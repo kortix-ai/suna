@@ -178,9 +178,6 @@
     }
   },
   "src/apps/deployment-worker.ts": {
-    "no-restricted-globals": {
-      "count": 2
-    },
     "no-restricted-properties": {
       "count": 5
     }
@@ -191,9 +188,6 @@
     }
   },
   "src/apps/idle-reaper.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 2
     }
@@ -215,9 +209,6 @@
   },
   "src/apps/public-proxy-handler.ts": {
     "no-console": {
-      "count": 1
-    },
-    "no-restricted-globals": {
       "count": 1
     }
   },
@@ -244,9 +235,6 @@
   },
   "src/apps/ws-proxy.ts": {
     "no-console": {
-      "count": 1
-    },
-    "no-restricted-globals": {
       "count": 1
     }
   },
@@ -275,9 +263,6 @@
   },
   "src/billing/index.ts": {
     "no-console": {
-      "count": 3
-    },
-    "no-restricted-globals": {
       "count": 3
     }
   },
@@ -540,9 +525,6 @@
     "no-console": {
       "count": 10
     },
-    "no-restricted-globals": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     }
@@ -562,9 +544,6 @@
       "count": 1
     },
     "no-console": {
-      "count": 1
-    },
-    "no-restricted-globals": {
       "count": 1
     }
   },
@@ -665,9 +644,6 @@
     },
     "no-console": {
       "count": 8
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/channels/telegram-webhook.ts": {
@@ -1048,9 +1024,6 @@
     }
   },
   "src/llm-gateway/models/runtime-catalog.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     }
@@ -1146,9 +1119,6 @@
   },
   "src/oauth/index.ts": {
     "kortix-api/replica-local": {
-      "count": 1
-    },
-    "no-restricted-globals": {
       "count": 1
     },
     "no-restricted-syntax": {
@@ -1289,9 +1259,6 @@
   "src/platform/services/pi-worker-pool.ts": {
     "no-console": {
       "count": 9
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/platform/services/provider-events.ts": {
@@ -1530,9 +1497,6 @@
   "src/projects/lib/session-control-reconciler.ts": {
     "kortix-api/replica-local": {
       "count": 1
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/projects/lib/session-create.ts": {
@@ -1622,9 +1586,6 @@
   "src/projects/lib/trigger-scheduler.ts": {
     "no-console": {
       "count": 8
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/projects/lib/turn-start-convergence.ts": {
@@ -1635,9 +1596,6 @@
   "src/projects/maintenance.ts": {
     "no-console": {
       "count": 26
-    },
-    "no-restricted-globals": {
-      "count": 1
     },
     "no-restricted-properties": {
       "count": 4
@@ -1679,15 +1637,7 @@
       "count": 2
     }
   },
-  "src/projects/provider-transition/provider-transition-service.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    }
-  },
   "src/projects/provider-transition/provider-transition-worker.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 3
     }
@@ -2244,9 +2194,6 @@
     }
   },
   "src/projects/routes/session-stream.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 2
     },
@@ -2374,11 +2321,6 @@
       "count": 1
     }
   },
-  "src/projects/session-lifecycle/command-lease.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    }
-  },
   "src/projects/session-lifecycle/command-transitions.ts": {
     "no-console": {
       "count": 1
@@ -2489,9 +2431,6 @@
   "src/projects/session-lifecycle/worker.ts": {
     "no-console": {
       "count": 1
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/projects/session-title-generate.ts": {
@@ -2508,9 +2447,6 @@
     }
   },
   "src/projects/suna-migration/suna-migration-worker.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 3
     }
@@ -2559,9 +2495,6 @@
     },
     "no-console": {
       "count": 5
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/router/routes/generation.ts": {
@@ -2645,9 +2578,6 @@
   },
   "src/routes/system.ts": {
     "kortix-api/layers": {
-      "count": 1
-    },
-    "no-restricted-globals": {
       "count": 1
     },
     "no-restricted-properties": {
@@ -2745,9 +2675,6 @@
     },
     "no-console": {
       "count": 2
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/scim/app.ts": {
@@ -2814,9 +2741,6 @@
       "count": 2
     },
     "no-console": {
-      "count": 1
-    },
-    "no-restricted-globals": {
       "count": 1
     }
   },
@@ -3106,11 +3030,6 @@
       "count": 1
     }
   },
-  "src/snapshots/tmp-reaper.ts": {
-    "no-restricted-globals": {
-      "count": 1
-    }
-  },
   "src/tunnel/core/cluster-forwarder.ts": {
     "no-console": {
       "count": 2
@@ -3124,9 +3043,6 @@
   "src/tunnel/index.ts": {
     "no-console": {
       "count": 11
-    },
-    "no-restricted-globals": {
-      "count": 1
     }
   },
   "src/tunnel/routes/auth.ts": {

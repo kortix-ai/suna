@@ -105,10 +105,6 @@ export default tseslint.config(
       'kortix-api/layers': 'error',
       'kortix-api/replica-local': 'error',
       'no-console': 'error',
-      'no-restricted-globals': [
-        'error',
-        { name: 'setInterval', message: 'A timer runs in every API replica, and prod runs 3. Periodic work belongs in a worker.' },
-      ],
       'no-restricted-syntax': [
         'error',
         {

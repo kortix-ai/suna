@@ -605,9 +605,10 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 - `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
   are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
-  files, no `setInterval`, no `(c: any)`, no `process.env` outside
-  `config.ts`, no `console.*`, and a `replica-local:` comment on every empty
-  module-level `Map`/`Set`.
+  files, no `(c: any)`, no `process.env` outside `config.ts`, no
+  `console.*`, and a `replica-local:` comment on every empty module-level
+  `Map`/`Set`. Background timers are guarded by
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
 - `apps/api/eslint-suppressions.json` holds the violations that existed when
   each rule was added. A new violation fails. A fixed one fails until you run
   `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
