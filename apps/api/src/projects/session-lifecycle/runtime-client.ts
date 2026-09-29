@@ -123,32 +123,41 @@ export async function disarmAllQuickQueueInterrupt(
   await clearTurnStopRequest(sessionId, 'QueueInterrupt');
 }
 
+/**
+ * Arm the daemon's abort-after-tool for this prompt's turn. `false` ONLY when
+ * the runtime was asked and did not serve the interrupt (status, shape,
+ * timeout, transport) — the caller then requeues the row on the
+ * runtime-unreachable ladder instead of the 2 s order backoff. A skipped arm
+ * (no endpoint, session mismatch) arms nothing and is not a failure: `true`.
+ */
 export async function armQuickQueueInterrupt(
   row: SessionLifecycleCommandRow,
   identity: { opencodeSessionId: string; messageId: string },
-): Promise<void> {
+): Promise<boolean> {
   const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
-  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return;
-  const armed = await sendQuickQueueControl(resolved.endpoint, {
+  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return true;
+  const outcome = await sendQuickQueueControl(resolved.endpoint, {
     kind: 'arm',
     promptId: row.commandId,
     opencodeSessionId: identity.opencodeSessionId,
     messageId: identity.messageId,
   });
-  if (!armed) {
+  if (!outcome.ok) {
     logger.warn('[session-lifecycle] Quick Queue boundary interrupt unavailable', {
       sessionId: row.sessionId,
       commandId: row.commandId,
+      reason: outcome.reason,
     });
-    return;
+    return false;
   }
   // The daemon now aborts this turn at its next tool boundary because the user
   // sent a prompt into it. That abort is asked for, not a failure.
-  if (!row.sessionId) return;
+  if (!row.sessionId) return true;
   await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
     opencodeSessionId: identity.opencodeSessionId,
     messageId: identity.messageId,
   });
+  return true;
 }
 
 /** What one read of the root transcript tells the drain about this prompt. */
