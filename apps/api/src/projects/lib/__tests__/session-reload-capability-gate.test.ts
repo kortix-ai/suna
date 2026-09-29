@@ -377,9 +377,9 @@ describe('compiled-governance push callers', () => {
     const src = join(import.meta.dir, '..', '..', '..');
     const users: string[] = [];
     for await (const file of new Bun.Glob('**/*.ts').scan({ cwd: src })) {
-      if (file.endsWith('.test.ts')) continue;
       // The definition files hold the symbol; only callers count.
       if (
+        file.endsWith('.test.ts') ||
         file.endsWith('projects/lib/sandbox-env-sync.ts') ||
         file.endsWith('projects/lib/sandbox-session-push.ts')
       )
