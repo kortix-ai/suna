@@ -1,6 +1,7 @@
 // Severity, suppression, and timing breakdown of the post-request
 // `Request completed:` line. `src/http-middleware.ts` owns the middleware that calls them.
 
+import { normalizeAuditClientSource, normalizeClientVersion } from '../shared/audit-client-source';
 import { formatStageEntries, stageSnapshot } from './server-timing';
 
 /**
@@ -105,4 +106,18 @@ export function shouldSuppressRequestLog(input: {
         status === 503)) ||
     (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
   );
+}
+
+/**
+ * The caller's reported surface (`X-Kortix-Client`) and release version
+ * (`X-Kortix-Client-Version`) for the `Request completed:` line, so a route or
+ * alias can be retired once no supported client version calls it. A missing
+ * or malformed value is omitted.
+ */
+export function requestClientLogFields(
+  header: (name: string) => string | undefined,
+): { client?: string; client_version?: string } {
+  const client = normalizeAuditClientSource(header('x-kortix-client'));
+  const clientVersion = normalizeClientVersion(header('x-kortix-client-version'));
+  return { ...(client ? { client } : {}), ...(clientVersion ? { client_version: clientVersion } : {}) };
 }

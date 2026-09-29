@@ -36,6 +36,8 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
     clientSource: 'cli',
+    // Baked by the release build (`--define`); unset in a local `bun run`.
+    clientVersion: process.env.KORTIX_CLI_VERSION,
   };
 }
 

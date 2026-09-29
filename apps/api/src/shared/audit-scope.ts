@@ -144,6 +144,7 @@ export interface InboundAuditScope {
   ip: string | null;
   userAgent: string | null;
   clientSourceHeader: string | null;
+  clientVersionHeader: string | null;
   correlationId: string | null;
   /** Account id from `?account_id=` / `?accountId=`; the only query value read. */
   queryAccountId: string | null;
@@ -195,6 +196,7 @@ export function attachInboundAuditScope(init: InboundAuditScopeInit): InboundAud
     ip: headers ? clientIpFromHeaders((name) => headers.get(name)) : null,
     userAgent: headers?.get('user-agent') || null,
     clientSourceHeader: headers?.get('x-kortix-client') ?? null,
+    clientVersionHeader: headers?.get('x-kortix-client-version') ?? null,
     correlationId: headers?.get('x-correlation-id') || headers?.get('idempotency-key') || null,
     queryAccountId:
       init.url?.searchParams.get('account_id') || init.url?.searchParams.get('accountId') || null,

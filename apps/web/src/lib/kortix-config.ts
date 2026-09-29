@@ -33,6 +33,7 @@ export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
     backendUrl: getEnv().BACKEND_URL,
     getToken: () => getSupabaseAccessToken(),
     clientSource: 'web',
+    clientVersion: getEnv().VERSION,
     getUserId: async () => {
       try {
         const {

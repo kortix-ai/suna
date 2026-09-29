@@ -22,6 +22,10 @@ Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
 separate source in the centralized audit log. This value identifies the client
 surface. It does not change the authenticated actor or their permissions.
 
+Set `clientVersion` to your app's release version, for example `1.4.0`. The SDK
+sends it as `X-Kortix-Client-Version` on every request. Kortix uses it to see
+which client versions still call an API route before that route is retired.
+
 ## Personal access tokens
 
 A personal access token (PAT) is the credential for the SDK, the CLI, and CI.

@@ -57,6 +57,8 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'X-Request-Id',
       'Last-Event-ID',
       'X-Kortix-Client',
+      // The SDK sends the host's release version on every request (R0.6).
+      'X-Kortix-Client-Version',
       // Defense in depth for the session stream: a cross-origin SSE reader that
       // sends `Cache-Control: no-cache` (older SDKs, the opencode fallback) would
       // otherwise fail preflight and the stream would never open. The current SDK

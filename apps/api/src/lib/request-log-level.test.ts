@@ -21,6 +21,7 @@
 import { describe, expect, test } from 'bun:test';
 import { runWithContext } from './request-context';
 import {
+  requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
   shouldSuppressRequestLog,
@@ -162,5 +163,22 @@ describe('requestTimingLogField', () => {
       if (previous === undefined) delete process.env.KORTIX_SLOW_REQUEST_TIMING_MS;
       else process.env.KORTIX_SLOW_REQUEST_TIMING_MS = previous;
     }
+  });
+});
+
+describe('requestClientLogFields', () => {
+  const headers = (map: Record<string, string>) => (name: string) => map[name];
+
+  test('logs the reported surface and version so a route can be retired on data', () => {
+    expect(
+      requestClientLogFields(headers({ 'x-kortix-client': 'cli', 'x-kortix-client-version': '0.13.42-dev.ab12cd3' })),
+    ).toEqual({ client: 'cli', client_version: '0.13.42-dev.ab12cd3' });
+  });
+
+  test('omits a missing, malformed or credential-shaped value', () => {
+    expect(requestClientLogFields(headers({}))).toEqual({});
+    expect(requestClientLogFields(headers({ 'x-kortix-client-version': 'a b' }))).toEqual({});
+    expect(requestClientLogFields(headers({ 'x-kortix-client-version': 'x'.repeat(65) }))).toEqual({});
+    expect(requestClientLogFields(headers({ 'x-kortix-client-version': 'sk-live-123' }))).toEqual({});
   });
 });

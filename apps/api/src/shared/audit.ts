@@ -10,7 +10,7 @@ import type { Context, Next } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import { getRequestContext, runWithContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
-import { normalizeAuditClientSource } from './audit-client-source';
+import { normalizeAuditClientSource, normalizeClientVersion } from './audit-client-source';
 import { type AuditRow, getAuditQueue } from './audit-queue';
 import { AnonymousAuditBudget, type AnonymousAuditSummary } from './audit-anonymous-budget';
 import {
@@ -748,6 +748,7 @@ async function inboundAuditInput(
     ? inferResource(hono.path)
     : { resourceType: ENTRYPOINT_RESOURCE_TYPE[scope.entrypoint], resourceId: null };
 
+  const clientVersion = normalizeClientVersion(scope.clientVersionHeader);
   const metadata: Record<string, unknown> = {
     ...annotation.metadata,
     method: scope.method,
@@ -755,6 +756,7 @@ async function inboundAuditInput(
     ...(action !== httpAction ? { http: httpAction } : {}),
     ...(scope.entrypoint !== 'http' ? { entrypoint: scope.entrypoint } : {}),
     ...(bound.authMethod ? { auth: bound.authMethod } : {}),
+    ...(clientVersion ? { client_version: clientVersion } : {}),
   };
 
   return {

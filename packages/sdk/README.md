@@ -787,6 +787,7 @@ interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  clientVersion?: string; // your release version, sent as X-Kortix-Client-Version
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
   sandboxId?: string | null;
@@ -800,6 +801,11 @@ interface KortixPlatformConfig {
 Set `clientSource` when a non-web host needs its requests separated in the
 centralized audit log. The SDK sends the validated value as request metadata.
 Actor identity and permissions still come from the bearer token.
+
+Set `clientVersion` to the host's release version. The SDK sends it as
+`X-Kortix-Client-Version` on every request, and the API logs it, so a route is
+retired only when no supported client version still calls it. A blank value
+sends nothing.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

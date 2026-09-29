@@ -144,6 +144,26 @@ describe('audit event middleware', () => {
     expect(auditRows[0]?.clientReportedSource).toBeNull();
   });
 
+  test('records the reported client version in the row metadata, and drops a malformed one', async () => {
+    const app = new Hono();
+    app.use('/v1/*', auditApiRequest);
+    app.get('/v1/projects/:projectId/detail', async (c) => {
+      (c as any).set('userId', '00000000-0000-4000-a000-000000000001');
+      (c as any).set('accountId', '00000000-0000-4000-a000-000000000101');
+      (c as any).set('authType', 'pat');
+      return c.json({ ok: true });
+    });
+
+    for (const version of ['0.13.42', 'not a version']) {
+      await app.request('/v1/projects/00000000-0000-4000-a000-000000000201/detail', {
+        headers: { 'X-Kortix-Client': 'cli', 'X-Kortix-Client-Version': version },
+      });
+    }
+
+    expect((auditRows[0]?.metadata as Record<string, unknown>).client_version).toBe('0.13.42');
+    expect(auditRows[1]?.metadata).not.toHaveProperty('client_version');
+  });
+
   test('records failed mutations with a failure outcome', async () => {
     const app = new Hono();
     app.use('/v1/*', auditApiRequest);

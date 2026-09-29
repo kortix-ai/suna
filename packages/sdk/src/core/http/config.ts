@@ -33,6 +33,10 @@ export interface KortixPlatformConfig {
    *  `apps/tui` — a terminal UI that authenticates with the CLI's host config
    *  but is a distinct surface in `client_reported_source`. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  /** The host's own release version (e.g. `0.13.42`), sent as
+   *  `X-Kortix-Client-Version` so the API can see which client versions still
+   *  call a route before it is retired. Omitted when unset or blank. */
+  clientVersion?: string;
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;
   /** Default sandbox id for local/single-sandbox hosts (was `getEnv().SANDBOX_ID`). */

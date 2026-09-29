@@ -63,6 +63,7 @@ import { bindSavedCopies } from '@/lib/session/saved-copy-registry';
 import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
+import Constants from 'expo-constants';
 import { configureKortix } from '@kortix/sdk';
 import { API_URL, getAuthToken } from '@/api/config';
 import {
@@ -93,6 +94,8 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
 configureKortix({
   backendUrl: API_URL,
   getToken: getAuthToken,
+  clientSource: 'mobile',
+  clientVersion: Constants.expoConfig?.version,
   onError: (error, context) => {
     log.error('❌ [kortix-sdk] request failed:', error, context);
     // A 401 may mean the login ended: the monitor checks once (COR-144).
