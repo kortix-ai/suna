@@ -40,7 +40,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/email/installation',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/email/installation',
+    summary: 'Get the email channel installation',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -70,7 +70,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/email/mode',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/email/mode',
+    summary: 'Get the email channel mode',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -98,7 +98,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/email/connect',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/email/connect',
+    summary: 'Connect an email channel',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -281,7 +281,7 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/channels/email/installation',
     tags: ['channels'],
-    summary: 'PATCH /:projectId/channels/email/installation',
+    summary: 'Update the email channel',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -334,7 +334,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/channels/email/installation',
     tags: ['channels'],
-    summary: 'DELETE /:projectId/channels/email/installation',
+    summary: 'Disconnect the email channel',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),

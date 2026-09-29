@@ -100,7 +100,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sandboxes',
     tags: ['sandboxes'],
-    summary: 'GET /:projectId/sandboxes',
+    summary: 'List project sandboxes',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -143,7 +143,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/snapshots',
     tags: ['sandboxes'],
-    summary: 'GET /:projectId/snapshots',
+    summary: 'List project sandbox snapshots',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -350,7 +350,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sandbox-health',
     tags: ['sandboxes'],
-    summary: 'GET /:projectId/sandbox-health',
+    summary: 'Get project sandbox health',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -392,7 +392,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/snapshots/rebuild',
     tags: ['sandboxes'],
-    summary: 'POST /:projectId/snapshots/rebuild',
+    summary: 'Rebuild the project sandbox snapshot',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -492,7 +492,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/snapshots/fix-with-agent',
     tags: ['sandboxes'],
-    summary: 'POST /:projectId/snapshots/fix-with-agent',
+    summary: 'Ask an agent to fix a failing snapshot build',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),

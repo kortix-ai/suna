@@ -10,7 +10,7 @@ import { refusesSelfMerge } from '../change-request-policy';
 // replace the barrel wholesale with `mock.module`, and the guard runs only with
 // the agent_principal flag on.
 import { agentGovernanceMergeRefusal } from '../change-request-governance';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { kickPiPackageBundle } from '../../pi-packages/bundle';
@@ -23,7 +23,7 @@ import {
   readManifestFromRepo,
 } from '../git';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { enqueueProjectSnapshot } from '../../git-proxy/project-snapshot';
 import { normalizeString } from '../lib/serializers';
@@ -37,11 +37,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/change-requests/{crId}/merge',
     tags: ['change-requests'],
-    summary: 'POST /:projectId/change-requests/:crId/merge',
+    summary: 'Merge a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          message: z.string().optional().openapi({ description: 'Merge commit message. Optional; the body itself is optional.' }),
+        }) } } },
     },
     responses: {
       200: json(z.any(), 'OK'),
@@ -290,7 +292,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/change-requests/{crId}/close',
     tags: ['change-requests'],
-    summary: 'POST /:projectId/change-requests/:crId/close',
+    summary: 'Close a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),
@@ -336,7 +338,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/change-requests/{crId}/reopen',
     tags: ['change-requests'],
-    summary: 'POST /:projectId/change-requests/:crId/reopen',
+    summary: 'Reopen a change request',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), crId: z.string() }),

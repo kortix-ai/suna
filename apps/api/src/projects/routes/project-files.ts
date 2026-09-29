@@ -37,7 +37,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files',
     tags: ['files'],
-    summary: 'GET /:projectId/files',
+    summary: 'List files in the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -87,7 +87,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/archive',
     tags: ['files'],
-    summary: 'GET /:projectId/files/archive',
+    summary: 'Download the project repository as an archive',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -150,7 +150,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/search',
     tags: ['files'],
-    summary: 'GET /:projectId/files/search',
+    summary: 'Search files in the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -214,7 +214,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/content',
     tags: ['files'],
-    summary: 'GET /:projectId/files/content',
+    summary: 'Read a file from the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -278,7 +278,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/history',
     tags: ['files'],
-    summary: 'GET /:projectId/files/history',
+    summary: 'List the commit history of a file',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -343,7 +343,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/branches',
     tags: ['files'],
-    summary: 'GET /:projectId/branches',
+    summary: 'List repository branches',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -402,7 +402,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/commits',
     tags: ['files'],
-    summary: 'GET /:projectId/commits',
+    summary: 'List repository commits',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -440,7 +440,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/commits/{sha}',
     tags: ['files'],
-    summary: 'GET /:projectId/commits/:sha',
+    summary: 'Get a repository commit',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sha: z.string() }),
@@ -475,7 +475,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/commits/{sha}/diff',
     tags: ['files'],
-    summary: 'GET /:projectId/commits/:sha/diff',
+    summary: 'Get the diff of a commit',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sha: z.string() }),
@@ -515,7 +515,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/version-diff',
     tags: ['files'],
-    summary: 'GET /:projectId/version-diff',
+    summary: 'Compare two repository versions',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),

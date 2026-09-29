@@ -86,7 +86,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/logs',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/logs',
+    summary: 'List LLM gateway request logs',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -143,7 +143,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/logs/{logId}',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/logs/:logId',
+    summary: 'Get an LLM gateway request log',
     ...auth,
     request: { params: z.object({ projectId: z.string(), logId: z.string() }) },
     responses: { 200: json(z.any(), 'Gateway request log detail'), ...errors(400, 404) },
@@ -198,7 +198,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/gateway/errors',
     tags: ['gateway'],
-    summary: 'GET /:projectId/gateway/errors',
+    summary: 'List LLM gateway errors',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),

@@ -33,7 +33,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/turn-stream',
     tags: ['projects'],
-    summary: 'POST /:projectId/turn-stream',
+    summary: 'Run a turn and stream the reply',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),

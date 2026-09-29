@@ -334,7 +334,7 @@ const handleSessionSnapshot = async (c: any) => {
 projectsApp.openapi(
   sessionSnapshotRoute(
     '/{projectId}/sessions/{sessionId}/snapshot',
-    'GET /:projectId/sessions/:sessionId/snapshot',
+    'Get the session snapshot (state, prompts, audit) in one read',
   ),
   handleSessionSnapshot,
 );
@@ -345,7 +345,7 @@ projectsApp.openapi(
 projectsApp.openapi(
   sessionSnapshotRoute(
     '/{projectId}/sessions/{sessionId}/open-bundle',
-    'GET /:projectId/sessions/:sessionId/open-bundle',
+    'Get the session snapshot (legacy open-bundle path)',
   ),
   handleSessionSnapshot,
 );
