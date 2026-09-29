@@ -2456,6 +2456,27 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(logged.filter((line) => line.includes('[reaper] failed for sandbox'))).toEqual([]);
   });
 
+  test('an unreachable Platinum guest during renewal retries without paging each pass', async () => {
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new Error(
+      'Platinum lifecycle renewal failed for ext-1: exit unknown: guest vsock unreachable after 5s: EOF',
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(stops).toEqual([]);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
+  });
+
   test('the deadline is the WHOLE decision — the box is never consulted', async () => {
     // Identical rows; only the deadline differs. Metadata that used to veto a
     // stop (a live lease, a fresh lastTurnAt) is present on the doomed one and
