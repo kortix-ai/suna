@@ -28,6 +28,11 @@ async function processActivity(
   const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl, byo?.appId);
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
 
+  // Teams only. The same Bot Framework token also signs Web Chat and Direct
+  // Line activities, and there the client writes the sender and the tenant, so
+  // anyone holding the bot's Direct Line secret could name any Teams user.
+  if (activity.channelId !== 'msteams') return c.json({ error: 'Only the Microsoft Teams channel is supported' }, 403);
+
   // The token proves the audience (the app id), not the body. For a
   // bring-your-own bot the project admin registered that app, so the body's
   // tenant is accepted only when it is one the project's install proved, and
