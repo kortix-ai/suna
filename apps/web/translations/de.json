@@ -1175,6 +1175,10 @@
         "reminders": {
           "name": "Erinnerungen",
           "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
+        },
+        "us_region": {
+          "name": "US-Region",
+          "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
         }
       }
     },

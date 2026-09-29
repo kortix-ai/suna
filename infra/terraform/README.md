@@ -21,15 +21,9 @@ table is the source of truth for which root it drives.
 | `compliance-monitoring` | `terraform-apply-global.yml` | push to `main` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
 | `security-baseline` | `terraform-apply-global.yml` | push to `main` touching the root | `us-west-2` | `kortix-gha-tf-apply-global` |
 | `environments/prod-us-east-2-shadow` | `deploy-prod-us-east-2-shadow.yml` | release | `us-east-2` | `kortix-gha-prod-use2-terraform` |
-| **`environments/preview`** | **nobody — apply by hand** | — | `us-west-2` | — |
 
 Every root above, applied or not, is planned nightly by the `drift detection`
 matrix in `terraform-ci.yml`, so an unapplied change still shows up as drift.
-
-`environments/preview` is the one remaining manual root, by design: it declares
-`postgres_egress_cidrs` with no default and a validation that rejects
-`0.0.0.0/0`, so the operator states the allowed CIDRs on a reviewed plan. It is
-a one-off bootstrap for the PR-preview control plane, not a per-deploy root.
 
 ## `api_image` is the only input CI supplies
 

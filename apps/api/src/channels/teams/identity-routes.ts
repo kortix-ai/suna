@@ -6,9 +6,11 @@ import { config } from '../../config';
 import { combinedAuth } from '../../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
-import { listProjectsForWorkspace, loadTeamsInstall } from '../install-store';
+import { listProjectsForWorkspace, loadTeamsAppIdForProject, loadTeamsInstall } from '../install-store';
 import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from './auth-resume';
-import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
+import { chatUser, completeChatLogin } from '../core/identity';
+import { buildDenialError } from '../../iam/denial-message';
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
 import { confirmTeamsConnected } from './identity';
@@ -124,7 +126,7 @@ teamsIdentityApp.openapi(
     ...auth,
     middleware: [combinedAuth] as const,
     request: { body: { content: { 'application/json': { schema: BindBody } } } },
-    responses: { 200: json(BindResult, 'Identity linked'), ...errors(400, 403, 404, 410, 503) },
+    responses: { 200: json(BindResult, 'Identity linked'), ...errors(400, 403, 404, 409, 410, 503) },
   }),
   async (c: Context) => {
     if (!config.TEAMS_REQUIRE_USER_IDENTITY) return c.json({ error: 'Not found' }, 404);
@@ -152,24 +154,50 @@ teamsIdentityApp.openapi(
       .from(projects)
       .where(inArray(projects.projectId, projectIds));
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
-    const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
-    const hasAccess = memberships.some(Boolean);
 
-    await linkChatIdentity(chatUser('teams', payload.tenantId, payload.teamsUserId), userId);
-
-    const pending = await consumePendingTeamsAuthMessage({
-      pendingId: payload.pendingId,
-      tenantId: payload.tenantId,
-      teamsUserId: payload.teamsUserId,
+    const outcome = await completeChatLogin({
+      user: chatUser('teams', payload.tenantId, payload.teamsUserId),
+      userId,
+      login: payload,
+      accountIds,
+      mfaAal: c.get('mfaAal'),
+      tokenId: c.get('iamTokenId'),
     });
+    if (!outcome.ok) {
+      if (outcome.reason === 'mfa_required') {
+        throw buildDenialError(PROJECT_ACTIONS.PROJECT_SESSION_START, 'account_mfa_required');
+      }
+      return outcome.reason === 'used'
+        ? c.json({ error: 'This link was already used. Send /login to the Kortix bot in Teams for a new one.' }, 410)
+        : c.json(
+            {
+              error:
+                'This Teams account is connected to a different Kortix account. Send /logout to the Kortix bot in Teams, then /login.',
+            },
+            409,
+          );
+    }
+    const { hasAccess } = outcome;
+
+    const pending = outcome.fresh
+      ? await consumePendingTeamsAuthMessage({
+          pendingId: payload.pendingId,
+          tenantId: payload.tenantId,
+          teamsUserId: payload.teamsUserId,
+        })
+      : null;
     let resumed = false;
     if (pending) {
       resumed = true;
+      // A project on its own bot resumes only into its own sessions, as its
+      // webhook would have delivered the message (ownThreadsOnly).
+      const ownBot = Boolean(await loadTeamsAppIdForProject(pending.projectId).catch(() => null));
       void createOrJoinTeamsConversationSession({
         projectId: pending.projectId,
         tenantId: payload.tenantId,
         conversationId: pending.activity.conversation?.id ?? '',
         activity: pending.activity,
+        ownThreadsOnly: ownBot,
       }).catch((err) =>
         console.error('[teams-auth] failed to resume pending Teams message after bind', err),
       );
@@ -178,16 +206,18 @@ teamsIdentityApp.openapi(
     // Say so in Teams too: the browser tab is the only place that said it, and
     // the person is back in Teams. Slack posts "Slack connected — picking up
     // your message". Best effort: the 1:1 chat opens only when the app is
-    // installed for them, which is where the sign-in link was sent.
-    const confirmProject = pending?.projectId ?? projectIds[0]!;
-    void confirmTeamsConnected({
-      projectId: confirmProject,
-      tenantId: payload.tenantId,
-      teamsUserId: payload.teamsUserId,
-      userId,
-      resumed,
-      hasAccess,
-    });
+    // installed for them, which is where the sign-in link was sent. A reload
+    // of a used link (`fresh` false) connected nothing new, so it says nothing.
+    if (outcome.fresh) {
+      void confirmTeamsConnected({
+        projectId: pending?.projectId ?? projectIds[0]!,
+        tenantId: payload.tenantId,
+        teamsUserId: payload.teamsUserId,
+        userId,
+        resumed,
+        hasAccess,
+      });
+    }
 
     const workspaceName =
       (await loadTeamsInstall(projectIds[0]).catch(() => null))?.teamName ?? null;

@@ -12,6 +12,7 @@ import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelCatalog,
+  withChannelDefaults,
 } from './channels';
 import {
   type ExecResult,
@@ -980,7 +981,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         connectedAccountId,
       });
     } else {
-      let providerArgs = executionArgs;
+      let providerArgs =
+        connector.provider === 'channel'
+          ? withChannelDefaults(connector.platform ?? '', input.actionPath, executionArgs)
+          : executionArgs;
       const scope = {
         accountId: input.accountId,
         projectId: input.projectId,
