@@ -81,8 +81,15 @@ function extract(archive: Buffer): string {
 }
 
 function blobOf(path: string): string {
-  const stat = lstatSync(path);
-  const content = stat.isSymbolicLink() ? readlinkSync(path) : readFileSync(path).toString('binary');
+  // Resolve the entry in one call: readlink fails with EINVAL on a regular
+  // file, so no separate lstat can race the read (CodeQL js/file-system-race).
+  let content: string;
+  try {
+    content = readlinkSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EINVAL') throw error;
+    content = readFileSync(path).toString('binary');
+  }
   const bytes = Buffer.from(content, 'binary');
   return createHash('sha1')
     .update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes]))
