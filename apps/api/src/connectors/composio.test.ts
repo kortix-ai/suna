@@ -677,7 +677,9 @@ test('composioCatalogPage answers any search from the catalogue, categories incl
     runtime: fakeRuntime({ created: session({}), calls }),
   });
 
-  expect('toolkits' in result && result.toolkits.map((t) => t.slug)).toEqual(['hubspot']);
+  // The wire contract is `items`, not `toolkits` — CONN-24 (gate run
+  // 36497729410) asserts this directly over REST.
+  expect('items' in result && result.items.map((t) => t.slug)).toEqual(['hubspot']);
   expect(calls).toEqual([]);
 });
 
@@ -926,29 +928,30 @@ test('composioCatalogPage searches one and two letters across every provider pag
     catalogClient,
     limit: 1,
   };
+  // The wire contract is `items` + `cursor` + `totalPages`, the same shape the
+  // unsearched page answers (CONN-24, gate run 36497729410) — not the
+  // internal `{toolkits, total, hasMore}` snapshot shape.
   const first = await composioCatalogPage({ ...input, q: ' A ' });
   expect(first).toMatchObject({
-    provider: 'composio',
-    total: 2,
-    hasMore: true,
-    toolkits: [{ slug: 'alpha' }],
+    totalPages: 2,
+    items: [{ slug: 'alpha' }],
   });
-  if (!('nextCursor' in first)) throw new Error('expected a next cursor');
-  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.nextCursor });
+  if (!('cursor' in first) || !first.cursor) throw new Error('expected a next cursor');
+  const second = await composioCatalogPage({ ...input, q: 'a', cursor: first.cursor });
   expect(second).toMatchObject({
-    total: 2,
-    hasMore: false,
-    toolkits: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
+    totalPages: 2,
+    cursor: null,
+    items: [{ slug: 'gmail', description: 'Email', categories: ['email'], connected: false }],
   });
   expect(await composioCatalogPage({ ...input, q: 'gm' })).toMatchObject({
-    total: 1,
-    hasMore: false,
-    toolkits: [{ slug: 'gmail' }],
+    totalPages: 1,
+    cursor: null,
+    items: [{ slug: 'gmail' }],
   });
   expect(await composioCatalogPage({ ...input, q: 'zz' })).toMatchObject({
-    total: 0,
-    hasMore: false,
-    toolkits: [],
+    totalPages: 0,
+    cursor: null,
+    items: [],
   });
   expect(requests).toEqual([
     { limit: 1000, sort_by: 'usage' },
