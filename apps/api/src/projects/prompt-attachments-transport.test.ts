@@ -187,6 +187,22 @@ test('begin in direct mode returns a public-origin signed upload URL', async () 
   expect(JSON.stringify(handle)).not.toContain('supabase-kong');
 });
 
+test('begin stores unsupported MIME as binary and preserves native image/PDF types', async () => {
+  for (const [declared, expected] of [
+    ['text/html', 'application/octet-stream'],
+    ['image/svg+xml', 'application/octet-stream'],
+    ['image/png; charset=binary', 'image/png'],
+    ['application/pdf', 'application/pdf'],
+  ]) {
+    const handle = await attachments.beginPromptAttachment(scope, {
+      filename: 'synthetic-file', mime: declared, size: 5,
+    });
+    expect(row?.mime).toBe(expected);
+    expect(handle.mime).toBe(expected);
+    expect(handle.upload.kind === 'direct' && handle.upload.headers['content-type']).toBe(expected);
+  }
+});
+
 test('begin with an existing attachment_id re-signs the same row and inserts nothing', async () => {
   const first = await attachments.beginPromptAttachment(scope, {
     filename: 'a.txt',
