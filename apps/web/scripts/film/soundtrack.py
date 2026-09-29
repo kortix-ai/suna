@@ -4,14 +4,14 @@ The film soundtrack: a synthesized score on the film's bar grid, plus sound
 effects placed on the film's cue frames. Deterministic: same input, same WAV.
 
   python3 soundtrack.py fetch-sfx              # once: ElevenLabs sound effects -> sfx/
-  python3 soundtrack.py mix <cues.json> <out.wav>
+  python3 soundtrack.py mix <film.json> <out.wav>   # {cues, score} written by render.ts
 
 Needs numpy, scipy, and ffmpeg on PATH. `fetch-sfx` reads ELEVENLABS_API_KEY.
 The score is synthesized because the ElevenLabs Music API needs a paid plan
 (402 paid_plan_required on the free key); sound effects work on the free plan.
 
 Grid (must match engine/time.ts): 120 BPM, 4/4, one bar = 2 s = 120 frames at 60 fps.
-The section map below follows the launch storyboard in
+Each film declares its own section map (FilmDef.score); see
 .agents/skills/kortix-presentation/references/films.md.
 """
 
@@ -29,8 +29,6 @@ SR = 48000
 BPM = 120
 BEAT = 60 / BPM
 BAR = BEAT * 4
-BARS = 32
-LENGTH = BARS * BAR
 FPS = 60
 HERE = Path(__file__).parent
 SFX_DIR = HERE / "sfx"
@@ -185,47 +183,65 @@ G = ([55, 59, 62], 43)
 CYCLE = [AM, F, C, G]
 
 
-def chord_for(b):
-    if b <= 3:
-        return AM
-    if b >= 29:
-        return [F, G, AM][b - 29]
-    return CYCLE[(b - 4) % 4]
+class Score:
+    """A film's score, read from its `score` block (FilmDef.score in the film engine).
+
+    sections: [[start_bar, kind], ...], kinds intro | reveal | groove | break | lift | end.
+    cycle_from: the bar the Am–F–C–G cycle starts on. risers: [[bar, seconds]] swell INTO the bar.
+    impacts: [[bar, gain]] hit ON the bar. Layers are placed relative to the first groove bar:
+    hats from +6 bars, claps and the octave-up arpeggio from +12.
+    """
+
+    def __init__(self, spec):
+        self.bars = spec["bars"]
+        self.length = self.bars * BAR
+        self.sections = sorted(spec["sections"])
+        self.cycle_from = spec["cycle_from"]
+        self.risers = spec.get("risers", [])
+        self.impacts = spec.get("impacts", [])
+        starts = {kind: b for b, kind in reversed(self.sections)}
+        self.groove = starts.get("groove", 0)
+        self.break_at = starts.get("break", self.bars)
+        self.end_at = starts.get("end", self.bars)
+        reveal = [b for b, kind in self.sections if kind == "reveal"]
+        # the reveal's last bar already carries the kick and the arpeggio
+        self.reveal_last = self.groove - 1 if reveal else -1
+
+    def section(self, b):
+        kind = self.sections[0][1]
+        for start, k in self.sections:
+            if b >= start:
+                kind = k
+        return kind
+
+    def chord(self, b):
+        sec = self.section(b)
+        if sec == "end":
+            # F, G, then home: the last bar always resolves to Am
+            return AM if b == self.bars - 1 else [F, G][min(1, b - self.end_at)]
+        if b < self.cycle_from:
+            return AM
+        return CYCLE[(b - self.cycle_from) % 4]
 
 
-def section(b):
-    """What plays in bar b. Mirrors the storyboard beats."""
-    if b <= 2:
-        return "intro"
-    if b <= 4:
-        return "reveal"
-    if b <= 24:
-        return "groove"
-    if b <= 26:
-        return "break"
-    if b <= 28:
-        return "lift"
-    return "end"
-
-
-def score():
-    n = int((LENGTH + 3) * SR)
+def score(sc):
+    n = int((sc.length + 3) * SR)
     music = np.zeros((n, 2))
     drums = np.zeros((n, 2))
     duck = np.ones(n)
-    k, arp_bus = kick(), np.zeros((n, 2))
+    arp_bus = np.zeros((n, 2))
 
-    for b in range(BARS):
+    for b in range(sc.bars):
         s0 = b * BAR
-        notes, root = chord_for(b)
-        sec = section(b)
+        notes, root = sc.chord(b)
+        sec = sc.section(b)
 
         # pad — darker in the intro and the break, open in the groove
         cutoff = {"intro": 900, "reveal": 1600, "groove": 2000, "break": 1100, "lift": 2400, "end": 1800}[sec]
-        hold = BAR * (3 if b == 31 else 1) + 0.6
+        hold = BAR * (3 if b == sc.bars - 1 else 1) + 0.6
         place(music, pad(notes, hold, cutoff), s0, {"intro": 0.5, "break": 1.7, "end": 1.9}.get(sec, 0.8))
 
-        if sec in ("groove", "lift") or (sec == "reveal" and b == 4):
+        if sec in ("groove", "lift") or b == sc.reveal_last:
             for q in range(4):
                 place(drums, kick(), s0 + q * BEAT, 0.9)
                 i = int((s0 + q * BEAT) * SR)
@@ -233,10 +249,10 @@ def score():
                 duck[i : i + len(env)] = np.minimum(duck[i : i + len(env)], env[: len(duck) - i])
             for e in range(8):
                 place(music, bass(root, BEAT / 2 * 0.9), s0 + e * BEAT / 2, 0.4)
-        if (sec == "groove" and b >= 11) or sec == "lift":
+        if (sec == "groove" and b >= sc.groove + 6) or sec == "lift":
             for e in range(8):
                 place(drums, hat(open_=e % 2 == 1), s0 + e * BEAT / 2, 0.8)
-        if (sec == "groove" and b >= 17) or sec == "lift":
+        if (sec == "groove" and b >= sc.groove + 12) or sec == "lift":
             for q in (1, 3):
                 place(drums, clap(), s0 + q * BEAT, 0.8)
         if sec in ("break", "end"):
@@ -244,12 +260,12 @@ def score():
         if sec == "intro":
             place(drums, kick() * 0.5, s0, 0.5)  # a heartbeat on the one
 
-        # arpeggio: 16ths over chord tones from bar 4; an octave up from bar 17
-        if sec in ("groove", "lift", "break") or b == 4:
+        # arpeggio: 16ths over chord tones; an octave up once the groove is 12 bars in
+        if sec in ("groove", "lift", "break") or b == sc.reveal_last:
             tones = notes + [notes[0] + 12]
             pattern = [0, 1, 2, 3, 2, 1, 0, 1, 0, 1, 2, 3, 2, 3, 2, 1]
-            up = 12 if (b >= 17 and sec != "break") else 0
-            cut = 1400 + (b - 25) * 900 if sec == "break" else 2600
+            up = 12 if (b >= sc.groove + 12 and sec != "break") else 0
+            cut = 1400 + (b - sc.break_at) * 900 if sec == "break" else 2600
             for i, p in enumerate(pattern):
                 place(arp_bus, pluck(tones[p] + 12 + up, cutoff=max(700, cut)), s0 + i * BEAT / 4, 0.16)
 
@@ -259,20 +275,19 @@ def score():
         arp_bus[d * tap :] += arp_bus[: -d * tap] * g
     music += arp_bus
 
-    # risers into the reveal (bar 3), the lift (bar 27) and the end card (bar 29)
-    for target, dur in ((3, 3.0), (27, 2.0), (29, 1.5)):
+    for target, dur in sc.risers:
         place(music, riser(dur), target * BAR - dur, 0.6)
-    for target, g in ((3, 0.9), (29, 0.7)):
+    for target, g in sc.impacts:
         place(drums, impact(), target * BAR, g)
 
     music *= duck[:, None]
     mixed = reverb(music, mix=0.25) + drums
 
     # end: fade across the last bar so the film closes on the tail
-    fade_from, fade_to = int((LENGTH - 2.2) * SR), int((LENGTH - 0.1) * SR)
+    fade_from, fade_to = int((sc.length - 2.2) * SR), int((sc.length - 0.1) * SR)
     mixed[fade_from:fade_to] *= np.linspace(1, 0, fade_to - fade_from)[:, None] ** 1.5
     mixed[fade_to:] = 0
-    return mixed[: int(LENGTH * SR)]
+    return mixed[: int(sc.length * SR)]
 
 
 # ── sound effects ────────────────────────────────────────────────────────
@@ -303,9 +318,10 @@ def load_audio(path):
     return np.frombuffer(raw, dtype=np.float32).reshape(-1, 2).astype(float)
 
 
-def mix(cues_path, out_path):
-    cues = json.loads(Path(cues_path).read_text())
-    out = score()
+def mix(meta_path, out_path):
+    meta = json.loads(Path(meta_path).read_text())
+    cues = meta["cues"]
+    out = score(Score(meta["score"]))
     cache = {}
     for cue in cues:
         name = cue["sfx"]

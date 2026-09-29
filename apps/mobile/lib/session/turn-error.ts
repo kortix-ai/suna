@@ -24,14 +24,16 @@ export function isInsufficientCreditsError(text: string): boolean {
   );
 }
 
-/** Free tier dry, inactive subscription, exhausted budget — a subscribe CTA, not a top-up. */
+/**
+ * Free tier, inactive subscription, or exhausted Kortix budget — a subscribe
+ * CTA, not a top-up. Kortix phrases only: a provider's own cap ("usage limit",
+ * 429) must not reach the upgrade card (KRTX-621).
+ */
 export function isUsageLimitError(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
   return (
     lower.includes('free usage') ||
-    lower.includes('usage exceeded') ||
-    lower.includes('usage limit') ||
     lower.includes('subscription required') ||
     lower.includes('subscription_required') ||
     lower.includes('budget exceeded') ||
