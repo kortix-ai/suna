@@ -37,7 +37,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/turn-question',
     tags: ['projects'],
-    summary: 'POST /:projectId/turn-question',
+    summary: 'Ask the user a question from a turn',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -259,7 +259,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/question',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/question',
+    summary: 'Get the pending agent question of a session',
     ...auth,
     request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
     responses: { 200: json(AnyObject, 'Open question, or null'), ...errors(404) },
@@ -296,7 +296,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/question',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/question',
+    summary: 'Answer the pending agent question of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
