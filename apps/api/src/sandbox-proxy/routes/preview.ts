@@ -496,12 +496,15 @@ async function agentSwitchRefusal(
   origin?: string,
 ): Promise<Response | null> {
   const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
-  // In-session agent switching is allowed, unconditionally. What remains is an
-  // AUTHORIZATION question, not an immutability one: may THIS caller run THAT
-  // agent? The grant the switched-to agent runs under is re-scoped separately
-  // (env sync + token re-mint) before the prompt is forwarded.
   if (!isConcreteAgentSwitch(requestedAgent, sessionAgent)) return null;
   const switchedToAgent = requestedAgent as string;
+  if (sessionAgent !== DEFAULT_AGENT_SENTINEL) {
+    return jsonProxyError(
+      { error: 'A session cannot switch agents.', code: 'AGENT_SWITCH_NOT_ALLOWED' },
+      409,
+      origin,
+    );
+  }
   if (!userId) {
     // A switch is an authorization decision and there is no principal to decide
     // about — a share-token forward, say. Refuse rather than run another agent
@@ -545,24 +548,9 @@ async function agentSwitchRefusal(
   );
 }
 
-// A prompt's explicit `agent` only constitutes a prohibited switch when it would
-// run a DIFFERENT *concrete* agent than the one this session's connector token was
-// minted for. That — and only that — is the escalation the policy prevents. The sentinel 'default'
-// is non-binding on EITHER side: a session stored as 'default' has no privileged
-// agent-specific grant to inherit, and a prompt asking for 'default' just means
-// "this session's own default agent".
-//
-// This predicate does NOT refuse the switch. It used to gate a 409; it now gates
-// only the 403 authz check in `agentSwitchRefusal`.
-//
-// The sentinel 'default' is non-binding on EITHER side: a session stored as
-// 'default' has no privileged agent-specific grant to inherit, and a prompt
-// asking for 'default' just means "this session's own default agent".
-//
-// Without that carve-out, the client's perfectly ordinary behaviour read as a
-// switch: it resolves "the default" to a concrete name (e.g. `kortix`) for
-// display and echoes it back on follow-up turns — and a first-turn race can send
-// that name before the session's bound agent has even loaded.
+// A concrete session rejects another concrete agent. The legacy `default`
+// sentinel is non-binding: clients can echo a resolved default before the
+// session's agent has loaded, so that path still requires agent authorization.
 function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
   if (!requestedAgent) return false;
   // Asking for the sentinel is asking for "this session's own agent" — never a
@@ -1325,13 +1313,10 @@ export async function forwardToSandbox(
 
       if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
-        // The agent-lock 409 and the project.agent.read 403 used to live here.
-        // They now run in `agentSwitchRefusal`, above the dedupe claim and above
-        // the connector gate — see that function for why both moves matter.
+        // Agent immutability and authorization run before the dedupe claim.
         // Drop only the legacy 'default' sentinel so OpenCode resolves its own
         // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent is forwarded untouched so the user can switch agents
-        // within a session.
+        // requested agent remains on the authorized default-sentinel path.
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }

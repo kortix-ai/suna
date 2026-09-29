@@ -1271,6 +1271,7 @@ function ComposerImpl({
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
     const available = localizedSlashActions(tI18nComplete).filter((action) => {
+      if (action.id === 'switch-agent') return !agentSelectorLocked;
       if (action.id === 'compact-session') return Boolean(onCompactClick);
       if (action.id === 'show-context') return Boolean(onContextClick);
       return true;
@@ -1286,7 +1287,7 @@ function ComposerImpl({
       }
       return action;
     });
-  }, [selectedAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
+  }, [selectedAgent, agentSelectorLocked, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
