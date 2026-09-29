@@ -124,6 +124,8 @@ describe("buildCompiledRuntimeArtifact", () => {
           prompt: "Answer from the compiled runtime.\n",
         },
       },
+      // #8027 (W1 B5): the compiled config names the manifest's default agent.
+      default_agent: "kortix",
     });
     expect(manifest.opencode_config_dir).toBe(".kortix/opencode");
     expect(manifest.opencode_config_archive_sha256).toMatch(/^[0-9a-f]{64}$/);

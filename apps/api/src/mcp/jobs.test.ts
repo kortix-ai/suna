@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -76,7 +76,12 @@ describe.skipIf(process.platform !== 'linux')('job scripts in a real shell', () 
   test('a launch deletes job dirs older than 24 h and keeps recent ones', async () => {
     const jobs = join(home, '.cache/kortix-mcp/jobs');
     mkdirSync(join(jobs, 'old'), { recursive: true });
-    spawnSync('touch', ['-d', '2 days ago', join(jobs, 'old')]);
+    // Backdate in-process and prove it took: `touch -d '2 days ago'` depends on
+    // the runner's coreutils and its exit status was never checked, so a CI
+    // failure could not say whether the mtime or the cleanup was wrong.
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    utimesSync(join(jobs, 'old'), twoDaysAgo, twoDaysAgo);
+    expect(Date.now() - statSync(join(jobs, 'old')).mtimeMs).toBeGreaterThan(24 * 60 * 60 * 1000);
     sh(JOB_LAUNCH, { KMCP_JOB: 'j5', KMCP_CMD: 'true', KMCP_TIMEOUT: '60' });
     expect(existsSync(join(jobs, 'old'))).toBe(false);
     expect(existsSync(join(jobs, 'j5'))).toBe(true);
