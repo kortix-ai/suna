@@ -224,16 +224,15 @@ function setupComputer(deps) {
   }
 
   /**
-   * Shows a native dialog on top of every app. macOS: steal focus. Windows and
-   * Linux: a tray-only app has no window to own the dialog, and the foreground
-   * lock hides an ownerless one behind the active app, so open the main window
-   * always-on-top and make it the parent.
+   * Shows a native dialog on top of every app, attached to the main window
+   * (opened if the app sits in the tray) raised always-on-top. macOS also
+   * steals focus; Windows and Linux hide an ownerless dialog behind the
+   * active app.
    */
   async function showOnTop(options) {
-    if (process.platform === 'darwin') {
-      app.focus({ steal: true });
-      return dialog.showMessageBox(options);
-    }
+    // Always parented: on macOS an ownerless message box runs synchronously and
+    // ignores its AbortSignal, so a prompt answered elsewhere could not close.
+    if (process.platform === 'darwin') app.focus({ steal: true });
     if (!deps.getMainWindow()) deps.openMainWindow();
     const parent = deps.getMainWindow();
     if (!parent) return dialog.showMessageBox(options);
@@ -262,7 +261,21 @@ function setupComputer(deps) {
       if (!focused && Notification.isSupported()) {
         new Notification({ title: prompt.title, body: prompt.detail }).show();
       }
-      const { response } = await showOnTop(prompt);
+      // Answered elsewhere (the page, the tray, another prompt) or expired:
+      // close this prompt without recording its cancel as a Deny.
+      const controller = new AbortController();
+      const watch = setInterval(() => {
+        const current = computer.freshRequest(home);
+        const pending = current?.id === request.id && computer.decideAccess(computer.readAccess(home)) === 'ask';
+        if (!pending) controller.abort();
+      }, 500);
+      let response;
+      try {
+        ({ response } = await showOnTop({ ...prompt, signal: controller.signal }));
+      } finally {
+        clearInterval(watch);
+      }
+      if (controller.signal.aborted) return;
       const answeredAt = Date.now();
       computer.writeAccess(home, computer.answerAccess(computer.readAccess(home), response, answeredAt));
       computer.clearAccessRequestsUntil(home, answeredAt);
@@ -296,6 +309,8 @@ function setupComputer(deps) {
       if (response !== 0) return computer.accessView(home);
     }
     computer.writeAccess(home, computer.nextAccess(computer.readAccess(home), input));
+    // A grant or a denial from the page answers the pending request too.
+    if (input?.grantMinutes !== undefined || input?.deny === true) computer.clearAccessRequestsUntil(home);
     void refresh();
     return computer.accessView(home);
   }

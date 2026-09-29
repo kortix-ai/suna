@@ -1,6 +1,6 @@
 'use client';
 
-import { MonitorIcon, XIcon } from '@phosphor-icons/react';
+import { XIcon } from '@phosphor-icons/react';
 import { useCallback, useState } from 'react';
 
 import Loading from '@/components/ui/loading';
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import {
   ComputerConnectModal,
+  ComputerGlyph,
   useConnectDesktopComputer,
   useOwnsPairedComputer,
   useThisComputerState,
@@ -76,7 +77,7 @@ function ComputerPromo({ projectId, onDismiss }: { projectId: string; onDismiss:
     <>
       <SidebarMenuItem>
         <SidebarMenuButton
-          className="text-sidebar-foreground h-auto items-start"
+          className="text-sidebar-foreground bg-popover h-auto gap-2.5 border py-2"
           disabled={connectDesktop.isPending}
           aria-busy={connectDesktop.isPending}
           onClick={() => {
@@ -89,11 +90,13 @@ function ComputerPromo({ projectId, onDismiss }: { projectId: string; onDismiss:
           }}
         >
           {connectDesktop.isPending ? (
-            <Loading className="size-4 shrink-0" />
+            <span className="flex size-8 shrink-0 items-center justify-center">
+              <Loading className="size-4 shrink-0" />
+            </span>
           ) : (
-            <MonitorIcon className="text-foreground mt-0.5" />
+            <ComputerGlyph className="size-8" />
           )}
-          <span className="min-w-0 flex-1 space-y-0.5 whitespace-normal!">
+          <span className="min-w-0 flex-1 whitespace-normal!">
             <span className="block">{connectDesktop.isPending ? t('connecting') : title}</span>
             <span className="text-muted-foreground block text-xs font-normal text-pretty">
               {t('promoLine')}

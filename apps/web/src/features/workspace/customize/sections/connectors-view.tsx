@@ -122,7 +122,12 @@ import {
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
+import {
+  ComputerConnectModal,
+  ComputerGlyph,
+  ComputerStateDot,
+  computerDisplayName,
+} from '@/features/tunnel/computer-connect';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
@@ -276,6 +281,7 @@ function ConnectionRow({
   const tSharing = useTranslations('accessSharing');
   const tComputers = useTranslations('computers');
   const isProjectAuthorization = connection.owner_type === 'project';
+  const isComputer = Boolean(connection.tunnel_id);
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
   // or, for a project authorization, a project manager.
@@ -287,23 +293,32 @@ function ConnectionRow({
 
   return (
     <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
-      <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-sm',
-          isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
-        )}
-      >
-        {isProjectAuthorization ? (
-          <Users className="text-kortix-blue size-5" />
-        ) : (
-          <Lock className="text-kortix-purple size-5" />
-        )}
-      </span>
+      {isComputer ? (
+        <ComputerGlyph />
+      ) : (
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-sm',
+            isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
+          )}
+        >
+          {isProjectAuthorization ? (
+            <Users className="text-kortix-blue size-5" />
+          ) : (
+            <Lock className="text-kortix-purple size-5" />
+          )}
+        </span>
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{connection.label}</span>
+          <span className="truncate text-sm font-medium">
+            {isComputer
+              ? computerDisplayName(connection.label, { hostname: connection.machine?.hostname }) ||
+                connection.label
+              : connection.label}
+          </span>
           {/* A computer account: is the machine it points at online right now? */}
-          {connection.tunnel_id ? (
+          {isComputer ? (
             <Hint
               label={connection.machine?.online ? tComputers('online') : tComputers('offline')}
             >
@@ -317,38 +332,46 @@ function ConnectionRow({
               {tI18nComplete.raw('text21b111cbfe6e')}
             </Badge>
           )}
-          {/* Who may use this account, on every card: the list has one group. */}
-          <Hint
-            label={
-              visibility.kind === 'named'
-                ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
-                : visibility.kind === 'everyone'
-                  ? tSharing('everyoneMeta')
-                  : tSharing('onlyYouDescription')
-            }
-          >
-            <Badge variant="outline" size="xs" data-testid="account-visibility">
-              {visibility.kind === 'you' ? (
-                <Lock />
-              ) : visibility.kind === 'everyone' ? (
-                <UsersThree />
-              ) : (
-                <Users />
-              )}
-              {visibility.kind === 'you'
-                ? tSharing('onlyYou')
-                : visibility.kind === 'everyone'
-                  ? tSharing('visibilityEveryone')
-                  : visibility.more > 0
-                    ? tSharing('visibilityNamedMore', {
-                        names: visibility.names.join(', '),
-                        count: visibility.more,
-                      })
-                    : visibility.names.join(', ')}
-            </Badge>
-          </Hint>
+          {/* Who may use this account, on every card: the list has one group.
+              A computer row says it in its meta line instead. */}
+          {isComputer ? null : (
+            <Hint
+              label={
+                visibility.kind === 'named'
+                  ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
+                  : visibility.kind === 'everyone'
+                    ? tSharing('everyoneMeta')
+                    : tSharing('onlyYouDescription')
+              }
+            >
+              <Badge variant="outline" size="xs" data-testid="account-visibility">
+                {visibility.kind === 'you' ? (
+                  <Lock />
+                ) : visibility.kind === 'everyone' ? (
+                  <UsersThree />
+                ) : (
+                  <Users />
+                )}
+                {visibility.kind === 'you'
+                  ? tSharing('onlyYou')
+                  : visibility.kind === 'everyone'
+                    ? tSharing('visibilityEveryone')
+                    : visibility.more > 0
+                      ? tSharing('visibilityNamedMore', {
+                          names: visibility.names.join(', '),
+                          count: visibility.more,
+                        })
+                      : visibility.names.join(', ')}
+              </Badge>
+            </Hint>
+          )}
         </div>
         <InlineMeta>
+          {isComputer
+            ? isProjectAuthorization
+              ? tComputers('sharedWithThisProject')
+              : tComputers('yoursEveryProject')
+            : null}
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
@@ -957,8 +980,9 @@ export function ConnectionsList({
 }
 
 /**
- * A computer's accounts in two groups: the caller's own machines, which follow
- * them into every project, and the machines shared with this project.
+ * A computer's accounts: the caller's own machines first (they follow them
+ * into every project), then the machines shared with this project. Each row
+ * says which it is.
  */
 function ComputerAccountGroups({
   rows,
@@ -967,21 +991,9 @@ function ComputerAccountGroups({
   rows: readonly Connection[];
   renderRow: (connection: Connection) => ReactNode;
 }) {
-  const t = useTranslations('computers');
-  const groups = [
-    { key: 'yours', label: t('groupYours'), rows: rows.filter((row) => row.owner_type === 'member') },
-    { key: 'shared', label: t('groupShared'), rows: rows.filter((row) => row.owner_type !== 'member') },
-  ].filter((group) => group.rows.length > 0);
-  return (
-    <div className="space-y-4">
-      {groups.map((group) => (
-        <div key={group.key} className="space-y-2">
-          <p className="text-muted-foreground text-xs">{group.label}</p>
-          <ul className="space-y-2">{group.rows.map(renderRow)}</ul>
-        </div>
-      ))}
-    </div>
-  );
+  const mine = rows.filter((row) => row.owner_type === 'member');
+  const shared = rows.filter((row) => row.owner_type !== 'member');
+  return <ul className="space-y-2">{[...mine, ...shared].map(renderRow)}</ul>;
 }
 
 function RosterStatusBadge({ status }: { status: 'active' | 'revoked' | 'error' }) {

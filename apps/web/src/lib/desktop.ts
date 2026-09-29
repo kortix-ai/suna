@@ -362,6 +362,8 @@ export interface DesktopComputerAccessInput {
   grantMinutes?: number;
   /** End the current grant now. */
   revoke?: boolean;
+  /** Answer a pending request with "Deny": refused for 10 minutes. */
+  deny?: boolean;
   keepAwake?: boolean;
 }
 

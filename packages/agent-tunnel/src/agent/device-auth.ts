@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { hostname, platform } from 'os';
 import { isTunnelCapability } from '../shared/permissions';
 import type { TunnelCapability } from '../shared/types';
@@ -141,6 +141,34 @@ export function parseDeviceAuthStatus(value: unknown): DeviceAuthOutcome | null 
 }
 
 /**
+ * The name a person gave this machine, e.g. "Ada's MacBook Pro" instead of
+ * `MacBook-Pro-9.local`. macOS: System Settings' Computer Name; Windows:
+ * COMPUTERNAME; elsewhere, and whenever those are unavailable, the hostname
+ * without a trailing `.local`.
+ */
+export function machineDisplayName({
+  os = platform(),
+  host = hostname(),
+  env = process.env,
+  run = (command: string, args: string[]) =>
+    execFileSync(command, args, { encoding: 'utf8', timeout: 1_000, stdio: ['ignore', 'pipe', 'ignore'] }),
+}: {
+  os?: string;
+  host?: string;
+  env?: Record<string, string | undefined>;
+  run?: (command: string, args: string[]) => string;
+} = {}): string {
+  const fallback = host.replace(/\.local$/i, '') || host;
+  try {
+    const name =
+      os === 'darwin' ? run('scutil', ['--get', 'ComputerName']) : os === 'win32' ? env.COMPUTERNAME : '';
+    return name?.trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Starts pairing. `projectId` names the project the machine is being connected
  * to, so the approval page can skip its project picker. A relay that predates
  * the field ignores it.
@@ -153,7 +181,8 @@ export async function requestDeviceAuthorization(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      machineHostname: hostname(),
+      // The default machine name on the approval page.
+      machineHostname: machineDisplayName(),
       ...(options.projectId ? { project_id: options.projectId } : {}),
     }),
   });

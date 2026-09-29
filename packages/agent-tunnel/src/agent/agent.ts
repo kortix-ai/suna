@@ -12,6 +12,7 @@ import {
   writeAccessRequest,
 } from './access';
 import { agentTunnelHome } from './service-paths';
+import { machineDisplayName } from './device-auth';
 import { capabilityForMethod } from '../shared/permissions';
 import { TunnelErrorCode } from '../shared/types';
 import { agentTunnelVersion } from './version';
@@ -171,6 +172,8 @@ export class TunnelAgent {
   private isShuttingDown = false;
   private status: TunnelAgentStatus | null = null;
   private uptime = 0;
+  /** Read once: on macOS it runs `scutil`, and the pong repeats every 30 s. */
+  private displayName?: string;
   private uptimeInterval: ReturnType<typeof setInterval> | null = null;
 
   // HMAC signature verification
@@ -572,6 +575,7 @@ export class TunnelAgent {
         capabilities: this.registry.getCapabilityNames(),
         machineInfo: {
           hostname: hostname(),
+          displayName: (this.displayName ??= machineDisplayName()),
           platform: platform(),
           arch: arch(),
           osVersion: release(),

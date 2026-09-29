@@ -233,6 +233,11 @@ function nextAccess(current, input = {}, now = Date.now()) {
     next.deniedUntil = null;
   }
   if (input.revoke === true) next.grantedUntil = null;
+  // The page's answer to a pending request: the native prompt's "Deny".
+  if (input.deny === true) {
+    next.grantedUntil = null;
+    next.deniedUntil = new Date(now + DENY_MS).toISOString();
+  }
   if (input.keepAwake !== undefined) next.keepAwake = input.keepAwake === true;
   return next;
 }
@@ -347,7 +352,12 @@ function answerAccess(current, response, now = Date.now()) {
 function desktopAppRecord({ execPath, defaultApp, argv, env, pid, cwd = process.cwd() }) {
   // `electron .` (dev) needs the app path; a packaged app is its own binary.
   const args = defaultApp && argv[1] ? [path.resolve(cwd, argv[1])] : [];
-  const keep = env.KORTIX_DESKTOP_URL ? { KORTIX_DESKTOP_URL: env.KORTIX_DESKTOP_URL } : {};
+  // Every KORTIX_DESKTOP_* override: without KORTIX_DESKTOP_USER_DATA a woken
+  // app opens another profile, misses the single-instance lock, and watches
+  // the wrong agent home.
+  const keep = Object.fromEntries(
+    Object.entries(env).filter(([key, value]) => key.startsWith('KORTIX_DESKTOP_') && typeof value === 'string'),
+  );
   // A Linux AppImage runs from a /tmp/.mount_* path that is gone once it quits;
   // the AppImage file itself is what starts it again.
   return { command: env.APPIMAGE || execPath, args, pid, env: keep };

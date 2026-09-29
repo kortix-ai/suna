@@ -1,7 +1,16 @@
 'use client';
 
 import { listConnections, type Connection } from '@kortix/sdk';
-import { DownloadSimpleIcon, MonitorIcon, TerminalWindowIcon } from '@phosphor-icons/react';
+import {
+  CheckIcon,
+  CursorClickIcon,
+  DownloadSimpleIcon,
+  FolderIcon,
+  LaptopIcon,
+  MonitorIcon,
+  TerminalWindowIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
@@ -52,6 +61,34 @@ function connectionsQueryOptions(projectId: string) {
 /** A connection that fronts a paired machine. */
 export function isComputerConnection(connection: Connection): boolean {
   return Boolean(connection.tunnel_id);
+}
+
+/**
+ * A machine's name for people: its own friendly name (`machineInfo.displayName`,
+ * e.g. "Ada's MacBook Pro") until the owner picks another, and never the
+ * `.local` suffix of a raw hostname. Empty when nothing names it.
+ */
+export function computerDisplayName(
+  name: string | null | undefined,
+  machineInfo?: Record<string, unknown> | null,
+): string {
+  const own = name?.trim() ?? '';
+  const host = typeof machineInfo?.hostname === 'string' ? machineInfo.hostname : '';
+  const friendly =
+    typeof machineInfo?.displayName === 'string' ? machineInfo.displayName.trim() : '';
+  const chosen = friendly && (!own || own === host) ? friendly : own;
+  return chosen.replace(/\.local$/i, '');
+}
+
+const PLATFORM_NAMES: Record<string, string> = {
+  darwin: 'macOS',
+  win32: 'Windows',
+  linux: 'Linux',
+};
+
+/** `darwin` → macOS. `null` for anything the agent did not report. */
+export function platformName(platform: unknown): string | null {
+  return typeof platform === 'string' ? (PLATFORM_NAMES[platform] ?? null) : null;
 }
 
 /**
@@ -194,7 +231,9 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
   const desktop = useDesktopComputer({ poll });
   const status = desktop.data;
   const localTunnelId = status?.paired ? status.tunnelId : undefined;
-  const machines = useTunnelConnections({ refetchInterval: poll && localTunnelId ? 10_000 : false });
+  const machines = useTunnelConnections({
+    refetchInterval: poll && localTunnelId ? 10_000 : false,
+  });
   const machine = machines.data?.find((candidate) => candidate.tunnelId === localTunnelId);
   const stale = Boolean(localTunnelId && machines.isSuccess && !machine);
   const tunnelId = stale ? undefined : localTunnelId;
@@ -213,7 +252,13 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
 }
 
 /** Status dot, e.g. in the workspace menu, the "Your computer" dialog, account rows. */
-export function ComputerStateDot({ state, className }: { state: ComputerState; className?: string }) {
+export function ComputerStateDot({
+  state,
+  className,
+}: {
+  state: ComputerState;
+  className?: string;
+}) {
   const t = useTranslations('computers');
   return (
     <span
@@ -230,6 +275,63 @@ export function ComputerStateDot({ state, className }: { state: ComputerState; c
         className,
       )}
     />
+  );
+}
+
+/** The device glyph in a muted tile: the computer's avatar everywhere it appears. */
+export function ComputerGlyph({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        'bg-muted text-foreground flex size-9 shrink-0 items-center justify-center rounded-sm',
+        className,
+      )}
+    >
+      <LaptopIcon className="size-5" />
+    </span>
+  );
+}
+
+const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Icon }[] = [
+  { key: 'filesystem', icon: FolderIcon },
+  { key: 'shell', icon: TerminalWindowIcon },
+  { key: 'desktop', icon: CursorClickIcon },
+];
+
+/**
+ * What Kortix can use on a computer. With `granted` (the capabilities approved
+ * at pairing) each row says Allowed / Not allowed; without it, it is a preview.
+ */
+export function ComputerCapabilities({ granted }: { granted?: readonly string[] }) {
+  const t = useTranslations('computers');
+  return (
+    <ul className="bg-popover divide-border divide-y rounded-md border">
+      {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
+        const allowed = granted?.includes(key);
+        return (
+          <li key={key} className="flex items-center gap-3 px-4 py-2.5">
+            <CapabilityIcon className="text-muted-foreground size-4 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">{t(`capability.${key}`)}</p>
+              <p className="text-muted-foreground truncate text-xs">
+                {t(`capability.${key}Description`)}
+              </p>
+            </div>
+            {granted ? (
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 text-xs',
+                  allowed ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {allowed ? <CheckIcon className="text-kortix-green size-3.5 shrink-0" /> : null}
+                {allowed ? t('capability.allowed') : t('capability.notAllowed')}
+              </span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -257,11 +359,14 @@ export function ComputerConnectModal({
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-lg">
-        <ModalHeader>
-          <ModalTitle>{t('connectTitle')}</ModalTitle>
-          <ModalDescription>{t('connectDescription')}</ModalDescription>
+        <ModalHeader className="flex-row items-center gap-3 pr-12">
+          <ComputerGlyph />
+          <div className="min-w-0 space-y-0.5">
+            <ModalTitle>{t('connectTitle')}</ModalTitle>
+            <ModalDescription className="text-xs">{t('connectDescription')}</ModalDescription>
+          </div>
         </ModalHeader>
-        <ModalBody className="max-h-[70vh] space-y-6 overflow-y-auto">
+        <ModalBody className="space-y-5">
           {open ? (
             <ComputerConnectOptions
               projectId={projectId}
@@ -315,6 +420,11 @@ function ComputerConnectOptions({
 
   return (
     <>
+      <section className="space-y-2">
+        <ComputerCapabilities />
+        <p className="text-muted-foreground text-xs text-pretty">{t('scopeLine')}</p>
+      </section>
+
       {oneClick ? (
         <Button
           className="w-full"
@@ -341,7 +451,7 @@ function ComputerConnectOptions({
       ) : null}
 
       {showCli ? (
-        <section className="space-y-2">
+        <section className="space-y-2 border-t pt-5">
           <Label>{t('runCommand')}</Label>
           <p className="text-muted-foreground text-xs text-pretty">{t('cliHint')}</p>
           <ConnectCommandPanel projectId={projectId} />

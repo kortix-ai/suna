@@ -167,6 +167,12 @@ describe('access control on the machine (A1, A4, A5, X5)', () => {
     expect(widens(ask, { mode: 'off' })).toBe(false);
     expect(widens({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' }, { revoke: true })).toBe(false);
     expect(widens(ask, { keepAwake: true })).toBe(false);
+    // "Deny" from the page's request banner: narrows, same 10 minutes as the native prompt.
+    expect(computer.nextAccess({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' }, { deny: true }, now)).toMatchObject({
+      grantedUntil: null,
+      deniedUntil: '2030-01-01T12:10:00.000Z',
+    });
+    expect(widens(ask, { deny: true })).toBe(false);
     expect(computer.widenPrompt({ mode: 'always' }, 'Studio')).toMatchObject({ buttons: ['Allow', 'Cancel'], defaultId: 1, cancelId: 1 });
   });
 
@@ -221,7 +227,11 @@ describe('access control on the machine (A1, A4, A5, X5)', () => {
         execPath: '/repo/node_modules/electron/dist/Electron',
         defaultApp: true,
         argv: ['/repo/node_modules/electron/dist/Electron', '.'],
-        env: { KORTIX_DESKTOP_URL: 'http://localhost:3000/projects', SECRET: 'x' },
+        env: {
+          KORTIX_DESKTOP_URL: 'http://localhost:3000/projects',
+          KORTIX_DESKTOP_USER_DATA: '/tmp/profile',
+          SECRET: 'x',
+        },
         pid: 8,
         cwd: '/repo/apps/desktop-electron',
       }),
@@ -229,7 +239,8 @@ describe('access control on the machine (A1, A4, A5, X5)', () => {
       command: '/repo/node_modules/electron/dist/Electron',
       args: ['/repo/apps/desktop-electron'],
       pid: 8,
-      env: { KORTIX_DESKTOP_URL: 'http://localhost:3000/projects' },
+      // The profile must follow, or the woken app misses the single-instance lock.
+      env: { KORTIX_DESKTOP_URL: 'http://localhost:3000/projects', KORTIX_DESKTOP_USER_DATA: '/tmp/profile' },
     });
   });
 });

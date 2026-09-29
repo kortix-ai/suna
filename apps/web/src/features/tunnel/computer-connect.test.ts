@@ -2,7 +2,12 @@ import type { Connection } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import type { DesktopComputerStatus } from '@/lib/desktop';
-import { computerState, projectComputerAccounts } from './computer-connect';
+import {
+  computerDisplayName,
+  computerState,
+  platformName,
+  projectComputerAccounts,
+} from './computer-connect';
 import { activeGrant } from './local-computer-modal';
 
 const ME = '00000000-0000-4000-8000-000000000001';
@@ -59,7 +64,9 @@ describe('computerState', () => {
   });
 
   test('a stopped service that is not paused reads offline (the desktop app repairs it)', () => {
-    expect(computerState(local({ serviceActive: false, paused: false, state: 'offline' }), false)).toBe('offline');
+    expect(
+      computerState(local({ serviceActive: false, paused: false, state: 'offline' }), false),
+    ).toBe('offline');
   });
 
   test('a rejected credential needs a reconnect', () => {
@@ -91,6 +98,44 @@ describe('activeGrant', () => {
   test('an expired approval, no approval, or another mode is none', () => {
     expect(activeGrant({ mode: 'ask', grantedUntil: '2026-09-29T09:00:00.000Z' }, now)).toBeNull();
     expect(activeGrant({ mode: 'ask', grantedUntil: null }, now)).toBeNull();
-    expect(activeGrant({ mode: 'always', grantedUntil: '2026-09-29T11:00:00.000Z' }, now)).toBeNull();
+    expect(
+      activeGrant({ mode: 'always', grantedUntil: '2026-09-29T11:00:00.000Z' }, now),
+    ).toBeNull();
   });
+});
+
+describe('computerDisplayName', () => {
+  test('prefers the machine’s own friendly name while the name is still the hostname', () => {
+    expect(
+      computerDisplayName('MacBook-Pro-9.local', {
+        hostname: 'MacBook-Pro-9.local',
+        displayName: 'Ada’s MacBook Pro',
+      }),
+    ).toBe('Ada’s MacBook Pro');
+  });
+
+  test('keeps a name the owner chose', () => {
+    expect(
+      computerDisplayName('Studio', {
+        hostname: 'MacBook-Pro-9.local',
+        displayName: 'Ada’s MacBook Pro',
+      }),
+    ).toBe('Studio');
+  });
+
+  test('falls back to the hostname without .local (older agents report no displayName)', () => {
+    expect(computerDisplayName('MacBook-Pro-9.local', { hostname: 'MacBook-Pro-9.local' })).toBe(
+      'MacBook-Pro-9',
+    );
+    expect(computerDisplayName('build-box', null)).toBe('build-box');
+    expect(computerDisplayName(undefined, {})).toBe('');
+  });
+});
+
+test('platformName names the three desktop platforms and nothing else', () => {
+  expect(platformName('darwin')).toBe('macOS');
+  expect(platformName('win32')).toBe('Windows');
+  expect(platformName('linux')).toBe('Linux');
+  expect(platformName('freebsd')).toBeNull();
+  expect(platformName(undefined)).toBeNull();
 });

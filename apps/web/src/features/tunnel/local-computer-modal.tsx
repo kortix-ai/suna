@@ -1,12 +1,13 @@
 'use client';
 
-import { MonitorIcon } from '@phosphor-icons/react';
+import { HandPalmIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
@@ -14,14 +15,16 @@ import {
   ModalBody,
   ModalContent,
   ModalDescription,
+  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   desktopComputerAccessGet,
   desktopComputerAccessSet,
@@ -30,12 +33,18 @@ import {
   desktopComputerPause,
   desktopComputerResume,
 } from '@/lib/desktop';
+import { relativeTime } from '@/lib/relative-time';
 import {
+  ComputerCapabilities,
+  computerDisplayName,
+  ComputerGlyph,
   ComputerStateDot,
   DESKTOP_STATUS_KEY,
+  platformName,
   useConnectDesktopComputer,
   useProjectComputerAccounts,
   useThisComputerState,
+  type ComputerState,
 } from './computer-connect';
 
 const DESKTOP_ACCESS_KEY = ['desktop-computer-access'] as const;
@@ -43,6 +52,7 @@ const DESKTOP_ACCESS_KEY = ['desktop-computer-access'] as const;
 type ComputerAccess = NonNullable<Awaited<ReturnType<typeof desktopComputerAccessGet>>>;
 type AccessMode = ComputerAccess['mode'];
 const ACCESS_MODES: readonly AccessMode[] = ['ask', 'always', 'off'];
+const REQUEST_CAPABILITIES = ['filesystem', 'shell', 'desktop'];
 
 /** The current approval, when it is still running. */
 export function activeGrant(access: Pick<ComputerAccess, 'mode' | 'grantedUntil'>, now: number) {
@@ -51,11 +61,13 @@ export function activeGrant(access: Pick<ComputerAccess, 'mode' | 'grantedUntil'
   return until.getTime() > now ? until : null;
 }
 
+const clock = (date: Date) => date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 /**
- * "Your computer" (desktop app only): this machine's pairing, who may use it
- * (decided here, on the machine), and its background service. It follows its
- * owner into every project; sharing it with a project is the `computer`
- * connector's Accounts tab, linked from here.
+ * "Your computer" (desktop app only): this machine's pairing, when Kortix may
+ * use it (decided here, on the machine), what it may use, and its background
+ * service. It follows its owner into every project; sharing it with a project
+ * is the `computer` connector's Accounts tab, linked from the footer.
  */
 export function LocalComputerModal({
   projectId,
@@ -66,32 +78,41 @@ export function LocalComputerModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const t = useTranslations('computers');
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-lg">
-        <ModalHeader>
-          <ModalTitle>{t('localComputerTitle')}</ModalTitle>
-          <ModalDescription>{t('localComputerDescription')}</ModalDescription>
-        </ModalHeader>
-        <ModalBody className="max-h-[70vh] space-y-6 overflow-y-auto">
-          {open ? (
-            <LocalComputerBody projectId={projectId} onClose={() => onOpenChange(false)} />
-          ) : null}
-        </ModalBody>
+      {/* A column: on a short window only the body scrolls; header and footer stay. */}
+      <ModalContent className="flex flex-col lg:max-w-lg">
+        {open ? (
+          <LocalComputerContent projectId={projectId} onClose={() => onOpenChange(false)} />
+        ) : null}
       </ModalContent>
     </Modal>
   );
 }
 
-function LocalComputerBody({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+/** Glyph, name, and one status line. */
+function ComputerHeader({ name, status }: { name: string; status: ReactNode }) {
+  return (
+    <ModalHeader className="flex-row items-center gap-3 pr-12">
+      <ComputerGlyph />
+      <div className="min-w-0 space-y-0.5">
+        <ModalTitle className="truncate">{name}</ModalTitle>
+        <ModalDescription className="flex items-center gap-1.5 text-xs">{status}</ModalDescription>
+      </div>
+    </ModalHeader>
+  );
+}
+
+function LocalComputerContent({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const t = useTranslations('computers');
+  const locale = useLocale();
   const queryClient = useQueryClient();
   const { desktop, status, tunnelId, machine, state, stale } = useThisComputerState({ poll: true });
   const { connectorAlias, connections } = useProjectComputerAccounts(projectId);
   const connect = useConnectDesktopComputer(projectId);
   const deleteMachine = useDeleteTunnelConnection();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const access = useComputerAccess();
 
   // Any account of this machine in the project, shared or private, names the
   // connector; an older project may use another slug than `computer`.
@@ -104,8 +125,8 @@ function LocalComputerBody({ projectId, onClose }: { projectId: string; onClose:
   const toggleService = useMutation({
     retry: false,
     // Rejects with the desktop app's reason when it could not change the service.
-    mutationFn: async () => {
-      const next = await (state === 'paused' ? desktopComputerResume() : desktopComputerPause());
+    mutationFn: async (run: boolean) => {
+      const next = await (run ? desktopComputerResume() : desktopComputerPause());
       if (!next) throw new Error(t('desktopUnavailable'));
       return next;
     },
@@ -133,99 +154,154 @@ function LocalComputerBody({ projectId, onClose }: { projectId: string; onClose:
     onSettled: refreshStatus,
   });
 
-  if (desktop.isPending) return <Loading className="size-4 shrink-0" />;
+  const name = computerDisplayName(machine?.name, machine?.machineInfo) || t('thisComputer');
+
+  if (desktop.isPending) {
+    return (
+      <>
+        <ComputerHeader name={t('localComputerTitle')} status={t('state.connecting')} />
+        <ModalBody>
+          <Loading className="size-4 shrink-0" />
+        </ModalBody>
+      </>
+    );
+  }
 
   if (!status?.available) {
     return (
-      <p className="text-muted-foreground text-sm text-pretty">
-        {status?.error || t('desktopUnavailable')}
-      </p>
+      <>
+        <ComputerHeader name={t('localComputerTitle')} status={t('notConnected')} />
+        <ModalBody>
+          <p className="text-muted-foreground text-sm text-pretty">
+            {status?.error || t('desktopUnavailable')}
+          </p>
+        </ModalBody>
+      </>
     );
   }
 
   const paired = Boolean(tunnelId && state);
   if (!paired || state === 'needsReconnect') {
+    const reconnect = state === 'needsReconnect';
     return (
       <>
-        {state === 'needsReconnect' ? (
-          <p className="text-muted-foreground text-sm text-pretty">{t('needsReconnectHint')}</p>
-        ) : null}
-        <Button
-          className="w-full"
-          disabled={connect.isPending}
-          onClick={() => connect.mutate({ reauth: stale || state === 'needsReconnect' })}
-        >
-          {connect.isPending ? (
-            <Loading className="size-4 shrink-0" />
-          ) : (
-            <MonitorIcon className="size-4 shrink-0" />
-          )}
-          {connect.isPending ? t('connecting') : t('connectThisComputer')}
-        </Button>
+        <ComputerHeader
+          name={reconnect ? name : t('localComputerTitle')}
+          status={reconnect ? <StatusText state="needsReconnect" /> : t('notConnected')}
+        />
+        <ModalBody className="space-y-5">
+          {reconnect ? (
+            <InfoBanner tone="warning" icon={WarningIcon} title={t('needsReconnectHint')} />
+          ) : null}
+          <section className="space-y-2">
+            <ComputerCapabilities />
+            <p className="text-muted-foreground text-xs text-pretty">{t('scopeLine')}</p>
+          </section>
+          <Button
+            className="w-full"
+            disabled={connect.isPending}
+            onClick={() => connect.mutate({ reauth: stale || reconnect })}
+          >
+            {connect.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            {connect.isPending
+              ? t('connecting')
+              : reconnect
+                ? t('connectAgain')
+                : t('connectThisComputer')}
+          </Button>
+        </ModalBody>
       </>
     );
   }
 
+  const lastSeen =
+    state === 'offline' && machine?.lastHeartbeatAt
+      ? relativeTime(machine.lastHeartbeatAt, locale)
+      : '';
+  const platform = platformName(machine?.machineInfo?.platform);
+
   return (
     <>
-      <section className="space-y-2">
-        <div className="bg-popover flex items-center gap-3 rounded-md border px-4 py-3">
-          <MonitorIcon className="text-muted-foreground size-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
-            {machine?.name ?? t('thisComputer')}
-          </span>
-          {state ? (
-            <span className="text-muted-foreground flex items-center gap-2 text-xs">
-              <ComputerStateDot state={state} />
-              {t(`state.${state}`)}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={toggleService.isPending}
-            onClick={() => toggleService.mutate()}
-          >
-            {toggleService.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            {state === 'paused' ? t('resumeAccess') : t('pauseAccess')}
-          </Button>
-          <Button size="sm" variant="outline" asChild>
-            <Link
-              href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(manageSlug)}`}
-              onClick={onClose}
+      <ComputerHeader
+        name={name}
+        status={
+          <>
+            <StatusText state={state ?? 'offline'} />
+            {lastSeen ? <span>· {t('lastSeen', { time: lastSeen })}</span> : null}
+            {platform && state !== 'offline' ? <span>· {platform}</span> : null}
+          </>
+        }
+      />
+      <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
+        {access.current?.mode === 'ask' && access.current.pendingRequest ? (
+          <AccessRequestBanner
+            capability={access.current.pendingRequest.capability}
+            update={access.update}
+          />
+        ) : null}
+        {access.current ? (
+          <AccessSection access={access.current} now={access.now} update={access.update} />
+        ) : null}
+        <section className="space-y-2">
+          <Label>{t('capabilitiesTitle')}</Label>
+          <ComputerCapabilities granted={machine?.capabilities ?? []} />
+          <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
+        </section>
+        <SettingsRowGroup>
+          <SettingsRow label={t('runInBackground')} description={t('runInBackgroundDescription')}>
+            <Switch
+              checked={state !== 'paused'}
+              disabled={toggleService.isPending}
+              onCheckedChange={(run) => toggleService.mutate(run)}
+              aria-label={t('runInBackground')}
+            />
+          </SettingsRow>
+          {access.current?.keepAwakeSupported ? (
+            <SettingsRow
+              label={t('access.keepAwake')}
+              description={t('access.keepAwakeDescription')}
             >
-              {t('manageAccess')}
-            </Link>
-          </Button>
+              <Switch
+                checked={access.current.keepAwake}
+                disabled={access.update.isPending}
+                onCheckedChange={(keepAwake) => access.update.mutate({ keepAwake })}
+                aria-label={t('access.keepAwake')}
+              />
+            </SettingsRow>
+          ) : null}
+        </SettingsRowGroup>
+      </ModalBody>
+      <ModalFooter className="border-t py-3 sm:justify-between">
+        <div className="flex w-full items-center gap-1 sm:w-auto">
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
+            className="gap-1.5"
             onClick={() =>
               void desktopComputerOpenLogs().catch((error: Error) => errorToast(error.message))
             }
           >
+            <ScrollIcon className="size-3.5 shrink-0" />
             {t('showLogs')}
           </Button>
-        </div>
-      </section>
-
-      <AccessControls />
-
-      <div className="bg-popover rounded-md border px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0 space-y-0.5">
-            <p className="text-sm font-medium">{t('disconnectTitle')}</p>
-            <p className="text-muted-foreground text-xs text-pretty">
-              {t('disconnectDescription')}
-            </p>
-          </div>
-          <Button variant="destructive" size="sm" onClick={() => setConfirmDisconnect(true)}>
-            {t('disconnect')}
+          <Button size="sm" variant="ghost" asChild>
+            <Link
+              href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(manageSlug)}`}
+              onClick={onClose}
+            >
+              {t('manageInProject')}
+            </Link>
           </Button>
         </div>
-      </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-kortix-red hover:bg-kortix-red/15 hover:text-kortix-red w-full sm:w-auto"
+          onClick={() => setConfirmDisconnect(true)}
+        >
+          {t('disconnectEllipsis')}
+        </Button>
+      </ModalFooter>
 
       <ConfirmDialog
         open={confirmDisconnect}
@@ -241,11 +317,18 @@ function LocalComputerBody({ projectId, onClose }: { projectId: string; onClose:
   );
 }
 
-/**
- * Who may use this computer, enforced by the agent on this machine: ask each
- * time, always, or off. Hidden on a desktop build without the access commands.
- */
-function AccessControls() {
+function StatusText({ state }: { state: ComputerState }) {
+  const t = useTranslations('computers');
+  return (
+    <>
+      <ComputerStateDot state={state} />
+      <span>{t(`state.${state}`)}</span>
+    </>
+  );
+}
+
+/** The access state the agent on this machine enforces, and its one writer. */
+function useComputerAccess() {
   const t = useTranslations('computers');
   const queryClient = useQueryClient();
   const access = useQuery({
@@ -264,64 +347,117 @@ function AccessControls() {
     onSuccess: (next) => queryClient.setQueryData(DESKTOP_ACCESS_KEY, next),
     onError: (error: Error) => errorToast(error.message || t('actionFailed')),
   });
+  // `null` on a desktop build without the access commands. `now` is the last
+  // read (every 5 s), so render stays pure.
+  return { current: access.data ?? null, now: access.dataUpdatedAt, update };
+}
 
-  const current = access.data;
-  if (!current) return null;
-  // Measured at the last read (every 5 s), so render stays pure.
-  const grant = activeGrant(current, access.dataUpdatedAt);
+type AccessUpdate = ReturnType<typeof useComputerAccess>['update'];
 
+/** A pending request (A3): the native prompt's choices, answerable here too. */
+function AccessRequestBanner({ capability, update }: { capability: string; update: AccessUpdate }) {
+  const t = useTranslations('computers');
   return (
-    <section className="space-y-3">
-      <Label>{t('access.title')}</Label>
-      <RadioGroup
-        value={current.mode}
-        onValueChange={(mode) => update.mutate({ mode: mode as AccessMode })}
-        disabled={update.isPending}
-      >
-        {ACCESS_MODES.map((mode) => (
-          <RadioGroupItem
-            key={mode}
-            value={mode}
-            variant="outline"
-            label={t(`access.${mode}`)}
-            description={t(`access.${mode}Description`)}
-          />
-        ))}
-      </RadioGroup>
-      {grant ? (
-        <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-2">
-          <span className="text-sm">
-            {t('access.allowedUntil', {
-              time: grant.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            })}
-          </span>
+    <InfoBanner
+      tone="info"
+      icon={HandPalmIcon}
+      title={t(
+        `access.request.${REQUEST_CAPABILITIES.includes(capability) ? capability : 'other'}`,
+      )}
+    >
+      <div className="space-y-2.5">
+        <p>{t('access.requestHint')}</p>
+        {/* Below the text, not beside it: the title needs the full width. */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={update.isPending}
+            onClick={() => update.mutate({ grantMinutes: 60 })}
+          >
+            {t('access.allowHour')}
+          </Button>
           <Button
             size="sm"
             variant="outline"
             disabled={update.isPending}
-            onClick={() => update.mutate({ revoke: true })}
+            onClick={() => update.mutate({ grantMinutes: 24 * 60 })}
           >
-            {t('access.revokeNow')}
+            {t('access.allowDay')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={update.isPending}
+            onClick={() => update.mutate({ deny: true })}
+          >
+            {t('access.deny')}
           </Button>
         </div>
-      ) : null}
-      {/* R6: shown on every platform; Windows says it is not available yet. */}
-      <div className="bg-popover flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-        <div className="min-w-0 space-y-0.5">
-          <p className="text-sm font-medium">{t('access.keepAwake')}</p>
-          <p className="text-muted-foreground text-xs text-pretty">
-            {current.keepAwakeSupported
-              ? t('access.keepAwakeDescription')
-              : t('access.keepAwakeUnsupported')}
-          </p>
-        </div>
-        <Switch
-          checked={current.keepAwakeSupported && current.keepAwake}
-          disabled={update.isPending || !current.keepAwakeSupported}
-          onCheckedChange={(keepAwake) => update.mutate({ keepAwake })}
-          aria-label={t('access.keepAwake')}
-        />
       </div>
+    </InfoBanner>
+  );
+}
+
+/** Ask each time · Always · Off, and one line that says what that means now. */
+function AccessSection({
+  access,
+  now,
+  update,
+}: {
+  access: ComputerAccess;
+  now: number;
+  update: AccessUpdate;
+}) {
+  const t = useTranslations('computers');
+  const grant = activeGrant(access, now);
+  const denied =
+    access.mode === 'ask' && access.deniedUntil && Date.parse(access.deniedUntil) > now
+      ? new Date(access.deniedUntil)
+      : null;
+  return (
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Label>{t('access.title')}</Label>
+        {/* `manual`: a click sends one change. The default also fires on the
+            focus that follows the click, and "Always" asks the owner natively. */}
+        <Tabs
+          value={access.mode}
+          activationMode="manual"
+          onValueChange={(mode) => {
+            if (mode !== access.mode) update.mutate({ mode: mode as AccessMode });
+          }}
+          className="w-fit"
+        >
+          <TabsListCompact aria-label={t('access.title')}>
+            {ACCESS_MODES.map((mode) => (
+              <TabsTriggerCompact key={mode} value={mode} disabled={update.isPending}>
+                {t(`access.${mode}`)}
+              </TabsTriggerCompact>
+            ))}
+          </TabsListCompact>
+        </Tabs>
+      </div>
+      <p className="text-muted-foreground flex min-h-7 flex-wrap items-center gap-x-2 text-xs">
+        {grant ? (
+          <>
+            <span className="text-foreground">
+              {t('access.allowedUntil', { time: clock(grant) })}
+            </span>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={update.isPending}
+              onClick={() => update.mutate({ revoke: true })}
+            >
+              {t('access.revokeNow')}
+            </Button>
+          </>
+        ) : denied ? (
+          t('access.deniedUntil', { time: clock(denied) })
+        ) : (
+          t(`access.${access.mode}Status`)
+        )}
+      </p>
     </section>
   );
 }
