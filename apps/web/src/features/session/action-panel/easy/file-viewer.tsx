@@ -161,12 +161,12 @@ export function FileViewer({
             // toggle — and it sits at the far left, before the name, because it
             // changes what the name is showing you.
             <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-              <TabsList type="default" size="sm" className="h-7 border-b-0 p-0">
+              <TabsList size="sm" className="h-7">
                 <TabsTrigger
                   size="xs"
                   value="preview"
                   aria-label={tI18nComplete.raw('text324b134f57c7')}
-                  className="h-7 w-7 px-0"
+                  className="w-6 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
@@ -174,7 +174,7 @@ export function FileViewer({
                   size="xs"
                   value="source"
                   aria-label={tI18nComplete.raw('text0e570ca6fabe')}
-                  className="h-7 w-7 px-0"
+                  className="w-6 px-0"
                 >
                   <Code2 className="size-3.5" />
                 </TabsTrigger>

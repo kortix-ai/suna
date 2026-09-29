@@ -80,6 +80,7 @@ import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
 import { copyToClipboard } from '@/lib/utils/clipboard';
+import { isDesktop } from '@/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import {
@@ -158,7 +159,7 @@ import {
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Copy } from '@/features/icon/icons/copy';
 import {
   SidebarToggle as PanelLeftClose,
@@ -282,6 +283,37 @@ export const ROOT_SUGGESTION_LIMIT = 8;
 export const WORKSPACE_SWITCHER_ITEM_ID = 'nav-projects';
 
 /**
+ * Registry rows kept out of the no-query Suggestions. They stay in the
+ * registry and in search ("new session", "audit"); they only stop spending a
+ * suggestion slot. New session has its own button and shortcut, and the
+ * session audit is a deep link, not a first move.
+ */
+export const SEARCH_ONLY_ITEM_IDS: ReadonlySet<string> = new Set([
+  'new-session',
+  'open-session-audit',
+  // Home and the session list are one click away in the sidebar already.
+  'proj-home',
+  'proj-sessions',
+]);
+
+/**
+ * The no-query Suggestions order: the everyday moves first — where am I
+ * working, which session, then the session's own surfaces, then review — and
+ * the registry's order only after them. Registry order put "Compact Session"
+ * second and the session's Files/Browser last, behind rarer actions. An id
+ * missing from the palette (no session, a flag off) is skipped, not a hole.
+ */
+export const SUGGESTION_PRIORITY: readonly string[] = [
+  WORKSPACE_SWITCHER_ITEM_ID,
+  'open-session-files',
+  'open-session-browser',
+  'open-session-terminal',
+  'view-changes',
+  'review-changes',
+  'nav-accounts',
+];
+
+/**
  * How many rows of one page the palette warms (see the prefetch effects in
  * `CommandPalette`). The sessions page renders up to 50 rows; firing 50 RSC
  * requests because a project has 50 sessions costs more than the cold fetch it
@@ -292,8 +324,8 @@ const PALETTE_PREFETCH_LIMIT = 8;
 /**
  * The rows the palette offers before anything is typed.
  *
- * "Switch workspace" is PINNED to the front, then the registry's own order,
- * then the cap. Unpinned it sits at index 11 of the actions+navigation list
+ * `SUGGESTION_PRIORITY` first — "Switch workspace" leads it — then the
+ * registry's own order, then the cap. Unpinned it sits at index 11 of the actions+navigation list
  * and the cap is {@link ROOT_SUGGESTION_LIMIT} — so opening ⌘K and typing
  * nothing showed eight session and terminal actions and no way to change
  * workspace at all. Every other top-level move in this product has a control
@@ -313,11 +345,16 @@ export function buildRootSuggestions(
   limit: number = ROOT_SUGGESTION_LIMIT,
 ): MenuItemDef[] {
   const candidates = items.filter(
-    (item) => item.group === 'actions' || item.group === 'navigation',
+    (item) =>
+      (item.group === 'actions' || item.group === 'navigation') &&
+      !SEARCH_ONLY_ITEM_IDS.has(item.id),
   );
-  const switcher = candidates.find((item) => item.id === WORKSPACE_SWITCHER_ITEM_ID);
-  const rest = candidates.filter((item) => item.id !== WORKSPACE_SWITCHER_ITEM_ID);
-  return (switcher ? [switcher, ...rest] : rest).slice(0, limit);
+  const rank = (item: MenuItemDef) => {
+    const index = SUGGESTION_PRIORITY.indexOf(item.id);
+    return index === -1 ? SUGGESTION_PRIORITY.length : index;
+  };
+  // A stable sort: unranked rows keep the registry's relative order.
+  return [...candidates].sort((a, b) => rank(a) - rank(b)).slice(0, limit);
 }
 
 export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
@@ -1588,9 +1625,40 @@ export function CommandPalette() {
         value: currentSessionId ? pathname : '',
         keywords: 'session link url share',
       },
+      {
+        id: 'session-title',
+        label: tPalette('copySessionTitle'),
+        value: currentSessionId ? (currentProjectSession?.name ?? '') : '',
+        keywords: 'session title name',
+      },
     ];
     return items.filter((item) => item.value);
-  }, [tPalette, user?.email, user?.id, activeAccountId, projectId, currentSessionId, pathname]);
+  }, [
+    tPalette,
+    user?.email,
+    user?.id,
+    activeAccountId,
+    projectId,
+    currentSessionId,
+    currentProjectSession?.name,
+    pathname,
+  ]);
+
+  /**
+   * "Copy session ID" in the no-query Suggestions, fourth row: it is what a
+   * user in a session reaches for most (support threads, CLI flags), so it
+   * should not need a search. Off a session there is none, and no row.
+   */
+  const suggestedSessionIdCopy = copyItems.find((item) => item.id === 'session-id') ?? null;
+  /**
+   * Desktop only, right under it: the Electron shell has no address bar, so
+   * there is no other way to take a session's link out of the app. The copy
+   * is `window.location.href` — the shell loads the real web origin, so the
+   * link opens in any browser. The web keeps its address bar and one row.
+   */
+  const suggestedSessionLinkCopy = isDesktop()
+    ? (copyItems.find((item) => item.id === 'session-link') ?? null)
+    : null;
 
   // Copy rows ride along with ordinary root search: "email" offers the email,
   // "project" offers the project id under the projects it finds, "session" the
@@ -2272,7 +2340,7 @@ export function CommandPalette() {
                   <>
                     <CommandGroup heading="Suggestions" forceMount>
                       <div className="space-y-0.5">
-                        {rootSuggestionItems.map((item) => {
+                        {rootSuggestionItems.map((item, index) => {
                           const Icon = item.icon;
                           const isToggleSidebar = item.id === 'toggle-sidebar';
                           const DisplayIcon = isToggleSidebar
@@ -2288,41 +2356,71 @@ export function CommandPalette() {
 
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
                           return (
-                            <CommandItem
-                              key={item.id}
-                              value={sanitizeCmdkValue(
-                                `suggestion ${buildPaletteSearchText(item)}`,
-                              )}
-                              onSelect={() =>
-                                submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
-                              }
-                              disabled={item.id === 'new-session' && isCreating}
-                            >
-                              {item.id === 'new-session' && isCreating ? (
-                                <Loading className="text-muted-foreground size-4 shrink-0" />
-                              ) : (
-                                <DisplayIcon className="size-4" />
-                              )}
-                              <span className="flex-1">{displayLabel}</span>
-                              {item.id === 'review-changes' && openChangeRequestCount > 0 && (
-                                <span className="text-muted-foreground/40 text-xs tabular-nums">
-                                  {openChangeRequestCount}
-                                </span>
-                              )}
-                              {submenuPage === 'density' && (
-                                <span className="text-muted-foreground/40 text-xs">
-                                  {
-                                    densityPageOptions.find(
-                                      (option) => option.id === conversationDensity,
-                                    )?.label
-                                  }
-                                </span>
-                              )}
-                              {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
-                              {submenuPage && (
-                                <ChevronRight className="text-muted-foreground/30 size-3" />
-                              )}
-                            </CommandItem>
+                            <Fragment key={item.id}>
+                              <CommandItem
+                                value={sanitizeCmdkValue(
+                                  `suggestion ${buildPaletteSearchText(item)}`,
+                                )}
+                                onSelect={() =>
+                                  submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
+                                }
+                                disabled={item.id === 'new-session' && isCreating}
+                              >
+                                {item.id === 'new-session' && isCreating ? (
+                                  <Loading className="text-muted-foreground size-4 shrink-0" />
+                                ) : (
+                                  <DisplayIcon className="size-4" />
+                                )}
+                                <span className="flex-1">{displayLabel}</span>
+                                {item.id === 'review-changes' && openChangeRequestCount > 0 && (
+                                  <span className="text-muted-foreground/40 text-xs tabular-nums">
+                                    {openChangeRequestCount}
+                                  </span>
+                                )}
+                                {submenuPage === 'density' && (
+                                  <span className="text-muted-foreground/40 text-xs">
+                                    {
+                                      densityPageOptions.find(
+                                        (option) => option.id === conversationDensity,
+                                      )?.label
+                                    }
+                                  </span>
+                                )}
+                                {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                                {submenuPage && (
+                                  <ChevronRight className="text-muted-foreground/30 size-3" />
+                                )}
+                              </CommandItem>
+                              {index === 2 && suggestedSessionIdCopy ? (
+                                <CommandItem
+                                  value={sanitizeCmdkValue(
+                                    `suggestion copy-session-id ${suggestedSessionIdCopy.keywords}`,
+                                  )}
+                                  onSelect={() => void handleCopyValue(suggestedSessionIdCopy)}
+                                >
+                                  <Copy className="size-4" />
+                                  <span className="flex-1">
+                                    {tPalette('copyAction', { label: suggestedSessionIdCopy.label })}
+                                  </span>
+                                  <span className="text-muted-foreground max-w-40 truncate font-mono text-xs">
+                                    {suggestedSessionIdCopy.value}
+                                  </span>
+                                </CommandItem>
+                              ) : null}
+                              {index === 2 && suggestedSessionLinkCopy ? (
+                                <CommandItem
+                                  value={sanitizeCmdkValue(
+                                    `suggestion copy-session-link ${suggestedSessionLinkCopy.keywords}`,
+                                  )}
+                                  onSelect={() => void handleCopyValue(suggestedSessionLinkCopy)}
+                                >
+                                  <Copy className="size-4" />
+                                  <span className="flex-1">
+                                    {tPalette('copyAction', { label: suggestedSessionLinkCopy.label })}
+                                  </span>
+                                </CommandItem>
+                              ) : null}
+                            </Fragment>
                           );
                         })}
                       </div>

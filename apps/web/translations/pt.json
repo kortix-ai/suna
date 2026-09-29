@@ -187,7 +187,12 @@
     "account": {
       "label": "Conta",
       "createIn": "Criar em {account}",
-      "choose": "Escolher uma conta"
+      "choose": "Escolher uma conta",
+      "loggedInAs": "Conectado como",
+      "nameLabel": "Nome da conta",
+      "nameHint": "Sua equipe vê este nome na barra lateral e nos convites. Você pode alterá-lo depois.",
+      "nameRequired": "O nome da conta é obrigatório",
+      "renameFailed": "Não foi possível salvar o nome da conta. Tente novamente."
     },
     "name": {
       "label": "Nome do projeto",
@@ -215,7 +220,6 @@
       "label": "Repositório",
       "defaultBranch": "Branch padrão",
       "loadGitHubAccountsError": "Não foi possível carregar as contas do GitHub. Tente novamente.",
-      "createsPath": "Cria <path>{path}</path>",
       "loadRepositoriesError": "Não foi possível carregar os repositórios. Tente novamente.",
       "sources": {
         "managed": {
@@ -19102,6 +19106,7 @@
     "copyProjectId": "ID do projeto",
     "copySessionId": "ID da sessão",
     "copySessionLink": "link da sessão",
+    "copySessionTitle": "título da sessão",
     "copyAction": "Copiar {label}",
     "copied": "Copiado: {label}",
     "copyFailed": "Não foi possível copiar para a área de transferência"
@@ -19903,6 +19908,9 @@
   },
   "projectSelector": {
     "welcome": "Boas-vindas ao Kortix",
+    "nameAccountTitle": "Dê um nome à sua conta",
+    "nameAccountBody": "Seus projetos, agentes e colegas de equipe ficam aqui.",
+    "nameAccountContinue": "Continuar",
     "welcomeBack": "Bem-vindo de volta",
     "descriptionNew": "Crie seu primeiro projeto ou entre em um que sua equipe compartilhou.",
     "descriptionReturning": "Abra um projeto ou crie um novo.",

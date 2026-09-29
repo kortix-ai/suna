@@ -187,7 +187,12 @@
     "account": {
       "label": "Konto",
       "createIn": "Erstellen in {account}",
-      "choose": "Konto auswählen"
+      "choose": "Konto auswählen",
+      "loggedInAs": "Angemeldet als",
+      "nameLabel": "Kontoname",
+      "nameHint": "Dein Team sieht ihn in der Seitenleiste und in Einladungen. Du kannst ihn später ändern.",
+      "nameRequired": "Kontoname ist erforderlich",
+      "renameFailed": "Der Kontoname konnte nicht gespeichert werden. Versuche es erneut."
     },
     "name": {
       "label": "Name des Projekts",
@@ -215,7 +220,6 @@
       "label": "Repository",
       "defaultBranch": "Standard-Branch",
       "loadGitHubAccountsError": "GitHub-Konten konnten nicht geladen werden. Versuchen Sie es erneut.",
-      "createsPath": "Erstellt <path>{path}</path>",
       "loadRepositoriesError": "Repositories konnten nicht geladen werden. Versuchen Sie es erneut.",
       "sources": {
         "managed": {
@@ -19102,6 +19106,7 @@
     "copyProjectId": "Projekt-ID",
     "copySessionId": "Sitzungs-ID",
     "copySessionLink": "Sitzungslink",
+    "copySessionTitle": "Sitzungstitel",
     "copyAction": "{label} kopieren",
     "copied": "{label} kopiert",
     "copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen"
@@ -19903,6 +19908,9 @@
   },
   "projectSelector": {
     "welcome": "Willkommen bei Kortix",
+    "nameAccountTitle": "Benenne dein Konto",
+    "nameAccountBody": "Hier leben deine Projekte, Agenten und Teammitglieder.",
+    "nameAccountContinue": "Weiter",
     "welcomeBack": "Willkommen zurück",
     "descriptionNew": "Erstelle dein erstes Projekt oder tritt einem bei, das dein Team geteilt hat.",
     "descriptionReturning": "Öffne ein Projekt oder erstelle ein neues.",

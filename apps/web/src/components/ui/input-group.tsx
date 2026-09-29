@@ -4,7 +4,12 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input, InputProps } from '@/components/ui/input';
+import {
+  Input,
+  InputProps,
+  inputSurfaceClasses,
+  inputTransitionClasses,
+} from '@/components/ui/input';
 import { Close } from '@/features/icon/icons/close';
 import { cn } from '@/lib/utils';
 
@@ -14,7 +19,9 @@ function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
       data-slot="input-group"
       role="group"
       className={cn(
-        'group/input-group border-border dark:bg-input/30 relative flex w-full items-center rounded-md border transition-[color,box-shadow] outline-none',
+        'group/input-group relative flex w-full items-center outline-none',
+        inputSurfaceClasses,
+        inputTransitionClasses,
         'h-9 min-w-0 has-[>textarea]:h-auto',
 
         // Variants based on alignment.
@@ -24,10 +31,12 @@ function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
         'has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-end]]:[&>input]:pt-3',
 
         // Focus state.
-        'has-[[data-slot=input-group-control]:focus-visible]:border-kortix-blue has-[[data-slot=input-group-control]:focus-visible]:border has-[[data-slot=input-group-control]:focus-visible]:outline-none',
+        // Focus state — the same border + halo as `Input`, drawn on the group
+        // so addons sit inside the ring rather than beside it.
+        'has-[[data-slot=input-group-control]:focus]:border-ring has-[[data-slot=input-group-control]:focus]:ring-ring/15 has-[[data-slot=input-group-control]:focus]:ring-3',
 
         // Error state.
-        'has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-destructive/20 dark:has-[[data-slot][aria-invalid=true]]:ring-destructive/40',
+        'has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-destructive/15 has-[[data-slot][aria-invalid=true]]:ring-3',
 
         className,
       )}
@@ -115,8 +124,9 @@ function InputGroupInput({ className, ...props }: InputProps) {
     <Input
       data-slot="input-group-control"
       className={cn(
-        'flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent',
-        'focus:border-0 focus:outline-none',
+        // The group paints the surface, border and ring; the control is bare.
+        'flex-1 rounded-none border-0 bg-transparent shadow-none',
+        'focus:ring-0 focus:outline-none aria-invalid:ring-0',
         className,
       )}
       {...props}
@@ -144,12 +154,17 @@ function InputGroupSearchIcon({ className, ...props }: React.ComponentProps<'div
   );
 }
 
-function InputGroupSearchInput({ className, variant = 'transparent', ...props }: InputProps) {
+function InputGroupSearchInput({
+  className,
+  variant = 'transparent',
+  size = 'md',
+  ...props
+}: InputProps) {
   return (
     <Input
       data-slot="input-group-search-control"
       variant={variant}
-      size="md"
+      size={size}
       className={cn('peer placeholder:text-muted-foreground/60 pl-9', className)}
       {...props}
     />

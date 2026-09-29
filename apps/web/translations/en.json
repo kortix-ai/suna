@@ -187,7 +187,12 @@
     "account": {
       "label": "Account",
       "createIn": "Create in {account}",
-      "choose": "Choose an account"
+      "choose": "Choose an account",
+      "loggedInAs": "Logged in as",
+      "nameLabel": "Account name",
+      "nameHint": "Your team sees this in the sidebar and in invites. You can change it later.",
+      "nameRequired": "Account name is required",
+      "renameFailed": "Could not save the account name. Try again."
     },
     "name": {
       "label": "Project name",
@@ -215,7 +220,6 @@
       "label": "Repository",
       "defaultBranch": "Default branch",
       "loadGitHubAccountsError": "Could not load GitHub accounts. Try again.",
-      "createsPath": "Creates <path>{path}</path>",
       "loadRepositoriesError": "Could not load repositories. Try again.",
       "sources": {
         "managed": {
@@ -19115,6 +19119,7 @@
     "copyProjectId": "project ID",
     "copySessionId": "session ID",
     "copySessionLink": "session link",
+    "copySessionTitle": "session title",
     "copyAction": "Copy {label}",
     "copied": "Copied {label}",
     "copyFailed": "Could not copy to the clipboard"
@@ -19916,6 +19921,9 @@
   },
   "projectSelector": {
     "welcome": "Welcome to Kortix",
+    "nameAccountTitle": "Name your account",
+    "nameAccountBody": "Your projects, agents and teammates live here.",
+    "nameAccountContinue": "Continue",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",

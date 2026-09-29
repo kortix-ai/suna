@@ -255,7 +255,8 @@ describe('every screen has Back by default', () => {
 
   test('rows pinned to the top of a shell-less screen drop below the band', () => {
     for (const file of [
-      'features/workspace/new/new-workspace-page.tsx',
+      // `/new` and `/projects` render their top row through this component.
+      'features/workspace/account-top-bar.tsx',
       'app/[locale]/(app)/projects/start/page.tsx',
     ]) {
       expect(readFileSync(join(webSrc, file), 'utf8')).toContain('kx-desktop-band-row');

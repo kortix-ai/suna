@@ -187,7 +187,12 @@
     "account": {
       "label": "账户",
       "createIn": "在 {account} 中创建",
-      "choose": "选择账户"
+      "choose": "选择账户",
+      "loggedInAs": "当前登录",
+      "nameLabel": "账户名称",
+      "nameHint": "你的团队会在侧边栏和邀请中看到它。之后可以修改。",
+      "nameRequired": "账户名称为必填项",
+      "renameFailed": "无法保存账户名称，请重试。"
     },
     "name": {
       "label": "项目名称",
@@ -215,7 +220,6 @@
       "label": "代码仓库",
       "defaultBranch": "默认分支",
       "loadGitHubAccountsError": "无法加载 GitHub 账户。请重试。",
-      "createsPath": "创建 <path>{path}</path>",
       "loadRepositoriesError": "无法加载仓库。请重试。",
       "sources": {
         "managed": {
@@ -19102,6 +19106,7 @@
     "copyProjectId": "项目 ID",
     "copySessionId": "会话 ID",
     "copySessionLink": "会话链接",
+    "copySessionTitle": "会话标题",
     "copyAction": "复制{label}",
     "copied": "已复制{label}",
     "copyFailed": "无法复制到剪贴板"
@@ -19903,6 +19908,9 @@
   },
   "projectSelector": {
     "welcome": "欢迎使用 Kortix",
+    "nameAccountTitle": "为你的账户命名",
+    "nameAccountBody": "你的项目、智能体和团队成员都在这里。",
+    "nameAccountContinue": "继续",
     "welcomeBack": "欢迎回来",
     "descriptionNew": "创建你的第一个项目，或加入团队共享的项目。",
     "descriptionReturning": "打开一个项目，或创建新项目。",
