@@ -339,7 +339,7 @@ describe('per-session ingest ceiling', () => {
 });
 
 /**
- * The SampleCo convoy (2026-08-26): `kortix.audit_prepare_event` locks this
+ * The 2026-08-26 convoy: `kortix.audit_prepare_event` locks this
  * session's `audit_session_sequences` row for every row inserted, and
  * PostgreSQL holds that lock until COMMIT. One long statement pinned the
  * session for its whole duration, and a rollback threw away the whole batch's
