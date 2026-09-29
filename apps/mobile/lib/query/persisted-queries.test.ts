@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { qk } from '@kortix/sdk/react/session-list';
 
 import {
   PERSISTED_QUERY_GC_TIME_MS,
@@ -8,19 +9,34 @@ import {
   keepFirstSessionPage,
 } from './persisted-queries';
 
+/** The drawer's "Sessions" section, one of the SDK's paged session lists. */
+const MINE = qk.project.sessionsPaged('p-1', 'visible', { parent: 'root', startedBy: 'me' });
+
 describe('isPersistedQueryKey: what a user navigates by, nothing large or sensitive', () => {
   test.each([
     [['accounts']],
     [['projects', 'acc-1']],
     [['project', 'p-1']],
-    [['project-sessions', 'p-1', 'paged']],
+    // The drawer's sections and the Sessions page's scopes (the SDK's keys).
+    [MINE],
+    [qk.project.sessionsPaged('p-1', 'visible', { parent: 'root' })],
+    [qk.project.sessionsPaged('p-1')],
+    // One parent's children, without a search.
+    [qk.project.sessionChildren('p-1', 's-1')],
   ])('keeps %j', (key) => {
     expect(isPersistedQueryKey(key)).toBe(true);
   });
 
   test.each([
     // The flat first page: a lookup copy of the paged list's page one.
-    [['project-sessions', 'p-1']],
+    [qk.project.sessions('p-1')],
+    // A search: its text is the user's, and its answer is momentary.
+    [qk.project.sessionsPaged('p-1', 'visible', { parent: 'root', q: 'deploy' })],
+    [qk.project.sessionChildren('p-1', 's-1', 'deploy')],
+    // One session's row, from the SDK's persistable set: this app never reads it.
+    [qk.project.session('p-1', 's-1')],
+    // The keys before the SDK's (stored by an older build).
+    [['project-sessions', 'p-1', 'paged']],
     // The config summary carries the repository's whole file listing.
     [['project-detail', 'p-1']],
     [['project-secrets', 'p-1']],
@@ -33,7 +49,7 @@ describe('isPersistedQueryKey: what a user navigates by, nothing large or sensit
     [['projects', null]],
     [['project', undefined]],
     [['project', '']],
-    [['project-sessions', null, 'paged']],
+    [qk.project.sessionsPaged('')],
     [['accounts', 'extra']],
     [[]],
   ])('does not keep %j', (key) => {
@@ -54,12 +70,12 @@ describe('applyPersistedQueryDefaults', () => {
     const client = deviceClient();
     applyPersistedQueryDefaults(client);
     // `setQueryData` is how the persisted cache restores an entry.
-    client.setQueryData(['project-sessions', 'p-1', 'paged'], { pages: [], pageParams: [] });
+    client.setQueryData(MINE, { pages: [], pageParams: [] });
     client.setQueryData(['projects', 'acc-1'], []);
     client.setQueryData(['project', 'p-1'], { project_id: 'p-1' });
     client.setQueryData(['accounts'], []);
 
-    expect(gcTimeOf(client, ['project-sessions', 'p-1', 'paged'])).toBe(PERSISTED_QUERY_GC_TIME_MS);
+    expect(gcTimeOf(client, MINE)).toBe(PERSISTED_QUERY_GC_TIME_MS);
     expect(gcTimeOf(client, ['projects', 'acc-1'])).toBe(PERSISTED_QUERY_GC_TIME_MS);
     expect(gcTimeOf(client, ['project', 'p-1'])).toBe(PERSISTED_QUERY_GC_TIME_MS);
     expect(gcTimeOf(client, ['accounts'])).toBe(PERSISTED_QUERY_GC_TIME_MS);
@@ -79,7 +95,7 @@ describe('applyPersistedQueryDefaults', () => {
 });
 
 describe('keepFirstSessionPage: a restored list refetches one page, not every page', () => {
-  const PAGED = ['project-sessions', 'p-1', 'paged'] as const;
+  const PAGED = MINE;
   const page = (id: string, next: string | null) => ({
     items: [{ session_id: id }],
     next_cursor: next,
@@ -112,12 +128,12 @@ describe('keepFirstSessionPage: a restored list refetches one page, not every pa
     const onePage = { pages: [page('a', null)], pageParams: [null] };
     const flat = [{ session_id: 'a' }, { session_id: 'b' }];
     client.setQueryData(PAGED, onePage, { updatedAt: 1_000 });
-    client.setQueryData(['project-sessions', 'p-1'], flat, { updatedAt: 1_000 });
+    client.setQueryData(qk.project.sessions('p-1'), flat, { updatedAt: 1_000 });
 
     keepFirstSessionPage(client);
 
     expect(client.getQueryData(PAGED) as unknown).toBe(onePage);
-    expect(client.getQueryData(['project-sessions', 'p-1']) as unknown).toBe(flat);
+    expect(client.getQueryData(qk.project.sessions('p-1')) as unknown).toBe(flat);
     client.clear();
   });
 });

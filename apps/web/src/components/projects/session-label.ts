@@ -3,73 +3,31 @@ import type { UiTranslator } from '@/i18n/translator';
 import {
   isLegacyMigratedSession,
   SESSION_LIST_STATUS,
+  sessionDisplayTitle,
+  sessionHasTitle,
   sessionListStatus,
-  type ProjectRuntimeSession,
+  sessionSource as sdkSessionSource,
   type ProjectSession,
   type SessionListStatus,
+  type SessionSource as SdkSessionSource,
+  type SessionSourceKind,
 } from '@kortix/sdk';
 
 /**
- * Canonical, framework-free helpers for reading a project session the way the
- * UI reads it. Single source of truth for four things:
+ * The web's localized reading of a project session. The rules (title, source,
+ * status, filters, the opencode sub-session tree) live in `@kortix/sdk`; this
+ * file adds only what needs the web's translator or has no SDK twin:
  *
- * - the display LABEL and the opencode session tree (`sessionDisplayLabel`,
- *   `rootOpenCodeSession`, `directSubsessions`) — the sidebar, the session
- *   list, and the tab bar must all render the SAME name for a session;
- * - the SOURCE a session came from, and the source filter over it;
- * - the DISPLAY STATUS — the five user-facing states the seven-value sandbox
- *   lifecycle collapses to — and the status filter over it;
+ * - the localized SOURCE label, and the source filter over it;
+ * - the DISPLAY STATUS aliases and their catalog keys;
+ * - the ownership and meta-coordinator markers.
  */
 
-/** The root opencode session a project session is pinned to (if synced). */
-export function rootOpenCodeSession(session: ProjectSession): ProjectRuntimeSession | null {
-  const opencodeSessions = session.opencode_sessions ?? [];
-  const rootId = session.opencode_session_id;
-  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
-  return opencodeSessions.find((item) => !item.parent_id) ?? null;
-}
+export type { SessionSourceKind };
 
-/**
- * Direct, non-archived children of the root opencode session, newest first.
- *
- * Ties break on id. A child with no `updated_at` collapses to `0`, so whole
- * groups of them tie — and a stable sort then preserves ARRIVAL order, which is
- * whatever order the sandbox listing came back in. That order is re-derived on
- * every refetch, and the snapshot writer persists a pure reorder as a change,
- * so the churn reached every client as sub-sessions visibly swapping places in
- * the sidebar. Ids are stable and unique; the rendered order now is too.
- */
-export function directSubsessions(session: ProjectSession): ProjectRuntimeSession[] {
-  const root = rootOpenCodeSession(session);
-  if (!root) return [];
-  return (session.opencode_sessions ?? [])
-    .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0) || a.id.localeCompare(b.id));
-}
-
-/**
- * Where a session came from, derived from the creation metadata stamped by
- * the API: channel sessions carry `metadata.source` ('slack' | 'telegram' |
- * 'teams' | 'email'),
- * trigger fires carry `metadata.trigger_source` ('cron' | 'webhook' |
- * 'manual') + `trigger_type`/`trigger_slug`. Everything else is a regular
- * chat the user started.
- */
-export type SessionSourceKind =
-  | 'chat'
-  | 'slack'
-  | 'telegram'
-  | 'teams'
-  | 'email'
-  | 'schedule'
-  | 'webhook';
-
-export interface SessionSource {
-  kind: SessionSourceKind;
+export interface SessionSource extends SdkSessionSource {
   /** Human label, e.g. "Slack", "Scheduled". */
   label: string;
-  /** For trigger-fired sessions: the kortix.yaml trigger slug. */
-  triggerSlug: string | null;
 }
 
 /** The platform meta coordinator — drives other sessions from its own sandbox. */
@@ -88,27 +46,29 @@ export function sessionIsShared(session: Pick<ProjectSession, 'is_owner'>): bool
   return session.is_owner === false;
 }
 
-export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslator): SessionSource {
-  const meta = (session.metadata ?? {}) as Record<string, unknown>;
-  const source = typeof meta.source === 'string' ? meta.source : null;
-  if (source === 'slack')
-    return { kind: 'slack', label: tI18nComplete.raw('textb27fb38ba323'), triggerSlug: null };
-  if (source === 'telegram')
-    return { kind: 'telegram', label: tI18nComplete.raw('textacdd1e734125'), triggerSlug: null };
-  if (source === 'teams')
-    return { kind: 'teams', label: tI18nComplete.raw('texta7b52b269a23'), triggerSlug: null };
-  if (source === 'email')
-    return { kind: 'email', label: tI18nComplete.raw('text969ccbd3cf63'), triggerSlug: null };
-  if (typeof meta.trigger_source === 'string') {
-    const triggerSlug = typeof meta.trigger_slug === 'string' ? meta.trigger_slug : null;
-    // Classify by the trigger's kind (cron|webhook) when present so a manual
-    // "run now" fire groups under its trigger; fall back to the fire source.
-    const type = typeof meta.trigger_type === 'string' ? meta.trigger_type : meta.trigger_source;
-    if (type === 'cron')
-      return { kind: 'schedule', label: tI18nComplete.raw('text4724f344c1c0'), triggerSlug };
-    return { kind: 'webhook', label: tI18nComplete.raw('text4814f62c108d'), triggerSlug };
+function sourceLabel(kind: SessionSourceKind, tI18nComplete: UiTranslator): string {
+  switch (kind) {
+    case 'slack':
+      return tI18nComplete.raw('textb27fb38ba323');
+    case 'telegram':
+      return tI18nComplete.raw('textacdd1e734125');
+    case 'teams':
+      return tI18nComplete.raw('texta7b52b269a23');
+    case 'email':
+      return tI18nComplete.raw('text969ccbd3cf63');
+    case 'schedule':
+      return tI18nComplete.raw('text4724f344c1c0');
+    case 'webhook':
+      return tI18nComplete.raw('text4814f62c108d');
+    case 'chat':
+      return tI18nComplete.raw('text460b3a7da007');
   }
-  return { kind: 'chat', label: tI18nComplete.raw('text460b3a7da007'), triggerSlug: null };
+}
+
+/** The SDK's `sessionSource` plus the localized label. */
+export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslator): SessionSource {
+  const source = sdkSessionSource(session);
+  return { ...source, label: sourceLabel(source.kind, tI18nComplete) };
 }
 
 /**
@@ -118,32 +78,8 @@ export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslat
  * metadata.session_name → branch slice → short id.
  */
 export function sessionDisplayLabel(session: ProjectSession): string {
-  const metadataName =
-    typeof session.metadata?.session_name === 'string'
-      ? (session.metadata.session_name as string)
-      : null;
-  const fallback = session.branch_name
-    ? session.branch_name.slice(0, 14)
-    : session.session_id.slice(0, 8);
-  return (
-    stripChatMentionMarkup(session.custom_name ?? '') ||
-    stripChatMentionMarkup(session.name ?? '') ||
-    stripChatMentionMarkup(metadataName ?? '') ||
-    fallback
-  );
-}
-
-/**
- * Teams wraps a channel @-mention of the bot in `<at>…</at>`. Sessions titled
- * from such a message before the API stripped it (#7388) still carry the tag
- * in `name`; nothing a person reads should show it.
- */
-export function stripChatMentionMarkup(value: string): string {
-  return value
-    .replace(/<at[^>]*>.*?<\/at>/gi, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  if (sessionHasTitle(session)) return sessionDisplayTitle(session);
+  return session.branch_name ? session.branch_name.slice(0, 14) : session.session_id.slice(0, 8);
 }
 
 /**
@@ -207,7 +143,6 @@ export type SessionSourceFilter =
   | 'email'
   | 'schedule'
   | 'webhook';
-export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
   { value: 'shared', label: 'Shared' },
@@ -218,28 +153,6 @@ export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: 
   { value: 'schedule', label: 'Scheduled' },
   { value: 'webhook', label: 'Webhook' },
 ];
-
-export const SESSION_STATUS_FILTERS: Array<{ value: SessionStatusFilter; label: string }> = [
-  { value: 'running', label: 'Running' },
-  { value: 'done', label: 'Done' },
-  { value: 'stopped', label: 'Stopped' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'legacy', label: 'Legacy' },
-];
-
-/** Selected values are ORed. Empty = everything. */
-export function matchesStatusFilters(
-  session: ProjectSession,
-  filters: readonly SessionStatusFilter[],
-): boolean {
-  if (filters.length === 0) return true;
-  // Lifecycle only — someone filtering to Running still wants their
-  // review-pending running session.
-  const display = sessionDisplayStatus(session);
-  return filters.some((filter) =>
-    filter === 'running' ? display === 'running' || display === 'starting' : display === filter,
-  );
-}
 
 export function matchesSourceFilters(
   session: ProjectSession,

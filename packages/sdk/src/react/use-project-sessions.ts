@@ -14,7 +14,8 @@
  * tested without mounting react-query, plus the hook itself.
  */
 
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import {
   listProjectSessionsPage,
   type ListProjectSessionsOptions,
@@ -66,6 +67,13 @@ export interface UseProjectSessionsOptions
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
   refetchInterval?: number | false | ((sessions: ProjectSession[]) => number | false);
   refetchOnWindowFocus?: boolean;
+  /** Keep the previous filter's rows on screen while a new `q` / `startedBy`
+   *  loads, instead of an empty list for every keystroke. */
+  keepPreviousData?: boolean;
+  /** Override the `inventory` freshness contract (a host that persists the
+   *  list across launches keeps it longer than the web's 30 minutes). */
+  staleTime?: number;
+  gcTime?: number;
 }
 
 /**
@@ -97,8 +105,13 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
       if (typeof interval !== 'function') return interval ?? false;
       return interval(flattenProjectSessionPages(query.state.data));
     },
+    placeholderData: options?.keepPreviousData ? keepPreviousData : undefined,
     ...contract('inventory'),
+    ...(options?.staleTime !== undefined ? { staleTime: options.staleTime } : {}),
+    ...(options?.gcTime !== undefined ? { gcTime: options.gcTime } : {}),
   });
+  // One array per fetched result, not per render: hosts memoize on it.
+  const sessions = useMemo(() => flattenProjectSessionPages(query.data), [query.data]);
 
   return {
     ...query,
@@ -110,11 +123,13 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
      * the intended trade — it is bounded by what the viewer actually asked to
      * see, where the old behavior was bounded by nothing.
      */
-    sessions: flattenProjectSessionPages(query.data),
+    sessions,
   };
 }
 
-export interface UseSessionChildrenOptions extends Pick<ListProjectSessionsOptions, 'limit' | 'q'> {
+export interface UseSessionChildrenOptions
+  extends Pick<ListProjectSessionsOptions, 'limit' | 'q'>,
+    Pick<UseProjectSessionsOptions, 'staleTime' | 'gcTime'> {
   /** Set false until the parent is expanded — children load lazily. */
   enabled?: boolean;
 }
@@ -143,6 +158,9 @@ export function useSessionChildren(
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     ...contract('inventory'),
+    ...(options?.staleTime !== undefined ? { staleTime: options.staleTime } : {}),
+    ...(options?.gcTime !== undefined ? { gcTime: options.gcTime } : {}),
   });
-  return { ...query, sessions: flattenProjectSessionPages(query.data) };
+  const sessions = useMemo(() => flattenProjectSessionPages(query.data), [query.data]);
+  return { ...query, sessions };
 }

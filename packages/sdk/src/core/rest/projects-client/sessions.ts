@@ -327,6 +327,9 @@ export interface ProjectSessionPage {
   next_cursor: string | null;
 }
 
+/** Longest `q` the list API accepts; a longer one is rejected with 400. */
+export const PROJECT_SESSION_SEARCH_MAX_LENGTH = 200;
+
 function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const params = new URLSearchParams();
   if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
@@ -334,7 +337,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (options?.cursor) params.set('cursor', options.cursor);
   if (options?.parent) params.set('parent', options.parent);
   if (options?.startedBy) params.set('started_by', options.startedBy);
-  const q = options?.q?.trim();
+  const q = options?.q?.trim().slice(0, PROJECT_SESSION_SEARCH_MAX_LENGTH);
   if (q) params.set('q', q);
   return params.size > 0 ? `?${params}` : '';
 }

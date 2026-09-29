@@ -4,10 +4,8 @@ import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { menuRow } from '@/components/ui/menu-recipe';
-import { shortRelative } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useTranslations } from '@/i18n/use-translations';
-import type { ProjectRuntimeSession } from '@kortix/sdk';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { shortRelative, type ProjectRuntimeSession } from '@kortix/sdk';
 import { useState, type ReactElement } from 'react';
 
 /** A subsession's own title, without OpenCode's "(@general subagent)" suffix. */
@@ -83,9 +81,7 @@ export function SubagentHoverCard({
                       className="text-muted-foreground shrink-0 text-xs tabular-nums"
                       suppressHydrationWarning
                     >
-                      {shortRelative(
-                        formatDistanceToNowStrict(new Date(child.updated_at), { addSuffix: false }),
-                      )}
+                      {shortRelative(child.updated_at, Date.now())}
                     </time>
                   ) : null}
                 </HoverPrefetchLink>

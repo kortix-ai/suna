@@ -353,6 +353,19 @@ describe('filterProjectSessions', () => {
       filterProjectSessions([failedSlack, runningSlack, failedEmail], ['failed'], ['slack'], testUiTranslator),
     ).toEqual([failedSlack]);
   });
+
+  test('Needs you keeps the sessions with pending review items, whatever their lifecycle', () => {
+    const reviewing = makeSession({ session_id: 'reviewing', status: 'completed' });
+    const quiet = makeSession({ session_id: 'quiet', status: 'running' });
+
+    expect(
+      filterProjectSessions([reviewing, quiet], ['needs-you'], [], testUiTranslator, {
+        reviewCountBySession: { reviewing: 2 },
+      }).map((s) => s.session_id),
+    ).toEqual(['reviewing']);
+    // Without the review summary nothing needs you.
+    expect(filterProjectSessions([reviewing, quiet], ['needs-you'], [], testUiTranslator)).toEqual([]);
+  });
 });
 
 describe('filterProjectSessions — owner and access facets', () => {

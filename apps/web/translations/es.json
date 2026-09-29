@@ -1525,6 +1525,7 @@
         "all": "Todos"
       },
       "statusValue": {
+        "needsYou": "Necesita tu atención",
         "running": "Ejecutando",
         "done": "Listo",
         "stopped": "Detenida",

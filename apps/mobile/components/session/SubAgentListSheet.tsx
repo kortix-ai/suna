@@ -18,13 +18,12 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
-  sessionDisplayStatus,
   sessionDisplayTitle,
   sessionLastActivityAt,
-  sessionStatusLabel,
+  sessionListStatus,
   shortRelative,
-  spokenRelative,
-} from '@/lib/session/session-list';
+} from '@kortix/sdk';
+import { sessionStatusLabel, spokenRelative } from '@/lib/session/session-list';
 
 export interface SubAgentListSheetProps {
   subAgents: ProjectSession[];
@@ -60,7 +59,7 @@ export const SubAgentListSheet = React.forwardRef<SheetRef, SubAgentListSheetPro
             <SettingsGroup>
               {subAgents.map((session) => {
                 const title = sessionDisplayTitle(session);
-                const status = sessionDisplayStatus(session);
+                const status = sessionListStatus(session);
                 const lastActivity = sessionLastActivityAt(session);
                 return (
                   <SettingsRow

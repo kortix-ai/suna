@@ -19,8 +19,17 @@ config.transformer = {
 const mobileNodeModules = path.resolve(projectRoot, 'node_modules');
 
 // Modules that should always resolve from mobile's node_modules
-// This prevents duplicate React instances when bundling shared packages
-const forcedModules = ['react', 'react-native', 'react/jsx-runtime', 'react/jsx-dev-runtime'];
+// This prevents duplicate React instances when bundling shared packages.
+// `@tanstack/react-query`: packages/sdk resolves a copy built against its own
+// React version, and a second copy has its own QueryClient context, so the
+// SDK's session-list hooks would throw "No QueryClient set".
+const forcedModules = [
+  'react',
+  'react-native',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
+  '@tanstack/react-query',
+];
 
 // Node.js built-ins that leak into the bundle graph via third-party packages
 // but have no React Native equivalent and are never exercised at runtime.
@@ -87,6 +96,16 @@ config.resolver = {
     if (moduleName === '@kortix/sdk/turns') {
       return {
         filePath: path.resolve(monorepoRoot, 'packages/sdk/src/deprecated/turns.ts'),
+        type: 'sourceFile',
+      };
+    }
+    // The SDK's React Native-safe session-list hooks, the same deterministic
+    // mapping as `@kortix/sdk/turns`. Keep in sync with the `./react/session-list`
+    // export in packages/sdk/package.json. Never the `@kortix/sdk/react` barrel:
+    // modules there read `window`, `document` and `localStorage`.
+    if (moduleName === '@kortix/sdk/react/session-list') {
+      return {
+        filePath: path.resolve(monorepoRoot, 'packages/sdk/src/react/session-list.ts'),
         type: 'sourceFile',
       };
     }

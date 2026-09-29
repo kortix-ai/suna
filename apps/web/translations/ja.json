@@ -1525,6 +1525,7 @@
         "all": "すべて"
       },
       "statusValue": {
+        "needsYou": "対応が必要",
         "running": "実行中",
         "done": "完了",
         "stopped": "停止",

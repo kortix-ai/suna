@@ -17,7 +17,7 @@
  *
  * A session is `needs-you` while the review inbox holds a pending item from
  * it (`lib/session/needs-you`): the drawer's Needs you group and the Sessions
- * page pass that count to `sessionDisplayStatus`.
+ * page pass that count to the SDK's `sessionListStatus`.
  *
  * The mark is hidden from screen readers: the row's label speaks the status
  * (`sessionStatusLabel`).
@@ -37,7 +37,7 @@ import Animated, {
 
 import { Icon } from '@/components/ui/icon';
 import { CheckIcon, ClockIcon } from '@/lib/icons';
-import type { SessionDisplayStatus } from '@/lib/session/session-list';
+import type { SessionListStatus } from '@kortix/sdk';
 
 /** Yellow ring with a centre dot, pulsing. Static under reduced motion. */
 function StartingMark() {
@@ -69,7 +69,7 @@ function StartingMark() {
 }
 
 /** A 20pt slot (`h-5 min-w-5`) holding the mark for `status`. */
-export function SessionStatusMark({ status }: { status: SessionDisplayStatus }) {
+export function SessionStatusMark({ status }: { status: SessionListStatus }) {
   let mark: React.ReactNode;
   switch (status) {
     case 'running':

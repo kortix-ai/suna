@@ -1525,6 +1525,7 @@
         "all": "Alle"
       },
       "statusValue": {
+        "needsYou": "Benötigt dich",
         "running": "Läuft",
         "done": "Fertig",
         "stopped": "Gestoppt",

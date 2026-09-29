@@ -16,16 +16,11 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import {
-  projectSessionsRefetchInterval,
-  resolveSessionListViewState,
-  sessionLastActivityAt,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { projectSessionsRefetchInterval } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import { useDebounce } from '@/hooks/use-debounced-value';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
@@ -45,8 +40,13 @@ import {
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
 import {
+  childCountOf,
   deleteProjectSession,
+  isParentExpanded,
   restartProjectSession,
+  sessionLastActivityAt,
+  sessionListViewState,
+  shortRelative,
   stopProjectSession,
   type ProjectSession,
 } from '@kortix/sdk';
@@ -58,7 +58,7 @@ import {
 } from '@kortix/sdk/react';
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { format, formatDistanceToNowStrict } from 'date-fns';
+import { format } from 'date-fns';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -74,6 +74,7 @@ import { SessionRow, type SessionRowActions } from './session-row';
 import { SessionsEmptyState } from './sessions-empty-state';
 import { SessionsSelectionBar } from './sessions-selection-bar';
 import { SessionsToolbar } from './sessions-toolbar';
+import { useSessionSearchQuery } from './use-session-search-query';
 
 /**
  * This page's view state is its OWN — narrowing the manager inventory here must not
@@ -87,9 +88,6 @@ import { SessionsToolbar } from './sessions-toolbar';
  */
 const SURFACE = 'page' as const;
 
-/** Milliseconds between the last keystroke and the server search. */
-const SEARCH_DEBOUNCE_MS = 250;
-
 /** Rows per "Show more" click under an expanded parent. */
 const CHILDREN_PAGE_SIZE = 20;
 
@@ -100,16 +98,14 @@ const STARTED_BY_FILTERS: readonly StartedByFilter[] = ['all', 'me', 'others', '
  *  27-session batch would otherwise open 27 sockets at once. */
 const DELETE_CONCURRENCY = 4;
 
-function formatTimestamp(value: string): { relative: string; exact: string } {
-  try {
-    const date = new Date(value);
-    return {
-      relative: formatDistanceToNowStrict(date, { addSuffix: false }),
-      exact: format(date, 'MMM d, yyyy, h:mm a'),
-    };
-  } catch {
-    return { relative: 'Unknown', exact: value };
-  }
+/** An ISO string or epoch ms, as the short relative form and the exact date. */
+function formatTimestamp(value: string | number): { relative: string; exact: string } {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { relative: 'Unknown', exact: String(value) };
+  return {
+    relative: shortRelative(date.getTime(), Date.now()),
+    exact: format(date, 'MMM d, yyyy, h:mm a'),
+  };
 }
 
 // Staggered (unique) widths so the block reads as a list of rows rather than a
@@ -249,8 +245,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const [search, setSearch] = useState('');
   const [startedBy, setStartedBy] = useState<StartedByFilter>('all');
   // Search is the server's: `q` reaches every session the viewer may open, not
-  // only the pages already loaded. Debounced so a keystroke is not a request.
-  const searchQuery = useDebounce(search.trim(), SEARCH_DEBOUNCE_MS);
+  // only the pages already loaded.
+  const searchQuery = useSessionSearchQuery(search);
   const searching = searchQuery.length > 0;
   // A root that matched only through a child opens by default while searching;
   // the ids here are the ones the viewer closed again, for THIS query.
@@ -343,8 +339,17 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       filterProjectSessions(sessions, statusFilters, sourceFilters, tI18nComplete, {
         owners: ownerFilters,
         access: accessFilters,
+        reviewCountBySession: reviewSummary.needsYouBySession,
       }),
-    [sessions, statusFilters, sourceFilters, ownerFilters, accessFilters, tI18nComplete],
+    [
+      sessions,
+      statusFilters,
+      sourceFilters,
+      ownerFilters,
+      accessFilters,
+      reviewSummary.needsYouBySession,
+      tI18nComplete,
+    ],
   );
 
   const grouped = useMemo(
@@ -395,11 +400,14 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   // has not run yet (waiting on the manager probe, or paused offline) is
   // loading, never "No sessions yet". No-matches is decided below from
   // `grouped`, which also sees hidden sections.
-  const listState = resolveSessionListViewState({
+  const listState = sessionListViewState({
     hasData: sessionsQuery.data !== undefined,
     isError: sessionsQuery.isError,
     totalCount: sessions.length,
     visibleCount: visibleSessions.length,
+    // Zero rows under a search or a Started by tab is "none match", not
+    // "No sessions yet".
+    serverFiltered: searching || startedBy !== 'all',
   });
 
   // Selection must never outlive its own visibility: narrowing the filter after
@@ -555,11 +563,18 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     ? bulkDeleteMutation.variables.length
     : visibleSelection.size;
 
+  // A root that matched only through a child opens by default while
+  // searching, unless the viewer closed it for this query; any other root
+  // follows the persisted expanded set.
   const isParentOpen = (session: ProjectSession) => {
-    if (searching && session.search_match === 'child') {
-      return !(closedInSearch.q === searchQuery && closedInSearch.ids.includes(session.session_id));
-    }
-    return expandedParents.includes(session.session_id);
+    const childMatch = searching && session.search_match === 'child';
+    const closedHere =
+      closedInSearch.q === searchQuery && closedInSearch.ids.includes(session.session_id);
+    return isParentExpanded({
+      explicit: childMatch ? (closedHere ? false : undefined) : expandedParents.includes(session.session_id),
+      isActiveParent: false,
+      searchMatch: childMatch ? 'child' : undefined,
+    });
   };
   const handleToggleChildren = (session: ProjectSession) => {
     if (searching && session.search_match === 'child') {
@@ -581,7 +596,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const renderRow = (session: ProjectSession, topLevel = false): ReactNode => {
     const time = timestamps.get(session.session_id) ?? formatTimestamp(sessionLastActivityAt(session));
     const isOpen = expanded === session.session_id;
-    const childCount = topLevel ? (session.child_count ?? 0) : 0;
+    const childCount = topLevel ? childCountOf(session) : 0;
     const childrenOpen = childCount > 0 && isParentOpen(session);
     return (
       <div key={session.session_id} className="space-y-2">
@@ -708,9 +723,9 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
                 </Button>
               }
             />
-          ) : listState === 'empty' && !searching && startedBy === 'all' ? (
+          ) : listState === 'empty' ? (
             <SessionsEmptyState className="flex-1 pb-24" />
-          ) : grouped.sections.length === 0 || listState === 'empty' ? (
+          ) : grouped.sections.length === 0 ? (
             // Covers BOTH "the filters/search match nothing" and "every section
             // was hidden via the menu's Show list" — `visibleSessions.length`
             // alone cannot see the second, and the list would otherwise render

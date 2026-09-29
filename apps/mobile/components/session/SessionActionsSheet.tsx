@@ -39,7 +39,7 @@
  */
 import * as React from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { partialMatchKey, useMutation, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import Animated from 'react-native-reanimated';
 import { View } from 'react-native';
@@ -92,19 +92,15 @@ import {
   type ChangedFile,
 } from '@/lib/session/session-actions';
 import { useCompactionStore } from '@/stores/compaction-store';
-import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
+import { qk } from '@kortix/sdk/react/session-list';
+import { cachedSessionRow, removeListedSession } from '@/lib/session/session-cache-write';
 import {
   deleteProjectSession,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
 } from '@/lib/projects/projects-client';
-import { sessionDisplayStatus, sessionDisplayTitle } from '@/lib/session/session-list';
-import {
-  applyToSessionCache,
-  withoutSession,
-  writeSessionLists,
-} from '@/lib/session/session-cache-write';
+import { sessionDisplayTitle, sessionListStatus } from '@kortix/sdk';
 import { useTabStore } from '@/stores/tab-store';
 
 /**
@@ -165,15 +161,15 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     React.useEffect(
       () =>
         queryClient.getQueryCache().subscribe((event) => {
-          if (event.query.queryKey[0] === 'project-sessions') bumpLists();
+          if (partialMatchKey(event.query.queryKey, qk.project.sessionsScope(projectId))) bumpLists();
         }),
-      [queryClient]
+      [queryClient, projectId]
     );
     const liveRow = (session: ProjectSession) =>
       cachedSessionRow(queryClient, projectId, session.session_id) ?? session;
 
     const invalidateSessions = React.useCallback(
-      () => queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) }),
+      () => queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) }),
       [queryClient, projectId]
     );
 
@@ -377,17 +373,10 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       try {
         // The row leaves the drawer and the Sessions page behind the dialog
         // now, and comes back if the server refuses. A refetch in flight would
-        // put it back first, so it is cancelled. The paged list only: the flat
-        // one names the open thread, which keeps its title until the delete
-        // succeeds.
-        // Paged lists and children only (keys longer than the flat list's).
-        const listKeys = sessionListKeys(queryClient, projectId).filter((key) => key.length > 2);
-        await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
-        undo = writeSessionLists(queryClient, listKeys, (cached) =>
-          applyToSessionCache<ProjectSession>(cached, (rows) =>
-            withoutSession(rows, confirmDelete.session_id)
-          )
-        );
+        // put it back first, so it is cancelled. The flat first page keeps
+        // it: it names the open thread (`removeListedSession`).
+        await queryClient.cancelQueries({ queryKey: qk.project.sessionsScope(projectId) });
+        undo = removeListedSession(queryClient, projectId, confirmDelete.session_id);
         await deleteSession.mutateAsync(confirmDelete);
         // Drop the session's tab, so the store never points at a deleted
         // session and no dead tab survives — matters most when this was the
@@ -412,7 +401,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       }
     }, [confirmDelete, deleteSession, projectId, queryClient, toast, invalidateSessions]);
 
-    const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
+    const menuStatus = menuSession ? sessionListStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
     const canManageSharing = menuSession?.can_manage_sharing !== false;
     const topRows = sessionActionRows({

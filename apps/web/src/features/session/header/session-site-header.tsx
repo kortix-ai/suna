@@ -28,7 +28,6 @@ import { SessionPendingApprovalsIndicator } from '@/features/session/header/sess
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
-import { directSubsessions } from '@/components/projects/session-label';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
@@ -36,7 +35,6 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
 import {
@@ -45,7 +43,12 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import {
+  directSubsessions,
+  restartProjectSession,
+  sessionDisplayTitle,
+  stopProjectSession,
+} from '@kortix/sdk';
 import { qk, useProjectSession } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
@@ -168,7 +171,7 @@ export function SessionSiteHeader({
    * Falls back to the prop when there is no project session: the share viewer
    * and the instant shell render this header without one.
    */
-  const projectTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
+  const projectTitle = projectSession ? sessionDisplayTitle(projectSession) : sessionTitle;
   // A subsession has no project session row of its own — `projectSession` is
   // the parent's. It shows its own OpenCode title, minus the
   // "(@general subagent)" suffix, and is not renamable from here.

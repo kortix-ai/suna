@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { InfiniteQueryObserver, QueryClient } from '@tanstack/react-query';
-import type { KeyValueStorage } from '@kortix/sdk';
-
-import { sessionsNextCursor, type SessionPage } from '@/lib/session/session-pages';
+import type { KeyValueStorage, ProjectSessionPage } from '@kortix/sdk';
+import { projectSessionsPageParam, qk } from '@kortix/sdk/react/session-list';
 
 import {
   QUERY_CACHE_OPTIONS,
@@ -18,7 +17,11 @@ import { createQueryCacheBinder } from './query-cache-binder';
  */
 
 const T0 = Date.parse('2026-09-26T12:00:00Z');
-const SESSIONS = ['project-sessions', 'p-1', 'paged'] as const;
+/** The drawer's "Sessions" section (the SDK's key). */
+const SESSIONS: readonly unknown[] = qk.project.sessionsPaged('p-1', 'visible', {
+  parent: 'root',
+  startedBy: 'me',
+});
 const PROJECT = ['project', 'p-1'] as const;
 const PAGES = {
   pages: [{ items: [{ session_id: 's-1' }], next_cursor: null }],
@@ -112,21 +115,21 @@ describe('a cold start renders the last known lists', () => {
       pageParams: [null, 'c1'],
     };
 
-    /** Mounts the list with the options `useProjectSessionsPaged` passes (lib/projects/hooks.ts). */
+    /** Mounts the list with the options the SDK's `useProjectSessions` passes (its `inventory` contract). */
     function mountSessionList(client: QueryClient) {
       const cursors: (string | null)[] = [];
       const observer = new InfiniteQueryObserver(client, {
         queryKey: SESSIONS,
         initialPageParam: null as string | null,
-        queryFn: async ({ pageParam }): Promise<SessionPage<{ session_id: string }>> => {
+        queryFn: async ({ pageParam }): Promise<ProjectSessionPage> => {
           cursors.push(pageParam);
           return {
             items: [{ session_id: `fresh-${pageParam ?? 'first'}` }],
             next_cursor: pageParam === null ? 'c1' : null,
-          };
+          } as ProjectSessionPage;
         },
-        getNextPageParam: sessionsNextCursor,
-        staleTime: 10_000,
+        getNextPageParam: projectSessionsPageParam,
+        staleTime: 30_000,
       });
       const unsubscribe = observer.subscribe(() => {});
       const refetched = async () => {
@@ -148,7 +151,7 @@ describe('a cold start renders the last known lists', () => {
       // The first frame: the restored rows, already refetching.
       const onMount = list.observer.getCurrentResult();
       expect(onMount.isPending).toBe(false);
-      expect(onMount.data).toEqual(twoPages);
+      expect(onMount.data as unknown).toEqual(twoPages);
       expect(onMount.isFetching).toBe(true);
 
       expect(await list.refetched()).toEqual(['fresh-first', 'fresh-c1']);
@@ -168,7 +171,7 @@ describe('a cold start renders the last known lists', () => {
       await appBinderOver(storage).bind(client, 'user-a');
 
       const list = mountSessionList(client);
-      expect(list.observer.getCurrentResult().data).toEqual({
+      expect(list.observer.getCurrentResult().data as unknown).toEqual({
         pages: [twoPages.pages[0]],
         pageParams: [null],
       });

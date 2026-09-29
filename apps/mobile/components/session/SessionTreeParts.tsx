@@ -14,6 +14,7 @@
  * Layout rules: apps/mobile/design.md → Project sidebar → Nesting and starters.
  */
 
+import { PERSISTED_QUERY_GC_TIME_MS } from '@/lib/query/persisted-queries';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 
@@ -34,20 +35,25 @@ import {
   WebhooksLogoIcon,
   type AppIcon,
 } from '@/lib/icons';
-import { useSessionChildren } from '@/lib/projects/hooks';
+import { useSessionChildren } from '@kortix/sdk/react/session-list';
+import { sessionDisplayTitle, type SessionStarter, type SessionStarterIcon } from '@kortix/sdk';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { sessionDisplayTitle } from '@/lib/session/session-list';
-import type { SessionStarter, StarterIcon } from '@/lib/session/session-tree';
 
-const STARTER_ICONS: Record<NonNullable<StarterIcon>, AppIcon> = {
-  clock: ClockIcon,
+/** The glyph of each SDK starter icon. Teams, Telegram and any other channel share the chat bubble. */
+const STARTER_ICONS: Record<NonNullable<SessionStarterIcon>, AppIcon> = {
+  schedule: ClockIcon,
   webhook: WebhooksLogoIcon,
-  lightning: LightningIcon,
+  trigger: LightningIcon,
   slack: SlackLogoIcon,
-  envelope: EnvelopeIcon,
-  chat: ChatCircleIcon,
-  key: KeyIcon,
+  email: EnvelopeIcon,
+  teams: ChatCircleIcon,
+  telegram: ChatCircleIcon,
+  channel: ChatCircleIcon,
+  api: KeyIcon,
 };
+
+/** Rows a parent shows per "Show more". */
+const SESSION_CHILDREN_PAGE_SIZE = 20;
 
 /** One muted line: [glyph] label. */
 export function StarterLabel({ starter }: { starter: SessionStarter }) {
@@ -107,7 +113,11 @@ export interface SessionChildrenProps {
 }
 
 export function SessionChildren({ projectId, parent, q, renderChild, moreInset = 0, showLoader = true }: SessionChildrenProps) {
-  const query = useSessionChildren(projectId, parent.session_id, { q });
+  const query = useSessionChildren(projectId, parent.session_id, {
+    q,
+    limit: SESSION_CHILDREN_PAGE_SIZE,
+    gcTime: PERSISTED_QUERY_GC_TIME_MS,
+  });
   const { sessions, hasNextPage, isFetchingNextPage, isPending, isError, fetchNextPage, refetch } = query;
 
   if (isPending && !isError) {

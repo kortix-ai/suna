@@ -163,7 +163,7 @@ test('root entry loads and createKortix constructs outside React', async () => {
 // Every OTHER non-React subpath in package.json's `exports` map — tiered.
 // ============================================================================
 
-type Tier = 'isomorphic-core' | 'node-allowed' | 'browser-only';
+type Tier = 'isomorphic-core' | 'node-allowed' | 'browser-only' | 'react-portable';
 
 interface Subpath {
   name: string;
@@ -208,6 +208,9 @@ const SUBPATH_TIERS: Subpath[] = [
   // Zero imports: `apps/api` loads the wire-id clock without the whole root barrel.
   { name: './wire-message-id', file: 'core/session/wire-message-id.ts', tier: 'isomorphic-core' },
   { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },
+  // React hooks that must also run on React Native (apps/mobile): react and
+  // react-query only, no DOM globals. The ./react barrel is not portable.
+  { name: './react/session-list', file: 'react/session-list.ts', tier: 'react-portable' },
 ];
 
 test('SUBPATH_TIERS matches package.json exports (minus "." and "./react")', () => {
@@ -229,7 +232,12 @@ for (const subpath of SUBPATH_TIERS) {
 
   test(`${subpath.name} (${subpath.tier}): no forbidden framework imports`, () => {
     const { externals } = collectGraph(entryFile);
-    const forbiddenList = subpath.tier === 'browser-only' ? REACT_ONLY : FORBIDDEN_MODULES;
+    const forbiddenList =
+      subpath.tier === 'browser-only'
+        ? REACT_ONLY
+        : subpath.tier === 'react-portable'
+          ? ['react-dom', 'next', 'zustand']
+          : FORBIDDEN_MODULES;
     for (const [spec, importers] of externals) {
       const forbidden = forbiddenList.find((m) => spec === m || spec.startsWith(`${m}/`));
       expect(forbidden ? `"${spec}" imported by ${importers.join(', ')} (subpath ${subpath.name})` : null).toBeNull();
@@ -245,6 +253,24 @@ for (const subpath of SUBPATH_TIERS) {
         expect(
           hasDirective ? `'use client' in ${file.slice(SRC_ROOT.length + 1)} (subpath ${subpath.name})` : null,
         ).toBeNull();
+      }
+    });
+  }
+
+  if (subpath.tier === 'react-portable') {
+    // The tripwire walks imports and cannot see globals; React Native has no
+    // DOM, so a bare read of one throws there. Scan the React-layer files the
+    // subpath adds for them (core/ carries its own guarded-globals rule, and
+    // apps/mobile already runs it).
+    test(`${subpath.name} (react-portable): no DOM globals, no node: imports`, () => {
+      const { files, externals } = collectGraph(entryFile);
+      for (const spec of externals.keys()) expect(spec.startsWith('node:') ? spec : null).toBeNull();
+      for (const file of files.filter((f) => f.startsWith(join(SRC_ROOT, 'react')))) {
+        const code = readFileSync(file, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        const hit = code.match(/\b(window|document|localStorage|sessionStorage|indexedDB)\s*[.[]/);
+        expect(hit ? `${hit[0]} in ${file.slice(SRC_ROOT.length + 1)}` : null).toBeNull();
       }
     });
   }

@@ -42,7 +42,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/stores/last-project-store': { useLastProjectStore: { getState: () => ({ remember() {} }) } },
   '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen: null }), { getState: () => ({ setViewingSessionId() {}, takeOpen: () => null }) }) },
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector({ openUpgradeSheet: spy('upgrade') }) },
-  '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
+  '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: {} },
   '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate') }) },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: [] }) },
   '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' } },

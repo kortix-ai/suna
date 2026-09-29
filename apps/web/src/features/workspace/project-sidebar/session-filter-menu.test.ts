@@ -74,6 +74,29 @@ describe('resolveStatusFacetOptions', () => {
   test('no sessions: no options', () => {
     expect(resolveStatusFacetOptions([], [], [], testUiTranslator)).toEqual([]);
   });
+
+  test('Needs you is offered first, counted from the review summary', () => {
+    const sessions = [running('a'), done('b'), failed('c')];
+    const options = resolveStatusFacetOptions(sessions, [], [], testUiTranslator, { b: 1, c: 3 });
+    expect(options.map((o) => [o.value, o.count])).toEqual([
+      ['needs-you', 2],
+      ['running', 1],
+      ['done', 1],
+      ['failed', 1],
+    ]);
+    // No review summary: nothing needs you, so the option is not listed.
+    expect(
+      resolveStatusFacetOptions(sessions, [], [], testUiTranslator).some((o) => o.value === 'needs-you'),
+    ).toBe(false);
+  });
+
+  test('a Needs you pick narrows the Source counts to the sessions awaiting review', () => {
+    const sessions = [slack('a'), slack('b'), email('c')];
+    const options = resolveSourceFacetOptions(sessions, ['needs-you'], [], testUiTranslator, { a: 1, c: 1 });
+    const byValue = Object.fromEntries(options.map((o) => [o.value, o.count]));
+    expect(byValue.slack).toBe(1);
+    expect(byValue.email).toBe(1);
+  });
 });
 
 describe('resolveSourceFacetOptions', () => {

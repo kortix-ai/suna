@@ -89,12 +89,7 @@ import {
 import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { newSessionCreateInput } from '@/lib/session/new-session-input';
-import {
-  projectSessionForOpenCodeId,
-  resolveSessionTitle,
-  sessionDisplayTitle,
-  subsessionTitle,
-} from '@/lib/session/session-list';
+import { subsessionTitle } from '@/lib/session/session-list';
 import { subAgentRelation, subAgentsOf } from '@/lib/session/sub-agents';
 import { ProjectLeftDrawer } from '@/components/session/ProjectLeftDrawer';
 import {
@@ -106,9 +101,8 @@ import { Drawer } from 'react-native-drawer-layout';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
+import { listCreatedSession } from '@/lib/session/session-cache-write';
 import {
-  listCreatedSession,
-  projectKeys,
   useAccounts,
   useProject,
   useProjectSessions,
@@ -122,6 +116,7 @@ import {
   getProjectSession,
   SESSION_NOTICE,
   sessionConnectionLabel,
+  sessionDisplayTitle,
   sessionParentId,
 } from '@kortix/sdk';
 import { queuePromptWhileWaking } from '@/lib/session/connecting-send';

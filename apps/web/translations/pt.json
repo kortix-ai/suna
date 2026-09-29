@@ -1525,6 +1525,7 @@
         "all": "Todos"
       },
       "statusValue": {
+        "needsYou": "Precisa de si",
         "running": "Executando",
         "done": "Pronto",
         "stopped": "Parada",

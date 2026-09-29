@@ -1,26 +1,45 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   SESSION_STATUS_FILTERS,
-  filterSessionsByStatus,
-  sessionStatusFilterSummary,
+  directSubsessions,
   groupSessionsByActivity,
-  recentSessions,
-  sessionDisplayStatus,
+  matchesSessionStatusFilters,
+  rootOpenCodeSession,
   sessionDisplayTitle,
   sessionLastActivityAt,
+  type SessionStatusFilter,
+} from '@kortix/sdk';
+
+import type { ProjectSession } from '@/lib/projects/projects-client';
+import {
+  sessionStatusFilterSummary,
   sessionStatusLabel,
-  shortRelative,
   spokenRelative,
   SUB_SESSION_FALLBACK_TITLE,
-  directSubsessions,
   projectSessionForOpenCodeId,
-  rootOpenCodeSession,
   subsessionTitle,
   SUBSESSION_COUNT_BADGE_THRESHOLD,
   showSubsessionCountBadge,
 } from './session-list';
+
+/**
+ * The shared list rules are the SDK's (`@kortix/sdk`, its own tests in
+ * packages/sdk/src/core/session/session-list.test.ts). The cases below that
+ * the SDK suite does not assert stay here, against the SDK functions this app
+ * calls, next to the mobile-only helpers.
+ */
+
+/** The Sessions page's status filter, as ProjectSessionsPage applies it. */
+function filterSessionsByStatus(
+  sessions: ProjectSession[],
+  statuses: readonly SessionStatusFilter[],
+  needsYou?: ReadonlyMap<string, { count: number }>,
+): ProjectSession[] {
+  return sessions.filter((session) =>
+    matchesSessionStatusFilters(session, statuses, needsYou?.get(session.session_id)?.count ?? 0),
+  );
+}
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   return {
@@ -51,33 +70,12 @@ function openCodeSession(updatedAt: string | null, id = 'oc-1') {
 }
 
 describe('sessionDisplayTitle', () => {
-  test('a user rename (custom_name) wins over everything else', () => {
-    const session = makeSession({
-      custom_name: 'My renamed session',
-      name: 'server-name',
-      branch_name: 'feature/branch-name',
-    });
-    expect(sessionDisplayTitle(session)).toBe('My renamed session');
-  });
-
-  test('falls back to the server name when there is no custom name', () => {
-    const session = makeSession({ name: 'server-name', branch_name: 'feature/branch-name' });
-    expect(sessionDisplayTitle(session)).toBe('server-name');
-  });
-
-  test('falls back to legacy metadata.session_name next', () => {
-    const session = makeSession({
-      metadata: { session_name: 'legacy-name' },
-      branch_name: 'feature/branch-name',
-    });
-    expect(sessionDisplayTitle(session)).toBe('legacy-name');
-  });
-
-  test('untitled sessions fall back to "New session"', () => {
-    expect(sessionDisplayTitle(makeSession({ branch_name: 'feature/a-very-long-branch' }))).toBe(
-      'New session',
+  // Fix: mobile showed the raw Teams mention tag in a title; the SDK strips it.
+  test('a Teams @-mention tag never reaches the row title', () => {
+    expect(sessionDisplayTitle(makeSession({ name: '<at>Kortix</at> summarize the thread' }))).toBe(
+      'summarize the thread',
     );
-    expect(sessionDisplayTitle(makeSession())).toBe('New session');
+    expect(sessionDisplayTitle(makeSession({ custom_name: '<at id="0">Kortix</at>' }))).toBe('New session');
   });
 
   test('blank/whitespace-only names are treated as absent', () => {
@@ -88,52 +86,6 @@ describe('sessionDisplayTitle', () => {
   test('blank metadata.session_name falls through to the placeholder', () => {
     const session = makeSession({ metadata: { session_name: '   ' } });
     expect(sessionDisplayTitle(session)).toBe('New session');
-  });
-});
-
-describe('sessionDisplayStatus', () => {
-  test('queued / branching / provisioning collapse to starting', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'queued' }))).toBe('starting');
-    expect(sessionDisplayStatus(makeSession({ status: 'branching' }))).toBe('starting');
-    expect(sessionDisplayStatus(makeSession({ status: 'provisioning' }))).toBe('starting');
-  });
-
-  test('running stays running', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'running' }))).toBe('running');
-  });
-
-  // One vocabulary with web: a finished session is Done, not Stopped.
-  test('stopped reads stopped; completed reads done', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'stopped' }))).toBe('stopped');
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('done');
-  });
-
-  test('failed stays failed', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'failed' }))).toBe('failed');
-  });
-
-  test('an unrecognized status falls back to stopped', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'weird' as never }))).toBe('stopped');
-  });
-
-  test('a pending review wins outright over every lifecycle status', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'running' }), 1)).toBe('needs-you');
-    expect(sessionDisplayStatus(makeSession({ status: 'failed' }), 2)).toBe('needs-you');
-    expect(sessionDisplayStatus(makeSession({ status: 'queued' }), 1)).toBe('needs-you');
-  });
-
-  test('a zero review count does not trigger needs-you', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'running' }), 0)).toBe('running');
-  });
-
-  test('review count defaults to zero when omitted', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'completed' }))).toBe('done');
-  });
-
-  test('a migrated session that has not run reads legacy', () => {
-    expect(
-      sessionDisplayStatus(makeSession({ status: 'stopped', metadata: { legacy_migration: true } } as never)),
-    ).toBe('legacy');
   });
 });
 
@@ -215,42 +167,6 @@ describe('sessionLastActivityAt', () => {
       opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
-  });
-});
-
-describe('shortRelative', () => {
-  const NOW = new Date(2026, 8, 16, 10, 0, 0).getTime();
-
-  test('under a minute is "now"', () => {
-    expect(shortRelative(NOW, NOW)).toBe('now');
-    expect(shortRelative(NOW - 30_000, NOW)).toBe('now');
-  });
-
-  test('a future timestamp clamps to "now"', () => {
-    expect(shortRelative(NOW + 60_000, NOW)).toBe('now');
-  });
-
-  test('minutes', () => {
-    expect(shortRelative(NOW - 5 * 60_000, NOW)).toBe('5m');
-    expect(shortRelative(NOW - 59 * 60_000, NOW)).toBe('59m');
-  });
-
-  test('hours', () => {
-    expect(shortRelative(NOW - 2 * 60 * 60_000, NOW)).toBe('2h');
-    expect(shortRelative(NOW - 23 * 60 * 60_000, NOW)).toBe('23h');
-  });
-
-  test('days', () => {
-    expect(shortRelative(NOW - 3 * 24 * 60 * 60_000, NOW)).toBe('3d');
-    expect(shortRelative(NOW - 29 * 24 * 60 * 60_000, NOW)).toBe('29d');
-  });
-
-  test('months', () => {
-    expect(shortRelative(NOW - 60 * 24 * 60 * 60_000, NOW)).toBe('2mo');
-  });
-
-  test('years', () => {
-    expect(shortRelative(NOW - 400 * 24 * 60 * 60_000, NOW)).toBe('1y');
   });
 });
 
@@ -412,9 +328,9 @@ describe('groupSessionsByActivity', () => {
 });
 
 describe('filterSessionsByStatus', () => {
-  test('an empty set returns the input unchanged', () => {
+  test('an empty set lets every session through', () => {
     const sessions = [makeSession({ session_id: 'a', status: 'running' })];
-    expect(filterSessionsByStatus(sessions, new Set())).toBe(sessions);
+    expect(filterSessionsByStatus(sessions, [])).toEqual(sessions);
   });
 
   test('keeps only sessions whose display status is in the set', () => {
@@ -424,7 +340,7 @@ describe('filterSessionsByStatus', () => {
       makeSession({ session_id: 'c', status: 'completed' }),
     ];
     expect(
-      filterSessionsByStatus(sessions, new Set(['running', 'failed'])).map((s) => s.session_id),
+      filterSessionsByStatus(sessions, ['running', 'failed']).map((s) => s.session_id),
     ).toEqual(['a', 'b']);
   });
 
@@ -436,14 +352,14 @@ describe('filterSessionsByStatus', () => {
       makeSession({ session_id: 'c', status: 'running' }),
     ];
     expect(
-      filterSessionsByStatus(sessions, new Set(['stopped'])).map((s) => s.session_id),
+      filterSessionsByStatus(sessions, ['stopped']).map((s) => s.session_id),
     ).toEqual(['b']);
-    expect(filterSessionsByStatus(sessions, new Set(['done'])).map((s) => s.session_id)).toEqual(['a']);
+    expect(filterSessionsByStatus(sessions, ['done']).map((s) => s.session_id)).toEqual(['a']);
   });
 
   test('a set matching nothing returns an empty array', () => {
     const sessions = [makeSession({ session_id: 'a', status: 'running' })];
-    expect(filterSessionsByStatus(sessions, new Set(['failed']))).toEqual([]);
+    expect(filterSessionsByStatus(sessions, ['failed'])).toEqual([]);
   });
 
   test('running also matches starting sessions (web parity, KRTX-250)', () => {
@@ -455,7 +371,7 @@ describe('filterSessionsByStatus', () => {
       makeSession({ session_id: 'e', status: 'stopped' }),
     ];
     expect(
-      filterSessionsByStatus(sessions, new Set(['running'])).map((s) => s.session_id),
+      filterSessionsByStatus(sessions, ['running']).map((s) => s.session_id),
     ).toEqual(['a', 'b', 'c', 'd']);
   });
 
@@ -471,12 +387,14 @@ describe('filterSessionsByStatus', () => {
     ];
     const needsYou = new Map([['b', { count: 1 }], ['c', { count: 2 }]]);
     expect(
-      filterSessionsByStatus(sessions, new Set(['needs-you']), needsYou).map((s) => s.session_id),
+      filterSessionsByStatus(sessions, ['needs-you'], needsYou).map((s) => s.session_id),
     ).toEqual(['b', 'c']);
-    // A waiting session is no longer "running" for the filter.
+    // A waiting session still matches its lifecycle: someone filtering to
+    // Running still wants their review-pending running session (SDK rule;
+    // before the SDK, mobile hid it from Running).
     expect(
-      filterSessionsByStatus(sessions, new Set(['running']), needsYou).map((s) => s.session_id),
-    ).toEqual(['a']);
+      filterSessionsByStatus(sessions, ['running'], needsYou).map((s) => s.session_id),
+    ).toEqual(['a', 'b']);
   });
 });
 
@@ -520,45 +438,6 @@ describe('sessionStatusLabel', () => {
     expect(sessionStatusLabel('stopped')).toBe('Stopped');
     expect(sessionStatusLabel('failed')).toBe('Failed');
     expect(sessionStatusLabel('needs-you')).toBe('Needs you');
-  });
-});
-
-describe('recentSessions', () => {
-  test('orders by last activity, newest first, without mutating the input', () => {
-    const sessions = [
-      makeSession({ session_id: 'old', updated_at: '2026-01-01T00:00:00.000Z' }),
-      makeSession({ session_id: 'new', updated_at: '2026-03-01T00:00:00.000Z' }),
-      makeSession({
-        session_id: 'prompted',
-        updated_at: '2026-01-02T00:00:00.000Z',
-        metadata: { last_activity_at: '2026-04-01T00:00:00.000Z' },
-      }),
-    ];
-    const before = sessions.map((s) => s.session_id);
-    expect(recentSessions(sessions, 20).map((s) => s.session_id)).toEqual([
-      'prompted',
-      'new',
-      'old',
-    ]);
-    expect(sessions.map((s) => s.session_id)).toEqual(before);
-  });
-
-  test('keeps only the newest `limit` sessions', () => {
-    const sessions = Array.from({ length: 25 }, (_, i) =>
-      makeSession({
-        session_id: `s${i}`,
-        updated_at: new Date(Date.UTC(2026, 0, 1 + i)).toISOString(),
-      }),
-    );
-    const recent = recentSessions(sessions, 20);
-    expect(recent).toHaveLength(20);
-    expect(recent[0]?.session_id).toBe('s24');
-    expect(recent[19]?.session_id).toBe('s5');
-  });
-
-  test('returns every session when there are fewer than `limit`', () => {
-    expect(recentSessions([makeSession()], 20)).toHaveLength(1);
-    expect(recentSessions([], 20)).toEqual([]);
   });
 });
 

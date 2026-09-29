@@ -1,99 +1,30 @@
 /**
- * session-cache-write — writes one session change into the cached session
- * lists, so a rename, a delete and a new session show at once instead of
- * after the refetch that follows the server's answer.
+ * session-cache-write — the pure pieces of this app's session-list cache
+ * writes that the SDK does not provide. The writes themselves go through the
+ * SDK's writers (`@kortix/sdk/react/session-list`: `upsertCachedProjectSession`,
+ * `updateCachedProjectSessions`, `removeCachedProjectSession`), which reach
+ * every cached list shape under `qk.project.sessionsScope(projectId)`.
  *
- * A project's sessions are cached in two shapes (lib/projects/hooks.ts):
+ * - `renameInRows` / `mergeRenamed`: the rename updaters. The SDK writes any
+ *   updater; what a rename changes on a row is this app's decision.
+ * - `createdSessionListRow`: a create's answer as a list row. The SDK's
+ *   upsert takes a row; the 202 answer and the list-omitted metadata are
+ *   this app's to handle.
+ * - `listCreatedSession`, `removeListedSession`, `cachedSessionRow`: the
+ *   create, the delete and the freshest-row read, over the SDK's writers.
  *
- *   projectKeys.projectSessions(id)       ProjectSession[] — page one, for
- *                                          lookups (the thread header's title)
- *   projectKeys.projectSessionsPaged(id)  { pages: [{ items, next_cursor }], pageParams }
- *                                          — the drawer and the Sessions page
- *
- * The rules of the SDK's web writer (packages/sdk/src/react/session-cache-write.ts),
- * which this app cannot import (`@kortix/sdk/react` is web's React surface):
- * - an insert goes to the top of the FIRST page only; a session already
- *   cached is replaced where it is;
- * - a write that changes nothing returns the cache by reference, so no
- *   observer re-renders for it.
- *
- * Pure data and pure functions, plus `writeSessionLists` over a structural
- * query client: `bun test` cannot load native modules.
+ * No React Native imports: `bun test` cannot load native modules.
  */
+
+import type { QueryClient } from '@tanstack/react-query';
+import {
+  flattenProjectSessionPages,
+  qk,
+  removeCachedProjectSession,
+  upsertCachedProjectSession,
+} from '@kortix/sdk/react/session-list';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
-
-import type { SessionPage } from './session-pages';
-
-interface SessionRow {
-  session_id: string;
-}
-
-interface PagedSessions<T> {
-  pages: SessionPage<T>[];
-  pageParams: unknown[];
-}
-
-function isPagedSessions<T>(value: unknown): value is PagedSessions<T> {
-  return (
-    typeof value === 'object' && value !== null && Array.isArray((value as PagedSessions<T>).pages)
-  );
-}
-
-/**
- * Apply `update` to one cached list, flat or paged. A page whose rows come
- * back unchanged keeps its identity, and so does the whole cache when no page
- * changed. Any other value is returned as is.
- */
-export function applyToSessionCache<T extends SessionRow>(
-  cached: unknown,
-  update: (rows: T[]) => T[]
-): unknown {
-  if (Array.isArray(cached)) return update(cached as T[]);
-  if (!isPagedSessions<T>(cached)) return cached;
-  let changed = false;
-  const pages = cached.pages.map((page) => {
-    const items = update(page.items);
-    if (items === page.items) return page;
-    changed = true;
-    return { ...page, items };
-  });
-  return changed ? { ...cached, pages } : cached;
-}
-
-/**
- * Put `session` at the top of the list, or replace it where it is already
- * cached. An insert is not a map: over a paged cache it goes to page one only
- * (the list is newest activity first), never to every loaded page.
- */
-export function upsertIntoSessionCache<T extends SessionRow>(cached: unknown, session: T): unknown {
-  const upsert = (items: T[]): T[] => {
-    const index = items.findIndex((row) => row.session_id === session.session_id);
-    if (index === -1) return [session, ...items];
-    if (items[index] === session) return items;
-    const next = items.slice();
-    next[index] = session;
-    return next;
-  };
-  if (Array.isArray(cached)) return upsert(cached as T[]);
-  if (!isPagedSessions<T>(cached) || cached.pages.length === 0) return cached;
-  const holder = cached.pages.findIndex((page) =>
-    page.items.some((row) => row.session_id === session.session_id)
-  );
-  const target = holder === -1 ? 0 : holder;
-  const items = upsert(cached.pages[target].items);
-  if (items === cached.pages[target].items) return cached;
-  return {
-    ...cached,
-    pages: cached.pages.map((page, i) => (i === target ? { ...page, items } : page)),
-  };
-}
-
-/** The rows without `sessionId`: the same array when it is not there. */
-export function withoutSession<T extends SessionRow>(rows: T[], sessionId: string): T[] {
-  const kept = rows.filter((row) => row.session_id !== sessionId);
-  return kept.length === rows.length ? rows : kept;
-}
 
 /**
  * A rename as the server answers it: `custom_name` set, or cleared by an
@@ -176,32 +107,47 @@ export function createdSessionListRow(value: unknown, projectId: string): Projec
   return { ...session, metadata: trimmed };
 }
 
-/** The slice of a TanStack `QueryClient` the writer uses. */
-export interface SessionListCache {
-  getQueryData(queryKey: readonly unknown[]): unknown;
-  setQueryData(queryKey: readonly unknown[], data: unknown): unknown;
+/**
+ * A created session, in the cached lists now: the top of page one, or in
+ * place where a refetch already brought it. A 202 (create only queued) is not
+ * a row and waits for the refetch. Only lists it belongs to
+ * (`upsertCachedProjectSession` decides per list): the flat lookup list and
+ * the viewer's own top-level lists, never "Shared", "Automated", a search or
+ * a parent's children.
+ */
+export function listCreatedSession(queryClient: QueryClient, projectId: string, created: unknown): void {
+  const row = createdSessionListRow(created, projectId);
+  if (row) upsertCachedProjectSession(queryClient, projectId, row);
 }
 
 /**
- * Write `change` into each cached list under `keys`, skipping a list that is
- * not cached or that the change leaves as it is. Returns the undo: every
- * written list back exactly as it was, for the write the server refuses.
+ * A deleted session, out of every paged list and parent's children now.
+ * Returns the undo, for the delete the server refuses. The flat first page
+ * keeps the row: it names the open thread, which keeps its title until the
+ * delete succeeds (the tab then closes).
  */
-export function writeSessionLists(
-  client: SessionListCache,
-  keys: readonly (readonly unknown[])[],
-  change: (cached: unknown) => unknown
-): () => void {
-  const written: [readonly unknown[], unknown][] = [];
-  for (const key of keys) {
-    const cached = client.getQueryData(key);
-    if (cached === undefined) continue;
-    const next = change(cached);
-    if (next === cached) continue;
-    written.push([key, cached]);
-    client.setQueryData(key, next);
+export function removeListedSession(queryClient: QueryClient, projectId: string, sessionId: string): () => void {
+  const flatKey = qk.project.sessions(projectId);
+  const flat = queryClient.getQueryData(flatKey);
+  const undo = removeCachedProjectSession(queryClient, projectId, sessionId);
+  if (flat !== undefined) queryClient.setQueryData(flatKey, flat);
+  return undo;
+}
+
+/**
+ * A session's freshest cached row, from any cached list of the project: the
+ * flat first page, each paged list (the drawer's three sections, the Sessions
+ * page and its searches) and each parent's children.
+ */
+export function cachedSessionRow(queryClient: QueryClient, projectId: string, sessionId: string): ProjectSession | null {
+  for (const [, data] of queryClient.getQueriesData({ queryKey: qk.project.sessionsScope(projectId) })) {
+    const rows = Array.isArray(data)
+      ? (data as ProjectSession[])
+      : Array.isArray((data as { pages?: unknown } | undefined)?.pages)
+        ? flattenProjectSessionPages(data as Parameters<typeof flattenProjectSessionPages>[0])
+        : [];
+    const row = rows.find((r) => r.session_id === sessionId);
+    if (row) return row;
   }
-  return () => {
-    for (const [key, cached] of written) client.setQueryData(key, cached);
-  };
+  return null;
 }

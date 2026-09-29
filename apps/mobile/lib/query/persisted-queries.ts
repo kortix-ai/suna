@@ -4,31 +4,34 @@
  * `createPersistedQueryCache` (`QUERY_CACHE_OPTIONS`, wired in
  * `lib/query/query-cache.ts`).
  *
- * The SDK's `isPersistableQueryKey` covers the SDK's `['kx', …]` keys. This app
- * has its own keys (`projectKeys`, lib/projects/hooks.ts). Kept: what a user
- * navigates by, small and not sensitive —
+ * The session lists are the SDK's (`@kortix/sdk/react/session-list`, keys
+ * under `['kx', 'project', projectId, 'sessions']`), and the SDK's
+ * `isPersistableQueryKey` decides which of them are kept: the paged lists
+ * (the drawer's sections, the Sessions page's scopes) and each parent's
+ * children, never a search. The rest are this app's own keys (`projectKeys`,
+ * lib/projects/hooks.ts). Kept: what a user navigates by, small and not
+ * sensitive —
  *
- *   ['accounts']                              the account list
- *   ['projects', accountId]                   one account's projects
- *   ['project', projectId]                    the project row (name, account)
- *   ['project-sessions', projectId, 'paged']  the drawer's and the Sessions page's list
+ *   ['accounts']              the account list
+ *   ['projects', accountId]   one account's projects
+ *   ['project', projectId]    the project row (name, account)
  *
  * Not kept: transcripts, secrets, files, the flat first page
- * (`['project-sessions', projectId]`, a lookup copy of page one), and the
- * config summary (`['project-detail', projectId]`): its `files` field is the
- * repository's whole file listing, unbounded in size.
+ * (`qk.project.sessions`, a lookup copy of page one), and the config summary
+ * (`['project-detail', projectId]`): its `files` field is the repository's
+ * whole file listing, unbounded in size.
  *
  * Pure: `bun test` cannot load native modules.
  */
 
-import { PERSISTED_QUERY_CACHE_VERSION } from '@kortix/sdk';
+import { PERSISTED_QUERY_CACHE_VERSION, isPersistableQueryKey } from '@kortix/sdk';
 
 /**
  * The stored cache's version: the SDK's part changes with the SDK's data
  * shapes, the second part with this app's (bump it when a kept query's data
  * changes shape — the stored cache is then discarded, never migrated).
  */
-export const QUERY_CACHE_VERSION = `${PERSISTED_QUERY_CACHE_VERSION}.1`;
+export const QUERY_CACHE_VERSION = `${PERSISTED_QUERY_CACHE_VERSION}.2`;
 
 /**
  * Upper bound of the stored cache, in UTF-16 code units: at most ~1.5 MB of
@@ -49,30 +52,33 @@ export const PERSISTED_QUERY_GC_TIME_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The key prefixes of the kept families, for `setQueryDefaults` (a prefix
- * match). `['project-sessions']` also reaches the flat first page: one page,
- * so its longer life costs little.
+ * match). `['kx', 'project']` reaches every SDK project query this app has:
+ * the session lists, the flat first page included (one page, so its longer
+ * life costs little).
  */
-export const PERSISTED_QUERY_FAMILIES: readonly (readonly [string])[] = [
+export const PERSISTED_QUERY_FAMILIES: readonly (readonly string[])[] = [
   ['accounts'],
   ['projects'],
   ['project'],
-  ['project-sessions'],
+  ['kx', 'project'],
 ];
 
 function isId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+/** A kept SDK session list that pages (`{ pages, pageParams }`): a paged list or a parent's children. */
 function isPagedSessionsKey(queryKey: readonly unknown[]): boolean {
   return (
-    queryKey.length === 3 &&
-    queryKey[0] === 'project-sessions' &&
-    isId(queryKey[1]) &&
-    queryKey[2] === 'paged'
+    queryKey[0] === 'kx' &&
+    isId(queryKey[2]) &&
+    queryKey[3] === 'sessions' &&
+    (queryKey[4] === 'list-paged' || queryKey[4] === 'list-children') &&
+    isPersistableQueryKey(queryKey)
   );
 }
 
-/** The `shouldPersist` predicate: true only for the four keys above. */
+/** The `shouldPersist` predicate: true only for the keys above. */
 export function isPersistedQueryKey(queryKey: readonly unknown[]): boolean {
   const [family, id] = queryKey;
   switch (family) {
@@ -81,7 +87,7 @@ export function isPersistedQueryKey(queryKey: readonly unknown[]): boolean {
     case 'projects':
     case 'project':
       return queryKey.length === 2 && isId(id);
-    case 'project-sessions':
+    case 'kx':
       return isPagedSessionsKey(queryKey);
     default:
       return false;

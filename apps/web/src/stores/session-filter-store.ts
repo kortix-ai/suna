@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
+import type { SessionSourceFilter } from '@/components/projects/session-label';
 import {
   DEFAULT_SESSION_GROUP_MODE,
   type SessionGroupMode,
@@ -12,6 +12,7 @@ import {
 import type { SessionAccessFilter } from '@/features/workspace/project-sessions/session-owner-filters';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import type { SessionStatusFilter } from '@kortix/sdk';
 
 /**
  * Per-project session-list VIEW state — grouping, ordering, the two filter

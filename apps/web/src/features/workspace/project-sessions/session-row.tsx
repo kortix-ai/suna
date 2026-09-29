@@ -18,15 +18,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
 import { TypedTitle } from '@/components/ui/typed-title';
-import {
-  getSessionDisplayTitle,
-  shortRelative,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
   SESSION_LIST_STATUS,
+  sessionDisplayTitle,
   type ProjectSession,
   type StatusTone as SessionStatusTone,
 } from '@kortix/sdk';
@@ -181,8 +178,9 @@ export interface SessionRowActions {
 
 export interface SessionRowProps {
   session: ProjectSession;
-  /** Preformatted last-activity stamp. Formatting stays in the container so
-   *  every row shares one `date-fns` pass instead of one per row. */
+  /** Preformatted last-activity stamp: `relative` is the fixed-width short
+   *  form ("5m"). Formatting stays in the container so every row shares one
+   *  pass instead of one per row. */
   time: { relative: string; exact: string };
   open: boolean;
   /** Takes the session id so the container can pass ONE stable callback to
@@ -222,7 +220,7 @@ function SessionRowImpl({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tStatus = useTranslations('sidebar.sessionList.status');
   const [menuOpen, setMenuOpen] = useState(false);
-  const title = getSessionDisplayTitle(session);
+  const title = sessionDisplayTitle(session);
   const source = sessionSource(session, tI18nComplete);
   const SourceIcon = source.kind === 'chat' ? ChatTeardropTextIcon : SOURCE_ICONS[source.kind];
   const access = sessionAccessMeta(session, tI18nComplete);
@@ -235,7 +233,7 @@ function SessionRowImpl({
   const hasLifecycleActions = access.canOpen && !isDeleted;
   const showAccessEntry = hasLifecycleActions;
   const hasActions = hasLifecycleActions;
-  const relativeLabel = time.relative ? shortRelative(time.relative) : '';
+  const relativeLabel = time.relative;
   const statusTile = sessionStatusTile(
     session,
     {

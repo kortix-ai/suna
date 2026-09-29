@@ -1,22 +1,18 @@
-import { stripChatMentionMarkup } from '@/components/projects/session-label';
-import { type ChangeRequest, type ProjectSession, type ProjectSessionStatus } from '@kortix/sdk';
+import {
+  sessionHasTitle,
+  sessionLastActivityAt,
+  type ChangeRequest,
+  type ProjectSession,
+  type ProjectSessionStatus,
+} from '@kortix/sdk';
 
 /**
- * Pure helpers extracted from `project-session-list.tsx` so every decision the
- * sidebar session list makes is unit-testable without mounting react-query or
- * the row components. Five decisions live here:
- *
- * - when to keep polling (`shouldPollProjectSessions`);
- * - what "last activity" means and how to sort by it
- *   (`sessionLastActivityAt`, `sortSessionsByLastActivity`) — the same value
- *   the sidebar's date sections bucket on, see `session-grouping.ts`;
- * - what a row is titled, and how its timestamp is abbreviated
- *   (`getSessionDisplayTitle`, `shortRelative`);
- * - which of loading/error/empty/no-matches/content renders
- *   (`resolveSessionListViewState`, also read by the Sessions page).
- *
- * Display status itself is NOT decided here — `sessionDisplayStatus` in
- * `components/projects/session-label` owns that mapping, and this file reads it.
+ * The web-only decisions of the session lists, unit-testable without mounting
+ * react-query or the row components: when to keep polling, how change requests
+ * attach to sessions, and the newest-activity sort. Titles, last activity,
+ * relative time, view state, and starter sections are `@kortix/sdk`'s
+ * (`sessionDisplayTitle`, `sessionLastActivityAt`, `shortRelative`,
+ * `sessionListViewState`, `starterSectionOf`).
  */
 
 export const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = [
@@ -114,7 +110,7 @@ export function projectSessionsRefetchInterval(params: {
   if (shouldPollProjectSessions(params.sessions)) return PROVISIONING_POLL_MS;
   // A title the server has not written yet. This is the ONLY case where the
   // client knows something is coming and has no way to be told it arrived —
-  // see `sessionTitleHasLanded`. It outranks the open-session interval because
+  // see `sessionHasTitle` in `@kortix/sdk`. It outranks the open-session interval because
   // that one is 60s, four times the title generator's own 15s timeout: the
   // header sat on "New session" for most of a minute after the name existed.
   //
@@ -129,122 +125,10 @@ export function projectSessionsRefetchInterval(params: {
   return params.hasOpenSession ? OPEN_SESSION_POLL_MS : false;
 }
 
-/** Epoch ms from an ISO string or an epoch-ms number, or null. `metadata` is
- *  jsonb, so its values arrive as `unknown` and must be proven, not asserted. */
-function activityMs(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value !== 'string' || !value) return null;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-/** When the API last accepted a prompt for this session.
- *
- * Stamped server-side in the preview proxy the moment a prompt is admitted
- * (`apps/api/src/projects/session-activity.ts`), so it needs no sandbox
- * round-trip and cannot silently go missing the way the snapshot below can. */
-function promptActivityMs(session: ProjectSession): number | null {
-  return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);
-}
-
-/** Newest conversation update in OpenCode's scoped session snapshot, or null
- *  when the session carries no usable snapshot. */
-function conversationActivityMs(session: ProjectSession): number | null {
-  let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
-    if (parsed === null) continue;
-    latest = latest === null ? parsed : Math.max(latest, parsed);
-  }
-  return latest;
-}
-
-/** The latest real activity for a session, newest evidence first.
- *
- * Two independent signals mean "someone used this session", and the newer one
- * wins because each can lead the other: the prompt stamp lands before the turn
- * runs, and the conversation snapshot keeps advancing while the agent replies.
- *
- *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
- *      Real activity, but a LAGGING cache: it is written only by a deferred,
- *      best-effort sandbox read (`opencode-session-snapshot.ts`), so a session
- *      whose sandbox was unreachable at that moment has no snapshot at all.
- *   3. `updated_at` — row bookkeeping, and only reached when neither signal
- *      above exists.
- *   4. `created_at` — last resort.
- *
- * Step 3 is the fix for the reported bug and it is deliberately a FALLBACK, not
- * a peer. Bookkeeping writes (runtime stop/resume, title sync, branch
- * telemetry, mapping repairs) advance `updated_at` without a turn, so it must
- * never outrank a session that has real activity data. But for a session with
- * NO activity data, `updated_at` is an upper bound on when it was last touched
- * while `created_at` is provably not activity at all — which is what pinned a
- * session that is used every day to the "Older" section of its creation date.
- * On local data 164 of 181 sessions were in exactly that state. Step 3 retires
- * itself: any such session gets an exact stamp on its next prompt. */
-export function sessionLastActivityAt(session: ProjectSession): string {
-  const prompt = promptActivityMs(session);
-  const conversation = conversationActivityMs(session);
-  if (prompt !== null || conversation !== null) {
-    return new Date(Math.max(prompt ?? -Infinity, conversation ?? -Infinity)).toISOString();
-  }
-  return session.updated_at || session.created_at;
-}
-
-/** Newest-first sort by `sessionLastActivityAt`. */
+/** Newest-first sort by the SDK's `sessionLastActivityAt`. */
 export function sortSessionsByLastActivity(sessions: ProjectSession[]): ProjectSession[] {
-  return sessions.slice().sort((a, b) => {
-    const parsedA = new Date(sessionLastActivityAt(a)).getTime();
-    const parsedB = new Date(sessionLastActivityAt(b)).getTime();
-    const aTime = Number.isFinite(parsedA) ? parsedA : 0;
-    const bTime = Number.isFinite(parsedB) ? parsedB : 0;
-    return bTime - aTime;
-  });
-}
-
-/** What a row shows before the server has written any name for the session. */
-export const UNTITLED_SESSION_LABEL = 'New session';
-
-/**
- * The session's real name, or null while the server has not written one.
- *
- * The single resolver behind BOTH `getSessionDisplayTitle` (what the row
- * renders) and `sessionTitleHasLanded` (whether to keep polling for it). They
- * must not be two implementations: a predicate that reported "titled" while the
- * row still showed the placeholder would stop the poll with the UI wrong, which
- * is the failure mode being fixed here rather than a new one to introduce.
- *
- * Precedence: user rename (`custom_name`) → server name → legacy
- * `metadata.session_name`.
- */
-function resolveSessionTitle(session: ProjectSession): string | null {
-  const legacyMetadataName =
-    typeof session.metadata?.session_name === 'string'
-      ? (session.metadata.session_name as string)
-      : null;
-  // Teams wraps a channel @-mention of the bot in `<at>…</at>`; sessions titled
-  // from such a message before the API stripped it still carry the tag.
-  return (
-    stripChatMentionMarkup(session.custom_name ?? '') ||
-    stripChatMentionMarkup(session.name ?? '') ||
-    stripChatMentionMarkup(legacyMetadataName ?? '') ||
-    null
-  );
-}
-
-/**
- * Has the server-generated title arrived for this session yet?
- *
- * `generateSessionTitleFromFirstPrompt` (apps/api) writes `metadata.name`
- * fire-and-forget, 3–15s after the first prompt, and emits nothing — no SSE
- * event, no invalidation. The browser's live event stream comes from opencode
- * INSIDE the sandbox, so the API has no channel on which to announce it. This
- * predicate is therefore the only signal a client has, and it is what bounds
- * the fast poll in `projectSessionsRefetchInterval`.
- */
-export function sessionTitleHasLanded(session: ProjectSession): boolean {
-  return resolveSessionTitle(session) !== null;
+  const at = new Map(sessions.map((session) => [session.session_id, sessionLastActivityAt(session)]));
+  return sessions.slice().sort((a, b) => at.get(b.session_id)! - at.get(a.session_id)!);
 }
 
 /**
@@ -277,10 +161,13 @@ const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
  * produces.
  */
 export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
-  if (sessionTitleHasLanded(session)) return false;
+  if (sessionHasTitle(session)) return false;
   const createdAt = Date.parse((session as { created_at?: string | null }).created_at ?? '');
   if (!Number.isFinite(createdAt)) return false;
-  const windowStart = Math.max(createdAt, promptActivityMs(session) ?? createdAt);
+  // The API's prompt stamp; `metadata` is jsonb, so prove its shape.
+  const stamp = session.metadata?.last_activity_at;
+  const promptAt = typeof stamp === 'number' ? stamp : Date.parse(typeof stamp === 'string' ? stamp : '');
+  const windowStart = Number.isFinite(promptAt) ? Math.max(createdAt, promptAt) : createdAt;
   return now - windowStart <= TITLE_WAIT_WINDOW_MS;
 }
 
@@ -290,80 +177,4 @@ export function hasSessionAwaitingTitle(
   now: number,
 ): boolean {
   return (sessions ?? []).some((session) => isAwaitingTitle(session, now));
-}
-
-/**
- * Display title for a session row. Precedence: user rename (custom_name) →
- * server name → legacy metadata.session_name → the untitled placeholder.
- */
-export function getSessionDisplayTitle(session: ProjectSession): string {
-  // Untitled (the real title lands seconds after the first prompt): a humane
-  // static label beats a raw branch-hash slice in the sidebar.
-  return resolveSessionTitle(session) ?? UNTITLED_SESSION_LABEL;
-}
-
-/** Compresses date-fns' `formatDistanceToNowStrict` output ("5 minutes") down
- *  to the sidebar's fixed-width form ("5m") so the relative-time column never
- *  reflows the row. "0 seconds" and "less than a minute" both collapse to
- *  "now". Unrecognized input (a future date-fns phrasing change, or a locale
- *  string) is passed through unchanged rather than dropped. */
-export function shortRelative(input: string): string {
-  if (input === 'less than a minute') return 'now';
-  const match = input.match(/^(\d+)\s+(second|minute|hour|day|month|year)s?$/);
-  if (!match) return input;
-  if (match[1] === '0' && match[2] === 'second') return 'now';
-  const [, n, unit] = match;
-  const suffix =
-    unit === 'second'
-      ? 's'
-      : unit === 'minute'
-        ? 'm'
-        : unit === 'hour'
-          ? 'h'
-          : unit === 'day'
-            ? 'd'
-            : unit === 'month'
-              ? 'mo'
-              : 'y';
-  return `${n}${suffix}`;
-}
-
-/** Which of a session list's mutually-exclusive render states applies (the
- *  sidebar and the Sessions page).
- *
- *  Data wins. A failed refetch or "Load more" keeps the rows it had (TanStack
- *  v5 keeps `data` and sets `status: 'error'`), so an error decides the view
- *  only while there is nothing to show. Without data and without an error the
- *  list is still loading: a first load that is paused offline, or not enabled
- *  yet, is not "no sessions". With data, "no sessions at all" wins over
- *  "sessions exist but none match the active filter". */
-export type SessionListViewState = 'loading' | 'error' | 'empty' | 'no-matches' | 'content';
-
-export function resolveSessionListViewState(params: {
-  hasData: boolean;
-  isError: boolean;
-  totalCount: number;
-  visibleCount: number;
-}): SessionListViewState {
-  if (!params.hasData) return params.isError ? 'error' : 'loading';
-  if (params.totalCount === 0) return 'empty';
-  if (params.visibleCount === 0) return 'no-matches';
-  return 'content';
-}
-
-export type StarterSection = 'shared' | 'automated';
-
-/**
- * Which sidebar section a session's RUN lives in, from its `initiator`: another
- * member's run is Shared, an automated run (trigger, channel, API, platform) is
- * Automated, and the viewer's own run (or an unclassified row) is neither.
- */
-export function starterSectionOf(
-  session: Pick<ProjectSession, 'initiator' | 'is_owner'>,
-  viewerId: string | null,
-): StarterSection | null {
-  const initiator = session.initiator;
-  if (!initiator) return session.is_owner === false ? 'shared' : null;
-  if (initiator.type !== 'member') return 'automated';
-  return initiator.id && viewerId && initiator.id !== viewerId ? 'shared' : null;
 }

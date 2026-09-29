@@ -33,7 +33,8 @@ import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { GlobeIcon, LockIcon, UsersIcon, type AppIcon } from '@/lib/icons';
-import { projectKeys, useProjectAccess } from '@/lib/projects/hooks';
+import { qk } from '@kortix/sdk/react/session-list';
+import { useProjectAccess } from '@/lib/projects/hooks';
 import {
   setProjectSessionSharing,
   type ProjectSession,
@@ -101,7 +102,7 @@ export function SessionShareForm({ projectId, session, onDone, onConfirmPublicLi
       return setProjectSessionSharing(projectId, seed.sessionId, intent);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+      void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       haptics.success();
       onDone();
     },

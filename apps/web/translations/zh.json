@@ -1525,6 +1525,7 @@
         "all": "全部"
       },
       "statusValue": {
+        "needsYou": "需要你处理",
         "running": "运行中",
         "done": "完成",
         "stopped": "已停止",

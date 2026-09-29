@@ -49,10 +49,8 @@ import {
   OPEN_COMMAND_PALETTE_EVENT,
   consumePendingCommandPalette,
 } from '@/features/workspace/open-command-palette';
-import {
-  sessionLastActivityAt,
-  sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { sortSessionsByLastActivity } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { useSessionSearchQuery } from '@/features/workspace/project-sessions/use-session-search-query';
 import {
   PALETTE_NO_PROJECT_DEFAULT_TAB,
   filterSettingsPaletteGroups,
@@ -75,7 +73,6 @@ import {
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useDebounce } from '@/hooks/use-debounced-value';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations } from '@/i18n/use-translations';
@@ -116,6 +113,7 @@ import {
   listProjectSessions,
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
+  sessionLastActivityAt,
   normalizeAppPathname,
   systemReload,
   updateFeatureFlag,
@@ -893,7 +891,7 @@ export function CommandPalette() {
   const projectSessionsList = paletteSessions ?? sidebarSessions;
   // Search is the server's: `q` reaches every session the viewer may open, not
   // only the newest `PROJECT_SESSION_NAME_LOOKUP_LIMIT` the lookup above holds.
-  const serverSessionQuery = useDebounce(query.trim(), 250);
+  const serverSessionQuery = useSessionSearchQuery(query);
   const { sessions: serverSessionMatches } = useProjectSessions(projectId ?? '', {
     q: serverSessionQuery,
     limit: 20,
@@ -2416,9 +2414,7 @@ export function CommandPalette() {
                             <span className="flex-1 truncate">{sessionName(session)}</span>
                             <SessionSharedIcon session={session} />
                             <span className="text-muted-foreground/30 shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(
-                                new Date(sessionLastActivityAt(session)).getTime(),
-                              )}
+                              {formatRelativeTime(sessionLastActivityAt(session))}
                             </span>
                           </CommandItem>
                         ))}
@@ -2595,9 +2591,7 @@ export function CommandPalette() {
                               <Check className="text-primary h-3.5 w-3.5 shrink-0" />
                             )}
                             <span className="text-muted-foreground/40 shrink-0 text-xs tabular-nums">
-                              {formatRelativeTime(
-                                new Date(sessionLastActivityAt(session)).getTime(),
-                              )}
+                              {formatRelativeTime(sessionLastActivityAt(session))}
                             </span>
                           </CommandItem>
                         ))}
@@ -2960,7 +2954,7 @@ export function CommandPalette() {
                       <span className="flex-1 truncate">{sessionName(session)}</span>
                       <SessionSharedIcon session={session} />
                       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                        {formatRelativeTime(new Date(sessionLastActivityAt(session)).getTime())}
+                        {formatRelativeTime(sessionLastActivityAt(session))}
                       </span>
                       {session.session_id === params?.sessionId && (
                         <Check className="text-primary h-3.5 w-3.5 shrink-0" />

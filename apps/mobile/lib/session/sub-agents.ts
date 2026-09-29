@@ -18,10 +18,9 @@
  * Pure data and pure functions only. No React, no React Native, no expo —
  * this module is unit-tested under `bun test`.
  */
-import { sessionParentId } from '@kortix/sdk';
+import { sessionDisplayTitle, sessionLastActivityAt, sessionParentId } from '@kortix/sdk';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { sessionDisplayTitle, sessionLastActivityAt } from './session-list';
 
 /**
  * The project session that spawned `session`, or `null` when nothing spawned

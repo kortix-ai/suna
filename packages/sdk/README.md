@@ -749,6 +749,7 @@ That is the whole map — learn it once.
 | --- | --- | --- |
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk/react/session-list` | the session list hooks (`useProjectSessions`, `useSessionChildren`), `qk`, and the list cache writers, from React Native too | the `./react` barrel reads DOM globals and cannot load on React Native; this subpath is `react` + `@tanstack/react-query` + the core only, enforced by the `react-portable` tripwire tier |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
@@ -809,7 +810,8 @@ The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
 dependency and is usable from any JS host, all of it from the root entry;
 `apps/mobile` imports `classifyTurn` from `@kortix/sdk` this way.
-React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
+React Native does not use the `@kortix/sdk/react` barrel. It uses the portable
+`@kortix/sdk/react/session-list` subpath for the session list, and the framework-free
 `createHttpSessionSyncController` for message history, status recovery, and older
 pagination. Mobile keeps its platform-specific event transport because React
 Native cannot consume the SDK's fetch-based SSE stream.

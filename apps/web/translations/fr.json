@@ -1525,6 +1525,7 @@
         "all": "Tous"
       },
       "statusValue": {
+        "needsYou": "Votre intervention requise",
         "running": "En cours",
         "done": "OK",
         "stopped": "Arrêtée",

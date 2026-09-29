@@ -1,4 +1,10 @@
-import type { ProjectSession } from '@kortix/sdk';
+import {
+  SESSION_ACTIVITY_SECTIONS,
+  sessionActivitySectionOf,
+  sessionDisplayTitle,
+  sessionLastActivityAt,
+  type ProjectSession,
+} from '@kortix/sdk';
 
 import { sessionDisplayStatus, sessionSource } from '@/components/projects/session-label';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
@@ -10,7 +16,6 @@ import {
   sessionOwnerKey,
   UNKNOWN_OWNER_KEY,
 } from '../project-sessions/session-owner-filters';
-import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session-list-helpers';
 
 /** Section id for one owner in `owner` grouping mode. */
 export function ownerSectionId(ownerKey: string): string {
@@ -103,15 +108,6 @@ const STATUS_SECTION_ORDER: Array<{ id: SessionSectionId; label: string }> = [
   { id: 'recent', label: 'Recent' },
 ];
 
-type ActivityBucketId = 'today' | 'yesterday' | 'week' | 'older';
-
-const ACTIVITY_SECTION_ORDER: Array<{ id: ActivityBucketId; label: string }> = [
-  { id: 'today', label: 'Today' },
-  { id: 'yesterday', label: 'Yesterday' },
-  { id: 'week', label: 'This week' },
-  { id: 'older', label: 'Older' },
-];
-
 const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
   { id: 'chat', label: 'Chat' },
   { id: 'slack', label: 'Slack' },
@@ -123,36 +119,6 @@ const SOURCE_SECTION_ORDER: Array<{ id: string; label: string }> = [
 ];
 
 const NONE_SECTION_ORDER: Array<{ id: string; label: string }> = [{ id: 'all', label: 'All' }];
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Midnight, in the viewer's LOCAL timezone, of the calendar day containing
- *  `ms`. Local calendar components (`getFullYear`/`getMonth`/`getDate`), not
- *  UTC — a row labelled "Today" means today on the viewer's own clock, not a
- *  rolling 24h window from whatever instant they happened to look. */
-function startOfLocalDay(ms: number): number {
-  const d = new Date(ms);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-
-/** Which activity bucket a timestamp falls into, against calendar-day
- *  boundaries computed ONCE by the caller (never inside a per-session
- *  predicate) from a caller-supplied `now` — never `Date.now()` — so grouping
- *  is deterministic and every session lands in exactly one bucket regardless
- *  of what time the viewer happens to look. A future/skewed timestamp is
- *  `>= todayStart` and lands in `today` rather than falling out of every
- *  bucket. */
-function activityBucketFor(
-  activityMs: number,
-  todayStart: number,
-  yesterdayStart: number,
-  weekStart: number,
-): ActivityBucketId {
-  if (activityMs >= todayStart) return 'today';
-  if (activityMs >= yesterdayStart) return 'yesterday';
-  if (activityMs >= weekStart) return 'week';
-  return 'older';
-}
 
 function statusBucketFor(session: ProjectSession, reviewCount: number): SessionSectionId {
   const display = sessionDisplayStatus(session, reviewCount);
@@ -170,12 +136,10 @@ function orderComparator(
   }
   if (order === 'name') {
     return (a, b) =>
-      getSessionDisplayTitle(a).localeCompare(getSessionDisplayTitle(b), undefined, {
+      sessionDisplayTitle(a).localeCompare(sessionDisplayTitle(b), undefined, {
         sensitivity: 'base',
       });
   }
-  // Mirrors sortSessionsByLastActivity's guard: an unparseable date sorts as
-  // 0 rather than NaN, which would otherwise produce an unstable order.
   return (a, b) =>
     (lastActivityMsBySession.get(b.session_id) ?? 0) -
     (lastActivityMsBySession.get(a.session_id) ?? 0);
@@ -209,21 +173,11 @@ export function groupSessions(
   // Precompute last-activity once per session (decorate-sort-undecorate):
   // sessionLastActivityAt re-scans opencode_sessions, so calling it inside a
   // comparator would repeat that scan O(n log n) times instead of O(n).
-  // Same NaN guard as sortSessionsByLastActivity — an unparseable date reads
-  // as 0, not NaN.
-  const lastActivityMsBySession = new Map<string, number>();
-  for (const session of sessions) {
-    const parsed = new Date(sessionLastActivityAt(session)).getTime();
-    lastActivityMsBySession.set(session.session_id, Number.isFinite(parsed) ? parsed : 0);
-  }
+  const lastActivityMsBySession = new Map(
+    sessions.map((session) => [session.session_id, sessionLastActivityAt(session)]),
+  );
 
   const ordered = sessions.slice().sort(orderComparator(order, lastActivityMsBySession));
-
-  // Calendar-day boundaries, resolved once against `now` — never inside the
-  // per-session bucket function below.
-  const todayStart = startOfLocalDay(now);
-  const yesterdayStart = todayStart - DAY_MS;
-  const weekStart = todayStart - 7 * DAY_MS;
 
   const statusSections = localizeUiCatalog(
     STATUS_SECTION_ORDER,
@@ -231,7 +185,7 @@ export function groupSessions(
     PRODUCT_CATALOG_TRANSLATION_KEYS,
   );
   const activitySections = localizeUiCatalog(
-    ACTIVITY_SECTION_ORDER,
+    SESSION_ACTIVITY_SECTIONS,
     tI18nComplete,
     PRODUCT_CATALOG_TRANSLATION_KEYS,
   );
@@ -263,12 +217,7 @@ export function groupSessions(
       mode === 'status'
         ? statusBucketFor(session, reviewCountBySession[session.session_id] ?? 0)
         : mode === 'activity'
-          ? activityBucketFor(
-              lastActivityMsBySession.get(session.session_id) ?? 0,
-              todayStart,
-              yesterdayStart,
-              weekStart,
-            )
+          ? sessionActivitySectionOf(lastActivityMsBySession.get(session.session_id) ?? 0, now)
           : mode === 'source'
             ? sessionSource(session, tI18nComplete).kind
             : mode === 'owner'

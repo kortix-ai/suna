@@ -8,8 +8,10 @@ import { useTabStore } from '@/stores/tab-store';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
-import { listCreatedSession, projectKeys, useCreateProjectSession } from '@/lib/projects/hooks';
-import { getProjectSession } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react/session-list';
+import { useCreateProjectSession } from '@/lib/projects/hooks';
+import { listCreatedSession } from '@/lib/session/session-cache-write';
+import { getProjectSession, sessionDisplayTitle, sessionHasTitle } from '@kortix/sdk';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -22,7 +24,7 @@ import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { threadOpenTarget, returnThreadForPage, type PendingThreadFocus } from '@/lib/session/project-stack';
-import { projectSessionForOpenCodeId, resolveSessionTitle } from '@/lib/session/session-list';
+import { projectSessionForOpenCodeId } from '@/lib/session/session-list';
 import type { OpenedThread } from '@/lib/session/session-sandbox';
 import type { AttachedFile } from '@/lib/session/attachments';
 import type { ProjectHomeSubmit } from '@/components/session/ProjectHome';
@@ -205,8 +207,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   const pendingThreadFocusRef = useRef<PendingThreadFocus | null>(null);
   // Refetch both session lists (the drawer's and the paged Sessions page).
   const refreshSessionLists = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
-    void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessionsPaged(projectId) });
+    void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
   }, [queryClient, projectId]);
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
@@ -455,7 +456,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     ? firstPromptRef.current[connectingProjectSessionId]
     : undefined;
   const connectingTitle =
-    (connectingRow ? resolveSessionTitle(connectingRow) : null) ??
+    (connectingRow && sessionHasTitle(connectingRow) ? sessionDisplayTitle(connectingRow) : null) ??
     (connectingFirstPrompt?.text || null) ??
     'New session';
 

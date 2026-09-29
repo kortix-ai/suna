@@ -7,8 +7,7 @@
  * Simple Hey" on the left and "Greeting" on top, and renaming changed only the
  * left one.
  */
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
-import type { ProjectSession } from '@kortix/sdk';
+import { sessionDisplayTitle, type ProjectSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 const SRC = await Bun.file(new URL('./session-site-header.tsx', import.meta.url).pathname).text();
@@ -34,7 +33,7 @@ function session(over: Partial<ProjectSession>): ProjectSession {
 describe('the header renders the sidebar name', () => {
   test("uses the sidebar helper, not opencode's title", () => {
     const src = code();
-    expect(src).toContain('getSessionDisplayTitle(projectSession)');
+    expect(src).toContain('sessionDisplayTitle(projectSession)');
     // The regression shape: the raw prop back in the label.
     expect(src).not.toContain('truncate">{sessionTitle}<');
   });
@@ -49,7 +48,7 @@ describe('the header renders the sidebar name', () => {
     // The share viewer and instant shell render this header with no project
     // session; hardcoding the helper would blank the title there.
     expect(code()).toContain(
-      'projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle',
+      'projectSession ? sessionDisplayTitle(projectSession) : sessionTitle',
     );
   });
 });
@@ -57,18 +56,18 @@ describe('the header renders the sidebar name', () => {
 describe('the two surfaces cannot disagree', () => {
   test('a rename wins in both', () => {
     const s = session({ custom_name: 'My Rename', name: 'Greeting' });
-    expect(getSessionDisplayTitle(s)).toBe('My Rename');
+    expect(sessionDisplayTitle(s)).toBe('My Rename');
   });
 
   test('the server name beats opencode auto-title drift', () => {
     const s = session({ name: 'Just A Simple Hey' });
-    expect(getSessionDisplayTitle(s)).toBe('Just A Simple Hey');
+    expect(sessionDisplayTitle(s)).toBe('Just A Simple Hey');
   });
 
   test('an untitled session reads "New session", never a uuid slice', () => {
     // This is why the sidebar helper is used rather than sessionDisplayLabel:
     // that one ends at `session_id.slice(0, 8)`, so the header would have shown
     // a raw hash where the sidebar shows words.
-    expect(getSessionDisplayTitle(session({}))).toBe('New session');
+    expect(sessionDisplayTitle(session({}))).toBe('New session');
   });
 });

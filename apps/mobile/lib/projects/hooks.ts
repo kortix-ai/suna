@@ -7,20 +7,18 @@ import { useCallback, useMemo, useRef } from 'react';
 import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
-  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
-  type QueryClient,
 } from '@tanstack/react-query';
-import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
-import { normalizeSessionListFilter, type SessionListFilter } from '@/lib/session/session-tree';
 import {
-  createdSessionListRow,
-  upsertIntoSessionCache,
-  writeSessionLists,
-} from '@/lib/session/session-cache-write';
+  qk,
+  useProjectSessions as useSdkProjectSessions,
+  type UseProjectSessionsOptions,
+} from '@kortix/sdk/react/session-list';
+import { listCreatedSession } from '@/lib/session/session-cache-write';
+import { PERSISTED_QUERY_GC_TIME_MS } from '@/lib/query/persisted-queries';
 import {
   nextProjectSessionsPollWindow,
   projectSessionsPollInterval,
@@ -70,7 +68,6 @@ import {
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
-  listProjectSessionsPage,
   listProjectTriggers,
   listProjectsForAccount,
   mergeChangeRequest,
@@ -123,23 +120,6 @@ export const projectKeys = {
   modelDefaults: (projectId: string | null | undefined) => ['model-defaults', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
-  projectSessions: (projectId: string | null | undefined) =>
-    ['project-sessions', projectId] as const,
-  /**
-   * The paged list (`useInfiniteQuery`). A child of `projectSessions`, so every
-   * `invalidateQueries({ queryKey: projectSessions(id) })` refreshes it too. Its
-   * own key: a flat `useQuery` and an infinite query under one key would hand
-   * each other the wrong data shape.
-   */
-  projectSessionsPaged: (projectId: string | null | undefined, filter?: SessionListFilter) => {
-    const normalized = normalizeSessionListFilter(filter);
-    return Object.keys(normalized).length === 0
-      ? (['project-sessions', projectId, 'paged'] as const)
-      : (['project-sessions', projectId, 'paged', normalized] as const);
-  },
-  /** One parent's children (`parent=<id>`), optionally narrowed by a search. */
-  sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
-    ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
@@ -188,55 +168,6 @@ export const projectKeys = {
   pipedreamAppMeta: (projectId: string | null | undefined, slug: string | null | undefined) =>
     ['pipedream-app-meta', projectId, slug] as const,
 };
-
-/**
- * Every cached session list of a project, for a write that must reach every
- * reader (lib/session/session-cache-write): the flat first page (the thread's
- * lookups), each paged list (the drawer's three sections, the Sessions page
- * and its searches) and each parent's children.
- */
-export function sessionListKeys(queryClient: QueryClient, projectId: string) {
-  return queryClient
-    .getQueryCache()
-    .findAll({ queryKey: projectKeys.projectSessions(projectId) })
-    .map((query) => query.queryKey);
-}
-
-/** A session's freshest cached row, from any cached list of the project. */
-export function cachedSessionRow(queryClient: QueryClient, projectId: string, sessionId: string): ProjectSession | null {
-  for (const key of sessionListKeys(queryClient, projectId)) {
-    const data = queryClient.getQueryData(key);
-    const rows = Array.isArray(data)
-      ? (data as ProjectSession[])
-      : flattenSessionPages(data as Parameters<typeof flattenSessionPages<ProjectSession>>[0]);
-    const row = rows.find((r) => r.session_id === sessionId);
-    if (row) return row;
-  }
-  return null;
-}
-
-/** Where a session the viewer just started belongs: their top-level "Sessions" list. */
-const CREATED_SESSION_FILTER: SessionListFilter = { parent: 'root', startedBy: 'me' };
-
-/**
- * A created session, in the cached lists now: the top of page one, or in
- * place where a refetch already brought it. A 202 (create only queued) is not
- * a row and waits for the refetch. Only lists it belongs to: the flat lookup
- * list and the viewer's top-level list, never "Shared", "Automated", a search
- * or a parent's children.
- */
-export function listCreatedSession(queryClient: QueryClient, projectId: string, created: unknown) {
-  const row = createdSessionListRow(created, projectId);
-  if (!row) return;
-  writeSessionLists(
-    queryClient,
-    [
-      projectKeys.projectSessions(projectId),
-      projectKeys.projectSessionsPaged(projectId, CREATED_SESSION_FILTER),
-    ],
-    (cached) => upsertIntoSessionCache(cached, row)
-  );
-}
 
 export function useAccounts(enabled = true) {
   return useQuery({
@@ -493,92 +424,60 @@ export interface PollOptions {
   poll?: boolean;
 }
 
-export function useProjectSessions(projectId: string | null, { poll = true }: PollOptions = {}) {
+/**
+ * The provisioning poll (lib/projects/poll-policy) as a `refetchInterval`
+ * over the rows loaded so far: 3 s while a row is still coming up, for at most
+ * 4 min per set of pending rows. One window per hook instance.
+ */
+function useProvisioningPoll(poll: boolean) {
   const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
+  return (rows: readonly ProjectSession[] | undefined): number | false => {
+    const now = Date.now();
+    const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
+    pollWindowRef.current = pollWindow;
+    if (!poll || !pollWindow) return false;
+    return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
+  };
+}
+
+/** Page one of the project's sessions as a flat array: lookups (the thread's
+ *  title, sub-agents), not browsing. Cached at the SDK's flat key
+ *  (`qk.project.sessions`), so the SDK's cache writers reach it. */
+export function useProjectSessions(projectId: string | null, { poll = true }: PollOptions = {}) {
+  const pollInterval = useProvisioningPoll(poll);
   return useQuery({
-    queryKey: projectKeys.projectSessions(projectId),
+    queryKey: qk.project.sessions(projectId ?? ''),
     queryFn: () => listProjectSessions(projectId!),
     enabled: !!projectId,
     staleTime: 10_000,
-    // Poll so freshly-provisioning session sandboxes flip to running in the
-    // list, for at most 4 min per set of pending rows (poll-policy).
-    refetchInterval: (query) => {
-      const rows = query.state.data;
-      const now = Date.now();
-      const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
-      pollWindowRef.current = pollWindow;
-      if (!poll || !pollWindow) return false;
-      return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
-    },
+    refetchInterval: (query) => pollInterval(query.state.data),
   });
 }
 
 /**
  * A project's sessions a page at a time, newest activity first — the list the
- * project drawer and the Sessions page scroll. `useProjectSessions` above is
- * one page (the first 50): it serves lookups, not browsing.
- *
- * `sessions` is every loaded page, flattened and de-duplicated. A refetch
- * (poll, pull to refresh, invalidation) refetches every loaded page, so the
- * cost is bounded by what the user scrolled to.
+ * project drawer and the Sessions page scroll: the SDK's `useProjectSessions`
+ * with this app's provisioning poll. A new search or scope keeps the previous
+ * rows on screen until its answer lands.
  */
 export function useProjectSessionsPaged(
   projectId: string | null,
-  { poll = true, enabled = true, limit, ...filter }: PollOptions & SessionListFilter & { enabled?: boolean; limit?: number } = {}
+  {
+    poll = true,
+    enabled = true,
+    ...options
+  }: PollOptions & Pick<UseProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'limit' | 'enabled'> = {}
 ) {
-  const pollWindowRef = useRef<ProjectSessionsPollWindow | null>(null);
-  const normalized = normalizeSessionListFilter(filter);
-  const query = useInfiniteQuery({
-    queryKey: projectKeys.projectSessionsPaged(projectId, normalized),
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => listProjectSessionsPage(projectId!, { ...normalized, limit, cursor: pageParam }),
-    getNextPageParam: sessionsNextCursor,
+  const pollInterval = useProvisioningPoll(poll);
+  return useSdkProjectSessions(projectId ?? '', {
+    ...options,
     enabled: !!projectId && enabled,
-    staleTime: 10_000,
-    // A new search or scope keeps the previous rows on screen until its answer lands.
-    placeholderData: keepPreviousData,
-    // The same 4-minute provisioning poll as `useProjectSessions`, judged on the rows loaded so far.
-    refetchInterval: (q) => {
-      const rows = flattenSessionPages(q.state.data);
-      const now = Date.now();
-      const pollWindow = nextProjectSessionsPollWindow(pollWindowRef.current, rows, now);
-      pollWindowRef.current = pollWindow;
-      if (!poll || !pollWindow) return false;
-      return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
-    },
+    keepPreviousData: true,
+    refetchInterval: pollInterval,
+    // The SDK's inventory contract would drop an unviewed list after 30 min,
+    // and with it the copy restored on the next launch.
+    gcTime: PERSISTED_QUERY_GC_TIME_MS,
   });
-  const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return { ...query, sessions };
-}
-
-/** Rows a parent shows per "Show more". */
-export const SESSION_CHILDREN_PAGE_SIZE = 20;
-
-/**
- * One parent's children, newest first, 20 at a time (`parent=<id>`). Runs only
- * while `enabled`: a collapsed parent fetches nothing. `q` narrows it to the
- * children a search matched.
- */
-export function useSessionChildren(
-  projectId: string | null,
-  parentSessionId: string | null,
-  { enabled = true, q }: { enabled?: boolean; q?: string } = {}
-) {
-  const query = useInfiniteQuery({
-    queryKey: projectKeys.sessionChildren(projectId, parentSessionId, q),
-    initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
-      listProjectSessionsPage(projectId!, {
-        ...normalizeSessionListFilter({ parent: parentSessionId!, q }),
-        limit: SESSION_CHILDREN_PAGE_SIZE,
-        cursor: pageParam,
-      }),
-    getNextPageParam: sessionsNextCursor,
-    enabled: !!projectId && !!parentSessionId && enabled,
-    staleTime: 10_000,
-  });
-  const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return { ...query, sessions };
 }
 
 export function useCreateProjectSession(projectId: string | null) {
@@ -588,8 +487,9 @@ export function useCreateProjectSession(projectId: string | null) {
     onSuccess: (created) => {
       // The drawer and the Sessions page list it the moment the POST answers;
       // the refetch below then replaces it with the list's own row.
-      if (projectId) listCreatedSession(queryClient, projectId, created);
-      queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+      if (!projectId) return;
+      listCreatedSession(queryClient, projectId, created);
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
   });
 }
@@ -891,7 +791,7 @@ export function useComposerModels(projectId: string | null, sandboxUrl?: string)
 function invalidateChangeWorld(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
   queryClient.invalidateQueries({ queryKey: ['change-requests', projectId] });
   queryClient.invalidateQueries({ queryKey: projectKeys.branches(projectId) });
-  queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+  queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
 }
 
 /** CR list, filtered by status. Polls so merged/closed transitions clear live. */
@@ -1150,7 +1050,7 @@ export function useFixSandboxWithAgent(projectId: string) {
     mutationFn: () => fixSandboxWithAgent(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) });
-      queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
   });
 }

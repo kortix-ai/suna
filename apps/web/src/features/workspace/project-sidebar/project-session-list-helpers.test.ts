@@ -1,16 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ChangeRequest, ProjectSession } from '@kortix/sdk';
+import { sessionLastActivityAt, type ChangeRequest, type ProjectSession } from '@kortix/sdk';
 import {
-  getSessionDisplayTitle,
   groupChangeRequestsBySession,
   projectSessionsRefetchInterval,
-  resolveSessionListViewState,
-  sessionLastActivityAt,
-  shortRelative,
   shouldPollProjectSessions,
   sortSessionsByLastActivity,
-  starterSectionOf,
 } from './project-session-list-helpers';
 
 function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
@@ -179,7 +174,7 @@ describe('session last activity', () => {
       opencode_sessions: [openCodeSession('2026-01-03T04:05:06.000Z')],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-03T04:05:06.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T04:05:06.000Z'));
   });
 
   test("the API's prompt stamp counts as activity", () => {
@@ -190,7 +185,7 @@ describe('session last activity', () => {
       opencode_sessions: [],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-09T10:00:00.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-09T10:00:00.000Z'));
   });
 
   test('the newer of the prompt stamp and the conversation snapshot wins', () => {
@@ -205,8 +200,8 @@ describe('session last activity', () => {
       opencode_sessions: [openCodeSession('2026-01-09T10:04:00.000Z')],
     });
 
-    expect(sessionLastActivityAt(staleSnapshot)).toBe('2026-01-09T10:00:00.000Z');
-    expect(sessionLastActivityAt(stalePrompt)).toBe('2026-01-09T10:04:00.000Z');
+    expect(sessionLastActivityAt(staleSnapshot)).toBe(Date.parse('2026-01-09T10:00:00.000Z'));
+    expect(sessionLastActivityAt(stalePrompt)).toBe(Date.parse('2026-01-09T10:04:00.000Z'));
   });
 
   test('a malformed stamp is ignored, not treated as activity', () => {
@@ -217,7 +212,7 @@ describe('session last activity', () => {
       opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-03T00:00:00.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
   });
 
   test('a snapshot entry with no timestamp does not mask a later one', () => {
@@ -228,7 +223,7 @@ describe('session last activity', () => {
       ],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-05T00:00:00.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-05T00:00:00.000Z'));
   });
 
   // The reported bug: a session with no activity record at all was pinned to
@@ -240,7 +235,7 @@ describe('session last activity', () => {
       opencode_sessions: [],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-08T08:00:09.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-08T08:00:09.000Z'));
   });
 
   test('created_at is the last resort when the row carries no updated_at', () => {
@@ -250,7 +245,7 @@ describe('session last activity', () => {
       opencode_sessions: [],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-01T00:00:00.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-01T00:00:00.000Z'));
   });
 
   // Guards the rule that survives from #6039: bookkeeping (runtime stop/resume,
@@ -262,7 +257,7 @@ describe('session last activity', () => {
       opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
     });
 
-    expect(sessionLastActivityAt(session)).toBe('2026-01-03T00:00:00.000Z');
+    expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
   });
 
   test('orders reused sessions by latest activity, not by row bookkeeping', () => {
@@ -310,168 +305,3 @@ describe('session last activity', () => {
   });
 });
 
-describe('getSessionDisplayTitle', () => {
-  test('a user rename (custom_name) wins over everything else', () => {
-    const session = makeSession({
-      custom_name: 'My renamed session',
-      name: 'server-name',
-      branch_name: 'feature/branch-name',
-    });
-    expect(getSessionDisplayTitle(session)).toBe('My renamed session');
-  });
-
-  test('falls back to the server name when there is no custom name', () => {
-    const session = makeSession({ name: 'server-name', branch_name: 'feature/branch-name' });
-    expect(getSessionDisplayTitle(session)).toBe('server-name');
-  });
-
-  test('falls back to legacy metadata.session_name next', () => {
-    const session = makeSession({
-      metadata: { session_name: 'legacy-name' },
-      branch_name: 'feature/branch-name',
-    });
-    expect(getSessionDisplayTitle(session)).toBe('legacy-name');
-  });
-
-  test('untitled sessions fall back to a humane static label, never branch hex', () => {
-    const session = makeSession({ branch_name: 'feature/a-very-long-branch-name' });
-    expect(getSessionDisplayTitle(session)).toBe('New session');
-    expect(getSessionDisplayTitle(makeSession())).toBe('New session');
-  });
-
-  test('blank/whitespace-only names are treated as absent', () => {
-    const session = makeSession({ custom_name: '   ', name: 'server-name' });
-    expect(getSessionDisplayTitle(session)).toBe('server-name');
-  });
-});
-
-describe('shortRelative', () => {
-  test('collapses "less than a minute" to "now"', () => {
-    expect(shortRelative('less than a minute')).toBe('now');
-  });
-
-  test('collapses "0 seconds" to "now"', () => {
-    expect(shortRelative('0 seconds')).toBe('now');
-  });
-
-  test('compresses each unit to its single-letter suffix', () => {
-    expect(shortRelative('5 seconds')).toBe('5s');
-    expect(shortRelative('5 minutes')).toBe('5m');
-    expect(shortRelative('5 hours')).toBe('5h');
-    expect(shortRelative('5 days')).toBe('5d');
-    expect(shortRelative('5 months')).toBe('5mo');
-    expect(shortRelative('5 years')).toBe('5y');
-  });
-
-  test('handles the singular form (no trailing "s")', () => {
-    expect(shortRelative('1 minute')).toBe('1m');
-  });
-
-  test('passes unrecognized input through unchanged', () => {
-    expect(shortRelative('a while ago')).toBe('a while ago');
-  });
-});
-
-describe('resolveSessionListViewState', () => {
-  test('a list with no data and no error is loading, never "empty"', () => {
-    // The first load running, paused offline (TanStack `fetchStatus: 'paused'`,
-    // `isLoading` false), or not enabled yet: none of them means "no sessions".
-    const state = resolveSessionListViewState({
-      hasData: false,
-      isError: false,
-      totalCount: 0,
-      visibleCount: 0,
-    });
-    expect(state).toBe('loading');
-  });
-
-  test('a first load that failed is "error"', () => {
-    const state = resolveSessionListViewState({
-      hasData: false,
-      isError: true,
-      totalCount: 0,
-      visibleCount: 0,
-    });
-    expect(state).toBe('error');
-  });
-
-  test('rows win over a failed refetch or "Load more"', () => {
-    // TanStack v5 keeps the loaded pages and sets `status: 'error'`.
-    const state = resolveSessionListViewState({
-      hasData: true,
-      isError: true,
-      totalCount: 5,
-      visibleCount: 5,
-    });
-    expect(state).toBe('content');
-  });
-
-  test('an empty list stays "empty" when its refetch fails', () => {
-    const state = resolveSessionListViewState({
-      hasData: true,
-      isError: true,
-      totalCount: 0,
-      visibleCount: 0,
-    });
-    expect(state).toBe('empty');
-  });
-
-  test('no sessions at all is "empty"', () => {
-    const state = resolveSessionListViewState({
-      hasData: true,
-      isError: false,
-      totalCount: 0,
-      visibleCount: 0,
-    });
-    expect(state).toBe('empty');
-  });
-
-  test('sessions exist but the active filter matches none: "no-matches"', () => {
-    const state = resolveSessionListViewState({
-      hasData: true,
-      isError: false,
-      totalCount: 3,
-      visibleCount: 0,
-    });
-    expect(state).toBe('no-matches');
-  });
-
-  test('sessions exist and the filter matches some: "content"', () => {
-    const state = resolveSessionListViewState({
-      hasData: true,
-      isError: false,
-      totalCount: 3,
-      visibleCount: 2,
-    });
-    expect(state).toBe('content');
-  });
-});
-
-describe('getSessionDisplayTitle — Teams mention markup', () => {
-  test('a title created from a channel mention shows the words, not <at> tags', () => {
-    const title = getSessionDisplayTitle({
-      session_id: 's1',
-      name: '<at>Kortix Dev</at>summarize the README in two sentences',
-    } as never);
-    expect(title).toBe('summarize the README in two sentences');
-  });
-});
-
-describe('starterSectionOf', () => {
-  const at = (initiator: ProjectSession['initiator'], is_owner?: boolean) => ({ initiator, is_owner });
-  test('the viewer\'s own run belongs to neither section', () => {
-    expect(starterSectionOf(at({ type: 'member', id: 'u1', label: 'Ann' }), 'u1')).toBeNull();
-  });
-  test('another member\'s run is Shared', () => {
-    expect(starterSectionOf(at({ type: 'member', id: 'u2', label: 'Bo' }), 'u1')).toBe('shared');
-  });
-  test('trigger, channel, api and system runs are Automated', () => {
-    for (const type of ['trigger', 'channel', 'api', 'system'] as const) {
-      expect(starterSectionOf(at({ type, id: 'x', label: 'x' }), 'u1')).toBe('automated');
-    }
-  });
-  test('an unclassified row falls back to is_owner', () => {
-    expect(starterSectionOf(at(null, false), 'u1')).toBe('shared');
-    expect(starterSectionOf(at(null, true), 'u1')).toBeNull();
-  });
-});

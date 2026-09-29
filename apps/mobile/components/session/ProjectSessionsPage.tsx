@@ -78,36 +78,37 @@ import {
 import { ExpandControl, SessionChildren, StarterLabel } from '@/components/session/SessionTreeParts';
 import { haptics } from '@/lib/haptics';
 import { useProjectSessionsPaged } from '@/lib/projects/hooks';
-import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import {
-  SESSION_SCOPES,
+  SESSION_STATUS_FILTERS,
   childCountOf,
+  directSubsessions,
+  groupSessionsByActivity,
   isParentExpanded,
+  matchesSessionStatusFilters,
   rootRowsOnly,
-  searchQueryParam,
+  sessionDisplayTitle,
+  sessionLastActivityAt,
+  sessionListStatus,
+  sessionListViewState,
+  sessionSearchParam,
   sessionStarter,
+  shortRelative,
+  shouldLoadMoreSessions,
   startedByForScope,
-} from '@/lib/session/session-tree';
+  type SessionStarter,
+  type SessionStatusFilter,
+} from '@kortix/sdk';
+import { SESSION_SCOPES } from '@/lib/session/session-tree';
 import { useAuthContext } from '@/contexts';
 import { parentKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import type { SessionStarter } from '@/lib/session/session-tree';
 import {
-  SESSION_STATUS_FILTERS,
-  directSubsessions,
   showSubsessionCountBadge,
-  filterSessionsByStatus,
-  groupSessionsByActivity,
-  sessionDisplayStatus,
-  sessionDisplayTitle,
-  sessionLastActivityAt,
   sessionStatusFilterSummary,
   sessionStatusLabel,
-  shortRelative,
   spokenRelative,
-  type SessionStatusFilter,
 } from '@/lib/session/session-list';
 import { THEME } from '@/lib/utils/theme';
 import { EMPTY_SESSION_FILTER, useSessionFilterStore } from '@/stores/session-filter-store';
@@ -187,7 +188,7 @@ const SessionRow = React.memo(function SessionRow({
 }: SessionRowProps) {
   const childCount = childCountOf(session);
   const title = sessionDisplayTitle(session);
-  const status = sessionDisplayStatus(session, needsYouCount);
+  const status = sessionListStatus(session, needsYouCount);
   const lastActivity = sessionLastActivityAt(session);
   const subsessions = React.useMemo(() => directSubsessions(session), [session]);
   const subsessionCount = subsessions.length;
@@ -318,7 +319,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     useSessionFilterStore((state) => state.byProject[projectId]) ?? EMPTY_SESSION_FILTER;
   const query = storedFilter.query;
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
-  const serverQuery = searchQueryParam(debouncedQuery);
+  const serverQuery = sessionSearchParam(debouncedQuery);
   const sessionsQuery = useProjectSessionsPaged(projectId, {
     poll: isFocused,
     parent: 'root',
@@ -377,8 +378,11 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
   // The status filter is client-side over the loaded rows (the server has no
   // status param); search and starter are the server's.
   const filtered = React.useMemo(
-    () => filterSessionsByStatus(allSessions, statusFilter, needsYou),
-    [allSessions, statusFilter, needsYou]
+    () =>
+      allSessions.filter((session) =>
+        matchesSessionStatusFilters(session, storedFilter.statuses, needsYou.get(session.session_id)?.count ?? 0)
+      ),
+    [allSessions, storedFilter.statuses, needsYou]
   );
   const grouped = React.useMemo(() => groupSessionsByActivity(filtered, now), [filtered, now]);
   const sections = React.useMemo<SessionSection[]>(
@@ -502,15 +506,16 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
     newSession();
   }, [newSession]);
 
-  // loading / error / empty / rows — shared with the project drawer
-  // (lib/session/session-pages) so a failed fetch, or a first load paused
+  // loading / error / empty — the SDK's `sessionListViewState`, shared with
+  // the project drawer, so a failed fetch, or a first load paused
   // offline, never reads as "No sessions yet" (COR-146). With a search, a
   // starter or a status filter active, an empty list is "No matching
   // sessions" — and only once the server has answered for the current search.
-  const rawListState = sessionListState({
-    isPending: sessionsQuery.isPending,
+  const rawListState = sessionListViewState({
+    hasData: sessionsQuery.data !== undefined,
     isError: sessionsQuery.isError,
-    hasSessions,
+    totalCount: allSessions.length,
+    visibleCount: filtered.length,
   });
   const loading = rawListState === 'loading';
   const loadFailed = rawListState === 'error';

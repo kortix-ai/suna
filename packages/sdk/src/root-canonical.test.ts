@@ -42,6 +42,7 @@ import { join } from 'node:path';
  */
 const NOT_ROOT_REACHABLE = new Set([
   './react',
+  './react/session-list',
   './server',
   './internal/sync-store',
   './internal/server-store',

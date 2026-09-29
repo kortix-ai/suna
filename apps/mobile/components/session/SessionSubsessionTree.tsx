@@ -22,13 +22,8 @@ import * as React from 'react';
 import { Pressable, View } from 'react-native';
 
 import { Text } from '@/components/ui/text';
-import {
-  showSubsessionCountBadge,
-  shortRelative,
-  spokenRelative,
-  subsessionTitle,
-  type ProjectRuntimeSession,
-} from '@/lib/session/session-list';
+import { shortRelative, type ProjectRuntimeSession } from '@kortix/sdk';
+import { showSubsessionCountBadge, spokenRelative, subsessionTitle } from '@/lib/session/session-list';
 import { cn } from '@/lib/utils/index';
 
 /** Height of one sub-session row. Fixed, so the trunk length is exact. */

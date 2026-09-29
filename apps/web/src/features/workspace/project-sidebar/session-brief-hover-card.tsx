@@ -13,11 +13,9 @@ import { CR_ID_PREFIX } from '@/features/review-center/review-actions';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSessionHoverStore } from '@/stores/session-hover-store';
-import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
+import { shortRelative, type ChangeRequest, type ChangeRequestStatus } from '@kortix/sdk';
 import { GitDiffIcon } from '@phosphor-icons/react';
-import { formatDistanceToNowStrict } from 'date-fns';
 import { useEffect, type ReactElement } from 'react';
-import { shortRelative } from './project-session-list-helpers';
 import { SOURCE_ICONS } from './session-source-icons';
 import { SessionStatusMark } from './session-status-mark';
 
@@ -77,10 +75,8 @@ function SessionCreatedTime({ createdAt, className }: { createdAt: string; class
 }
 
 function RelativeCreatedTime({ createdAt }: { createdAt: string }) {
-  const createdDate = new Date(createdAt);
-  const relativeTime = Number.isNaN(createdDate.getTime())
-    ? '—'
-    : shortRelative(formatDistanceToNowStrict(createdDate, { addSuffix: false }));
+  const createdMs = Date.parse(createdAt);
+  const relativeTime = Number.isNaN(createdMs) ? '—' : shortRelative(createdMs, Date.now());
 
   return (
     <time

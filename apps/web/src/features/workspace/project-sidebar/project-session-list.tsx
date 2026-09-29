@@ -4,10 +4,8 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import {
-  directSubsessions,
   isMetaCoordinatorSession,
   matchesSourceFilters,
-  matchesStatusFilters,
   sessionDisplayStatus,
   sessionIsShared,
   sessionSource,
@@ -36,12 +34,8 @@ import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/r
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
-  getSessionDisplayTitle,
   groupChangeRequestsBySession,
   projectSessionsRefetchInterval,
-  resolveSessionListViewState,
-  shortRelative,
-  starterSectionOf,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
   MobileSessionCreatedTime,
@@ -78,10 +72,17 @@ import {
 } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
+  childCountOf,
+  directSubsessions,
   listChangeRequests,
+  matchesSessionStatusFilters,
   restartProjectSession,
-  stopProjectSession,
+  sessionDisplayTitle,
+  sessionListViewState,
   sessionParentId,
+  shortRelative,
+  starterSectionOf,
+  stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
@@ -102,7 +103,6 @@ import {
   TrashIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -358,7 +358,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // both on the Sessions header and on every section header below); this list
   // only applies the two ANDed multi-select facets from the store.
   const passesFacets = (session: ProjectSession) =>
-    matchesStatusFilters(session, statusFilters) &&
+    matchesSessionStatusFilters(
+      session,
+      statusFilters,
+      reviewSummary.needsYouBySession[session.session_id] ?? 0,
+    ) &&
     matchesSourceFilters(session, sourceFilters, tI18nComplete);
   const visibleSessions = sessions.filter(passesFacets);
   const visibleShared = sharedQuery.sessions.filter(passesFacets);
@@ -366,7 +370,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const otherCount = sharedQuery.sessions.length + automatedQuery.sessions.length;
   const visibleOtherCount = visibleShared.length + visibleAutomated.length;
 
-  const viewState = resolveSessionListViewState({
+  const viewState = sessionListViewState({
     hasData: data !== undefined,
     isError,
     totalCount: sessions.length + otherCount,
@@ -382,7 +386,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     const isActive = pathname?.includes(`/sessions/${session.session_id}`);
     const isSwitchTarget = switchingToSessionId === session.session_id;
     const children = directSubsessions(session);
-    const spawnedCount = nested ? 0 : (session.child_count ?? 0);
+    const spawnedCount = nested ? 0 : childCountOf(session);
     const spawnedOpen = spawnedCount > 0 && expandedIdSet.has(session.session_id);
     return (
       <div key={session.session_id} className="space-y-px">
@@ -402,7 +406,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               beginSessionSwitch(session.session_id);
             }
           }}
-          displayTitle={getSessionDisplayTitle(session)}
+          displayTitle={sessionDisplayTitle(session)}
           childCount={children.length}
           spawnedCount={spawnedCount}
           spawnedOpen={spawnedOpen}
@@ -543,7 +547,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       tI18nComplete,
     );
 
-    // `resolveSessionListViewState` only sees counts before filtering by
+    // `sessionListViewState` only sees counts before filtering by
     // `hiddenSections` — it has no way to know every section got hidden. Catch
     // that case here instead of letting `FadedScrollArea` render nothing with
     // no explanation.
@@ -1454,9 +1458,7 @@ function ProjectSubsessionRow({
   isActive: boolean;
   updatedAt: number | null;
 }) {
-  const relative = updatedAt
-    ? shortRelative(formatDistanceToNowStrict(new Date(updatedAt), { addSuffix: false }))
-    : '';
+  const relative = updatedAt ? shortRelative(updatedAt, Date.now()) : '';
 
   return (
     // Same reason as ProjectSessionRow: sub-session rows are session routes too,

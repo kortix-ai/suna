@@ -30,6 +30,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./react": "./src/react/index.ts",
+    "./react/session-list": "./src/react/session-list.ts",
     "./server": "./src/node/server.ts",
     "./internal/sync-store": "./src/internal/sync-store.ts",
     "./internal/server-store": "./src/internal/server-store.ts",
@@ -68,6 +69,7 @@
     "exports": {
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+      "./react/session-list": { "types": "./dist/react/session-list.d.ts", "import": "./dist/react/session-list.js" },
       "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
       "./internal/sync-store": {
         "types": "./dist/internal/sync-store.d.ts",

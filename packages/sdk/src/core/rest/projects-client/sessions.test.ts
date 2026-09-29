@@ -34,6 +34,7 @@ import {
   getSessionTurn,
   listProjectSessions,
   listProjectSessionsPage,
+  PROJECT_SESSION_SEARCH_MAX_LENGTH,
   listSessionPrompts,
   listSessionPublicShares,
   reloadProjectSessionConfig,
@@ -1494,6 +1495,15 @@ test('listProjectSessions sends a child parent id and trims q', async () => {
   const url = new URL(last().url);
   expect(url.searchParams.get('parent')).toBe('S9');
   expect(url.searchParams.get('q')).toBe('hi');
+});
+
+test('listProjectSessionsPage caps q at the 200 characters the API accepts', async () => {
+  // The route rejects a longer q with 400, so a pasted paragraph used to turn
+  // the whole list into an error instead of a search.
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessionsPage('P1', { q: `  ${'x'.repeat(250)}  ` });
+  expect(new URL(last().url).searchParams.get('q')).toBe('x'.repeat(PROJECT_SESSION_SEARCH_MAX_LENGTH));
+  expect(PROJECT_SESSION_SEARCH_MAX_LENGTH).toBe(200);
 });
 
 test('listProjectSessions omits filter params that are absent or blank', async () => {

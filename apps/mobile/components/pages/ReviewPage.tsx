@@ -62,7 +62,7 @@ import {
 } from '@/lib/review/review-meta';
 import { reviewKeys, useReviewItems } from '@/lib/review/use-review';
 import { THEME } from '@/lib/utils/theme';
-import { sessionDisplayTitle } from '@/lib/session/session-list';
+import { sessionDisplayTitle } from '@kortix/sdk';
 import type { PageTab } from '@/stores/tab-store';
 
 const SEGMENT_ICONS: Record<ReviewSegment, typeof BellIcon> = {

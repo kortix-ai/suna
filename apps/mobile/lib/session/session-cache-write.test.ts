@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { qk, updateCachedProjectSessions } from '@kortix/sdk/react/session-list';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
 
 import {
-  applyToSessionCache,
+  cachedSessionRow,
   createdSessionListRow,
+  listCreatedSession,
   mergeRenamed,
+  removeListedSession,
   renameInRows,
-  upsertIntoSessionCache,
-  withoutSession,
-  writeSessionLists,
 } from './session-cache-write';
 
 /**
@@ -33,66 +33,6 @@ const paged = (...pages: ProjectSession[][]) => ({
 type Paged = ReturnType<typeof paged>;
 const ids = (cache: unknown) =>
   (cache as Paged).pages.map((page) => page.items.map((session) => session.session_id));
-
-describe('applyToSessionCache', () => {
-  test('updates a flat list', () => {
-    const next = applyToSessionCache([row('a'), row('b')], (rows) => withoutSession(rows, 'b'));
-    expect((next as ProjectSession[]).map((s) => s.session_id)).toEqual(['a']);
-  });
-
-  test('updates the page that holds the row; the other pages keep their identity', () => {
-    const cached = paged([row('a')], [row('b')]);
-    const next = applyToSessionCache(cached, (rows) => withoutSession(rows, 'b')) as Paged;
-    expect(ids(next)).toEqual([['a'], []]);
-    expect(next.pages[0]).toBe(cached.pages[0]);
-    expect(next.pageParams).toBe(cached.pageParams);
-  });
-
-  test('a change that touches no row returns the cache by reference', () => {
-    const cached = paged([row('a')], [row('b')]);
-    expect(applyToSessionCache(cached, (rows) => withoutSession(rows, 'zzz'))).toBe(cached);
-    const flat = [row('a')];
-    expect(applyToSessionCache(flat, (rows) => withoutSession(rows, 'zzz'))).toBe(flat);
-  });
-
-  test('another shape, or nothing cached, is left as it is', () => {
-    const other = { total: 3 };
-    expect(applyToSessionCache(other, (rows) => rows.slice(1))).toBe(other);
-    expect(applyToSessionCache(undefined, (rows) => rows.slice(1))).toBeUndefined();
-  });
-});
-
-describe('upsertIntoSessionCache', () => {
-  test('a new session goes to the top of the FIRST page only', () => {
-    const cached = paged([row('a')], [row('b')]);
-    const next = upsertIntoSessionCache(cached, row('new')) as Paged;
-    expect(ids(next)).toEqual([['new', 'a'], ['b']]);
-    expect(next.pages[1]).toBe(cached.pages[1]);
-  });
-
-  test('a session already cached is replaced in place, on the page that holds it', () => {
-    const cached = paged([row('a')], [row('b', { name: 'old' })]);
-    const next = upsertIntoSessionCache(cached, row('b', { name: 'new' })) as Paged;
-    expect(ids(next)).toEqual([['a'], ['b']]);
-    expect(next.pages[1].items[0].name).toBe('new');
-    expect(next.pages[0]).toBe(cached.pages[0]);
-  });
-
-  test('prepends to a flat list', () => {
-    const next = upsertIntoSessionCache([row('a')], row('new')) as ProjectSession[];
-    expect(next.map((s) => s.session_id)).toEqual(['new', 'a']);
-  });
-
-  test('the same row again, no page, or another shape: the cache by reference', () => {
-    const same = row('a');
-    const cached = paged([same]);
-    expect(upsertIntoSessionCache(cached, same)).toBe(cached);
-    const noPages = { pages: [], pageParams: [] };
-    expect(upsertIntoSessionCache(noPages, row('new'))).toBe(noPages);
-    const other = { total: 3 };
-    expect(upsertIntoSessionCache(other, row('new'))).toBe(other);
-  });
-});
 
 describe('rename', () => {
   test('a name sets custom_name and the display name, as the server answers', () => {
@@ -167,49 +107,119 @@ describe('createdSessionListRow', () => {
   });
 });
 
-describe('writeSessionLists over the real query client', () => {
-  const FLAT = ['project-sessions', 'p-1'] as const;
-  const PAGED = ['project-sessions', 'p-1', 'paged'] as const;
+/**
+ * The writes as the screens run them, over a real QueryClient holding every
+ * list shape the app caches under the SDK's keys: the flat first page, the
+ * drawer's "Sessions" / "Shared" / "Automated" sections, the Sessions page's
+ * All scope and a search, and one parent's children.
+ */
+describe('session list writes over the real query client', () => {
+  const P = 'p-1';
+  const FLAT = qk.project.sessions(P);
+  const MINE = qk.project.sessionsPaged(P, 'visible', { parent: 'root', startedBy: 'me' });
+  const SHARED = qk.project.sessionsPaged(P, 'visible', { parent: 'root', startedBy: 'others' });
+  const AUTOMATED = qk.project.sessionsPaged(P, 'visible', { parent: 'root', startedBy: 'automated' });
+  const ALL = qk.project.sessionsPaged(P, 'visible', { parent: 'root' });
+  const SEARCH = qk.project.sessionsPaged(P, 'visible', { parent: 'root', q: 'deploy' });
+  const CHILDREN = qk.project.sessionChildren(P, 'a');
 
-  test('a delete leaves the paged list at once, and its undo puts the row back', () => {
+  const mine = row('a', { is_owner: true, child_count: 1 });
+  const theirs = row('t', { is_owner: false, initiator: { type: 'member', id: 'u2', label: 'Ada' } });
+  const child = row('c', { parent_session_id: 'a' } as Partial<ProjectSession>);
+
+  function seed() {
     const client = new QueryClient();
-    const cached = paged([row('a'), row('b')], [row('c')]);
-    client.setQueryData(PAGED, cached);
+    client.setQueryData(FLAT, [mine, theirs]);
+    client.setQueryData(MINE, paged([mine]));
+    client.setQueryData(SHARED, paged([theirs]));
+    client.setQueryData(AUTOMATED, paged([]));
+    client.setQueryData(ALL, paged([mine, theirs]));
+    client.setQueryData(SEARCH, paged([mine]));
+    client.setQueryData(CHILDREN, paged([child]));
+    return client;
+  }
 
-    const undo = writeSessionLists(client, [PAGED], (list) =>
-      applyToSessionCache(list, (rows) => withoutSession(rows, 'b'))
-    );
-    expect(ids(client.getQueryData(PAGED))).toEqual([['a'], ['c']]);
+  test('create: the new row tops the viewer\'s lists and the flat page, never Shared, Automated, a search or children', () => {
+    const client = seed();
+    const created = {
+      session_id: 'new',
+      project_id: P,
+      status: 'queued',
+      created_at: '2026-09-29T00:00:00Z',
+      is_owner: true,
+      metadata: { initial_prompt: 'kept out of the list' },
+    };
+    listCreatedSession(client, P, created);
 
-    undo();
-    // Equal, not identical: setQueryData shares structure with the current data.
-    expect(client.getQueryData(PAGED) as unknown).toEqual(cached);
+    expect((client.getQueryData(FLAT) as ProjectSession[]).map((s) => s.session_id)).toEqual(['new', 'a', 't']);
+    expect(ids(client.getQueryData(MINE))).toEqual([['new', 'a']]);
+    expect(ids(client.getQueryData(ALL))).toEqual([['new', 'a', 't']]);
+    expect(ids(client.getQueryData(SHARED))).toEqual([['t']]);
+    expect(ids(client.getQueryData(AUTOMATED))).toEqual([[]]);
+    expect(ids(client.getQueryData(SEARCH))).toEqual([['a']]);
+    expect(ids(client.getQueryData(CHILDREN))).toEqual([['c']]);
+    expect((client.getQueryData(MINE) as Paged).pages[0].items[0].metadata).toEqual({});
     client.clear();
   });
 
-  test('a created session reaches both lists; a list not cached is not created', () => {
-    const client = new QueryClient();
-    client.setQueryData(PAGED, paged([row('a')]));
-
-    writeSessionLists(client, [FLAT, PAGED], (list) => upsertIntoSessionCache(list, row('new')));
-
-    expect(ids(client.getQueryData(PAGED))).toEqual([['new', 'a']]);
-    expect(client.getQueryData(FLAT) as unknown).toBeUndefined();
+  test('create: a 202 "create queued" answer writes nothing', () => {
+    const client = seed();
+    const before = client.getQueryData(MINE);
+    listCreatedSession(client, P, { status: 'queued', command_id: 'cmd', session_id: 'new', reason: null });
+    expect(client.getQueryData(MINE) as unknown).toBe(before);
     client.clear();
   });
 
-  test('a change that touches nothing writes nothing, and its undo restores nothing', () => {
-    const client = new QueryClient();
-    const cached = paged([row('a')]);
-    client.setQueryData(PAGED, cached, { updatedAt: 1 });
+  test('rename: every list that holds the row shows the new name; the rest keep their identity', () => {
+    const client = seed();
+    const shared = client.getQueryData(SHARED);
+    updateCachedProjectSessions(client, P, (rows) => renameInRows(rows, 'a', 'Release notes'));
 
-    const undo = writeSessionLists(client, [PAGED], (list) =>
-      applyToSessionCache(list, (rows) => withoutSession(rows, 'zzz'))
-    );
+    for (const key of [MINE, ALL, SEARCH]) {
+      expect((client.getQueryData(key) as Paged).pages[0].items[0].custom_name).toBe('Release notes');
+    }
+    expect((client.getQueryData(FLAT) as ProjectSession[])[0].name).toBe('Release notes');
+    expect(client.getQueryData(SHARED) as unknown).toBe(shared);
+
+    // The undo SessionRenameForm runs when the server refuses: the old name fields back.
+    updateCachedProjectSessions(client, P, (rows) => mergeRenamed(rows, mine));
+    expect((client.getQueryData(MINE) as Paged).pages[0].items[0].custom_name).toBeNull();
+    client.clear();
+  });
+
+  test('rename: a child row renames inside its parent\'s children list', () => {
+    const client = seed();
+    updateCachedProjectSessions(client, P, (rows) => renameInRows(rows, 'c', 'Worker'));
+    expect((client.getQueryData(CHILDREN) as Paged).pages[0].items[0].name).toBe('Worker');
+    client.clear();
+  });
+
+  test('delete: the row leaves every paged list and children, the flat page keeps it, and the undo restores all', () => {
+    const client = seed();
+    const before = client.getQueryData(MINE);
+    const undo = removeListedSession(client, P, 'a');
+
+    expect(ids(client.getQueryData(MINE))).toEqual([[]]);
+    expect(ids(client.getQueryData(ALL))).toEqual([['t']]);
+    expect(ids(client.getQueryData(SEARCH))).toEqual([[]]);
+    expect((client.getQueryData(FLAT) as ProjectSession[]).map((s) => s.session_id)).toEqual(['a', 't']);
+
+    const childUndo = removeListedSession(client, P, 'c');
+    expect(ids(client.getQueryData(CHILDREN))).toEqual([[]]);
+    childUndo();
+    expect(ids(client.getQueryData(CHILDREN))).toEqual([['c']]);
+
     undo();
+    expect(client.getQueryData(MINE) as unknown).toEqual(before);
+    client.clear();
+  });
 
-    expect(client.getQueryData(PAGED) as unknown).toBe(cached);
-    expect(client.getQueryState(PAGED)?.dataUpdatedAt).toBe(1);
+  test('cachedSessionRow finds the freshest row in any list shape, else null', () => {
+    const client = seed();
+    expect(cachedSessionRow(client, P, 'c')).toBe(child);
+    expect(cachedSessionRow(client, P, 't')?.session_id).toBe('t');
+    expect(cachedSessionRow(client, P, 'zzz')).toBeNull();
+    expect(cachedSessionRow(client, 'p-other', 'a')).toBeNull();
     client.clear();
   });
 });

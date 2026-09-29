@@ -26,16 +26,18 @@
  * from the client: whether a session still has no title. That is what these
  * tests pin.
  */
-import type { ProjectSession } from '@kortix/sdk';
+import {
+  UNTITLED_SESSION_LABEL,
+  sessionDisplayTitle,
+  sessionHasTitle,
+  type ProjectSession,
+} from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import {
-  UNTITLED_SESSION_LABEL,
-  getSessionDisplayTitle,
   hasSessionAwaitingTitle,
   isAwaitingTitle,
   projectSessionsRefetchInterval,
-  sessionTitleHasLanded,
 } from './project-session-list-helpers';
 
 /** Fixed clock, so the age bound below is asserted rather than raced. */
@@ -55,35 +57,35 @@ function session(over: Partial<ProjectSession> = {}): ProjectSession {
   } as unknown as ProjectSession;
 }
 
-describe('sessionTitleHasLanded', () => {
+describe('sessionHasTitle', () => {
   test('false while the server has written no name of any kind', () => {
-    expect(sessionTitleHasLanded(session())).toBe(false);
+    expect(sessionHasTitle(session())).toBe(false);
   });
 
   test('true for each of the three name sources, in isolation', () => {
     // Each is independently sufficient. Asserted separately rather than as one
     // OR so a precedence change cannot silently drop a source.
-    expect(sessionTitleHasLanded(session({ name: 'Fix The Proxy' }))).toBe(true);
-    expect(sessionTitleHasLanded(session({ custom_name: 'My Rename' }))).toBe(true);
-    expect(sessionTitleHasLanded(session({ metadata: { session_name: 'Legacy Name' } }))).toBe(
+    expect(sessionHasTitle(session({ name: 'Fix The Proxy' }))).toBe(true);
+    expect(sessionHasTitle(session({ custom_name: 'My Rename' }))).toBe(true);
+    expect(sessionHasTitle(session({ metadata: { session_name: 'Legacy Name' } }))).toBe(
       true,
     );
   });
 
   test('whitespace is not a title — it is what an empty generation writes', () => {
-    expect(sessionTitleHasLanded(session({ name: '   ' }))).toBe(false);
+    expect(sessionHasTitle(session({ name: '   ' }))).toBe(false);
   });
 
   test('agrees with what the row actually renders, so the two cannot drift', () => {
     // The bug this guards: a predicate that says "titled" while the row still
     // shows the placeholder would stop the poll with the UI still wrong.
     const untitled = session();
-    expect(sessionTitleHasLanded(untitled)).toBe(false);
-    expect(getSessionDisplayTitle(untitled)).toBe(UNTITLED_SESSION_LABEL);
+    expect(sessionHasTitle(untitled)).toBe(false);
+    expect(sessionDisplayTitle(untitled)).toBe(UNTITLED_SESSION_LABEL);
 
     const titled = session({ name: 'Fix The Proxy' });
-    expect(sessionTitleHasLanded(titled)).toBe(true);
-    expect(getSessionDisplayTitle(titled)).not.toBe(UNTITLED_SESSION_LABEL);
+    expect(sessionHasTitle(titled)).toBe(true);
+    expect(sessionDisplayTitle(titled)).not.toBe(UNTITLED_SESSION_LABEL);
   });
 });
 

@@ -1,16 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
+import { sessionStarter } from '@kortix/sdk';
+
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import {
-  buildDrawerItems,
-  childCountOf,
-  isParentExpanded,
-  normalizeSessionListFilter,
-  rootRowsOnly,
-  searchQueryParam,
-  sessionStarter,
-  startedByForScope,
-} from './session-tree';
+import { buildDrawerItems } from './session-tree';
 
 const make = (overrides: Record<string, unknown> = {}): ProjectSession =>
   ({
@@ -23,75 +16,16 @@ const make = (overrides: Record<string, unknown> = {}): ProjectSession =>
     ...overrides,
   }) as unknown as ProjectSession;
 
-describe('startedByForScope', () => {
-  test('maps each chip to its started_by value; All sends none', () => {
-    expect(startedByForScope('all')).toBeUndefined();
-    expect(startedByForScope('mine')).toBe('me');
-    expect(startedByForScope('shared')).toBe('others');
-    expect(startedByForScope('automated')).toBe('automated');
+describe('sessionStarter (SDK) for rows the backfill left unclassified', () => {
+  // Fix: mobile read an unclassified row by `created_by` alone, so the
+  // viewer's own row without an initiator read "Member". The SDK falls back
+  // to `is_owner`, then to the owner's name.
+  test('the viewer\'s own row reads "You" through is_owner', () => {
+    expect(sessionStarter(make({ created_by: 'u1', is_owner: true }), 'u2').label).toBe('You');
   });
-});
-
-describe('normalizeSessionListFilter / searchQueryParam', () => {
-  test('an empty filter is the legacy key; q is trimmed and capped at 200', () => {
-    expect(normalizeSessionListFilter(undefined)).toEqual({});
-    expect(normalizeSessionListFilter({ q: '   ' })).toEqual({});
-    expect(normalizeSessionListFilter({ parent: 'root', startedBy: 'me', q: ' x ' })).toEqual({
-      parent: 'root',
-      startedBy: 'me',
-      q: 'x',
-    });
-    expect(searchQueryParam('a'.repeat(300))).toHaveLength(200);
-    expect(searchQueryParam('  ')).toBeUndefined();
-  });
-});
-
-describe('rootRowsOnly', () => {
-  test('drops any row that names a parent (never an orphan child)', () => {
-    const rows = [make({ session_id: 'a' }), make({ session_id: 'b', parent_session_id: 'a' })];
-    expect(rootRowsOnly(rows).map((r) => r.session_id)).toEqual(['a']);
-  });
-});
-
-describe('childCountOf / isParentExpanded', () => {
-  test('child_count defaults to 0', () => {
-    expect(childCountOf(make())).toBe(0);
-    expect(childCountOf(make({ child_count: 12 }))).toBe(12);
-  });
-  test('explicit choice wins; else the active parent or a child search match opens', () => {
-    expect(isParentExpanded({ explicit: false, isActiveParent: true, searchMatch: 'child' })).toBe(false);
-    expect(isParentExpanded({ explicit: true, isActiveParent: false, searchMatch: undefined })).toBe(true);
-    expect(isParentExpanded({ explicit: undefined, isActiveParent: true, searchMatch: undefined })).toBe(true);
-    expect(isParentExpanded({ explicit: undefined, isActiveParent: false, searchMatch: 'child' })).toBe(true);
-    expect(isParentExpanded({ explicit: undefined, isActiveParent: false, searchMatch: 'self' })).toBe(false);
-  });
-});
-
-describe('sessionStarter', () => {
-  test('member: You only for the viewer, else the name', () => {
-    const row = make({ initiator: { type: 'member', id: 'u1', label: 'Ada' } });
-    expect(sessionStarter(row, 'u1')).toEqual({ type: 'member', label: 'You', icon: null });
-    expect(sessionStarter(row, 'u2')).toEqual({ type: 'member', label: 'Ada', icon: null });
-  });
-  test('null initiator counts as a member of created_by', () => {
-    expect(sessionStarter(make({ created_by: 'u1' }), 'u1').label).toBe('You');
-    expect(sessionStarter(make({ created_by: 'u1' }), 'u2').label).toBe('Member');
-  });
-  test('trigger: slug with a schedule or webhook icon', () => {
-    const cron = make({ initiator: { type: 'trigger', id: 'nightly', label: 'nightly' }, metadata: { source: 'trigger:cron' } });
-    const hook = make({ initiator: { type: 'trigger', id: 'gh', label: 'gh' }, metadata: { source: 'trigger:webhook' } });
-    expect(sessionStarter(cron, 'u1')).toEqual({ type: 'trigger', label: 'nightly', icon: 'clock' });
-    expect(sessionStarter(hook, 'u1').icon).toBe('webhook');
-  });
-  test('channel, api and system', () => {
-    expect(sessionStarter(make({ initiator: { type: 'channel', id: 'slack', label: 'Slack' } }), 'u').icon).toBe('slack');
-    expect(sessionStarter(make({ initiator: { type: 'channel', id: 'email', label: 'Email' } }), 'u').icon).toBe('envelope');
-    expect(sessionStarter(make({ initiator: { type: 'api', id: 'sa1', label: 'CI key' } }), 'u')).toEqual({
-      type: 'api',
-      label: 'CI key',
-      icon: 'key',
-    });
-    expect(sessionStarter(make({ initiator: { type: 'system', id: 'system:x', label: 'Kortix' } }), 'u').label).toBe('Kortix');
+  test('another member\'s row reads their name, "Member" only without one', () => {
+    expect(sessionStarter(make({ is_owner: false, owner_name: 'Ada' }), 'u2').label).toBe('Ada');
+    expect(sessionStarter(make({ is_owner: false }), 'u2').label).toBe('Member');
   });
 });
 

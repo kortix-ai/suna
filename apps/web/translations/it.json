@@ -1525,6 +1525,7 @@
         "all": "Tutti"
       },
       "statusValue": {
+        "needsYou": "Richiede la tua attenzione",
         "running": "In esecuzione",
         "done": "Fatto",
         "stopped": "Interrotta",

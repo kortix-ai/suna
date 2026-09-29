@@ -10,8 +10,7 @@
 
 import { create } from 'zustand';
 
-import type { SessionStatusFilter } from '@/lib/session/session-list';
-import type { SessionScope } from '@/lib/session/session-tree';
+import type { SessionListScope as SessionScope, SessionStatusFilter } from '@kortix/sdk';
 
 export interface SessionFilter {
   query: string;

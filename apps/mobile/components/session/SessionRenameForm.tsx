@@ -20,14 +20,9 @@ import { useToast } from '@/components/kortix/toast-provider';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { projectKeys, sessionListKeys } from '@/lib/projects/hooks';
+import { qk, updateCachedProjectSessions } from '@kortix/sdk/react/session-list';
 import { updateProjectSession, type ProjectSession } from '@/lib/projects/projects-client';
-import {
-  applyToSessionCache,
-  mergeRenamed,
-  renameInRows,
-  writeSessionLists,
-} from '@/lib/session/session-cache-write';
+import { mergeRenamed, renameInRows } from '@/lib/session/session-cache-write';
 
 const MAX_NAME_LENGTH = 120;
 
@@ -48,31 +43,27 @@ export function SessionRenameForm({ projectId, session, onDone }: SessionRenameF
     mutationFn: (name: string) => updateProjectSession(projectId, session.session_id, { name }),
     onMutate: async (name) => {
       // A refetch in flight would land the old name over the new one.
-      await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
-      const undo = writeSessionLists(queryClient, sessionListKeys(queryClient, projectId), (cached) =>
-        applyToSessionCache<ProjectSession>(cached, (rows) =>
-          renameInRows(rows, session.session_id, name)
-        )
+      await queryClient.cancelQueries({ queryKey: qk.project.sessionsScope(projectId) });
+      updateCachedProjectSessions(queryClient, projectId, (rows) =>
+        renameInRows(rows, session.session_id, name)
       );
-      return { undo };
     },
     onSuccess: (updated) => {
       // The server's name (normalized, or the automatic title after a clear).
-      writeSessionLists(queryClient, sessionListKeys(queryClient, projectId), (cached) =>
-        applyToSessionCache<ProjectSession>(cached, (rows) => mergeRenamed(rows, updated))
-      );
+      updateCachedProjectSessions(queryClient, projectId, (rows) => mergeRenamed(rows, updated));
       haptics.success();
       onDone();
     },
-    onError: (_error, _name, context) => {
-      context?.undo();
+    onError: () => {
+      // Undo: the name fields back as they were before the edit.
+      updateCachedProjectSessions(queryClient, projectId, (rows) => mergeRenamed(rows, session));
       haptics.warning();
       toast.error('Unable to rename the session. Try again.');
     },
     // The server stays the source: refetch after either answer. Not awaited:
     // the mutation would stay pending ("Saving…") until the refetch lands.
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+      void queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
     },
   });
 

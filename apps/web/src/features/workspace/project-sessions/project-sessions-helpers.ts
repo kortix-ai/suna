@@ -1,18 +1,17 @@
 import type { UiTranslator } from '@/i18n/translator';
-import type { ProjectSession } from '@kortix/sdk';
+import {
+  matchesSessionStatusFilters,
+  type ProjectSession,
+  type SessionStatusFilter,
+} from '@kortix/sdk';
 
 import {
   matchesSourceFilters,
-  matchesStatusFilters,
   sessionSource,
   type SessionSourceFilter,
   type SessionSourceKind,
-  type SessionStatusFilter,
 } from '@/components/projects/session-label';
-import {
-  getSessionDisplayTitle,
-  sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import { sortSessionsByLastActivity } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 
 import {
   matchesAccessFilters,
@@ -57,11 +56,20 @@ export function filterProjectSessions(
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
   tI18nComplete: UiTranslator,
-  facets: { owners?: readonly string[]; access?: readonly SessionAccessFilter[] } = {},
+  facets: {
+    owners?: readonly string[];
+    access?: readonly SessionAccessFilter[];
+    /** Review Center `needs_you` counts by session id: the Needs you status. */
+    reviewCountBySession?: Record<string, number>;
+  } = {},
 ): ProjectSession[] {
   const matches = sessions.filter(
     (session) =>
-      matchesStatusFilters(session, statusFilters) &&
+      matchesSessionStatusFilters(
+        session,
+        statusFilters,
+        facets.reviewCountBySession?.[session.session_id] ?? 0,
+      ) &&
       matchesSourceFilters(session, sourceFilters, tI18nComplete) &&
       matchesOwnerFilters(session, facets.owners ?? []) &&
       matchesAccessFilters(session, facets.access ?? []),

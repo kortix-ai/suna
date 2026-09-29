@@ -48,7 +48,7 @@ import {
   type ProjectSession,
   type SessionPublicShare,
 } from '@/lib/projects/projects-client';
-import { sessionDisplayTitle } from '@/lib/session/session-list';
+import { sessionDisplayTitle } from '@kortix/sdk';
 import { PUBLIC_LINK_FALLBACK_ERROR, publicLinkErrorMessage } from '@/lib/session/public-share-error';
 import { guardTranscriptShare } from '@/lib/session/public-share-guard';
 import { buildTranscriptText } from '@/lib/session/transcript-text';

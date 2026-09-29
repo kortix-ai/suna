@@ -98,7 +98,18 @@ import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
 import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
-import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
+import {
+  childCountOf,
+  directSubsessions,
+  isParentExpanded,
+  rootRowsOnly,
+  sessionDisplayTitle,
+  sessionListStatus,
+  sessionListViewState,
+  sessionStarter,
+  shouldLoadMoreSessions,
+  type SessionStarter,
+} from '@kortix/sdk';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   PROJECT_ACCOUNT_ROUTE,
@@ -106,22 +117,8 @@ import {
   PROJECT_SESSIONS_ROUTE,
   type ProjectDrawerRoute,
 } from '@/lib/session/project-stack';
-import {
-  directSubsessions,
-  sessionDisplayStatus,
-  sessionDisplayTitle,
-  sessionStatusLabel,
-} from '@/lib/session/session-list';
-import {
-  buildDrawerItems,
-  childCountOf,
-  isParentExpanded,
-  rootRowsOnly,
-  sessionStarter,
-  type DrawerItem,
-  type DrawerSectionId,
-  type SessionStarter,
-} from '@/lib/session/session-tree';
+import { sessionStatusLabel } from '@/lib/session/session-list';
+import { buildDrawerItems, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
 import { parentKey, sectionKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { useAuthContext } from '@/contexts';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
@@ -213,7 +210,7 @@ function ProjectSessionListItem({
   onLongPress: (s: ProjectSession) => void;
 }) {
   const title = sessionDisplayTitle(item);
-  const status = sessionDisplayStatus(item, needsYou?.count ?? 0);
+  const status = sessionListStatus(item, needsYou?.count ?? 0);
   const statusLabel = [
     sessionStatusLabel(status),
     needsYou?.reason,
@@ -631,7 +628,6 @@ export function ProjectLeftDrawer({
     enabled: automatedOpen,
   });
   const {
-    isPending: projectSessionsPending,
     isError: projectSessionsErrored,
     hasNextPage,
     isFetchingNextPage,
@@ -711,14 +707,16 @@ export function ProjectLeftDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
     [mineRoots, sharedRoots, automatedRoots, withoutNeedsYou, sharedOpen, automatedOpen, choices, projectId, hasNextPage, shared.hasNextPage, automated.hasNextPage, isExpanded]
   );
-  // loading / error / empty / rows — shared with the Sessions page
-  // (lib/session/session-pages) so a failed fetch, or a first load paused
+  // loading / error / empty / content — the SDK's `sessionListViewState`,
+  // shared with the Sessions page, so a failed fetch, or a first load paused
   // offline, never reads as "No sessions yet" (COR-146). Judged on the
   // viewer's own list; Shared and Automated add rows, never a verdict.
-  const sessionsListState = sessionListState({
-    isPending: projectSessionsPending,
+  const rootCount = mineRoots.length + sharedRoots.length + automatedRoots.length;
+  const sessionsListState = sessionListViewState({
+    hasData: mine.data !== undefined,
     isError: projectSessionsErrored,
-    hasSessions: mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0,
+    totalCount: rootCount,
+    visibleCount: rootCount,
   });
   // Only a pull shows the refresh spinner; a background poll does not.
   const [refreshing, setRefreshing] = useState(false);
@@ -998,7 +996,7 @@ export function ProjectLeftDrawer({
             ))}
           </View>
         ) : null}
-        {sessionsListState === 'rows' ? null : stateBlock}
+        {sessionsListState === 'content' ? null : stateBlock}
       </View>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- stateBlock is derived from the deps below

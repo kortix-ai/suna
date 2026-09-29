@@ -1,6 +1,5 @@
-import type { ProjectSession } from '@kortix/sdk';
+import { sessionDisplayTitle, type ProjectSession } from '@kortix/sdk';
 
-import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { siteMetadata } from '@/lib/site-metadata';
 
 /**
@@ -28,7 +27,7 @@ const SEPARATOR = ' — ';
 /**
  * Shown when the session could not be read at all (404, no auth, timeout).
  *
- * Distinct from an untitled session, which `getSessionDisplayTitle` already
+ * Distinct from an untitled session, which `sessionDisplayTitle` already
  * names "New session" — "we could not read this" and "this has no name yet"
  * are different facts and must not share a label.
  */
@@ -57,12 +56,12 @@ export function sessionTabTitle(name: string | null | undefined): string {
 /**
  * `sessionTabTitle` for a session record, or the unavailable title if absent.
  *
- * The name comes from `getSessionDisplayTitle` — the SAME function the sidebar,
+ * The name comes from `sessionDisplayTitle` — the SAME function the sidebar,
  * the session list, and the tab bar render — so a session reads identically in
  * the tab and in the app, including its "New session" placeholder. Deriving the
  * precedence a second time here is how the two would drift apart.
  */
 export function sessionTabTitleFromSession(session: ProjectSession | null | undefined): string {
   if (!session) return sessionTabTitle(null);
-  return sessionTabTitle(getSessionDisplayTitle(session));
+  return sessionTabTitle(sessionDisplayTitle(session));
 }

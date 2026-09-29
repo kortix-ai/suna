@@ -5,11 +5,8 @@ import type { ComponentType } from 'react';
 
 import {
   matchesSourceFilters,
-  matchesStatusFilters,
   SESSION_SOURCE_FILTERS,
-  SESSION_STATUS_FILTERS,
   type SessionSourceFilter,
-  type SessionStatusFilter,
 } from '@/components/projects/session-label';
 import {
   DropdownMenuCheckboxItem,
@@ -48,7 +45,13 @@ import {
   useSessionFilterStore,
   type SessionViewSurface,
 } from '@/stores/session-filter-store';
-import type { ProjectSession } from '@kortix/sdk';
+import {
+  matchesSessionStatusFilters,
+  SESSION_LIST_STATUS,
+  SESSION_STATUS_FILTERS,
+  type ProjectSession,
+  type SessionStatusFilter,
+} from '@kortix/sdk';
 import {
   GlobeIcon,
   LockSimpleIcon,
@@ -176,19 +179,29 @@ function buildFacetOptions<V extends string>(
   return options;
 }
 
+/** Every status option with its English label, in the SDK's display order. */
+const STATUS_FILTER_OPTIONS = SESSION_STATUS_FILTERS.map((value) => ({
+  value,
+  label: SESSION_LIST_STATUS[value].label,
+}));
+
+/** `reviewCountBySession` feeds the Needs you option: without it, that option
+ *  counts 0 and is not listed. */
 export function resolveStatusFacetOptions(
   sessions: ProjectSession[],
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
   tI18nComplete: UiTranslator,
+  reviewCountBySession: Record<string, number> = {},
 ): SessionFilterFacetOption<SessionStatusFilter>[] {
   const passingSource = sessions.filter((session) =>
     matchesSourceFilters(session, sourceFilters, tI18nComplete),
   );
   return buildFacetOptions(
-    localizeUiCatalog(SESSION_STATUS_FILTERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+    localizeUiCatalog(STATUS_FILTER_OPTIONS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
     passingSource,
-    (session, value) => matchesStatusFilters(session, [value]),
+    (session, value) =>
+      matchesSessionStatusFilters(session, [value], reviewCountBySession[session.session_id] ?? 0),
     statusFilters,
   );
 }
@@ -198,8 +211,15 @@ export function resolveSourceFacetOptions(
   statusFilters: readonly SessionStatusFilter[],
   sourceFilters: readonly SessionSourceFilter[],
   tI18nComplete: UiTranslator,
+  reviewCountBySession: Record<string, number> = {},
 ): SessionFilterFacetOption<SessionSourceFilter>[] {
-  const passingStatus = sessions.filter((session) => matchesStatusFilters(session, statusFilters));
+  const passingStatus = sessions.filter((session) =>
+    matchesSessionStatusFilters(
+      session,
+      statusFilters,
+      reviewCountBySession[session.session_id] ?? 0,
+    ),
+  );
   return buildFacetOptions(
     localizeUiCatalog(SESSION_SOURCE_FILTERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
     passingStatus,
@@ -312,6 +332,7 @@ export function SessionFilterMenu({
     all: t('section.all'),
   };
   const statusLabels: Record<SessionStatusFilter, string> = {
+    'needs-you': t('statusValue.needsYou'),
     running: t('statusValue.running'),
     done: t('statusValue.done'),
     stopped: t('statusValue.stopped'),
@@ -351,16 +372,22 @@ export function SessionFilterMenu({
     statusFilters,
     sourceFilters,
     tI18nComplete,
+    reviewCountBySession,
   );
   const sourceOptions = resolveSourceFacetOptions(
     passingOwnerAndAccess,
     statusFilters,
     sourceFilters,
     tI18nComplete,
+    reviewCountBySession,
   );
   const passingStatusAndSource = sessions.filter(
     (session) =>
-      matchesStatusFilters(session, statusFilters) &&
+      matchesSessionStatusFilters(
+        session,
+        statusFilters,
+        reviewCountBySession[session.session_id] ?? 0,
+      ) &&
       matchesSourceFilters(session, sourceFilters, tI18nComplete),
   );
   const ownerOptions = pageFacets
