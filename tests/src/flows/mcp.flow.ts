@@ -307,10 +307,10 @@ flow(
       if (listed.role !== "manager") throw new Error(`list_projects role for the owner: ${JSON.stringify(listed.role)}`);
       const me = await mcp(rpc(5, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/accounts/me" } }));
       const text: string = me.json<any>().result.content[0].text;
-      if (!text.startsWith("HTTP 200") || !text.includes('"auth_type":"oauth"')) throw new Error(`me: ${JSON.stringify(text.slice(0, 400))}`);
+      if (!text.startsWith("GET /v1/accounts/me → HTTP 200") || !text.includes('"auth_type":"oauth"')) throw new Error(`me: ${JSON.stringify(text.slice(0, 400))}`);
       const proj = await mcp(rpc(6, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects/{projectId}", project_id: p.id } }));
       const body: string = proj.json<any>().result.content[0].text;
-      if (!body.startsWith("HTTP 200") || !body.includes(p.id)) throw new Error(`project: ${JSON.stringify(body.slice(0, 400))}`);
+      if (!body.startsWith(`GET /v1/projects/${p.id} → HTTP 200`) || !body.includes(p.id)) throw new Error(`project: ${JSON.stringify(body.slice(0, 400))}`);
       const noProject = await mcp(rpc(31, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects/{projectId}" } }));
       noProject.status(200).body().has("$.result.isError", true);
     });
@@ -399,7 +399,7 @@ flow(
       await fail(53, "read_file", { project_id: p.id, path: "kortix.yaml", offset: -1 });
     });
     await ctx.step("list_sessions → a JSON array; sandbox tools on a missing session → isError 404", async () => {
-      if (!Array.isArray(JSON.parse(await toolText(16, "list_sessions", { project_id: p.id })))) throw new Error("list_sessions is not an array");
+      if (!Array.isArray(JSON.parse(await toolText(16, "list_sessions", { project_id: p.id })).sessions)) throw new Error("list_sessions has no sessions array");
       for (const [id, name, args] of [
         [17, "run_command", { command: "true" }],
         [18, "list_files", {}],
@@ -429,11 +429,11 @@ flow(
       if (one.owner_type !== "user" || !one.owner_email || one.owner_email !== row?.owner_email || one.owner_name !== row?.owner_name) {
         throw new Error(`owner by id ${JSON.stringify([one.owner_type, one.owner_email, one.owner_name])} vs list ${JSON.stringify([row?.owner_type, row?.owner_email, row?.owner_name])}`);
       }
-      const listed = JSON.parse(await toolText(21, "list_sessions", { project_id: p.id })) as Array<{ session_id: string; owner: string | null }>;
+      const listed = (JSON.parse(await toolText(21, "list_sessions", { project_id: p.id })) as { sessions: Array<{ session_id: string; owner: string | null }> }).sessions;
       if (!listed.some((s) => s.session_id === session.id && s.owner)) throw new Error(`list_sessions: ${JSON.stringify(listed)}`);
       const read = JSON.parse(await toolText(22, "read_session", { session_id: session.id }));
       // The session_id alone finds its project: no project_id argument.
-      if (read.session_id !== session.id || read.project_id !== p.id || !["idle", "running", "booting"].includes(read.turn) || !Array.isArray(read.messages)) {
+      if (read.session_id !== session.id || read.project_id !== p.id || !["idle", "running", "booting", "queued"].includes(read.turn) || !Array.isArray(read.messages)) {
         throw new Error(`read_session: ${JSON.stringify(read).slice(0, 400)}`);
       }
     });
@@ -462,6 +462,81 @@ flow(
       // The tool's own API call carries the client; the outer row is `mcp.request`.
       const read = events.find((e) => e.action === "project.read");
       if (read?.client_reported_source !== "mcp") throw new Error(`audit: ${JSON.stringify(read)}`);
+    });
+    await ctx.step("protocol: -32700 on bad JSON, -32600 on a batch / a wrong jsonrpc, 202 for a client response, -32602 for an unknown tool, latest version for an unknown one, 400 for a bad MCP-Protocol-Version", async () => {
+      const raw = (body: string, headers: Record<string, string> = {}) =>
+        fetch(`${ctx.env.apiUrl.replace(/\/v1$/, "")}/v1/mcp`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...headers }, body });
+      const bad = await raw("{not json");
+      const badBody: any = await bad.json();
+      if (bad.status !== 400 || badBody.error.code !== -32700) throw new Error(`bad json: ${bad.status} ${JSON.stringify(badBody)}`);
+      const batch = await raw(JSON.stringify([rpc(1, "ping"), rpc(2, "ping")]));
+      const batchBody: any = await batch.json();
+      if (batch.status !== 400 || batchBody.error.code !== -32600 || !/batch/i.test(batchBody.error.message)) throw new Error(`batch: ${JSON.stringify(batchBody)}`);
+      const v1 = await raw(JSON.stringify({ id: 1, method: "ping" }));
+      if (v1.status !== 400 || ((await v1.json()) as any).error.code !== -32600) throw new Error("a message without jsonrpc was accepted");
+      const response = await raw(JSON.stringify({ jsonrpc: "2.0", id: 5, result: {} }));
+      if (response.status !== 202) throw new Error(`client response: ${response.status}`);
+      const unknown = await mcp(rpc(40, "tools/call", { name: "nope", arguments: {} }));
+      unknown.status(200).body().has("$.error.code", -32602);
+      const noName = await mcp(rpc(41, "tools/call", { name: { a: 1 } }));
+      noName.status(200).body().has("$.error.code", -32602);
+      const init = await mcp(rpc(42, "initialize", { protocolVersion: "1999-01-01" }));
+      init.status(200).body().has("$.result.protocolVersion", "2025-11-25");
+      const header = await raw(JSON.stringify(rpc(43, "ping")), { "MCP-Protocol-Version": "9999-01-01" });
+      if (header.status !== 400) throw new Error(`bad MCP-Protocol-Version: ${header.status}`);
+      const ok = await raw(JSON.stringify(rpc(44, "ping")), { "MCP-Protocol-Version": "2025-06-18" });
+      if (ok.status !== 200) throw new Error(`good MCP-Protocol-Version: ${ok.status}`);
+    });
+    await ctx.step("tools/list: titles, and annotations that tell an approval UI what is safe", async () => {
+      const tools = (await (await mcp(rpc(45, "tools/list"))).json<any>()).result.tools as Array<{ name: string; title?: string; annotations: Record<string, boolean> }>;
+      const by = (n: string) => tools.find((t) => t.name === n)!;
+      for (const n of ["list_projects", "start_session", "send_message", "read_session", "list_sessions", "read_skill", "search_api", "describe_api", "call_api"]) {
+        if (!by(n).title || typeof by(n).annotations.readOnlyHint !== "boolean") throw new Error(`${n}: ${JSON.stringify(by(n))}`);
+      }
+      for (const n of ["list_projects", "read_session", "list_sessions", "read_skill", "search_api", "describe_api"]) {
+        if (by(n).annotations.readOnlyHint !== true || by(n).annotations.openWorldHint !== false) throw new Error(`${n} annotations: ${JSON.stringify(by(n).annotations)}`);
+      }
+      for (const n of ["start_session", "send_message"]) if (by(n).annotations.destructiveHint !== false) throw new Error(`${n} is not marked non-destructive`);
+      if (by("call_api").annotations.destructiveHint !== true) throw new Error("call_api must stay destructive");
+      const body = (by("call_api") as any).inputSchema.properties.body;
+      if (body.type !== "object") throw new Error(`call_api body schema: ${JSON.stringify(body)}`);
+    });
+    await ctx.step("call_api: no bypass of the /v1/oauth and MCP block by dot segments, %-escapes or double slashes", async () => {
+      for (const path of ["/v1/projects/../oauth/grants", "/v1/%6fauth/grants", "/v1/projects/%2e%2e/oauth/grants", "/v1/%6dcp", "/v1//oauth/grants"]) {
+        const r = await mcp(rpc(46, "tools/call", { name: "call_api", arguments: { method: "GET", path } }));
+        const result = r.json<any>().result;
+        if (!result.isError || !result.content[0].text.startsWith("path must")) throw new Error(`${path}: ${JSON.stringify(result).slice(0, 200)}`);
+      }
+    });
+    await ctx.step("call_api: a JSON-string body is parsed (not double-encoded); an unfilled {name} is refused naming it; the result leads with METHOD path; array query values repeat", async () => {
+      const name = `MCP_FLOW_${Date.now()}`;
+      const created = await mcp(rpc(47, "tools/call", { name: "call_api", arguments: { method: "POST", path: "/v1/projects/{projectId}/secrets", project_id: p.id, body: JSON.stringify({ name, value: "x" }) } }));
+      const createdText: string = created.json<any>().result.content[0].text;
+      if (!createdText.startsWith(`POST /v1/projects/${p.id}/secrets → HTTP 2`)) throw new Error(`string body: ${createdText.slice(0, 300)}`);
+      const open = await mcp(rpc(48, "tools/call", { name: "call_api", arguments: { method: "DELETE", path: "/v1/projects/{projectId}/secrets/{name}", project_id: p.id } }));
+      const openResult = open.json<any>().result;
+      if (!openResult.isError || !openResult.content[0].text.includes("{name}")) throw new Error(`unfilled: ${JSON.stringify(openResult)}`);
+      const del = await mcp(rpc(49, "tools/call", { name: "call_api", arguments: { method: "DELETE", path: `/v1/projects/{projectId}/secrets/${name}`, project_id: p.id } }));
+      if (!del.json<any>().result.content[0].text.startsWith(`DELETE /v1/projects/${p.id}/secrets/${name} → HTTP 200`)) throw new Error("secret delete failed");
+      const repeat = await mcp(rpc(50, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects", query: { account_id: [team.id, team.id] } } }));
+      if (repeat.json<any>().result.isError) throw new Error(`array query: ${JSON.stringify(repeat.json<any>().result).slice(0, 200)}`);
+    });
+    await ctx.step("list_sessions pages: limit=1 returns next_cursor, the cursor returns the next session; created_at and branch are present; a non-numeric limit is isError", async () => {
+      const a = await ctx.fixtures.session(p);
+      const b = await ctx.fixtures.session(p);
+      const first = JSON.parse(await toolText(51, "list_sessions", { project_id: p.id, limit: 1 })) as { sessions: any[]; next_cursor: string | null };
+      if (first.sessions.length !== 1 || !first.next_cursor || !first.sessions[0].created_at || !("branch" in first.sessions[0])) throw new Error(`page 1: ${JSON.stringify(first)}`);
+      const second = JSON.parse(await toolText(52, "list_sessions", { project_id: p.id, limit: 1, cursor: first.next_cursor })) as { sessions: any[] };
+      if (second.sessions.length !== 1 || second.sessions[0].session_id === first.sessions[0].session_id) throw new Error(`page 2: ${JSON.stringify(second)}`);
+      void a; void b;
+      const bad = await mcp(rpc(53, "tools/call", { name: "list_sessions", arguments: { project_id: p.id, limit: "abc" } }));
+      bad.status(200).body().has("$.result.isError", true);
+    });
+    await ctx.step("search_api: a stopword or a 1-letter term matches nothing; `secret` finds the secrets routes", async () => {
+      const none = await toolText(54, "search_api", { query: "a the" });
+      if (!none.startsWith("No matching routes")) throw new Error(`stopwords: ${none.slice(0, 200)}`);
+      const hits = await toolText(55, "search_api", { query: "set a secret" });
+      if (!hits.includes("/v1/projects/{projectId}/secrets")) throw new Error(`secret: ${hits.slice(0, 300)}`);
     });
     await ctx.step("an unknown JSON-RPC method → -32601", async () => {
       const r = await mcp(rpc(10, "resources/list"));
