@@ -12,6 +12,12 @@
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
 
+import { sessionParentId } from '@kortix/sdk';
+
+import type { ProjectSession } from '@/lib/projects/projects-client';
+
+import { groupSessionsByCoordinator, sessionLastActivityAt } from './session-list';
+
 export interface SessionPage<T> {
   items: T[];
   /** Null on the last page. */
@@ -47,6 +53,59 @@ export function flattenSessionPages<T extends { session_id: string }>(
     }
   }
   return flat;
+}
+
+/**
+ * The server's keyset position after the loaded pages: the oldest
+ * `updated_at` on the last page that has rows. A coordinator the API appends
+ * to a page (the parent of a row on it) rides outside the keyset, so it does
+ * not count.
+ */
+function loadedBoundaryMs(pages: SessionPage<ProjectSession>[]): number | null {
+  for (let i = pages.length - 1; i >= 0; i -= 1) {
+    const items = pages[i].items;
+    const parents = new Set(items.map((session) => sessionParentId(session)));
+    let boundary = Infinity;
+    for (const session of items) {
+      if (parents.has(session.session_id)) continue;
+      const updatedAt = Date.parse(session.updated_at);
+      if (updatedAt < boundary) boundary = updatedAt;
+    }
+    if (boundary !== Infinity) return boundary;
+  }
+  return null;
+}
+
+/**
+ * The loaded sessions whose place in the list is final.
+ *
+ * The API pages by `updated_at`; the drawer and the Sessions page sort by
+ * last activity (`sessionLastActivityAt`), which is never later than
+ * `updated_at`. A session updated today but last prompted in June is on page
+ * one, yet every row of page two sorts above it. Shown at once, it sat at the
+ * bottom of the list: each loaded page landed above it, the bottom never
+ * changed, and scrolling down looked like no page ever loaded.
+ *
+ * So a session shows once its activity is at or after the loaded boundary:
+ * no unloaded row can sort above it any more. The rest wait for a later page.
+ * A coordinator group shows whole when any member shows.
+ */
+export function listedSessions(
+  data: { pages: SessionPage<ProjectSession>[] } | undefined,
+  hasNextPage: boolean
+): ProjectSession[] {
+  const loaded = flattenSessionPages(data);
+  const boundary = hasNextPage && data ? loadedBoundaryMs(data.pages) : null;
+  if (boundary === null) return loaded;
+  const listed = new Set<string>();
+  for (const group of groupSessionsByCoordinator(loaded)) {
+    const members = [group.session, ...group.children];
+    if (!members.some((session) => sessionLastActivityAt(session) >= boundary)) continue;
+    for (const session of members) listed.add(session.session_id);
+  }
+  // ponytail: when every loaded row waits, show them all rather than an empty
+  // list that reads as "No sessions yet"; their order may shift as pages land.
+  return listed.size > 0 ? loaded.filter((session) => listed.has(session.session_id)) : loaded;
 }
 
 /** `onEndReached` fires repeatedly near the end of a list: fetch one page at a time. */

@@ -13,7 +13,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { flattenSessionPages, sessionsNextCursor } from '@/lib/session/session-pages';
+import { flattenSessionPages, listedSessions, sessionsNextCursor } from '@/lib/session/session-pages';
 import {
   createdSessionListRow,
   upsertIntoSessionCache,
@@ -484,7 +484,8 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
  * project drawer and the Sessions page scroll. `useProjectSessions` above is
  * one page (the first 50): it serves lookups, not browsing.
  *
- * `sessions` is every loaded page, flattened and de-duplicated. A refetch
+ * `sessions` is the loaded pages, flattened and de-duplicated, minus the rows
+ * a later page could still sort above (`listedSessions`). A refetch
  * (poll, pull to refresh, invalidation) refetches every loaded page, so the
  * cost is bounded by what the user scrolled to.
  */
@@ -507,7 +508,11 @@ export function useProjectSessionsPaged(projectId: string | null, { poll = true 
       return projectSessionsPollInterval(rows, pollWindow.startedAt, now);
     },
   });
-  const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
+  // Only rows whose place is final: a later page never lands above them (`listedSessions`).
+  const sessions = useMemo(
+    () => listedSessions(query.data, query.hasNextPage),
+    [query.data, query.hasNextPage]
+  );
   return { ...query, sessions };
 }
 

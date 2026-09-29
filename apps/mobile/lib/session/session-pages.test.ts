@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { InfiniteQueryObserver, QueryClient, onlineManager } from '@tanstack/react-query';
 
+import type { ProjectSession } from '@/lib/projects/projects-client';
+
 import {
   FILTER_AUTO_FETCH_MIN_MATCHES,
   flattenSessionPages,
+  listedSessions,
   shouldAutoFetchForFilter,
   sessionListState,
   sessionsNextCursor,
@@ -11,6 +14,23 @@ import {
 } from './session-pages';
 
 const row = (session_id: string) => ({ session_id });
+
+/** A list row: `updated_at` is the server's page order, `last_activity_at` the app's sort key. */
+const listRow = (
+  session_id: string,
+  updated_at: string,
+  last_activity_at: string,
+  spawned_by_session?: string
+) =>
+  ({
+    session_id,
+    project_id: 'p1',
+    status: 'running',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at,
+    metadata: { last_activity_at, ...(spawned_by_session ? { spawned_by_session } : {}) },
+    opencode_sessions: [],
+  }) as unknown as ProjectSession;
 
 describe('session list pages', () => {
   test('next cursor: the page cursor, or undefined at the end (null would page forever)', () => {
@@ -147,5 +167,44 @@ describe('shouldAutoFetchForFilter (KRTX-250)', () => {
 
   test('a failed page fetch stops the loop (no retry storm); scroll or pull retries', () => {
     expect(shouldAutoFetchForFilter({ ...base, fetchNextPageFailed: true })).toBe(false);
+  });
+});
+
+describe('listedSessions: a loaded page never inserts rows above the ones already shown', () => {
+  // The API pages by `updated_at`; the lists sort by last activity, which is
+  // never later than `updated_at`. A row updated today but last prompted in
+  // June is on page one, yet sorts below every row of page two.
+  const stale = listRow('stale', '2026-09-29T10:00:00Z', '2026-06-30T00:00:00Z');
+  const p1 = [listRow('a', '2026-09-29T11:00:00Z', '2026-09-29T11:00:00Z'), stale];
+  const p2 = [listRow('b', '2026-09-28T12:00:00Z', '2026-09-28T12:00:00Z')];
+  const ids = (rows: ProjectSession[]) => rows.map((s) => s.session_id).sort();
+
+  test('holds a row back while an unloaded page can still sort above it', () => {
+    const data = { pages: [{ items: p1, next_cursor: 'c1' }] };
+    expect(ids(listedSessions(data, true))).toEqual(['a']);
+  });
+
+  test('shows it once the loaded pages pass its place', () => {
+    const data = {
+      pages: [
+        { items: p1, next_cursor: 'c1' },
+        { items: p2, next_cursor: null },
+      ],
+    };
+    expect(ids(listedSessions(data, false))).toEqual(['a', 'b', 'stale']);
+  });
+
+  test("a coordinator the API appends to a page does not move the page's boundary", () => {
+    // `coord` rides outside the keyset (old updated_at) because `child` is on the page.
+    const child = listRow('child', '2026-09-29T11:00:00Z', '2026-09-29T11:00:00Z', 'coord');
+    const coord = listRow('coord', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z');
+    const data = { pages: [{ items: [child, stale, coord], next_cursor: 'c1' }] };
+    // Boundary = stale's updated_at, not coord's: stale waits; coord shows with its child.
+    expect(ids(listedSessions(data, true))).toEqual(['child', 'coord']);
+  });
+
+  test('never hides every loaded row (the list would read as empty)', () => {
+    const data = { pages: [{ items: [stale], next_cursor: 'c1' }] };
+    expect(ids(listedSessions(data, true))).toEqual(['stale']);
   });
 });
