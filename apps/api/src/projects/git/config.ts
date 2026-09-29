@@ -283,25 +283,25 @@ async function resolveProjectManifest(
   };
 }
 
-interface OpenCodeResourceTarget {
-  /** The sort key for the scan: the path for agents, the slug for skills/commands. */
+interface OpenCodeResourceMatch<T> {
+  /** Sort key for the scan: the path for agents, the slug for skills/commands. */
   key: string;
-  /** The repo path whose frontmatter the entry is built from. */
-  path: string;
+  /** The value the entry builder receives. */
+  target: T;
 }
 
-async function scanOpenCodeResources<T>(
+async function scanOpenCodeResources<TTarget, TEntry>(
   repoFiles: ProjectFileEntry[],
-  matcher: (path: string) => OpenCodeResourceTarget | null,
-  buildEntry: (target: OpenCodeResourceTarget) => Promise<T>,
-  compare: (a: OpenCodeResourceTarget, b: OpenCodeResourceTarget) => number,
-): Promise<T[]> {
+  matcher: (path: string) => OpenCodeResourceMatch<TTarget> | null,
+  buildEntry: (target: TTarget) => Promise<TEntry>,
+  compare: (a: string, b: string) => number,
+): Promise<TEntry[]> {
   return Promise.all(
     repoFiles
       .map((file) => matcher(file.path))
-      .filter((target): target is OpenCodeResourceTarget => Boolean(target))
-      .sort(compare)
-      .map((target) => buildEntry(target)),
+      .filter((match): match is OpenCodeResourceMatch<TTarget> => Boolean(match))
+      .sort((a, b) => compare(a.key, b.key))
+      .map((match) => buildEntry(match.target)),
   );
 }
 
@@ -312,8 +312,8 @@ async function scanAgents(
 ): Promise<NativeAgentSummary[]> {
   return scanOpenCodeResources(
     repoFiles,
-    (path) => (agentRe.test(path) ? { key: path, path } : null),
-    async ({ path }) => {
+    (path) => (agentRe.test(path) ? { key: path, target: path } : null),
+    async (path) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -325,7 +325,7 @@ async function scanAgents(
       };
     },
     // Native agent paths sort in plain code-point order (the historical `.sort()`).
-    (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    (a, b) => (a < b ? -1 : a > b ? 1 : 0),
   );
 }
 
@@ -345,9 +345,12 @@ async function scanSkills(
       if (!match) return null;
       if (seenSkills.has(match[1])) return null;
       seenSkills.add(match[1]);
-      return { key: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` };
+      return {
+        key: match[1],
+        target: { slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` },
+      };
     },
-    async ({ key: slug, path }) => {
+    async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -356,7 +359,7 @@ async function scanSkills(
         description: meta.description || null,
       };
     },
-    (a, b) => a.key.localeCompare(b.key),
+    (a, b) => a.localeCompare(b),
   );
 }
 
@@ -373,9 +376,9 @@ async function scanCommands(
     repoFiles,
     (path) => {
       const match = path.match(commandRe);
-      return match ? { key: match[1], path } : null;
+      return match ? { key: match[1], target: { slug: match[1], path } } : null;
     },
-    async ({ key: slug, path }) => {
+    async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
       return {
@@ -384,7 +387,7 @@ async function scanCommands(
         description: meta.description || null,
       };
     },
-    (a, b) => a.key.localeCompare(b.key),
+    (a, b) => a.localeCompare(b),
   );
 }
 
