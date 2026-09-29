@@ -60,6 +60,14 @@ mock.module('../channels/teams/session', () => ({
   createOrJoinTeamsConversationSession: async () => {},
 }));
 
+// The conversation's session row: which project the card's session lives in.
+let threadRow: { sessionId: string; projectId: string } | null = null;
+const realThreads = await import('../channels/core/threads');
+mock.module('../channels/core/threads', () => ({
+  ...realThreads,
+  findChatThread: async () => threadRow,
+}));
+
 // The project's `teams` flag, which gates card actions as it gates messages.
 let teamsOn = true;
 const flagChecks: string[] = [];
@@ -86,6 +94,7 @@ beforeEach(() => {
   flagChecks.length = 0;
   actorResult = { userId: 'user-1' };
   teamsOn = true;
+  threadRow = null;
 });
 
 afterEach(() => {
@@ -133,6 +142,18 @@ describe('a review decision is authorized on the press', () => {
     expect(actorCalls).toEqual([
       { tenantId: TENANT, uid: '29:presser', accountId: ITEM_ACCOUNT, projectId: PROJECT },
     ]);
+  });
+});
+
+describe('a review card acts on the project of the session that posted it', () => {
+  test('after a /use, the item and the actor check use the session`s project, not the conversation`s', async () => {
+    threadRow = { sessionId: 'sess-a', projectId: 'proj-a' };
+    const { handleAdaptiveCardAction } = await load();
+
+    await handleAdaptiveCardAction(activity as never);
+
+    expect(actorCalls).toEqual([{ tenantId: TENANT, uid: '29:presser', accountId: ITEM_ACCOUNT, projectId: 'proj-a' }]);
+    expect(verdicts).toHaveLength(1);
   });
 });
 

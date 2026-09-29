@@ -126,7 +126,10 @@ export async function applyTeamsModelChoice(
   // secret grant, and whether it reaches the person's own keys. A personal
   // chat's session created before these became private is shared, so it
   // cannot, whatever the chat is.
-  const live = await conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null);
+  // Only a session of the conversation's own project: after a `/use` the
+  // conversation's session may still belong to the project it started in,
+  // and this project's keys must never be attached to it.
+  const live = await conversationSession(tenantId, conversationId, sessionProjectId ?? scope.projectId).catch(() => null);
   if (live?.sessionId) {
     // The choice reaches the live session: every message in it runs on the
     // new model and keys. Choosing needs the same standing as sending one.

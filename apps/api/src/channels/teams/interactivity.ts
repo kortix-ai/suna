@@ -120,6 +120,26 @@ function convoOf(activity: TeamsActivity): { tenantId: string; conversationId: s
   return { tenantId, conversationId };
 }
 
+/**
+ * The project a decision card (review, approval) acts on: the project of the
+ * session this conversation runs, which posted the card. After a `/use` the
+ * conversation points at another project while its session stays where it
+ * started, and the item lives with the session. A per-project bot stays
+ * inside its own project.
+ */
+async function decisionTarget(
+  inbound: TeamsInbound,
+  convo: { tenantId: string; conversationId: string },
+): Promise<{ projectId: string; sessionId: string | null } | null> {
+  const thread = await findChatThread(
+    { platform: 'teams', workspaceId: convo.tenantId, threadId: convo.conversationId },
+    inbound.kind === 'project' ? inbound.projectId : undefined,
+  );
+  if (thread) return { projectId: thread.projectId, sessionId: thread.sessionId };
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
+  return projectId ? { projectId, sessionId: null } : null;
+}
+
 /** A per-project bot configures only conversations that run its own project. */
 async function conversationInScope(
   inbound: TeamsInbound,
@@ -390,8 +410,9 @@ async function handleReview(
   const uid = teamsUserId(activity);
   if (!convo || !reviewItemId || !verdict) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
-  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const target = await decisionTarget(inbound, convo);
+  if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const { projectId } = target;
 
   const item = await getReviewItemById(reviewItemId, projectId);
   if (!item) return cardResponse(buildNoticeCard('That review item no longer exists.'));
@@ -465,17 +486,14 @@ async function handleApproval(
   const decision = data.decision === 'approve' || data.decision === 'deny' ? data.decision : null;
   if (!convo || !executionId || !decision) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
-  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
-  const thread = await findChatThread(
-    { platform: 'teams', workspaceId: convo.tenantId, threadId: convo.conversationId },
-    projectId,
-  );
+  const target = await decisionTarget(inbound, convo);
+  if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const { projectId } = target;
   const note = normalizeApprovalNote(data[APPROVAL_NOTE_INPUT]);
   const result = await decideChatApproval({
     user: chatUser('teams', convo.tenantId, teamsUserId(activity) ?? ''),
     projectId,
-    sessionId: thread?.sessionId ?? null,
+    sessionId: target.sessionId,
     executionId,
     decision,
     note,
