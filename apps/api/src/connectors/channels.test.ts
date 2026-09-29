@@ -40,7 +40,7 @@ describe('Slack curated defaults reach the outgoing request', () => {
     expect(q.get('types')).toBe('public_channel');
   });
 
-  test('get_history applies limit 20; get_thread and list_users leave Slack's default', async () => {
+  test('get_history applies limit 20; get_thread and list_users leave the Slack default', async () => {
     expect((await sent('get_history', { channel: 'C1' })).get('limit')).toBe('20');
     expect((await sent('get_history', { channel: 'C1', limit: 5 })).get('limit')).toBe('5');
     expect((await sent('get_thread', { channel: 'C1', ts: '1' })).get('limit')).toBeNull();

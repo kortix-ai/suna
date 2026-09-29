@@ -221,7 +221,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     verb: 'GET',
     name: 'Get channel history',
     description:
-      'Fetch recent messages from a channel. Provide `channel`; optional `limit`.',
+      'Fetch recent messages from a channel. Provide `channel`; optional `limit` (default 20).',
     risk: 'read',
     properties: {
       channel: { type: 'string', description: 'Channel ID to read.' },
@@ -236,7 +236,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     verb: 'GET',
     name: 'Get thread replies',
     description:
-      'Fetch the replies in a thread. Requires `channel` and the thread root `ts`; optional `limit` (default 20).',
+      'Fetch the replies in a thread. Requires `channel` and the thread root `ts`; optional `limit`.',
     risk: 'read',
     properties: {
       channel: { type: 'string', description: 'Channel ID the thread is in.' },
