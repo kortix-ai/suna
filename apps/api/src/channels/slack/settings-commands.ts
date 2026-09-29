@@ -14,7 +14,8 @@ import { buildAgentPickerBlocks, loadScopedChannelAgents } from './agent-picker'
 import { channelModelContext } from './model-gate';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
 import { currentChannelSelection } from './selection';
-import { dashboardBase, escapeMrkdwn, repoLabel, repoOgImage, respondViaUrl } from './util';
+import { dashboardBase, escapeMrkdwn, respondViaUrl } from './util';
+import { SLACK_PREVIEW_WAIT_MS, isKortixHostedRepo, repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { SlashCtx, SlashResponse } from './types';
 
 // The Slack rendering of channel settings: the `/kortix` panel, the project,
@@ -45,6 +46,12 @@ export function agentChangeText(
 // ── Projects ─────────────────────────────────────────────────────────────────
 
 type WorkspaceProject = { projectId: string; name: string; repoUrl: string };
+
+/** The repository line: a link people can open, or "Hosted by Kortix" for a private Kortix-hosted repo. */
+function repoLine(repoUrl: string): string {
+  const label = escapeMrkdwn(repoDisplayLabel(repoUrl) ?? '');
+  return isKortixHostedRepo(repoUrl) ? `_${label}_` : `_<${repoUrl}|${label}>_`;
+}
 
 /**
  * `/kortix projects` (`list`) and `/kortix switch` (`switch`): the projects
@@ -88,12 +95,12 @@ async function projectPicker(ctx: SlashCtx, mode: 'list' | 'switch'): Promise<Sl
   }
   const p = rows[0];
   const isBound = p.projectId === current;
-  const repo = `_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_`;
+  const repo = repoLine(p.repoUrl);
   if (mode === 'switch') {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `Only one project connected: *${escapeMrkdwn(p.name)}*\n${repo}` } });
     return { response_type: 'ephemeral', blocks };
   }
-  const og = repoOgImage(p.repoUrl);
+  const og = (await repoPreviewImages([p.repoUrl], { waitMs: SLACK_PREVIEW_WAIT_MS })).get(p.repoUrl);
   blocks.push({
     type: 'section',
     text: { type: 'mrkdwn', text: `${isBound ? '✓ ' : '🟢 '}*${escapeMrkdwn(p.name)}*\n${repo}\n${isBound ? '🟢  Bound to this channel.' : ''}` },
@@ -117,7 +124,7 @@ async function projectPicker(ctx: SlashCtx, mode: 'list' | 'switch'): Promise<Sl
 function projectCard(p: WorkspaceProject, isBound: boolean, channelId: string, mode: 'list' | 'switch'): Record<string, unknown> {
   const switchValue = JSON.stringify({ p: p.projectId, c: channelId });
   const title = { type: 'mrkdwn', text: `${isBound ? '✓ ' : ''}*${escapeMrkdwn(p.name)}*` };
-  const subtitle = { type: 'mrkdwn', text: `_${escapeMrkdwn(repoLabel(p.repoUrl))}_` };
+  const subtitle = { type: 'mrkdwn', text: `_${escapeMrkdwn(repoDisplayLabel(p.repoUrl) ?? '')}_` };
   if (mode === 'switch') {
     return {
       type: 'card',
@@ -278,7 +285,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
       ],
     };
   }
-  const og = repoOgImage(p.repoUrl);
+  const og = (await repoPreviewImages([p.repoUrl], { waitMs: SLACK_PREVIEW_WAIT_MS })).get(p.repoUrl);
 
   // Effective AGENT (channel override → project default → 'default').
   const projectDefaultAgent =
@@ -313,7 +320,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: `🟢  *${escapeMrkdwn(p.name)}*  ·  connected to this channel\n_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_`,
+      text: `🟢  *${escapeMrkdwn(p.name)}*  ·  connected to this channel\n${repoLine(p.repoUrl)}`,
     },
   };
   if (og) section.accessory = { type: 'image', image_url: og, alt_text: `${p.name} repo` };

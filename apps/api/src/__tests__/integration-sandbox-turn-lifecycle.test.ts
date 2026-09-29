@@ -1505,7 +1505,9 @@ describe('the pending stop marker', () => {
     // trips. A marker stamped with it is backdated, and a later read from a
     // fresh-clock observer confirms a park inside one provider transition.
     const before = Date.now();
-    await markPendingStopObservation(SANDBOX_ID);
+    // The armed report is what the warn sites key on: one warn line per stop
+    // episode, not one per reaper pass.
+    expect(await markPendingStopObservation(SANDBOX_ID)).toBe(true);
     const after = Date.now();
 
     const { metadata } = await readRow();
@@ -1521,7 +1523,7 @@ describe('the pending stop marker', () => {
     // on every pass would mean the box never parks.
     await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 1234 });
 
-    await markPendingStopObservation(SANDBOX_ID);
+    expect(await markPendingStopObservation(SANDBOX_ID)).toBe(false);
 
     expect((await readRow()).metadata.pendingStopObservedAtMs).toBe(1234);
   });
@@ -1529,7 +1531,7 @@ describe('the pending stop marker', () => {
   test('re-records a marker nothing can read', async () => {
     await setLifecycleState({ activeTurns: ACTIVE_TURNS, pendingStopObservedAtMs: 'soon' });
 
-    await markPendingStopObservation(SANDBOX_ID);
+    expect(await markPendingStopObservation(SANDBOX_ID)).toBe(true);
 
     expect(typeof (await readRow()).metadata.pendingStopObservedAtMs).toBe('number');
   });

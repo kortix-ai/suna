@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Modell verbinden, um den Chat zu starten",
-      "description": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
-      "upgradeDescription": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Führe ein Upgrade durch, um sofort auf die verwalteten Modelle von Kortix zuzugreifen, oder verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
       "upgrade": "Upgrade",
-      "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
       "connectModel": "Modell verbinden",
@@ -15625,7 +15621,6 @@
       "textb139c4cffca9": "Info-Banner",
       "textb13bbdebd165": "Noch keine SCIM-Tokens",
       "textb13c564cdf28": "{value0} wird gestoppt",
-      "textb14f19afe19f": "· Übersprungen",
       "textb16288742d59": "- Zusammenfassung der Verlängerung im Ton des Accounts entwerfen",
       "textb169cfa6f00f": "„{value0}“ löschen? Dies kann nicht rückgängig gemacht werden. Mitglieder behalten ihren Kontozugriff.",
       "textb16ecefb1aec": "Eine neue Maschine wird vorbereitet. Jetzt gestartete Sitzungen warten, bis sie fertig ist — sie schlagen nicht fehl.",

@@ -2,6 +2,8 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { withTimeout } from '../../shared/with-timeout';
+import { logger as appLogger } from '../../lib/logger';
 import {
   ensureOpencodeSessionPin,
   sandboxOpencodeEndpoint,
@@ -24,6 +26,30 @@ import {
 } from './session-transcript-mirror';
 
 const WORKSPACE_DIRECTORY = '/workspace';
+
+/**
+ * Budget for resolving the sandbox's daemon endpoint inside a transcript
+ * read. The request deadline is 25 s and the rest of the live attempt is
+ * already bounded (3 s session list, 8 s message fetch), so 8 s keeps the
+ * worst attempt under the deadline. Unbounded, Daytona's preview-link
+ * resolution runs two provider calls of up to 20 s each — 2026-09-29: a
+ * cold/wedged provider stacked that into 25 s deadline 503s and 20–25 s
+ * reads on GET /v1/projects/:id/sessions/:id/transcript.
+ * # ponytail: 8 s ceiling converts a slow-but-live read into a possibly-stale
+ * mirror answer; raise it if callers ever need longer live waits.
+ */
+const TRANSCRIPT_ENDPOINT_BUDGET_MS = 8_000;
+
+/**
+ * A degraded live attempt is expected backpressure — a wedged box during a
+ * burst degrades every read it is asked for. One line per degrade was the
+ * 2026-09-28 `[audit] Write contended` spike class (KRTX-614, learnings:
+ * "Rate-limit the warning for expected backpressure"): report the FIRST
+ * occurrence, then at most one line per interval. Every degrade still
+ * degrades; the per-request `reason` field still says why.
+ */
+const DEGRADE_LOG_INTERVAL_MS = 60_000;
+let lastDegradeLogAt = 0;
 
 export type { CompactMessage, CompactToolCall };
 
@@ -106,11 +132,15 @@ export async function buildSessionTranscriptDigest(
     maxChars: number;
     /** `compactMessage`'s `full` variant: line breaks plus tool input/output. */
     full?: boolean;
+    /** Budget for the sandbox endpoint resolution. Tests inject a short one;
+     *  prod uses {@link TRANSCRIPT_ENDPOINT_BUDGET_MS}. */
+    endpointBudgetMs?: number;
   },
   deps: SessionTranscriptDeps = {},
 ): Promise<SessionTranscriptDigest> {
   const { session, projectId, accountId, userId, limit, maxChars, full = false } = input;
   const readMirror = deps.readMirror ?? readMirrorSafely;
+  const startedAt = Date.now();
 
   /**
    * The live path could not answer. Serve the durable mirror if there is one —
@@ -122,6 +152,19 @@ export async function buildSessionTranscriptDigest(
     reason: string,
     opencodeSessionId: string | null,
   ): Promise<SessionTranscriptDigest> => {
+    // A degraded live attempt is otherwise invisible: `Request completed`
+    // carries no why, so a p95 spike on this route had to be reconstructed
+    // from durations alone. Rate-limited (see DEGRADE_LOG_INTERVAL_MS).
+    // A stopped session degrades by design on every read — it stays silent.
+    const now = Date.now();
+    if (session.status === 'running' && now - lastDegradeLogAt >= DEGRADE_LOG_INTERVAL_MS) {
+      lastDegradeLogAt = now;
+      appLogger.info('[transcript] live read degraded to the mirror', {
+        sessionId: session.sessionId,
+        reason,
+        elapsed_ms: now - startedAt,
+      });
+    }
     const mirror = await readMirror(session.sessionId, limit);
     if (mirror) {
       return {
@@ -161,6 +204,33 @@ export async function buildSessionTranscriptDigest(
     return degrade('session has no reachable sandbox external id yet', session.opencodeSessionId);
   }
 
+  // ONE endpoint resolution serves the pin check and the message fetch — it
+  // is handed to `ensureOpencodeSessionPin` below instead of being resolved
+  // again there. Resolution touches the sandbox provider (Daytona
+  // preview-link / service-key lookup) and can throw on a 429
+  // `ThrottlerException` rate limit, an archived/deleted box, a transient
+  // provider outage, or simply hang — the provider SDK exposes no per-call
+  // timeout, so the resolution is bounded with `withTimeout` and a hang
+  // degrades to the mirror like any other unreachable box. This digest is
+  // best-effort enrichment (the session row is already loaded); a provider
+  // throw must NEVER bubble up and 500 the transcript read (see #3567 for
+  // the sibling title-sync fix — this is the same class of bug on a
+  // different post-#3567 call site).
+  let endpoint: { url: string; headers: Record<string, string> } | null;
+  try {
+    endpoint = await withTimeout(
+      sandboxOpencodeEndpoint(externalId, userId),
+      input.endpointBudgetMs ?? TRANSCRIPT_ENDPOINT_BUDGET_MS,
+      'sandbox endpoint resolution',
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return degrade(`could not reach sandbox: ${message}`, session.opencodeSessionId);
+  }
+  if (!endpoint) {
+    return degrade('sandbox service key unavailable', session.opencodeSessionId);
+  }
+
   const ensured = await ensureOpencodeSessionPin({
     projectId,
     sessionId: session.sessionId,
@@ -168,28 +238,11 @@ export async function buildSessionTranscriptDigest(
     externalId,
     userId,
     currentPin: session.opencodeSessionId,
+    endpoint,
   });
   const opencodeSessionId = ensured.pin;
   if (!opencodeSessionId) {
     return degrade(opencodeReason(ensured.reason), null);
-  }
-
-  // Endpoint resolution touches the sandbox provider (Daytona preview-link /
-  // service-key lookup) and can throw on a 429 `ThrottlerException` rate limit,
-  // an archived/deleted box, or a transient provider outage. This digest is
-  // best-effort enrichment (the session row is already loaded); a provider
-  // throw must NEVER bubble up and 500 the transcript read (see #3567 for the
-  // sibling title-sync fix — this is the same class of bug on a different
-  // post-#3567 call site). Degrade to the mirror instead.
-  let endpoint: { url: string; headers: Record<string, string> } | null;
-  try {
-    endpoint = await sandboxOpencodeEndpoint(externalId, userId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return degrade(`could not reach sandbox: ${message}`, opencodeSessionId);
-  }
-  if (!endpoint) {
-    return degrade('sandbox service key unavailable', opencodeSessionId);
   }
 
   try {
