@@ -86,9 +86,6 @@ mock.module('../lib/session-runtime-projection-refresh', () => ({
     refreshCalls.push(target);
   },
 }));
-mock.module('../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: () => gatewayEnabled,
-}));
 mock.module('../../llm-gateway/enablement', () => ({
   projectLlmGatewayEnabled: () => gatewayEnabled,
 }));
