@@ -552,6 +552,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Keyboard-driven interactions → `transition-none`. ❌ animating arrow-key nav or focus moves.
 - ✅ Every animation ships a `prefers-reduced-motion` variant. ❌ one variant only.
 - ✅ List items appear at once. ❌ stagger in product UI.
+- ✅ Interactive elements show the pointer from the global rule. ❌ `cursor-default` on a clickable element.
 
 ## Workflow checklist
 
