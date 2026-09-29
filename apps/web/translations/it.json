@@ -187,7 +187,12 @@
     "account": {
       "label": "Account",
       "createIn": "Crea in {account}",
-      "choose": "Scegli un account"
+      "choose": "Scegli un account",
+      "loggedInAs": "Accesso effettuato come",
+      "nameLabel": "Nome dell'account",
+      "nameHint": "Il tuo team lo vede nella barra laterale e negli inviti. Puoi cambiarlo in seguito.",
+      "nameRequired": "Il nome dell'account è obbligatorio",
+      "renameFailed": "Impossibile salvare il nome dell'account. Riprova."
     },
     "name": {
       "label": "Nome dello progetto",
@@ -215,7 +220,6 @@
       "label": "Repository",
       "defaultBranch": "Branch predefinito",
       "loadGitHubAccountsError": "Impossibile caricare gli account GitHub. Riprova.",
-      "createsPath": "Crea <path>{path}</path>",
       "loadRepositoriesError": "Impossibile caricare i repository. Riprova.",
       "sources": {
         "managed": {
@@ -1171,6 +1175,10 @@
         "reminders": {
           "name": "Promemoria",
           "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Promemoria, l’indicatore dei promemoria della sessione e `kortix remind`."
+        },
+        "us_region": {
+          "name": "Regione USA",
+          "description": "Esegui le nuove sessioni di questo progetto nella regione USA Est. Una sessione in corso mantiene la sua regione fino al riavvio."
         }
       }
     },
@@ -19000,7 +19008,27 @@
       "text2edf70730233": "Messaggio per l'agente (facoltativo)",
       "texte88286ad9739": "Promemoria del progetto elencati",
       "text711edad21902": "Computer aggiunto al progetto",
-      "texta3ecfa724d04": "Il computer si è scollegato"
+      "texta3ecfa724d04": "Il computer si è scollegato",
+      "text734315a9e07d": "Metadati della risorsa MCP letti",
+      "text872227a135cd": "Configurazione OpenID letta",
+      "textd19297f36620": "React con server component e routing basato sui file.",
+      "text030637ad147a": "Framework web Python con tutto incluso.",
+      "textaf48bcf0b951": "Frontend",
+      "text2fb4019a35e4": "Backend",
+      "text21f231146e6c": "Phoenix (in arrivo)",
+      "textb53181a4d853": "Il mio account",
+      "textd696a35bdd18": "Profilo",
+      "text9e8197ce9e5f": "Mostra barra laterale",
+      "text073549e7238a": "Mostra minimappa",
+      "texte9736daa7c32": "Mostra barra di stato",
+      "textefb52e7172b7": "Tema",
+      "text27bf0f2d3f3f": "Invita persone",
+      "text9c0b617e79e9": "Elimina progetto",
+      "text8aec60d8fca6": "Lo stesso menu in ogni dimensione di riga: icone, scorciatoie, caselle di controllo, pulsanti di opzione, un sottomenu e una riga distruttiva.",
+      "textd71a0c697cce": "Segmentato",
+      "text9ae34cca7f2d": "Gestito da Kortix",
+      "textafecbae4466e": "Kortix crea e gestisce un repository privato per questo progetto.",
+      "text6cb9b40da8a0": "Kortix crea un repository privato nel tuo account GitHub."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -19102,6 +19130,7 @@
     "copyProjectId": "ID progetto",
     "copySessionId": "ID sessione",
     "copySessionLink": "link della sessione",
+    "copySessionTitle": "titolo della sessione",
     "copyAction": "Copia {label}",
     "copied": "Copiato: {label}",
     "copyFailed": "Impossibile copiare negli appunti"
@@ -19903,6 +19932,9 @@
   },
   "projectSelector": {
     "welcome": "Benvenuto in Kortix",
+    "nameAccountTitle": "Dai un nome al tuo account",
+    "nameAccountBody": "Qui vivono i tuoi progetti, agenti e membri del team.",
+    "nameAccountContinue": "Continua",
     "welcomeBack": "Bentornato",
     "descriptionNew": "Crea il tuo primo progetto o unisciti a uno condiviso dal tuo team.",
     "descriptionReturning": "Apri un progetto o creane uno nuovo.",

@@ -5,7 +5,6 @@ import { MANAGED_GIT_BACKEND_KEY } from '@/components/iam/managed-git-notice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -17,7 +16,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
 import { BranchPicker, RepositoryPicker } from '@/features/projects/modal/github-import-pickers';
-import { plannedRepoPath } from '@/features/workspace/new/github-source';
 import type { NewWorkspaceFormState } from '@/features/workspace/new/new-workspace-form';
 import {
   type GitAccountOption,
@@ -190,10 +188,14 @@ export function AdvancedFields({
       <div className="flex flex-col space-y-3">
         <Label htmlFor="workspace-source">{t('repository.gitAccountLabel')}</Label>
         {optionsLoading ? (
-          <p className="text-muted-foreground flex items-center gap-2 text-xs">
-            <Loading className="size-3.5 shrink-0" />
-            {t('repository.loadingOptions')}
-          </p>
+          // The trigger's own shape (md: `h-10`, the field radius), so the
+          // Select lands in exactly the box that was holding its place — no
+          // spinner and no sentence that disappears a beat later.
+          <div
+            aria-busy="true"
+            aria-label={t('repository.loadingOptions')}
+            className="bg-muted h-10 w-full rounded-md motion-safe:animate-pulse"
+          />
         ) : options.length === 0 ? (
           // No connection AND no managed git: the only honest thing left is to
           // say managed git is unavailable and offer to add a GitHub account.
@@ -234,7 +236,7 @@ export function AdvancedFields({
                 {options.map((option) => {
                   const typeLabel = ownerTypeLabel(option);
                   return (
-                    <SelectItem key={option.value} size="sm" value={option.value}>
+                    <SelectItem key={option.value} size="md" value={option.value}>
                       <span className="flex items-baseline gap-2">
                         <span>
                           {option.kind === 'managed'
@@ -251,7 +253,7 @@ export function AdvancedFields({
                 {accountId ? (
                   <>
                     <SelectSeparator />
-                    <SelectItem size="sm" value={ADD_ACCOUNT_VALUE}>
+                    <SelectItem size="md" value={ADD_ACCOUNT_VALUE}>
                       <span className="flex items-center gap-2">
                         <PlusIcon className="size-3.5" />
                         {t('repository.addGitHubAccount')}
@@ -299,35 +301,24 @@ export function AdvancedFields({
               {t('repository.createPersonalAuthorize')}
             </p>
           ) : null}
-          {action === 'create' ? (
-            <p className="text-muted-foreground text-xs">
-              {plannedRepoPath(selected.ownerLogin, state.name)
-                ? // The workspace name is free text and a GitHub repository
-                  // name is not, so `repoSlugFromName` can change it
-                  // noticeably. Showing the result before the create is what
-                  // stops that being a surprise discovered in the repository
-                  // list afterwards.
-                  t.rich('repository.createsPath', {
-                    path: () => (
-                      <span className="font-mono">
-                        {plannedRepoPath(selected.ownerLogin, state.name)}
-                      </span>
-                    ),
-                  })
-                : t('repository.sources.githubCreate.description')}
-            </p>
-          ) : null}
         </div>
       ) : null}
 
       {selected?.kind === 'github' && action === 'import' ? (
-        <>
+        // One decision — which repository, on which branch — so the two
+        // fields share the in-field gap rather than the gap between fields.
+        <div className="flex flex-col space-y-3">
           <ImportRepositoryField state={state} accountId={accountId} onChange={onChange} />
-          <div className="flex flex-col space-y-3">
-            <Label htmlFor="workspace-branch">{t('repository.defaultBranch')}</Label>
-            <ImportBranchField state={state} accountId={accountId} onChange={onChange} />
-          </div>
-        </>
+          {/* A branch belongs to a repository: until one is picked there is
+              nothing to choose from, so the field waits rather than sitting
+              there disabled. */}
+          {state.repoFullName ? (
+            <div className="flex flex-col space-y-3">
+              <Label htmlFor="workspace-branch">{t('repository.defaultBranch')}</Label>
+              <ImportBranchField state={state} accountId={accountId} onChange={onChange} />
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {selected?.kind === 'managed' ? (

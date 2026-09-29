@@ -187,7 +187,12 @@
     "account": {
       "label": "Account",
       "createIn": "Create in {account}",
-      "choose": "Choose an account"
+      "choose": "Choose an account",
+      "loggedInAs": "Logged in as",
+      "nameLabel": "Account name",
+      "nameHint": "Your team sees this in the sidebar and in invites. You can change it later.",
+      "nameRequired": "Account name is required",
+      "renameFailed": "Could not save the account name. Try again."
     },
     "name": {
       "label": "Project name",
@@ -215,7 +220,6 @@
       "label": "Repository",
       "defaultBranch": "Default branch",
       "loadGitHubAccountsError": "Could not load GitHub accounts. Try again.",
-      "createsPath": "Creates <path>{path}</path>",
       "loadRepositoriesError": "Could not load repositories. Try again.",
       "sources": {
         "managed": {
@@ -997,6 +1001,10 @@
         "reminders": {
           "name": "Reminders",
           "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
+        },
+        "us_region": {
+          "name": "US Region",
+          "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
         }
       }
     },
@@ -19013,7 +19021,27 @@
       "text2edf70730233": "Message to the agent (optional)",
       "texte88286ad9739": "Listed project reminders",
       "text711edad21902": "Added computer to project",
-      "texta3ecfa724d04": "Computer unpaired itself"
+      "texta3ecfa724d04": "Computer unpaired itself",
+      "text734315a9e07d": "Read MCP resource metadata",
+      "text872227a135cd": "Read OpenID configuration",
+      "textd19297f36620": "React with server components and file-based routing.",
+      "text030637ad147a": "Batteries-included Python web framework.",
+      "textaf48bcf0b951": "Frontend",
+      "text2fb4019a35e4": "Backend",
+      "text21f231146e6c": "Phoenix (coming soon)",
+      "textb53181a4d853": "My account",
+      "textd696a35bdd18": "Profile",
+      "text9e8197ce9e5f": "Show sidebar",
+      "text073549e7238a": "Show minimap",
+      "texte9736daa7c32": "Show status bar",
+      "textefb52e7172b7": "Theme",
+      "text27bf0f2d3f3f": "Invite people",
+      "text9c0b617e79e9": "Delete project",
+      "text8aec60d8fca6": "The same menu at every row size: icons, shortcuts, checkboxes, radios, a submenu and a destructive row.",
+      "textd71a0c697cce": "Segmented",
+      "text9ae34cca7f2d": "Kortix managed",
+      "textafecbae4466e": "Kortix creates and manages a private repository for this project.",
+      "text6cb9b40da8a0": "Kortix creates a private repository in your GitHub account."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -19115,6 +19143,7 @@
     "copyProjectId": "project ID",
     "copySessionId": "session ID",
     "copySessionLink": "session link",
+    "copySessionTitle": "session title",
     "copyAction": "Copy {label}",
     "copied": "Copied {label}",
     "copyFailed": "Could not copy to the clipboard"
@@ -19916,6 +19945,9 @@
   },
   "projectSelector": {
     "welcome": "Welcome to Kortix",
+    "nameAccountTitle": "Name your account",
+    "nameAccountBody": "Your projects, agents and teammates live here.",
+    "nameAccountContinue": "Continue",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",

@@ -1628,8 +1628,15 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mobile-tabs {
   height: var(--kx-titlebar-control-size);
 }
+/* The wrapper is the segmented track (with its own padding); the inner list and
+   the triggers fill it, so only the outer box takes the control size. */
+html[data-desktop-platform='macos']
+  .kx-settings-mobile-titlebar
+  [data-slot='tabs-list'].kx-settings-mobile-tabs {
+  height: 100%;
+}
 html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar [data-slot='tabs-trigger'] {
-  height: var(--kx-titlebar-control-size);
+  height: 100%;
   padding-top: 0;
   padding-bottom: 0;
 }

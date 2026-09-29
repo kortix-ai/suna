@@ -89,6 +89,24 @@ describe('URL precedence', () => {
   });
 });
 
+describe('homeUrl', () => {
+  it('opens the site root for a /projects instance URL, so the web lands in the last project', () => {
+    const dir = profile();
+    fs.mkdirSync(dir);
+    expect(store(dir).homeUrl()).toBe('https://kortix.com/');
+    expect(store(dir, 'http://localhost:3000/projects/').homeUrl()).toBe('http://localhost:3000/');
+    fs.writeFileSync(path.join(dir, OVERRIDE_FILE), CUSTOM_URL);
+    expect(store(dir).homeUrl()).toBe('https://kortix.acme.com/');
+  });
+
+  it('keeps any other path the user saved', () => {
+    const dir = profile();
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, OVERRIDE_FILE), 'https://kortix.acme.com/projects/abc');
+    expect(store(dir).homeUrl()).toBe('https://kortix.acme.com/projects/abc');
+  });
+});
+
 describe('save', () => {
   it('saves a custom URL and completes setup', () => {
     const dir = profile();

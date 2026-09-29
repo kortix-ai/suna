@@ -677,8 +677,8 @@
     {
       "idx": 96,
       "version": "7",
-      "when": 1790703625970,
-      "tag": "20260929174025_chat_identity_mfa_verified",
+      "when": 1790703018479,
+      "tag": "20260929173018_drizzle_snapshot_drop_opencode_archive",
       "breakpoints": true
     }
   ]

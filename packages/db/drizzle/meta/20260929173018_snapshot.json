@@ -1,5 +1,5 @@
 {
-  "id": "525ae11e-d57c-4e3b-86c5-a58900ec93a2",
+  "id": "08f260e3-fd62-47f7-a33e-95cc6f92273b",
   "prevId": "3d8e04e0-8281-4e31-a374-5058a499e41b",
   "version": "7",
   "dialect": "postgresql",
@@ -5979,12 +5979,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "mfa_verified_at": {
-          "name": "mfa_verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -10447,12 +10441,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
-        },
-        "opencode_archive": {
-          "name": "opencode_archive",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "error": {
           "name": "error",

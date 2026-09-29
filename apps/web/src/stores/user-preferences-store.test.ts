@@ -1,18 +1,16 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { useUserPreferencesStore } from './user-preferences-store';
 
+const defaults = useUserPreferencesStore.getState().preferences;
+const reset = () => useUserPreferencesStore.setState({ preferences: defaults });
+
 describe('panelMode', () => {
   beforeEach(() => {
-    useUserPreferencesStore.getState().resetPreferences();
+    reset();
   });
 
   it('defaults to easy', () => {
     expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('easy');
-  });
-
-  it('setPanelMode switches to advanced', () => {
-    useUserPreferencesStore.getState().setPanelMode('advanced');
-    expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('advanced');
   });
 
   it('togglePanelMode flips between the two modes', () => {
@@ -44,16 +42,16 @@ describe('panelMode', () => {
     expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('advanced');
   });
 
-  it('resetPreferences restores easy', () => {
-    useUserPreferencesStore.getState().setPanelMode('advanced');
-    useUserPreferencesStore.getState().resetPreferences();
+  it('reset restores easy', () => {
+    useUserPreferencesStore.getState().togglePanelMode();
+    reset();
     expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('easy');
   });
 });
 
 describe('conversationDensity', () => {
   beforeEach(() => {
-    useUserPreferencesStore.getState().resetPreferences();
+    reset();
   });
 
   it('defaults to normal', () => {
@@ -66,14 +64,14 @@ describe('conversationDensity', () => {
   });
 
   it('setConversationDensity leaves every other preference untouched', () => {
-    useUserPreferencesStore.getState().setPanelMode('advanced');
+    useUserPreferencesStore.getState().togglePanelMode();
     useUserPreferencesStore.getState().setConversationDensity('minimal');
     expect(useUserPreferencesStore.getState().preferences.panelMode).toBe('advanced');
   });
 
-  it('resetPreferences restores normal', () => {
+  it('reset restores normal', () => {
     useUserPreferencesStore.getState().setConversationDensity('minimal');
-    useUserPreferencesStore.getState().resetPreferences();
+    reset();
     expect(useUserPreferencesStore.getState().preferences.conversationDensity).toBe('normal');
   });
 });
