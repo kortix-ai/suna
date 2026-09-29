@@ -1175,6 +1175,10 @@
         "reminders": {
           "name": "Rappels",
           "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."
+        },
+        "us_region": {
+          "name": "Région États-Unis",
+          "description": "Exécutez les nouvelles sessions de ce projet dans la région Est des États-Unis. Une session en cours garde sa région jusqu’à son redémarrage."
         }
       }
     },

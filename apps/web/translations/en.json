@@ -1001,6 +1001,10 @@
         "reminders": {
           "name": "Reminders",
           "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
+        },
+        "us_region": {
+          "name": "US Region",
+          "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
         }
       }
     },
