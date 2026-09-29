@@ -350,6 +350,87 @@ describe('dispatch: one attempt plan', () => {
   });
 });
 
+// Seen on dev 2026-09-29: a ChatGPT login the provider no longer accepted
+// (401 "Could not parse your authentication token") failed every turn, while
+// the gateway believed the token valid until its stored expiry. A 401 on a
+// refreshable login now gets one forced refresh and one retry.
+describe('dispatch: a refused login', () => {
+  const login = (overrides: Partial<UpstreamDescriptor> = {}) =>
+    upstream('chatgpt', { apiKey: 'stale', credentialRef: 'acct-a', refreshableCredential: true, billingMode: 'none', markup: 0, ...overrides });
+  const refused = () => json({ error: { message: 'Could not parse your authentication token.', code: 'unauthorized_unknown' } }, 401);
+
+  test('a 401 refreshes the login once and retries with the new token', async () => {
+    const refreshed: string[] = [];
+    const { run, sent } = harness(({ key }) => (key === 'stale' ? refused() : ok()), {
+      refreshCredential: async (descriptor) => {
+        refreshed.push(descriptor.credentialRef!);
+        return { ...descriptor, apiKey: 'fresh' };
+      },
+    });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent.map((s) => s.key)).toEqual(['stale', 'fresh']);
+    expect(refreshed).toEqual(['acct-a']);
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.descriptor.apiKey).toBe('fresh');
+  });
+
+  test('a login that cannot be refreshed keeps the provider 401, sent once', async () => {
+    const { run, sent } = harness(() => refused(), { refreshCredential: async () => null });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent).toHaveLength(1);
+    expect(outcome.response?.status).toBe(401);
+    expect(await outcome.response?.text()).toContain('unauthorized_unknown');
+  });
+
+  test('a refreshed login that is refused again is final: no second refresh', async () => {
+    let refreshes = 0;
+    const { run, sent } = harness(() => refused(), {
+      refreshCredential: async (descriptor) => {
+        refreshes += 1;
+        return { ...descriptor, apiKey: `fresh-${refreshes}` };
+      },
+    });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent.map((s) => s.key)).toEqual(['stale', 'fresh-1']);
+    expect(refreshes).toBe(1);
+    expect(outcome.response?.status).toBe(401);
+  });
+
+  test('a refresh hook that throws does not fail the request differently', async () => {
+    const { run, sent } = harness(() => refused(), {
+      refreshCredential: async () => {
+        throw new Error('api unreachable');
+      },
+    });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent).toHaveLength(1);
+    expect(outcome.response?.status).toBe(401);
+  });
+
+  test('only a refreshable login is refreshed: a BYOK key 401 is final', async () => {
+    let refreshes = 0;
+    const { run, sent } = harness(() => status(401), {
+      refreshCredential: async (descriptor) => {
+        refreshes += 1;
+        return descriptor;
+      },
+    });
+    const outcome = await run({ model: 'openai/m', candidates: [upstream('openai', { credentialRef: 'OPENAI_API_KEY' })] });
+    expect(sent).toHaveLength(1);
+    expect(refreshes).toBe(0);
+    expect(outcome.response?.status).toBe(401);
+  });
+
+  test('a pooled login that stays refused hands the request to the next pool member', async () => {
+    const member = (name: string) => login({ apiKey: name, credentialRef: name, poolSecretId: name });
+    const { run, sent } = harness(({ key }) => (key === 'b' ? ok() : refused()), { refreshCredential: async () => null });
+    const outcome = await run({ model: 'codex/m', candidates: [member('a'), member('b')] });
+    expect(sent.map((s) => s.key)).toEqual(['a', 'b']);
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.descriptor.poolSecretId).toBe('b');
+  });
+});
+
 describe('the provider response-header deadline', () => {
   test('aborts a provider fetch that does not return response headers before the deadline', async () => {
     const fetchWithTimeout = withUpstreamHeadersTimeout(

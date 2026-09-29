@@ -48,6 +48,7 @@ export interface ApiClient {
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
+  refreshCredential: (principal: AuthedPrincipal, descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
   assertBillingActive: (accountId: string) => Promise<{ holdUsd?: number } | void>;
   assertBudget: (principal: AuthedPrincipal) => Promise<void>;
   recordUsage: (event: UsageEvent) => Promise<void>;
@@ -184,6 +185,16 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     },
     notePoolRateLimit: async (principal, secretId, seconds) => {
       await post<{ ok: boolean }>('/internal/gateway/pool-rate-limit', { principal, secretId, seconds });
+    },
+    // The token itself never crosses back: the API compares a digest to tell
+    // a login another request already refreshed from the one that failed.
+    refreshCredential: async (principal, descriptor) => {
+      if (!descriptor.credentialRef) return null;
+      const failedKeySha256 = new Bun.CryptoHasher('sha256').update(descriptor.apiKey).digest('hex');
+      const result = await post<{ descriptor: Partial<UpstreamDescriptor> | null }>('/internal/gateway/refresh-credential', {
+        principal, secretId: descriptor.credentialRef, failedKeySha256,
+      });
+      return result.descriptor ? { ...descriptor, ...result.descriptor } : null;
     },
     assertBillingActive: async (accountId) => {
       const result = await post<{ active: boolean; reason?: string; message?: string; holdUsd?: number }>(

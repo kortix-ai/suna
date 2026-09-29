@@ -6,7 +6,6 @@
 
 import * as lifecycleStore from './store';
 import { sessionAttachmentStore } from '../lib/session-attachments';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -79,7 +78,6 @@ export async function continueSession(
       projectId: projectSessions.projectId,
       status: projectSessions.status,
       metadata: projectSessions.metadata,
-      projectMetadata: sql<Record<string, unknown> | null>`(SELECT p.metadata FROM kortix.projects p WHERE p.project_id = "kortix"."project_sessions"."project_id")`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
@@ -196,8 +194,6 @@ export async function continueSession(
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
-        attachmentProjectId: resolveFeatureFlag(session.projectMetadata, 'session_transcript_history')
-          ? session.projectId : undefined,
         accountId: session.accountId,
         projectId: session.projectId,
       },

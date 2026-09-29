@@ -11,6 +11,7 @@ import { consumePendingTeamsAuthMessage, peekPendingTeamsAuthSenderName } from '
 import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
 import { verifyTeamsLoginState } from './login';
 import { createOrJoinTeamsConversationSession } from './session';
+import { confirmTeamsConnected } from './identity';
 import { readJsonObject } from '../../shared/http-body';
 
 export const teamsIdentityApp = makeOpenApiApp();
@@ -173,6 +174,20 @@ teamsIdentityApp.openapi(
         console.error('[teams-auth] failed to resume pending Teams message after bind', err),
       );
     }
+
+    // Say so in Teams too: the browser tab is the only place that said it, and
+    // the person is back in Teams. Slack posts "Slack connected — picking up
+    // your message". Best effort: the 1:1 chat opens only when the app is
+    // installed for them, which is where the sign-in link was sent.
+    const confirmProject = pending?.projectId ?? projectIds[0]!;
+    void confirmTeamsConnected({
+      projectId: confirmProject,
+      tenantId: payload.tenantId,
+      teamsUserId: payload.teamsUserId,
+      userId,
+      resumed,
+      hasAccess,
+    });
 
     const workspaceName =
       (await loadTeamsInstall(projectIds[0]).catch(() => null))?.teamName ?? null;

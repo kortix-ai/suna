@@ -117,9 +117,10 @@ async function codexAccountCandidates(context: Context, secrets: Array<{ secretI
       });
       if (!credential) { failed.push(secret.label); continue; }
       // `poolSecretId`: a 429 on one account records its cooldown and moves
-      // the request to the next account.
+      // the request to the next account. `refreshableCredential`: a 401 forces
+      // one refresh of this login (internal-routes /refresh-credential).
       candidates.push({ ...codexDescriptor(credential, effectiveModel),
-        credentialRef: secret.secretId, poolSecretId: secret.secretId });
+        credentialRef: secret.secretId, poolSecretId: secret.secretId, refreshableCredential: true });
     } catch (err) {
       if (!(err instanceof CodexRefreshError)) throw err;
       failed.push(secret.label);
@@ -216,7 +217,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           sessionId: principal.sessionId ?? null, userId: principal.userId,
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
         });
-        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId }];
+        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
       } catch (err) {
         if (!(err instanceof CodexRefreshError)) throw err;
       }

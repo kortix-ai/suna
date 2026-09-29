@@ -226,6 +226,62 @@ test('recognizes exact command-key XML without materializing or overwriting the 
   expect(marks).toBe(1);
 });
 
+test('recognizes command-key XML that names its saved copy', async () => {
+  // Every delivered file also gets a private copy, and the reference the
+  // runtime holds names it. That reference is still the canonical one.
+  let marks = 0;
+  const savedXml =
+    '<file path="/workspace/uploads/.kortix-inbox/command_first/0-bundle.zip" mime="application/zip" filename="bundle.zip" attachment="kortix-attachment://project_1/session_1/3b6e0b5c-4c7e-5f0d-9a39-1c1f3f0e2a11">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const pending = {
+    commandId: 'command_first',
+    deliveredMessageIds: ['msg_first'],
+    parts: [
+      {
+        type: 'file' as const,
+        mime: 'application/zip',
+        filename: 'bundle.zip',
+        url: 'data:application/zip;base64,UEsDBA==',
+      },
+    ],
+  };
+  const result = await repair({
+    loadPendingFirst: async () => pending,
+    readMessage: async () => ({
+      info: { id: 'msg_first', role: 'user' },
+      parts: [{ id: 'part_zip', type: 'text', text: savedXml }],
+    }),
+    materialize: async () => {
+      throw new Error('recognized transcript must not materialize');
+    },
+    updatePart: async () => {
+      throw new Error('recognized transcript must not PATCH');
+    },
+    markRepaired: async () => {
+      marks += 1;
+    },
+  });
+  expect(result).toEqual({ repaired: 1 });
+  expect(marks).toBe(1);
+
+  // Only a saved-copy URL is that attribute. Anything else is not the
+  // reference this command wrote.
+  for (const text of [
+    savedXml.replace('kortix-attachment://', 'https://'),
+    savedXml.replace('/0-bundle.zip', '/1-bundle.zip'),
+    savedXml.replace('">\nThis file', '" pending="x">\nThis file'),
+  ]) {
+    await expect(
+      repair({
+        loadPendingFirst: async () => pending,
+        readMessage: async () => ({
+          info: { id: 'msg_first', role: 'user' },
+          parts: [{ id: 'part_zip', type: 'text', text }],
+        }),
+      }),
+    ).rejects.toThrow('does not map to one runtime part');
+  }
+});
+
 test('recognizes exact legacy repair XML without materializing again', async () => {
   let materializations = 0;
   let marks = 0;

@@ -970,10 +970,6 @@
           "name": "Network-Enforced Secrets",
           "description": "Control which tools and destinations can receive project secrets."
         },
-        "session_transcript_history": {
-          "name": "Session Transcript History",
-          "description": "Save chat history after each turn and show it while the session computer starts."
-        },
         "pooled_provider_secrets": {
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
@@ -1721,7 +1717,8 @@
       "unavailableTitle": "Secret access is unavailable",
       "unavailableDescription": "The current secret selection stays unchanged.",
       "useProjectDefault": "Use the project default",
-      "empty": "No secrets are available for this agent."
+      "empty": "No secrets are available for this agent.",
+      "loading": "Loading secrets…"
     },
     "connectors": {
       "unavailableTitle": "Connector access is unavailable",
@@ -18690,6 +18687,7 @@
       "text7ca079c260d4": "Deducted credits for agent run",
       "text2fa5960eb241": "Deleted Kortix App",
       "text8a18f907f571": "Deleted LLM gateway budget",
+      "text3fb4073453fc": "Deleted Microsoft Teams message",
       "texta5022956d571": "Deleted computer tunnel",
       "text5be61028cb32": "Deleted connector",
       "textc3ab70838004": "Deleted gateway routing policy",
@@ -18715,6 +18713,7 @@
       "text46bf87f15165": "Downloaded fast-boot Git bundle",
       "text3f83682cacbc": "Downloaded session attachment",
       "text21d6e0d7c87a": "Downloaded the sandbox entrypoint",
+      "textda0af072ec8c": "Edited Microsoft Teams message",
       "textf2b760a63dfe": "Enrolled a second factor",
       "text32c94e9eb5f4": "Expired a role",
       "text7bc76ea5ba38": "Expired computer tunnel permission",
@@ -18868,6 +18867,7 @@
       "textd7e9422246ca": "Recorded agent runtime event",
       "text24bd93cb9282": "Recorded sandbox boot timeline",
       "text8124518133b5": "Recorded session creation",
+      "text6882f8a71aff": "Refreshed a refused ChatGPT login",
       "text5b075f5d4491": "Refreshed a sign-in session",
       "text7e2c4b63962f": "Refreshed secret credential",
       "textaa64846a875f": "Refused secret handle",

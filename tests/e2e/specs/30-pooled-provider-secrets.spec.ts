@@ -241,9 +241,25 @@ test.describe('30 — pooled provider secrets', () => {
         await dialog.getByRole('button', { name: 'Cancel' }).click();
       }
       await page.unroute(`**/v1/projects/${projectId}/oauth/openai/start`);
+      // The secrets catalog can take seconds. It used to keep the gear disabled
+      // until it answered, so no key could be chosen before the first prompt.
+      // Held here for the whole selection: the gear, provider keys and Save
+      // must not wait on it.
+      let releaseSecrets = () => {};
+      const secretsHeld = new Promise<void>((resolve) => { releaseSecrets = resolve; });
+      let secretsReads = 0;
+      await page.route(`**/v1/projects/${projectId}/secrets`, async (route) => {
+        if (route.request().method() === 'GET') {
+          secretsReads += 1;
+          await secretsHeld;
+        }
+        await route.fallback();
+      });
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      await expect.poll(() => secretsReads).toBeGreaterThan(0);
       await page.getByRole('button', { name: 'Session overrides' }).click();
       await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Secrets Loading secrets…/ })).toBeVisible();
       await expect(page.getByRole('button', { name: /Provider keys/ })).toBeVisible();
       await page.evaluate(() => window.dispatchEvent(new CustomEvent('focus-session-textarea')));
       await expect(page.getByRole('button', { name: /Provider keys/ })).toBeVisible();
@@ -251,6 +267,9 @@ test.describe('30 — pooled provider secrets', () => {
       await page.getByRole('checkbox', { name: 'Primary test key' }).check();
       await page.getByRole('checkbox', { name: 'Backup test key for shared research and development sessions' }).check();
       await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Session overrides', exact: true })).toHaveCount(0);
+      releaseSecrets();
+      await page.unroute(`**/v1/projects/${projectId}/secrets`);
       await page.getByRole('textbox', { name: 'Message input' }).fill('Verify selected provider keys');
       const createResponse = page.waitForResponse((response) => response.request().method() === 'POST'
         && response.url().endsWith(`/projects/${projectId}/sessions`));
@@ -823,7 +842,7 @@ test.describe('30 — pooled provider secrets', () => {
       project = await createManifestProject({ api, accessToken: ownerSession.access_token, accountId, userId: owner.id,
         name: `ChatGPT reconnect ${runId}`, databaseUrl: databaseUrl! });
       const projectId = project.id;
-      for (const feature of ['llm_gateway', 'pooled_provider_secrets', 'session_transcript_history']) {
+      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
         await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/features`, { feature, enabled: true });
       }
       await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });

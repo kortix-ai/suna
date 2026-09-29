@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 690,
+  "count": 693,
   "routes": [
     {
       "method": "GET",
@@ -45,6 +45,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/refresh-credential"
     },
     {
       "method": "POST",
@@ -1705,6 +1709,14 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/channels/teams/message"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/edit"
     },
     {
       "method": "GET",
