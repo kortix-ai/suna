@@ -116,6 +116,9 @@ data "aws_caller_identity" "current" {}
 
 locals {
   account_id = data.aws_caller_identity.current.account_id
+  # Drata's IaC scan (test 8028) does not resolve local.tags or merge() on KMS,
+  # S3, SNS, IAM role, EC2 and DynamoDB resources. Those resources repeat this
+  # map as a literal; keep the copies identical.
   tags = {
     ManagedBy  = "terraform"
     Stack      = "security-baseline"

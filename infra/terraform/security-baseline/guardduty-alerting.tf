@@ -24,7 +24,11 @@ resource "aws_iam_role" "guardduty_event_forwarder" {
       Action    = "sts:AssumeRole"
     }]
   })
-  tags = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_iam_role_policy" "guardduty_event_forwarder" {
