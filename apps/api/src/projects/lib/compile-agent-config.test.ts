@@ -244,6 +244,32 @@ agents:
     }) as OpencodeConfig;
     expect(compiled.model).toBeUndefined();
   });
+
+  // W1 B5: pi reads `default_agent` for a session with no agent chosen; OpenCode reads the same key.
+  test('names the manifest default_agent, so every runtime runs it when no agent is chosen', () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    expect(compiled.default_agent).toBe('support');
+  });
+
+  test('omits default_agent when that agent cannot run as the primary one', () => {
+    const subagent = parseYaml(`
+kortix_version: 2
+default_agent: pr-bot
+agents:
+  pr-bot:
+    kortix_permissions: []
+`);
+    const disabled = parseYaml(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    enabled: false
+`);
+    const md = { '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs') };
+    expect((compileAgentConfig(subagent, 'opencode', md) as OpencodeConfig).default_agent).toBeUndefined();
+    expect((compileAgentConfig(disabled, 'opencode', {}) as OpencodeConfig).default_agent).toBeUndefined();
+  });
 });
 
 describe('compileAgentConfig — a stock OpenCode agent .md with frontmatter compiles cleanly', () => {
@@ -503,18 +529,25 @@ agents:
 
 describe('selectSessionHarness — flag OR manifest', () => {
   test('pi when the project flag is on, whatever the manifest says', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode' })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi' })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
   });
 
   test('pi when the manifest says runtime: pi, even with the flag off', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
   });
 
   test('opencode in every other case', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode' })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
+  });
+
+  // W1 B7: pi calls models only through the gateway; without it the box would never start.
+  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
   });
 });
 

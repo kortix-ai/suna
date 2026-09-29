@@ -24,6 +24,8 @@ import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCa
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
 import { readHostHealth } from '@/harness/shared/host-health'
+import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
+import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 
 const TOKEN = 'pi-test-token'
 const MODEL_ID = 'test-model'
@@ -160,13 +162,14 @@ async function boot(input: {
   workspace?: string
   /** Runs on the fresh workspace before the runtime starts. */
   prepare?: (workspace: string) => void
+  hooks?: PiRuntimeHooks
 }): Promise<Rig> {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
   input.prepare?.(workspace)
   gateway.script(input.script)
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
-  const service = createPiHarnessService(cfg, undefined, { env })
+  const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks })
   const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialOpenCodeSessionRequired: false }
   if (input.start !== false) await service.lifecycle.start()
   const app = buildDaemonApp(cfg, service, Date.now(), bootState)
@@ -545,6 +548,121 @@ describe('pi harness', () => {
     const allowedPage = (await allowed.bearer(`/kortix/opencode/messages/${allowedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const allowedTool = allowedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(allowedTool.state).toMatchObject({ status: 'completed', output: expect.stringContaining('fine') })
+  })
+
+  /** The tool part of the root's first tool call, once the turn is over. */
+  const firstToolPart = async (r: Rig) => {
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    return page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')! as { state: { status: string; error?: string; output?: string } }
+  }
+
+  test('a bare "permission: deny" blocks every tool (W1 B1)', async () => {
+    // The compiler emits the whole-agent string when the manifest block has no
+    // `skills:` key. pi used to read it as "no rules" and allow everything.
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'rm -rf ./keep' } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: 'deny' } } }) },
+      prepare: (workspace) => {
+        mkdirSync(join(workspace, 'keep'))
+        writeFileSync(join(workspace, 'keep', 'sentinel'), 'still here')
+      },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies')
+    expect(existsSync(join(r.workspace, 'keep', 'sentinel'))).toBe(true)
+  })
+
+  test('an "edit: deny" rule stops the write tool (W1 B2)', async () => {
+    const r = await boot({
+      script: [{ tool: 'write', args: { path: 'new.txt', content: 'should not exist' } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies this write call')
+    expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
+  })
+
+  test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
+    const skill = (dir: string, name: string) => {
+      mkdirSync(join(dir, name), { recursive: true })
+      writeFileSync(join(dir, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
+    }
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    skill(managed, 'kortix-memory')
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({
+        script: [{ text: 'ok' }],
+        // What compileAgentConfig emits for `skills: [deploy]`.
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } } }) },
+        prepare: (workspace) => {
+          skill(join(workspace, 'skills'), 'deploy')
+          skill(join(workspace, '.kortix', 'opencode', 'skills'), 'review')
+          // pi's own project skill dir, read by its resource loader.
+          skill(join(workspace, '.pi', 'skills'), 'secrets-dump')
+        },
+      })
+      const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+      expect(skills.map((s) => s.name)).toEqual(['deploy'])
+      const root = r.service.runtime()!.rootId
+      const before = gateway.sent.length
+      expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
+      expect(system).toContain('deploy')
+      for (const hidden of ['kortix-memory', 'review', 'secrets-dump']) expect(system).not.toContain(hidden)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+      rmSync(managed, { recursive: true, force: true })
+    }
+  })
+
+  test('agent shells source the live agent env file through BASH_ENV (W1 B4)', async () => {
+    // The egress shim's proxy + CA variables exist only in that file; a
+    // non-interactive `bash -c` reads it only through BASH_ENV.
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'printf "%s" "$BASH_ENV"' } }, { text: 'done' }] })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('completed')
+    expect(tool.state.output).toContain(AGENT_ENV_SH)
+  })
+
+  test('a session with no agent chosen runs the manifest default_agent, not the first agent (W1 B5)', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      env: {
+        KORTIX_AGENT_NAME: 'default',
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'writer', agent: { build: { prompt: 'You build.' }, writer: { prompt: 'You write docs.' } } }),
+      },
+    })
+    expect(r.service.runtime()!.agentNameValue()).toBe('writer')
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))).toContain('You write docs.')
+  })
+
+  test('a permission ask is reported for the approval push (W1 B9)', async () => {
+    const asked: Array<{ id: string; sessionID: string; permission: string; patterns: string[] }> = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+      hooks: { onPermissionAsked: (request) => asked.push(request) },
+    })
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
+    const pending = r.service.runtime()!.permissions.list()[0]!
+    expect(asked).toEqual([expect.objectContaining({ id: pending.id, sessionID: root, permission: 'bash', patterns: ['bash'] })])
+    r.service.runtime()!.permissions.reply(pending.id, 'once')
+    await waitFor(() => !r.service.runtime()!.busy())
   })
 
   test('abort stops a running tool and ends the turn as aborted', async () => {

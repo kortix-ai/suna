@@ -325,6 +325,39 @@ export function relaunchStrategyFor(provider: ProviderName | string): RelaunchSt
   }
 }
 
+/** Metadata stamp: when a session open asked for a dead-daemon relaunch. */
+export const DEAD_DAEMON_REPAIR_REQUESTED_KEY = 'deadDaemonRepairRequestedAt';
+/** One open-time relaunch: download + relaunch + the script's own health wait, then the open parks. */
+export const DEAD_DAEMON_REPAIR_BUDGET_MS = 4 * 60_000;
+
+export type DeadDaemonOpenAction = 'request' | 'wait' | 'park';
+
+/**
+ * A provider-running box whose daemon stayed unreachable past the open budget.
+ * Where the provider's init never relaunches the runtime (Platinum), parking it
+ * only freezes the corpse: every later open resumes the same snapshot with
+ * nothing on :8000, forever (prod 2026-09-28: 18 h, every `/start` parked it
+ * again). So ask for the relaunch once per unreachable spell, and park only
+ * after it had its chance. Daytona/E2B rerun the entrypoint on their next
+ * start, so parking IS their repair.
+ */
+export function decideDeadDaemonOnOpen(input: {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  unreachableSinceMs: number | null;
+  nowMs: number;
+}): DeadDaemonOpenAction {
+  if (relaunchStrategyFor(input.provider) !== 'pt-app') return 'park';
+  const requestedMs = Date.parse(String(input.metadata?.[DEAD_DAEMON_REPAIR_REQUESTED_KEY] ?? ''));
+  if (!Number.isFinite(requestedMs)) return 'request';
+  if (input.unreachableSinceMs !== null && requestedMs < input.unreachableSinceMs) return 'request';
+  const record = readRecord(input.metadata);
+  if (record?.state === 'failed' && Date.parse(record.finishedAt ?? record.lastAttemptAt) >= requestedMs) {
+    return 'park';
+  }
+  return input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS ? 'wait' : 'park';
+}
+
 export interface RenderScriptOptions {
   relaunch: RelaunchStrategy;
   opencodeHome?: string;
@@ -939,6 +972,14 @@ export async function bootstrapLegacyRuntime(
       'failed',
       `script failed at ${report.stage}`,
     );
+  }
+  if (report.stage === 'deferred_busy') {
+    // A turn started between the idle gate above and the relaunch. Nothing
+    // ran, so this was not an attempt: put the prior record back and the next
+    // idle pass retries with no cooldown and no budget spent.
+    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
+    deps.log('legacy runtime bootstrap deferred: a turn started during the repair', { sandboxId: input.sandboxId });
+    return { outcome: 'skipped-busy', detail: 'a turn started during the repair; relaunch deferred', classification };
   }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {
