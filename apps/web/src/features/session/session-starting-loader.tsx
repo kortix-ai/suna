@@ -65,8 +65,7 @@ export function sessionWakeStatusNote(input: {
     return `Computer did not start. Retrying automatically (attempt ${nextAttempt}).`;
   }
   const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
-  if (seconds === 0)
-    return `Computer did not start. Retrying automatically now (attempt ${nextAttempt}).`;
+  if (seconds === 0) return `Computer did not start. Retrying automatically now (attempt ${nextAttempt}).`;
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   const duration = minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
