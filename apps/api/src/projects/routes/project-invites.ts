@@ -4,7 +4,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { assignPendingProjectRole, revokePendingAssignments } from '../../iam/assignments';
 import { normalizeProjectRole, parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -18,7 +18,7 @@ import {
   parseExpiresAtBody,
   assertProjectCapability,
 } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
 
 // PUT /v1/projects/:projectId/access/:userId
@@ -32,11 +32,15 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/access/invite',
     tags: ['access'],
-    summary: 'POST /:projectId/access/invite',
+    summary: 'Invite a member to a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            email: z.string().openapi({ description: 'Email address to invite.' }),
+            role: z.enum(['manager,member']).optional().openapi({ description: 'Project role.' }),
+            expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -232,7 +236,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/access/pending-invites',
     tags: ['access'],
-    summary: 'GET /:projectId/access/pending-invites',
+    summary: 'List pending project invites',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -321,7 +325,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/access/pending-invites/{inviteId}',
     tags: ['access'],
-    summary: 'DELETE /:projectId/access/pending-invites/:inviteId',
+    summary: 'Cancel a pending project invite',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), inviteId: z.string() }),
@@ -396,7 +400,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/access/pending-invites/{inviteId}/resend',
     tags: ['access'],
-    summary: 'POST /:projectId/access/pending-invites/:inviteId/resend',
+    summary: 'Resend a project invite',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), inviteId: z.string() }),

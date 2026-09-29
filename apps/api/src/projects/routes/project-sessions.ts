@@ -14,14 +14,14 @@ import {
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
 import { and, eq, or } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -69,7 +69,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions',
+    summary: 'Create a session (start an agent task)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -243,7 +243,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions',
+    summary: 'List sessions of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -349,7 +349,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId',
+    summary: 'Get a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -401,11 +401,16 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/sessions/{sessionId}/sharing',
     tags: ['sessions'],
-    summary: 'PUT /:projectId/sessions/:sessionId/sharing',
+    summary: 'Set who can see a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            mode: z.enum(['project,private,members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
+            ownerId: z.string().optional().openapi({ description: 'For mode private: the owner user id. Defaults to the caller.' }),
+            memberIds: z.array(z.string()).optional().openapi({ description: 'For mode members: user ids.' }),
+            groupIds: z.array(z.string()).optional().openapi({ description: 'For mode members: group ids.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -534,11 +539,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'PATCH /:projectId/sessions/:sessionId',
+    summary: 'Rename a session or merge metadata into it',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
+            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata. Server-managed keys are rejected.' }),
+          }) } } },
       },
     responses: {
         200: json(SessionSchema, 'The updated session'),
@@ -669,7 +677,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId',
+    summary: 'Delete a session (soft delete; its branch is kept)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),

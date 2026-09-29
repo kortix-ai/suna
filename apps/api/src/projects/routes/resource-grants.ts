@@ -16,14 +16,14 @@ import {
   projectResourcesFromConfig,
   loadConfigWithFiles,
 } from '../lib/project-resources';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroups, accountMembers, connectors } from '@kortix/db';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -66,7 +66,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/resource-grants',
     tags: ['access'],
-    summary: 'GET /:projectId/resource-grants',
+    summary: 'List resource grants of a project',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'Resource grants + grantable resources'), ...errors(404) },
@@ -207,11 +207,17 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/resource-grants',
     tags: ['access'],
-    summary: 'POST /:projectId/resource-grants',
+    summary: 'Grant a member or group access to a project resource',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          resource_type: z.enum(['agent']).openapi({ description: 'Only agent grants can be created.' }),
+          resource_id: z.string().openapi({ description: 'Agent name.' }),
+          principal_type: z.enum(['member,group']).openapi({ description: 'Who gets access.' }),
+          principal_id: z.string().openapi({ description: 'User id or group id (uuid).' }),
+          expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
+        }) } } },
     },
     responses: { 201: json(z.any(), 'The created grant'), ...errors(400, 404) },
   }),
@@ -341,7 +347,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/resource-grants/{grantId}',
     tags: ['access'],
-    summary: 'DELETE /:projectId/resource-grants/:grantId',
+    summary: 'Remove a resource grant',
     ...auth,
     request: { params: z.object({ projectId: z.string(), grantId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },

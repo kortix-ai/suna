@@ -827,6 +827,8 @@ Native cannot consume the SDK's fetch-based SSE stream.
 (`kortix_pat_…`) for server-side / automation use, or an OAuth access token
 (`kortix_oat_…`) minted by "Sign in with Kortix" — supplied via `getToken`.
 
+To use Kortix from an MCP client (Claude, ChatGPT, Cursor, Codex) instead of code, see the hosted MCP server: <https://kortix.com/docs/connect/mcp>.
+
 ### Sign in with Kortix (your app, their Kortix account)
 
 Make Kortix the identity provider for an app you run. Register the app once

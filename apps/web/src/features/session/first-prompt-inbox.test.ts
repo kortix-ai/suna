@@ -22,6 +22,7 @@ function read(relative: string): string {
 }
 
 const shell = read('./instant-session-shell.tsx');
+const shellSend = read('./use-instant-session-send.ts');
 const projectHome = read('../../app/[locale]/(app)/projects/[id]/page.tsx');
 const sessionPage = read('../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
@@ -29,10 +30,11 @@ const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts
 
 describe('every first-prompt producer writes a durable row, not a prompt stash', () => {
   test('instant shell POSTs via startSessionWithPrompt with handle-only attachment parts', () => {
-    expect(shell).toContain('startSessionWithPrompt(projectId, sessionId');
-    expect(shell).toContain('promptFileParts(files, attachmentParts)');
-    expect(shell).toContain("prompt: ''");
-    expect(shell).not.toContain('prompt: text');
+    expect(shell).toContain('useInstantSessionSend({');
+    expect(shellSend).toContain('startSessionWithPrompt(projectId, sessionId');
+    expect(shellSend).toContain('promptFileParts(files, attachmentParts)');
+    expect(shellSend).toContain("prompt: ''");
+    expect(shellSend).not.toContain('prompt: text');
   });
 
   test('project home hands the prompt (and its attachments) to the create', () => {

@@ -3,7 +3,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { buildDenialError } from '../../iam/denial-message';
 import { invalidateIamCacheForProjectResources } from '../../iam/cache-invalidation';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
@@ -86,11 +86,14 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/onboarding',
     tags: ['projects'],
-    summary: 'PATCH /:projectId/onboarding',
+    summary: 'Update project onboarding state',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            completed: z.boolean().optional().openapi({ description: 'true marks onboarding complete; false clears it.' }),
+            profile: z.record(z.string(), z.any()).optional().openapi({ description: 'Onboarding answers to merge.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -156,7 +159,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}',
     tags: ['projects'],
-    summary: 'DELETE /:projectId',
+    summary: 'Delete a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),

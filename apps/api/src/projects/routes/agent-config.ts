@@ -188,7 +188,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/agents/{agentName}/config',
     tags: ['projects'],
-    summary: 'GET /:projectId/agents/:agentName/config',
+    summary: 'Get an agent\'s configuration',
     ...auth,
     request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
     responses: { 200: json(z.any(), 'The agent config block'), ...errors(400, 403, 404) },
@@ -360,7 +360,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/agents/{agentName}/config',
     tags: ['projects'],
-    summary: 'PUT /:projectId/agents/:agentName/config',
+    summary: 'Set an agent\'s configuration',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), agentName: z.string() }),
