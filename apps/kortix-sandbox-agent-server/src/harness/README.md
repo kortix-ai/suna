@@ -17,7 +17,8 @@ await runtime.lifecycle.start()
 `KORTIX_HARNESS` (`opencode` | `pi`; unset means `opencode`) is set by apps/api
 at provisioning (`buildSessionSandboxEnvVars` → `selectSessionHarness`): pi when
 the project's `pi_harness` feature flag is on, or when the manifest says
-`runtime: pi`; OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
+`runtime: pi`, and the `llm_gateway` flag is on (pi has no model path without
+the gateway); OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
 loads its own environment, so only the selected adapter's variables are parsed.
 There is no per-request switching: one box, one harness, for the life of the
 session (a restart or resume re-reads the selection).

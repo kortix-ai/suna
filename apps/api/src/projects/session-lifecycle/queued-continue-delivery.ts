@@ -41,8 +41,8 @@ async function settleDelivery(row: SessionLifecycleCommandRow, delivery: Exclude
   return retryable ? 'queued' : 'failed';
 }
 
-async function markDelivered(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload, wireMessageId: string | undefined, tl: ProvisionTimeline): Promise<void> {
-  if (wireMessageId) await markCommandForwarded(row, row.sessionId!, wireMessageId);
+async function markDelivered(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload, wireMessageId: string | undefined, tl: ProvisionTimeline, noReply: boolean): Promise<void> {
+  if (wireMessageId) await markCommandForwarded(row, row.sessionId!, wireMessageId, noReply ? { noReply } : undefined);
   else await markCommandSucceeded(row, { status: 'delivered' }, row.sessionId);
   tl.mark('marked');
   if (typeof payload.triggerSlug === 'string') {
@@ -116,7 +116,7 @@ export async function continuationOverrides(
 
 export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   text: string, wireId: string | undefined, placedIntoLiveTurn: boolean, underPlaced: boolean,
-  tl: ProvisionTimeline): Promise<Status> {
+  tl: ProvisionTimeline, noReply = false): Promise<Status> {
   let wireMessageId = wireId;
   const isPendingFirstPrompt = row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
   try {
@@ -132,11 +132,12 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(overrides ? { overrides } : {}),
         ...(wireMessageId ? { wireMessageId } : {}),
         materializationKey: row.commandId, isPendingFirstPrompt,
+        ...(noReply ? { noReply } : {}),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
       payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined);
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
-      await markDelivered(row, payload, wireMessageId, tl);
+      await markDelivered(row, payload, wireMessageId, tl, noReply);
       if (!placedIntoLiveTurn || !wireMessageId) break;
       const replaced = await repairPlacement(row, wireMessageId, postedAt, round, underPlaced, tl);
       if (!replaced) break;

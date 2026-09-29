@@ -518,6 +518,7 @@ export async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
+    noReply?: boolean;
     accountId?: string;
     projectId?: string;
   },
@@ -580,6 +581,7 @@ export async function postPrompt(
       ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),
+      ...(prompt?.noReply ? { noReply: true } : {}),
     }),
   );
   try {

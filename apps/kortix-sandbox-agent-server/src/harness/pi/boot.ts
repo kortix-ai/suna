@@ -12,6 +12,7 @@
 import { homedir } from 'node:os'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
+import { relayPermissionToApi } from '../shared/permission-relay'
 import { materializeProject } from '@/services/config-provider/config-provider'
 import { startEgressShim } from '@/services/egress-shim'
 import {
@@ -79,6 +80,10 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     },
     onQuestionAsked: (request, answer) => {
       void relayQuestion(request, answer).catch((err) => logger.warn('[pi] question relay failed', { err: (err as Error).message }))
+    },
+    // Report only: apps/api pushes "needs your approval"; the request stays open for the user.
+    onPermissionAsked: (request) => {
+      void relayPermissionToApi(request).catch((err) => logger.warn('[pi] permission relay failed', { err: (err as Error).message }))
     },
   }
   const harness = createPiHarnessService(cfg, projectEnv, { onStartupMark: bootMark, hooks, sessionId })

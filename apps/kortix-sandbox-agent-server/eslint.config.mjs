@@ -233,6 +233,7 @@ const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|h
 export const OPENCODE_NAMES_ALLOWED = {
   'src/harness/contract/control.ts': ['opencode', 'opencodeSessionId', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_reload', 'opencode_session_id', 'opencode_turn_ended'],
   'src/harness/shared/memory-guard-relay.ts': ['opencodeRssMb', 'opencodeSessionId', 'opencode_session_id'],
+  'src/harness/shared/permission-relay.ts': ['opencode_session_id'],
   'src/lib/config/config.ts': ['opencode'],
   'src/routes/kortix/abort.ts': ['opencodeSessionId', 'opencode_session_id'],
   'src/routes/kortix/env.ts': ['opencodeEnv'],
