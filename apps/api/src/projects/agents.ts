@@ -1,3 +1,4 @@
+// Barrel for the agents module — the implementation lives in ./agents/{types,parse,grants,crud}.ts.
 /**
  * `agents` block parsing for `kortix.yaml` (a legacy v1 project may instead
  * declare `[[agents]]` in `kortix.toml` — both are parsed here).
@@ -31,16 +32,13 @@
  * them in `errors` so the UI can render them next to the good ones.
  */
 
-// Barrel for the agents module.
-//
-// This module was split into focused files under ./agents/ with ZERO behavior
+// This module was split into focused files under ./agents/ with no behavior
 // change. It re-exports the FULL original symbol set so every importer
-// (`./agents`, `../agents`) is unchanged.
+// (`./agents`, `../agents`) is unchanged:
 //
-//   types  — all exported interfaces/types + the sentinel (pure leaf)
+//   types  — exported interfaces/types + the sentinel (pure leaf)
 //   parse  — extractAgents, loadProjectAgents + the v1/v2 entry parsers
-//   grants — resolveAgentGrant, grantFromLoadedAgents, launchability and the
-//            governed declared-agents resolution rules
+//   grants — resolveAgentGrant, grantFromLoadedAgents, launchability + governed rules
 //   crud   — agentSpecToTomlEntry, applyAgentScope, manifestHashForAgent
 
 export type {

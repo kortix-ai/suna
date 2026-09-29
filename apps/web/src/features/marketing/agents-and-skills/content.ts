@@ -37,7 +37,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    Values are exactly `allow` | `ask` | `deny`.
  *  - Governance is deny-by-default. `packages/starter/templates/base/kortix.yaml`:
  *    "Omitted grants resolve to `none` in this schema version. Grant explicitly."
- *  - The ceiling is real and quotable — `apps/api/src/projects/agents.ts:18-20`:
+ *  - The ceiling is real and quotable — `apps/api/src/projects/agents.ts:19-21`:
  *    the effective grant is `declared ∩ launching-user role`. An agent can never
  *    exceed the human who launched it.
  *  - A skill is a DIRECTORY with a `SKILL.md` at its root. Frontmatter is
