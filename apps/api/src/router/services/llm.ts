@@ -1,6 +1,18 @@
 import { config, KORTIX_MARKUP } from '../../config';
 import { OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE } from '../../openrouter-attribution';
-import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
+import {
+  getModel,
+  getAllModels,
+  requireModelPricing,
+  resolveOpenRouterId,
+  type ModelConfig,
+} from '../config/models';
+import type { ActorContext } from '../../shared/actor-context';
+import {
+  refundLlmReservation,
+  settleLlmReservation,
+  type LlmCreditReservation,
+} from './llm-reservation';
 
 /**
  * Calculate cost based on token usage and model pricing.
@@ -162,6 +174,142 @@ export function accumulateUsageChunk(
       upstreamCost: next.upstreamCost ?? current.usage.upstreamCost,
     },
   };
+}
+
+/**
+ * Read an SSE stream and accumulate its usage chunks into one
+ * UsageAccumulator. Handles both OpenAI-compatible and Anthropic-native
+ * SSE formats.
+ */
+export async function consumeSseUsage(
+  stream: ReadableStream<Uint8Array>,
+  provider: 'openai' | 'anthropic' = 'openai',
+): Promise<UsageAccumulator | null> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let usageState: UsageAccumulator | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+      try {
+        const chunk = JSON.parse(line.slice(6));
+        usageState = accumulateUsageChunk(usageState, chunk, provider);
+      } catch {
+        // Not valid JSON — skip
+      }
+    }
+  }
+
+  return usageState;
+}
+
+/**
+ * Extract usage from an SSE stream and bill at KORTIX_MARKUP.
+ * Handles both OpenAI-compatible and Anthropic-native SSE formats.
+ * Runs in background (fire-and-forget). Shared by the LLM router and the
+ * proxy handlers; each call site passes its own model resolution and its
+ * exact log and refund labels.
+ */
+export async function settleStreamUsage(options: {
+  /** The tee'd billing copy of the upstream SSE stream. */
+  stream: ReadableStream<Uint8Array>;
+  /** Provider shape of the stream; defaults to OpenAI-compatible. */
+  provider?: 'openai' | 'anthropic';
+  accountId: string;
+  actor: ActorContext | null;
+  reservation: LlmCreditReservation | null;
+  /** The request's model id; derived from the stream when omitted. */
+  modelId?: string;
+  /** Resolved pricing; when omitted, the settled model is priced with requireModelPricing. */
+  modelConfig?: ModelConfig;
+  pricingProvider: string;
+  route: string;
+  logPrefix: string;
+  sessionId?: string;
+  /** The labels below are kept verbatim from each call site. */
+  noUsageWarning: string;
+  noUsageRefund: string;
+  /** When set, a zero-token stream refunds instead of settling at cost 0. */
+  zeroTokensWarning?: string;
+  zeroTokensRefund?: string;
+  errorRefund: string;
+  scanErrorLog: string;
+  refundFailedLog: string;
+  successLog: (modelId: string, usage: UsageInfo, cost: number) => string;
+}): Promise<void> {
+  let settlementStarted = false;
+  try {
+    const usageState = await consumeSseUsage(options.stream, options.provider);
+    const modelId = options.modelId ?? usageState?.model ?? 'unknown';
+
+    if (!usageState) {
+      console.warn(options.noUsageWarning);
+      await refundLlmReservation(options.reservation, options.noUsageRefund);
+      return;
+    }
+
+    const usage = usageState.usage;
+    // The proxy refunds a zero-token stream; the router settles it at cost 0.
+    if (
+      usage.promptTokens > 0 ||
+      usage.completionTokens > 0 ||
+      options.zeroTokensRefund === undefined
+    ) {
+      const modelConfig =
+        options.reservation?.modelConfig ??
+        options.modelConfig ??
+        requireModelPricing(modelId, options.pricingProvider);
+      const cost = calculateCost(
+        modelConfig,
+        usage.promptTokens,
+        usage.completionTokens,
+        usage.cachedTokens,
+        usage.cacheWriteTokens,
+        KORTIX_MARKUP,
+        usage.upstreamCost,
+      );
+      settlementStarted = true;
+      await settleLlmReservation({
+        accountId: options.accountId,
+        modelId,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        actualCost: cost,
+        reservation: options.reservation,
+        actor: options.actor,
+        logPrefix: options.logPrefix,
+        provider: options.pricingProvider,
+        route: options.route,
+        cachedTokens: usage.cachedTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        upstreamCost: usage.upstreamCost,
+        streaming: true,
+        upstreamStatus: 200,
+        sessionId: options.sessionId,
+      });
+      console.log(options.successLog(modelId, usage, cost));
+    } else {
+      console.warn(options.zeroTokensWarning);
+      await refundLlmReservation(options.reservation, options.zeroTokensRefund);
+    }
+  } catch (err) {
+    console.error(options.scanErrorLog, err);
+    if (!settlementStarted) {
+      await refundLlmReservation(options.reservation, options.errorRefund).catch((refundError) =>
+        console.error(options.refundFailedLog, refundError),
+      );
+    }
+  }
 }
 
 // Re-export model functions used by router handlers.
