@@ -12,7 +12,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { safeHttpUrl } from '@/lib/safe-url';
+import { safeHttpUrl } from '@kortix/shared';
 import { cn } from '@/lib/utils';
 import {
   CheckIcon as Check,

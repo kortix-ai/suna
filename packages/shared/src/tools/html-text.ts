@@ -1,8 +1,8 @@
 /**
  * HTML → readable text pipeline: entity decoding, tag stripping, and the
  * readable-text walk. Moved verbatim from apps/web
- * `features/session/tool/tool-renderers-sanitization.ts` (KRTX-365 phase 2;
- * hosts switch to this module in phase 3).
+ * `features/session/tool/tool-renderers-sanitization.ts` (KRTX-365 phases 2–3;
+ * the hosts import this module since phase 3).
  */
 
 type HtmlTag = {
