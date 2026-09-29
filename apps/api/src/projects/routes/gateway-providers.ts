@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { type AuthedPrincipal } from '@kortix/llm-gateway';
+import type { AuthedPrincipal } from '@kortix/llm-gateway';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
