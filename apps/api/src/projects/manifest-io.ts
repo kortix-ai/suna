@@ -10,7 +10,7 @@ import {
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
 import { type GitBackedProject, readManifestFromRepo } from './git';
-import { type ParsedManifest } from './trigger-types';
+import type { ParsedManifest } from './trigger-types';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
  *  A project may instead use `kortix.yaml` ({@link MANIFEST_FILENAME_YAML}) —

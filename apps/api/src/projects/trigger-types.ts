@@ -1,4 +1,4 @@
-import { type ManifestFormat, type ResolvedManifest } from '@kortix/manifest-schema';
+import type { ManifestFormat, ResolvedManifest } from '@kortix/manifest-schema';
 
 export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
 
