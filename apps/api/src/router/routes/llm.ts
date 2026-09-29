@@ -2,14 +2,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import type { AppContext } from '../../types';
 import {
-  accumulateUsageChunk,
   proxyToOpenRouter,
   extractUsage,
   calculateCost,
   getModel,
   getAllModels,
-  type UsageAccumulator,
 } from '../services/llm';
+import { consumeSseUsage, settleStreamUsage } from '../services/llm-stream';
 import { getSandboxMemberCapStatus } from '../services/member-spend';
 import { resolveActorFromRequest, type ActorContext } from '../../shared/actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
@@ -291,7 +290,7 @@ llm.openapi(
   },
 );
 
-async function extractUsageFromStream(
+export async function extractUsageFromStream(
   stream: ReadableStream<Uint8Array>,
   modelConfig: import('../config/models').ModelConfig,
   modelId: string,
@@ -300,86 +299,25 @@ async function extractUsageFromStream(
   actor?: ActorContext | null,
   reservation?: LlmCreditReservation | null,
 ) {
-  let settlementStarted = false;
-  try {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let usageState: UsageAccumulator | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-        try {
-          const chunk = JSON.parse(line.slice(6));
-          usageState = accumulateUsageChunk(usageState, chunk);
-        } catch {}
-      }
-    }
-
-    if (usageState) {
-      const usage = usageState.usage;
-      const cost = calculateCost(
-        modelConfig,
-        usage.promptTokens,
-        usage.completionTokens,
-        usage.cachedTokens,
-        usage.cacheWriteTokens,
-        KORTIX_MARKUP,
-        usage.upstreamCost,
-      );
-      settlementStarted = true;
-      await settleLlmReservation({
-        accountId,
-        modelId,
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        actualCost: cost,
-        reservation: reservation ?? null,
-        actor: actor ?? null,
-        logPrefix: 'LLM router stream billing',
-        provider: 'openrouter',
-        route: '/v1/router/chat/completions',
-        cachedTokens: usage.cachedTokens,
-        cacheWriteTokens: usage.cacheWriteTokens,
-        upstreamCost: usage.upstreamCost,
-        streaming: true,
-        upstreamStatus: 200,
-        sessionId,
-      });
-      const cacheInfo =
-        usage.cachedTokens || usage.cacheWriteTokens
-          ? ` (cache: ${usage.cachedTokens}read/${usage.cacheWriteTokens}write)`
-          : '';
-      console.log(
-        `[LLM] Stream ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens${cacheInfo}, cost=$${cost.toFixed(6)}`,
-      );
-    } else {
-      console.warn(`[LLM] Stream ${modelId}: no usage data found in stream — billing skipped`);
-      await refundLlmReservation(
-        reservation ?? null,
-        `LLM router reservation refund after missing stream usage: ${modelId}`,
-      );
-    }
-  } catch (err) {
-    console.error(`[LLM] Error extracting usage from stream for billing:`, err);
-    if (!settlementStarted) {
-      await refundLlmReservation(
-        reservation ?? null,
-        `LLM router reservation refund after stream usage error: ${modelId}`,
-      ).catch((refundError) =>
-        console.error('[LLM] LLM router reservation refund failed:', refundError),
-      );
-    }
-  }
+  const usage = await consumeSseUsage(stream);
+  await settleStreamUsage({
+    usage,
+    accountId,
+    modelId,
+    modelConfig,
+    reservation: reservation ?? null,
+    actor: actor ?? null,
+    logPrefix: 'LLM router stream billing',
+    provider: 'openrouter',
+    route: '/v1/router/chat/completions',
+    label: '[LLM] Stream',
+    refundLabel: 'LLM router reservation',
+    subject: modelId,
+    sessionId,
+    requirePositiveTokens: false,
+    cacheInfo: true,
+    markupSuffix: '',
+  });
 }
 
 function resolveActor(c: Parameters<typeof resolveActorFromRequest>[0]): ActorContext | null {
