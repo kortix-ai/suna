@@ -2,11 +2,12 @@
  * sub-agents — which project sessions are sub-agents of which (COR-162).
  *
  * One relation for the whole app. A sub-agent session is a project session
- * spawned by another project session: `metadata.spawned_by_session`, read
- * through `sessionParentId` from `@kortix/sdk` (it rejects a non-string value
- * and a session that names itself). The session list nests by the same
- * relation (`groupSessionsByCoordinator`, `session-list.ts`), so the list and
- * the thread header always agree on what a sub-agent is.
+ * spawned by another project session: `parent_session_id` (falling back to
+ * `metadata.spawned_by_session`), read through `sessionParentId` from
+ * `@kortix/sdk` (it rejects a non-string value and a session that names
+ * itself). The session lists nest by the same relation, server-side
+ * (`parent=root` / `parent=<id>`, KRTX-639; lib/session/session-tree.ts), so
+ * the list and the thread header agree on what a sub-agent is.
  *
  * OpenCode's own sub-session tree (`parentID` / `opencode_sessions[].parent_id`)
  * is a different thing and is not read here.

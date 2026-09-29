@@ -1436,6 +1436,9 @@
       "actions": "Ações da sessão",
       "actionsFor": "Ações para {title}",
       "reviewCount": "A aguardar revisão: {count}",
+      "expandChildren": "Show {count} spawned sessions",
+      "collapseChildren": "Hide spawned sessions",
+      "showMore": "Show more",
       "brief": {
         "status": "Estado",
         "created": "Criada em",
@@ -1529,7 +1532,6 @@
         "legacy": "Antiga"
       },
       "sourceValue": {
-        "mine": "As minhas conversas",
         "shared": "Partilhadas"
       },
       "owner": "Proprietário",
@@ -1547,6 +1549,14 @@
     },
     "loadingMore": "A carregar…",
     "loadMoreSessions": "Carregar mais sessões",
+    "startedByLabel": "Started by {name}",
+    "startedBy": {
+      "label": "Started by",
+      "all": "All",
+      "mine": "Mine",
+      "others": "Shared",
+      "automated": "Automated"
+    },
     "reminders": "Lembretes"
   },
   "dashboard": {

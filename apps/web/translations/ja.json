@@ -1436,6 +1436,9 @@
       "actions": "セッション操作",
       "actionsFor": "{title} の操作",
       "reviewCount": "確認待ち：{count}",
+      "expandChildren": "Show {count} spawned sessions",
+      "collapseChildren": "Hide spawned sessions",
+      "showMore": "Show more",
       "brief": {
         "status": "状態",
         "created": "作成日時",
@@ -1529,7 +1532,6 @@
         "legacy": "旧形式"
       },
       "sourceValue": {
-        "mine": "自分のチャット",
         "shared": "共有"
       },
       "owner": "オーナー",
@@ -1547,6 +1549,14 @@
     },
     "loadingMore": "読み込み中…",
     "loadMoreSessions": "セッションをさらに読み込む",
+    "startedByLabel": "Started by {name}",
+    "startedBy": {
+      "label": "Started by",
+      "all": "All",
+      "mine": "Mine",
+      "others": "Shared",
+      "automated": "Automated"
+    },
     "reminders": "リマインダー"
   },
   "dashboard": {

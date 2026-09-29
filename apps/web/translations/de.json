@@ -1436,6 +1436,9 @@
       "actions": "Sitzungsaktionen",
       "actionsFor": "Aktionen für {title}",
       "reviewCount": "Zur Prüfung: {count}",
+      "expandChildren": "Show {count} spawned sessions",
+      "collapseChildren": "Hide spawned sessions",
+      "showMore": "Show more",
       "brief": {
         "status": "Status",
         "created": "Erstellt",
@@ -1529,7 +1532,6 @@
         "legacy": "Veraltet"
       },
       "sourceValue": {
-        "mine": "Meine Chats",
         "shared": "Geteilt"
       },
       "owner": "Inhaber",
@@ -1547,6 +1549,14 @@
     },
     "loadingMore": "Wird geladen …",
     "loadMoreSessions": "Weitere Sitzungen laden",
+    "startedByLabel": "Started by {name}",
+    "startedBy": {
+      "label": "Started by",
+      "all": "All",
+      "mine": "Mine",
+      "others": "Shared",
+      "automated": "Automated"
+    },
     "reminders": "Erinnerungen"
   },
   "dashboard": {

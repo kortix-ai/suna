@@ -1436,6 +1436,9 @@
       "actions": "Радње сесије",
       "actionsFor": "Радње за {title}",
       "reviewCount": "Чека преглед: {count}",
+      "expandChildren": "Show {count} spawned sessions",
+      "collapseChildren": "Hide spawned sessions",
+      "showMore": "Show more",
       "brief": {
         "status": "Статус",
         "created": "Креирано",
@@ -1529,7 +1532,6 @@
         "legacy": "Застарело"
       },
       "sourceValue": {
-        "mine": "Моја ћаскања",
         "shared": "Дељено"
       },
       "owner": "Власник",
@@ -1547,6 +1549,14 @@
     },
     "loadingMore": "Учитавање…",
     "loadMoreSessions": "Учитајте још сесија",
+    "startedByLabel": "Started by {name}",
+    "startedBy": {
+      "label": "Started by",
+      "all": "All",
+      "mine": "Mine",
+      "others": "Shared",
+      "automated": "Automated"
+    },
     "reminders": "Подсетници"
   },
   "dashboard": {

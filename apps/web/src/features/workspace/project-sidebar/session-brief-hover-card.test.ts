@@ -43,6 +43,11 @@ describe('session brief hover card portal', () => {
 
 describe('session status agreement', () => {
   const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+  // The row draws its starter through `SessionStarterMark`, which reads the map.
+  const markSource = readFileSync(
+    join(import.meta.dir, '../project-sessions/session-starter-mark.tsx'),
+    'utf8',
+  );
 
   test('the row dot and the hover card read the same status', () => {
     // `sessionDisplayStatus(session, reviewCount)` defaults reviewCount to 0, so
@@ -101,14 +106,18 @@ describe('session brief hover card surface', () => {
 });
 
 describe('session source icons', () => {
-  const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+  // The row draws its starter through `SessionStarterMark`, which reads the map.
+  const markSource = readFileSync(
+    join(import.meta.dir, '../project-sessions/session-starter-mark.tsx'),
+    'utf8',
+  );
   const mapSource = readFileSync(join(import.meta.dir, 'session-source-icons.ts'), 'utf8');
 
   test('the row and the card read one map, not a copy each', () => {
     // Two maps that happen to agree is not the same as one map. The row and its
     // own hover card describe the same session, so two glyphs for it would leave
     // a reader no way to tell which was true.
-    for (const consumer of [listSource, briefSource]) {
+    for (const consumer of [markSource, briefSource]) {
       expect(consumer).toContain('SOURCE_ICONS');
       expect(consumer).not.toContain('const SOURCE_ICONS');
     }

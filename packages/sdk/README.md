@@ -300,6 +300,11 @@ const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
+// Top-level sessions the caller started; spawned sessions load under their parent.
+const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy: "me" });
+const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
+const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
+// React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
