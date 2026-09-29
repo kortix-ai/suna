@@ -369,6 +369,11 @@ Decide the mechanism first:
   itself if the session is deleted. This is the native mid-task
   pause/resume: set a reminder, end the turn. Always remove a recurring
   reminder once its condition is met — every fire is a model turn.
+  Reminders are a per-project feature flag (`reminders`, off by default).
+  If `kortix remind` answers "Reminders is not enabled for this project",
+  tell the user and name the switch (`kortix projects features enable
+  reminders`, or Settings → Feature flags); turning it on is their call, not
+  yours. Until then, use a one-off `run_at` trigger instead.
 - **Recurring project work** anyone should see (daily digest) →
   `type: cron` + `cron` (6-field croner) + `timezone` in `kortix.yaml`.
 - **One-off project job** not tied to this session → `type: cron` + `run_at`.
