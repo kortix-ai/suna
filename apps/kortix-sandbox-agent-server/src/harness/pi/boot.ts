@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { createRuntimeAuditRelay, type AuditRelay } from '../shared/audit-relay'
-import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import {
   claimInitialTurn,
   relayPermission,

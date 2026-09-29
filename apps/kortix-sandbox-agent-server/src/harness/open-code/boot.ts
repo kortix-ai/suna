@@ -96,9 +96,8 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
-import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
+import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
-import type { InitialTurnClaim } from '@/types/control-plane'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',

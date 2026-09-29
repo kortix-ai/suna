@@ -25,7 +25,7 @@ const ARGS = {
   previewUrl: 'https://box.test/',
   providerHeaders: {},
   serviceKey: 'svc',
-  snapshot: { env: {}, names: [], revision: 'rev-1', capabilitiesJson: '{"version":1,"capabilities":[]}' },
+  snapshot: { env: {}, names: [], revision: 'rev-1', scope: 'inherit' as const, capabilitiesJson: '{"version":1,"capabilities":[]}' },
   opencodeEnv: { KORTIX_MODEL: 'kortix/m', KORTIX_OPENCODE_MODEL: 'kortix/m' },
   refreshModels: true,
 };
