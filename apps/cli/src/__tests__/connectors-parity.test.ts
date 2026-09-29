@@ -77,9 +77,10 @@ function startServer(): string {
           requestId: 'auth_1',
         });
       }
-      if (url.pathname === `${ex}/connectors/gmail/accounts` && req.method === 'GET') {
+      const accountsSlug = /\/connectors\/(gmail|computer)\/accounts$/.exec(url.pathname)?.[1];
+      if (accountsSlug && url.pathname.startsWith(ex) && req.method === 'GET') {
         return Response.json({
-          connector: 'gmail',
+          connector: accountsSlug,
           accounts: connectorAccounts,
         });
       }
@@ -117,15 +118,6 @@ function startServer(): string {
           total: 2,
           nextCursor: 'cur_2',
           hasMore: true,
-        });
-      }
-      if (url.pathname === `${ex}/connectors/desk/config` && req.method === 'GET') {
-        return Response.json({
-          slug: 'desk',
-          name: 'Desk',
-          provider: 'computer',
-          tunnelIds: ['11111111-1111-4111-8111-111111111111'],
-          auth: { type: 'none', in: 'header', name: null, prefix: null },
         });
       }
       if (url.pathname === `${ex}/connectors/gmail/config` && req.method === 'GET') {
@@ -270,9 +262,16 @@ describe('kortix connectors — capability-page parity', () => {
   test('--help documents every new subcommand', async () => {
     const r = await runCli(['connectors', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['sensitive <slug> on|off', 'owner <slug> project|user', 'catalog show <id>', 'machines <slug>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
+    for (const fragment of ['sensitive <slug> on|off', 'owner <slug> project|user', 'catalog show <id>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
       expect(r.stdout).toContain(fragment);
     }
+  });
+
+  test('--help documents computers as accounts, not a machines subcommand', async () => {
+    const r = await runCli(['connectors', '--help']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain('machines <slug>');
+    expect(r.stdout).toContain('--account "<machine name>"');
   });
 
   test('ls and show opt out of action schemas; show --json still asks for them', async () => {
@@ -545,6 +544,26 @@ describe('kortix connectors — capability-page parity', () => {
     });
   });
 
+  // A computer is paired, not connected with a credential: `connect computer`
+  // cannot add one, so the remedy names the desktop app and the pairing command.
+  test('accounts with no computer connected names pairing, not connect, in both faces', async () => {
+    connectorAccounts = [];
+    const config = writeConfig(startServer());
+    const human = await runCli(['connectors', 'accounts', 'computer', '--project', PROJECT], config);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('No computer is connected.');
+    expect(human.stdout).toContain('npx @kortix/agent-tunnel connect');
+    expect(human.stdout).not.toContain('connectors connect computer');
+
+    const json = await runCli(['connectors', 'accounts', 'computer', '--project', PROJECT, '--json'], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({
+      connector: 'computer',
+      accounts: [],
+      note: 'No computer is connected. Connect one from the Kortix desktop app, or run `npx @kortix/agent-tunnel connect` on the computer.',
+    });
+  });
+
   test('catalog lists records and forwards q + cursor', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
@@ -571,47 +590,16 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stderr).toContain('Connector discovery is not enabled for this project');
   });
 
-  test('machines --show reads the config without writing', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'machines', 'desk', '--show', '--project', PROJECT], config);
-    expect(r.code).toBe(0);
-    expect(calls.map((c) => c.method)).toEqual(['GET']);
-    expect(r.stdout).toContain('11111111-1111-4111-8111-111111111111');
-  });
-
-  test('machines --add/--rm read-merge-write the whole tunnel_ids list', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(
-      ['connectors', 'machines', 'desk', '--add', '22222222-2222-4222-8222-222222222222', '--rm', '11111111-1111-4111-8111-111111111111', '--project', PROJECT],
-      config,
-    );
-    expect(r.code).toBe(0);
-    expect(calls.at(-1)).toEqual({
-      method: 'POST',
-      path: `/v1/connectors/projects/${PROJECT}/connectors`,
-      body: {
-        slug: 'desk',
-        name: 'Desk',
-        provider: 'computer',
-        tunnel_ids: ['22222222-2222-4222-8222-222222222222'],
-      },
+  for (const sub of ['machines', 'computers']) {
+    test(`${sub} is removed: it points at computer accounts and sends no request`, async () => {
+      const config = writeConfig(startServer());
+      const r = await runCli(['connectors', sub, 'desk', '--add', '22222222-2222-4222-8222-222222222222', '--project', PROJECT], config);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain('kortix connectors accounts computer');
+      expect(r.stderr).toContain('--account');
+      expect(calls).toEqual([]);
     });
-  });
-
-  test('machines refuses to empty the list — the route would 400', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'machines', 'desk', '--rm', '11111111-1111-4111-8111-111111111111', '--project', PROJECT], config);
-    expect(r.code).toBe(2);
-    expect(r.stderr).toContain('at least one machine');
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
-  });
-
-  test('machines on a non-computer connector says so', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'machines', 'gmail', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('is a pipedream connector');
-  });
+  }
 
   test('policy show prints the default mode and every rule with its conditions', async () => {
     const config = writeConfig(startServer());

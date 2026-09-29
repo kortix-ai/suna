@@ -272,7 +272,6 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-  useFeatureFlag,
   useProjectConfig,
   useRuntimeAgents,
   useRuntimeBootStalled,
@@ -317,7 +316,7 @@ import { useReadinessSettling } from './use-readiness-settling';
 // Sub-Session Breadcrumb
 // ============================================================================
 
-// SubSessionBar removed — subsessions now use SessionSiteHeader + chat input indicator
+// SubSessionBar removed — subsessions show their parent as the header breadcrumb
 
 // ============================================================================
 // Optimistic answers cache
@@ -2344,8 +2343,7 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useRuntimeReady();
-  const transcriptHistory = useFeatureFlag(projectId, 'session_transcript_history');
-  const allowSendBeforeReady = transcriptHistory.enabled && !!projectSessionId && !runtimeReady;
+  const allowSendBeforeReady = !!projectSessionId && !runtimeReady;
   // "The health poller GAVE UP", which `!runtimeReady` does not say — that is
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.
@@ -5170,7 +5168,7 @@ export function SessionChat({
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
 
-  // The "Sub-session of <parent>" back destination, resolved the moment the
+  // The parent crumb's destination, resolved the moment the
   // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
   // is warmed below instead of being fetched cold on the click.
   const backToParentHref = useMemo(() => {
@@ -5187,15 +5185,15 @@ export function SessionChat({
     if (backToParentHref) router.prefetch(backToParentHref);
   }, [backToParentHref, router]);
 
-  const threadContext = useMemo(() => {
+  // The header breadcrumb's "Home" crumb: the parent session, for a subsession.
+  const parentCrumb = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     return {
-      parentTitle: parentSessionData.title || 'Parent session',
-      onBackToParent: () => {
+      onOpen: () => {
         if (backToParentHref) {
-          // nav-contract: prefetch-only — the composer's threadContext contract
-          // carries an opaque `onBackToParent: () => void`, so this control
-          // cannot render an anchor until that contract carries the href.
+          // nav-contract: prefetch-only — the header crumb's contract carries
+          // an opaque `onOpen: () => void`, so it cannot render an anchor
+          // until that contract carries the href.
           router.push(backToParentHref);
           return;
         }
@@ -5746,6 +5744,7 @@ export function SessionChat({
             sessionId={sessionId}
             sessionTitle={session?.title || 'Untitled'}
             leadingAction={headerLeadingAction}
+            parent={parentCrumb}
           />
         )}
 
@@ -6280,7 +6279,6 @@ export function SessionChat({
                 providers={providers}
                 modelRequired={!allowSendBeforeReady}
                 modelsLoading={providersLoading}
-                threadContext={threadContext}
                 onContextClick={handleContextClick}
                 onCompactClick={handleCompactClick}
                 quoteRequests={quoteRequests}

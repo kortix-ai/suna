@@ -122,6 +122,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,
+      refreshCredential: api.refreshCredential,
       assertBillingActive: api.assertBillingActive,
       assertBudget: api.assertBudget,
       recordUsage: api.recordUsage,

@@ -658,6 +658,8 @@ describe('projects API contract', () => {
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
+    // The best-effort timestamp write runs after the response is returned.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
   });
 

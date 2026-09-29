@@ -1,5 +1,5 @@
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
@@ -12,20 +12,24 @@ export function teamsChannelCtx(tenantId: string, conversationId: string): Chann
 
 export async function listTenantProjects(
   tenantId: string,
-): Promise<Array<{ projectId: string; name: string }>> {
+): Promise<Array<{ projectId: string; name: string; repoUrl: string | null }>> {
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
+  // Only the installed projects. This read had no `where`, so every `/status`,
+  // `/projects` and `/use` loaded the whole projects table to keep a handful.
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
-    .from(projects);
-  const byId = new Map(rows.map((r) => [r.projectId, r.name]));
-  return ids
-    .filter((id) => byId.has(id))
-    .map((id) => ({ projectId: id, name: byId.get(id) ?? id }));
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .from(projects)
+    .where(inArray(projects.projectId, ids));
+  const byId = new Map(rows.map((r) => [r.projectId, r]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [{ projectId: id, name: row.name ?? id, repoUrl: row.repoUrl ?? null }] : [];
+  });
 }
 
 export async function resolveConversationProject(

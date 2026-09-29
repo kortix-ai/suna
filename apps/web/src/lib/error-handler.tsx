@@ -10,7 +10,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { isSilentTimeoutError } from '@/lib/timeout-toast-policy';
 import {
   accountSettingsTarget,
-  useAccountSettingsModalStore,
+  openAccountSettings,
 } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import type { BillingState } from '@kortix/sdk';
@@ -349,7 +349,7 @@ export const handleApiError = (
     const isCreditsExhausted = errorUI.alertTitle === 'You ran out of credits';
 
     if (isCreditsExhausted) {
-      useAccountSettingsModalStore.getState().openAccountSettings({
+      openAccountSettings({
         tab: 'billing',
         highlight: 'credits',
       });

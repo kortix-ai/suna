@@ -36,6 +36,7 @@ const { isAppPath, isPreviewHost } = require('./nav-rules');
 const { rendererGoneNeedsRecovery } = require('./renderer-recovery');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
+const { setupComputer } = require('./computer-tray');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -235,6 +236,8 @@ function handleDeepLink(deepLink) {
 let mainWindow = null;
 /** @type {BrowserWindow | null} */
 let splashWindow = null;
+/** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
+let computerShell = null;
 
 function launchSize() {
   // ~85% of the primary display, clamped to [1280,1700] × [820,1080] — same as
@@ -514,7 +517,7 @@ function createMainWindow() {
   });
 
   // did-fail-load reports failures; the rejected promise carries nothing more.
-  mainWindow.loadURL(instanceStore.appUrl()).catch(() => {});
+  mainWindow.loadURL(instanceStore.homeUrl()).catch(() => {});
 }
 
 /**
@@ -593,15 +596,15 @@ function goBackInApp() {
   else mainWindow.webContents.navigationHistory.goToIndex(index);
 }
 
-/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the configured app URL, from any page. */
+/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the app's home, from any page. */
 function goHome() {
-  navigateMainWindow(instanceStore.appUrl());
+  navigateMainWindow(instanceStore.homeUrl());
 }
 
 /** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
 function switchInstance(choice) {
   const error = instanceStore.save(choice);
-  if (!error) navigateMainWindow(instanceStore.appUrl());
+  if (!error) navigateMainWindow(instanceStore.homeUrl());
   return error;
 }
 
@@ -609,7 +612,7 @@ function switchInstance(choice) {
 async function changeInstance(mode, error = null) {
   const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   if (await openInstanceChooser({ mode, error, parent, store: instanceStore })) {
-    navigateMainWindow(instanceStore.appUrl());
+    navigateMainWindow(instanceStore.homeUrl());
   }
 }
 
@@ -1076,6 +1079,11 @@ function registerIpc() {
         return null;
       }
       default:
+        // computer_status / _connect / _pause / _resume / _disconnect / _open_logs.
+        // Same trusted-sender gate as every command above.
+        if (typeof cmd === 'string' && cmd.startsWith('computer_') && computerShell) {
+          return computerShell.invoke(cmd, args);
+        }
         throw new Error(`Unknown command: ${cmd}`);
     }
   });
@@ -1129,6 +1137,16 @@ function applyUserAgent() {
 
 /* ─── App lifecycle ───────────────────────────────────────────────────────*/
 
+/** Show the app window, recreating it when only the tray is left. */
+function openMainWindow() {
+  if (needsMainWindow(mainWindow)) {
+    createSplash();
+    createMainWindow();
+  } else {
+    revealMainWindow(mainWindow);
+  }
+}
+
 // Single-instance lock: a second launch (incl. a kortix:// deep link on
 // Windows/Linux where the URL arrives as an argv) routes to the running window
 // instead of spawning a new process.
@@ -1171,7 +1189,12 @@ if (!gotLock) {
 
   app.on('second-instance', (_event, argv) => {
     const deepLink = argv.find((a) => a.startsWith(`${URL_SCHEME}://`));
-    if (deepLink) handleDeepLink(deepLink);
+    // Running in the tray with no window (a paired computer): open one again.
+    // Not during first-launch setup, where the chooser is the only window.
+    const reopened = needsMainWindow(mainWindow) && app.isReady() && !instanceStore.needsSetup();
+    if (reopened) openMainWindow();
+    if (deepLink && reopened) mainWindow?.webContents.once('did-finish-load', () => handleDeepLink(deepLink));
+    else if (deepLink) handleDeepLink(deepLink);
     revealMainWindow(mainWindow);
     // First launch: the chooser is the only window.
     focusInstanceChooser();
@@ -1193,6 +1216,15 @@ if (!gotLock) {
     }
 
     applyUserAgent();
+    computerShell = setupComputer({
+      channel: CHANNEL,
+      appUrl: () => instanceStore.appUrl(),
+      isConfiguredAppUrl,
+      shouldLoadInApp,
+      getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+      openMainWindow,
+      backgroundColor: currentBackgroundColor,
+    });
     registerIpc();
     nativeTheme.themeSource = readTheme();
     nativeTheme.on('updated', () => {
@@ -1228,17 +1260,15 @@ if (!gotLock) {
       });
     }
 
-    app.on('activate', () => {
-      if (needsMainWindow(mainWindow)) {
-        createSplash();
-        createMainWindow();
-      } else {
-        revealMainWindow(mainWindow);
-      }
-    });
+    app.on('activate', openMainWindow);
+
+    // Tray + state watch. After the window, so a slow status never delays it.
+    computerShell.start();
   });
 
+  // With a paired computer the app stays in the tray on every platform; the
+  // agent itself is an OS service and keeps running either way.
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin' && !computerShell?.keepRunning()) app.quit();
   });
 }

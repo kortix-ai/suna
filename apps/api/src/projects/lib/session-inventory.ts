@@ -128,6 +128,7 @@ export function selectSessionRowsForViewer(input: {
       },
       {
         metadata: row.metadata,
+        initiatorType: row.initiatorType,
         canManageProject: input.canManageProject,
         accountSessionOversight: input.scope === 'project' && input.accountSessionOversight === true,
       },
@@ -198,6 +199,8 @@ export interface SessionCursorScope {
   viewerId: string;
   /** Separates activity-order cursors from updated_at-order cursors. */
   ordering?: 'activity';
+  /** The list filter (parent / started_by / q) the cursor was issued under. */
+  filter?: string;
 }
 
 /** GCM nonce and authentication-tag sizes, pinned on both sides. */
@@ -207,7 +210,7 @@ const CURSOR_TAG_BYTES = 16;
 function cursorKey(scope: SessionCursorScope): Buffer {
   if (!config.API_KEY_SECRET) throw new Error('API_KEY_SECRET is required');
   return Buffer.from(
-    hkdfSync('sha256', config.API_KEY_SECRET, scope.projectId, `kortix-session-cursor-v1:${scope.viewerId}${scope.ordering === 'activity' ? ':activity' : ''}`, 32),
+    hkdfSync('sha256', config.API_KEY_SECRET, scope.projectId, `kortix-session-cursor-v1:${scope.viewerId}${scope.ordering === 'activity' ? ':activity' : ''}${scope.filter ? `:filter:${scope.filter}` : ''}`, 32),
   );
 }
 

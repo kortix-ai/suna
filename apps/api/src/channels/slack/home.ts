@@ -4,7 +4,8 @@ import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { publishHomeView } from '../slack-api';
 import { config } from '../../config';
-import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage } from './util';
+import { escapeMrkdwn, formatRelativeTime } from './util';
+import { isKortixHostedRepo, repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { HomeProjectRow, HomeRecentRow } from './types';
 
 export async function publishHomeForUser(teamId: string, userId: string): Promise<void> {
@@ -34,7 +35,8 @@ export async function publishHomeForUser(teamId: string, userId: string): Promis
     .orderBy(desc(chatThreads.lastMessageAt))
     .limit(5);
 
-  const view = buildHomeView({ projects: projectRows, recent });
+  const images = await repoPreviewImages(projectRows.map((p) => p.repoUrl));
+  const view = buildHomeView({ projects: projectRows, recent, images });
   await publishHomeView(token, userId, view);
 }
 
@@ -65,7 +67,7 @@ function projectCoverUrl(projectId: string): string {
 const DEFAULT_HOME_HERO_URL =
   'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=480&fit=crop&q=80&auto=format';
 
-function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
+function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[]; images?: Map<string, string> }): Record<string, unknown> {
   const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
   const blocks: Array<Record<string, unknown>> = [];
@@ -120,7 +122,8 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
       text: { type: 'plain_text', text: `Connected projects · ${input.projects.length}`, emoji: true },
     });
     for (const p of input.projects) {
-      const label = repoLabel(p.repoUrl);
+      const label = repoDisplayLabel(p.repoUrl) ?? '';
+      const hosted = isKortixHostedRepo(p.repoUrl);
       // Cover image — full-width card hero.
       blocks.push({
         type: 'image',
@@ -133,7 +136,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
           type: 'mrkdwn',
           text: [
             `*${escapeMrkdwn(p.name)}*`,
-            `<${p.repoUrl}|${escapeMrkdwn(label)}>`,
+            hosted ? `_${escapeMrkdwn(label)}_` : `<${p.repoUrl}|${escapeMrkdwn(label)}>`,
           ].join('\n'),
         },
       });
@@ -154,12 +157,15 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
             url: `${dashboardBase}/projects/${p.projectId}`,
             action_id: `home_open_${p.projectId}`,
           },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: 'View on GitHub' },
-            url: p.repoUrl,
-            action_id: `home_repo_${p.projectId}`,
-          },
+          // A Kortix-hosted repository is private: the button would open a 404.
+          ...(hosted
+            ? []
+            : [{
+                type: 'button',
+                text: { type: 'plain_text', text: 'View on GitHub' },
+                url: p.repoUrl,
+                action_id: `home_repo_${p.projectId}`,
+              }]),
         ],
       });
     }
@@ -193,7 +199,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
       const projectName = proj?.name ?? 'project';
       const when = formatRelativeTime(r.lastMessageAt);
       const elements: Array<Record<string, unknown>> = [];
-      const og = proj ? repoOgImage(proj.repoUrl) : null;
+      const og = proj ? input.images?.get(proj.repoUrl) : undefined;
       if (og) elements.push({ type: 'image', image_url: og, alt_text: `${projectName} repo` });
       elements.push({ type: 'mrkdwn', text: `*${escapeMrkdwn(projectName)}*  ·  ${when}` });
       blocks.push({ type: 'context', elements });

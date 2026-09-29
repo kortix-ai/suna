@@ -15,7 +15,7 @@ import {
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
-import { writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
+import { writeDevCatalogs, writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -178,8 +178,11 @@ function resolveKortixVersion(): string {
 }
 const KORTIX_VERSION = resolveKortixVersion();
 // Writes public/i18n/<locale>.<hash>.json (see the script for why) and returns
-// the hashes the browser uses to build each catalog URL.
-const I18N_CATALOG_VERSIONS = writePublicCatalogs();
+// the hashes the browser uses to build each catalog URL. `next dev` writes
+// unhashed files instead and rewrites them on every catalog save, so a new key
+// shows after a reload rather than after a server restart.
+const I18N_CATALOG_VERSIONS =
+  process.env.NODE_ENV === 'development' ? writeDevCatalogs() : writePublicCatalogs();
 const KORTIX_COMMIT =
   process.env.NEXT_PUBLIC_KORTIX_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown';
 

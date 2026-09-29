@@ -630,8 +630,14 @@ jobs:
       - name: Install pnpm
         run: corepack enable pnpm
 
+      # The app bundles the computer agent (packages/agent-tunnel), built with
+      # bun by scripts/ensure-runtime.js before electron-builder runs.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 

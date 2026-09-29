@@ -16,7 +16,7 @@ import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
 import {
   isProjectSessionVisibleTo,
-  isTriggerCreatedSessionMetadata,
+  isTriggerRunSession,
   loadSessionGrants,
   resolveShareSubject,
 } from '../connectors/share';
@@ -87,6 +87,7 @@ export async function canAccessSandboxSession(input: {
       createdBy: projectSessions.createdBy,
       origin: projectSessions.origin,
       metadata: projectSessions.metadata,
+      initiatorType: projectSessions.initiatorType,
     })
     .from(projectSessions)
     .where(
@@ -103,7 +104,7 @@ export async function canAccessSandboxSession(input: {
     const [subject, grantsBySession, managerVerdict] = await Promise.all([
       subjectRead,
       grantsRead,
-      isTriggerCreatedSessionMetadata(row.metadata)
+      isTriggerRunSession(row)
         ? authorize(
             actorForUser(input.userId, input.accountId),
             'project.members.manage',
@@ -118,7 +119,7 @@ export async function canAccessSandboxSession(input: {
       visibility: row.visibility,
       origin: row.origin ?? null,
       sessionOwnedByCaller: row.createdBy === subject.userId,
-      isTriggerSession: isTriggerCreatedSessionMetadata(row.metadata),
+      isTriggerSession: isTriggerRunSession(row),
       canManageProject: managerVerdict.allowed,
       managerReason: 'reason' in managerVerdict ? String(managerVerdict.reason) : null,
       sessionGrants: grants.length,
@@ -134,6 +135,7 @@ export async function canAccessSandboxSession(input: {
     const visibility = row.visibility as 'private' | 'project' | 'restricted';
     allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
       metadata: row.metadata,
+      initiatorType: row.initiatorType,
       canManageProject: managerVerdict.allowed,
     });
     // Account session oversight — the same rule `loadVisibleSession` applies,
@@ -146,6 +148,7 @@ export async function canAccessSandboxSession(input: {
     ) {
       allowed = isProjectSessionVisibleTo(visibility, row.createdBy, grants, subject, ownership, {
         metadata: row.metadata,
+        initiatorType: row.initiatorType,
         canManageProject: managerVerdict.allowed,
         accountSessionOversight: true,
       });

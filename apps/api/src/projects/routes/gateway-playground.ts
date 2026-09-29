@@ -17,6 +17,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import {
   assertGatewayBudget,
+  GatewayBudgetExceededError,
   persistGatewayTrace,
   recordGatewayUsage,
 } from '../../llm-gateway/hooks';
@@ -26,7 +27,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/gateway/playground',
     tags: ['gateway'],
-    summary: 'POST /:projectId/gateway/playground',
+    summary: 'Run a prompt in the project LLM gateway playground',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -48,7 +49,7 @@ projectsApp.openapi(
         },
       },
     },
-    responses: { 200: json(z.any(), 'Playground results'), ...errors(400, 404) },
+    responses: { 200: json(z.any(), 'Playground results'), ...errors(400, 402, 404) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -79,7 +80,12 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
     };
-    await assertGatewayBudget(principal);
+    try {
+      await assertGatewayBudget(principal);
+    } catch (err) {
+      if (!(err instanceof GatewayBudgetExceededError)) throw err;
+      return c.json({ error: err.message, code: 'budget_exceeded' }, 402);
+    }
 
     const results = await Promise.all(
       models.map(async (model) => {

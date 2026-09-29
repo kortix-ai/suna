@@ -293,6 +293,8 @@ describe('connectors', () => {
       'idx_connector_connections_project_label',
       'idx_connector_connections_project',
       'idx_connector_connections_connector',
+      'idx_connector_connections_tunnel',
+      'idx_connector_connections_owner_tunnel',
     ]);
     expect(indexNames(connectorCalls)).toEqual([
       'idx_connector_calls_project',

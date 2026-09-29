@@ -1,7 +1,7 @@
 /**
  * Backfill on wake: what makes saved history work for sessions that already
- * exist. Capture otherwise runs only at turn end, so a project that enables the
- * flag got nothing for its existing sessions until each one was prompted again.
+ * exist. Capture otherwise runs only at turn end, so a session nobody prompted
+ * since saved history shipped had nothing saved until it was prompted again.
  *
  * Real PostgreSQL; the runtime read is injected.
  */
@@ -121,14 +121,14 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
     await backfillSessionTranscriptMirrorOnWake(pruned, deps);
     expect(await stored(pruned)).toBe(120);
 
-    // 4. FLAG TURNED OFF ⇒ THE SURFACE STAYS DARK. No read, no rows. Turn-end
-    //    capture keeps its legacy tail behaviour untouched.
+    // 4. A STORED OFF OVERRIDE IS INERT. Saved history graduated out of the
+    //    flag system; a project that turned it off before keeps its history.
     const off = await seedSession(false);
     await backfillSessionTranscriptMirrorOnWake(off, deps);
-    expect(reads.has(off)).toBe(false);
-    expect(await stored(off)).toBe(0);
+    expect(reads.get(off)).toBe(1);
+    expect(await stored(off)).toBe(120);
 
-    // 4b. ON BY DEFAULT: a project that never set the flag keeps its history.
+    // 4b. A project that never set the flag keeps its history.
     const unset = await seedSession('default');
     await backfillSessionTranscriptMirrorOnWake(unset, deps);
     expect(reads.get(unset)).toBe(1);
@@ -229,7 +229,6 @@ test('a history the old mirror stripped is served with what it kept, read again 
     accountId = await seedAccount('transcript-backfill-stripped-test');
     const project = await seedProject(`backfill-stripped-${randomUUID().slice(0, 8)}`, {
       accountId,
-      metadata: { experimental: { session_transcript_history: true } },
     });
     seeded.push(project);
     const sessionId = await seedSessionRow(project, randomUUID());

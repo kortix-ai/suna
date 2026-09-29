@@ -518,7 +518,7 @@ export async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
-    attachmentProjectId?: string;
+    noReply?: boolean;
     accountId?: string;
     projectId?: string;
   },
@@ -536,10 +536,10 @@ export async function postPrompt(
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
         readAttachment: (scope) => sessionAttachmentStore().read(scope),
-        saveAttachment: prompt.attachmentProjectId ? async (file) => {
+        saveAttachment: prompt.projectId ? async (file) => {
           const saved = await sessionAttachmentStore().put({
             ...file,
-            projectId: prompt.attachmentProjectId!,
+            projectId: prompt.projectId!,
             sessionId: callerSessionId,
             attachmentId: stableSessionAttachmentId(`${callerSessionId}:${prompt.materializationKey}:${file.index}`),
           });
@@ -581,6 +581,7 @@ export async function postPrompt(
       ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),
+      ...(prompt?.noReply ? { noReply: true } : {}),
     }),
   );
   try {

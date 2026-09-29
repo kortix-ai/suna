@@ -246,6 +246,18 @@ describe('extractPreviewToken', () => {
       'tok-cookie',
     ],
     ['nothing', 'http://p3000-sbx.localhost:8008/x', {}, null],
+    [
+      'a malformed cookie is absent',
+      'http://p3000-sbx.localhost:8008/x',
+      { Cookie: '__preview_session=%' },
+      null,
+    ],
+    [
+      'a valid encoded cookie is decoded',
+      'http://p3000-sbx.localhost:8008/x',
+      { Cookie: '__preview_session=tok%2Dcookie' },
+      'tok-cookie',
+    ],
   ])('%s', (_label, href, headers, token) => {
     const url = new URL(href);
     expect(extractPreviewToken(new Request(url, { headers }), url)).toBe(token);

@@ -50,6 +50,20 @@ describe('project sidebar footer ordering', () => {
     expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(
       orderOf('ProjectChatGptConnectNavItem'),
     );
+    expect(orderOf('SidebarUpgradeButton')).toBeGreaterThan(orderOf('ProjectComputerNavItem'));
+  });
+
+  test('the computer row sits directly below the ChatGPT connect entry', () => {
+    // Both are "connect an account you own" rows: ChatGPT, then your computer.
+    // Nothing else stands between them.
+    const between = source.slice(
+      orderOf('ProjectChatGptConnectNavItem'),
+      orderOf('ProjectComputerNavItem'),
+    );
+    expect(orderOf('ProjectComputerNavItem')).toBeGreaterThan(
+      orderOf('ProjectChatGptConnectNavItem'),
+    );
+    expect(between.match(/<[A-Z]\w+/g)).toEqual(['<ProjectChatGptConnectNavItem']);
   });
 
   test('the permanent nav keeps its own order', () => {

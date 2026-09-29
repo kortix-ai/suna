@@ -533,6 +533,11 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
   expect(last().url).toContain('/projects/PID123/connections/connection-1/label');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ label: 'Support inbox' });
+
+  await kortix.project('PID123').connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
+  expect(last().url).toContain('/projects/PID123/computers');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ tunnel_id: 'tunnel-1', share: 'me' });
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {

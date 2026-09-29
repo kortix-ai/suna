@@ -261,12 +261,15 @@ export function useCatalog(
     discoverEnabled: boolean;
     /** The category the grid is filtered to, or `null` for everything. */
     focusCategory?: string | null;
+    /** Show the native Computer card: this deployment can connect computers. */
+    computers?: boolean;
   },
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
   const category = opts.focusCategory ?? null;
+  const computers = opts.computers === true;
   const searching = activeQuery.length > 0;
 
   // Probed whenever Easy Connect is the source, whether or not the catalogue is
@@ -347,6 +350,7 @@ export function useCatalog(
     // The native Computers card is ours, not the catalogue's, so it is matched
     // locally and hidden inside a category it does not claim.
     const includeComputers =
+      computers &&
       category === null &&
       (!activeQuery ||
         `${native.name} ${native.description ?? ''}`
@@ -367,6 +371,7 @@ export function useCatalog(
     );
   }, [
     tI18nComplete,
+    computers,
     category,
     activeQuery,
     source,
@@ -412,11 +417,11 @@ export function useCatalog(
   const sections = useMemo<CatalogSection[]>(() => {
     if (searching || category !== null || !sectionsQuery.data) return [];
     return browseSections(sectionsQuery.data, {
-      native: computersCatalogEntry(tI18nComplete),
+      native: computers ? computersCatalogEntry(tI18nComplete) : null,
       cardCount: SECTION_CARD_COUNT,
       title: (label) => localizedSectionTitle(label, tI18nComplete),
     });
-  }, [searching, category, sectionsQuery.data, tI18nComplete]);
+  }, [searching, category, sectionsQuery.data, tI18nComplete, computers]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
   const categories = useMemo<PipedreamCategory[]>(() => {

@@ -14,6 +14,8 @@ const FORWARDER_IDLE_MS = 100;
 const FORWARDER_ERROR_MS = 1_000;
 const FORWARD_TTL_PAD_MS = 5_000;
 
+const rpcTimeoutMs = (requested?: number) => Math.max(1_000, requested ?? config.TUNNEL_RPC_TIMEOUT_MS);
+
 type ForwardRow = typeof tunnelRpcForwards.$inferSelect;
 
 let forwarderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -89,6 +91,8 @@ export async function relayRpcToConnectedAgent(input: {
   accountId: string;
   method: string;
   params: Record<string, unknown>;
+  /** Defaults to TUNNEL_RPC_TIMEOUT_MS. Longer while the machine may hold the call for its owner. */
+  timeoutMs?: number;
 }): Promise<unknown> {
   const [row] = await db
     .select()
@@ -136,7 +140,9 @@ export async function relayRpcToConnectedAgent(input: {
         `Capability is not registered by the connected Agent Tunnel: ${capability}`,
       );
     }
-    return tunnelRelay.relayRPC(input.tunnelId, input.method, input.params);
+    return tunnelRelay.relayRPC(input.tunnelId, input.method, input.params, {
+      timeoutMs: rpcTimeoutMs(input.timeoutMs),
+    });
   }
 
   if (!isTunnelConnectionLive(row)) {
@@ -174,8 +180,10 @@ async function forwardRpcToOwner(input: {
   method: string;
   params: Record<string, unknown>;
   targetRelayOwnerId: string;
+  timeoutMs?: number;
 }): Promise<unknown> {
-  const timeoutMs = Math.max(1_000, config.TUNNEL_RPC_TIMEOUT_MS);
+  // The owner replica reads the budget back from expires_at.
+  const timeoutMs = rpcTimeoutMs(input.timeoutMs);
   const expiresAt = new Date(Date.now() + timeoutMs + FORWARD_TTL_PAD_MS);
   const [request] = await db
     .insert(tunnelRpcForwards)
@@ -350,7 +358,9 @@ async function processForward(row: ForwardRow): Promise<void> {
         `Capability is not registered by the connected Agent Tunnel: ${capability}`,
       );
     }
-    const result = await tunnelRelay.relayRPC(row.tunnelId, row.method, row.params ?? {});
+    const result = await tunnelRelay.relayRPC(row.tunnelId, row.method, row.params ?? {}, {
+      timeoutMs: Math.max(1_000, new Date(row.expiresAt).getTime() - Date.now() - FORWARD_TTL_PAD_MS),
+    });
     await db
       .update(tunnelRpcForwards)
       .set({

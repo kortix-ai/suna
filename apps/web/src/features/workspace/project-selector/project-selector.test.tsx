@@ -134,8 +134,33 @@ describe('ProjectSelectorView', () => {
     expect(total).not.toContain('data-testid="selector-create"');
   });
 
-  test('Log out is always present', () => {
-    expect(render({})).toContain('Log out');
-    expect(render({ loading: true })).toContain('Log out');
+  test('the account menu (which holds Log out) is always present', () => {
+    expect(render({})).toContain('Logged in as');
+    expect(render({ loading: true })).toContain('Logged in as');
   });
 });
+
+describe('onboarding name step (KRTX-638)', () => {
+  const step = { initialName: "Ada's workspace", saving: false, error: null, onSubmit: () => {} };
+
+  test('a new user sees the name step, pre-filled, instead of the selector', () => {
+    const out = render({ accountStep: step });
+    expect(out).toContain('Name your account');
+    expect(out).toContain('value="Ada&#x27;s workspace"');
+    expect(out).toContain('Continue');
+    expect(out).not.toContain('data-testid="selector-create"');
+  });
+
+  test('everyone else sees the selector, never the step', () => {
+    const out = render({ accountStep: null, createHref: '/new' });
+    expect(out).not.toContain('Name your account');
+    expect(out).toContain('data-testid="selector-create"');
+  });
+
+  test('a failed save is said in the field, not swallowed', () => {
+    const out = render({ accountStep: { ...step, error: 'Could not save the account name. Try again.' } });
+    expect(out).toContain('Could not save the account name. Try again.');
+    expect(out).toContain('aria-invalid="true"');
+  });
+});
+

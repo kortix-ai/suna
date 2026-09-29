@@ -17,7 +17,7 @@ const input = {
 };
 
 test('imports a staged attachment with identifiers only when the daemon advertises file.import', async () => {
-  const calls: Array<{ route: string; body: unknown }> = [];
+  const calls: Array<{ route: string; body: unknown; binding: string | null }> = [];
   const result = await importRuntimePromptAttachment(
     {
       externalId: 'sbx_import',
@@ -27,10 +27,11 @@ test('imports a staged attachment with identifiers only when the daemon advertis
       attachmentId: '22222222-2222-4222-8222-222222222222',
       partIndex: 3,
     },
-    async (_externalId, _port, _access, _method, route, _query, _headers, body) => {
+    async (_externalId, _port, access, _method, route, _query, _headers, body) => {
       calls.push({
         route,
         body: body?.byteLength ? JSON.parse(new TextDecoder().decode(body)) : null,
+        binding: access.kind === 'principal' ? access.boundCredentialSessionId : null,
       });
       if (route === '/kortix/health') {
         return Response.json({ capabilities: ['file.import', 'file.append'] });
@@ -49,9 +50,10 @@ test('imports a staged attachment with identifiers only when the daemon advertis
     sha256: 'a'.repeat(64),
   });
   expect(calls).toEqual([
-    { route: '/kortix/health', body: null },
+    { route: '/kortix/health', body: null, binding: null },
     {
       route: '/file/import',
+      binding: null,
       body: {
         command_id: '11111111-1111-4111-8111-111111111111',
         attachment_id: '22222222-2222-4222-8222-222222222222',

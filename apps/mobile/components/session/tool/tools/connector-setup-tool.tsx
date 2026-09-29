@@ -71,7 +71,4 @@ export function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) 
     </BasicTool>
   );
 }
-ToolRegistry.register('connector_setup', ConnectorSetupTool);
 ToolRegistry.register('connector-setup', ConnectorSetupTool);
-ToolRegistry.register('oc-connector_setup', ConnectorSetupTool);
-ToolRegistry.register('oc-connector-setup', ConnectorSetupTool);

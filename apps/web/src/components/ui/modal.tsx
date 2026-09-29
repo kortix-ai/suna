@@ -56,9 +56,7 @@ import {
   useDialogDepth,
   useDialogRootLayer,
 } from '@/lib/z-stack';
-import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
-import Loading from './loading';
 import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
 
 // Stacks by open order, not only by JSX nesting: a Modal opened while another
@@ -369,52 +367,12 @@ const ModalDescription = React.forwardRef<
 ));
 ModalDescription.displayName = DialogPrimitive.Description.displayName;
 
-const ModalLoadingContent = () => {
-  return (
-    <ModalContentInner className="flex min-h-[300px] items-center justify-center" autoFocus={false}>
-      <div className="flex flex-col items-center gap-4">
-        <Loading className="h-12 w-12" />
-        <p className="text-muted-foreground">Loading content...</p>
-      </div>
-    </ModalContentInner>
-  );
-};
-
-// TODO: implement passing props directly to ModalContent
-// NOTE: consider moving portal+overlay inside Suspense
-const LazyModal = ({
-  children,
-  open,
-  forceMount,
-  ...props
-}: DialogPrimitive.DialogProps & { forceMount?: boolean }) => {
-  const [hasOpened, setHasOpened] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setHasOpened(true);
-    }
-  }, [open]);
-
-  if (!hasOpened && !forceMount) return null;
-
-  return (
-    <Modal open={open} {...props}>
-      <ModalPortal>
-        <ModalOverlay />
-        <Suspense fallback={<ModalLoadingContent />}>{children}</Suspense>
-      </ModalPortal>
-    </Modal>
-  );
-};
-
 const ModalBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn('flex-1 space-y-4 p-5 pt-0', className)} {...props} />
 );
 ModalBody.displayName = 'ModalBody';
 
 export {
-  LazyModal,
   Modal,
   ModalBody,
   ModalClose,

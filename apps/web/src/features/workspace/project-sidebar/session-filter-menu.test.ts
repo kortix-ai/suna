@@ -84,7 +84,6 @@ describe('resolveSourceFacetOptions', () => {
     // Only the two running sessions pass the Status facet.
     expect(byValue.slack).toBe(1);
     expect(byValue.email).toBe(1);
-    expect(byValue.mine).toBeUndefined();
   });
 
   test('the active option stays listed at count 0', () => {
@@ -95,12 +94,12 @@ describe('resolveSourceFacetOptions', () => {
     expect(emailOption?.count).toBe(0);
   });
 
-  test('mine and shared split ownership', () => {
+  test('shared counts sessions the viewer does not own', () => {
     const mine = makeSession({ session_id: 'a', is_owner: true });
     const shared = makeSession({ session_id: 'b', is_owner: false });
     const options = resolveSourceFacetOptions([mine, shared], [], [], testUiTranslator);
     const byValue = Object.fromEntries(options.map((o) => [o.value, o.count]));
-    expect(byValue.mine).toBe(1);
+    expect(byValue.mine).toBeUndefined();
     expect(byValue.shared).toBe(1);
   });
 

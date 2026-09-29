@@ -143,8 +143,6 @@ export function ProjectHome({
   const files = attachments.files;
   // Waiting for the uploads before the create: the send slot shows the loader.
   const [preparing, setPreparing] = React.useState(false);
-  /** The picked row (`modelOptionKey`), or null to follow the default. */
-  const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
   const connectSheetRef = React.useRef<SheetRef>(null);
   const attachSheetRef = React.useRef<AttachSheetRef>(null);
@@ -208,7 +206,12 @@ export function ProjectHome({
     providers,
   };
   const defaultModel = resolveComposerModel(modelInput).model;
-  const pickedModel = model ? models.find((m) => modelOptionKey(m) === model) : undefined;
+  // The pick persists in the store the thread reads (`agentModels`, per
+  // agent), so it survives the remount after a send and the thread opens on
+  // the same model and thinking level.
+  const agentSlot = agentName ?? '_default';
+  const pickedModel = useLocalConfigStore((s) => s.agentModels[agentSlot]);
+  const setModelForAgent = useLocalConfigStore((s) => s.setModelForAgent);
   const { model: activeKey, explicit } = resolveComposerModel({ ...modelInput, picks: [pickedModel] });
   const activeModel = activeKey
     ? models.find((m) => m.providerID === activeKey.providerID && m.modelID === activeKey.modelID)
@@ -401,7 +404,11 @@ export function ProjectHome({
         options={modelOptions}
         activeKey={activeKey ? modelOptionKey(activeKey) : null}
         thinking={thinking}
-        onSelect={(key) => setModel(selectComposerModel(key, defaultModel ? modelOptionKey(defaultModel) : null))}
+        onSelect={(key) => {
+          const picked = selectComposerModel(key, defaultModel ? modelOptionKey(defaultModel) : null);
+          const m = picked ? models.find((x) => modelOptionKey(x) === picked) : undefined;
+          setModelForAgent(agentSlot, m ? { providerID: m.providerID, modelID: m.modelID } : null);
+        }}
         onConnect={openConnectSheet}
         agent={agentChoice}
       />

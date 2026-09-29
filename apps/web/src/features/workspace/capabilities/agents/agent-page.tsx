@@ -343,7 +343,7 @@ function AgentPageFrame({
               className="min-w-0 flex-1 py-2"
             >
               <Tabs value={section} className="w-fit">
-                <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
+                <TabsList orientation="horizontal" className="w-fit">
                   {items.map((item) => trigger(item, true))}
                 </TabsList>
               </Tabs>

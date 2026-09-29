@@ -207,24 +207,33 @@ async function cachedCustomAuthConfigIds(catalogClient: ComposioCatalogClient) {
 }
 
 /**
- * The toolkits every catalogue view leaves out: those Composio cannot connect
- * and that have no auth config yet. Adding one only produced a 4300 on sync.
- * Fails open: when either list is unavailable nothing is hidden, and connecting
- * such a toolkit still answers a clear 422.
+ * Toolkits Kortix provides natively, left out of every catalogue view.
+ * Microsoft Teams is connected under Channels (the Kortix bot); the Composio
+ * app listed beside it was a second, different "Microsoft Teams".
+ */
+export const NATIVE_TOOLKITS: ReadonlySet<string> = new Set(['microsoft_teams']);
+
+/**
+ * The toolkits every catalogue view leaves out: the native ones above, and
+ * those Composio cannot connect and that have no auth config yet (adding one
+ * only produced a 4300 on sync). The auth-config part fails open: when either
+ * list is unavailable it hides nothing, and connecting such a toolkit still
+ * answers a clear 422. The native set is always hidden.
  */
 async function hiddenToolkits(
   catalogClient: ComposioCatalogClient,
   catalog: CatalogToolkit[],
 ): Promise<Set<string>> {
+  const hidden = new Set(NATIVE_TOOLKITS);
   const needy = catalog.filter(requiresOwnAuthConfig).map((item) => item.slug.toLowerCase());
-  if (needy.length === 0 || !catalogClient.authConfigs) return new Set();
+  if (needy.length === 0 || !catalogClient.authConfigs) return hidden;
   try {
     const configured = await cachedCustomAuthConfigIds(catalogClient);
-    return new Set(needy.filter((slug) => !configured.has(slug)));
+    for (const slug of needy) if (!configured.has(slug)) hidden.add(slug);
   } catch (error) {
-    console.warn('[composio] auth config list unavailable, hiding no toolkits:', error);
-    return new Set();
+    console.warn('[composio] auth config list unavailable, hiding only native toolkits:', error);
   }
+  return hidden;
 }
 
 export async function composioHiddenToolkits(
@@ -233,8 +242,8 @@ export async function composioHiddenToolkits(
   try {
     return await hiddenToolkits(catalogClient, await catalogSnapshot(catalogClient));
   } catch (error) {
-    console.warn('[composio] toolkit catalogue unavailable, hiding no toolkits:', error);
-    return new Set();
+    console.warn('[composio] toolkit catalogue unavailable, hiding only native toolkits:', error);
+    return new Set(NATIVE_TOOLKITS);
   }
 }
 

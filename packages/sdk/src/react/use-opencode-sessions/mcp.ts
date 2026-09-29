@@ -10,6 +10,7 @@ import { unwrap } from './shared';
 // MCP Status Hook
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeMcpStatus() {
   const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Record<string, McpStatus>>({

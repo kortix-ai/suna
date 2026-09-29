@@ -231,7 +231,7 @@ projectsApp.openapi(
     method: "get",
     path: "/{projectId}/channels/bindings",
     tags: ["channels"],
-    summary: "GET /:projectId/channels/bindings",
+    summary: "List channel bindings of a project",
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), "OK"), ...errors(404) },
@@ -306,7 +306,7 @@ projectsApp.openapi(
     method: "patch",
     path: "/{projectId}/channels/bindings/{bindingId}",
     tags: ["channels"],
-    summary: "PATCH /:projectId/channels/bindings/:bindingId",
+    summary: "Update a channel binding",
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), bindingId: z.string() }),

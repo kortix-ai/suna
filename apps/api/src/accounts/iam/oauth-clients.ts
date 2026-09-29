@@ -121,6 +121,7 @@ iamRouter.openapi(
     },
   }),
   async (c: any) => {
+    if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot create OAuth clients.' }, 403);
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
@@ -259,6 +260,7 @@ iamRouter.openapi(
   }),
   async (c: any) => {
     const accountId = c.req.param('accountId');
+    if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot rotate OAuth client secrets.' }, 403);
     const clientId = c.req.param('clientId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
     let rotated;

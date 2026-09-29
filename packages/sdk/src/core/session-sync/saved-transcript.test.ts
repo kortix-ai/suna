@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { type SavedTranscriptInput, isEmptyConversation, resolveSavedTranscript } from './saved-transcript';
+import {
+  type SavedTranscriptInput,
+  isEmptyConversation,
+  resolveSavedTranscript,
+  savedCopyEmptyRoot,
+} from './saved-transcript';
+import type { SessionTranscriptSyncEnvelope } from '../rest/projects-client/sessions';
 
 const base: SavedTranscriptInput = {
   enabled: true,
@@ -122,5 +128,49 @@ describe('isEmptyConversation', () => {
 
   test('an unanswered turn read is an unknown, never an empty', () => {
     expect(isEmptyConversation({ ...empty, turnRead: false })).toBe(false);
+  });
+});
+
+describe('savedCopyEmptyRoot', () => {
+  // The server's proof that a conversation is empty: a complete, available
+  // saved window that counts zero messages, named by the root it was read from.
+  const window = (fields: Partial<SessionTranscriptSyncEnvelope> = {}) =>
+    ({
+      available: true,
+      reason: null,
+      source: 'mirror',
+      complete: true,
+      captured_at: '2026-09-28T00:00:00Z',
+      opencode_session_id: 'ses_root',
+      message_count: 0,
+      total: 0,
+      messages: [],
+      ...fields,
+    }) as SessionTranscriptSyncEnvelope;
+
+  test('a complete, available window that counts zero names its root', () => {
+    expect(savedCopyEmptyRoot(window())).toBe('ses_root');
+  });
+
+  test('anything short of that proves nothing', () => {
+    expect(savedCopyEmptyRoot(null)).toBeNull();
+    expect(savedCopyEmptyRoot(undefined)).toBeNull();
+    expect(savedCopyEmptyRoot(window({ complete: false }))).toBeNull();
+    expect(savedCopyEmptyRoot(window({ available: false, source: 'none' }))).toBeNull();
+    // An older API sends no total, and never an available empty window.
+    expect(savedCopyEmptyRoot(window({ total: undefined }))).toBeNull();
+    expect(savedCopyEmptyRoot(window({ total: 1 }))).toBeNull();
+    expect(savedCopyEmptyRoot(window({ opencode_session_id: null }))).toBeNull();
+    expect(
+      savedCopyEmptyRoot(
+        window({ messages: [{ info: { id: 'msg_1' }, parts: [] }] as SessionTranscriptSyncEnvelope['messages'] }),
+      ),
+    ).toBeNull();
+  });
+
+  test('both rules are public, so every host decides an empty conversation the same way', async () => {
+    const sdk = await import('../../index');
+    expect(sdk.savedCopyEmptyRoot).toBe(savedCopyEmptyRoot);
+    expect(sdk.isEmptyConversation).toBe(isEmptyConversation);
   });
 });

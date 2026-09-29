@@ -8,6 +8,7 @@ import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { ResourceMonitor } from '@/services/resources/resources'
 import { egressShimPort } from '@/services/egress-shim'
 import { logger } from '@/lib/log/logger'
+import { slowRequestLogger } from './slow-request'
 import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/services/runtime-assets/runtime-assets'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
@@ -99,6 +100,10 @@ export function buildDaemonApp(
   agentEnvFile?: string,
 ): Hono {
   const app = new Hono()
+
+  // First middleware: wraps every route (auth gates included), so a slow
+  // request is logged with its wall/CPU split no matter which gate served it.
+  app.use('*', slowRequestLogger())
 
   const kortixRouter = new Hono()
   const context = {

@@ -311,9 +311,12 @@ async function promoteAfterTurnEnd(
   // Fire-and-forget beside the reconcile above: a mirror write must never be
   // able to fail a turn-end report, and `captureSessionTranscriptMirror`
   // never throws.
-  if (!childSession) {
-    void captureSessionTranscriptMirror(sessionId);
-  }
+  //
+  // EVERY session, a coordinator-spawned one included: it runs in its own
+  // sandbox with its own OpenCode root, and nobody may ever open it, so this
+  // turn end is the only moment its history is saved. Skipping it served
+  // `available: false` and a loading bar to the first person who looked.
+  void captureSessionTranscriptMirror(sessionId);
   // THE TURN ENDED — the session's next queued prompt is admissible NOW.
   // Await the durable promotion before acknowledging the terminal relay.
   // The targeted drain remains asynchronous and re-runs admission itself;

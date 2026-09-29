@@ -54,5 +54,4 @@ export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('task_delete', TaskDeleteTool);
 ToolRegistry.register('task-delete', TaskDeleteTool);

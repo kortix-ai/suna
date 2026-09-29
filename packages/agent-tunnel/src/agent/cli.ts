@@ -1,9 +1,10 @@
 import '../node-ws-polyfill';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { join } from 'path';
 
 import { TunnelAgent } from './agent';
+import { accessFilePath, accessRequestPath, desktopAppPath, readAccess, writeAccess } from './access';
 import { printStartupBanner } from './banner';
 import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
 import { loadConfig, type TunnelConfig } from './config';
@@ -11,6 +12,7 @@ import { CONFIG_FILE, clearSavedCredentials, saveCredentials } from './credentia
 import { probeCredentials } from './credential-probe';
 import {
   InvalidDeviceAuthResponseError,
+  UUID_PATTERN,
   awaitDeviceAuthorization,
   openBrowser,
   requestDeviceAuthorization,
@@ -19,7 +21,7 @@ import { collapseRepeatedLines, isShellStartupNoise } from './log-format';
 import { anyFlag, isInteractiveTerminal, isTruthyFlag, promptYesNo } from './prompts';
 import {
   DEFAULT_INSTALL_BACKGROUND_SERVICE,
-  TERMINAL_SERVICE_EXIT_CODE,
+  agentTunnelHome,
   getServicePaths,
   getServiceStatus,
   rotateServiceLogs,
@@ -32,6 +34,7 @@ import {
   describeService,
   renderServiceAction,
 } from './service-control';
+import { readAgentState, writeAgentState } from './state-file';
 import { blankLine, c, clearScreen, field, glyph, stripAnsi } from './terminal';
 import { agentTunnelVersion } from './version';
 
@@ -53,8 +56,23 @@ function parseArgs(argv: string[]): { command: string; flags: Flags } {
   return { command: argv[2] || 'help', flags };
 }
 
+// ── machine-readable events (connect --json) ─────────────────────────────────
+
+/**
+ * `--json` turns `connect` into newline-delimited JSON events on stdout for a
+ * program such as the desktop app: `challenge`, `approved`, `service`, `error`.
+ * It never prompts and never opens a browser; the caller shows the URL.
+ */
+let jsonMode = false;
+const writeStdout = process.stdout.write.bind(process.stdout);
+
+function emit(event: string, fields: Record<string, unknown> = {}): void {
+  writeStdout(`${JSON.stringify({ event, ...fields })}\n`);
+}
+
 function fail(message: string): never {
-  console.error(`  ${glyph.bad} ${message}`);
+  if (jsonMode) emit('error', { message });
+  else console.error(`  ${glyph.bad} ${message}`);
   process.exit(1);
 }
 
@@ -66,6 +84,12 @@ function shortenHomePath(path: string): string {
 // ── running the agent ────────────────────────────────────────────────────────
 
 function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): void {
+  if (jsonMode) {
+    // The agent logs to stdout. Keep stdout pure NDJSON for the caller.
+    // ponytail: redirect by rebinding; give TunnelAgent a log sink if a second caller needs one.
+    process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
+    options = { ...options, service: true };
+  }
   const registry = createEnabledCapabilityRegistry(config);
   if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
     console.error(
@@ -74,7 +98,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
   }
 
   if (options.service) {
-    console.log(`[agent-tunnel] service starting: ${config.tunnelId} -> ${config.apiUrl}`);
+    process.stdout.write(`[agent-tunnel] service starting: ${config.tunnelId} -> ${config.apiUrl}\n`);
   } else {
     clearScreen();
     void printStartupBanner({
@@ -85,15 +109,19 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
     });
   }
 
-  const agent = new TunnelAgent(config, registry, {
-    onTerminalClose: ({ reason }) => {
-      if (!options.service) return;
-      // Staying alive would leave a supervised process connected to nothing that
-      // the supervisor never restarts. Exit cleanly so the service stops.
-      console.log(`[agent-tunnel] stopping service: ${reason}`);
-      process.exit(TERMINAL_SERVICE_EXIT_CODE);
+  // A service never stops on its own (R2): a refused credential waits in
+  // `rejected` and re-reads config.json, so pairing again heals it.
+  const agent = new TunnelAgent(
+    config,
+    registry,
+    // The agent passes the credential it uses NOW: a re-pair picked up by a
+    // `rejected` service has a new tunnelId, and state.json must name it.
+    { onStatus: (status, current) => writeAgentState(status, current) },
+    {
+      persistent: options.service === true,
+      reloadConfig: () => loadConfig({ apiUrl: config.apiUrl }),
     },
-  });
+  );
   agent.connect();
 
   const shutdown = () => {
@@ -110,7 +138,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 async function chooseBackgroundMode(flags: Flags): Promise<boolean> {
   if (anyFlag(flags, BACKGROUND_FLAGS)) return true;
   if (anyFlag(flags, FOREGROUND_FLAGS)) return false;
-  if (!isInteractiveTerminal()) return false;
+  if (jsonMode || !isInteractiveTerminal()) return false;
 
   blankLine();
   console.log(`  ${glyph.warn} ${c.bold}Security note${c.reset}`);
@@ -125,25 +153,41 @@ async function chooseBackgroundMode(flags: Flags): Promise<boolean> {
 async function launch(config: TunnelConfig, flags: Flags, lease?: { serviceWasActive: boolean }): Promise<void> {
   if (await chooseBackgroundMode(flags)) {
     saveCredentials(config.tunnelId, config.token, config.apiUrl);
-    renderServiceAction('install', SERVICE_ACTIONS.install.run());
+    if (!jsonMode) {
+      renderServiceAction('install', SERVICE_ACTIONS.install.run());
+      return;
+    }
+    // Return instead of process.exit(): an exit can cut off a piped stdout.
+    try {
+      const status = SERVICE_ACTIONS.install.run();
+      // Installed is not enough: a job launchd did not load keeps the computer offline.
+      const ok = status.installed && status.active === true;
+      emit('service', { action: 'install', ok, active: status.active, detail: status.detail ?? '' });
+      if (!ok) process.exitCode = 1;
+    } catch (error) {
+      emit('service', { action: 'install', ok: false, detail: error instanceof Error ? error.message : String(error) });
+      process.exitCode = 1;
+    }
     return;
   }
 
-  if (lease?.serviceWasActive) {
+  if (lease?.serviceWasActive && !jsonMode) {
     console.log(`  ${c.dim}Background service stays paused while this terminal holds the tunnel.${c.reset}`);
     console.log(`  ${c.dim}Resume it with${c.reset} ${c.white}agent-tunnel start${c.reset}${c.dim}, or leave it — it starts again at login.${c.reset}`);
   }
   startAgent(config);
 }
 
-async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
-  blankLine();
-  console.log(`  ${glyph.mark} ${c.bold}Device Authorization${c.reset}`);
-  blankLine();
+async function pairThisMachine(apiUrl: string, flags: Flags, lease?: { serviceWasActive: boolean }): Promise<void> {
+  if (!jsonMode) {
+    blankLine();
+    console.log(`  ${glyph.mark} ${c.bold}Device Authorization${c.reset}`);
+    blankLine();
+  }
 
   let challenge;
   try {
-    challenge = await requestDeviceAuthorization(apiUrl);
+    challenge = await requestDeviceAuthorization(apiUrl, { projectId: flags['project-id'] });
   } catch (error) {
     fail(
       error instanceof InvalidDeviceAuthResponseError
@@ -152,27 +196,36 @@ async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
     );
   }
 
-  console.log(`  ${c.dim}Code:${c.reset}  ${c.bold}${c.white}${challenge.deviceCode}${c.reset}`);
-  blankLine();
-  console.log(`  ${c.dim}Open this URL on any device to approve:${c.reset}`);
-  console.log(`  ${c.cyan}${challenge.verificationUrl}${c.reset}`);
-  blankLine();
-  openBrowser(challenge.verificationUrl);
+  if (jsonMode) {
+    emit('challenge', {
+      deviceCode: challenge.deviceCode,
+      verificationUrl: challenge.verificationUrl,
+      expiresAt: challenge.expiresAt,
+    });
+  } else {
+    console.log(`  ${c.dim}Code:${c.reset}  ${c.bold}${c.white}${challenge.deviceCode}${c.reset}`);
+    blankLine();
+    console.log(`  ${c.dim}Open this URL on any device to approve:${c.reset}`);
+    console.log(`  ${c.cyan}${challenge.verificationUrl}${c.reset}`);
+    blankLine();
+    openBrowser(challenge.verificationUrl);
+  }
 
+  const clearWaiting = () => { if (!jsonMode) process.stdout.write(`\r${' '.repeat(60)}\r`); };
   let outcome;
   try {
     outcome = await awaitDeviceAuthorization(apiUrl, challenge, {
-      onWaiting: (secondsRemaining) => {
+      onWaiting: jsonMode ? undefined : (secondsRemaining) => {
         const minutes = Math.floor(secondsRemaining / 60);
         const seconds = String(secondsRemaining % 60).padStart(2, '0');
         process.stdout.write(`\r  ${c.dim}Waiting for approval... ${c.white}${minutes}:${seconds}${c.reset}  `);
       },
     });
   } catch (error) {
-    process.stdout.write(`\r${' '.repeat(60)}\r`);
+    clearWaiting();
     fail(error instanceof Error ? error.message : 'Device authorization failed');
   }
-  process.stdout.write(`\r${' '.repeat(60)}\r`);
+  clearWaiting();
 
   if (outcome.status === 'denied') fail('Authorization denied.');
   if (outcome.status === 'expired') fail('Authorization expired. Please try again.');
@@ -183,6 +236,7 @@ async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
   // The approved set is a ceiling only re-pairing can widen. Saving an empty one
   // yields a tunnel that connects, reports success, and can do nothing.
   if (outcome.capabilities.length === 0) {
+    if (jsonMode) fail('No capabilities were approved. Nothing was saved. Pair again and approve at least one capability.');
     console.log(`  ${glyph.bad} ${c.bold}No capabilities were approved${c.reset}`);
     blankLine();
     console.log(`  ${c.dim}A tunnel with no capabilities connects but cannot act, and the${c.reset}`);
@@ -193,13 +247,28 @@ async function pairThisMachine(apiUrl: string, flags: Flags): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`  ${glyph.on} ${c.bold}Authorized${c.reset}`);
   saveCredentials(outcome.tunnelId, outcome.token, apiUrl, outcome.capabilities);
-  console.log(`  ${c.dim}Saved to ${CONFIG_FILE}${c.reset}`);
-  console.log(`  ${c.dim}Access: ${outcome.capabilities.join(', ')}${c.reset}`);
-  blankLine();
+  // A1: a pairing made from the desktop app asks before each use; the app is
+  // what answers. A CLI-only machine has nobody to answer a prompt, so it is
+  // always allowed (a documented deviation from A1). A new pairing never
+  // inherits a grant or an `always` from the previous one; keep awake is a
+  // machine setting and stays.
+  writeAccess({
+    mode: existsSync(desktopAppPath()) ? 'ask' : 'always',
+    grantedUntil: null,
+    deniedUntil: null,
+    keepAwake: readAccess().keepAwake,
+  });
+  if (jsonMode) {
+    emit('approved', { tunnelId: outcome.tunnelId, capabilities: outcome.capabilities });
+  } else {
+    console.log(`  ${glyph.on} ${c.bold}Authorized${c.reset}`);
+    console.log(`  ${c.dim}Saved to ${CONFIG_FILE}${c.reset}`);
+    console.log(`  ${c.dim}Access: ${outcome.capabilities.join(', ')}${c.reset}`);
+    blankLine();
+  }
 
-  await launch(loadConfig({ apiUrl }), flags);
+  await launch(loadConfig({ apiUrl }), flags, lease);
 }
 
 async function commandConnect(flags: Flags): Promise<void> {
@@ -215,23 +284,36 @@ async function commandConnect(flags: Flags): Promise<void> {
   if (Boolean(config.token) !== Boolean(config.tunnelId)) {
     fail('Provide both --token and --tunnel-id, or neither (for device auth)');
   }
+  if (flags['project-id'] !== undefined && !UUID_PATTERN.test(flags['project-id'])) {
+    fail('--project-id must be a project UUID');
+  }
 
-  if (!config.token) {
-    await pairThisMachine(config.apiUrl, flags);
+  // X6: a credential saved for another backend is never sent to this one. Pair
+  // afresh; the other pairing stays on disk until this one succeeds.
+  const savedForOtherBackend =
+    Boolean(config.token) && !explicitCredentials && Boolean(flags['api-url']) &&
+    new URL(loadConfig().apiUrl).origin !== new URL(config.apiUrl).origin;
+
+  // Take the credential from the background service before probing or pairing:
+  // the relay allows one connection, and a waiting or `rejected` service picks
+  // up a new pairing within seconds and would displace this process.
+  const lease = acquireTunnelLease();
+
+  if (!config.token || savedForOtherBackend) {
+    await pairThisMachine(config.apiUrl, flags, lease);
     return;
   }
 
   if (isTruthyFlag(flags.reauth) && !explicitCredentials) {
     clearSavedCredentials();
-    await pairThisMachine(config.apiUrl, flags);
+    await pairThisMachine(config.apiUrl, flags, lease);
     return;
   }
 
-  // Take the credential from the background service before probing, so the two
-  // never race for the single connection the relay allows.
-  const lease = acquireTunnelLease();
-  blankLine();
-  console.log(`  ${glyph.mark} ${c.dim}Checking saved credentials…${c.reset}`);
+  if (!jsonMode) {
+    blankLine();
+    console.log(`  ${glyph.mark} ${c.dim}Checking saved credentials…${c.reset}`);
+  }
 
   let probe;
   try {
@@ -251,12 +333,16 @@ async function commandConnect(flags: Flags): Promise<void> {
 
   if (probe === 'rejected') {
     if (explicitCredentials) fail('The supplied --token was rejected for this tunnel.');
-    console.log(`  ${glyph.warn} ${c.dim}Saved token rejected — re-authorizing${c.reset}`);
+    if (!jsonMode) console.log(`  ${glyph.warn} ${c.dim}Saved token rejected — re-authorizing${c.reset}`);
     clearSavedCredentials();
-    await pairThisMachine(config.apiUrl, flags);
+    await pairThisMachine(config.apiUrl, flags, lease);
     return;
   }
 
+  // The saved pairing is still valid: report it as the approved credential.
+  if (jsonMode) {
+    emit('approved', { tunnelId: config.tunnelId, capabilities: config.enabledCapabilities ?? [], existing: true });
+  }
   await launch(config, flags, lease);
 }
 
@@ -271,10 +357,21 @@ function commandRun(flags: Flags): void {
   const asService = flags.service === 'true';
 
   if (!config.token || !config.tunnelId) {
-    console.error(`  ${glyph.bad} No saved tunnel credentials found. Run \`agent-tunnel connect\` first.`);
-    // Restarting cannot conjure a credential. Under a supervisor this exits
-    // cleanly so the service stops instead of respawning forever.
-    process.exit(asService ? TERMINAL_SERVICE_EXIT_CODE : 1);
+    if (!asService) {
+      console.error(`  ${glyph.bad} No saved tunnel credentials found. Run \`agent-tunnel connect\` first.`);
+      process.exit(1);
+    }
+    // R2: the supervisor restarts on every exit, so exiting would only spin.
+    // Wait for a pairing to write the credential instead.
+    process.stdout.write('[agent-tunnel] no saved credential — waiting for a credential (pair this computer to start)\n');
+    const wait = setInterval(() => {
+      const next = loadConfig({ apiUrl: flags['api-url'] });
+      if (!next.token || !next.tunnelId) return;
+      clearInterval(wait);
+      rotateServiceLogs();
+      startAgent(next, { service: true });
+    }, 60_000);
+    return;
   }
 
   if (asService) rotateServiceLogs();
@@ -307,7 +404,11 @@ function commandStatus(flags: Flags): void {
       apiUrl: config.apiUrl,
       capabilities: [...approved],
       version: agentTunnelVersion(),
+      home: agentTunnelHome(),
+      serviceLabel: getServicePaths().label,
       service,
+      state: readAgentState(),
+      access: readAccess(),
       lastActivity: lastServiceActivity(),
     }, null, 2));
     return;
@@ -347,12 +448,49 @@ function commandStatus(flags: Flags): void {
   blankLine();
 }
 
-function commandLogout(flags: Flags): void {
+/**
+ * X4: `DELETE /v1/tunnel/self`, authenticated by this machine's own credential,
+ * removes the machine and its accounts on the server. Best effort: a failure
+ * never blocks the local sign-out.
+ */
+async function unpairOnServer(): Promise<boolean> {
+  let config: TunnelConfig;
+  try {
+    config = loadConfig();
+  } catch {
+    return false;
+  }
+  if (!config.token || !config.tunnelId) return false;
+  try {
+    const response = await fetch(`${config.apiUrl}/self`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${config.token}`, 'X-Tunnel-Id': config.tunnelId },
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function commandLogout(flags: Flags): Promise<void> {
+  const serverUnpaired = await unpairOnServer();
   const removed = clearSavedCredentials();
+  // The access answer belongs to this pairing; the next one starts fresh.
+  rmSync(accessFilePath(), { force: true });
+  rmSync(accessRequestPath(), { force: true });
   const keepService = isTruthyFlag(flags['keep-service']);
   if (!keepService) SERVICE_ACTIONS.uninstall.run();
 
+  if (isTruthyFlag(flags.json)) {
+    console.log(JSON.stringify({ ok: true, serverUnpaired, credentialsCleared: removed, serviceRemoved: !keepService }));
+    return;
+  }
+
   blankLine();
+  console.log(serverUnpaired
+    ? `  ${glyph.on} ${c.dim}Removed this computer from Kortix${c.reset}`
+    : `  ${glyph.warn} ${c.dim}Could not reach Kortix — remove this computer from its settings${c.reset}`);
   console.log(removed
     ? `  ${glyph.on} ${c.bold}Signed out${c.reset} ${c.dim}(credentials cleared from ${CONFIG_FILE})${c.reset}`
     : `  ${glyph.off} ${c.dim}No saved credentials to clear${c.reset}`);
@@ -444,11 +582,15 @@ const COMMANDS: Record<string, Command> = {
   },
   status: { summary: 'Show pairing, capabilities, and service state (--json)', run: commandStatus },
   logs: { summary: 'Show recent service logs (--lines <n>, --all, --clear)', run: commandLogs },
-  start: { summary: 'Start the background service', run: (f) => commandServiceAction('start', f) },
+  start: {
+    summary: 'Start the background service (resumes a paused one)',
+    run: (f) => commandServiceAction('start', f),
+    aliases: ['resume'],
+  },
   stop: {
-    summary: 'Stop the background service (keeps it installed)',
+    summary: 'Pause the background service; it stays stopped after restart until `start`',
     run: (f) => commandServiceAction('stop', f),
-    aliases: ['disable'],
+    aliases: ['disable', 'pause'],
   },
   restart: { summary: 'Restart the background service', run: (f) => commandServiceAction('restart', f) },
   'install-service': {
@@ -460,10 +602,10 @@ const COMMANDS: Record<string, Command> = {
     run: (f) => commandServiceAction('uninstall', f),
   },
   'service-status': {
-    summary: 'Show the background service state (same view as status)',
+    summary: 'Show the background service state (same view as status, --json)',
     run: commandStatus,
   },
-  logout: { summary: 'Clear saved credentials and remove the service', run: commandLogout },
+  logout: { summary: 'Remove this computer from Kortix, clear credentials, remove the service', run: commandLogout },
   run: { summary: 'Run using saved credentials (used by the service)', run: commandRun },
   'start-service': { summary: '', run: (f) => commandServiceAction('start', f), hidden: true },
   'stop-service': { summary: '', run: (f) => commandServiceAction('stop', f), hidden: true },
@@ -477,7 +619,8 @@ const OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ['--token <token> --tunnel-id <id>', 'Skip device auth and use an explicit credential'],
   ['--reauth', 'With connect: discard the saved credential and pair again'],
   ['--daemon / --foreground', 'With connect: skip the prompt and choose the mode'],
-  ['--json', 'With status: machine-readable output'],
+  ['--project-id <uuid>', 'With connect: offer "Also share with <project>" on the approval page; the computer is yours in every project either way'],
+  ['--json', 'With connect: NDJSON events, no prompts. With status and logout: machine-readable output'],
   ['--keep-service', 'With logout: keep the background service installed'],
 ];
 
@@ -506,11 +649,13 @@ function showHelp(): void {
   }
   blankLine();
   console.log(`  ${c.dim}Config: ${CONFIG_FILE}${c.reset}`);
+  console.log(`  ${c.dim}Set AGENT_TUNNEL_HOME to use another config directory and service.${c.reset}`);
   console.log(`  ${c.dim}powered by ${c.cyan}kortix${c.reset}`);
   blankLine();
 }
 
 const { command, flags } = parseArgs(process.argv);
+jsonMode = command === 'connect' && isTruthyFlag(flags.json);
 
 if (Object.prototype.hasOwnProperty.call(flags, 'keep-awake')) {
   console.error(`  ${glyph.bad} --keep-awake is not supported. Configure sleep behavior in the operating system.`);
@@ -525,7 +670,6 @@ if (!resolved) {
   showHelp();
 } else {
   void Promise.resolve(resolved.run(flags)).catch((error: unknown) => {
-    console.error(`  ${glyph.bad} ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
+    fail(error instanceof Error ? error.message : String(error));
   });
 }

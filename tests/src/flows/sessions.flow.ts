@@ -5,7 +5,9 @@
  * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
  * the local profile against a database session with a saved transcript.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
 
@@ -910,11 +912,20 @@ flow(
     });
 
     await ctx.step(
-      'anon: the transcript share reads the conversation → 200 digest from the live sandbox or the saved transcript',
+      'anon: the transcript share reads the conversation → 503 until the sandbox is active, then a 200 digest from the live sandbox or the saved transcript',
       async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-          params: { shareId: transcriptShareId },
-        });
+        // The fixture session was created moments ago; while its sandbox starts
+        // and nothing is saved, the contract answers 503.
+        const r = await waitFor(
+          () => anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: transcriptShareId } }),
+          {
+            until: (res) => res.statusCode !== 503,
+            timeoutMs: 180_000,
+            intervalMs: 2_000,
+            description: 'the shared session to become readable',
+            retryOnError: isKe2eRetryableError,
+          },
+        );
         r.status(200).body().exists('$.messages');
         const source = r.json<{ source?: string }>().source;
         if (source !== 'live' && source !== 'mirror') {
@@ -1981,5 +1992,115 @@ flow(
       if (tokenId) await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});
       await db.end();
     }
+  },
+);
+
+/**
+ * SESS-37 — the session list's tree and starter filters (KRTX-639). A trigger
+ * coordinator's workers must never drown a member's own chats, and search must
+ * reach every session the viewer may see, not only the loaded page.
+ */
+flow(
+  'SESS-37',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['GET /v1/projects/:projectId/sessions'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>) => {
+      const id = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, ...input });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    const factory = { type: 'trigger' as const, id: 'software-factory' };
+    const coordinator = await seed({
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'project',
+      initiator: factory,
+      metadata: { source: 'trigger:manual', name: 'Factory intake' },
+    });
+    await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Fix login bug' } });
+    await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Ledger probe' } });
+    const myChat = await seed({ userId: ctx.P.OWNER.userId!, metadata: { source: 'ui', custom_name: 'Apartment rent research' } });
+    await seed({ userId: ctx.P.OWNER.userId!, parentSessionId: myChat, metadata: { source: 'agent', name: 'Helper' } });
+    const memberChat = await seed({ userId: member.userId!, visibility: 'project', metadata: { source: 'ui', name: 'Teammate plan' } });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const route = '/v1/projects/:projectId/sessions';
+    const params = { projectId: project.id };
+    type Row = {
+      session_id: string;
+      parent_session_id: string | null;
+      initiator: { type: string; id: string | null; label: string | null } | null;
+      child_count?: number;
+      search_match?: 'self' | 'child';
+    };
+    const rows = async (as: typeof owner, query: Record<string, string>) => {
+      const r = await as.get(route, { params, query });
+      r.status(200);
+      return r.json<Row[]>();
+    };
+    const expectIds = (got: Row[], want: string[], what: string) => {
+      const ids = got.map((row) => row.session_id);
+      if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error(`${what}: got ${JSON.stringify(ids)}, want ${JSON.stringify(want)}`);
+    };
+
+    await ctx.step('started_by=me with parent=root lists only the OWNER’s own chat, with its child count', async () => {
+      const got = await rows(owner, { parent: 'root', started_by: 'me' });
+      expectIds(got, [myChat], 'mine');
+      if (got[0]!.child_count !== 1) throw new Error(`child_count ${got[0]!.child_count}`);
+      if (got[0]!.initiator?.type !== 'member' || got[0]!.initiator.id !== ctx.P.OWNER.userId) throw new Error('mine initiator');
+    });
+
+    await ctx.step('started_by=automated lists the trigger coordinator, labelled by its slug, and none of its workers', async () => {
+      const got = await rows(owner, { parent: 'root', started_by: 'automated' });
+      expectIds(got, [coordinator], 'automated');
+      if (got[0]!.child_count !== 2) throw new Error(`child_count ${got[0]!.child_count}`);
+      if (got[0]!.initiator?.label !== 'software-factory') throw new Error(`label ${got[0]!.initiator?.label}`);
+    });
+
+    await ctx.step('parent=<coordinator> lists its two workers, each attributed to the trigger', async () => {
+      const got = await rows(owner, { parent: coordinator });
+      if (got.length !== 2) throw new Error(`workers ${got.length}`);
+      for (const row of got) {
+        if (row.parent_session_id !== coordinator) throw new Error('worker parent');
+        if (row.initiator?.type !== 'trigger') throw new Error('worker initiator');
+      }
+    });
+
+    await ctx.step('started_by=others lists the MEMBER’s shared chat', async () => {
+      expectIds(await rows(owner, { parent: 'root', started_by: 'others' }), [memberChat], 'others');
+    });
+
+    await ctx.step('q searches server-side: a title match is `self`, a worker match returns its coordinator as `child`', async () => {
+      const own = await rows(owner, { parent: 'root', q: 'APARTMENT rent' });
+      expectIds(own, [myChat], 'q self');
+      if (own[0]!.search_match !== 'self') throw new Error('search_match self');
+      const viaWorker = await rows(owner, { parent: 'root', q: 'ledger' });
+      expectIds(viaWorker, [coordinator], 'q child');
+      if (viaWorker[0]!.search_match !== 'child') throw new Error('search_match child');
+      if ((await rows(owner, { parent: coordinator, q: 'ledger' })).length !== 1) throw new Error('q children');
+    });
+
+    await ctx.step('the MEMBER’s search never reaches the OWNER’s private chat', async () => {
+      const asMember = ctx.client.as(member);
+      expectIds(await rows(asMember, { parent: 'root', q: 'apartment' }), [], 'member q');
+      expectIds(await rows(asMember, { parent: 'root', started_by: 'me' }), [memberChat], 'member mine');
+    });
+
+    await ctx.step('an unknown started_by, or a q over 200 characters → 400', async () => {
+      (await owner.get(route, { params, query: { started_by: 'robots' } })).status(400);
+      (await owner.get(route, { params, query: { q: 'x'.repeat(201) } })).status(400);
+    });
+
+    await ctx.step('without the new params the list stays the flat legacy list (old clients)', async () => {
+      const flat = await rows(owner, {});
+      if (flat.length !== 6) throw new Error(`flat ${flat.length}`);
+    });
   },
 );

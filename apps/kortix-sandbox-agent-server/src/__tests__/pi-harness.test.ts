@@ -18,12 +18,14 @@ import { loadConfig } from '@/harness/harness'
 import { resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
 import { buildDaemonApp } from '@/app/server'
 import { requirePiConfig } from '@/harness/pi/config'
-import { createPiHarnessService, type PiHarnessService } from '@/harness/pi/service'
+import { createPiHarnessService, piDefinition, type PiHarnessService } from '@/harness/pi/service'
 import type { PiBootState } from '@/harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
 import { readHostHealth } from '@/harness/shared/host-health'
+import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
+import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 
 const TOKEN = 'pi-test-token'
 const MODEL_ID = 'test-model'
@@ -160,13 +162,14 @@ async function boot(input: {
   workspace?: string
   /** Runs on the fresh workspace before the runtime starts. */
   prepare?: (workspace: string) => void
+  hooks?: PiRuntimeHooks
 }): Promise<Rig> {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
   input.prepare?.(workspace)
   gateway.script(input.script)
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
-  const service = createPiHarnessService(cfg, undefined, { env })
+  const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks })
   const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialOpenCodeSessionRequired: false }
   if (input.start !== false) await service.lifecycle.start()
   const app = buildDaemonApp(cfg, service, Date.now(), bootState)
@@ -352,11 +355,10 @@ describe('pi harness', () => {
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_in_flight).toBe(false)
     expect(probe.turn_end).toBe('completed')
-    const observed = (await r.bearer(`/kortix/opencode/turn/${messageID}`).then((res) => res.json())) as Record<string, unknown>
-    expect(observed.in_flight).toBe(false)
-    expect(observed.end).toBe('completed')
-    const unknown = (await r.bearer(`/kortix/opencode/turn/msg_000000000000zzzzzzzzzzzzzz`).then((res) => res.json())) as Record<string, unknown>
-    expect(unknown.end).toBe('abandoned')
+    const unknown = (await r.bearer('/kortix/health?turn=1&turn_message_id=msg_000000000000zzzzzzzzzzzzzz').then((res) => res.json())) as Record<string, unknown>
+    expect(unknown.turn_in_flight).toBe(false)
+    expect(unknown.turn_end).toBe('abandoned')
+    expect(unknown.turn_orphaned_prompt).toBe(true)
 
     // A repeated delivery of the same id is deduplicated, not re-run.
     const again = await r.user(`/session/${root}/prompt_async`, {
@@ -499,14 +501,14 @@ describe('pi harness', () => {
     })
     const root = r.service.runtime()!.rootId
     // Stop on an idle root is a no-op success.
-    const idleStop = await r.bearer('/kortix/opencode/act', { method: 'POST', body: JSON.stringify({ kind: 'stop' }) })
+    const idleStop = await r.user(`/session/${root}/abort`, { method: 'POST' })
     expect(idleStop.status).toBe(200)
-    expect(await idleStop.json()).toMatchObject({ ok: true })
+    expect(await idleStop.json()).toBe(true)
     expect((await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'go' }] }) })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
     const id = r.service.runtime()!.permissions.list()[0]!.id
-    const act = await r.bearer('/kortix/opencode/act', { method: 'POST', body: JSON.stringify({ kind: 'permission', id, reply: 'reject' }) })
-    expect(act.status).toBe(200)
+    const rejected = await r.user(`/permission/${id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'reject' }) })
+    expect(rejected.status).toBe(200)
     await waitFor(() => !r.service.runtime()!.busy())
     const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
@@ -545,6 +547,121 @@ describe('pi harness', () => {
     const allowedPage = (await allowed.bearer(`/kortix/opencode/messages/${allowedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const allowedTool = allowedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(allowedTool.state).toMatchObject({ status: 'completed', output: expect.stringContaining('fine') })
+  })
+
+  /** The tool part of the root's first tool call, once the turn is over. */
+  const firstToolPart = async (r: Rig) => {
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    return page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')! as { state: { status: string; error?: string; output?: string } }
+  }
+
+  test('a bare "permission: deny" blocks every tool (W1 B1)', async () => {
+    // The compiler emits the whole-agent string when the manifest block has no
+    // `skills:` key. pi used to read it as "no rules" and allow everything.
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'rm -rf ./keep' } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: 'deny' } } }) },
+      prepare: (workspace) => {
+        mkdirSync(join(workspace, 'keep'))
+        writeFileSync(join(workspace, 'keep', 'sentinel'), 'still here')
+      },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies')
+    expect(existsSync(join(r.workspace, 'keep', 'sentinel'))).toBe(true)
+  })
+
+  test('an "edit: deny" rule stops the write tool (W1 B2)', async () => {
+    const r = await boot({
+      script: [{ tool: 'write', args: { path: 'new.txt', content: 'should not exist' } }, { text: 'blocked' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { edit: 'deny', bash: 'allow' } } } }) },
+    })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('error')
+    expect(tool.state.error).toContain('denies this write call')
+    expect(existsSync(join(r.workspace, 'new.txt'))).toBe(false)
+  })
+
+  test('the manifest skills grant hides every other skill: managed, project and pi skill dirs (W1 B3)', async () => {
+    const skill = (dir: string, name: string) => {
+      mkdirSync(join(dir, name), { recursive: true })
+      writeFileSync(join(dir, name, 'SKILL.md'), `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`)
+    }
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    skill(managed, 'kortix-memory')
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({
+        script: [{ text: 'ok' }],
+        // What compileAgentConfig emits for `skills: [deploy]`.
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { skill: { deploy: 'allow', '*': 'deny' } } } } }) },
+        prepare: (workspace) => {
+          skill(join(workspace, 'skills'), 'deploy')
+          skill(join(workspace, '.kortix', 'opencode', 'skills'), 'review')
+          // pi's own project skill dir, read by its resource loader.
+          skill(join(workspace, '.pi', 'skills'), 'secrets-dump')
+        },
+      })
+      const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+      expect(skills.map((s) => s.name)).toEqual(['deploy'])
+      const root = r.service.runtime()!.rootId
+      const before = gateway.sent.length
+      expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      const system = JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))
+      expect(system).toContain('deploy')
+      for (const hidden of ['kortix-memory', 'review', 'secrets-dump']) expect(system).not.toContain(hidden)
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+      rmSync(managed, { recursive: true, force: true })
+    }
+  })
+
+  test('agent shells source the live agent env file through BASH_ENV (W1 B4)', async () => {
+    // The egress shim's proxy + CA variables exist only in that file; a
+    // non-interactive `bash -c` reads it only through BASH_ENV.
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'printf "%s" "$BASH_ENV"' } }, { text: 'done' }] })
+    const tool = await firstToolPart(r)
+    expect(tool.state.status).toBe('completed')
+    expect(tool.state.output).toContain(AGENT_ENV_SH)
+  })
+
+  test('a session with no agent chosen runs the manifest default_agent, not the first agent (W1 B5)', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      env: {
+        KORTIX_AGENT_NAME: 'default',
+        KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'writer', agent: { build: { prompt: 'You build.' }, writer: { prompt: 'You write docs.' } } }),
+      },
+    })
+    expect(r.service.runtime()!.agentNameValue()).toBe('writer')
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'hi' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(JSON.stringify(gateway.sent[before]!.filter((m) => m.role === 'system'))).toContain('You write docs.')
+  })
+
+  test('a permission ask is reported for the approval push (W1 B9)', async () => {
+    const asked: Array<{ id: string; sessionID: string; permission: string; patterns: string[] }> = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+      hooks: { onPermissionAsked: (request) => asked.push(request) },
+    })
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
+    const pending = r.service.runtime()!.permissions.list()[0]!
+    expect(asked).toEqual([expect.objectContaining({ id: pending.id, sessionID: root, permission: 'bash', patterns: ['bash'] })])
+    r.service.runtime()!.permissions.reply(pending.id, 'once')
+    await waitFor(() => !r.service.runtime()!.busy())
   })
 
   test('abort stops a running tool and ends the turn as aborted', async () => {
@@ -654,19 +771,56 @@ describe('pi harness', () => {
     for (const m of after.slice(before.length)) expect(m.info.id > newest).toBe(true)
   })
 
-  test('project skills are listed, and the harness-neutral copy wins a name clash', async () => {
+  test('a managed-skill overlay that lands after start reaches the running pi', async () => {
+    const managed = mkdtempSync(join(tmpdir(), 'pi-managed-'))
+    const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = managed
+    try {
+      const r = await boot({ script: [{ text: 'ok' }], start: false })
+      const write = (root: string, name: string, description: string) => {
+        mkdirSync(join(root, name), { recursive: true })
+        writeFileSync(join(root, name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+      }
+      write(join(r.workspace, 'skills'), 'kortix-cli', 'Committed copy')
+      await r.service.lifecycle.start()
+      const list = async () =>
+        ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>)
+          .map((s) => [s.name, s.description])
+          .sort()
+      expect(await list()).toEqual([['kortix-cli', 'Committed copy']])
+
+      // runtime-assets writes the overlay after the harness started, then calls injectSkills.
+      write(managed, 'kortix-cli', 'Managed copy')
+      write(managed, 'kortix-system', 'Platform reference')
+      await piDefinition.assets.injectSkills(r.workspace, managed)
+
+      expect(await list()).toEqual([
+        ['kortix-cli', 'Managed copy'],
+        ['kortix-system', 'Platform reference'],
+      ])
+    } finally {
+      if (previous === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+      else process.env.KORTIX_MANAGED_SKILLS_DIR = previous
+    }
+  })
+
+  test('skills in the project are loaded into the system prompt: root skills/, then the legacy dir', async () => {
     const r = await boot({ script: [{ text: 'ok' }], start: false })
-    const neutral = join(r.workspace, '.kortix', 'skills', 'deploy')
-    const opencode = join(r.workspace, '.kortix', 'opencode', 'skills', 'deploy')
-    const other = join(r.workspace, '.kortix', 'opencode', 'skills', 'review')
-    for (const dir of [neutral, opencode, other]) mkdirSync(dir, { recursive: true })
-    writeFileSync(join(neutral, 'SKILL.md'), '---\nname: deploy\ndescription: Ship to prod\n---\nRun the deploy script.\n')
-    writeFileSync(join(opencode, 'SKILL.md'), '---\nname: deploy\ndescription: The OpenCode copy\n---\nOld.\n')
-    writeFileSync(join(other, 'SKILL.md'), '---\nname: review\ndescription: Review a PR\n---\nReview it.\n')
+    const skill = (root: string, name: string, description: string) => {
+      const dir = join(r.workspace, root, name)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+    }
+    skill('skills', 'deploy', 'Ship to prod')
+    skill('.kortix/opencode/skills', 'review', 'Review a change')
+    // Same name in both roots: the root layout wins.
+    skill('.kortix/opencode/skills', 'deploy', 'Stale legacy copy')
     await r.service.lifecycle.start()
-    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description?: string }>
-    expect(skills.map((s) => s.name).sort()).toEqual(['deploy', 'review'])
-    expect(skills.find((s) => s.name === 'deploy')?.description).toBe('Ship to prod')
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>
+    expect(skills.map((s) => [s.name, s.description]).sort()).toEqual([
+      ['deploy', 'Ship to prod'],
+      ['review', 'Review a change'],
+    ])
   })
 
   test.each([

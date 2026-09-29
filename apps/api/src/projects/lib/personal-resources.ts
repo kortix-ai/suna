@@ -75,23 +75,6 @@ export function actorPersonalScope(
 }
 
 /**
- * The machine owners an Agent Computer Tunnel call may reach ("own
- * computer"). A connector profile stores the owner of every machine it lists:
- * the team account (shared) or one member's user id (that member's own
- * computer). Only an agent-principal caller is filtered: it keeps the team
- * account plus `personalOwner` (from `personalResourceOwner`). `null` owners
- * (a legacy aggregate row = every team machine) pass through.
- */
-export function filterPersonalTunnelOwners(input: {
-  accountId: string;
-  owners: string[] | null;
-  personalOwner: string | null;
-}): string[] | null {
-  if (input.owners === null) return null;
-  return input.owners.filter((owner) => owner === input.accountId || owner === input.personalOwner);
-}
-
-/**
  * Server-side resolution for one session: the user whose personal resources
  * the session may reach, or null.
  *

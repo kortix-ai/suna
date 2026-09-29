@@ -14,6 +14,8 @@ const source = readFileSync(join(import.meta.dir, 'new-workspace-page.tsx'), 'ut
  * what the comments say about it.
  */
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+/** The shared top row `/new` renders (Back, account menu, desktop Close). */
+const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
 
 /**
  * The full text of the element that opens at `from`, found by counting nested
@@ -57,11 +59,17 @@ describe('/new page: no invented constraints', () => {
     // of assertion a second effect slips past when it is relaxed to a
     // `toContain`. The body is pinned too, so this stays a WRITE ban rather
     // than an effect budget.
-    // Back to ZERO effects. The signed-out guard this page needs is the shared
-    // `useSignedOutRedirect()` hook — one copy for all eight surfaces that had
-    // hand-rolled it, and the only place the `isSigningOut()` stand-down has to
-    // be written.
-    expect(code).not.toContain('useEffect(');
+    // The signed-out guard this page needs is the shared `useSignedOutRedirect()`
+    // hook — one copy for all eight surfaces that had hand-rolled it.
+    //
+    // ONE effect is allowed, and its body is pinned: it seeds the default
+    // project name after mount (a random value in the `useState` initializer
+    // would differ between the server render and hydration). It only sets
+    // local state and never replaces a name the user already has — no request.
+    expect(code.match(/useEffect\(/g) ?? []).toHaveLength(1);
+    expect(code).toContain(
+      'setState((current) => (current.name ? current : { ...current, name: suggestWorkspaceName() }));',
+    );
     expect(code).toContain('useSignedOutRedirect();');
 
     // Paired presence check: there IS a submit path, just not an eager one.
@@ -105,12 +113,14 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     // Log out alone was the only way off `/new` on the web; a user with an
     // invalid form read it as "you cannot leave" (dev, 2026-09-17). The exit
     // is a plain link to the project selector, rendered ahead of the <form> so
-    // it is reachable regardless of form state.
-    expect(code).toContain("t('actions.back')");
-    expect(code).toContain('href="/projects"');
+    // it is reachable regardless of form state. The row is the shared
+    // `AccountTopBar`; Log out lives in its account menu.
+    expect(code).toContain("back={{ href: '/projects', label: t('actions.back') }}");
     const formIndex = code.indexOf('<form');
-    expect(code.indexOf("t('actions.back')")).toBeLessThan(formIndex);
-    expect(code).toContain("t('actions.logOut')");
+    expect(code.indexOf('<AccountTopBar')).toBeGreaterThan(0);
+    expect(code.indexOf('<AccountTopBar')).toBeLessThan(formIndex);
+    expect(bar).toContain('<Link href={back.href}>');
+    expect(bar).toContain("t('actions.logOut')");
     // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
     // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
     // assertion could not tell the fixed control from the broken one — which
@@ -120,10 +130,9 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     // ...and it now says so while it works. The sign-out makes a server round
     // trip this control never made before and is bounded at four steps, which
     // is long enough that a silent button reads as a dead one.
-    expect(code).toContain('disabled={signingOut}');
-    expect(code).toContain(
-      "const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut')",
-    );
+    expect(code).toContain('signingOut={signingOut}');
+    expect(bar).toContain('disabled={signingOut}');
+    expect(bar).toContain("signingOut ? t('actions.signingOut') : t('actions.logOut')");
   });
 
   test('the create-into account is a field IN the form, above the repository fields', () => {
@@ -143,11 +152,10 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
   // The desktop shell has no browser toolbar. Without this control, Log out was
   // the only way off `/new` there.
   test('on desktop, a Close control after Log out returns to the project selector', () => {
-    const logOutAt = code.indexOf('{signOutLabel}');
+    // Extreme right: the bar renders `trailing` after the account menu.
+    expect(code).toContain('trailing={<DesktopCloseButton');
+    expect(bar.indexOf('{trailing}')).toBeGreaterThan(bar.indexOf('</DropdownMenu>'));
     const closeAt = code.indexOf('<DesktopCloseButton');
-    expect(logOutAt).toBeGreaterThan(0);
-    // Extreme right: rendered after Log out, in the same top row.
-    expect(closeAt).toBeGreaterThan(logOutAt);
     expect(closeAt).toBeLessThan(code.indexOf('<AnimatePresence'));
 
     const close = code.match(/<DesktopCloseButton[\s\S]*?\/>/)?.[0];
@@ -158,7 +166,7 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
   test('the top row sits below the title-bar band on desktop', () => {
     // The band holds the macOS traffic lights and the Win/Linux controls. The
     // email used to sit directly under the lights.
-    const row = code.match(/<div className="[^"]*absolute inset-x-0 top-3[^"]*"/)?.[0];
+    const row = bar.match(/<div className="[^"]*absolute inset-x-0 top-3[^"]*"/)?.[0];
     expect(row).toBeDefined();
     expect(row).toContain('kx-desktop-band-row');
     // The old side indents and their gutter variable are gone.
@@ -299,7 +307,9 @@ describe('/new page: layout shape (design is a release gate here)', () => {
     expect(code).not.toContain('col-span-2');
     // A static padding would survive `width: 0` (border-box clamps content, not
     // padding) and hold the column open by 12px.
-    expect(code).toContain("paddingRight: showIcon ? '0.75rem' : 0");
+    expect(code).toContain('paddingRight: showIcon ? ICON_GAP : 0');
+    // The open width holds the tile AND the gap, or the gap clips the tile.
+    expect(code).toContain("const ICON_WIDTH = '2.8rem';");
     expect(code).not.toContain('overflow-hidden pr-3');
     expect(code).toContain('aria-hidden={!showIcon}');
     expect(code).toContain('inert={!showIcon ? true : undefined}');

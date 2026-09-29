@@ -81,6 +81,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'connector.approval.denied': 'Denied connector action',
   'connector.computer.*': 'Ran computer operation',
   'llm.usage': 'Recorded LLM usage',
+  // Historical: permission expiry was removed 2026-09-29; kept so old rows keep a title.
   'connector.computer.permission.expired': 'Expired computer tunnel permission',
   'tunnel.agent.authenticate': 'Authenticated computer tunnel agent',
 };

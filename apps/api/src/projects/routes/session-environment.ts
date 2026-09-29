@@ -118,7 +118,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/environment/ensure',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/environment/ensure',
+    summary: 'Ensure the session sandbox is running',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -173,7 +173,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/environment',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/environment',
+    summary: 'Get the session sandbox state',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -197,7 +197,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions/{sessionId}/environment/stop',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/environment/stop',
+    summary: 'Stop the session sandbox',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),

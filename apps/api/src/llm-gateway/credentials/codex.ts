@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSecretResources, projectSecrets } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -6,7 +7,7 @@ import {
   resolveProjectSecretForConsumer,
 } from '../../projects/secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { encryptAccountSecret } from '../../secrets/account-resource';
+import { type CodexAccountLogin, encryptAccountSecret, loadCodexAccountLogin } from '../../secrets/account-resource';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,
@@ -255,4 +256,58 @@ async function resolveCodexRowCredential(
   const access = stored.access;
   if (!access) return null;
   return { access, accountId: stored.accountId };
+}
+
+/**
+ * The login to retry with after the provider refused its access token (401),
+ * or null when there is none. Another request may already have refreshed it:
+ * the stored token then differs from the refused one and is used as is.
+ * Otherwise one forced refresh, whatever the stored expiry says; a permanent
+ * refusal marks the login for reconnection. A login already marked is not
+ * sent to the provider again: only its owner's reconnect fixes it.
+ */
+export async function refreshRefusedCodexAccountLogin(
+  input: {
+    projectId: string; accountId: string; sessionId: string | null; userId: string;
+    secretId: string; failedKeySha256: string;
+  },
+  deps: {
+    load?: (accountId: string, secretId: string) => Promise<CodexAccountLogin | null>;
+    fetchImpl?: FetchImpl;
+  } = {},
+): Promise<CodexCredential | null> {
+  const load = deps.load ?? loadCodexAccountLogin;
+  const fetchImpl = deps.fetchImpl ?? ((request: string, init: RequestInit) => fetch(request, init));
+  const current = await load(input.accountId, input.secretId);
+  if (!current || current.needsReauthAt) return null;
+  const row: SecretRow = {
+    storage: 'account_resource', accountId: input.accountId, secretId: input.secretId,
+    ownerUserId: input.userId, value: current.value, actorUserId: input.userId,
+    sessionId: input.sessionId, loadedUpdatedAt: current.updatedAt,
+  };
+  const stored = current.value === null ? null : parseCodexAuth(current.value);
+  if (!stored?.access) {
+    await markNeedsReauth(row);
+    return null;
+  }
+  if (sha256(stored.access) !== input.failedKeySha256) return { access: stored.access, accountId: stored.accountId };
+  if (!stored.refresh) {
+    await markNeedsReauth(row);
+    return null;
+  }
+  try {
+    const refreshed = await refreshSingleFlight(input.projectId, row, stored, fetchImpl);
+    return refreshed?.access ? { access: refreshed.access, accountId: refreshed.accountId } : null;
+  } catch (err) {
+    if (!(err instanceof CodexRefreshError)) throw err;
+    // OpenAI rotates the refresh token on use: a concurrent refresh on another
+    // replica wins, and this one is refused as reused. Its token is the login.
+    const after = await load(input.accountId, input.secretId);
+    const winner = after?.value && !after.needsReauthAt ? parseCodexAuth(after.value) : null;
+    return winner?.access && winner.access !== stored.access ? { access: winner.access, accountId: winner.accountId } : null;
+  }
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }

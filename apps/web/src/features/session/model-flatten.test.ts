@@ -31,6 +31,16 @@ describe('flattenModels — gateway provider pass-through', () => {
     expect(flat.providerName).toBe('Kortix');
   });
 
+  test('names a BYOK model after its real provider (OpenCode Go, not "Kortix")', () => {
+    const [flat] = flattenModels(
+      gatewayProviders({
+        'opencode-go/glm-5.3': { name: 'GLM-5.3', provider: 'opencode-go', provider_name: 'OpenCode Go' },
+      }),
+    );
+    expect(flat.providerID).toBe('kortix');
+    expect(flat.providerName).toBe('OpenCode Go');
+  });
+
   test('carries the models.dev passthrough fields', () => {
     const [flat] = flattenModels(
       gatewayProviders({

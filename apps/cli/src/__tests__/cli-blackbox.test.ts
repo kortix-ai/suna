@@ -900,18 +900,18 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.claude', 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(root, '.codex', 'AGENTS.md'))).toBe(false);
     expect(existsSync(join(root, '.pi', 'README.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     // Managed / served-live skills still aren't committed into the repo.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'memory.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
     // The full kit is the default now, so domain skills like pdf ARE present.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('init help exposes one starter and hides compatibility template choices', async () => {
@@ -937,8 +937,8 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('E2E: CLI project setup plus marketplace discovery, then unlink/relink/archive', async () => {
@@ -949,11 +949,11 @@ describe('kortix CLI black-box behavior', () => {
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'show.ts'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);

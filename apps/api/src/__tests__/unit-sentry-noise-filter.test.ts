@@ -100,7 +100,8 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
   // `FreeTierRotation`/`YearlyRotation` cron ticks + `llm-gateway` catalog
   // loads + a user `GET /v1/projects` contending for the 20-session pool),
   // NOT a code bug — `pool_size` is a Supabase-pooler config. The
-  // `index.ts` DB-error handler unconditionally `captureException`d it → paged
+  // The API's DB-error handler (http-errors.ts since the KRTX-347 split)
+  // unconditionally `captureException`d it → paged
   // Sentry → the frontend surfaced the 500 as `ApiError: Internal server
   // error`. The fix classifies it as transient (skip Sentry capture) while
   // STILL logging + STILL 500. Mirrors #5167/#5175 (Daytona transient
@@ -136,34 +137,34 @@ describe('Sentry ignoreErrors noise filter (BS c672fb5e)', () => {
   });
 });
 
-// ── Source-level guard: the `index.ts` DB-error handler must skip
+// ── Source-level guard: the API's DB-error handler (http-errors.ts) must skip
 // `captureException` for pool-exhaustion (the DIRECT call bypasses the
 // `ignoreErrors` list, which only filters automatic/unhandled captures).
 // Mirrors the repo's existing source-guard test convention (e.g. the
 // `seedDraft` source-structure pin). Asserts the guard structure is present so
 // a future refactor can't silently re-enable the paging.
-describe('index.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', () => {
-  const indexSrc = readFileSync(
-    fileURLToPath(new URL('../index.ts', import.meta.url)),
+describe('http-errors.ts DB-error handler pool-exhaustion guard (BS 721b7efe)', () => {
+  const handlerSrc = readFileSync(
+    fileURLToPath(new URL('../http-errors.ts', import.meta.url)),
     'utf8',
   );
 
   test('imports isSentryIgnoredError from lib/sentry', () => {
-    expect(indexSrc).toContain('isSentryIgnoredError');
-    expect(indexSrc).toMatch(/import\s*\{[^}]*\bisSentryIgnoredError\b[^}]*\}\s*from\s*['"]\.\/lib\/sentry['"]/);
+    expect(handlerSrc).toContain('isSentryIgnoredError');
+    expect(handlerSrc).toMatch(/import\s*\{[^}]*\bisSentryIgnoredError\b[^}]*\}\s*from\s*['"]\.\/lib\/sentry['"]/);
   });
 
   test('the DB-error handler guards captureException with isSentryIgnoredError', () => {
     // The guard must classify via isSentryIgnoredError and conditionally skip
     // the captureException call (defense in depth — the ignoreErrors list
     // alone does NOT stop a direct captureException).
-    expect(indexSrc).toContain('const isPoolExhaustion = isSentryIgnoredError(');
-    expect(indexSrc).toContain('databaseError.causeName ?? databaseError.outerName');
-    expect(indexSrc).toContain('databaseMessage');
-    expect(indexSrc).toContain('if (!isPoolExhaustion)');
+    expect(handlerSrc).toContain('const isPoolExhaustion = isSentryIgnoredError(');
+    expect(handlerSrc).toContain('databaseError.causeName ?? databaseError.outerName');
+    expect(handlerSrc).toContain('databaseMessage');
+    expect(handlerSrc).toContain('if (!isPoolExhaustion)');
     // The structured log still fires (transient: true / errorType tag) so the
     // event stays observable without paging.
-    expect(indexSrc).toContain("'database-pool-exhaustion'");
-    expect(indexSrc).toContain('transient: isPoolExhaustion');
+    expect(handlerSrc).toContain("'database-pool-exhaustion'");
+    expect(handlerSrc).toContain('transient: isPoolExhaustion');
   });
 });

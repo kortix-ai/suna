@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 697,
+  "count": 695,
   "routes": [
     {
       "method": "GET",
@@ -8,7 +8,15 @@
     },
     {
       "method": "GET",
+      "path": "/.well-known/oauth-protected-resource"
+    },
+    {
+      "method": "GET",
       "path": "/.well-known/oauth-protected-resource/v1/mcp"
+    },
+    {
+      "method": "GET",
+      "path": "/.well-known/openid-configuration"
     },
     {
       "method": "GET",
@@ -45,6 +53,10 @@
     {
       "method": "POST",
       "path": "/internal/gateway/pool-rate-limit"
+    },
+    {
+      "method": "POST",
+      "path": "/internal/gateway/refresh-credential"
     },
     {
       "method": "POST",
@@ -1707,6 +1719,14 @@
       "path": "/v1/projects/:projectId/channels/teams/message"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/delete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/teams/message/edit"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/teams/mode"
     },
@@ -1737,6 +1757,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/commits/:sha/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/computers"
     },
     {
       "method": "GET",
@@ -2620,14 +2644,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/tunnel/audit/:tunnelId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/connections"
-    },
-    {
-      "method": "POST",
       "path": "/v1/tunnel/connections"
     },
     {
@@ -2667,36 +2683,12 @@
       "path": "/v1/tunnel/device-auth/:code/status"
     },
     {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests"
-    },
-    {
       "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permission-requests/:requestId/deny"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permission-requests/stream"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/tunnel/permissions/:tunnelId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/permissions/:tunnelId"
+      "path": "/v1/tunnel/rpc/:tunnelId"
     },
     {
       "method": "DELETE",
-      "path": "/v1/tunnel/permissions/:tunnelId/:permissionId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/tunnel/rpc/:tunnelId"
+      "path": "/v1/tunnel/self"
     },
     {
       "method": "GET",
