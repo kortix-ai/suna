@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { promptAttachments, promptAttachmentReferences, sessionLifecycleCommands } from '@kortix/db';
-import { MAX_PROMPT_ATTACHMENT_BYTES, MAX_PROMPT_ATTACHMENTS_BYTES, MAX_PROMPT_ATTACHMENT_FILES, PROMPT_ATTACHMENT_TTL_MS, sanitizePromptUploadFilename } from '@kortix/shared';
+import { MAX_PROMPT_ATTACHMENT_BYTES, MAX_PROMPT_ATTACHMENTS_BYTES, MAX_PROMPT_ATTACHMENT_FILES, PROMPT_ATTACHMENT_TTL_MS, isModelNativeAttachmentMime, sanitizePromptUploadFilename } from '@kortix/shared';
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
@@ -76,9 +76,10 @@ export async function beginPromptAttachment(
       'Each attachment must contain 1 byte to 50 MiB.',
       413,
     );
-  const mime = input.mime.split(';')[0]!.trim().toLowerCase() || 'application/octet-stream';
-  if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mime) || mime.length > 255)
+  const declaredMime = input.mime.split(';')[0]!.trim().toLowerCase() || 'application/octet-stream';
+  if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(declaredMime) || declaredMime.length > 255)
     throw new PromptAttachmentError('attachment_mime_invalid', 'Attachment MIME type is invalid.');
+  const mime = isModelNativeAttachmentMime(declaredMime) ? declaredMime : 'application/octet-stream';
   // The prompt path's billing decision, without its admission hold: an upload
   // spends no compute, and the hold is reconciled only by an LLM request.
   const { checkBillingAdmission } = await import('../billing/services/billing-gate');
