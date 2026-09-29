@@ -1,13 +1,19 @@
 // Project config introspection: parses the project manifest (kortix.yaml,
-// falling back to legacy kortix.toml) + the OpenCode config dir
-// (agents/skills/commands) out of the repo into a ProjectConfigSummary.
+// falling back to legacy kortix.toml), the agents and skills (root `agents/`
+// and `skills/`, or the legacy `.kortix/opencode/`), and the OpenCode config
+// dir (commands) out of the repo into a ProjectConfigSummary.
 
 import {
+  AGENTS_DIR,
+  agentFileCandidates,
+  legacyConfigDir,
   type ManifestFormat,
   ManifestImportError,
   manifestCandidatePaths,
   manifestFormatForPath,
+  opencodeConfigDirCandidates,
   parseManifestText,
+  skillDirs,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
@@ -159,6 +165,8 @@ type NativeAgentSummary = Omit<ProjectConfigSummary['agents'][number], 'source' 
 export function resolveConfigAgents(
   nativeAgents: NativeAgentSummary[],
   loadedAgents: LoadedAgents,
+  /** Where a declared agent's `.md` actually is, when its spec names no `file`. */
+  resolveFile: (spec: LoadedAgents['specs'][number]) => string | undefined = () => undefined,
 ): Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'> {
   if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
     return {
@@ -178,11 +186,11 @@ export function resolveConfigAgents(
     agents: loadedAgents.specs
       .filter((spec) => spec.enabled)
       .map((spec) => {
-        const native =
-          (spec.file ? nativeByPath.get(spec.file) : undefined) ?? nativeByName.get(spec.name);
+        const file = spec.file ?? resolveFile(spec);
+        const native = (file ? nativeByPath.get(file) : undefined) ?? nativeByName.get(spec.name);
         return {
           name: spec.name,
-          path: spec.file ?? native?.path ?? spec.path,
+          path: file ?? native?.path ?? spec.path,
           description: native?.description ?? null,
           mode: native?.mode ?? null,
           model: native?.model ?? null,
@@ -213,6 +221,7 @@ interface ResolvedProjectManifest {
   manifestFormat: ManifestFormat;
   manifest: Record<string, unknown>;
   loadedAgents: LoadedAgents;
+  repoPaths: Set<string>;
   opencodeDir: string;
   openCodeRaw: string | null;
 }
@@ -267,9 +276,14 @@ async function resolveProjectManifest(
           ],
         }
       : { specs: [], errors: [] };
-  const opencodeDir = resolveOpencodeDir(manifest);
-  // Where opencode.jsonc lives. Path comes from the manifest's
-  // [opencode] config_dir, defaulting to `.kortix/opencode`.
+  const repoPaths = new Set(repoFiles.map((file) => file.path));
+  // Where opencode.jsonc lives: the manifest's `opencode.config_dir`, else
+  // `harnesses/opencode`, then the legacy `.kortix/opencode`.
+  const opencodeCandidates = opencodeConfigDirCandidates(manifest);
+  const opencodeDir =
+    opencodeCandidates.find(
+      (dir) => repoPaths.has(`${dir}/opencode.jsonc`) || repoPaths.has(`${dir}/opencode.json`),
+    ) ?? opencodeCandidates[0]!;
   const openCodeRaw = await optionalFile(project, `${opencodeDir}/opencode.jsonc`);
   return {
     repoFiles,
@@ -278,28 +292,29 @@ async function resolveProjectManifest(
     manifestFormat,
     manifest,
     loadedAgents,
+    repoPaths,
     opencodeDir,
     openCodeRaw,
   };
 }
 
-interface OpenCodeResourceMatch<T> {
+interface RepoResourceMatch<T> {
   /** Sort key for the scan: the path for agents, the slug for skills/commands. */
   key: string;
   /** The value the entry builder receives. */
   target: T;
 }
 
-async function scanOpenCodeResources<TTarget, TEntry>(
+async function scanRepoResources<TTarget, TEntry>(
   repoFiles: ProjectFileEntry[],
-  matcher: (path: string) => OpenCodeResourceMatch<TTarget> | null,
+  matcher: (path: string) => RepoResourceMatch<TTarget> | null,
   buildEntry: (target: TTarget) => Promise<TEntry>,
   compare: (a: string, b: string) => number,
 ): Promise<TEntry[]> {
   return Promise.all(
     repoFiles
       .map((file) => matcher(file.path))
-      .filter((match): match is OpenCodeResourceMatch<TTarget> => Boolean(match))
+      .filter((match): match is RepoResourceMatch<TTarget> => Boolean(match))
       .sort((a, b) => compare(a.key, b.key))
       .map((match) => buildEntry(match.target)),
   );
@@ -309,10 +324,12 @@ async function scanAgents(
   project: GitBackedProject,
   repoFiles: ProjectFileEntry[],
   agentRe: RegExp,
+  /** Declared agents' `.md` files, listed wherever they are. */
+  declaredPaths: ReadonlySet<string>,
 ): Promise<NativeAgentSummary[]> {
-  return scanOpenCodeResources(
+  return scanRepoResources(
     repoFiles,
-    (path) => (agentRe.test(path) ? { key: path, target: path } : null),
+    (path) => (agentRe.test(path) || declaredPaths.has(path) ? { key: path, target: path } : null),
     async (path) => {
       const raw = await optionalFile(project, path);
       const meta = parseFrontmatter(raw);
@@ -332,23 +349,27 @@ async function scanAgents(
 async function scanSkills(
   project: GitBackedProject,
   repoFiles: ProjectFileEntry[],
-  skillRe: RegExp,
-  opencodeDir: string,
+  skillRoots: readonly string[],
 ): Promise<ProjectConfigSummary['skills']> {
-  // Skills dedupe by slug (first path wins) as the matcher's own behavior; the
-  // agent and command scans do not dedupe.
+  // Skills dedupe by slug: a slug found in two roots resolves to the first root
+  // (`skills/`, then the legacy `<config dir>/skills/`). The agent and command
+  // scans do not dedupe.
+  const slugByPath = new Map<string, string>();
   const seenSkills = new Set<string>();
-  return scanOpenCodeResources(
+  for (const root of skillRoots) {
+    const skillRe = new RegExp(`^${escapeRegExp(root)}/(.+)/SKILL\\.md$`);
+    for (const { path } of repoFiles) {
+      const slug = path.match(skillRe)?.[1];
+      if (!slug || seenSkills.has(slug)) continue;
+      seenSkills.add(slug);
+      slugByPath.set(path, slug);
+    }
+  }
+  return scanRepoResources(
     repoFiles,
     (path) => {
-      const match = path.match(skillRe);
-      if (!match) return null;
-      if (seenSkills.has(match[1])) return null;
-      seenSkills.add(match[1]);
-      return {
-        key: match[1],
-        target: { slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` },
-      };
+      const slug = slugByPath.get(path);
+      return slug ? { key: slug, target: { slug, path } } : null;
     },
     async ({ slug, path }) => {
       const raw = await optionalFile(project, path);
@@ -372,7 +393,7 @@ async function scanCommands(
   repoFiles: ProjectFileEntry[],
   commandRe: RegExp,
 ): Promise<ProjectConfigSummary['commands']> {
-  return scanOpenCodeResources(
+  return scanRepoResources(
     repoFiles,
     (path) => {
       const match = path.match(commandRe);
@@ -403,21 +424,31 @@ export async function loadProjectConfig(
     manifestFormat,
     manifest,
     loadedAgents,
+    repoPaths,
     opencodeDir,
     openCodeRaw,
   } = await resolveProjectManifest(project, candidatePaths, files);
 
-  // Build matchers off the configured opencode dir. The trailing
-  // `s?` on agents/commands is opencode's own historical quirk (it
-  // accepts both `agent/` and `agents/`); we follow suit.
-  const escapedDir = escapeRegExp(opencodeDir);
-  const agentRe = new RegExp(`^${escapedDir}/agents?/[^/]+\\.md$`);
-  const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
-  const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
+  // Agents live in `agents/` and, in the legacy layout, `<config dir>/agents/`.
+  // The trailing `s?` there is opencode's own historical quirk (it accepts
+  // both `agent/` and `agents/`); we follow suit. A declared agent's own
+  // `file` (or first existing conventional path) is listed too, wherever it is.
+  const legacyDir = escapeRegExp(legacyConfigDir(manifest));
+  const agentRe = new RegExp(`^(?:${escapeRegExp(AGENTS_DIR)}|${legacyDir}/agents?)/[^/]+\\.md$`);
+  const commandRe = new RegExp(`^${escapeRegExp(opencodeDir)}/commands?/([^/]+)\\.md$`);
+  const declaredAgentFile = (spec: LoadedAgents['specs'][number]) =>
+    agentFileCandidates(manifest, spec.name).find((path) => repoPaths.has(path));
+  const declaredAgentPaths = new Set(
+    loadedAgents.specs.map(declaredAgentFile).filter((path): path is string => Boolean(path)),
+  );
 
-  const nativeAgents = await scanAgents(project, repoFiles, agentRe);
-  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
-  const skills = await scanSkills(project, repoFiles, skillRe, opencodeDir);
+  const nativeAgents = await scanAgents(project, repoFiles, agentRe, declaredAgentPaths);
+  const { agent_discovery, agents } = resolveConfigAgents(
+    nativeAgents,
+    loadedAgents,
+    declaredAgentFile,
+  );
+  const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
   const commands = await scanCommands(project, repoFiles, commandRe);
 
   const signals = {
@@ -452,28 +483,6 @@ export async function loadProjectConfig(
     skills,
     commands,
   };
-}
-
-/**
- * Resolve `[opencode] config_dir` from the parsed manifest. Mirrors the
- * default from triggers.ts (DEFAULT_OPENCODE_CONFIG_DIR) but kept local
- * to avoid a circular import — git.ts is depended on by triggers.ts.
- */
-function resolveOpencodeDir(manifest: Record<string, unknown>): string {
-  const opencode = manifest.opencode;
-  if (opencode && typeof opencode === 'object' && !Array.isArray(opencode)) {
-    const raw = (opencode as Record<string, unknown>).config_dir;
-    if (typeof raw === 'string' && raw.trim()) {
-      const trimmed = raw.trim();
-      // Reject absolute paths + `..` segments here too. parseManifestString
-      // already validates the same on the trigger path; this is a
-      // belt-and-suspenders since loadProjectConfig uses its own parser.
-      if (!trimmed.startsWith('/') && !trimmed.split('/').includes('..')) {
-        return trimmed.replace(/\/+$/, '');
-      }
-    }
-  }
-  return '.kortix/opencode';
 }
 
 function escapeRegExp(input: string): string {

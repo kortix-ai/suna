@@ -31,7 +31,7 @@ the last run, however many commits that is.
 ```sh
 # Read the durable ledger first — the last commit SHA processed, any open
 # docs PR from a prior run, and pages known to intentionally lag the code.
-cat .kortix/memory/docs-sync-log.md 2>/dev/null || echo "(no ledger yet — first run)"
+cat memory/docs-sync-log.md 2>/dev/null || echo "(no ledger yet — first run)"
 
 # Check for an open docs PR from a prior run before opening a new one.
 gh pr list --repo {{target_repo}} --state open \
@@ -59,7 +59,7 @@ fi
 
 ```sh
 cd /workspace/repo
-LAST_SHA=$(grep -m1 '^checkpoint:' .kortix/memory/docs-sync-log.md | awk '{print $2}')
+LAST_SHA=$(grep -m1 '^checkpoint:' memory/docs-sync-log.md | awk '{print $2}')
 if [ -z "$LAST_SHA" ]; then
   # First run: seed from HEAD, do a light backward scan instead of the whole history.
   LAST_SHA=$(git rev-parse HEAD~20)
@@ -134,14 +134,14 @@ One PR per run, all of today's drift grouped together, reasoning attached per pa
 
 ## Step 7 — Update the ledger
 
-Append a dated entry to `.kortix/memory/docs-sync-log.md` (see `<ledger-format>`)
+Append a dated entry to `memory/docs-sync-log.md` (see `<ledger-format>`)
 with the new checkpoint SHA, then advance it whether or not a PR was opened — the
 checkpoint always moves to the `HEAD` this run inspected.
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/docs-sync-log.md`. Every run appends/updates the current
+Lives at `memory/docs-sync-log.md`. Every run appends/updates the current
 entry with: run timestamp, `checkpoint: <sha>` (the commit this run's scan ended
 at — the next run's starting point), the commit range processed, PR link (or
 "not opened — no doc-visible drift"), a **Pages changed** table (page / commit that

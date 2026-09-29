@@ -7,7 +7,7 @@ import { unwrap } from './shared';
 // connectors/secrets/skills/kortix_permissions/repository_access/enabled, written to
 // kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
-// the agent's own native `.kortix/opencode/agents/<name>.md` frontmatter +
+// the agent's own `.md` (`block.file`, e.g. `agents/<name>.md`) frontmatter +
 // body). The backend route is what merges the two files into this one
 // response/request shape — see apps/api/src/projects/routes/agent-config.ts.
 // Distinct from setAgentScope (agent-scope.ts), which writes only the
@@ -51,6 +51,10 @@ export interface OpencodeAgentConfig {
  *  only convenience; kortix.yaml itself never nests `opencode` — see the
  *  module doc above). */
 export interface AgentConfigBlock {
+  /** Repo-relative path of the agent's `.md` (e.g. `agents/support.md`). The
+   *  server owns it: it records the path it read or wrote. Send back the value
+   *  a read returned; a different value is refused. */
+  file?: string;
   enabled?: boolean;
   sandbox?: string;
   connectors?: AgentGrantSetV2;

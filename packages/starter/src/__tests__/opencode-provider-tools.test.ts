@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import imageSearch from '../../templates/base/.kortix/opencode/tools/image_search';
-import scrapeWebpage from '../../templates/base/.kortix/opencode/tools/scrape_webpage';
-import webSearch from '../../templates/base/.kortix/opencode/tools/web_search';
+import imageSearch from '../../templates/base/harnesses/opencode/tools/image_search';
+import scrapeWebpage from '../../templates/base/harnesses/opencode/tools/scrape_webpage';
+import webSearch from '../../templates/base/harnesses/opencode/tools/web_search';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = {
