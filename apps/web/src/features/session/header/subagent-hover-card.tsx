@@ -1,6 +1,7 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { menuRow } from '@/components/ui/menu-recipe';
 import { shortRelative } from '@/features/workspace/project-sidebar/project-session-list-helpers';
@@ -57,32 +58,41 @@ export function SubagentHoverCard({
           <span>{tHardcodedUi.raw('i18nComplete.text88296ab3d666')}</span>
           <span className="tabular-nums">{subsessions.length}</span>
         </div>
-        <ul className="max-h-64 overflow-y-auto overscroll-contain p-1 pt-0">
-          {subsessions.map((child) => (
-            <li key={child.id}>
-              <HoverPrefetchLink
-                href={`${href}?oc=${encodeURIComponent(child.id)}`}
-                onClick={() => setOpen(false)}
-                className={menuRow('sm', 'default', 'cursor-pointer')}
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  {subagentTitle(child.title || 'Sub-session')}
-                </span>
-                {child.updated_at ? (
-                  <time
-                    dateTime={new Date(child.updated_at).toISOString()}
-                    className="text-muted-foreground shrink-0 text-xs tabular-nums"
-                    suppressHydrationWarning
-                  >
-                    {shortRelative(
-                      formatDistanceToNowStrict(new Date(child.updated_at), { addSuffix: false }),
-                    )}
-                  </time>
-                ) : null}
-              </HoverPrefetchLink>
-            </li>
-          ))}
-        </ul>
+        {/* Capped at `max-h-64` (~8 rows); a long list scrolls inside the card.
+            The fades mark the clipped edges: the top one appears once the list
+            scrolls under the header, the bottom one while rows remain below. */}
+        <FadedScrollArea
+          fadeColor="from-popover"
+          fadeSize="6"
+          className="max-h-64 overscroll-contain"
+        >
+          <ul className="p-1 pt-0">
+            {subsessions.map((child) => (
+              <li key={child.id}>
+                <HoverPrefetchLink
+                  href={`${href}?oc=${encodeURIComponent(child.id)}`}
+                  onClick={() => setOpen(false)}
+                  className={menuRow('sm', 'default', 'cursor-pointer')}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {subagentTitle(child.title || 'Sub-session')}
+                  </span>
+                  {child.updated_at ? (
+                    <time
+                      dateTime={new Date(child.updated_at).toISOString()}
+                      className="text-muted-foreground shrink-0 text-xs tabular-nums"
+                      suppressHydrationWarning
+                    >
+                      {shortRelative(
+                        formatDistanceToNowStrict(new Date(child.updated_at), { addSuffix: false }),
+                      )}
+                    </time>
+                  ) : null}
+                </HoverPrefetchLink>
+              </li>
+            ))}
+          </ul>
+        </FadedScrollArea>
       </HoverCardContent>
     </HoverCard>
   );

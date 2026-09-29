@@ -203,6 +203,13 @@ describe('SessionSiteHeader subagent hover card', () => {
     expect(cardSource).toContain('onClick={() => setOpen(false)}');
     expect(cardSource).toContain('animated={false}');
   });
+
+  test('a long list scrolls inside a capped, edge-faded area', () => {
+    const area = cardSource.slice(cardSource.indexOf('<FadedScrollArea'), cardSource.indexOf('<ul'));
+    expect(area).toContain('max-h-64');
+    expect(area).toContain('overscroll-contain');
+    expect(area).toContain('fadeColor="from-popover"');
+  });
 });
 
 describe('SessionSiteHeader transcript ownership', () => {
