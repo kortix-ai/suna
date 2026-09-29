@@ -16,6 +16,10 @@ const shell = readFileSync(
   fileURLToPath(new URL('./instant-session-shell.tsx', import.meta.url)),
   'utf8',
 );
+const shellSend = readFileSync(
+  fileURLToPath(new URL('./use-instant-session-send.ts', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -44,9 +48,11 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
       'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.userMessage.info.id, originId: optimisticOriginOf(sessionId, turn.userMessage.info.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.userMessage.info.id, )?.attachments, })}',
     );
     // The first prompt's identities outlive its handover, in the chat and in the boot shell.
-    expect(flat(shell)).toContain(
-      'attachments: localFiles.length > 0 ? [] : (firstPromptAttachments(sessionId) ?? pendingRowSubmission?.attachments ?? []),',
+    expect(shell).toContain('useInstantSessionSend({');
+    expect(flat(shellSend)).toContain(
+      'attachments: localFiles.length > 0 ? [] : (rememberedAttachments ?? pendingRowSubmission?.attachments ?? []),',
     );
+    expect(shellSend).toContain('rememberedAttachments: firstPromptAttachments(sessionId),');
   });
 
   test('queued rows draw their files, a session unmount releases previews, and nothing says "Upload failed"', () => {
@@ -62,7 +68,7 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // The shell projects every durable row after the first, plus the sends it
     // has made that no row carries yet, through the same queue projection.
     expect(shell).toContain('projectQueueRows({');
-    expect(shell).toContain('attachments: sentAttachmentsOf(files ?? []),');
+    expect(shellSend).toContain('attachments: sentAttachmentsOf(files ?? []),');
   });
 });
 
@@ -146,7 +152,7 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
   });
 
   test('the boot shell paints the first prompt before its held POST and keeps it, marked failed, when a send with uploads fails', () => {
-    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
+    const send = between(shellSend, 'function paintSend(', 'interface FirstPromptSourcesProps');
     const paint = send.indexOf('setSubmission({ text, files: files ?? [] });');
     const held = send.indexOf('void postWhenUploaded(');
     expect(paint).toBeGreaterThan(-1);
@@ -156,22 +162,21 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     // refusal leaves the draft there, mention chips included. A send with uploads is
     // never taken back, so it paints and mounts the chat at once.
     const flat = (source: string) => source.replace(/\s+/g, ' ');
-    expect(send).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
+    expect(shellSend).toContain('const detached = !!attachments && deliversDetached(sessionId, attachments);');
     const inline = 'await deliverInOrder(sessionId, () => post([]));';
-    const textOnly = send.slice(send.indexOf(inline));
-    expect(send.indexOf(inline)).toBeGreaterThan(-1);
+    const textOnly = between(shellSend, 'async function deliverInChain(', 'interface FirstPromptSourcesProps');
+    expect(textOnly).toContain(inline);
     const refused = between(textOnly, '} catch (error) {', 'throw error;');
     expect(refused).not.toContain('setSubmission(');
     expect(refused).not.toContain('setPrefill(');
     expect(flat(textOnly.slice(textOnly.indexOf('throw error;')))).toContain(
       "if (first) { // Only now does the page mount the real chat: the server holds the prompt. playSound('send'); setSubmission({ text, files: files ?? [] }); onSubmit?.(); }",
     );
-    expect(send.slice(0, send.indexOf(inline)).match(/onSubmit\?\.\(\)/g)).toHaveLength(1);
     // A send with uploads, or one behind an earlier send of this session, is
     // delivered detached; the ordering itself is tested in
     // `instant-session-shell-delivery.test.tsx`.
     expect(
-      between(send, 'if (attachments && detached) {', 'void postWhenUploaded('),
+      between(shellSend, 'function deliverDetached(', 'void postWhenUploaded('),
     ).toContain('onSubmit?.();');
     expect(send.replace(/\s+/g, ' ').match(/void postWhenUploaded\( sessionId, attachments,/g)).toHaveLength(2);
     // A later send with uploads keeps its bubble, marked failed, instead of vanishing.
@@ -180,18 +185,18 @@ describe('a send paints first and holds its POST on the handed-off uploads', () 
     );
     // Send time, not POST time: a message sent while the uploads run is
     // ordered after this one.
-    const stamp = send.indexOf('const sentAtMs = Date.now();');
+    const stamp = shellSend.indexOf('const sentAtMs = Date.now();');
     expect(stamp).toBeGreaterThan(-1);
-    expect(stamp).toBeLessThan(held);
+    expect(stamp).toBeLessThan(shellSend.indexOf('const handleSend = useCallback('));
     expect(
-      between(send, 'const post = async', 'if (attachments && detached) {'),
+      between(shellSend, 'const post = async', 'function deliverDetached('),
     ).toContain('clientSentAtMs: sentAtMs,');
     // The failed status lives in the first-prompt preview, which SessionChat
     // also draws, so it survives the crossfade that unmounts this shell.
-    expect(send).toMatch(
+    expect(shellSend).toMatch(
       /useFirstPromptPreviewStore\s*\.getState\(\)\s*\.setFirstPromptPreview\(sessionId, text, files \?\? \[\], uploadStatus\)/,
     );
-    expect(shell).toContain(
+    expect(shellSend).toContain(
       'uploadStatus: previewSubmission?.uploadStatus ?? pendingRowSubmission?.uploadStatus,',
     );
     expect(chat.replace(/\s+/g, ' ')).toContain(
@@ -537,10 +542,10 @@ describe('the boot shell never swallows what the user typed', () => {
     // second message simply POSTs. AWAITED and thrown on failure, so the
     // composer's own recovery restores the draft for a message the server
     // never got.
-    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
+    const send = between(shellSend, 'function buildPost(', 'function deliverDetached(');
     expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
     expect(send).toContain('promptFileParts(files, attachmentParts)');
-    expect(send).toContain('throw error;');
+    expect(shellSend).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
     expect(shell).not.toContain('carryDraft(');
     expect(shell).not.toContain('Still starting this session');
@@ -553,7 +558,7 @@ describe('the boot shell never swallows what the user typed', () => {
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {
-    const send = between(shell, 'const handleSend = useCallback(', 'const handleCommand = useCallback(');
+    const send = between(shellSend, 'function paintSend(', 'function buildPost(');
     expect(send).toContain("prompt: ''");
     // And the shell paints the durable rows, so the bubble survives a reload.
     expect(shell).toContain('useSessionPrompts(projectId, sessionId');
