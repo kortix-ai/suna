@@ -77,40 +77,18 @@ function ToastMessage({
   );
 }
 
-export const successToast = (message: string, options?: ToastOptions) => {
-  const isMobile = window.innerWidth <= 768;
-
-  toast.custom(
-    (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
-        <div className={cn('flex gap-2', toastRowAlign(options))}>
-          <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <GoCheckCircleFill weight="fill" className="text-kortix-green size-5 shrink-0" />
-
-            <ToastMessage
-              message={message}
-              description={options?.description}
-              button={options?.button}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-primary size-7 shrink-0 cursor-auto p-0"
-            onClick={() => toast.dismiss(t)}
-            aria-label="Close notification"
-          >
-            <Close size={16} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    ),
-    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
-  );
-};
-
-/** Show or update a loading toast; pass `id` to update an existing toast in place. */
-export const progressToast = (message: string, options?: ToastOptions): string | number => {
+/**
+ * The one custom-toast render every factory funnels through: it owns the
+ * isMobile check, the toast JSX and the `toast.custom` call. A factory
+ * contributes only its icon, its duration (already resolved with the
+ * factory's own `||` / `??` semantics) and any pre-check.
+ */
+const renderToast = (
+  message: string,
+  icon: React.ReactNode,
+  options: ToastOptions | undefined,
+  duration: number,
+): string | number => {
   const isMobile = window.innerWidth <= 768;
 
   return toast.custom(
@@ -118,7 +96,8 @@ export const progressToast = (message: string, options?: ToastOptions): string |
       <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
         <div className={cn('flex gap-2', toastRowAlign(options))}>
           <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <Loading className="text-primary size-4 shrink-0 animate-spin" />
+            {icon}
+
             <ToastMessage
               message={message}
               description={options?.description}
@@ -137,7 +116,26 @@ export const progressToast = (message: string, options?: ToastOptions): string |
         </div>
       </div>
     ),
-    toastData(options, options?.duration ?? Infinity, isMobile),
+    toastData(options, duration, isMobile),
+  );
+};
+
+export const successToast = (message: string, options?: ToastOptions) => {
+  renderToast(
+    message,
+    <GoCheckCircleFill weight="fill" className="text-kortix-green size-5 shrink-0" />,
+    options,
+    options?.duration || DEFAULT_DURATION,
+  );
+};
+
+/** Show or update a loading toast; pass `id` to update an existing toast in place. */
+export const progressToast = (message: string, options?: ToastOptions): string | number => {
+  return renderToast(
+    message,
+    <Loading className="text-primary size-4 shrink-0 animate-spin" />,
+    options,
+    options?.duration ?? Infinity,
   );
 };
 
@@ -146,34 +144,13 @@ export const loadingToast = <T,>(
   promiseInput: Promise<T> | (() => Promise<T>),
   options?: LoadingToastOptions<T>,
 ): Promise<T> => {
-  const isMobile = window.innerWidth <= 768;
   const promise = typeof promiseInput === 'function' ? promiseInput() : promiseInput;
 
-  const toastId = toast.custom(
-    (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
-        <div className={cn('flex gap-2', toastRowAlign(options))}>
-          <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <Loading className="text-primary size-4 shrink-0 animate-spin" />
-            <ToastMessage
-              message={message}
-              description={options?.description}
-              button={options?.button}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-primary size-7 shrink-0 cursor-auto p-0"
-            onClick={() => toast.dismiss(t)}
-            aria-label="Close notification"
-          >
-            <Close size={16} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    ),
-    toastData(options, Infinity, isMobile),
+  const toastId = renderToast(
+    message,
+    <Loading className="text-primary size-4 shrink-0 animate-spin" />,
+    options,
+    Infinity,
   );
 
   return promise.then(
@@ -203,102 +180,29 @@ export const loadingToast = <T,>(
 export const errorToast = (message: string, options?: ToastOptions) => {
   if (isSilentTimeoutMessage(message)) return;
 
-  const isMobile = window.innerWidth <= 768;
-
-  toast.custom(
-    (t) => (
-      <div
-        className={cn(
-          'border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]',
-        )}
-      >
-        <div className={cn('flex gap-2', toastRowAlign(options))}>
-          <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <HiOutlineXCircle className="text-kortix-red size-6 shrink-0" />
-
-            <ToastMessage
-              message={message}
-              description={options?.description}
-              button={options?.button}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-primary size-7 shrink-0 cursor-auto p-0"
-            onClick={() => toast.dismiss(t)}
-            aria-label="Close notification"
-          >
-            <Close size={16} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    ),
-    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
+  renderToast(
+    message,
+    <HiOutlineXCircle className="text-kortix-red size-6 shrink-0" />,
+    options,
+    options?.duration || DEFAULT_DURATION,
   );
 };
 
 export const infoToast = (message: string, options?: ToastOptions) => {
-  const isMobile = window.innerWidth <= 768;
-
-  toast.custom(
-    (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
-        <div className={cn('flex gap-2', toastRowAlign(options))}>
-          <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <HiOutlineExclamationCircle className="text-kortix-blue size-6 shrink-0" />
-
-            <ToastMessage
-              message={message}
-              description={options?.description}
-              button={options?.button}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-primary size-7 shrink-0 cursor-auto p-0"
-            onClick={() => toast.dismiss(t)}
-            aria-label="Close notification"
-          >
-            <Close size={16} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    ),
-    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
+  renderToast(
+    message,
+    <HiOutlineExclamationCircle className="text-kortix-blue size-6 shrink-0" />,
+    options,
+    options?.duration || DEFAULT_DURATION,
   );
 };
 
 export const warningToast = (message: string, options?: ToastOptions) => {
-  const isMobile = window.innerWidth <= 768;
-
-  toast.custom(
-    (t) => (
-      <div className="border-primary/10 bg-background text-foreground w-full rounded-[0.64rem] border px-4 py-3 shadow-lg sm:w-[var(--width)]">
-        <div className={cn('flex gap-2', toastRowAlign(options))}>
-          <div className={cn('flex grow gap-3', toastRowAlign(options))}>
-            <HiOutlineExclamationCircle className="text-kortix-yellow size-6 shrink-0" />
-
-            <ToastMessage
-              message={message}
-              description={options?.description}
-              button={options?.button}
-            />
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-primary size-7 shrink-0 cursor-auto p-0"
-            onClick={() => toast.dismiss(t)}
-            aria-label="Close notification"
-          >
-            <Close size={16} aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
-    ),
-    toastData(options, options?.duration || DEFAULT_DURATION, isMobile),
+  renderToast(
+    message,
+    <HiOutlineExclamationCircle className="text-kortix-yellow size-6 shrink-0" />,
+    options,
+    options?.duration || DEFAULT_DURATION,
   );
 };
 
