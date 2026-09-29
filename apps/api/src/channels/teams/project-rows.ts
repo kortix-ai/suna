@@ -1,5 +1,5 @@
 import { config } from '../../config';
-import { repoLabel, repoOgImage } from '../slack/util';
+import { repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { ProjectRow } from './cards';
 
 /** How many projects a card lists. */
@@ -9,16 +9,24 @@ export function projectWebUrl(projectId: string): string {
   return `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
 }
 
-/** Tenant projects as card rows: repo label and preview image, as Slack's project carousel shows them. */
-export function projectRows(
+/** How long a card waits for a first preview check. Teams cards post asynchronously. */
+export const PREVIEW_WAIT_MS = 2_500;
+
+/**
+ * Tenant projects as card rows, as Slack's project carousel shows them: the
+ * repository as a person reads it, and its preview only when it loads.
+ */
+export async function projectRows(
   projects: ReadonlyArray<{ projectId: string; name: string; repoUrl?: string | null }>,
   currentProjectId?: string | null,
-): ProjectRow[] {
-  return projects.slice(0, MAX_PROJECT_ROWS).map((p) => ({
+): Promise<ProjectRow[]> {
+  const shown = projects.slice(0, MAX_PROJECT_ROWS);
+  const images = await repoPreviewImages(shown.map((p) => p.repoUrl), { waitMs: PREVIEW_WAIT_MS });
+  return shown.map((p) => ({
     projectId: p.projectId,
     name: p.name,
-    repo: p.repoUrl ? repoLabel(p.repoUrl) : null,
-    imageUrl: p.repoUrl ? repoOgImage(p.repoUrl) : null,
+    repo: repoDisplayLabel(p.repoUrl),
+    imageUrl: p.repoUrl ? images.get(p.repoUrl) ?? null : null,
     url: projectWebUrl(p.projectId),
     current: p.projectId === currentProjectId,
   }));

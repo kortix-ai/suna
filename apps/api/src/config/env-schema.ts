@@ -606,13 +606,6 @@ const envSchema = z.object({
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
   // ── Config releases (optional) ──────────────────────────────────────────
-  // Operator kill switch for the whole config-release feature (the
-  // `config_releases` per-project flag). Default ON: a session runs the base branch's current
-  // config. Set to false and the flag is unavailable platform-wide — the
-  // Settings row disappears, both routes answer 403 `feature_disabled` for
-  // every project, no convergence is scheduled, and every session falls back
-  // to reading its workspace config dir, whatever a project chose.
-  CONFIG_RELEASES_ENABLED: optBoolFalse,
   // Config archives go through the API's ONE object store
   // (src/object-store/s3.ts), same as project snapshots above, with their own
   // bucket/prefix so that naming a config bucket never starts the snapshot
@@ -623,8 +616,8 @@ const envSchema = z.object({
   //   local/preview/self-host: Supabase Storage's S3 PROTOCOL endpoint
   //     (`<supabase>/storage/v1/s3`) with the S3 protocol key pair, bucket
   //     `kortix-config-releases` (created by database migration).
-  // Required when CONFIG_RELEASES_ENABLED is on — see the conditional check in
-  // validateEnv(); without it every archive request rebuilds from the mirror.
+  // Unset ⇒ validateEnv() warns and every archive request rebuilds from the
+  // Git mirror.
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: optStr,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: optStr,
   /** S3-compatible endpoint. Empty = the AWS regional endpoint. */

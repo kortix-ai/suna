@@ -23,6 +23,7 @@
 import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
+import { timeUpstream } from '../middleware/upstream-timing';
 import {
   getProvider,
   type ProviderName,
@@ -267,7 +268,10 @@ export async function resolveSandboxIngress(
   const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
   if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
   const provider = getProvider(record.provider as ProviderName);
-  const ingress = await provider.resolveIngress(record.externalId, request);
+  // A provider API call is upstream time by the middleware's own contract; a
+  // stale link makes every proxied request pay this inline (KRTX-471: ~5 s
+  // give-ups whose `upstream_ms` held only the failed dials).
+  const ingress = await timeUpstream(() => provider.resolveIngress(record.externalId, request));
 
   const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
   if (cacheTtlMs > 0) {

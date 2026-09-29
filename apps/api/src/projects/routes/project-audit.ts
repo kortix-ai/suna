@@ -121,6 +121,44 @@ const AUDIT_INGEST_CHUNK_BUDGET_MS =
   AUDIT_INGEST_LOCK_WAIT_MS + AUDIT_STATEMENT_TIMEOUT_MS + 1_000;
 
 /**
+ * Resolve with `{ timedOut: true }` if `work` is still pending after
+ * `boundMs`, else with its value.
+ *
+ * The ingest chunk's own bounds (the in-process lock wait, the audit pool's
+ * statement timeout) bound their waits, but the wait for one of the audit
+ * pool's backends has NO bound: postgres.js has no acquire-queue timeout, so
+ * a statement whose two backends are busy queues for a connection for as
+ * long as the convoy in front of it takes (prod 2026-09-29, hours after the
+ * KRTX-644 budget check shipped: request-rate bursts kept both backends busy
+ * and ingest requests still died with the uncontrolled
+ * `request exceeded the 25s server processing deadline` abort mid-acquire).
+ * Racing the chunk against the request's remaining budget is the one bound
+ * that covers the acquire wait too.
+ *
+ * The loser of the race keeps running. Its eventual rejection has a handler
+ * through the race itself, and the caller answers the controlled contended
+ * 503 either way — the abandoned statement's rows still land
+ * (`onConflictDoNothing`) and the relay's retry is absorbed as duplicates.
+ */
+export async function boundChunkWrite<T>(
+  work: Promise<T>,
+  boundMs: number,
+): Promise<{ timedOut: true; value?: undefined } | { timedOut: false; value: T }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work.then((value) => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), boundMs);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Milliseconds left before this request's server-processing deadline, or null
  * when the guard is off: the deadline is disabled/exempt, or no inbound audit
  * scope exists (unit tests drive the bare app). The edge
@@ -466,7 +504,7 @@ projectsApp.openapi(
         // would otherwise race this insert for the same
         // `audit_session_sequences` row lock — the second writer lost at the
         // pool's 2.5 s `lock_timeout` (55P03) and the queue dropped the row.
-        const inserted = await withAuditSessionLock(
+        const chunkWork = withAuditSessionLock(
           sessionId,
           () =>
             auditDb()
@@ -476,6 +514,38 @@ projectsApp.openapi(
               .returning({ eventId: auditEvents.eventId }),
           { timeoutMs: AUDIT_INGEST_LOCK_WAIT_MS },
         );
+        // The chunk's own bounds (lock wait, statement timeout) do not bound
+        // the wait for an audit-pool backend. Race the chunk against what is
+        // left of the request deadline so a saturated pool degrades into the
+        // controlled contended 503 instead of the deadline abort. When the
+        // guard is off (`remainingMs === null`) there is nothing to race.
+        const chunkResult =
+          remainingMs === null
+            ? { timedOut: false as const, value: await chunkWork }
+            // 1s held back so the contended 503 response itself still fits
+            // inside the deadline.
+            : await boundChunkWrite(chunkWork, remainingMs - 1_000);
+        if (chunkResult.timedOut) {
+          // The statement keeps running off the request path. Swallow its
+          // eventual rejection (a statement timeout, or the lock wait it is
+          // still queued inside) so it can never surface unhandled.
+          void chunkWork.catch(() => {});
+          appLogger.warn('[audit] ingest budget exhausted', {
+            projectId,
+            sessionId,
+            remaining_ms: remainingIngestBudgetMs(c),
+            chunk_budget_ms: AUDIT_INGEST_CHUNK_BUDGET_MS,
+            accepted: parsed.accepted,
+            attempted,
+            inserted: insertedCount,
+            remaining: toInsert.length - offset - chunk.length,
+            chunk: chunk.length,
+            raced_out: true,
+          });
+          contended = true;
+          break;
+        }
+        const inserted = chunkResult.value;
         attempted += chunk.length;
         insertedCount += inserted.length;
       } catch (error) {

@@ -149,23 +149,15 @@ function collectBillingIssues(
   }
 }
 
-function collectConfigReleaseIssues(raw: RawEnv, billingOn: boolean, issues: EnvIssue[]): void {
-  // ── Conditional: config releases on → need the ONE object store ────────
-  // `CONFIG_RELEASES_ENABLED` is the operator switch and defaults to FALSE
-  // while the rollout runs. An environment turns it on together with the
-  // bucket, and only then can a project opt in
-  // (the per-project flag itself is OFF by default) and publish config
-  // archives from that moment on. They go through the API's one
-  // object store (src/object-store/s3.ts); there is no second store and no
-  // fallback path that quietly writes somewhere else. Unset ⇒ every archive
-  // request rebuilds from the Git mirror, every time, for every box.
-  // Managed cloud (billing on) is a hard error — a deploy that forgot the
-  // bucket must not reach users. Self-host warns and boots: the store is a
-  // cache, and an operator upgrading a container with a stale env block must
-  // not be locked out of their own dashboard.
-  const configReleasesOn =
-    (raw as any).CONFIG_RELEASES_ENABLED === 'true' || (raw as any).CONFIG_RELEASES_ENABLED === true;
-  if (configReleasesOn) {
+function collectConfigArchiveIssues(raw: RawEnv, issues: EnvIssue[]): void {
+  // ── Config archives → the ONE object store ──────────────────────────────
+  // A project that turns on `config_releases` publishes config archives
+  // through the API's one object store (src/object-store/s3.ts); there is no
+  // second store and no fallback path that quietly writes somewhere else.
+  // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
+  // for every box. A warning, not an error: the store is a cache, and a
+  // container with a stale env block must still boot.
+  {
     const bucket = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_BUCKET ?? '').trim();
     const endpoint = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT ?? '').trim();
     const keyId = String((raw as any).KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID ?? '').trim();
@@ -173,10 +165,9 @@ function collectConfigReleaseIssues(raw: RawEnv, billingOn: boolean, issues: Env
     if (!bucket) {
       issues.push({
         var: 'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
-        message: billingOn
-          ? 'Required when CONFIG_RELEASES_ENABLED is on — no config archive is stored and every box rebuilds from the Git mirror'
-          : 'Not set — config archives are not cached; every box rebuilds them from the Git mirror (set the KORTIX_CONFIG_ARCHIVE_S3_* block, or CONFIG_RELEASES_ENABLED=false)',
-        level: billingOn ? 'error' : 'warn',
+        message:
+          'Not set — config archives are not cached; every box rebuilds them from the Git mirror (set the KORTIX_CONFIG_ARCHIVE_S3_* block)',
+        level: 'warn',
       });
     } else if (endpoint && !(keyId && keySecret)) {
       // A custom S3 endpoint (Supabase Storage, MinIO) never has a task role.
@@ -311,7 +302,7 @@ function validateEnv(): z.infer<typeof envSchema> {
 
   collectProviderCredentialIssues(raw, billingOn, issues);
   collectBillingIssues(raw, billingWillBeEnabled, issues);
-  collectConfigReleaseIssues(raw, billingOn, issues);
+  collectConfigArchiveIssues(raw, issues);
   collectGitHubAppIssues(raw, issues);
   collectTunnelIssues(raw, issues);
   collectKortixUrlIssues(raw, result, billingWillBeEnabled, issues);

@@ -107,9 +107,8 @@ describe('config module boot characterization', () => {
     expect(result.stderr).toContain('DAYTONA_API_KEY');
   });
 
-  test('config releases with a custom endpoint require credentials', () => {
+  test('a custom archive endpoint requires credentials', () => {
     const result = load({
-      CONFIG_RELEASES_ENABLED: 'true',
       KORTIX_CONFIG_ARCHIVE_S3_BUCKET: 'synthetic-bucket',
       KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: 'http://localhost:9000',
     });
@@ -258,7 +257,6 @@ describe('config module boot characterization', () => {
       'KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID',
       'KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY',
       'KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS',
-      'CONFIG_RELEASES_ENABLED',
       'KORTIX_CONFIG_ARCHIVE_S3_BUCKET',
       'KORTIX_CONFIG_ARCHIVE_S3_REGION',
       'KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT',

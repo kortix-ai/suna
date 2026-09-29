@@ -525,7 +525,7 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
             account_id: account.account_id,
             repository: p.repo_url ?? null,
             default_branch: p.default_branch ?? null,
-            role: p.effective_role ?? null,
+            role: p.effective_project_role ?? null,
           }));
         }),
       );
