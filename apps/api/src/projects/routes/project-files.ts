@@ -58,10 +58,8 @@ projectsApp.openapi(
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    // A leading "/" is the repository root, not an absolute path.
-    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path')?.replace(/^\/+/, ''));
+    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'));
   } catch (error) {
-    if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
     console.warn('[projects] repo file listing unavailable', {
       projectId,
       error: error instanceof Error ? error.message : String(error),
@@ -257,8 +255,6 @@ projectsApp.openapi(
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   try {
     const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
-    // A NUL byte is never text: say so instead of returning U+FFFD garbage.
-    if (content.includes('\0')) return c.json({ path, ref, content: '', binary: true });
     return c.json({ path, ref, content });
   } catch (error) {
     if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
