@@ -16,6 +16,12 @@ import {
   readReviewFeedback,
 } from './review-modal';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
+import {
+  APPROVAL_REPLY_CALLBACK,
+  handleApprovalCardAction,
+  handleApprovalReplySubmission,
+  parseApprovalActionId,
+} from './approval-card';
 import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
@@ -711,6 +717,10 @@ export async function handleViewSubmission(
   payload: SlackInteractionPayload,
   inbound: SlackInbound = CANONICAL_SLACK_INBOUND,
 ): Promise<void> {
+  if (payload.view?.callback_id === APPROVAL_REPLY_CALLBACK) {
+    await handleApprovalReplySubmission(payload, inbound);
+    return;
+  }
   if (payload.view?.callback_id !== REVIEW_FEEDBACK_CALLBACK) return;
   const meta = decodeReviewMetadata(payload.view?.private_metadata);
   const slackUserId = payload.user?.id ?? '';
@@ -786,6 +796,13 @@ export async function handleBlockAction(
 
   if (action.action_id.startsWith('qa_')) {
     await handleQuestionAnswer(payload, action, inbound);
+    return;
+  }
+
+  // A gated connector call's card (`approval_<verb>_<executionId>`).
+  if (action.action_id.startsWith('approval_')) {
+    const parsed = parseApprovalActionId(action.action_id);
+    if (parsed) await handleApprovalCardAction(payload, parsed, inbound);
     return;
   }
 
