@@ -114,7 +114,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/manifest',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/manifest — digests of this deploy\'s sandbox runtime assets',
+    summary: 'Get digests of the sandbox runtime assets',
     description:
       'Identifies the `kortix-agent` daemon, `kortix` CLI binary, expected `opencode` version, ' +
       'and managed-skill overlay this API was built with. A sandbox compares these digests ' +
@@ -218,7 +218,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/cli',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/cli — the `kortix` binary this deploy bakes into sandboxes',
+    summary: 'Download the kortix CLI binary baked into sandboxes',
     description:
       'Streams the Linux binary from the API image. `ETag` is its sha256 (the manifest\'s ' +
       '`cli_sha256`); send `If-None-Match` to get a 304 instead of the body. 404 when the ' +
@@ -241,7 +241,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/agent',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/agent — the `kortix-agent` daemon this deploy bakes into sandboxes',
+    summary: 'Download the kortix-agent daemon baked into sandboxes',
     description:
       'Streams the Linux daemon binary from the API image. `ETag` is its sha256 (the manifest\'s ' +
       '`components.agent.sha256`); send `If-None-Match` to get a 304 instead of the body. 404 ' +
@@ -266,7 +266,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/entrypoint',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/entrypoint — the supervising sandbox entrypoint script',
+    summary: 'Download the sandbox entrypoint script',
     description:
       'Streams apps/sandbox/entrypoint.sh from the API image. `ETag` is its sha256 (the manifest\'s ' +
       '`components.entrypoint.sha256`). OUT-OF-BAND REPAIR ONLY: no box converges this component, ' +
@@ -309,7 +309,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/chunks/{component}',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/chunks/{component} — the chunk manifest for one binary',
+    summary: 'Get the chunk manifest of one runtime binary',
     description:
       'Names every 1 MiB chunk of `cli` or `agent`, in file order, plus the whole-file sha256 ' +
       'that stays the authority. Offsets are implied — chunk `i` starts at `i * chunk_size` — ' +
@@ -345,7 +345,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/chunk/{sha256}',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/chunk/{sha256} — one chunk of one of this deploy`s binaries',
+    summary: 'Download one runtime binary chunk',
     description:
       'The bytes of the named chunk, from whichever baked binary carries it. ONE store serves ' +
       'both: the ~90 MB the CLI and the daemon share is one set of chunks here exactly as it is ' +
@@ -389,7 +389,7 @@ runtimeAssetsApp.openapi(
     method: 'get',
     path: '/managed-skills',
     tags: ['runtime-assets'],
-    summary: 'GET /runtime-assets/managed-skills — the managed `kortix-*` skill overlay',
+    summary: 'Get the managed kortix-* skill overlay',
     description:
       'Every file of the overlay a sandbox writes to /opt/kortix/managed-skills, byte-identical ' +
       'to what the snapshot builder bakes. `ETag` is the manifest\'s `managed_skills_hash`.',

@@ -1,12 +1,12 @@
 /**
  * Read/write helpers for the v2 `agents.<name>` GOVERNANCE block (redirected
  * 2026-07-05 — "one home per concern"). `AgentBlockV2` here is governance
- * ONLY: connectors/secrets/skills/kortix_permissions/repository_access/enabled. OpenCode
- * BEHAVIOR (mode/model/temperature/top_p/steps/variant/color/hidden/
- * permission/prompt) lives entirely in the agent's own native
- * `.kortix/opencode/agents/<name>.md` frontmatter + body — see
- * `./agent-markdown.ts` (parse/serialize) and `./compile-agent-config.ts`
- * (`agentMarkdownPath`, the conventional-path join). The dashboard's agent
+ * ONLY: connectors/secrets/skills/kortix_permissions/repository_access/enabled, plus
+ * `file` (the path of the agent's `.md`). Agent BEHAVIOR (mode/model/
+ * temperature/top_p/steps/variant/color/hidden/permission/prompt) lives
+ * entirely in that `.md` frontmatter + body — see `./agent-markdown.ts`
+ * (parse/serialize) and `./compile-agent-config.ts` (`agentMarkdownPath`,
+ * `readAgentMarkdownFile`). The dashboard's agent
  * editor route (`../routes/agent-config.ts`) is what merges this governance
  * half with the `.md` behavior half into one wire response/request — this
  * module only ever touches kortix.yaml.

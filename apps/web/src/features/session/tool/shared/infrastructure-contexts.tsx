@@ -74,7 +74,7 @@ export const TurnLiveContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
-// Background memory plumbing (searches/gets and raw .kortix/memory reads) stays
+// Background memory plumbing (searches/gets and raw memory/ reads) stays
 // out of the Actions panel. The memory editor tool itself ('memory'/'oc-memory')
 // is NOT listed here — it renders in the panel so clicking its chat row works.
 const MEMORY_LOOKUP_TOOL_NAMES = new Set([

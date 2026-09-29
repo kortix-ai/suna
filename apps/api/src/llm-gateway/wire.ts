@@ -127,7 +127,7 @@ function chatCompletionsRoute(path: string) {
     method: 'post' as const,
     path,
     tags: [GATEWAY_INFERENCE_TAG],
-    summary: `POST ${fullPath}`,
+    summary: "Chat completions (OpenAI-compatible LLM gateway call)",
     description: `OpenAI-compatible chat completions, proxied through the Kortix LLM gateway (model routing/failover, budgets, usage billing, and request tracing all apply). The body is forwarded close to verbatim to the resolved upstream provider.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} \\\n  -H "Authorization: Bearer $KORTIX_GATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"Say hello in one word."}]}\'\n\`\`\``,
     ...auth,
     request: {
@@ -223,7 +223,7 @@ function messagesRoute(path: string) {
     method: 'post' as const,
     path,
     tags: [GATEWAY_INFERENCE_TAG],
-    summary: `POST ${fullPath}`,
+    summary: "Messages (Anthropic-compatible LLM gateway call)",
     description: `Anthropic-Messages-compatible ingress. Translated at the edges only — the request is converted to the gateway\'s internal chat.completions shape, driven through the SAME auth/billing/routing/failover/trace pipeline as chat completions, then the response (or SSE stream) is translated back to the Anthropic Messages wire format.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} \\\n  -H "Authorization: Bearer $KORTIX_GATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"claude-sonnet-4-5","max_tokens":1024,"messages":[{"role":"user","content":"Say hello in one word."}]}\'\n\`\`\``,
     ...auth,
     request: {
@@ -340,7 +340,7 @@ function modelsRoute(path: string) {
     method: 'get' as const,
     path,
     tags: [GATEWAY_INFERENCE_TAG],
-    summary: `GET ${fullPath}`,
+    summary: "List models served by the LLM gateway",
     description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
     request: {
       query: z.object({

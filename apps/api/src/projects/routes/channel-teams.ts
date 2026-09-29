@@ -35,7 +35,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/installation',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/installation',
+    summary: 'Get the Microsoft Teams installation',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },
@@ -54,7 +54,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/mode',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/mode',
+    summary: 'Get the Microsoft Teams connection mode',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },
@@ -86,7 +86,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/oauth/complete',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/oauth/complete',
+    summary: 'Complete the Microsoft Teams OAuth connection',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -132,7 +132,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/manifest',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/manifest',
+    summary: 'Download the Microsoft Teams app manifest',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
@@ -167,7 +167,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/connect',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/connect',
+    summary: 'Connect Microsoft Teams',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -263,7 +263,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/channels/teams/installation',
     tags: ['channels'],
-    summary: 'DELETE /:projectId/channels/teams/installation',
+    summary: 'Disconnect Microsoft Teams',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },
@@ -292,7 +292,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/file',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/file (download proxy)',
+    summary: 'Download a Microsoft Teams file',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -322,7 +322,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/conversations',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/conversations (proactive-post targets)',
+    summary: 'List Microsoft Teams conversations the bot can post to',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -347,7 +347,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/message',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/message (proactive post)',
+    summary: 'Post a Microsoft Teams message',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -395,7 +395,7 @@ for (const op of ['edit', 'delete'] as const) {
       method: 'post',
       path: `/{projectId}/channels/teams/message/${op}`,
       tags: ['channels'],
-      summary: `POST /:projectId/channels/teams/message/${op} (${op} a bot message)`,
+      summary: `${op === "edit" ? "Edit" : "Delete"} a Microsoft Teams bot message`,
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -435,7 +435,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/file/upload',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/file/upload (consent-card upload)',
+    summary: 'Upload a file to Microsoft Teams',
     description:
       'Delivers a file into a Teams conversation bound to the project. The service URL and tenant come from the ' +
       "binding and the project's stored install, never from the request: `service_url` is accepted and ignored.",

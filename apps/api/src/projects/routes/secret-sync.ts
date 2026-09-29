@@ -27,7 +27,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secrets/sync',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secrets/sync — force re-push secrets to active sandboxes',
+    summary: 'Re-push project secrets to active sandboxes',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {

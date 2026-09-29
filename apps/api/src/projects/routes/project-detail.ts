@@ -4,7 +4,7 @@ import { type SQL, eq } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 /** One project: read, detail, and update. */
 import { PROJECT_ACTIONS } from '../../iam';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { readJsonObject } from '../../shared/http-body';
 import { listRepoFiles, loadProjectConfig } from '../git';
@@ -15,7 +15,7 @@ import {
   loadProjectForUser,
   projectCapabilityAllowed,
 } from '../lib/access';
-import { AnyObject, ProjectSchema, projectsApp } from '../lib/app';
+import { ProjectSchema, projectsApp } from '../lib/app';
 import { applyDetailCapabilityFilter } from '../lib/detail-capability-filter';
 import { getProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -36,7 +36,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}',
     tags: ['projects'],
-    summary: 'GET /:projectId',
+    summary: 'Get a project',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -89,7 +89,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/detail',
     tags: ['projects'],
-    summary: 'GET /:projectId/detail',
+    summary: 'Get project detail with configuration',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -207,11 +207,17 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}',
     tags: ['projects'],
-    summary: 'PATCH /:projectId',
+    summary: 'Update project name or settings',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          name: z.string().optional().openapi({ description: 'New project name.' }),
+          default_branch: z.string().optional().openapi({ description: 'New default branch.' }),
+          manifest_path: z.string().optional().openapi({ description: 'New manifest path.' }),
+          icon: z.string().optional().openapi({ description: 'Project icon name. null clears it.' }),
+          icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph. null clears it.' }),
+        }) } } },
     },
     responses: {
       200: json(ProjectSchema, 'The updated project'),

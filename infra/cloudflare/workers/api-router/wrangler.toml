@@ -12,8 +12,8 @@
 #   wrangler secret put / or set the plain-text var ACTIVE_BACKEND in the dash,
 #   e.g. wrangler deploy --env prod --var ACTIVE_BACKEND:eks
 # Values: "ecs-fargate" (EU ECS), "eks" (EKS standby), or "us-east-2" (Ohio
-# ECS). Production stays on "ecs-fargate" until the database cutover. Verify
-# the live selection with the `X-Backend` response header.
+# ECS). Production stays on "ecs-fargate" until the database cutover. Check
+# the selected value in the Worker binding; responses do not disclose it.
 
 main = "worker.mjs"
 compatibility_date = "2026-06-01"

@@ -27,6 +27,29 @@ describe('ready chip state (W1)', () => {
     expect(useKortixComputerStore.getState().readyChip).toBeNull();
   });
 
+  test('each opening action clears only its target chip, while closes preserve chips', () => {
+    const s = useKortixComputerStore.getState();
+    s.setActiveSession('s1');
+    for (const open of [
+      () => s.focusToolCall('call-1'),
+      () => s.setIsSidePanelOpen(true),
+      () => s.setIsActionPanelOpen(true),
+      () => s.openSidePanel(),
+      () => s.requestQuickView('files', 's1'),
+    ]) {
+      s.setReadyChip({ sessionId: 'other', outcome: 'ready', count: 1 });
+      open();
+      expect(useKortixComputerStore.getState().readyChip?.sessionId).toBe('other');
+      s.setReadyChip({ sessionId: 's1', outcome: 'ready', count: 1 });
+      open();
+      expect(useKortixComputerStore.getState().readyChip).toBeNull();
+    }
+    s.setReadyChip({ sessionId: 's1', outcome: 'ready', count: 1 });
+    s.setIsSidePanelOpen(false);
+    s.setIsActionPanelOpen(false);
+    expect(useKortixComputerStore.getState().readyChip?.sessionId).toBe('s1');
+  });
+
   test('primary-open request is one-shot and session-scoped', () => {
     const s = useKortixComputerStore.getState();
     s.requestPrimaryOpen('s1');
