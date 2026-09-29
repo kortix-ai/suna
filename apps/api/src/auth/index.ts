@@ -8,7 +8,8 @@
 //      session-gate denies the rest of the session immediately
 //      (instead of waiting for Supabase to refuse the next refresh).
 //
-// The server also invalidates the refresh token at GoTrue.
+// The client still calls supabase.auth.signOut() in parallel to
+// invalidate the refresh token at Supabase's end.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
@@ -46,7 +47,7 @@ authRouter.openapi(
         z.object({ ok: z.boolean(), revoked_session_rows: z.number() }),
         'Logout processed (always 200)',
       ),
-      ...errors(401, 502),
+      ...errors(401),
     },
   }),
   async (c) => {
@@ -71,10 +72,6 @@ authRouter.openapi(
   // GoTrue within SUPABASE_JWT_LIVENESS_TTL_MS (shared/jwt-liveness.ts).
   const logoutBearer = c.req.header('Authorization')?.replace(/^Bearer\s+/, '');
   if (logoutBearer) forgetJwtLiveness(logoutBearer);
-  if (logoutBearer && (c.get('authType') as string) === 'supabase') {
-    const result = await gotrue('/logout', { method: 'POST', bearer: logoutBearer, body: {}, query: { scope: 'local' } });
-    if (!result.ok) return c.json({ error: 'logout_failed' }, 502);
-  }
   let revokedCount = 0;
   if (sessionId) {
     const rows = await db

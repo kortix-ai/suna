@@ -39,7 +39,6 @@ site_url = "http://localhost:3000"
 # the user to site_url instead of back into the app.
 additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000", "kortix://**"]
 enable_signup = true
-refresh_token_reuse_interval = 0
 
 [auth.email]
 enable_signup = true
