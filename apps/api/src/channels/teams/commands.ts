@@ -53,6 +53,8 @@ function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConv
   };
 }
 
+const OWN_PROJECT_NOTICE = 'This bot always runs its own project, so there is no other project to pick here.';
+
 function dashboardBase(): string {
   return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
 }
@@ -159,6 +161,7 @@ export async function handleTeamsCommand(input: {
             tenantId: input.tenantId,
             conversationId,
             activity: { ...input.activity, text: message, id: `${input.activity.id ?? 'new'}:new` },
+            ownThreadsOnly: input.projectScoped,
           });
         }
         return true;
@@ -210,11 +213,20 @@ export async function handleTeamsCommand(input: {
         await post(await setAgent(settings, actor, arg));
         return true;
       case 'projects':
-        await post(await buildProjectsCard(input.tenantId, input.projectId));
-        return true;
       case 'use':
       case 'switch':
-        await post(await switchProject(actor, settings, arg));
+        // A per-project bot runs only its own project. `/use` used to bind the
+        // conversation to another project, after which this bot declined the
+        // conversation for good, and `/unbind` (refused here) could not undo it.
+        if (sessionProjectId) {
+          await post(buildNoticeCard(OWN_PROJECT_NOTICE));
+          return true;
+        }
+        await post(
+          verb === 'projects'
+            ? await buildProjectsCard(input.tenantId, input.projectId)
+            : await switchProject(actor, settings, arg),
+        );
         return true;
       case 'policy':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -301,7 +313,7 @@ async function buildStatusCard(
     actions: [
       openPanelAction('Change model', 'models'),
       openPanelAction('Change agent', 'agents'),
-      ...(projects.length > 1 ? [openPanelAction('Switch project', 'projects')] : []),
+      ...(projects.length > 1 && !sessionProjectId ? [openPanelAction('Switch project', 'projects')] : []),
     ],
     // Deep-link to the run when there is one: the project page is a detour
     // from the thing the card is about.

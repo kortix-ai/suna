@@ -627,6 +627,15 @@ export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
 }
 
+/**
+ * Written only by the Microsoft Teams connection (channels/install-store.ts):
+ * the tenant, bot credentials and service URL. Connecting or disconnecting
+ * Teams changes them; the generic secrets API does not.
+ */
+export function isTeamsInstallSecretName(name: string): boolean {
+  return name.toUpperCase().startsWith('MS_TEAMS_');
+}
+
 export function serializeSessionSandboxConfig(
   configValue: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {

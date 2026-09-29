@@ -187,7 +187,12 @@
     "account": {
       "label": "账户",
       "createIn": "在 {account} 中创建",
-      "choose": "选择账户"
+      "choose": "选择账户",
+      "loggedInAs": "当前登录",
+      "nameLabel": "账户名称",
+      "nameHint": "你的团队会在侧边栏和邀请中看到它。之后可以修改。",
+      "nameRequired": "账户名称为必填项",
+      "renameFailed": "无法保存账户名称，请重试。"
     },
     "name": {
       "label": "项目名称",
@@ -215,7 +220,6 @@
       "label": "代码仓库",
       "defaultBranch": "默认分支",
       "loadGitHubAccountsError": "无法加载 GitHub 账户。请重试。",
-      "createsPath": "创建 <path>{path}</path>",
       "loadRepositoriesError": "无法加载仓库。请重试。",
       "sources": {
         "managed": {
@@ -1171,6 +1175,10 @@
         "reminders": {
           "name": "提醒",
           "description": "让代理和用户在会话上安排一次性或重复的检查。每次触发都会重新提示该会话。新增提醒页面、会话提醒标记和 `kortix remind`。"
+        },
+        "us_region": {
+          "name": "美国区域",
+          "description": "在美国东部区域运行此项目的新会话。正在运行的会话在重启前保持其当前区域。"
         }
       }
     },
@@ -1436,7 +1444,7 @@
       "actions": "会话操作",
       "actionsFor": "{title} 的操作",
       "reviewCount": "等待你审阅：{count}",
-      "expandChildren": "显示 {count} 个已启动的会话",
+      "expandChildren": "显示 {count, plural, other {# 个已启动的会话}}",
       "collapseChildren": "隐藏已启动的会话",
       "showMore": "显示更多",
       "brief": {
@@ -19000,7 +19008,27 @@
       "text2edf70730233": "给代理的消息（可选）",
       "texte88286ad9739": "已列出项目提醒",
       "text711edad21902": "已将电脑添加到项目",
-      "texta3ecfa724d04": "计算机已自行解除配对"
+      "texta3ecfa724d04": "计算机已自行解除配对",
+      "text734315a9e07d": "读取 MCP 资源元数据",
+      "text872227a135cd": "读取 OpenID 配置",
+      "textd19297f36620": "支持服务器组件和基于文件路由的 React。",
+      "text030637ad147a": "开箱即用的 Python Web 框架。",
+      "textaf48bcf0b951": "前端",
+      "text2fb4019a35e4": "后端",
+      "text21f231146e6c": "Phoenix（即将推出）",
+      "textb53181a4d853": "我的账户",
+      "textd696a35bdd18": "个人资料",
+      "text9e8197ce9e5f": "显示侧边栏",
+      "text073549e7238a": "显示缩略图",
+      "texte9736daa7c32": "显示状态栏",
+      "textefb52e7172b7": "主题",
+      "text27bf0f2d3f3f": "邀请成员",
+      "text9c0b617e79e9": "删除项目",
+      "text8aec60d8fca6": "每种行尺寸下的同一菜单：图标、快捷键、复选框、单选项、子菜单和一个破坏性操作行。",
+      "textd71a0c697cce": "分段",
+      "text9ae34cca7f2d": "由 Kortix 管理",
+      "textafecbae4466e": "Kortix 会为此项目创建并管理一个私有仓库。",
+      "text6cb9b40da8a0": "Kortix 会在你的 GitHub 账户中创建一个私有仓库。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -19102,6 +19130,7 @@
     "copyProjectId": "项目 ID",
     "copySessionId": "会话 ID",
     "copySessionLink": "会话链接",
+    "copySessionTitle": "会话标题",
     "copyAction": "复制{label}",
     "copied": "已复制{label}",
     "copyFailed": "无法复制到剪贴板"
@@ -19903,6 +19932,9 @@
   },
   "projectSelector": {
     "welcome": "欢迎使用 Kortix",
+    "nameAccountTitle": "为你的账户命名",
+    "nameAccountBody": "你的项目、智能体和团队成员都在这里。",
+    "nameAccountContinue": "继续",
     "welcomeBack": "欢迎回来",
     "descriptionNew": "创建你的第一个项目，或加入团队共享的项目。",
     "descriptionReturning": "打开一个项目，或创建新项目。",

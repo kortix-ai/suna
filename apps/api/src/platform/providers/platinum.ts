@@ -120,6 +120,11 @@ interface PlatinumSandbox {
   name?: string;
   /** Absent on Platinum builds before #1335. */
   autoResume?: boolean;
+  /** Public region the box was placed in (e.g. 'eu-west', 'us-east'). */
+  region?: string | null;
+  /** The control plane that owns this box. `PLATINUM_API_URL` routes to it
+   *  for every call by id; kept so a later change can call it directly. */
+  api_url?: string;
   /** Set true by Platinum's CP when an Idempotency-Key replay resolved this
    *  response to an already-committed sandbox rather than a fresh create. */
   replayed?: boolean;
@@ -312,8 +317,29 @@ function buildDeterministicSandboxName(sandboxId: string, attempt: number): stri
  * attempt number). Always a 64-char hex string, comfortably inside Platinum's
  * 8-255 char bound.
  */
-function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number): string {
-  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}`).digest('hex');
+function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: number, region?: string): string {
+  // The region joins the key only when one is asked for, so every existing
+  // no-region session keeps the exact key it had before regions existed.
+  const regionPart = region ? `|r${region}` : '';
+  return createHash('sha256').update(`${sandboxId}|${templateId}|a${attempt}${regionPart}`).digest('hex');
+}
+
+/**
+ * Platinum refuses a create in a region that does not hold the template yet:
+ * `409 template_not_resident`, with `state` 'absent', 'replicating' or
+ * 'failed'. Platinum copies the template there on its own (the copy's progress
+ * is what `state` reports), so this is the "image still building" condition in
+ * another form, and it gets the same patient retry window: the rewritten
+ * message matches `isSnapshotStillBuilding` in sandbox-init-state.ts.
+ */
+function regionalTemplateNotReady(error: unknown, template: string): Error | null {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (!/ -> 409\b/.test(message) || !/template_not_resident/.test(message)) return null;
+  const region = /"region"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? 'the requested region';
+  const state = /"state"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? 'absent';
+  return new Error(
+    `Sandbox image snapshot ${template} is building in ${region}: Platinum is copying the template there (state=${state})`,
+  );
 }
 
 /**
@@ -429,7 +455,7 @@ export class PlatinumProvider implements SandboxProvider {
       platinumCreateDedupEnabled() && opts.sandboxId
         ? {
             name: buildDeterministicSandboxName(opts.sandboxId, dedupAttempt),
-            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt),
+            idempotencyKey: buildIdempotencyKey(opts.sandboxId, template, dedupAttempt, opts.location),
             sandboxId: opts.sandboxId,
           }
         : null;
@@ -447,6 +473,11 @@ export class PlatinumProvider implements SandboxProvider {
       // default: a visitor's request is supposed to wake them. Platinum builds
       // before #1335 drop the unknown field (non-strict schema).
       auto_resume: workloadType === 'app',
+      // The project's `us_region` flag (platform/services/sandbox-region.ts).
+      // Absent ⇒ Platinum places the box in its home region, exactly as
+      // before. The one PLATINUM_API_URL forwards a regional create to that
+      // region's control plane and routes every later call by id there.
+      ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
       metadata: {
@@ -488,6 +519,8 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      const notYetInRegion = regionalTemplateNotReady(err, template);
+      if (notYetInRegion) throw notYetInRegion;
       if (!dedup || !isNameTakenConflict(err)) throw err;
       // See isNameTakenConflict + the module doc: the name is exclusively
       // ours, so this can only be our own prior commit under this same
@@ -527,7 +560,7 @@ export class PlatinumProvider implements SandboxProvider {
         // 409'd forever on a ~15-minute retry cadence.
         const advancedAttempt = dedupAttempt + 1;
         const advancedName = buildDeterministicSandboxName(dedup.sandboxId, advancedAttempt);
-        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt);
+        const advancedKey = buildIdempotencyKey(dedup.sandboxId, template, advancedAttempt, opts.location);
         console.warn(
           `[platinum] name_taken PERSISTED for ${dedup.name} after the replay retry — ` +
           `advancing to attempt ${advancedAttempt} (fresh name ${advancedName}), never touching the old box:`,
@@ -644,6 +677,10 @@ export class PlatinumProvider implements SandboxProvider {
         template,
         version: SANDBOX_VERSION,
         workloadType,
+        // Where Platinum actually placed the box, from its answer — not what
+        // we asked for — so an operator reading the session row sees the truth.
+        ...(sandbox.region ? { platinumRegion: sandbox.region } : {}),
+        ...(sandbox.api_url ? { platinumApiUrl: sandbox.api_url } : {}),
         // Persisted into session_sandboxes.metadata by the caller
         // (buildSandboxInitSuccessMetadata spreads this in verbatim) so a
         // LATER top-level provisioning call's restorePlatinumCreateAttempt

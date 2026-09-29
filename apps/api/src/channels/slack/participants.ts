@@ -10,7 +10,7 @@ import { loadSlackTokenForProject } from '../install-store';
 import { postEphemeral } from '../slack-api';
 import { escapeMrkdwn, sessionWebUrl } from './util';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
-import { chatUser, lookupChatIdentity, lookupChatUserForKortixUser } from '../core/identity';
+import { chatUser, lookupChatIdentity, lookupChatUserForKortixUser, resolveProjectChatActor } from '../core/identity';
 
 const PLATFORM = 'slack';
 
@@ -50,6 +50,7 @@ async function grantSessionMember(sessionId: string, userId: string): Promise<vo
 async function approvedParticipantExists(input: {
   teamId: string;
   threadId: string;
+  sessionId: string;
   slackUserId: string;
   actorUserId: string;
 }): Promise<boolean> {
@@ -62,6 +63,8 @@ async function approvedParticipantExists(input: {
       eq(chatThreadParticipants.threadId, input.threadId),
       eq(chatThreadParticipants.platformUserId, input.slackUserId),
       eq(chatThreadParticipants.userId, input.actorUserId),
+      // An approval is for one session; a thread keeps its row across sessions.
+      eq(chatThreadParticipants.sessionId, input.sessionId),
       eq(chatThreadParticipants.status, 'approved'),
     ))
     .limit(1);
@@ -75,8 +78,10 @@ async function loadParticipant(input: {
 }) {
   const [row] = await db
     .select({
+      participantId: chatThreadParticipants.participantId,
       status: chatThreadParticipants.status,
       userId: chatThreadParticipants.userId,
+      sessionId: chatThreadParticipants.sessionId,
     })
     .from(chatThreadParticipants)
     .where(and(
@@ -246,8 +251,10 @@ export async function ensureSlackThreadParticipant(input: {
     return true;
   }
 
-  const existing = await loadParticipant(input);
-  if (existing?.status === 'denied') {
+  const loaded = await loadParticipant(input);
+  // A decision from an earlier session in this thread does not carry over.
+  const existing = loaded && loaded.sessionId === input.sessionId ? loaded : null;
+  if (existing?.status === 'denied' && existing.userId === input.actorUserId) {
     if (token && input.channel) {
       await postEphemeral(
         token,
@@ -270,7 +277,7 @@ export async function ensureSlackThreadParticipant(input: {
   }
 
   let inserted = false;
-  if (existing && existing.userId !== input.actorUserId) {
+  if (loaded && (loaded.userId !== input.actorUserId || loaded.sessionId !== input.sessionId)) {
     await db
       .update(chatThreadParticipants)
       .set({
@@ -288,7 +295,7 @@ export async function ensureSlackThreadParticipant(input: {
         eq(chatThreadParticipants.platformUserId, input.slackUserId),
       ));
     inserted = true;
-  } else if (!existing) {
+  } else if (!loaded) {
     const rows = await db
       .insert(chatThreadParticipants)
       .values({
@@ -364,22 +371,37 @@ export async function rememberSlackThreadOwner(input: {
     });
 }
 
+/**
+ * The session owner decides a join request from the Approve / Deny buttons.
+ *
+ * The button value names the thread and the requester, and a button is not
+ * proof: an agent can post any Block Kit button through the same bot. So the
+ * decision applies only to a request this thread actually raised for its
+ * current session (`ensureSlackThreadParticipant` wrote it, pending), and the
+ * requester's Kortix account is the one that request recorded, never the
+ * value's. `sessionId` is the thread's own session, which the caller resolved
+ * from the thread mapping. The owner must still be able to work in the project.
+ */
 export async function decideSlackThreadJoin(input: {
   teamId: string;
   channelId: string;
   deciderSlackUserId: string;
-  projectId: string;
   sessionId: string;
   threadId: string;
-  requesterUserId: string;
   requesterSlackUserId: string;
   decision: 'approved' | 'denied';
 }): Promise<{ ok: true; text: string } | { ok: false; text: string }> {
-  const decider = await lookupChatIdentity(chatUser('slack', input.teamId, input.deciderSlackUserId));
+  const closed = { ok: false as const, text: 'This request is no longer open.' };
+  const deciderUser = chatUser('slack', input.teamId, input.deciderSlackUserId);
+  const decider = await lookupChatIdentity(deciderUser);
   if (!decider) return { ok: false, text: 'Connect your Kortix account before approving session access.' };
 
+  const request = await loadParticipant({ teamId: input.teamId, threadId: input.threadId, slackUserId: input.requesterSlackUserId });
+  if (!request || request.status !== 'pending' || request.sessionId !== input.sessionId || !request.userId) return closed;
+  const requesterUserId = request.userId;
+
   const [session] = await db
-    .select({ createdBy: projectSessions.createdBy })
+    .select({ createdBy: projectSessions.createdBy, projectId: projectSessions.projectId })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, input.sessionId))
     .limit(1);
@@ -387,45 +409,28 @@ export async function decideSlackThreadJoin(input: {
   if (!session.createdBy || session.createdBy !== decider.userId) {
     return { ok: false, text: 'Only the session owner can approve people for this thread.' };
   }
-
-  const now = new Date();
-  await db
-    .insert(chatThreadParticipants)
-    .values({
-      platform: PLATFORM,
-      workspaceId: input.teamId,
-      threadId: input.threadId,
-      sessionId: input.sessionId,
-      platformUserId: input.requesterSlackUserId,
-      userId: input.requesterUserId,
-      status: input.decision,
-      decidedAt: now,
-      decidedByUserId: decider.userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [
-        chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
-        chatThreadParticipants.threadId,
-        chatThreadParticipants.platformUserId,
-      ],
-      set: {
-        sessionId: input.sessionId,
-        userId: input.requesterUserId,
-        status: input.decision,
-        decidedAt: now,
-        decidedByUserId: decider.userId,
-        updatedAt: now,
-      },
-    });
-
-  if (input.decision === 'approved') {
-    await grantSessionMember(input.sessionId, input.requesterUserId);
+  if (!('userId' in (await resolveProjectChatActor(deciderUser, session.projectId)))) {
+    return { ok: false, text: 'Your Kortix account no longer has access to this project, so you cannot approve people for it.' };
   }
 
-  const token = await loadSlackTokenForProject(input.projectId);
-  const sessionUrl = sessionWebUrl(config.FRONTEND_URL, input.projectId, input.sessionId);
+  const now = new Date();
+  const decided = await db
+    .update(chatThreadParticipants)
+    .set({ status: input.decision, decidedAt: now, decidedByUserId: decider.userId, updatedAt: now })
+    .where(and(
+      eq(chatThreadParticipants.participantId, request.participantId),
+      // One decision per request, even when two clicks race.
+      eq(chatThreadParticipants.status, 'pending'),
+    ))
+    .returning({ participantId: chatThreadParticipants.participantId });
+  if (decided.length === 0) return closed;
+
+  if (input.decision === 'approved') {
+    await grantSessionMember(input.sessionId, requesterUserId);
+  }
+
+  const token = await loadSlackTokenForProject(session.projectId);
+  const sessionUrl = sessionWebUrl(config.FRONTEND_URL, session.projectId, input.sessionId);
   if (token) {
     const text = input.decision === 'approved'
       ? `You've been approved for this Kortix session. Send your message again and I'll continue.`
@@ -450,7 +455,7 @@ export async function decideSlackThreadJoin(input: {
     );
   }
 
-  const label = await requesterLabel(input.requesterUserId, input.requesterSlackUserId);
+  const label = await requesterLabel(requesterUserId, input.requesterSlackUserId);
   return {
     ok: true,
     text: input.decision === 'approved'

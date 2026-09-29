@@ -187,7 +187,12 @@
     "account": {
       "label": "Cuenta",
       "createIn": "Crear en {account}",
-      "choose": "Elegir una cuenta"
+      "choose": "Elegir una cuenta",
+      "loggedInAs": "Sesión iniciada como",
+      "nameLabel": "Nombre de la cuenta",
+      "nameHint": "Tu equipo lo ve en la barra lateral y en las invitaciones. Puedes cambiarlo después.",
+      "nameRequired": "El nombre de la cuenta es obligatorio",
+      "renameFailed": "No se pudo guardar el nombre de la cuenta. Inténtalo de nuevo."
     },
     "name": {
       "label": "Nombre del proyecto",
@@ -215,7 +220,6 @@
       "label": "Repositorio",
       "defaultBranch": "Rama predeterminada",
       "loadGitHubAccountsError": "No se pudieron cargar las cuentas de GitHub. Inténtalo de nuevo.",
-      "createsPath": "Crea <path>{path}</path>",
       "loadRepositoriesError": "No se pudieron cargar los repositorios. Inténtalo de nuevo.",
       "sources": {
         "managed": {
@@ -1171,6 +1175,10 @@
         "reminders": {
           "name": "Recordatorios",
           "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."
+        },
+        "us_region": {
+          "name": "Región de EE. UU.",
+          "description": "Ejecuta las nuevas sesiones de este proyecto en la región Este de EE. UU. Una sesión en curso conserva su región hasta que se reinicia."
         }
       }
     },
@@ -19000,7 +19008,27 @@
       "text2edf70730233": "Mensaje para el agente (opcional)",
       "texte88286ad9739": "Recordatorios del proyecto listados",
       "text711edad21902": "Equipo añadido al proyecto",
-      "texta3ecfa724d04": "El ordenador se desvinculó"
+      "texta3ecfa724d04": "El ordenador se desvinculó",
+      "text734315a9e07d": "Metadatos del recurso MCP leídos",
+      "text872227a135cd": "Configuración de OpenID leída",
+      "textd19297f36620": "React con componentes de servidor y enrutamiento basado en archivos.",
+      "text030637ad147a": "Framework web de Python con todo incluido.",
+      "textaf48bcf0b951": "Frontend",
+      "text2fb4019a35e4": "Backend",
+      "text21f231146e6c": "Phoenix (próximamente)",
+      "textb53181a4d853": "Mi cuenta",
+      "textd696a35bdd18": "Perfil",
+      "text9e8197ce9e5f": "Mostrar barra lateral",
+      "text073549e7238a": "Mostrar minimapa",
+      "texte9736daa7c32": "Mostrar barra de estado",
+      "textefb52e7172b7": "Tema",
+      "text27bf0f2d3f3f": "Invitar personas",
+      "text9c0b617e79e9": "Eliminar proyecto",
+      "text8aec60d8fca6": "El mismo menú en cada tamaño de fila: iconos, atajos, casillas de verificación, botones de opción, un submenú y una fila destructiva.",
+      "textd71a0c697cce": "Segmentado",
+      "text9ae34cca7f2d": "Gestionado por Kortix",
+      "textafecbae4466e": "Kortix crea y gestiona un repositorio privado para este proyecto.",
+      "text6cb9b40da8a0": "Kortix crea un repositorio privado en tu cuenta de GitHub."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -19102,6 +19130,7 @@
     "copyProjectId": "ID de proyecto",
     "copySessionId": "ID de sesión",
     "copySessionLink": "enlace de la sesión",
+    "copySessionTitle": "título de la sesión",
     "copyAction": "Copiar {label}",
     "copied": "Copiado: {label}",
     "copyFailed": "No se pudo copiar al portapapeles"
@@ -19903,6 +19932,9 @@
   },
   "projectSelector": {
     "welcome": "Te damos la bienvenida a Kortix",
+    "nameAccountTitle": "Ponle nombre a tu cuenta",
+    "nameAccountBody": "Aquí viven tus proyectos, agentes y compañeros de equipo.",
+    "nameAccountContinue": "Continuar",
     "welcomeBack": "Bienvenido de nuevo",
     "descriptionNew": "Crea tu primer proyecto o únete a uno que tu equipo haya compartido.",
     "descriptionReturning": "Abre un proyecto o crea uno nuevo.",

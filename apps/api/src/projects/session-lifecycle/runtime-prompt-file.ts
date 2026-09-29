@@ -56,7 +56,9 @@ async function forwarded(
       kind: 'principal',
       userId: input.userId,
       callerSessionId: input.sessionId,
-      boundCredentialSessionId: input.sessionId,
+      // Internal delivery uses the account principal, not a session-bound agent token.
+      // Keep the trigger-session manager override available, as postPrompt does.
+      boundCredentialSessionId: null,
       sandboxAuthored: false,
     },
     method,

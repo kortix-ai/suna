@@ -18,7 +18,7 @@ import type { SecretEgressPolicy } from '@kortix/db';
 import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
 import { parseEgressPolicy } from '../../secrets/strategy';
 import { isValidIdentifier, isValidSecretName } from '../secrets';
-import { CODEX_AUTH_JSON_SECRET_NAME, normalizeString } from './serializers';
+import { CODEX_AUTH_JSON_SECRET_NAME, isTeamsInstallSecretName, normalizeString } from './serializers';
 
 export type SecretWriteInput = {
   name: string;
@@ -52,6 +52,13 @@ export function resolveSecretWriteInput(
       ok: false,
       status: 400,
       body: { error: 'KORTIX_* names are reserved for platform/runtime-managed variables' },
+    };
+  }
+  if (isTeamsInstallSecretName(name)) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: 'MS_TEAMS_* names are managed by the Microsoft Teams connection' },
     };
   }
   if (name === CODEX_AUTH_JSON_SECRET_NAME) {

@@ -198,6 +198,9 @@ mock.module('../iam/authorize', () => {
     // memo for its candidate list, so a stub that omits it is a SyntaxError
     // in every other importer. Empty = this project scopes no agent.
     loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    // The account MFA gate is a pure rule; chat identity linking reads it.
+    mfaGateBlocks: (rec: { accountMfaRequired: boolean }, tokenId: string | null | undefined, mfaAal: string | undefined) =>
+      rec.accountMfaRequired && !tokenId && mfaAal !== 'aal2',
     clearAuthorizeCaches: () => {},
     isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };

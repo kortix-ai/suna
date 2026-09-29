@@ -102,7 +102,11 @@ resource "aws_sns_topic" "cloudtrail" {
   kms_master_key_id = aws_kms_key.cloudtrail.arn
   signature_version = 2
   tracing_config    = "Active"
-  tags              = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "cloudtrail_sns" {
@@ -516,7 +520,11 @@ resource "aws_kms_key" "backup" {
       },
     ]
   })
-  tags = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 resource "aws_kms_alias" "backup" {
   name          = "alias/kortix-backup"

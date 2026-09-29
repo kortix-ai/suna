@@ -66,10 +66,13 @@ export async function listVisibleChatSessions(
       read = (async () =>
         (await isAccountMember(identity.userId, accountId)) &&
         (
-          await authorize(actorForUser(identity.userId, accountId), PROJECT_ACTIONS.PROJECT_READ, {
-            type: 'project',
-            id: projectId,
-          })
+          // With the second factor the link was made with: an MFA account
+          // otherwise listed nothing.
+          await authorize(
+            actorForUser(identity.userId, accountId, identity.mfaVerified ? { mfaAal: 'aal2' } : {}),
+            PROJECT_ACTIONS.PROJECT_READ,
+            { type: 'project', id: projectId },
+          )
         ).allowed)();
       projectReads.set(projectId, read);
     }

@@ -187,7 +187,12 @@
     "account": {
       "label": "Налог",
       "createIn": "Направи у налогу {account}",
-      "choose": "Изаберите налог"
+      "choose": "Изаберите налог",
+      "loggedInAs": "Пријављени сте као",
+      "nameLabel": "Назив налога",
+      "nameHint": "Ваш тим га види на бочној траци и у позивницама. Можете га касније променити.",
+      "nameRequired": "Назив налога је обавезан",
+      "renameFailed": "Назив налога није сачуван. Покушајте поново."
     },
     "name": {
       "label": "Назив пројекта",
@@ -215,7 +220,6 @@
       "label": "Репозиторијум",
       "defaultBranch": "Подразумевана грана",
       "loadGitHubAccountsError": "Učitavanje GitHub naloga nije uspelo. Pokušajte ponovo.",
-      "createsPath": "Прави <path>{path}</path>",
       "loadRepositoriesError": "Učitavanje repozitorijuma nije uspelo. Pokušajte ponovo.",
       "sources": {
         "managed": {
@@ -1171,6 +1175,10 @@
         "reminders": {
           "name": "Подсетници",
           "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
+        },
+        "us_region": {
+          "name": "Регион САД",
+          "description": "Покрените нове сесије овог пројекта у региону Исток САД. Сесија која је у току задржава свој регион до поновног покретања."
         }
       }
     },
@@ -19000,7 +19008,27 @@
       "text2edf70730233": "Порука агенту (опционо)",
       "texte88286ad9739": "Излистани подсетници пројекта",
       "text711edad21902": "Рачунар додат у пројекат",
-      "texta3ecfa724d04": "Računar je sam prekinuo uparivanje"
+      "texta3ecfa724d04": "Računar je sam prekinuo uparivanje",
+      "text734315a9e07d": "Pročitani metapodaci MCP resursa",
+      "text872227a135cd": "Pročitana OpenID konfiguracija",
+      "textd19297f36620": "React са серверским компонентама и рутирањем заснованим на датотекама.",
+      "text030637ad147a": "Python веб-фрејмворк са свим што је потребно.",
+      "textaf48bcf0b951": "Фронтенд",
+      "text2fb4019a35e4": "Бекенд",
+      "text21f231146e6c": "Phoenix (ускоро)",
+      "textb53181a4d853": "Мој налог",
+      "textd696a35bdd18": "Профил",
+      "text9e8197ce9e5f": "Прикажи бочну траку",
+      "text073549e7238a": "Прикажи мини-мапу",
+      "texte9736daa7c32": "Прикажи статусну траку",
+      "textefb52e7172b7": "Тема",
+      "text27bf0f2d3f3f": "Позови особе",
+      "text9c0b617e79e9": "Обриши пројекат",
+      "text8aec60d8fca6": "Исти мени у свакој величини реда: иконе, пречице, поља за потврду, радио-дугмад, подмени и деструктивни ред.",
+      "textd71a0c697cce": "Сегментирано",
+      "text9ae34cca7f2d": "Kortix управља",
+      "textafecbae4466e": "Kortix креира и управља приватним репозиторијумом за овај пројекат.",
+      "text6cb9b40da8a0": "Kortix креира приватни репозиторијум на твом GitHub налогу."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -19102,6 +19130,7 @@
     "copyProjectId": "ИД пројекта",
     "copySessionId": "ИД сесије",
     "copySessionLink": "везу сесије",
+    "copySessionTitle": "наслов сесије",
     "copyAction": "Копирај {label}",
     "copied": "Копирано: {label}",
     "copyFailed": "Копирање у оставу није успело"
@@ -19903,6 +19932,9 @@
   },
   "projectSelector": {
     "welcome": "Dobro došli u Kortix",
+    "nameAccountTitle": "Дајте назив налогу",
+    "nameAccountBody": "Овде се налазе ваши пројекти, агенти и чланови тима.",
+    "nameAccountContinue": "Настави",
     "welcomeBack": "Dobro došli nazad",
     "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
     "descriptionReturning": "Otvorite projekat ili napravite novi.",

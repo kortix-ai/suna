@@ -143,7 +143,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ## 4. Accounts & identity
 
 `ME-1` `GET /accounts/me` → 200 user + memberships. `ANON` → 401.
-`ACCT-1` `GET /accounts` → list memberships (auto-claims pending plain account invites by email; an invite carrying a project grant waits for Join via `INV-8`).
+`ACCT-1` `GET /accounts` → list memberships (auto-claims pending plain account invites by email; an invite carrying a project grant waits for Join via `INV-8`). The caller's personal account is never named after their email (KRTX-638): a new account gets a suggested name — first name, work-email company, or the personal email's leading letters — and `/new` asks the user to confirm it on their first project.
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment).
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.
@@ -545,7 +545,7 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-3` `DELETE /projects/:id/channels/slack/installation` → `manage`.
 `CHN-4` Slack inbound (OAuth mode) — `POST /webhooks/slack` (shared `SLACK_SIGNING_SECRET`): `v0=HMAC(v0:{ts}:{body})`, ±5min replay window; `url_verification` → echo `challenge`; `event_callback` routed by `team_id`→binding→project.
 `CHN-5` Slack inbound (BYO mode) — `POST /webhooks/slack/:id` (unsigned `url_verification` bootstrap → 200 challenge before installation; real callbacks require the per-project signing secret).
-`CHN-6` Slack dispatch — `app_mention`/IM/threaded `message` → existing thread session → deliver to sandbox `/kortix/prompt` (`delivered|transient|stale`); else `createProjectSession` (actor=owner, agent `default`, `visibility:'project'` — channel sessions are team-visible) + record `chat_threads`.
+`CHN-6` Slack dispatch — `app_mention`/IM/threaded `message` → existing thread session → deliver to sandbox `/kortix/prompt` (`delivered|transient|stale`); else `createProjectSession` + record `chat_threads`. With `SLACK_REQUIRE_USER_IDENTITY` (the default) the session runs as the sender's linked Kortix account, which needs `project.session.start` (a project `member` holds it); `visibility` is `private` in a DM, `project` under `project_open`, and `restricted` under `owner_only`/`owner_approval`. Teams follows the same rules.
 `CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → hands the browser to the web `/slack/install` page, which posts `{code, state}` to `POST /projects/:id/channels/slack/oauth/complete` (see CHN-34) → exchange code → `saveSlackInstall`.
 `CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner, `visibility:'project'`).
 `CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
