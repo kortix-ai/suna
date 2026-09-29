@@ -383,6 +383,16 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(client.id);
   });
 
+  test('a noReply prompt is forwarded with its flag and never begins a turn', async () => {
+    const client = mintWireMessageId({ nowMs: NOW });
+    installFetch([]);
+    const body = { messageID: client.id, noReply: true, parts: [{ type: 'text', text: 'held' }] };
+    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf(body), 'http://app.local');
+    expect(res.status).toBe(200);
+    expect(begunTurns).toEqual([]);
+    expect(fetchLog[fetchLog.length - 1].body).toContain('"noReply":true');
+  });
+
   test('a body with NO client id pays for no read at all — OpenCode mints', async () => {
     installFetch([]);
     await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf({ parts: [{ type: 'text', text: 'hi' }] }), 'http://app.local');
