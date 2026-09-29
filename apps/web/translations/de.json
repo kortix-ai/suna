@@ -1736,11 +1736,7 @@
   },
   "sessionUi": {
     "modelGate": {
-      "title": "Modell verbinden, um den Chat zu starten",
-      "description": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
-      "upgradeDescription": "Diese Sitzung benötigt ein verbundenes LLM, bevor es antworten kann. Führe ein Upgrade durch, um sofort auf die verwalteten Modelle von Kortix zuzugreifen, oder verwende deinen eigenen API-Schlüssel von einem beliebigen Anbieter.",
       "upgrade": "Upgrade",
-      "bringKey": "Eigenen Schlüssel verwenden",
       "barTitle": "Kein Modell verbunden",
       "barDescription": "Verbinde eines, um den Chat zu starten",
       "connectModel": "Modell verbinden",

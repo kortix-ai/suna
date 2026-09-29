@@ -8,7 +8,6 @@ import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ConnectorConnectionGateDialog } from '@/features/connectors/connector-connection-gate-dialog';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
-import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
 import React from 'react';
@@ -75,11 +74,6 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
   );
 }
 
-function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode }) {
-  useDeleteOperationEffects();
-  return <>{children}</>;
-}
-
 // `GlobalUserSettingsModal` (the store-driven modal that
 // `showGlobalUserSettingsModal` used to conditionally mount, wrapping the
 // deleted legacy user-settings modal) was removed in Task 10. Both call
@@ -134,13 +128,11 @@ export function AppProviders({
   }, []);
 
   const content = (
-    <DeleteOperationEffectsWrapper>
-      <SubscriptionStoreSync>
-        {children}
-        {isBillingEnabled() && <GlobalUpgradeModal />}
-        <ConnectorConnectionGateDialog />
-      </SubscriptionStoreSync>
-    </DeleteOperationEffectsWrapper>
+    <SubscriptionStoreSync>
+      {children}
+      {isBillingEnabled() && <GlobalUpgradeModal />}
+      <ConnectorConnectionGateDialog />
+    </SubscriptionStoreSync>
   );
 
   if (!showSidebar) return content;

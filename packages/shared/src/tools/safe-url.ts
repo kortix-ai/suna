@@ -1,8 +1,9 @@
 /**
  * Safe URL helpers: allow-list http(s) URLs and pick link-only document
  * previews. Moved verbatim from apps/web `lib/safe-url.ts` +
- * `features/session/preview-url-fallback.ts` (KRTX-365 phase 2; hosts switch
- * in phase 3). `openSafeExternalUrl` stays in the web app: it opens `window`.
+ * `features/session/preview-url-fallback.ts` (KRTX-365 phases 2–3; the hosts
+ * import this module since phase 3). `openSafeExternalUrl` stays in the web
+ * app: it opens `window`.
  */
 
 const LINK_ONLY_PREVIEW_EXT_RE = /\.(pdf|docx?|pptx?|xlsx?)(?:[?#]|$)/i;
