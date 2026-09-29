@@ -211,8 +211,6 @@ interface ResolvedProjectManifest {
   resolved: Awaited<ReturnType<typeof readManifestFromRepo>>;
   manifestRaw: string | null;
   manifestFormat: ManifestFormat;
-  manifestFilePath: string;
-  parsedManifest: Record<string, unknown> | null;
   manifest: Record<string, unknown>;
   loadedAgents: LoadedAgents;
   opencodeDir: string;
@@ -278,8 +276,6 @@ async function resolveProjectManifest(
     resolved,
     manifestRaw,
     manifestFormat,
-    manifestFilePath,
-    parsedManifest,
     manifest,
     loadedAgents,
     opencodeDir,
@@ -309,6 +305,89 @@ async function scanOpenCodeResources<T>(
   );
 }
 
+async function scanAgents(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  agentRe: RegExp,
+): Promise<NativeAgentSummary[]> {
+  return scanOpenCodeResources(
+    repoFiles,
+    (path) => (agentRe.test(path) ? { key: path, path } : null),
+    async ({ path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || meta.slug || agentNameFromPath(path),
+        path,
+        description: meta.description || null,
+        mode: meta.mode || null,
+        model: meta.model || null,
+      };
+    },
+    // Native agent paths sort in plain code-point order (the historical `.sort()`).
+    (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+  );
+}
+
+async function scanSkills(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  skillRe: RegExp,
+  opencodeDir: string,
+): Promise<ProjectConfigSummary['skills']> {
+  // Skills dedupe by slug (first path wins) as the matcher's own behavior; the
+  // agent and command scans do not dedupe.
+  const seenSkills = new Set<string>();
+  return scanOpenCodeResources(
+    repoFiles,
+    (path) => {
+      const match = path.match(skillRe);
+      if (!match) return null;
+      if (seenSkills.has(match[1])) return null;
+      seenSkills.add(match[1]);
+      return { key: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` };
+    },
+    async ({ key: slug, path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || slug,
+        path,
+        description: meta.description || null,
+      };
+    },
+    (a, b) => a.key.localeCompare(b.key),
+  );
+}
+
+// OpenCode slash commands — `<opencode>/command/<slug>.md` or
+// `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
+// include either if present). Frontmatter `description:` is what gets
+// surfaced in the command picker.
+async function scanCommands(
+  project: GitBackedProject,
+  repoFiles: ProjectFileEntry[],
+  commandRe: RegExp,
+): Promise<ProjectConfigSummary['commands']> {
+  return scanOpenCodeResources(
+    repoFiles,
+    (path) => {
+      const match = path.match(commandRe);
+      return match ? { key: match[1], path } : null;
+    },
+    async ({ key: slug, path }) => {
+      const raw = await optionalFile(project, path);
+      const meta = parseFrontmatter(raw);
+      return {
+        name: meta.name || slug,
+        path,
+        description: meta.description || null,
+      };
+    },
+    (a, b) => a.key.localeCompare(b.key),
+  );
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -333,70 +412,10 @@ export async function loadProjectConfig(
   const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
   const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
 
-  const nativeAgents = await scanOpenCodeResources(
-    repoFiles,
-    (path) => (agentRe.test(path) ? { key: path, path } : null),
-    async ({ path }) => {
-      const raw = await optionalFile(project, path);
-      const meta = parseFrontmatter(raw);
-      return {
-        name: meta.name || meta.slug || agentNameFromPath(path),
-        path,
-        description: meta.description || null,
-        mode: meta.mode || null,
-        model: meta.model || null,
-      };
-    },
-    // Native agent paths sort in plain code-point order (the historical `.sort()`).
-    (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
-  );
+  const nativeAgents = await scanAgents(project, repoFiles, agentRe);
   const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
-
-  // Skills dedupe by slug (first path wins) as the matcher's own behavior; the
-  // agent and command scans do not dedupe.
-  const seenSkills = new Set<string>();
-  const skills = await scanOpenCodeResources(
-    repoFiles,
-    (path) => {
-      const match = path.match(skillRe);
-      if (!match) return null;
-      if (seenSkills.has(match[1])) return null;
-      seenSkills.add(match[1]);
-      return { key: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` };
-    },
-    async ({ key: slug, path }) => {
-      const raw = await optionalFile(project, path);
-      const meta = parseFrontmatter(raw);
-      return {
-        name: meta.name || slug,
-        path,
-        description: meta.description || null,
-      };
-    },
-    (a, b) => a.key.localeCompare(b.key),
-  );
-
-  // OpenCode slash commands — `<opencode>/command/<slug>.md` or
-  // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
-  // include either if present). Frontmatter `description:` is what gets
-  // surfaced in the command picker.
-  const commands = await scanOpenCodeResources(
-    repoFiles,
-    (path) => {
-      const match = path.match(commandRe);
-      return match ? { key: match[1], path } : null;
-    },
-    async ({ key: slug, path }) => {
-      const raw = await optionalFile(project, path);
-      const meta = parseFrontmatter(raw);
-      return {
-        name: meta.name || slug,
-        path,
-        description: meta.description || null,
-      };
-    },
-    (a, b) => a.key.localeCompare(b.key),
-  );
+  const skills = await scanSkills(project, repoFiles, skillRe, opencodeDir);
+  const commands = await scanCommands(project, repoFiles, commandRe);
 
   const signals = {
     manifest: Boolean(manifestRaw),
