@@ -19004,7 +19004,9 @@
       "text2edf70730233": "Mensagem para o agente (opcional)",
       "texte88286ad9739": "Lembretes do projeto listados",
       "text711edad21902": "Computador adicionado ao projeto",
-      "texta3ecfa724d04": "O computador desvinculou-se"
+      "texta3ecfa724d04": "O computador desvinculou-se",
+      "text734315a9e07d": "Metadados do recurso MCP lidos",
+      "text872227a135cd": "Configuração OpenID lida"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

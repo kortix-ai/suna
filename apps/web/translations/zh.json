@@ -1440,7 +1440,7 @@
       "actions": "会话操作",
       "actionsFor": "{title} 的操作",
       "reviewCount": "等待你审阅：{count}",
-      "expandChildren": "显示 {count} 个已启动的会话",
+      "expandChildren": "显示 {count, plural, other {# 个已启动的会话}}",
       "collapseChildren": "隐藏已启动的会话",
       "showMore": "显示更多",
       "brief": {
@@ -19004,7 +19004,9 @@
       "text2edf70730233": "给代理的消息（可选）",
       "texte88286ad9739": "已列出项目提醒",
       "text711edad21902": "已将电脑添加到项目",
-      "texta3ecfa724d04": "计算机已自行解除配对"
+      "texta3ecfa724d04": "计算机已自行解除配对",
+      "text734315a9e07d": "读取 MCP 资源元数据",
+      "text872227a135cd": "读取 OpenID 配置"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
