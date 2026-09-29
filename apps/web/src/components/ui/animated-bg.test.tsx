@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { LeftArc, RightArc } from './animated-bg';
+import { ArcSvg, leftArcCfg, rightArcCfg } from './animated-bg';
 
 /**
  * Characterization: pins the exact markup LeftArc and RightArc rendered
@@ -13,10 +13,12 @@ import { LeftArc, RightArc } from './animated-bg';
  */
 const tones = ['light', 'medium', 'dark'] as const;
 
-const renderLeft = (props: Parameters<typeof LeftArc>[0]) =>
-  renderToStaticMarkup(<LeftArc {...props} />);
-const renderRight = (props: Parameters<typeof RightArc>[0]) =>
-  renderToStaticMarkup(<RightArc {...props} />);
+type ArcSvgProps = Parameters<typeof ArcSvg>[0];
+
+const renderLeft = (props: Omit<ArcSvgProps, 'cfg'>) =>
+  renderToStaticMarkup(<ArcSvg {...props} cfg={leftArcCfg} />);
+const renderRight = (props: Omit<ArcSvgProps, 'cfg'>) =>
+  renderToStaticMarkup(<ArcSvg {...props} cfg={rightArcCfg} />);
 
 // One golden per pinned render, captured from the pre-merge components.
 const goldens = {
