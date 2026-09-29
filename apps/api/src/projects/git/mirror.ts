@@ -448,6 +448,12 @@ export function isGitPathNotFoundError(err: unknown): boolean {
   return text.includes('does not exist in');
 }
 
+/** `git` could not resolve the ref itself (a branch, tag or commit that does not exist). */
+export function isGitRefNotFoundError(err: unknown): boolean {
+  if (!isGitOperationError(err)) return false;
+  return /invalid object name|not a valid object name|unknown revision|bad revision/i.test(`${err.message}\n${err.stderr}`);
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,

@@ -22,6 +22,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
+import { isGitRefNotFoundError } from '../git/mirror';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 
@@ -57,8 +58,10 @@ projectsApp.openapi(
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'));
+    // A leading "/" is the repository root, not an absolute path.
+    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path')?.replace(/^\/+/, ''));
   } catch (error) {
+    if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
     console.warn('[projects] repo file listing unavailable', {
       projectId,
       error: error instanceof Error ? error.message : String(error),
@@ -254,8 +257,11 @@ projectsApp.openapi(
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   try {
     const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
+    // A NUL byte is never text: say so instead of returning U+FFFD garbage.
+    if (content.includes('\0')) return c.json({ path, ref, content: '', binary: true });
     return c.json({ path, ref, content });
   } catch (error) {
+    if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
     // `readRepoFile` converts a `git show` "path does not exist" failure into a
     // typed `RepoFileNotFoundError` (message: `file not found in repository at
     // '<ref>:<path>'`), which the `isMissingGitPathError` regex below does NOT

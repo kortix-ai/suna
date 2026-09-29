@@ -5,6 +5,10 @@
  * token the MCP endpoint accepts. One endpoint per person, bound to the token
  * like the CLI, never to a project. Maps to spec MCP-*.
  */
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { subscribe } from "../fixtures/billing";
 import { flow } from "../core/flow";
 import { waitFor } from "../core/poll";
@@ -279,6 +283,13 @@ flow(
         "read_skill", "run_command", "search_api", "send_message", "start_session", "write_file",
       ];
       if (JSON.stringify(names) !== JSON.stringify(want)) throw new Error(`tools: ${names}`);
+      const tool = (name: string) => r.json<any>().result.tools.find((t: { name: string }) => t.name === name);
+      if (!tool("read_file").inputSchema.properties.offset || !tool("read_file").inputSchema.properties.limit || !tool("list_files").inputSchema.properties.offset) {
+        throw new Error("read_file / list_files lack offset and limit");
+      }
+      const hints = (name: string) => JSON.stringify(tool(name).annotations);
+      if (hints("read_file") !== '{"readOnlyHint":true,"openWorldHint":false}' || hints("list_files") !== '{"readOnlyHint":true,"openWorldHint":false}') throw new Error("read annotations");
+      if (!tool("write_file").annotations.idempotentHint || !tool("write_file").annotations.destructiveHint || !tool("run_command").annotations.destructiveHint) throw new Error("write annotations");
     });
     await ctx.step("search_api finds the secrets routes; describe_api reads one", async () => {
       const s = await mcp(rpc(3, "tools/call", { name: "search_api", arguments: { query: "secrets" } }));
@@ -317,6 +328,34 @@ flow(
       const guide = await toolText(12, "read_skill", { name: "kortix-system" });
       if (!guide.includes("kortix.yaml") || guide.startsWith("{")) throw new Error(`guide: ${guide.slice(0, 300)}`);
     });
+    // Files the seeded repository lacks: a binary and a unicode name. The local
+    // profile's repository is a bare directory, so a clone + push adds them.
+    // Before the first repository read: the API mirrors the repository on read.
+    let extraFiles = false;
+    if (ctx.env.target === "local") {
+      await ctx.step("commit a binary file and a unicode-named file to the project repository", async () => {
+        const projects = JSON.parse(await toolText(40, "list_projects", {})) as Array<{ project_id: string; repository: string | null }>;
+        const url = projects.find((x) => x.project_id === p.id)?.repository;
+        if (!url) throw new Error("list_projects: no repository for the project");
+        const dir = mkdtempSync(join(tmpdir(), "ke2e-mcp-"));
+        try {
+          const git = (...args: string[]) => {
+            const r = spawnSync("git", ["-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", ...args], { cwd: dir, encoding: "utf8" });
+            if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+          };
+          git("clone", "-q", url, ".");
+          writeFileSync(join(dir, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]));
+          mkdirSync(join(dir, "t"));
+          writeFileSync(join(dir, "t", "ü ñ 日本.txt"), "unicode name\n");
+          git("add", "-A");
+          git("commit", "-qm", "add a binary and a unicode-named file");
+          git("push", "-q", "origin", "HEAD");
+          extraFiles = true;
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+    }
     await ctx.step("list_files and read_file without a session read the project repository", async () => {
       const files = (await toolText(13, "list_files", { project_id: p.id })).split("\n");
       if (!files.includes("kortix.yaml")) throw new Error(`repo files: ${files.slice(0, 20)}`);
@@ -324,6 +363,43 @@ flow(
       if (!manifest.includes("\n")) throw new Error(`kortix.yaml: ${JSON.stringify(manifest.slice(0, 200))}`);
       const missing = await mcp(rpc(15, "tools/call", { name: "read_file", arguments: { path: "no/such/file.txt", project_id: p.id } }));
       missing.status(200).body().has("$.result.isError", true);
+    });
+    await ctx.step("repository reads: a bad ref is a 404, paths and unicode names list cleanly, a binary is named, long text pages by offset, and no target says what to pass", async () => {
+      const fail = async (id: number, name: string, args: Record<string, unknown>) => {
+        const r = await mcp(rpc(id, "tools/call", { name, arguments: args }));
+        const result = r.json<any>().result;
+        if (!result.isError) throw new Error(`${name} ${JSON.stringify(args)} was not an error: ${JSON.stringify(result).slice(0, 200)}`);
+        return result.content[0].text as string;
+      };
+      for (const [id, name, args] of [
+        [41, "read_file", { path: "kortix.yaml", project_id: p.id, ref: "nope" }],
+        [42, "list_files", { project_id: p.id, ref: "nope" }],
+      ] as const) {
+        const t = await fail(id, name, args);
+        if (!t.startsWith("HTTP 404") || !t.includes("ref not found")) throw new Error(`${name} bad ref: ${t}`);
+      }
+      const root = (await toolText(43, "list_files", { project_id: p.id, path: "/" })).split("\n");
+      if (!root.includes("kortix.yaml")) throw new Error(`list_files path "/": ${root}`);
+      const none = await toolText(44, "list_files", { project_id: p.id, path: "no-such-dir" });
+      if (none !== "No files under no-such-dir at the default branch.") throw new Error(`empty listing: ${none}`);
+      if (extraFiles) {
+        const sub = await toolText(45, "list_files", { project_id: p.id, path: "/t" });
+        if (sub !== "t/ü ñ 日本.txt") throw new Error(`unicode listing: ${JSON.stringify(sub)}`);
+        const binary = await toolText(46, "read_file", { project_id: p.id, path: "img.png" });
+        if (!binary.includes("binary file") || binary.includes("\uFFFD")) throw new Error(`binary read: ${JSON.stringify(binary)}`);
+        const uni = await toolText(47, "read_file", { project_id: p.id, path: "t/ü ñ 日本.txt" });
+        if (uni !== "unicode name") throw new Error(`unicode read: ${JSON.stringify(uni)}`);
+      }
+      const lines = (await toolText(48, "read_file", { project_id: p.id, path: "kortix.yaml" })).replace(/\n$/, "").split("\n");
+      const first = await toolText(49, "read_file", { project_id: p.id, path: "kortix.yaml", limit: 2 });
+      if (first !== `${lines.slice(0, 2).join("\n")}\n… ${lines.length - 2} more lines; call again with offset=2`) throw new Error(`first page: ${JSON.stringify(first)}`);
+      const rest = await toolText(50, "read_file", { project_id: p.id, path: "kortix.yaml", offset: 2 });
+      if (rest !== lines.slice(2).join("\n")) throw new Error(`offset page: ${JSON.stringify(rest)}`);
+      for (const [id, name] of [[51, "list_files"], [52, "read_file"]] as const) {
+        const t = await fail(id, name, name === "read_file" ? { path: "kortix.yaml" } : {});
+        if (t !== "pass session_id (live sandbox) or project_id (repository)") throw new Error(`${name} with no target: ${t}`);
+      }
+      await fail(53, "read_file", { project_id: p.id, path: "kortix.yaml", offset: -1 });
     });
     await ctx.step("list_sessions → a JSON array; sandbox tools on a missing session → isError 404", async () => {
       if (!Array.isArray(JSON.parse(await toolText(16, "list_sessions", { project_id: p.id })))) throw new Error("list_sessions is not an array");
