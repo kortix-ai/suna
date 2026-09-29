@@ -84,6 +84,24 @@ describe('buildAnswerCard', () => {
     expect(texts(buildAnswerCard('hello'))).toEqual(['hello']);
     expect(texts(buildAnswerCard('hello', 'https://app/s')).some((t) => t.includes('https://app/s'))).toBe(true);
   });
+
+  // Both answer paths — the live card's final edit and a fresh answer card —
+  // show a connect link as a button between the answer and the session link.
+  test('a connect link in the answer is a button above the session link, on both answer paths', () => {
+    const connect = 'https://app.example.test/connect/ksl_c3ludGhldGlj';
+    const body = `Gmail is not connected yet.\n\n[Connect Gmail](${connect})`;
+    for (const card of [
+      buildAnswerCard(body, 'https://app/s'),
+      buildFinalCard({ title: 'Task complete', steps: [step({ status: 'complete' })], body, sessionUrl: 'https://app/s' }),
+    ]) {
+      const els = card.body as Array<{ type: string; text?: string; actions?: Array<Record<string, unknown>> }>;
+      const row = els.findIndex((e) => e.type === 'ActionSet');
+      expect(els[row].actions).toEqual([{ type: 'Action.OpenUrl', title: 'Connect Gmail', url: connect }]);
+      expect(els[row - 1].text).toBe('Gmail is not connected yet.');
+      expect(els[els.length - 1].text).toContain('https://app/s');
+      expect(texts(card).join('\n')).not.toContain('ksl_');
+    }
+  });
 });
 
 describe('interactive cards', () => {
