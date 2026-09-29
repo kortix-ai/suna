@@ -27,6 +27,8 @@ import type { AuditRouteLabel } from './audit-labels';
 // biome-ignore format: one route per line, so a diff names exactly the route that changed
 export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | string>> = {
   'GET /.well-known/oauth-authorization-server': { action: 'oauth.server_metadata.read', title: 'Read OAuth server metadata' },
+  'GET /.well-known/oauth-protected-resource': 'GET /.well-known/oauth-protected-resource/v1/mcp',
+  'GET /.well-known/openid-configuration': { action: 'oauth.openid_metadata.read', title: 'Read OpenID server metadata' },
   'GET /.well-known/oauth-protected-resource/v1/mcp': { action: 'mcp.resource_metadata.read', title: 'Read MCP server metadata' },
   'GET /health': { action: 'system.health.read', title: 'Checked API health' },
   'GET /health/live': { action: 'system.health.liveness.read', title: 'Checked API liveness' },
