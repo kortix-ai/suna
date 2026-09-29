@@ -135,8 +135,29 @@ describe('SessionSiteHeader subsession breadcrumb', () => {
     expect(crumbAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
     const crumb = source.slice(crumbAt, source.indexOf('</Button>', crumbAt));
     expect(crumb).toContain('<HouseIcon');
-    expect(crumb).toContain('{parent.title}');
-    expect(crumb).toContain('truncate');
+    // Reads "Home", never the parent session's title.
+    expect(crumb).toContain("'i18nComplete.text3a78695388b3'");
+    expect(source).not.toContain('parent.title');
+  });
+
+  // `projectSession` is the PARENT's row on a subsession route, so its name and
+  // its rename must not leak onto the subsession's crumb.
+  test("a subsession shows its own title, not the project session's, and cannot rename it", () => {
+    expect(source).toContain('const headerTitle = parent');
+    expect(source).toContain('const canRename = isProjectSession && !!projectSession && !parent;');
+    const menuStart = source.indexOf('const sessionActionItems = (');
+    const renameItem = source.indexOf('startRename();', menuStart);
+    expect(source.lastIndexOf('{canRename && (', renameItem)).toBeGreaterThan(menuStart);
+    // Delete removes the whole project session, so it names that session.
+    expect(source).toContain('sessionLabel={projectTitle}');
+  });
+
+  test('the subagent suffix is stripped from the subsession title', () => {
+    const pattern = source.match(/sessionTitle\.replace\((\/.*\/), ''\)/)?.[1];
+    expect(pattern).toBeTruthy();
+    const re = new Function(`return ${pattern}`)() as RegExp;
+    expect('Research the topic (@general subagent)'.replace(re, '')).toBe('Research the topic');
+    expect('Plain title'.replace(re, '')).toBe('Plain title');
   });
 
   test('the composer no longer carries a back-to-parent control', () => {

@@ -83,8 +83,8 @@ interface SessionSiteHeaderProps {
   sessionTitle: string;
   isMobileView?: boolean;
   leadingAction?: React.ReactNode;
-  /** A subsession's parent: rendered as the first breadcrumb, before the name. */
-  parent?: { title: string; onOpen: () => void };
+  /** A subsession's parent: rendered as a "Home" breadcrumb before the name. */
+  parent?: { onOpen: () => void };
 }
 
 export function SessionSiteHeader({
@@ -166,11 +166,18 @@ export function SessionSiteHeader({
    * Falls back to the prop when there is no project session: the share viewer
    * and the instant shell render this header without one.
    */
-  const headerTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
+  const projectTitle = projectSession ? getSessionDisplayTitle(projectSession) : sessionTitle;
+  // A subsession has no project session row of its own — `projectSession` is
+  // the parent's. It shows its own OpenCode title, minus the
+  // "(@general subagent)" suffix, and is not renamable from here.
+  const headerTitle = parent
+    ? sessionTitle.replace(/\s*\(@[^)]*subagent\)$/, '')
+    : projectTitle;
 
   const renameMutation = useRenameSession(projectId ?? '', projectSessionId ?? null);
+  const canRename = isProjectSession && !!projectSession && !parent;
   const startRename = () => {
-    if (isProjectSession && projectSession) setIsRenaming(true);
+    if (canRename) setIsRenaming(true);
   };
 
   const restartMutation = useMutation({
@@ -215,17 +222,23 @@ export function SessionSiteHeader({
     <>
       {isProjectSession && (
         <>
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onSelect={() => {
-              renameFromMenu.current = true;
-              startRename();
-            }}
-          >
-            <PencilSimpleIcon />
-            {tI18nHardcoded.raw('autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53')}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
+          {canRename && (
+            <>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => {
+                  renameFromMenu.current = true;
+                  startRename();
+                }}
+              >
+                <PencilSimpleIcon />
+                {tI18nHardcoded.raw(
+                  'autoFeaturesSessionHeaderSessionSiteHeaderJsxTextRename41731a53',
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
 
           <DropdownMenuItem
             className="cursor-pointer"
@@ -329,19 +342,18 @@ export function SessionSiteHeader({
           >
             <SidebarToggle />
 
-            {/* Subsession breadcrumb: home + parent name, a slash, then this
-                session's own name control. The parent shrinks first, so a
-                long parent name never hides the name of the session you are in. */}
+            {/* Subsession breadcrumb: "Home" (the parent session), a slash,
+                then this subsession's own title. */}
             {parent && (
               <>
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={parent.onOpen}
-                  className="text-muted-foreground hover:text-foreground h-7 max-w-24 min-w-0 shrink-[2] justify-start gap-1.5 rounded-md px-2 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out md:max-w-48"
+                  className="text-muted-foreground hover:text-foreground h-7 shrink-0 gap-1.5 rounded-md px-2 py-1 transition-[color,background-color] duration-(--duration-normal) ease-out"
                 >
                   <HouseIcon className="size-3.5 shrink-0" />
-                  <span className="min-w-0 truncate">{parent.title}</span>
+                  {tI18nHardcoded.raw('i18nComplete.text3a78695388b3')}
                 </Button>
                 <span aria-hidden className="text-muted-foreground shrink-0 text-sm select-none">
                   /
@@ -371,7 +383,7 @@ export function SessionSiteHeader({
                 // No name yet: `SavedSessionSkeleton` renders this header
                 // before the session row has answered.
                 <Skeleton className="mx-2.5 h-3.5 w-24 py-0 motion-reduce:animate-none" />
-              ) : isProjectSession && projectSession ? (
+              ) : canRename ? (
                 <Hint
                   side="bottom"
                   sideOffset={4}
@@ -613,7 +625,7 @@ export function SessionSiteHeader({
           <SessionDeleteModal
             projectId={projectId!}
             sessionId={projectSessionId!}
-            sessionLabel={headerTitle}
+            sessionLabel={projectTitle}
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
             onDeleted={() => router.push(`/projects/${projectId}`)}

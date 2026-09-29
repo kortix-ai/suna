@@ -5185,11 +5185,10 @@ export function SessionChat({
     if (backToParentHref) router.prefetch(backToParentHref);
   }, [backToParentHref, router]);
 
-  // The header breadcrumb's first crumb: the parent session, for a subsession.
+  // The header breadcrumb's "Home" crumb: the parent session, for a subsession.
   const parentCrumb = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     return {
-      title: parentSessionData.title || 'Parent session',
       onOpen: () => {
         if (backToParentHref) {
           // nav-contract: prefetch-only — the header crumb's contract carries
