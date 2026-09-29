@@ -601,6 +601,18 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - `agent-browser doctor` diagnoses launch and recording problems. Recording
   needs ffmpeg with libvpx and libx264.
 
+### API lint gate
+
+- `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
+  are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
+  files, no `setInterval`, no `(c: any)`, no `process.env` outside
+  `config.ts`, no `console.*`, and a `replica-local:` comment on every empty
+  module-level `Map`/`Set`.
+- `apps/api/eslint-suppressions.json` holds the violations that existed when
+  each rule was added. A new violation fails. A fixed one fails until you run
+  `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
+  absorb a new violation with `--suppress-all`.
+
 ### Frontend type/lint gate
 
 - `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
