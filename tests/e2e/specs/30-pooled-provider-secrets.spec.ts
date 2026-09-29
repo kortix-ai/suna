@@ -823,7 +823,7 @@ test.describe('30 — pooled provider secrets', () => {
       project = await createManifestProject({ api, accessToken: ownerSession.access_token, accountId, userId: owner.id,
         name: `ChatGPT reconnect ${runId}`, databaseUrl: databaseUrl! });
       const projectId = project.id;
-      for (const feature of ['llm_gateway', 'pooled_provider_secrets', 'session_transcript_history']) {
+      for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
         await api(ownerSession.access_token, 'PATCH', `/projects/${projectId}/features`, { feature, enabled: true });
       }
       await api(ownerSession.access_token, 'PUT', `/projects/${projectId}/access/${member.id}`, { role: 'user' });
