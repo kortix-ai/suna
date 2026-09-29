@@ -56,7 +56,7 @@ import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
-import { relayPermissionToApi } from './permission-relay'
+import { relayPermissionToApi } from '../shared/permission-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
@@ -786,7 +786,7 @@ async function startSessionRuntime(
     )
   }
   // Report only: apps/api pushes "needs your approval". The permission itself
-  // stays open for the user (permission-relay.ts).
+  // stays open for the user (shared/permission-relay.ts).
   const onPermissionAsked = (req: PermissionRequest) => {
     void relayPermissionToApi(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
