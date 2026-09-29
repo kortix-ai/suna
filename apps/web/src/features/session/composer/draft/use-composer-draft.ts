@@ -6,6 +6,7 @@ import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from 
 import { useAuth } from '@/features/providers/auth-provider';
 
 import type { ComposerEditorHandle } from '../editor/composer-editor';
+import { useLatestRef } from '../hooks/use-latest-ref';
 import type { AttachedFile } from '../types';
 import {
   type DraftScope,
@@ -78,24 +79,14 @@ export function useComposerDraft({
   // Everything the debounced writer reads, held in refs so the timer callback
   // is created once and always sees current values. Synced in effects, never
   // mutated during render.
-  const scopeRef = useRef(scope);
-  const userIdRef = useRef(userId);
-  const filesRef = useRef(attachedFiles);
+  const scopeRef = useLatestRef(scope);
+  const userIdRef = useLatestRef(userId);
+  const filesRef = useLatestRef(attachedFiles);
   const quotesRef = useRef(quotes);
   const pendingRef = useRef<{ doc: JSONContent; isEmpty: boolean } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoredKeyRef = useRef<string | null>(null);
   const activeRef = useRef(active);
-
-  useEffect(() => {
-    scopeRef.current = scope;
-  }, [scope]);
-  useEffect(() => {
-    userIdRef.current = userId;
-  }, [userId]);
-  useEffect(() => {
-    filesRef.current = attachedFiles;
-  }, [attachedFiles]);
 
   /**
    * Write whatever is pending, now.
@@ -125,7 +116,7 @@ export function useComposerDraft({
         userId: userIdRef.current,
       }),
     );
-  }, []);
+  }, [filesRef, scopeRef, userIdRef]);
 
   useLayoutEffect(() => {
     // Flush before the replacement composer's passive restore effect runs.
@@ -144,7 +135,7 @@ export function useComposerDraft({
       if (timerRef.current !== null) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(flush, SAVE_DEBOUNCE_MS);
     },
-    [flush],
+    [flush, scopeRef, userIdRef],
   );
 
   /**
@@ -170,7 +161,7 @@ export function useComposerDraft({
     pendingRef.current = null;
     const activeScope = scopeRef.current;
     if (activeRef.current && activeScope) clearDraft(activeScope);
-  }, []);
+  }, [scopeRef]);
 
   /**
    * Flush on every way a page can go away without unmounting cleanly.
