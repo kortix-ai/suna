@@ -290,6 +290,17 @@ export function isTransientGitMirrorError(err: unknown): err is GitOperationErro
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
 }
 
+/** Grant-resolution wrappers retain the original git failure via Error.cause. */
+export function transientGitMirrorCause(err: unknown): GitOperationError | null {
+  const seen = new Set<unknown>();
+  while (err instanceof Error && !seen.has(err)) {
+    if (isTransientGitMirrorError(err)) return err;
+    seen.add(err);
+    err = err.cause;
+  }
+  return null;
+}
+
 /**
  * Stable error code the platform API returns (HTTP 503) when a project's git
  * mirror cold-clone/fetch fails for a TRANSIENT, retryable upstream reason
