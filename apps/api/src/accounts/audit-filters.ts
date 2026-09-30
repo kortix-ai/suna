@@ -36,6 +36,9 @@ export interface AuditFilterInput {
   correlationId?: string | null;
 }
 
+/** The first day audit rows can carry `credential_kind` (migration 20260930024523072). */
+const CREDENTIAL_KIND_SINCE = new Date('2026-09-30T00:00:00Z');
+
 export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] {
   const conditions: SQL[] = [eq(auditEvents.accountId, accountId)];
   // `or`/`and` are typed `SQL | undefined` in drizzle (a 0-arg call is
@@ -51,7 +54,12 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
   if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
   if (input.source) push(eq(auditEvents.authoritativeSource, input.source));
-  if (input.credentialKind) push(eq(auditEvents.credentialKind, input.credentialKind));
+  if (input.credentialKind) {
+    // credential_kind is NULL on every row written before it existed, so no
+    // older row can match. The floor keeps an unindexed filter from scanning
+    // that whole history (it ran into the 25 s request deadline on dev).
+    push(eq(auditEvents.credentialKind, input.credentialKind), gte(auditEvents.occurredAt, CREDENTIAL_KIND_SINCE));
+  }
   if (input.phase) push(eq(auditEvents.phase, input.phase));
   if (input.outcome) push(eq(auditEvents.outcome, input.outcome));
   if (input.requestId) push(eq(auditEvents.requestId, input.requestId));
