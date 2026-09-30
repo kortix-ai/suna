@@ -1149,7 +1149,10 @@ for (const runtime of runtimes) {
         await expect.poll(() => postOrder).toEqual(["transcript", "composer"]);
         await page.unroute(promptsUrl);
         await expect(pending).toHaveAttribute("data-queue-tone", "pending");
-        await expect(pending).not.toContainText(/Quick Queue|Waiting|Sending|Queued/);
+        // KRTX-494: a prompt waiting in the inbox says "Queued" inline on the
+        // message. The retired Quick Queue / Waiting chrome stays gone.
+        await expect(pending.locator("[data-queued-status]")).toHaveText("Queued");
+        await expect(pending).not.toContainText(/Quick Queue|Waiting/);
         await expectThinkingMatchesStop(page);
         if (!isDeployedTarget()) {
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);
