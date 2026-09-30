@@ -50,6 +50,7 @@ export interface CompiledAgent {
   top_p?: number
   prompt?: string
   disable?: boolean
+  tools?: Record<string, boolean>
   hidden?: boolean
   options?: Record<string, unknown>
   color?: string
@@ -404,9 +405,9 @@ export class PiRuntime {
       this.workspaceTools = createWorkspaceTools(this.executionEnv)
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
       // so only a batch made entirely of parallel tools (task calls) runs concurrently.
-      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
-        (tool) => ({ ...tool, executionMode: 'sequential' as const }),
-      )
+      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))]
+        .filter((tool) => this.compiledAgent()?.tools?.[tool.name] !== false)
+        .map((tool) => ({ ...tool, executionMode: 'sequential' as const }))
       this.skills = await this.loadSkills(core.loadSkills)
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
@@ -445,7 +446,7 @@ export class PiRuntime {
       })
       const extensionsMs = performance.now() - extensionsStartedAt
       // The session installed the extension tool hooks; the permission policy runs first.
-      agent.beforeToolCall = this.toolGate((tool, args) => this.permissions.rule(tool, args), true, agent.beforeToolCall)
+      agent.beforeToolCall = this.toolGate((tool, args) => this.compiledAgent()?.tools?.[tool] === false ? 'deny' : this.permissions.rule(tool, args), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
       this.state = 'ok'
       logger.info('[pi] runtime ready', {
@@ -799,7 +800,8 @@ export class PiRuntime {
     }
     const selected = input.model ? this.models.select(nativeModelId(input.model)) : this.selected
     const model = { providerID: selected.providerID, modelID: selected.modelID }
-    const tools = input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools
+    const tools = (input.tools ? this.workspaceTools.filter((tool) => input.tools!.includes(tool.name)) : this.workspaceTools)
+      .filter((tool) => this.compiled?.agent?.[input.agent]?.tools?.[tool.name] !== false)
     const policy = compilePermissionPolicy(input.permission)
     const messageId = this.clock.mint(this.now())
     this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
@@ -833,7 +835,7 @@ export class PiRuntime {
     agent.beforeToolCall = this.toolGate((tool, args) => {
       const own = resolvePolicyRule(policy, tool, args)
       const session = this.permissions.rule(tool, args)
-      if (own === 'deny' || session === 'deny') return 'deny'
+      if (own === 'deny' || session === 'deny' || this.compiledAgent()?.tools?.[tool] === false || this.compiled?.agent?.[input.agent]?.tools?.[tool] === false) return 'deny'
       return own ?? session
     }, false, this.childExtensionGate())
     agent.subscribe((event) => {

@@ -2,9 +2,7 @@
 
 import { listConnections, type Connection } from '@kortix/sdk';
 import {
-  CheckIcon,
   CursorClickIcon,
-  DownloadSimpleIcon,
   FolderIcon,
   LaptopIcon,
   MonitorIcon,
@@ -15,19 +13,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Download } from '@/features/icon/icons/download';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { tunnelKeys, useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   desktopComputerConnect,
@@ -37,8 +31,9 @@ import {
   startDownload,
   type DesktopComputerStatus,
 } from '@/lib/desktop';
+import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
-import { ConnectCommandPanel } from './tunnel-connect-panel';
+import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
 /**
  * A computer is an ACCOUNT of the project's `computer` connector: one
@@ -305,13 +300,15 @@ const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Ic
 export function ComputerCapabilities({ granted }: { granted?: readonly string[] }) {
   const t = useTranslations('computers');
   return (
-    <ul className="bg-popover divide-border divide-y rounded-md border">
+    <ul className="divide-border divide-y">
       {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
         const allowed = granted?.includes(key);
         return (
-          <li key={key} className="flex items-center gap-3 px-4 py-2.5">
-            <CapabilityIcon className="text-muted-foreground size-4 shrink-0" />
-            <div className="min-w-0 flex-1">
+          <li key={key} className="flex items-center gap-3 py-3">
+            <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-sm">
+              <CapabilityIcon className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1 space-y-0.5">
               <p className="text-sm font-medium">{t(`capability.${key}`)}</p>
               <p className="text-muted-foreground truncate text-xs">
                 {t(`capability.${key}Description`)}
@@ -324,7 +321,7 @@ export function ComputerCapabilities({ granted }: { granted?: readonly string[] 
                   allowed ? 'text-foreground' : 'text-muted-foreground',
                 )}
               >
-                {allowed ? <CheckIcon className="text-kortix-green size-3.5 shrink-0" /> : null}
+                {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
                 {allowed ? t('capability.allowed') : t('capability.notAllowed')}
               </span>
             ) : null}
@@ -358,25 +355,43 @@ export function ComputerConnectModal({
   const t = useTranslations('computers');
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-lg">
-        <ModalHeader className="flex-row items-center gap-3 pr-12">
-          <ComputerGlyph />
-          <div className="min-w-0 space-y-0.5">
-            <ModalTitle>{t('connectTitle')}</ModalTitle>
-            <ModalDescription className="text-xs">{t('connectDescription')}</ModalDescription>
+      <ModalContent
+        className="space-y-0 lg:max-w-3xl"
+        closeClassName="max-sm:bg-background border-0 overflow-hidden"
+      >
+        {/* Art beside the content from `sm`; a short banner above it on a phone.
+            The art is dark in both themes, so its tokens resolve under `dark`.
+            It rounds its own outer corners: the modal is a scroll container,
+            and its rounded clip does not reach the shader's WebGL canvas. */}
+        <div className="grid sm:grid-cols-5 lg:min-h-128">
+          <div
+            aria-hidden="true"
+            className="dark bg-background relative isolate flex h-48 items-center justify-center overflow-hidden rounded-t-xl border-b sm:col-span-2 sm:h-auto sm:rounded-tr-none sm:border-r sm:border-b-0 lg:rounded-bl-xl"
+          >
+            <BeamsShader />
+            <span className="bg-foreground text-background relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium">
+              <LaptopIcon className="size-4 shrink-0" />
+              {t('localComputerTitle')}
+            </span>
           </div>
-        </ModalHeader>
-        <ModalBody className="space-y-5">
-          {open ? (
-            <ComputerConnectOptions
-              projectId={projectId}
-              onConnected={(connection) => {
-                onConnected?.(connection);
-                onOpenChange(false);
-              }}
-            />
-          ) : null}
-        </ModalBody>
+          <div className="flex min-w-0 flex-col gap-5 p-5 sm:col-span-3 lg:p-8">
+            <header className="space-y-1.5 pr-10">
+              <ModalTitle className="text-lg font-medium text-balance">
+                {t('connectTitle')}
+              </ModalTitle>
+              <ModalDescription className="text-pretty">{t('connectDescription')}</ModalDescription>
+            </header>
+            {open ? (
+              <ComputerConnectOptions
+                projectId={projectId}
+                onConnected={(connection) => {
+                  onConnected?.(connection);
+                  onOpenChange(false);
+                }}
+              />
+            ) : null}
+          </div>
+        </div>
       </ModalContent>
     </Modal>
   );
@@ -413,55 +428,51 @@ function ComputerConnectOptions({
   }, [addedId]);
 
   const inBrowser = desktop.isSuccess && !desktop.data && !isDesktop();
-  // The CLI is the fallback: shown on request, or when nothing else applies
-  // (this desktop is already paired, or its build lacks the bundled agent).
-  const [cliOpen, setCliOpen] = useState(false);
-  const showCli = cliOpen || (desktop.isSuccess && !inBrowser && !oneClick);
+  // The CLI fallback is one click: it copies the pairing command. The command
+  // prints its own instructions when it runs.
+  // The button itself confirms the copy; no toast.
+  const { copied, copy } = useCopy({ toast: false });
+  const copyCliCommand = () =>
+    copy(
+      buildTunnelConnectCommand({
+        backendUrl: getEnv().BACKEND_URL || '',
+        origin: window.location.origin,
+        projectId,
+      }),
+    );
 
   return (
     <>
-      <section className="space-y-2">
-        <ComputerCapabilities />
-        <p className="text-muted-foreground text-xs text-pretty">{t('scopeLine')}</p>
-      </section>
+      <ComputerCapabilities />
 
-      {oneClick ? (
-        <Button
-          className="w-full"
-          disabled={connectDesktop.isPending}
-          onClick={() => connectDesktop.mutate({ reauth: stale })}
-        >
-          {connectDesktop.isPending ? (
-            <Loading className="size-4 shrink-0" />
-          ) : (
-            <MonitorIcon className="size-4 shrink-0" />
-          )}
-          {connectDesktop.isPending ? t('connecting') : t('connectThisComputer')}
-        </Button>
-      ) : null}
-
-      {inBrowser ? (
-        <section className="space-y-2">
-          <Button className="w-full" onClick={() => startDownload(desktopDownloadUrl())}>
-            <DownloadSimpleIcon className="size-4 shrink-0" />
+      {/* Actions sit on the bottom edge, level with the foot of the art. */}
+      <div className="mt-auto space-y-2">
+        {oneClick ? (
+          <Button
+            size="lg"
+            className="w-full"
+            disabled={connectDesktop.isPending}
+            onClick={() => connectDesktop.mutate({ reauth: stale })}
+          >
+            {connectDesktop.isPending ? (
+              <Loading className="size-4 shrink-0" />
+            ) : (
+              <MonitorIcon className="size-4 shrink-0" />
+            )}
+            {connectDesktop.isPending ? t('connecting') : t('connectThisComputer')}
+          </Button>
+        ) : null}
+        {inBrowser ? (
+          <Button size="lg" className="w-full" onClick={() => startDownload(desktopDownloadUrl())}>
+            <Download className="shrink-0" />
             {t('downloadDesktop')}
           </Button>
-          <p className="text-muted-foreground text-xs text-pretty">{t('downloadHint')}</p>
-        </section>
-      ) : null}
-
-      {showCli ? (
-        <section className="space-y-2 border-t pt-5">
-          <Label>{t('runCommand')}</Label>
-          <p className="text-muted-foreground text-xs text-pretty">{t('cliHint')}</p>
-          <ConnectCommandPanel projectId={projectId} />
-        </section>
-      ) : (
-        <Button variant="ghost" size="sm" className="w-full" onClick={() => setCliOpen(true)}>
-          <TerminalWindowIcon className="size-4 shrink-0" />
-          {t('useCliInstead')}
+        ) : null}
+        <Button variant="secondary" size="lg" className="w-full" onClick={copyCliCommand}>
+          {copied ? <SolidCheckIcon /> : null}
+          {copied ? t('commandCopied') : t('copyCliCommand')}
         </Button>
-      )}
+      </div>
     </>
   );
 }

@@ -147,6 +147,12 @@
           "enabled": {
             "type": "boolean"
           },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
           "sandbox": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"

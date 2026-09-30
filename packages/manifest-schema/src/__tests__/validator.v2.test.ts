@@ -1277,6 +1277,11 @@ describe('v2 harnesses.pi.packages', () => {
   });
 });
 
+ test('agent tool toggles require boolean values', () => {
+  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: false, read: true }\n    connectors: [github, slack]')).errorPaths).not.toContain('agents.support.tools');
+  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: nope }\n    connectors: [github, slack]')).errorPaths).toContain('agents.support.tools');
+});
+
 describe('v2 harnesses.opencode.plugins', () => {
   const base = 'kortix_version: 2\ndefault_agent: w\n';
   test('accepts global defaults and agent opt-in/out by filename', () => {

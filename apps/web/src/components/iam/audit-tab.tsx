@@ -2,7 +2,6 @@
 
 import {
   CaretRightIcon as CaretRight,
-  DownloadIcon as Download,
   FunnelIcon as Funnel,
   MagnifyingGlassIcon as Search,
   XIcon as X,
@@ -73,6 +72,7 @@ import {
   describeAuditAction,
   formatResourcePill,
 } from './audit-display-helpers';
+import { Download } from '@/features/icon/icons/download';
 
 type ActorType = NonNullable<IamAuditEvent['actor_type']>;
 type Outcome = NonNullable<IamAuditEvent['outcome']>;
