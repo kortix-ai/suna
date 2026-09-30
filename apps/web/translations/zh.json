@@ -132,7 +132,18 @@
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
     "selectedOneForSession": "此会话已选择 {count} 个密钥",
-    "selectedOne": "已选择 {count} 个密钥"
+    "selectedOne": "已选择 {count} 个密钥",
+    "opencodeDeviceDescription": "复制此代码，然后打开 OpenCode 页面并输入它以连接你的工作区。",
+    "opencodeStarting": "正在连接 OpenCode…",
+    "opencodeConnected": "已使用 OpenCode 登录",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "使用你的 OpenCode 账户登录。我们会将登录信息保存为加密的项目密钥，供以后的会话复用。",
+    "opencodeGoConnectedBanner": "OpenCode Go 已连接。",
+    "opencodeGoDisconnected": "OpenCode Go 已断开",
+    "opencodeGoConnect": "连接 OpenCode Go",
+    "opencodeGoReconnect": "重新连接 OpenCode Go",
+    "opencodeGoDisconnect": "断开 OpenCode Go",
+    "opencodeGoFailed": "无法连接 OpenCode Go"
   },
   "useCases": {
     "headline": "驱动公司运转的循环"
@@ -19045,7 +19056,16 @@
       "text2bbd1ec2197d": "已连接应用",
       "textda3d3fb8f598": "代理会话",
       "text4dcb7e3b10a9": "SCIM 令牌",
-      "text36fe0f55b7f5": "任意凭据"
+      "text36fe0f55b7f5": "任意凭据",
+      "textbfda026e6c59": "已关联",
+      "text72ea4fa7caf9": "听写已停止：{value0}",
+      "text557b623f9a33": "无法开始听写。请检查麦克风权限。",
+      "textb43c4884c3be": "听写控制",
+      "textd31d065a762c": "取消听写",
+      "textbbb4106e8144": "正在聆听…",
+      "text7458028e0d1d": "完成听写",
+      "text9c84d6622566": "语音输入消息",
+      "textf164e4b031dc": "已更新会话在线状态"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20205,6 +20225,7 @@
     "commandCopied": "命令已复制",
     "copyFailed": "复制失败",
     "copyCommand": "复制命令",
+    "copyCliCommand": "复制安装命令",
     "authorizeCodeHint": "请确认此代码与你电脑上显示的代码一致。",
     "whoCanUse": "谁可以使用这台电脑",
     "onlyYouDescription": "只有你，在每个项目的私人会话中。",

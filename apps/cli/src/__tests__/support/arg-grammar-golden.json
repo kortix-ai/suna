@@ -62,7 +62,7 @@
       "--help"
     ],
     "code": 0,
-    "stdout": "\n  Usage: kortix providers login <provider> [options]\n  ────────────────────────────────────────────────────────\n\n  Start the OAuth device-code flow for openai or github-copilot.\n\n  Options:\n  --enterprise <url>  GitHub Enterprise URL for github-copilot.\n  --project <id>      Operate on this project id (default: linked).\n  --host <name>       Operate against a non-default Kortix host.\n  -h, --help          Show this help without starting OAuth.\n\n",
+    "stdout": "\n  Usage: kortix providers login <provider> [options]\n  ────────────────────────────────────────────────────────\n\n  Start the OAuth device-code flow for openai, opencode, or opencode-go.\n\n  Options:\n  --enterprise <url>  GitHub Enterprise URL for github-copilot.\n  --project <id>      Operate on this project id (default: linked).\n  --host <name>       Operate against a non-default Kortix host.\n  -h, --help          Show this help without starting OAuth.\n\n",
     "stderr": "host test (http://127.0.0.1:9, <email> (user)) · account account_\n"
   },
   {

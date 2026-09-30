@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   isAndroidWebViewNativeBridgePostEventNoise,
+  isAnonymousAuthRefreshRace,
   isAndroidWebViewNativeBridgePostMessageNoise,
   isCanvasImageDataOOMNoise,
   isCaptchaInterceptorNoise,
@@ -12186,4 +12187,21 @@ test('suppresses the digest-less React #419 at both gates', () => {
     }),
     false,
   );
+});
+
+test('anonymous Supabase refresh race is noise only on the landing page', () => {
+  const input = {
+    message: 'Auth session missing!',
+    requestUrl: 'https://kortix.com/',
+    mechanism: 'auto.browser.global_handlers.onunhandledrejection',
+    frames: [{ filename: 'app:///_next/static/immutable/chunks/22knfs0jv6sj3.js', function: 'async sc.refreshSession' }],
+  };
+  assert.equal(isAnonymousAuthRefreshRace(input), true);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, requestUrl: 'https://kortix.com/projects' }), false);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, frames: [{ filename: 'apps/web/src/auth.ts', function: 'refreshSession' }] }), false);
+  assert.equal(isAnonymousAuthRefreshRace({ ...input, message: 'Invalid refresh token' }), false);
+  assert.equal(shouldIgnoreSentryBrowserNoise({
+    request: { url: input.requestUrl },
+    exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
+  }), true);
 });

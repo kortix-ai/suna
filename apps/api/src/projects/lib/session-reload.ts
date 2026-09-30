@@ -830,8 +830,10 @@ export async function reloadSessionConfig(input: {
           ),
         );
     }
-    // Read the etag the box runs now: the release carried the governance.
-    const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
+    // Read the etag the box runs now: the release carried the governance. pi
+    // applies a release in place, so `applied` arrives with no `reload`.
+    const after =
+      converged.outcome === 'applied' ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
     return {
       ...convergeToReloadResult(converged, { previousEtag: before.etag, etagAfter: after?.etag ?? null }),
       repo_refreshed: repoRefreshed,
@@ -904,16 +906,11 @@ export async function reloadSessionConfig(input: {
     baseRef: input.baseRef,
   });
 
-  // The daemon reloads OpenCode itself when it brought agent files forward. A
-  // daemon that knows `base_config` receives governance in its release, so the
-  // push above returns without a second restart.
-  const daemonReload =
-    agentFiles === 'updated' && refreshed.reload
-      ? refreshed.reload.outcome === 'swapped'
-        ? ('restarted' as const)
-        : ('kept-old' as const)
-      : null;
-  const applied = push.applied || daemonReload === 'restarted';
+  // The daemon reloads the OpenCode config itself when it brought agent files
+  // forward (dispose-first, so milliseconds). On a project without releases
+  // the push above runs as well and disposes again; both are cheap.
+  const daemonReload = agentFiles === 'updated' ? (refreshed.configReload?.how ?? null) : null;
+  const applied = push.applied || daemonReload === 'disposed' || daemonReload === 'restarted';
   const opencodeReload = push.opencodeReload ?? daemonReload;
   return {
     applied,
@@ -925,7 +922,7 @@ export async function reloadSessionConfig(input: {
     commit_sha: commitSha,
     agent_files: agentFiles,
     opencode_reload: opencodeReload ?? null,
-    turn_ended: push.opencodeTurnEnded ?? (daemonReload ? refreshed.reload?.turnEnded ?? null : null),
+    turn_ended: push.opencodeTurnEnded ?? (daemonReload ? (refreshed.configReload?.turnEnded ?? null) : null),
     ...(applied || daemonReload === 'kept-old'
       ? opencodeReload === 'kept-old'
         ? {
@@ -949,7 +946,8 @@ export function convergeToReloadResult(
   const reloaded = converged.reload !== null;
   const common = {
     previous_etag: etags.previousEtag,
-    etag: reloaded ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    etag: converged.outcome === 'applied' ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    // Null for a runtime that applies a release in place (pi): nothing restarted.
     opencode_reload: reloaded ? ('restarted' as const) : null,
     turn_ended: converged.reload?.turn_ended ?? null,
   };
@@ -1053,11 +1051,12 @@ async function convergeSandboxConfig(
  * `/workspace`; on a capable daemon it is an alias for converge, which the
  * reload sends explicitly.
  *
- * `baseConfig` sends `base_config=1`: the daemon brings ONLY the base branch's
- * OpenCode config dir into the checkout (`syncConfigDirToBase` — it refuses the
- * session's own edits and commits there and never moves a ref), and reloads
- * OpenCode when files changed, despite `restart=0`. The pre-release path needs
- * it because OpenCode reads its agent files from this checkout.
+ * `baseConfig` sends `base_config=1`: the daemon brings the base branch's
+ * changes to the OpenCode config dir into the checkout (`syncConfigDirToBase` —
+ * file by file, keeping the session's own edits and commits, never moving a
+ * ref), and reloads the OpenCode config when files changed, despite
+ * `restart=0` (answered as `config_dir.reload`). The pre-release path needs it
+ * because OpenCode reads its agent files from this checkout.
  *
  * `restart=0`: the config push right after restarts opencode anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
@@ -1072,8 +1071,8 @@ async function refreshSandboxWorkspace(
   /** `null` = the box did not say (a daemon built before `base_config`). */
   configDirSynced: boolean | null;
   configDirReason?: string;
-  /** The OpenCode reload the daemon ran because it brought files forward. */
-  reload?: { outcome: 'swapped' | 'kept-old'; turnEnded: boolean | null };
+  /** The config reload the daemon ran because it brought files forward. */
+  configReload?: { how: 'disposed' | 'restarted' | 'kept-old'; turnEnded: boolean | null };
 }> {
   const unreachable = { ok: false, commitSha: null, configDirSynced: null };
   try {
@@ -1106,24 +1105,18 @@ async function refreshSandboxWorkspace(
     // PRE-reload value, making a successful pull look like a no-op.
     const body = (await res.json()) as {
       repo?: { after?: { commit?: unknown } };
-      config_dir?: { synced?: unknown; skipped?: unknown };
-      reload?: { outcome?: unknown; turn_ended?: unknown };
+      config_dir?: { synced?: unknown; skipped?: unknown; reload?: unknown; turn_ended?: unknown };
     };
     const commit = body.repo?.after?.commit;
     const dir = body.config_dir;
-    const outcome = body.reload?.outcome;
+    const how = dir?.reload;
     return {
       ok: true,
       commitSha: typeof commit === 'string' ? commit : null,
       configDirSynced: typeof dir?.synced === 'boolean' ? dir.synced : null,
       ...(typeof dir?.skipped === 'string' ? { configDirReason: dir.skipped } : {}),
-      ...(outcome === 'swapped' || outcome === 'kept-old'
-        ? {
-            reload: {
-              outcome,
-              turnEnded: typeof body.reload?.turn_ended === 'boolean' ? body.reload.turn_ended : null,
-            },
-          }
+      ...(how === 'disposed' || how === 'restarted' || how === 'kept-old'
+        ? { configReload: { how, turnEnded: typeof dir?.turn_ended === 'boolean' ? dir.turn_ended : null } }
         : {}),
     };
   } catch {

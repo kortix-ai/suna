@@ -150,6 +150,28 @@ describe('reloadSessionConfig capability gate', () => {
     });
   });
 
+  test('a daemon that applies in place (pi, reload: null) still reports the etag it runs now', async () => {
+    const daemon = fakeDaemon({ capable: true, etagAfter: 'ffff', converge: convergeBody('applied', { reload: null }) });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(daemon.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      'GET /kortix/health?turn=1',
+      'POST /kortix/refresh?restart=0',
+      'POST /kortix/config/converge',
+      'GET /kortix/health',
+    ]);
+    expect(result).toMatchObject({
+      applied: true,
+      agent_files: 'updated',
+      opencode_reload: null,
+      turn_ended: null,
+      previous_etag: 'eeee',
+      etag: 'ffff',
+      release_outcome: 'applied',
+      release: { running_release_id: RELEASE_B, desired_release_id: RELEASE_B },
+    });
+  });
+
   test('the health report and the converge report both reach the quarantine recorder', async () => {
     const daemon = fakeDaemon({
       capable: true,
@@ -266,6 +288,13 @@ describe('convergeToReloadResult', () => {
       agent_files: 'updated',
       opencode_reload: 'restarted',
       turn_ended: true,
+      etag: 'ffff',
+    });
+    expect(convergeToReloadResult(converge('applied', { reload: null }), etags)).toMatchObject({
+      applied: true,
+      agent_files: 'updated',
+      opencode_reload: null,
+      turn_ended: null,
       etag: 'ffff',
     });
     expect(convergeToReloadResult(converge('unchanged'), etags)).toMatchObject({
@@ -455,15 +484,15 @@ describe('reloadSessionConfig with config_releases off', () => {
     const daemon = fakeDaemon({
       capable: true,
       releasesEnabled: false,
-      refreshBody: { config_dir: { synced: true }, reload: { outcome: 'swapped', port: 4097, pid: 2, turn_ended: false } },
-      push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
+      refreshBody: { config_dir: { synced: true, reload: 'disposed', turn_ended: false } },
+      push: { applied: false, reason: 'no compiled agent config' },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
     expect(result).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: 'restarted',
+      opencode_reload: 'disposed',
       turn_ended: false,
       config_path: 'legacy',
     });
@@ -471,11 +500,25 @@ describe('reloadSessionConfig with config_releases off', () => {
     expect(reloadDetail(result)).toContain('The next prompt runs the new config.');
   });
 
+  // `daemonHasConfigReleases` is true only while a release is SERVED, so on a
+  // project without releases the push runs too and its reload is reported.
+  test('with the push also applying, the push reload is what is reported', async () => {
+    const daemon = fakeDaemon({
+      capable: true,
+      releasesEnabled: false,
+      refreshBody: { config_dir: { synced: true, reload: 'disposed', turn_ended: false } },
+    });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(daemon.pushes.length).toBe(1);
+    expect(result).toMatchObject({ applied: true, agent_files: 'updated', opencode_reload: 'restarted' });
+  });
+
   test('the session\'s own agent edits are kept and reported', async () => {
     const daemon = fakeDaemon({
       capable: true,
       releasesEnabled: false,
-      refreshBody: { config_dir: { synced: false, skipped: 'local changes' } },
+      refreshBody: { config_dir: { synced: false, skipped: 'local changes', kept: ['.kortix/opencode/agents/kortix.md'] } },
       push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);

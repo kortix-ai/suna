@@ -73,6 +73,7 @@ export {
   legacyConfigDir,
   manifestOpencodeConfigDir,
   opencodeConfigDirCandidates,
+  piConfigDirCandidates,
   safeAgentFile,
   safeRepoPath,
   skillDirs,

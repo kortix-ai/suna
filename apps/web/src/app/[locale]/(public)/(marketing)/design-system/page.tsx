@@ -11,7 +11,6 @@ import {
   CheckIcon as Check,
   CaretUpDownIcon as ChevronsUpDown,
   CopyIcon as Copy,
-  DownloadIcon as Download,
   GitBranchIcon as FolderGit2,
   QuestionIcon as HelpCircle,
   InfoIcon as Info,
@@ -165,6 +164,7 @@ import { CardSection } from './card-section';
 import { ConfettiSection } from './confetti-section';
 import { IconsSection } from './icons-section';
 import { DropdownDemos, SelectDemos } from './menu-demos';
+import { Download } from '@/features/icon/icons/download';
 
 // Filtered once at module load — the catalog is a static constant, so the
 // per-render filter().map() chain in the JSX collapses to a single map.

@@ -874,11 +874,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'turn-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'turn-token': {
+              token: 'turn-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -939,11 +941,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -972,11 +976,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1002,11 +1008,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + 60_000),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1291,11 +1299,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1317,11 +1327,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1353,11 +1365,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1381,11 +1395,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1404,11 +1420,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1438,14 +1456,16 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
-            // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
-            // why a record this young is not orphaned yet.
-            startedAtMs: NOW.getTime() - 120_000,
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
+              // why a record this young is not orphaned yet.
+              startedAtMs: NOW.getTime() - 120_000,
+            },
           },
         },
       }),
@@ -1484,12 +1504,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
-            startedAtMs: NOW.getTime() - 2_000,
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 2_000,
+            },
           },
         },
       }),
@@ -1513,11 +1535,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() + HOUR),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1538,11 +1562,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: null,
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+            },
           },
         },
       }),
@@ -1560,11 +1586,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'delivery-token',
-            state: 'delivering',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -1617,11 +1645,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'active-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_turn_1',
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
           },
         },
       }),
@@ -2462,11 +2492,13 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
         metadata: {
-          activeTurn: {
-            token: 'newer-token',
-            state: 'active',
-            opencodeSessionId: 'ses_root',
-            messageId: 'msg_newer',
+          activeTurns: {
+            'newer-token': {
+              token: 'newer-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_newer',
+            },
           },
         },
       }),
@@ -2558,6 +2590,26 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(stops).toEqual([]);
     expect(pausedCompute).toEqual([]);
     expect(logged.filter((line) => line.includes('[reaper] failed for sandbox'))).toEqual([]);
+  });
+
+  test('a Platinum org write throttle during renewal is transient, not a reaper error', async () => {
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new Error(
+      'platinum POST /v1/sandboxes/sbx_synthetic/exec -> 429 {"code":"rate_limited","error":"too many write requests for this org"}',
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
   });
 
   test('an unreachable Platinum guest during renewal retries without paging each pass', async () => {

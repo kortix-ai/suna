@@ -82,6 +82,29 @@ Excluded on 2026-09-24:
 
 The route pinned one endpoint (`only: ['coreweave/nvfp4']`, `allow_fallbacks: false`). CoreWeave serves OpenRouter's non-BYOK traffic from a shared pool. On 2026-09-24 that pool returned HTTP 429 `rate_limit_exceeded` (`limit_source: upstream_provider_shared_pool`) for 11 of 15 requests that OpenRouter routed to it. With a single pin and no fallback, every such 429 reached the user. The same 429 was recorded on 2026-09-18.
 
+### Context windows
+
+Every managed model publishes `limit: { context: 1_000_000, output: 16_384 }`. OpenCode compacts a session after a step that used `context - min(output, 32_000)` tokens, which is 983,616. It sends `max_tokens` = 16,384.
+
+Measured on 2026-09-30 with synthetic prompts at the edge of each window:
+
+| Model | Route | Largest request accepted | Check | Overflow reply |
+| --- | --- | --- | --- | --- |
+| GLM-5.3-Flash | Zen | prompt 1,048,573 | prompt only | HTTP 400 "The prompt is too long" |
+| GLM-5.3-Flash | OpenRouter `decart/fp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 200, then an in-band 400 frame |
+| GLM-5.3-Flash | OpenRouter `coreweave/nvfp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
+| GLM-5.3-Flash | Morph | prompt 1,036,630 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
+| DeepSeek V4.1 Flash | Morph | prompt 1,047,041 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
+| DeepSeek V4.1 Flash | OpenRouter `coreweave/fp8` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
+| Kimi K3 | OpenRouter `fireworks/us` | prompt 1,048,575 | prompt only | HTTP 400 "prompt is too long" |
+| Kimi K3 | Morph | not measured: HTTP 429 `service_overloaded` on every probe | | |
+
+A route that checks prompt + `max_tokens` rejects a prompt above 1,032,192. The 48,576-token gap between the compaction point and that limit is the room one more step has: a new message plus tool results. `src/managed.test.ts` fails when a managed model's `limit` leaves less than 32,768 tokens, or when a managed model has no measured window.
+
+The gateway answers every rejection above as HTTP 400 `context_length_exceeded`, including OpenRouter's in-band frame: an error as the first `data:` frame of a direct stream is a failed attempt, not a response (`packages/llm-gateway/src/http/call-upstream.ts`). OpenCode reads that code as a context overflow and compacts. A managed candidate fails over on any error, so Morph's unexplained 400 moves the request to the next route, whose reply explains it.
+
+Before 2026-09-30 the limit was 1,048,576. OpenCode compacted only at 1,032,192, which is where the combined routes reject, and OpenRouter's in-band rejection reached OpenCode as an `UnknownError`. A trigger that re-prompted one GLM session every few minutes failed every turn with `context_length_exceeded`.
+
 ### OpenAI and Anthropic models are not managed
 
 The managed lineup offers open-weight models only. OpenAI and Anthropic models reach members through BYOK (`openai/<id>`, `anthropic/<id>`) or a ChatGPT plan (`codex/<id>`). They never bill Kortix credits. `src/managed.test.ts` fails when a managed entry routes to an `openai/` or `anthropic/` upstream. Claude Opus 5.5, GPT-6 Sol, and GPT-6 Luna were added as managed on 2026-09-24 (#7561) and removed the same day.

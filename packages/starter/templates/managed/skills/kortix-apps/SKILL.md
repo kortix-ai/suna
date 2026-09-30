@@ -108,6 +108,31 @@ password into `kortix.yaml`, source, logs, or a command shown to another user.
 Kortix stores only an Argon2id hash. A policy update revokes existing App
 browser sessions.
 
+## Acting as the viewer
+
+An App that calls the Kortix API for each person who opens it (a chat, a
+per-user dashboard) must act as that person, never as one shared key.
+
+```bash
+kortix apps access <app> --viewer api
+```
+
+- `--viewer identity` (default) signs the viewer's id, email, and groups into
+  every request (`x-kortix-app-viewer`). `--viewer api` also sends a one-hour
+  token that acts as them (`x-kortix-app-viewer-token`). `--viewer off` sends
+  neither.
+- On the App's server, build one client per request:
+  `createAppViewerKortix(request, { backendUrl })` from `@kortix/sdk/server`.
+  Do not store the token across requests.
+- Never give the App a personal PAT or API key to run every viewer's sessions.
+  Kortix records each session as the credential's owner, so every viewer's
+  chat becomes that one person's private session.
+- The token holds the viewer's own role. On a project with agent permissions,
+  grant viewers the agent the App starts, or session creation answers
+  `403 no_agent_access`.
+- Never log the viewer headers. Kortix already leaves request headers out of
+  `kortix apps logs`.
+
 Create a short-lived authenticated browser link without changing the policy:
 
 ```bash

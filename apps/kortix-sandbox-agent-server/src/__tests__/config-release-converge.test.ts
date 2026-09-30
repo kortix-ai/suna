@@ -22,8 +22,8 @@ import {
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
 } from '@/lib/shutdown-state'
+import { ConvergeBusyError } from '@/services/config-release/release'
 import {
-  ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
   isConvergenceInFlight,

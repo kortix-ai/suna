@@ -5,10 +5,12 @@ import type {
   SecretDeliveryBlockedReason,
   SecretEgressPolicy,
 } from './secrets';
+import type { ConnectionShare } from './connectors';
 import {
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
   deleteProjectSecret,
+  listProjectProviderOAuth,
   listProjectSecrets,
   pollProjectProviderOAuth,
   setPersonalProjectSecret,
@@ -80,6 +82,33 @@ test('upsertProjectSecret includes an explicit identifier when given', async () 
   nextResponse = { status: 200, body: { name: 'FOO' } };
   await upsertProjectSecret('P1', { name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
   expect(last().body).toEqual({ name: 'FOO', identifier: 'GMAPS-backup', value: 'bar' });
+});
+
+test('upsertProjectSecret sends who can use the value as shared_with ([] = everyone)', async () => {
+  nextResponse = { status: 200, body: { name: 'DEEL_API_TOKEN' } };
+  await upsertProjectSecret('P1', {
+    name: 'DEEL_API_TOKEN',
+    value: 'token',
+    shared_with: [{ principal_type: 'user', principal_id: 'U1' }],
+  });
+  expect(last().body).toEqual({
+    name: 'DEEL_API_TOKEN',
+    value: 'token',
+    shared_with: [{ principal_type: 'user', principal_id: 'U1' }],
+  });
+  await upsertProjectSecret('P1', { name: 'DEEL_API_TOKEN', shared_with: [] });
+  expect(last().body).toEqual({ name: 'DEEL_API_TOKEN', shared_with: [] });
+});
+
+test('listProjectSecrets returns each value\'s audience and whether the caller can use it', async () => {
+  const share = { grant_id: 'G1', principal_type: 'member' as const, principal_id: 'U1', label: 'a@example.test', expires_at: null };
+  nextResponse = { status: 200, body: { items: [{ identifier: 'DEEL_API_TOKEN', shared_with: [share], usable: false }], required: [], optional: [] } };
+  const res = await listProjectSecrets('P1');
+  const item = res.items[0]!;
+  const sharedWith: ConnectionShare[] | undefined = item.shared_with;
+  const usable: boolean | undefined = item.usable;
+  expect(sharedWith).toEqual([share]);
+  expect(usable).toBe(false);
 });
 
 test('upsertProjectSecret sends an explicit server consumer without a plaintext transition', async () => {
@@ -166,6 +195,16 @@ test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () =
     },
   });
   expect(result.status).toBe(201);
+});
+
+test('listProjectProviderOAuth returns the connected provider logins', async () => {
+  const items = [{ provider_id: 'opencode-go', expires_in_ms: 1000, updated_at: '2026-10-01T00:00:00.000Z' }];
+  nextResponse = { status: 200, body: { items } };
+  const result = await listProjectProviderOAuth('P1');
+  expect(last().url).toContain('/projects/P1/oauth');
+  expect(last().url.endsWith('/oauth')).toBe(true);
+  expect(last().method).toBe('GET');
+  expect(result).toEqual(items);
 });
 
 test('startProjectProviderOAuth posts to the provider start endpoint with the sharing intent', async () => {

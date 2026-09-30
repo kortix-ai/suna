@@ -512,12 +512,12 @@ export function auditWritesAreSynchronous(): boolean {
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   const scope = currentInboundAuditScope();
-  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
   if (auditWritesAreSynchronous()) {
     await insertAuditEvent(auditDb(), input);
-    return;
+  } else {
+    getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
   }
-  getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
+  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
 }
 
 /**

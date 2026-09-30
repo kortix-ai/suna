@@ -17,7 +17,6 @@ import {
   WarningCircleIcon as CircleAlert,
   ClipboardIcon as ClipboardCopy,
   CopyIcon as Copy,
-  DownloadIcon as Download,
   ClockCounterClockwiseIcon as History,
   PencilSimpleIcon,
   ArrowClockwiseIcon as RefreshCw,
@@ -26,6 +25,7 @@ import {
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FileNode } from '../types';
+import { Download } from '@/features/icon/icons/download';
 
 /** Git status for display purposes */
 export type GitStatusType = 'added' | 'deleted' | 'modified';

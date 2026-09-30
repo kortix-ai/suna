@@ -74,6 +74,7 @@ export interface OpencodeAgentConfig {
   /** The agent's `.md` body (frontmatter stripped) — its system prompt. */
   prompt?: string;
   disable?: boolean;
+  tools?: Record<string, boolean>;
   hidden?: boolean;
   options?: Record<string, unknown>;
   color?: string;
@@ -404,6 +405,7 @@ function compileAgentBlock(
   // `enabled` is omitted (the default, true), whatever the `.md` itself set
   // for `disable` (if anything) passes through untouched above.
   if (block.enabled === false) out.disable = true;
+  if (block.tools !== undefined) out.tools = block.tools;
 
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);

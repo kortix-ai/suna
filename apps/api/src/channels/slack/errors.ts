@@ -104,10 +104,13 @@ function isUsageLimit(status: number | undefined, lower: string): boolean {
   );
 }
 
-// The conversation outgrew the model's context window. Common, distinct, and
-// user-actionable (start a fresh thread / summarize).
-function isContextWindow(lower: string): boolean {
+// The conversation outgrew the model's context window. OpenCode names it
+// `ContextOverflowError` ("Conversation history too large to compact - exceeds
+// model context limit" when its own compaction failed); a provider says it in
+// its own words.
+function isContextWindow(name: string, lower: string): boolean {
   return (
+    name === 'ContextOverflowError' ||
     lower.includes('context length') ||
     lower.includes('context window') ||
     lower.includes('maximum context') ||
@@ -297,13 +300,15 @@ export function classifyTurnError(
     };
   }
 
-  // 5. Conversation outgrew the context window.
-  if (isContextWindow(lower)) {
+  // 5. Conversation outgrew the context window. OpenCode compacts a session
+  //    on overflow by itself, so this reaches a thread only when that failed.
+  //    A request to summarize needs the same full history and fails the same way.
+  if (isContextWindow(name, lower)) {
     return {
       title: 'Conversation too long',
       text:
         `:books: *This conversation got too long for the model's context window.*` +
-        ` Start a fresh thread (or ask me to summarize) and continue from there.`,
+        ` Start a new thread to continue.`,
       aborted: false,
     };
   }

@@ -132,7 +132,18 @@
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
     "selectedOneForSession": "{count} chave selecionada para esta sessão",
-    "selectedOne": "{count} chave selecionada"
+    "selectedOne": "{count} chave selecionada",
+    "opencodeDeviceDescription": "Copie este código. Depois abra a página do OpenCode e insira-o para conectar seu workspace.",
+    "opencodeStarting": "Conectando ao OpenCode…",
+    "opencodeConnected": "Conectado com OpenCode",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Entre com sua conta do OpenCode. Salvamos o login como um segredo de projeto criptografado para que sessões futuras o reutilizem.",
+    "opencodeGoConnectedBanner": "OpenCode Go conectado.",
+    "opencodeGoDisconnected": "OpenCode Go desconectado",
+    "opencodeGoConnect": "Conectar OpenCode Go",
+    "opencodeGoReconnect": "Reconectar OpenCode Go",
+    "opencodeGoDisconnect": "Desconectar OpenCode Go",
+    "opencodeGoFailed": "Não foi possível conectar o OpenCode Go"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
@@ -19045,7 +19056,16 @@
       "text2bbd1ec2197d": "App conectado",
       "textda3d3fb8f598": "Sessão do agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Qualquer credencial"
+      "text36fe0f55b7f5": "Qualquer credencial",
+      "textbfda026e6c59": "Vinculado",
+      "text72ea4fa7caf9": "Ditado interrompido: {value0}",
+      "text557b623f9a33": "Não foi possível iniciar o ditado. Verifique o acesso ao microfone.",
+      "textb43c4884c3be": "Controles de ditado",
+      "textd31d065a762c": "Cancelar ditado",
+      "textbbb4106e8144": "Ouvindo…",
+      "text7458028e0d1d": "Concluir ditado",
+      "text9c84d6622566": "Ditar mensagem",
+      "textf164e4b031dc": "Presença na sessão atualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20205,6 +20225,7 @@
     "commandCopied": "Comando copiado",
     "copyFailed": "Falha ao copiar",
     "copyCommand": "Copiar comando",
+    "copyCliCommand": "Copiar comando de instalação",
     "authorizeCodeHint": "Confira se este código corresponde ao exibido no seu computador.",
     "whoCanUse": "Quem pode usar este computador",
     "onlyYouDescription": "Só você, em todos os projetos, nas suas sessões privadas.",

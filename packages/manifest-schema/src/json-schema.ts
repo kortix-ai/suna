@@ -612,7 +612,16 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         description: "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md.",
       },
       enabled: { type: 'boolean' },
+      tools: { type: 'object', additionalProperties: { type: 'boolean' } },
       sandbox: SLUG_SCHEMA,
+      // Declaration only; no provider network boundary enforces this yet.
+      network_egress: {
+        type: 'object',
+        required: ['version', 'default', 'rules'],
+        properties: { version: { const: 1 }, default: { const: 'deny' }, rules: { type: 'array', maxItems: 0 } },
+        additionalProperties: false,
+        description: 'Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships.',
+      },
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',

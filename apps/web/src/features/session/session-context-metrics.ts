@@ -57,9 +57,12 @@ export function getSessionContextMetrics(
   }
   if (!last) return { totalCost, context: undefined };
 
-  const provider = (providers as any)?.all?.find((p: any) => p.id === last!.providerID);
-  const model = provider?.models?.[last.modelID] as any;
-  const limit = model?.limit?.context as number | undefined;
+  const provider = providers?.all?.find((p) => p.id === last.providerID);
+  const model = provider?.models?.[last.modelID];
+  const modelProvider = model && 'provider' in model && typeof model.provider === 'string'
+    ? model.provider
+    : undefined;
+  const limit = model?.limit?.context;
   const total = tokenTotal(last);
 
   // The gateway registers every model under the single synthetic `kortix`
@@ -69,14 +72,14 @@ export function getSessionContextMetrics(
   // "anthropic"); prefer that for display, same fallback order as
   // `pickerGroupId`/`pickerGroupLabel` in ./model-grouping.ts.
   const upstreamProviderId =
-    last.providerID === 'kortix' && model?.provider ? model.provider : last.providerID;
+    last.providerID === 'kortix' && modelProvider ? modelProvider : last.providerID;
 
   return {
     totalCost,
     context: {
       message: last,
       providerLabel:
-        PROVIDER_LABELS[upstreamProviderId] ?? (provider as any)?.name ?? last.providerID,
+        PROVIDER_LABELS[upstreamProviderId] ?? provider?.name ?? last.providerID,
       modelLabel: model?.name ?? last.modelID,
       limit,
       input: last.tokens?.input ?? 0,

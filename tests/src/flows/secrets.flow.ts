@@ -1415,3 +1415,160 @@ flow(
     });
   },
 );
+
+// ── SEC-AUD-1 — who can use a secret value ────────────────────────────────
+// A secret value shared with specific people reaches only them: directly, or
+// in their own PRIVATE session. The proof is the credential that arrives at a
+// runner-local upstream through the real connector gateway — the same path a
+// connector bound to a payroll token takes.
+flow('SEC-AUD-1', {
+  domain: 'secrets',
+  requires: ['database'],
+  timeoutMs: 120_000,
+  routes: [
+    'POST /v1/projects/:projectId/secrets',
+    'GET /v1/projects/:projectId/secrets',
+    'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+    'POST /v1/connectors/projects/:projectId/call',
+    'POST /v1/connectors/call',
+    'POST /v1/accounts/tokens',
+  ],
+}, async (ctx) => {
+  const { createServer } = await import('node:http');
+  const { Client: PgClient } = await import('pg');
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
+  // The value's person, and a manager outside its audience: same role, so
+  // only the audience separates what the two can use.
+  const holder = await team.addMember('member');
+  await team.grantProjectRole(project.id, holder.userId!, 'manager');
+  const outsider = await team.addMember('member');
+  await team.grantProjectRole(project.id, outsider.userId!, 'manager');
+  const asHolder = ctx.client.as(holder);
+  const params = { projectId: project.id };
+  const databaseUrl = ctx.env.databaseUrl as string;
+  const local = /localhost|127\.0\.0\.1/.test(databaseUrl);
+  const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+
+  const seen: string[] = [];
+  const upstream = createServer((req, res) => {
+    seen.push(String(req.headers.authorization ?? ''));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"ok":true}');
+  });
+  const port = await new Promise<number>((resolve) =>
+    upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+  );
+  const slug = `ke2e-payroll-${Date.now().toString(36)}`;
+  const call = (as: typeof holder) =>
+    ctx.client.as(as).post('/v1/connectors/projects/:projectId/call', { connector: slug, action: 'list', args: {} }, { params });
+  const listed = async (as: typeof holder) => {
+    const r = await ctx.client.as(as).get('/v1/projects/:projectId/secrets', { params });
+    r.status(200);
+    return r.json<{ items: Array<Record<string, any>> }>().items.find((item) => item.identifier === 'PAYROLL_API_TOKEN');
+  };
+  const share = (shared_with: unknown[]) =>
+    asHolder.post('/v1/projects/:projectId/secrets', { name: 'PAYROLL_API_TOKEN', shared_with }, { params });
+  // A session-bound agent token for a session of `holder` — the credential a
+  // sandbox runs with. Its person is decided by the session, never the token.
+  const sessionToken = async (session: { visibility: 'private' | 'project'; metadata?: Record<string, unknown> }) => {
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id, accountId: team.id, userId: holder.userId!, ...session,
+    });
+    const minted = await asHolder.post('/v1/accounts/tokens', { name: 'Payroll agent', account_id: team.id });
+    minted.status(201);
+    const credential = minted.json<{ token_id: string; secret_key: string }>();
+    await db.query("INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status) VALUES ($1::uuid, $1, $2, $3, 'active')", [sessionId, team.id, project.id]);
+    await db.query('UPDATE kortix.account_tokens SET project_id = $2, session_id = $3, agent_grant = $4::jsonb, account_id = $5 WHERE token_id = $1', [
+      credential.token_id, project.id, sessionId,
+      JSON.stringify({ agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' }), team.id,
+    ]);
+    return ctx.client.withBearer(credential.secret_key, 'BOUND_SESSION');
+  };
+  const agentCall = (agent: Awaited<ReturnType<typeof sessionToken>>) =>
+    agent.post('/v1/connectors/call', { connector: slug, action: 'list', args: {} });
+
+  try {
+    await db.connect();
+    await ctx.step('a manager stores a connector credential only they can use → 200, listed with their audience', async () => {
+      (await asHolder.post('/v1/projects/:projectId/secrets', {
+        name: 'PAYROLL_API_TOKEN', value: 'payroll-holder-value', strategy: 'broker', consumer: 'connector',
+        shared_with: [{ principal_type: 'user', principal_id: holder.userId }],
+      }, { params })).status(200);
+      const row = await listed(holder);
+      if (!row || row.usable !== true || row.shared_with?.length !== 1 || row.shared_with[0].principal_id !== holder.userId) {
+        throw new Error(`holder view is wrong: ${JSON.stringify(row)}`);
+      }
+    });
+
+    await ctx.step('a manager outside the audience still lists it, marked not usable, so they can widen it', async () => {
+      const row = await listed(outsider);
+      if (!row || row.usable !== false) throw new Error(`outsider view is wrong: ${JSON.stringify(row)}`);
+    });
+
+    await ctx.step('bind it to an OpenAPI connector with bearer auth', async () => {
+      const connector = await db.query<{ connector_id: string }>(
+        `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+         VALUES ($1, $2, $3, 'KE2E Payroll', 'openapi', $4::jsonb, 'active') RETURNING connector_id`,
+        [team.id, project.id, slug, JSON.stringify({ auth: { type: 'bearer' } })],
+      );
+      const connectorId = connector.rows[0]!.connector_id;
+      await db.query(
+        `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+         VALUES ($1, $2, $3, 'project', 'KE2E Payroll', 'active', true, $4::jsonb)`,
+        [team.id, project.id, connectorId, JSON.stringify({ provider: 'openapi', connector_slug: slug })],
+      );
+      await db.query(
+        `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+         VALUES ($1, 'list', 'list', 'List contracts', '{"type":"object"}'::jsonb, 'read', $2::jsonb)`,
+        [connectorId, JSON.stringify({ kind: 'openapi', method: 'GET', path: '/contracts', server: `http://127.0.0.1:${port}` })],
+      );
+      (await asHolder.put('/v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+        { secret_identifier: 'PAYROLL_API_TOKEN' }, { params: { ...params, slug } })).status(200);
+    });
+
+    await ctx.step('the holder calls the connector → the upstream receives the holder value', async () => {
+      (await call(holder)).status(200);
+      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`upstream saw ${seen.at(-1)}`);
+    });
+
+    await ctx.step('a manager outside the audience calls it → denied credential_not_shared, and nothing reaches the upstream', async () => {
+      const before = seen.length;
+      const r = await call(outsider);
+      r.body().has('$.status', 'denied').has('$.reason', 'credential_not_shared');
+      if (seen.length !== before) throw new Error('a denied call reached the upstream');
+    });
+
+    await ctx.step("the holder's PRIVATE session uses it; their shared session and a trigger run do not", async () => {
+      (await agentCall(await sessionToken({ visibility: 'private' }))).status(200);
+      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`private session sent ${seen.at(-1)}`);
+      const before = seen.length;
+      (await agentCall(await sessionToken({ visibility: 'project' })))
+        .body().has('$.reason', 'credential_not_shared');
+      (await agentCall(await sessionToken({ visibility: 'private', metadata: { trigger_kind: 'cron', trigger_slug: 'nightly' } })))
+        .body().has('$.reason', 'credential_not_shared');
+      if (seen.length !== before) throw new Error('a shared session or a trigger reached the upstream');
+    });
+
+    await ctx.step('an agent session cannot change who can use a secret → 403', async () => {
+      const agent = await sessionToken({ visibility: 'private' });
+      (await agent.post('/v1/projects/:projectId/secrets', { name: 'PAYROLL_API_TOKEN', shared_with: [] }, { params }))
+        .status(403);
+    });
+
+    await ctx.step('the holder widens it to everyone ([]) → the other manager call now succeeds', async () => {
+      (await share([])).status(200);
+      (await call(outsider)).status(200);
+      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`outsider call sent ${seen.at(-1)}`);
+      const row = await listed(outsider);
+      if (!row || row.usable !== true || row.shared_with.length !== 0) throw new Error(`widened view is wrong: ${JSON.stringify(row)}`);
+    });
+
+    await ctx.step('malformed shared_with → 400 with the accepted shape', async () => {
+      (await share([{ principal_type: 'robot', principal_id: 'x' }])).status(400);
+    });
+  } finally {
+    upstream.close();
+    await db.end();
+  }
+});
