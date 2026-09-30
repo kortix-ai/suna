@@ -2,20 +2,13 @@
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
-import { errorToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
-import {
-  restartProjectSession,
-  sessionStartKey,
-  type SessionStartResult,
-  type SessionStartStage,
-} from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
-import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
+import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { useEffect, useState } from 'react';
+import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
+import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
+import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * The ONE loader shown while a session's Kortix Computer comes up — full-screen
@@ -117,6 +110,29 @@ function useBootProgress(stage: SessionStartStage): { active: number; now: numbe
   }
 
   return { active: activeStep(stage, now - stageEnteredAt), now };
+}
+
+/**
+ * The boot clock a restart carries. The shared restart hook owns the whole
+ * mutation, so the success signal this file used to read out of a hand-rolled
+ * `onSuccess` is the hook's own state: its `errorMessage` is null exactly when
+ * a settled restart succeeded, so a pending→idle edge without an error resets
+ * the clock. A rejected restart keeps the old clock, so the stuck fallback
+ * stays available for a retry.
+ */
+function useRestartedBootClock(restart: {
+  isPending: boolean;
+  errorMessage: string | null;
+}): number {
+  const [clockStart, setClockStart] = useState(() => Date.now());
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !restart.isPending && !restart.errorMessage) {
+      setClockStart(Date.now());
+    }
+    wasPending.current = restart.isPending;
+  }, [restart.isPending, restart.errorMessage]);
+  return clockStart;
 }
 
 /** The stalled-boot escape hatch, shared by the loader and instant session shell. */
@@ -258,8 +274,6 @@ export function SessionStartingLoader({
   reason?: string | null;
   failure?: StartFailure;
 }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
   const [delayElapsed, setDelayElapsed] = useState(false);
   const show = delayMs <= 0 || delayElapsed;
   useEffect(() => {
@@ -268,34 +282,21 @@ export function SessionStartingLoader({
     return () => clearTimeout(timeout);
   }, [delayMs]);
 
+  const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
-  const [clockStart, setClockStart] = useState(now);
+  const clockStart = useRestartedBootClock(restart);
   const slow = now - clockStart >= SLOW_AFTER_MS;
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
-
-  const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId!, sessionId!),
-    onSuccess: () => {
-      setClockStart(Date.now());
-      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
-      queryClient.invalidateQueries({
-        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
-      });
-    },
-    onError: (error) => {
-      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text1604d2906a45'));
-    },
-  });
 
   return (
     <QuietProgressLoader
       active={active}
       canRestart={canRestart}
       note={statusNote}
-      onRestart={() => restartMutation.mutate()}
-      pending={restartMutation.isPending}
+      onRestart={restart.restart}
+      pending={restart.isPending}
       show={show}
       slow={slow}
       stuck={stuck}
@@ -325,28 +326,14 @@ export function SessionConnectingBanner({
   failure?: StartFailure;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
+  const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
   const { active, now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
-  const [clockStart, setClockStart] = useState(now);
+  const clockStart = useRestartedBootClock(restart);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
   const steps = useLocalizedUiCatalog(STEPS);
   const step = steps[Math.min(active, steps.length - 1)];
-
-  const restartMutation = useMutation({
-    mutationFn: () => restartProjectSession(projectId!, sessionId!),
-    onSuccess: () => {
-      setClockStart(Date.now());
-      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId!, sessionId!) });
-      queryClient.invalidateQueries({
-        queryKey: qk.project.sessionSandbox(projectId ?? '', sessionId ?? ''),
-      });
-    },
-    onError: (error) => {
-      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text1604d2906a45'));
-    },
-  });
 
   return (
     <div
@@ -370,10 +357,10 @@ export function SessionConnectingBanner({
             variant="ghost"
             size="sm"
             className="pointer-events-auto -mr-2 h-6 px-2 text-xs"
-            disabled={restartMutation.isPending}
-            onClick={() => restartMutation.mutate()}
+            disabled={restart.isPending}
+            onClick={restart.restart}
           >
-            {restartMutation.isPending ? tI18nComplete.raw('text75d0f1469d16') : 'Restart'}
+            {restart.isPending ? tI18nComplete.raw('text75d0f1469d16') : 'Restart'}
           </Button>
         ) : null}
       </div>

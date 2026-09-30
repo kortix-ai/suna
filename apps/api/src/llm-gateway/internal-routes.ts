@@ -21,6 +21,9 @@ import { gatewayModelCatalog } from './models/catalog-models';
 import { servableProjectCatalog } from './models/servable-catalog';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { coolDownAccountSecret } from '../secrets/account-resource';
+import { refreshRefusedCodexAccountLogin } from './credentials/codex';
+import { refreshRefusedOpencodeLogin } from './credentials/opencode-console';
+import { codexDescriptor } from './resolution/descriptors';
 import { resolveGatewayRoute } from './routing';
 
 // HTTP control plane for the OUT-OF-PROCESS gateway pod. Every handler is a thin
@@ -105,6 +108,36 @@ export function createInternalGatewayRoutes() {
     if (!parsed.success) return c.json({ error: 'Invalid pool rate limit' }, 400);
     await coolDownAccountSecret(parsed.data.secretId, parsed.data.principal.accountId, parsed.data.seconds);
     return c.json({ ok: true });
+  });
+
+  // The provider refused a ChatGPT or OpenCode login (401): a fresh token to retry with,
+  // or null. Only the token and its headers change; the gateway keeps the rest
+  // of the descriptor it holds.
+  app.post('/refresh-credential', async (c) => {
+    const parsed = z.object({
+      principal: z.object({
+        accountId: z.string().uuid(), projectId: z.string().uuid(), userId: z.string().uuid(),
+        sessionId: z.string().nullish(),
+      }),
+      secretId: z.string().uuid(),
+      failedKeySha256: z.string().regex(/^[0-9a-f]{64}$/),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'Invalid credential refresh' }, 400);
+    const { principal, secretId, failedKeySha256 } = parsed.data;
+    // An OpenCode Console login keeps its descriptor's base URL; only the token
+    // and the workspace header change.
+    const opencode = await refreshRefusedOpencodeLogin({
+      projectId: principal.projectId, accountId: principal.accountId, userId: principal.userId,
+      sessionId: principal.sessionId ?? null, secretId, failedKeySha256,
+    });
+    if (opencode) return c.json({ descriptor: { apiKey: opencode.access } });
+    const credential = await refreshRefusedCodexAccountLogin({
+      projectId: principal.projectId, accountId: principal.accountId, userId: principal.userId,
+      sessionId: principal.sessionId ?? null, secretId, failedKeySha256,
+    });
+    if (!credential) return c.json({ descriptor: null });
+    const { apiKey, headers } = codexDescriptor(credential, '');
+    return c.json({ descriptor: { apiKey, headers } });
   });
 
   app.post('/resolve-route', async (c) => {

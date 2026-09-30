@@ -31,6 +31,7 @@ import {
   SessionConnectorBindingsSchema,
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
+  SessionUpdateInputSchema,
   SessionScopeInputSchema,
   SessionScopeSchema,
   SessionRuntimeContextSchema,
@@ -69,6 +70,31 @@ describe('connection terminology', () => {
         metadata: {},
       }),
     ).toMatchObject({ connector_alias: 'gmail', status: 'active' });
+    const computer = {
+      connection_id: '11111111-2222-4333-8444-555555555556',
+      connector_alias: 'computer',
+      owner_type: 'member' as const,
+      owner_id: '11111111-2222-4333-8444-555555555557',
+      label: 'Studio Mac',
+      status: 'active' as const,
+      is_default: true,
+      metadata: {},
+      tunnel_id: '11111111-2222-4333-8444-555555555558',
+      machine: { online: true, last_heartbeat_at: '2026-09-28T00:00:00.000Z', platform: 'darwin' },
+    };
+    expect(ConnectionSchema.parse(computer)).toEqual(computer);
+    const asking = {
+      ...computer,
+      machine: { ...computer.machine, access: { mode: 'ask' as const, granted_until: null } },
+    };
+    expect(ConnectionSchema.parse(asking)).toEqual(asking);
+    expect(() =>
+      ConnectionSchema.parse({ ...computer, machine: { ...computer.machine, access: { mode: 'sometimes' } } }),
+    ).toThrow();
+    expect(ConnectionSchema.parse({ ...computer, tunnel_id: null, machine: null })).toMatchObject({
+      tunnel_id: null,
+      machine: null,
+    });
     expect(
       ReconcileConnectionInputSchema.parse({
         connector_alias: 'gmail',
@@ -107,7 +133,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     effective_project_role: 'manager',
     dashboard_url: 'https://kortix.com/projects/11111111-2222-4333-8444-555555555555',
     experimental: {
-      agent_tunnel: false,
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
@@ -120,11 +145,11 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       warm_sessions: false,
       secrets_egress: false,
       pi_worker: false,
-      session_transcript_history: false,
       pooled_provider_secrets: false,
       pi_harness: false,
       config_releases: true,
       agent_principal: false,
+      us_region: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -143,13 +168,16 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_provider: 'daytona',
     sandbox_id: null,
     sandbox_url: null,
+    runtime_session_id: 'ses_abc',
     opencode_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
+    labels: [],
     agent_name: 'default',
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
+    runtime_sessions: [],
     opencode_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
@@ -685,7 +713,6 @@ describe('envelopes', () => {
 
   test('feature flag keys stay in sync with the map schema', () => {
     expect(FEATURE_FLAG_KEYS).toEqual([
-      'agent_tunnel',
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
@@ -698,11 +725,11 @@ describe('envelopes', () => {
       'warm_sessions',
       'secrets_egress',
       'pi_worker',
-      'session_transcript_history',
       'pooled_provider_secrets',
       'pi_harness',
       'config_releases',
       'agent_principal',
+      'us_region',
     ]);
   });
 
@@ -789,6 +816,11 @@ describe('SessionCreateInputSchema runtime_context', () => {
     expect(
       SessionCreateInputSchema.safeParse({ mcp: { url: 'https://attacker.test' } }).success,
     ).toBe(false);
+  });
+
+  test('accepts the model under its neutral name', () => {
+    expect(SessionCreateInputSchema.safeParse({ model: 'kortix/glm-5.3-flash' }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ model: '' }).success).toBe(false);
   });
 
   test('retains deprecated camelCase inputs already accepted by the route', () => {
@@ -1336,4 +1368,21 @@ describe('SecretEgressPolicySchema — `inject` is optional', () => {
         .success,
     ).toBe(false);
   });
+});
+test('session create bounds labels', () => {
+  expect(SessionCreateInputSchema.parse({ labels: ['  urgent  '] }).labels).toEqual(['urgent']);
+  expect(SessionCreateInputSchema.safeParse({ labels: Array(21).fill('x') }).success).toBe(false);
+  expect(SessionCreateInputSchema.safeParse({ labels: [' '] }).success).toBe(false);
+  expect(SessionCreateInputSchema.safeParse({ labels: ['x'.repeat(65)] }).success).toBe(false);
+  expect(SessionCreateInputSchema.parse({ labels: ['bug', ' bug', 'ui'] }).labels).toEqual(['bug', 'ui']);
+});
+test('session metadata is capped at 16 KB of JSON on create and update', () => {
+  expect(SessionCreateInputSchema.safeParse({ metadata: { a: 'x'.repeat(16_000) } }).success).toBe(true);
+  expect(SessionCreateInputSchema.safeParse({ metadata: { a: 'x'.repeat(16_385) } }).success).toBe(false);
+  expect(SessionUpdateInputSchema.safeParse({ metadata: { a: 'x'.repeat(16_385) } }).success).toBe(false);
+});
+test('session update accepts name, labels and metadata only', () => {
+  expect(SessionUpdateInputSchema.parse({ labels: ['a', 'a'], metadata: { k: null } })).toEqual({ labels: ['a'], metadata: { k: null } });
+  expect(SessionUpdateInputSchema.parse({ name: null })).toEqual({ name: null });
+  expect(SessionUpdateInputSchema.safeParse({ labels: 'a' }).success).toBe(false);
 });

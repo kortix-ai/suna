@@ -14,6 +14,7 @@ import type {
 import { requireOpenCodeConfig } from './config'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import { isInReleaseStore, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { managedOverlayRoot } from './project-layout'
 import {
   captureProcessOutput,
   latchOpencodePinned,
@@ -269,6 +270,8 @@ async function reconcileOpenCodeAssets(
   // Installing and restarting OpenCode can sever a turn. Only proceed when
   // the daemon's turn oracle confirms idle; unreadable counts as busy.
   let opencode: HarnessAssetOutcome = 'skipped'
+  /** The OpenCode release on disk after this pass, once known. */
+  let version: string | undefined
   try {
     const component = manifestComponent(manifest.components, 'opencode')
     const expected = optionalString(component?.version)
@@ -329,8 +332,7 @@ async function reconcileOpenCodeAssets(
     }
     if (installed !== null && !binaryStale && !pinStale) {
       opencode = 'current'
-      nextState.opencode_version = installed
-      return { components: { opencode }, reasons, state: nextState }
+      return { components: { opencode }, reasons, state: nextState, version: installed }
     }
     const probe = options.turnProbe ?? opencodeTurnInFlight
     // A missing managed binary cannot own a turn. Probing its absent
@@ -451,7 +453,7 @@ async function reconcileOpenCodeAssets(
       return { components: { opencode }, reasons, state: nextState }
     }
     opencode = 'updated'
-    nextState.opencode_version = expected
+    version = expected
     logger.info('[runtime-assets] opencode converged', {
       from: installed,
       to: expected,
@@ -470,6 +472,20 @@ async function reconcileOpenCodeAssets(
     components: { opencode },
     reasons,
     state: nextState,
+    ...(version ? { version } : {}),
+  }
+}
+
+/** `opencode --version` prints a bare version, so the image's binary can be asked. */
+async function bakedOpencodeVersion(path: string): Promise<string | undefined> {
+  try {
+    const proc = Bun.spawn([path, '--version'], { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
+    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
+    if (code !== 0) return undefined
+    const version = out.trim()
+    return OPENCODE_VERSION.test(version) ? version : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -479,14 +495,18 @@ export function createOpenCodeAssetsService(
   options: OpenCodeAssetsOptions = {},
 ): HarnessAssetsService {
   return {
+    harness: 'opencode',
     componentNames: ['opencode'],
+    bakedVersion: () => bakedOpencodeVersion(OPENCODE_CURRENT_LINK),
     // The overlay goes where opencode READS, and that is the boot link's
     // target — the one place the boot path wrote the answer. Re-deriving it
     // from the running report and the working tree is how an overlay once
     // rewrote tracked managed skills in `/workspace` (verification DEF-6).
+    // Returns the dir whose `skills/` takes the overlay: the config dir itself,
+    // or the project root for a root-layout working tree (`managedOverlayRoot`).
     resolveConfigDir: async (cfg) => {
       const target = await readBootLinkTarget()
-      if (target && existsSync(target)) return target
+      if (target && existsSync(target)) return managedOverlayRoot(target, cfg.projectTarget)
       return requireOpenCodeConfig(cfg).defaultOpencodeConfigDir
     },
     // A release is the platform's own sealed copy; a working tree is not.

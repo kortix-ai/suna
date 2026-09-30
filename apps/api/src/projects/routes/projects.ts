@@ -7,7 +7,7 @@ import { ACCOUNT_ACTIONS, assertAuthorized, authorize, listAccessible } from '..
 import { actorOf } from '../../iam/actor';
 import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager } from '../access';
@@ -17,7 +17,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
-import { AnyObject, ProjectSchema, projectsApp } from '../lib/app';
+import { ProjectSchema, projectsApp } from '../lib/app';
 import {
   GitHubInstallationRequiredError,
   createGitHubInstallationInstallUrl,
@@ -39,7 +39,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/',
     tags: ['projects'],
-    summary: 'GET /',
+    summary: 'List projects',
     ...auth,
     responses: {
         200: json(z.array(ProjectSchema), 'Projects the caller can read'),
@@ -120,10 +120,19 @@ projectsApp.openapi(
     method: 'post',
     path: '/',
     tags: ['projects'],
-    summary: 'POST /',
+    summary: 'Create a project from an existing GitHub repository',
+    description:
+      'Import an existing GitHub repository as a project. To create a project with a new repository use POST /v1/projects/provision.',
     ...auth,
       request: {
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            repo_url: z.string().openapi({ description: 'https URL of an existing GitHub repository, e.g. https://github.com/org/repo. camelCase repoUrl is also accepted.' }),
+            name: z.string().optional().openapi({ description: 'Project name. Defaults to the repository name.' }),
+            default_branch: z.string().optional().openapi({ description: 'Branch to track. Defaults to the repository default branch.' }),
+            manifest_path: z.string().optional().openapi({ description: 'Manifest path in the repository. Default kortix.yaml.' }),
+            installation_id: z.string().optional().openapi({ description: 'GitHub App installation id that can read the repository.' }),
+            account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+          }) } } },
       },
     responses: {
         201: json(ProjectSchema, 'The created project'),
@@ -210,7 +219,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/managed-git/status',
     tags: ['projects'],
-    summary: 'GET /managed-git/status',
+    summary: 'Get managed Git availability',
     ...auth,
     responses: {
       200: json(
@@ -244,10 +253,23 @@ projectsApp.openapi(
     method: 'post',
     path: '/provision',
     tags: ['projects'],
-    summary: 'POST /provision',
+    summary: 'Create a project with a new managed repository',
+    description:
+      'Create a project with a new managed repository. Send an Idempotency-Key header to make retries safe.',
     ...auth,
       request: {
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'Project name.' }),
+            provider: z.string().optional().openapi({ description: 'Managed Git provider. Defaults to the deployment default (github).' }),
+            icon: z.string().optional().openapi({ description: 'Project icon name.' }),
+            icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph.' }),
+            source_item_id: z.string().optional().openapi({ description: 'Marketplace project item id to clone into the new repository.' }),
+            starter_template: z.string().optional().openapi({ description: 'Starter template id to seed the repository.' }),
+            default_branch: z.string().optional().openapi({ description: 'Default branch. Default main.' }),
+            seed_starter: z.boolean().optional().openapi({ description: 'Set false when the client makes the first commit itself.' }),
+            marketplace_items: z.array(z.any()).optional().openapi({ description: 'Marketplace items to install into the new project.' }),
+            account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+          }) } } },
       },
     responses: {
         201: json(z.any(), 'OK'),
@@ -280,20 +302,29 @@ projectsApp.openapi(
 // must stay exactly one. Two copies diverge, and the copy that diverges is
 // the one that leaves an orphaned managed repo behind.
 //
-// Framing is a raw Response + ReadableStream — this codebase's one SSE
-// pattern (see tunnel/routes/permission-requests.ts's GET /stream), not
-// `hono/streaming`'s `streamSSE`, which nothing else in apps/api uses.
-// Unlike that tunnel stream, frames here carry NO `event:` line — see the
-// `write` comment below for why.
+// Framing is a raw Response + ReadableStream, not `hono/streaming`'s
+// `streamSSE`, which nothing else in apps/api uses. Frames carry NO `event:`
+// line — see the `write` comment below for why.
 projectsApp.openapi(
   createRoute({
     method: 'post',
     path: '/provision-stream',
     tags: ['projects'],
-    summary: 'POST /provision-stream',
+    summary: 'Create a project with a new managed repository (streamed progress)',
     ...auth,
       request: {
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'Project name.' }),
+            provider: z.string().optional().openapi({ description: 'Managed Git provider. Defaults to the deployment default (github).' }),
+            icon: z.string().optional().openapi({ description: 'Project icon name.' }),
+            icon_glyph: z.string().optional().openapi({ description: 'Project icon glyph.' }),
+            source_item_id: z.string().optional().openapi({ description: 'Marketplace project item id to clone into the new repository.' }),
+            starter_template: z.string().optional().openapi({ description: 'Starter template id to seed the repository.' }),
+            default_branch: z.string().optional().openapi({ description: 'Default branch. Default main.' }),
+            seed_starter: z.boolean().optional().openapi({ description: 'Set false when the client makes the first commit itself.' }),
+            marketplace_items: z.array(z.any()).optional().openapi({ description: 'Marketplace items to install into the new project.' }),
+            account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+          }) } } },
       },
     responses: {
         200: {

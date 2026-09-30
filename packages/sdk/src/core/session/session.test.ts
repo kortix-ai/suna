@@ -42,6 +42,25 @@ describe('session/health', () => {
     expect(isRuntimeReady(null)).toBe(false);
   });
 
+  it('isRuntimeReady reads the harness block before the pre-W3 opencode field', () => {
+    const block = (ready: boolean, state: string) => ({
+      id: 'pi',
+      version: null,
+      state,
+      ready,
+      error: null,
+      session: { id: null, required: true },
+      turn: null,
+      details: {},
+    });
+    // The process is up but the initial session is not pinned yet: not ready,
+    // although the flat field says `ok`.
+    expect(isRuntimeReady({ opencode: 'ok', harness: block(false, 'ok') })).toBe(false);
+    expect(isRuntimeReady({ harness: block(true, 'ok') })).toBe(true);
+    // runtimeReady still wins: it adds the host's workspace checks.
+    expect(isRuntimeReady({ runtimeReady: false, harness: block(true, 'ok') })).toBe(false);
+  });
+
   it('getSessionHealth parses a 200 body + reports ready', async () => {
     respond = () =>
       new Response(JSON.stringify({ status: 'ready', version: 'v9' }), { status: 200 });

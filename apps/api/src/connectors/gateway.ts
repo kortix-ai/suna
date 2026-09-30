@@ -7,11 +7,14 @@ import {
   resolveAttachmentRefs,
 } from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
+import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
+import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelCatalog,
+  withChannelDefaults,
 } from './channels';
 import {
   type ExecResult,
@@ -72,10 +75,9 @@ export interface GatewayConnector {
     | 'channel'
     | 'computer';
   platform?: string | null;
-  /** Server-side machine allowlist for a Computers connector profile. */
-  tunnelIds?: string[] | null;
-  /** Verified machine-owner accounts paired with the Computers allowlist. */
-  tunnelAccountIds?: string[] | null;
+  /** Computer connectors: the paired machine of the resolved account. Null
+   *  when the machine was unpaired. */
+  connectionTunnelId?: string | null;
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
   auth: ConnectorAuth;
@@ -158,8 +160,24 @@ export interface GatewayDeps {
     projectId: string,
     slug: string,
   ): Promise<
-    'connector_not_found' | 'connector_not_connected' | 'connector_disabled' | 'account_required'
+    | 'connector_not_found'
+    | 'connector_not_connected'
+    | 'connector_disabled'
+    | 'account_required'
+    | 'computer_unpaired'
   >;
+  /**
+   * v2 X7: the retired `computer` call argument named a machine. Resolves it
+   * (an account label or the machine's tunnel id) to one of the caller's
+   * reachable computer accounts on `slug`. `not_computer` when `slug` is not a
+   * computer connector (the argument then belongs to that connector); null
+   * when nothing the caller may use matches.
+   */
+  selectComputerAccount?(
+    projectId: string,
+    slug: string,
+    selector: unknown,
+  ): Promise<GatewayConnector | null | 'not_computer'>;
   loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
@@ -184,6 +202,20 @@ export interface GatewayDeps {
     channel: string;
     threadTs: string;
   }): Promise<Record<string, unknown>>;
+  /**
+   * Keeps a Slack or Teams channel read inside the calling project's own
+   * conversations (channel-read-scope.ts). Every project in a workspace or
+   * tenant resolves the same platform token, so the token alone does not.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
+  /**
+   * Keeps a Slack write (post, edit, delete, reaction, join) out of other
+   * projects' channels and threads (channel-write-scope.ts): refused before
+   * the call, and a post that landed elsewhere is taken back after it.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -281,17 +313,15 @@ export interface GatewayDeps {
   }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
-   * connectors. Verifies the selected machine belongs to the connector's
-   * stored id + owner-account grant, then relays through the tunnel core.
+   * connectors. Relays one call to the machine of the account the generic
+   * resolver chose, through the tunnel core.
    */
   executeComputerCall?(input: {
+    tunnelId: string;
     accountId: string;
     projectId: string;
     sessionId: string | null;
     actorUserId: string;
-    allowedTunnelIds: string[] | null;
-    allowedTunnelAccountIds: string[] | null;
-    selector: string | null;
     method: string;
     args: Record<string, unknown>;
   }): Promise<ComputerCallOutcome>;
@@ -304,12 +334,20 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      kind: 'permission_required';
-      requestId: string;
+      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+       *  an access refusal on the machine (`computer_access_pending` |
+       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  failure on the machine or in the relay. */
+      kind:
+        | 'computer_unpaired'
+        | 'computer_offline'
+        | 'computer_capability_not_approved'
+        | 'computer_access_pending'
+        | 'computer_access_denied'
+        | 'computer_access_off'
+        | 'error';
       message: string;
-    }
-  | { ok: false; kind: 'no_machine'; message: string }
-  | { ok: false; kind: 'error'; message: string };
+    };
 
 export interface CallInput {
   projectId: string;
@@ -342,7 +380,8 @@ export interface CallResultAccount {
 
 export type CallResult =
   | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
-  | { status: 'denied'; reason: string }
+  /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
+  | { status: 'denied'; reason: string; message?: string }
   | {
       status: 'pending_approval';
       reason: string;
@@ -435,8 +474,7 @@ async function resolveConnectorForCall(
 
 /**
  * The account echo for a successful call — `undefined` when the connector
- * resolved no connection (a no-credential/public connector, or a Computers
- * profile keyed on tunnelIds rather than a `connector_connections` row).
+ * resolved no connection (a no-credential/public connector).
  */
 function gatewayConnectorAccount(connector: GatewayConnector): CallResultAccount | undefined {
   if (!connector.connectionId) return undefined;
@@ -587,11 +625,44 @@ async function appAuthorizationForCall(
   }
 }
 
+/**
+ * The connector's credential is a project secret whose audience does not
+ * include the person this call acts for (projects/lib/secret-audience.ts).
+ * `resolveCredential` throws it instead of returning null, so the caller is
+ * told the truth — not shared with them — rather than `needs_auth`.
+ */
+export class CredentialNotSharedError extends Error {
+  readonly reason = 'credential_not_shared';
+  constructor(identifier: string) {
+    super(
+      `The credential ${identifier} is shared only with specific people, and this call does not run as one of them. ` +
+        'It works in a private session of someone it is shared with. Ask its owner to share it with you.',
+    );
+    this.name = 'CredentialNotSharedError';
+  }
+}
+
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
 
-  const connector = resolved.connector;
+  let connector = resolved.connector;
+  // v2 X7: older agents select a machine with a `computer` argument. Map it to
+  // that account and strip it; relaying it would run the call on the default
+  // machine instead. An unknown name is refused, never ignored.
+  if (input.args && Object.hasOwn(input.args, 'computer') && deps.selectComputerAccount) {
+    const { computer: selector, ...args } = input.args;
+    const selected = await deps.selectComputerAccount(input.projectId, resolved.slug, selector);
+    if (selected !== 'not_computer') {
+      input = { ...input, args };
+      if (!selected) {
+        const reason = `account_not_found: no computer account you can use matches "${String(selector).slice(0, 120)}". Select the computer with --account "<name>".`;
+        await audit(deps, input, null, 'denied', null, { reason: 'account_not_found' });
+        return { status: 'denied', reason };
+      }
+      connector = selected;
+    }
+  }
   if (!connector || !connector.enabled) {
     const reason = !connector
       ? deps.explainMissingConnector
@@ -610,6 +681,26 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: 'action_not_found' };
   }
 
+  // Before any credential, approval or provider call: a read of another
+  // project's conversation, or a write into it, never leaves the API.
+  const channelInput: ChannelReadInput = {
+    projectId: input.projectId,
+    platform: connector.platform ?? null,
+    actionPath: input.actionPath,
+    args: input.args ?? {},
+    risk: action.risk,
+  };
+  const channelGate =
+    connector.provider === 'channel' && deps.gateChannelRead ? await deps.gateChannelRead(channelInput) : null;
+  const channelWrite =
+    connector.provider === 'channel' && deps.gateChannelWrite ? await deps.gateChannelWrite(channelInput) : null;
+  const channelRefusal = channelGate?.refusal ?? channelWrite?.refusal ?? null;
+  if (channelRefusal) {
+    const { reason, message } = channelRefusal;
+    await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+    return { status: 'denied', reason, message };
+  }
+
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
   let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
@@ -617,6 +708,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
+    if (error instanceof CredentialNotSharedError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
+      return { status: 'denied', reason: error.reason, message: error.message };
+    }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
@@ -842,54 +937,41 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       );
     }
 
-    // Computers (Agent Computer Tunnel): relay through the shared tunnel RPC
-    // core. The connector profile owns the machine allowlist.
+    // Computers (Agent Computer Tunnel): the generic resolver chose the
+    // account; its machine receives the call through the shared tunnel core.
     if (connector.provider === 'computer') {
       if (action.binding.kind !== 'tunnel') {
         throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
       }
       if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      if (connector.tunnelIds && connector.tunnelIds.length === 0) {
-        return {
-          status: 'error',
-          reason: 'computer connector has no assigned machines',
-        };
-      }
-      const selector =
-        typeof executionArgs.computer === 'string' ? executionArgs.computer.trim() || null : null;
-      const callArgs = Object.fromEntries(
-        Object.entries(executionArgs).filter(([key]) => key !== 'computer'),
-      );
-      const outcome = await deps.executeComputerCall({
-        accountId: input.accountId,
-        projectId: input.projectId,
-        sessionId: input.sessionId ?? null,
-        actorUserId: input.subject.userId,
-        allowedTunnelIds: connector.tunnelIds ?? null,
-        allowedTunnelAccountIds: connector.tunnelAccountIds ?? null,
-        selector,
-        method: action.binding.method,
-        args: callArgs,
-      });
+      const outcome = connector.connectionTunnelId
+        ? await deps.executeComputerCall({
+            tunnelId: connector.connectionTunnelId,
+            accountId: input.accountId,
+            projectId: input.projectId,
+            sessionId: input.sessionId ?? null,
+            actorUserId: input.subject.userId,
+            method: action.binding.method,
+            args: executionArgs,
+          })
+        : ({
+            ok: false,
+            kind: 'computer_unpaired',
+            message: 'This computer was unpaired. Pair it again to use it.',
+          } as const);
       if (outcome.ok) {
         await audit(deps, input, connector, 'ok', action.risk, {
           method: action.binding.method,
         });
         return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
       }
-      if (outcome.kind === 'permission_required') {
-        await audit(deps, input, connector, 'pending_approval', action.risk, {
-          reason: 'tunnel_permission_required',
-          request_id: outcome.requestId,
-        });
-        return {
-          status: 'pending_approval',
-          reason: `computer_permission_required: approve in Computers (request ${outcome.requestId})`,
-        };
-      }
       await audit(deps, input, connector, 'error', action.risk, {
-        reason: outcome.message.slice(0, 500),
+        reason: outcome.kind,
+        message: outcome.message.slice(0, 500),
       });
+      if (outcome.kind !== 'error') {
+        return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
+      }
       logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
       return { status: 'error', reason: outcome.message };
     }
@@ -957,7 +1039,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         connectedAccountId,
       });
     } else {
-      let providerArgs = executionArgs;
+      let providerArgs =
+        connector.provider === 'channel'
+          ? withChannelDefaults(connector.platform ?? '', input.actionPath, executionArgs)
+          : executionArgs;
       const scope = {
         accountId: input.accountId,
         projectId: input.projectId,
@@ -1013,6 +1098,42 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
+      // A list can hold other projects' conversations, and a thread read can
+      // answer with a different thread: the gate sees the answer first.
+      const scoped = result.ok && channelGate ? await channelGate.answer(result.data) : null;
+      if (scoped && 'refusal' in scoped) {
+        if (attachmentClaim?.claimToken) {
+          await deps.attachmentStore
+            ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+            .catch(() => {});
+        }
+        const { reason, message } = scoped.refusal;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+        return { status: 'denied', reason, message };
+      }
+      if (scoped) result = { ...result, data: scoped.data };
+      // A post that Slack delivered somewhere other than the conversation that
+      // was checked (it resolved a name) is taken back, then refused.
+      const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
+      if (misfire) {
+        const undone = misfire.undo
+          ? await executeCall({
+              binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
+              baseUrl: connector.baseUrl,
+              auth: connector.auth,
+              headers: connector.headers,
+              secret: executionSecret,
+              args: misfire.undo.args,
+              fetchImpl: deps.fetchImpl,
+            })
+              .then((undo) => mapChannelEnvelope(undo).ok)
+              .catch(() => false)
+          : false;
+        const { reason } = misfire.refusal;
+        const message = `${misfire.refusal.message} ${undone ? 'Kortix removed it.' : 'Kortix could not remove it: delete it in Slack.'}`;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message, removed: undone });
+        return { status: 'denied', reason, message };
+      }
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
@@ -1048,9 +1169,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       http_status: result.status,
       reason: reason.slice(0, 500),
     });
-    logger.warn(
-      `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`,
-    );
+    const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
+    if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
+    else logger.warn(message);
     return { status: 'error', reason };
   } catch (e) {
     if (attachmentClaim?.claimToken) {

@@ -28,15 +28,8 @@ import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
-import {
-  deliverGovernance,
-  effectiveReleaseId,
-  manifestFromDescriptor,
-  noteRunningConfig,
-  prepareConfigDir,
-  preparePlatformConfigDir,
-  setRunningConfig,
-} from './config-release'
+import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-release/release'
+import { noteRunningConfig, prepareConfigDir, preparePlatformConfigDir, setRunningConfig } from './config-release'
 import type { ConfigSource } from '@/types/config-release'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
 import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput } from './proven-check'
@@ -315,7 +308,7 @@ function defaultPrepare(input: BootConfigPathInput): (dir: string, platformOwned
   return (dir, platformOwned) =>
     platformOwned
       ? preparePlatformConfigDir(dir, input.managedSkillsDir)
-      : prepareConfigDir(dir, input.managedSkillsDir)
+      : prepareConfigDir(dir, input.managedSkillsDir, {}, input.cfg.projectTarget)
 }
 
 export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<BootConfigPathResult> {

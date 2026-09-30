@@ -198,6 +198,9 @@ mock.module('../iam/authorize', () => {
     // memo for its candidate list, so a stub that omits it is a SyntaxError
     // in every other importer. Empty = this project scopes no agent.
     loadObjectGrants: Object.assign(async () => new Map(), { clear: () => {} }),
+    // The account MFA gate is a pure rule; chat identity linking reads it.
+    mfaGateBlocks: (rec: { accountMfaRequired: boolean }, tokenId: string | null | undefined, mfaAal: string | undefined) =>
+      rec.accountMfaRequired && !tokenId && mfaAal !== 'aal2',
     clearAuthorizeCaches: () => {},
     isImplicitManager: (key: string | null) => key === 'owner' || key === 'admin',
   };
@@ -658,6 +661,8 @@ describe('projects API contract', () => {
 
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
+    // The best-effort timestamp write runs after the response is returned.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dbState.projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
   });
 

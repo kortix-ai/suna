@@ -36,18 +36,10 @@ import { readJsonObject } from '../../shared/http-body';
 // Account-scoped GitHub App install state. The client only receives metadata;
 // installation tokens are minted server-side at repo creation time.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'GET /github/installation',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  async (c: any) => {
+// Both GET routes share this handler: the account's install state and the
+// Vercel-style connections surface serialize the same account-scoped rows
+// under the same authorization.
+const getAccountInstallationsHandler = async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -61,7 +53,20 @@ projectsApp.openapi(
   // used to appear here as a synthetic installation, which made an
   // instance-global credential look like this account's own connection.
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
+};
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'Get the GitHub App installation of the account',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  getAccountInstallationsHandler,
 );
 
 // GET /v1/projects/github/installations?account_id=...
@@ -73,27 +78,13 @@ projectsApp.openapi(
     method: 'get',
     path: '/github/installations',
     tags: ['github'],
-    summary: 'GET /github/installations',
+    summary: 'List GitHub App installations',
     ...auth,
     responses: {
         200: json(z.any(), 'OK'),
     },
   }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
-
-  const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
-  const installUrl = canManageGit
-    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-    : null;
-  // Account connections only. "Kortix managed" is the INSTANCE backend and
-  // has its own namespace (GET /v1/projects/git/backend[/repositories]); it
-  // used to appear here as a synthetic installation, which made an
-  // instance-global credential look like this account's own connection.
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
+  getAccountInstallationsHandler,
 );
 
 /**
@@ -180,7 +171,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installations/linkable',
     tags: ['github'],
-    summary: 'POST /github/installations/linkable',
+    summary: 'List GitHub installations that can be linked',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },
@@ -251,7 +242,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installations/link',
     tags: ['github'],
-    summary: 'POST /github/installations/link',
+    summary: 'Link a GitHub installation to the account',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },
@@ -327,7 +318,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'POST /github/installation',
+    summary: 'Save a GitHub App installation',
     ...auth,
       request: {
         body: { content: { 'application/json': { schema: AnyObject } } },
@@ -413,7 +404,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/github/installation',
     tags: ['github'],
-    summary: 'DELETE /github/installation',
+    summary: 'Remove the GitHub App installation',
     ...auth,
       request: {
         query: z.object({}).passthrough(),
@@ -453,7 +444,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/github/installations/{installationId}',
     tags: ['github'],
-    summary: 'DELETE /github/installations/:installationId',
+    summary: 'Remove a GitHub installation',
     ...auth,
       request: {
         params: z.object({ installationId: z.string() }),
@@ -495,7 +486,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/github/user-token',
     tags: ['github'],
-    summary: 'POST /github/user-token',
+    summary: 'Store a GitHub user token',
     ...auth,
     request: {
       body: { content: { 'application/json': { schema: AnyObject } } },

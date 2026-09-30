@@ -8,6 +8,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { ExecResult } from './call';
 import {
   composioHiddenToolkits,
+  NATIVE_TOOLKITS,
   composioRestClient,
   customAuthConfigIds,
   searchComposioCatalog,
@@ -509,11 +510,12 @@ export async function composioCatalogPage(input: {
 > {
   const runtime = input.runtime ?? getComposioRuntime();
   // The hidden set is read from the REST catalogue snapshot. A caller that
-  // injects a runtime without a REST client has no snapshot, so hides nothing.
+  // injects a runtime without a REST client has no snapshot, so hides only the
+  // toolkits Kortix provides natively.
   const hiddenToolkits =
     input.catalogClient || !input.runtime
       ? composioHiddenToolkits(input.catalogClient ?? composioRestClient())
-      : Promise.resolve(new Set<string>());
+      : Promise.resolve(new Set<string>(NATIVE_TOOLKITS));
   const category = input.category?.trim();
   if (category) {
     if (!runtime.toolkits) throw new Error('Composio toolkit catalogue is unavailable');
@@ -706,7 +708,12 @@ export async function executeComposio(
     result: response.data,
     ...(response.error ? { error: response.error } : {}),
   };
-  return response.error ? { ok: false, status: 502, data } : { ok: true, status: 200, data };
+  // Linear rejects malformed GraphQL from the caller, not from an unavailable provider.
+  const callerError = input.toolkit === 'linear' && input.toolSlug === 'LINEAR_RUN_QUERY_OR_MUTATION' &&
+    typeof response.error === 'string' && /\bCode: (?:GRAPHQL_VALIDATION_FAILED|INPUT_ERROR)\b/.test(response.error);
+  return response.error
+    ? { ok: false, status: callerError ? 400 : 502, data }
+    : { ok: true, status: 200, data };
 }
 
 /** Composio's `ConnectedAccount_BadRequest` for a reused alias. */

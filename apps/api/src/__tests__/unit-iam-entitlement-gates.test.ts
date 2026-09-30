@@ -87,7 +87,7 @@ function buildApp() {
   return app;
 }
 
-const ACCOUNT = 'acct-1';
+const ACCOUNT = '00000000-0000-4000-a000-000000000001';
 
 describe('SCIM tokens — DELETE bypasses the entitlement gate, POST keeps it', () => {
   test('DELETE /scim/tokens/:tokenId succeeds on an unentitled account', async () => {

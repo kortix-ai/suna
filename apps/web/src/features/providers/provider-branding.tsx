@@ -2,10 +2,12 @@
 
 import { cn } from '@/lib/utils';
 import {
+  CATALOG_PROVIDER_ENV,
   MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
 } from '@kortix/llm-catalog';
 import Image from 'next/image';
+import { useState } from 'react';
 
 export const POPULAR_PROVIDER_IDS = [
   'anthropic',
@@ -40,6 +42,7 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
   codex: { src: '/provider-icons/openai.svg', fallback: 'GPT' },
   opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
+  'opencode-go': { src: '/provider-icons/opencode.svg', fallback: 'OC' },
   kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
   'github-copilot': { src: '/provider-icons/github-copilot.svg', fallback: 'GH' },
   google: { src: '/provider-icons/google.svg', fallback: 'GO' },
@@ -90,14 +93,21 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   // Everything else falls back to monochrome initials.
 };
 
+const CATALOG_PROVIDER_IDS = new Set(CATALOG_PROVIDER_ENV.map((provider) => provider.id));
+
 /**
- * Resolve a provider id to its logo asset path, or `undefined` when the id has
- * no mapped mark (the caller falls back to monochrome initials). Keyed on the
- * VERBATIM models.dev provider ids so live-catalog entries resolve — see the
- * icon-map notes above for the Moonshot trio / Bedrock / Vertex cases.
+ * Resolve a provider id to its logo, or `undefined` when there is none (the
+ * caller falls back to monochrome initials). Keyed on the VERBATIM models.dev
+ * provider ids so live-catalog entries resolve — see the icon-map notes above
+ * for the Moonshot trio / Bedrock / Vertex cases. A catalog provider without a
+ * bundled asset uses its models.dev logo; models.dev answers any id with a
+ * generic mark, so an id outside the catalog (a custom provider) keeps initials.
  */
 export function providerIconSrc(providerID: string): string | undefined {
-  return PROVIDER_ICON_MAP[providerID]?.src;
+  const bundled = PROVIDER_ICON_MAP[providerID]?.src;
+  if (bundled) return bundled;
+  if (CATALOG_PROVIDER_IDS.has(providerID)) return `https://models.dev/logos/${providerID}.svg`;
+  return undefined;
 }
 
 function initialsFor(providerID: string, name?: string) {
@@ -130,7 +140,10 @@ export function ProviderLogo({
   className?: string;
   size?: 'xs' | 'small' | 'default' | 'large';
 }) {
-  const iconDef = PROVIDER_ICON_MAP[providerID];
+  // An unreachable models.dev logo (offline self-host) falls back to initials.
+  const [failedSrc, setFailedSrc] = useState<string>();
+  const iconSrc = providerIconSrc(providerID);
+  const src = iconSrc === failedSrc ? undefined : iconSrc;
 
   const sizeClasses = {
     xs: 'size-4',
@@ -155,24 +168,26 @@ export function ProviderLogo({
         // the other sizes read as an avatar, and at 16px a tile around a 12px
         // mark is all frame and no logo. The initials fallback keeps its tile
         // at every size: two bare letters at 9px read as debris, not a logo.
-        iconDef?.src && size === 'xs' ? 'bg-transparent' : 'bg-muted rounded-md',
+        src && size === 'xs' ? 'bg-transparent' : 'bg-muted rounded-md',
         sizeClasses[size],
         className,
       )}
       aria-hidden="true"
     >
-      {iconDef?.src ? (
+      {src ? (
         <Image
-          src={iconDef.src}
+          src={src}
           alt=""
           width={iconSizes[size]}
           height={iconSizes[size]}
+          unoptimized={src.startsWith('https:')}
+          onError={() => setFailedSrc(src)}
           className={cn(
             'object-contain dark:invert',
             // The Kortix mark is drawn edge-to-edge with no built-in padding,
             // so inside a tile it needs its own inset to match the other
             // logos' optical size. At `xs` there is no tile to inset from.
-            iconDef.src === '/kortix-symbol.svg' && (size === 'xs' ? 'size-3.5' : 'size-3'),
+            src === '/kortix-symbol.svg' && (size === 'xs' ? 'size-3.5' : 'size-3'),
           )}
         />
       ) : (

@@ -90,12 +90,10 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
   {
     name: "/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
-    // Anchored on the control's own `disabled`, not on the AccountPicker: the
-    // picker moved into the form (2026-09-17) and a Back link now precedes
-    // Log out in the top row, so "the next </Button> after the picker" is no
-    // longer this button.
-    from: 'disabled={signingOut}',
-    to: '</Button>',
+    // The control moved into `AccountTopBar` (#8286); the page owns only the
+    // `onLogOut` handler it passes in, so the slice is that handler.
+    from: 'onLogOut={() => {',
+    to: 'back={{',
   },
   {
     name: "phone verification's Sign out",
@@ -442,9 +440,9 @@ describe('the three bare logout controls now say something is happening', () => 
     },
     {
       name: "/new's Log out",
-      file: 'features/workspace/new/new-workspace-page.tsx',
-      handler: ['disabled={signingOut}', 'Log out'],
-      control: ['disabled={signingOut}', '</Button>'],
+      file: 'features/workspace/account-top-bar.tsx',
+      handler: ['disabled={signingOut}', 'onSelect={onLogOut}'],
+      control: ['disabled={signingOut}', '</button>'],
       holdsDialog: false,
     },
   ];

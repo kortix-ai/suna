@@ -56,7 +56,8 @@ import {
 } from './connector-identity';
 import { providerLabel } from './provider-label';
 
-import { ComputersAddFlow } from '@/features/workspace/capabilities/connectors/add/computers-add-flow';
+import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
+import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
 import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
 import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
@@ -95,8 +96,7 @@ import {
  *
  *   • `ConnectorModal` reaches it via `connector-accounts.tsx`
  *     (`ConnectionRoster`/`ConnectionSection`/…) and its own
- *     `SetCredentialModal`, and owns the only `usePipedreamConnect` call on
- *     the route.
+ *     `SetCredentialModal`, and owns the account connection flow on the route.
  *   • `CustomConnectorForm` is the Add modal's body.
  *
  * Neither can render before a click, so neither needs to be parsed before
@@ -492,10 +492,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const focusCategory =
     catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
 
+  // The machine list answers 503 on a deployment with computers disabled, so
+  // the Computer card shows only where a computer can be connected.
+  const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
     discoverEnabled,
     focusCategory,
+    computers: computersEnabled,
   });
 
   // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
@@ -574,6 +578,17 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   }, [detail.open]);
 
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
+
+  // The Computer card opens the existing computer connector's accounts once
+  // there is one: adding a computer is adding an account to it.
+  const computerConnector = connectors.find((connector) => connector.provider === 'computer');
+  const selectCatalogEntry = useCallback(
+    (entry: CatalogEntry) => {
+      if (entry.source === 'computer' && computerConnector) setDetailSlug(computerConnector.slug);
+      else setCatalogTarget(entry);
+    },
+    [computerConnector, setDetailSlug],
+  );
 
   const onCatalogAdded = useCallback(
     (slug?: string) => {
@@ -703,7 +718,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           mode={scope === 'discover' ? 'sectioned' : 'flat'}
           category={category}
           onCategoryChange={setCategory}
-          onSelect={setCatalogTarget}
+          onSelect={selectCatalogEntry}
           emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
           emptyDescription={tI18nComplete.raw('textf652a621153e')}
         />
@@ -778,13 +793,14 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
         onClose={() => setCatalogTarget(null)}
         onAdded={onCatalogAdded}
       />
-      <ComputersAddFlow
+      {/* Computers are accounts, not profiles: the card pairs the caller's own
+          machine. The `computer` connector is built into every project, so
+          the card opens it when listed and pairs a machine otherwise. */}
+      <ComputerConnectModal
         projectId={projectId}
         open={catalogTarget?.source === 'computer'}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
+        onOpenChange={(open) => !open && setCatalogTarget(null)}
+        onConnected={(connection) => onCatalogAdded(connection.connector_alias)}
       />
 
       {/* Custom upload only. `CustomConnectorForm` prints no heading of its

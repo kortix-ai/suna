@@ -12,6 +12,7 @@ import { sessionHoldsLiveTurn } from '../../projects/session-lifecycle/inbox-adm
 import { currentChannelSelection } from '../slack/selection';
 import { startErrorMessage, TEAMS_START_ERROR_COMMANDS } from '../start-error';
 import { buildAgentUnavailableCard } from './agent-picker';
+import { userMayLaunchAgent } from '../scoped-agents';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
@@ -276,6 +277,8 @@ async function deliverFollowUp(input: {
   handle: TeamsLiveTurn | null;
   activity: TeamsActivity;
   userId: string;
+  /** The message reports an already-authorized decision: see createOrJoinTeamsConversationSession. */
+  authorizedResume?: boolean;
 }): Promise<'done' | 'revive'> {
   const { projectId, tenantId, conversationId, sessionId, activity, userId } = input;
   let handle = input.handle;
@@ -284,7 +287,7 @@ async function deliverFollowUp(input: {
   // verdict's notice replaces the requester's own live card; nothing reaches
   // the session until they are allowed in.
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
-  if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl) {
+  if (config.TEAMS_REQUIRE_USER_IDENTITY && activity.serviceUrl && !input.authorizedResume) {
     const verdict = await ensureTeamsThreadParticipant({
       projectId,
       tenantId,
@@ -425,6 +428,13 @@ export async function createOrJoinTeamsConversationSession(input: {
    * own project, so a conversation another project's session owns is refused.
    */
   ownThreadsOnly?: boolean;
+  /**
+   * The decision this message reports (a review verdict, an approval) was
+   * already authorized for this project. The join policy governs who may TALK
+   * in a conversation; it must not strand the agent after a manager who is not
+   * a participant decided. The sender is still resolved as a linked member.
+   */
+  authorizedResume?: boolean;
 }): Promise<void> {
   const { tenantId, conversationId, activity } = input;
   let projectId = input.projectId;
@@ -447,6 +457,9 @@ export async function createOrJoinTeamsConversationSession(input: {
     console.warn('[teams-webhook] conversation session belongs to another project — ignoring', { projectId });
     return;
   }
+  // The decision was authorized for `input.projectId`; a session in another
+  // project gets the ordinary join-policy check.
+  const authorizedResume = Boolean(input.authorizedResume) && route.kind === 'here';
   if (route.kind === 'thread_project') {
     if (!(await projectFeatureFlagEnabled(route.projectId, 'teams'))) return;
     projectId = route.projectId;
@@ -489,6 +502,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         handle,
         activity,
         userId,
+        authorizedResume,
       });
       if (next === 'done') return;
       revived = true;
@@ -523,6 +537,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         handle,
         activity,
         userId,
+        authorizedResume,
       });
     } else {
       console.warn('[teams-webhook] lost thread-create claim but winner never published a session', {
@@ -536,6 +551,18 @@ export async function createOrJoinTeamsConversationSession(input: {
 
   await ensureTeamsConversationBinding({ projectId, tenantId, conversationId, ...describeTeamsConversation(activity) });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
+
+  // Per-resource scoping, as the web and Slack apply it: a person scoped out
+  // of the conversation's agent cannot start a session on it from Teams.
+  if (!(await userMayLaunchAgent({ projectId, accountId: project.accountId }, userId, selection?.agentName))) {
+    if (claimKey) await releaseThreadCreate(claimKey);
+    if (handle) {
+      await finalizeTurn(handle, {
+        error: `You don't have access to the \`${selection?.agentName}\` agent in this project. Ask a project manager to grant it, or pick another agent with /agents.`,
+      });
+    }
+    return;
+  }
 
   // A conversation that OPENS with an image has to start on a model that can
   // read one, and a `/model` pick that has since been retired has to be
@@ -552,6 +579,8 @@ export async function createOrJoinTeamsConversationSession(input: {
     agentGrantEnv: agentGrantEnvFor(project, selection?.agentName ?? null),
   });
   const createModel = start.model;
+  // Frozen at start: a later `/policy` change applies to NEW sessions only.
+  const conversationPolicy = normalizeConversationPolicy(selection?.conversationPolicy);
 
   const result = await teamsSessionLifecycle.createSession({
     source: 'teams',
@@ -587,7 +616,14 @@ export async function createOrJoinTeamsConversationSession(input: {
       tenantId && conversationId
         ? [{ type: 'bind_chat_thread', platform: 'teams', workspaceId: tenantId, threadId: conversationId }]
         : undefined,
-    visibility: teamsSessionIsPersonal(activity) ? 'private' : 'project',
+    // As Slack: an owner-only or approval conversation's session is not
+    // visible to the whole project on the web either. Its owner and each
+    // approved joiner hold a session grant (participants.ts).
+    visibility: teamsSessionIsPersonal(activity)
+      ? 'private'
+      : conversationPolicy === 'project_open'
+        ? 'project'
+        : 'restricted',
     metadata: {
       source: 'teams',
       teams: {
@@ -595,8 +631,7 @@ export async function createOrJoinTeamsConversationSession(input: {
         conversation_id: conversationId,
         user: activity.from?.id,
         activity_id: activity.id,
-        // Frozen at start: a later `/policy` change applies to NEW sessions only.
-        conversation_policy: normalizeConversationPolicy(selection?.conversationPolicy),
+        conversation_policy: conversationPolicy,
         // The team a channel conversation lives in. Each turn gets it as
         // MS_TEAMS_TEAM_GROUP_ID for that turn only; this is the durable
         // record, so a channel session can be traced back to its team (Graph
@@ -749,6 +784,7 @@ const TURN_INSTRUCTIONS = [
   '- Need to ask the user something with DISCRETE choices? Use the built-in `question` tool. It renders a real Adaptive Card — one tap per option for a single question, a form with a picker per question for several, a multi-select when you pass `multiple`, and a text box when you pass no options. It returns at once: END your turn, and the answer arrives as a NEW turn with full context.',
   '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
+  '- Put a link the user should open (connect an app, open a PR, review a draft) alone on its own line as `[Short action](url)` — Teams renders it as a button.',
 ].join('\n');
 
 const NO_VISION_NOTE = [

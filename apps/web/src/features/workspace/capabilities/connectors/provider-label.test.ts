@@ -7,8 +7,8 @@ import {
 } from './provider-label';
 
 describe('providerLabel', () => {
-  test('uses the transport-specific Computer Tunnel provider name', () => {
-    expect(providerLabel('computer')).toBe('Computer Tunnel');
+  test('names the computer provider plainly', () => {
+    expect(providerLabel('computer')).toBe('Computer');
   });
 
   test('normalizes managed connector providers behind one product label', () => {

@@ -50,7 +50,7 @@ function render(overrides: Partial<ProjectSelectorViewProps>): string {
 describe('ProjectSelectorView', () => {
   test('new user: welcome, one create card, no project form fields', () => {
     const html = render({
-      sections: buildAccountSections({ accounts: [account('a', 'owner', 'Me')], lists: [{ accountId: 'a', data: [], isError: false }] }),
+      sections: buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner', 'Me')], lists: [{ accountId: 'a', data: [], isError: false }] }),
     });
     expect(html).toContain('Welcome to Kortix');
     expect(html).toContain('data-testid="selector-create"');
@@ -64,6 +64,7 @@ describe('ProjectSelectorView', () => {
   test('a second empty account the card does not target keeps its own create row', () => {
     const html = render({
       sections: buildAccountSections({
+        creatableAccountIds: new Set(['a', 'b']),
         accounts: [account('a', 'owner', 'Me'), account('b', 'owner', 'Team')],
         lists: [
           { accountId: 'a', data: [], isError: false },
@@ -134,8 +135,11 @@ describe('ProjectSelectorView', () => {
     expect(total).not.toContain('data-testid="selector-create"');
   });
 
-  test('Log out is always present', () => {
-    expect(render({})).toContain('Log out');
-    expect(render({ loading: true })).toContain('Log out');
+  test('the account menu (which holds Log out) is always present', () => {
+    expect(render({})).toContain('Logged in as');
+    expect(render({ loading: true })).toContain('Logged in as');
+    expect(render({ name: 'Dogfood Tester' })).toContain('>Dogfood Tester</span>');
+    expect(render({ name: 'Dogfood Tester' })).toContain('Logged in as Dogfood Tester');
+    expect(render({ name: '  ' })).toContain('>user@example.com</span>');
   });
 });

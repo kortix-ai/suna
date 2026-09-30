@@ -1,3 +1,5 @@
+import { PROJECT_ACTIONS } from '../../iam/actions';
+import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { applyVerdict, getReviewItemById } from '../../projects/review-items';
 import { changeChannelAgent, switchChannelProject } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsRefusal, teamsSettingsChannel } from './settings-text';
@@ -14,7 +16,9 @@ import {
   REVIEW_FEEDBACK_INPUT,
   TEAMS_APPROVAL_VERB,
   TEAMS_FORM_VERB,
+  TEAMS_OPEN_PANEL_VERB,
   TEAMS_STOP_VERB,
+  type TeamsPanel,
   buildNoticeCard,
   buildTeamsApprovalOutcomeCard,
 } from './cards';
@@ -65,11 +69,27 @@ export async function handleAdaptiveCardAction(
     return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   }
 
+  // Turning Teams off for a project stops its cards too, not only its
+  // messages (dispatch): an Approve or Stop posted before still reached the
+  // project. The bring-your-own endpoint checks the flag before any of this.
+  if (inbound.kind === 'managed') {
+    const convo = convoOf(activity);
+    const projectId =
+      typeof action.data.projectId === 'string'
+        ? action.data.projectId
+        : convo
+          ? await conversationProjectFor(inbound, convo.tenantId, convo.conversationId)
+          : null;
+    if (projectId && !(await projectFeatureFlagEnabled(projectId, 'teams'))) {
+      return cardResponse(buildNoticeCard('Microsoft Teams is turned off for this project.'));
+    }
+  }
+
   switch (action.verb) {
     case 'teams_request_access':
       return handleRequestAccess(activity, action.data);
     case 'teams_thread_join':
-      return handleThreadJoin(activity, action.data);
+      return handleThreadJoin(activity, action.data, inbound);
     case 'teams_set_model':
       return handleSetModel(activity, action.data, inbound);
     case 'teams_set_agent':
@@ -86,6 +106,8 @@ export async function handleAdaptiveCardAction(
       return handleReview(activity, action.data, inbound);
     case TEAMS_APPROVAL_VERB:
       return handleApproval(activity, action.data, inbound);
+    case TEAMS_OPEN_PANEL_VERB:
+      return handleOpenPanel(activity, action.data, inbound);
     default:
       return cardResponse(buildNoticeCard("This action isn't available anymore."));
   }
@@ -96,6 +118,26 @@ function convoOf(activity: TeamsActivity): { tenantId: string; conversationId: s
   const conversationId = activity.conversation?.id;
   if (!tenantId || !conversationId) return null;
   return { tenantId, conversationId };
+}
+
+/**
+ * The project a decision card (review, approval) acts on: the project of the
+ * session this conversation runs, which posted the card. After a `/use` the
+ * conversation points at another project while its session stays where it
+ * started, and the item lives with the session. A per-project bot stays
+ * inside its own project.
+ */
+async function decisionTarget(
+  inbound: TeamsInbound,
+  convo: { tenantId: string; conversationId: string },
+): Promise<{ projectId: string; sessionId: string | null } | null> {
+  const thread = await findChatThread(
+    { platform: 'teams', workspaceId: convo.tenantId, threadId: convo.conversationId },
+    inbound.kind === 'project' ? inbound.projectId : undefined,
+  );
+  if (thread) return { projectId: thread.projectId, sessionId: thread.sessionId };
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
+  return projectId ? { projectId, sessionId: null } : null;
 }
 
 /** A per-project bot configures only conversations that run its own project. */
@@ -182,6 +224,28 @@ async function handleSetAgent(
   return cardResponse(buildNoticeCard(teamsAgentChangeText(result, agent), result.ok ? '✅' : undefined));
 }
 
+const PANELS = new Set<TeamsPanel>(['models', 'agents', 'projects']);
+
+/** A `/status` button: the picker it names, for the person who pressed it. */
+async function handleOpenPanel(
+  activity: TeamsActivity,
+  data: Record<string, unknown>,
+  inbound: TeamsInbound,
+): Promise<TeamsInvokeResponse> {
+  const convo = convoOf(activity);
+  const panel = data.panel as TeamsPanel;
+  if (!convo || !PANELS.has(panel)) return cardResponse(buildNoticeCard("This action isn't available anymore."));
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  // A per-project bot runs only its own project: it has no project list to offer.
+  if (panel === 'projects' && inbound.kind === 'project') return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
+  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
+  if (!projectId) return cardResponse(buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁'));
+  // Loaded on press: `commands.ts` pulls the whole command surface, which no
+  // other card action needs.
+  const { buildTeamsPanel } = await import('./commands');
+  return cardResponse(await buildTeamsPanel({ panel, activity, tenantId: convo.tenantId, conversationId: convo.conversationId, projectId }));
+}
+
 /** The Teams user who pressed a card button, as a chat identity. */
 function presser(activity: TeamsActivity, convo: { tenantId: string }) {
   return chatUser('teams', convo.tenantId, teamsUserId(activity) ?? '');
@@ -213,7 +277,11 @@ async function handlePickProject(
   // If this pick answered a project picker, replay the message that triggered it.
   const pendingId = typeof data.pendingId === 'string' ? data.pendingId : undefined;
   if (pendingId) {
-    const parked = await consumePendingTeamsPickerMessage({ pendingId, tenantId: convo.tenantId });
+    const parked = await consumePendingTeamsPickerMessage({
+      pendingId,
+      tenantId: convo.tenantId,
+      conversationId: convo.conversationId,
+    });
     if (parked) {
       void createOrJoinTeamsConversationSession({
         projectId,
@@ -342,8 +410,9 @@ async function handleReview(
   const uid = teamsUserId(activity);
   if (!convo || !reviewItemId || !verdict) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
-  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const target = await decisionTarget(inbound, convo);
+  if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const { projectId } = target;
 
   const item = await getReviewItemById(reviewItemId, projectId);
   if (!item) return cardResponse(buildNoticeCard('That review item no longer exists.'));
@@ -357,7 +426,7 @@ async function handleReview(
   //
   // The item is loaded FIRST because the authorization is scoped to its own
   // account, not to whatever account the presser happens to belong to.
-  const actor = await resolveChatActor(chatUser('teams', convo.tenantId, uid ?? ''), { projectId, accountId: item.accountId });
+  const actor = await resolveChatActor(chatUser('teams', convo.tenantId, uid ?? ''), { projectId, accountId: item.accountId }, PROJECT_ACTIONS.PROJECT_REVIEW_ACT);
   if ('reason' in actor) {
     return cardResponse(
       buildNoticeCard(
@@ -398,6 +467,7 @@ async function handleReview(
     conversationId: convo.conversationId,
     activity: synthetic,
     ownThreadsOnly: inbound.kind === 'project',
+    authorizedResume: true,
   }).catch((err) => console.error('[teams-webhook] review resume failed', err));
 
   const ack =
@@ -416,17 +486,14 @@ async function handleApproval(
   const decision = data.decision === 'approve' || data.decision === 'deny' ? data.decision : null;
   if (!convo || !executionId || !decision) return cardResponse(buildNoticeCard("I couldn't apply that decision."));
 
-  const projectId = await conversationProjectFor(inbound, convo.tenantId, convo.conversationId);
-  if (!projectId) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
-  const thread = await findChatThread(
-    { platform: 'teams', workspaceId: convo.tenantId, threadId: convo.conversationId },
-    projectId,
-  );
+  const target = await decisionTarget(inbound, convo);
+  if (!target) return cardResponse(buildNoticeCard("This conversation isn't connected to a project."));
+  const { projectId } = target;
   const note = normalizeApprovalNote(data[APPROVAL_NOTE_INPUT]);
   const result = await decideChatApproval({
     user: chatUser('teams', convo.tenantId, teamsUserId(activity) ?? ''),
     projectId,
-    sessionId: thread?.sessionId ?? null,
+    sessionId: target.sessionId,
     executionId,
     decision,
     note,
@@ -447,40 +514,38 @@ async function handleApproval(
     conversationId: convo.conversationId,
     activity: synthetic,
     ownThreadsOnly: inbound.kind === 'project',
+    authorizedResume: true,
   }).catch((err) => console.error('[teams-webhook] approval resume failed', err));
 
-  return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note }));
+  return cardResponse(buildTeamsApprovalOutcomeCard({ actionPath: result.row.actionPath, decision, note, decidedBy: activity.from?.name || undefined }));
 }
 
 async function handleThreadJoin(
   activity: TeamsActivity,
   data: Record<string, unknown>,
+  inbound: TeamsInbound,
 ): Promise<TeamsInvokeResponse> {
   const convo = convoOf(activity);
   const decider = teamsUserId(activity);
   const decision = data.decision === 'approved' ? 'approved' : data.decision === 'denied' ? 'denied' : null;
-  const sessionId = typeof data.sessionId === 'string' ? data.sessionId : null;
-  const projectId = typeof data.projectId === 'string' ? data.projectId : null;
-  const requesterUserId = typeof data.requesterUserId === 'string' ? data.requesterUserId : null;
+  // Only the requester's Teams id is read from the card; the session and the
+  // requester's Kortix account come from the pending request itself.
   const requesterTeamsUserId = typeof data.requesterTeamsUserId === 'string' ? data.requesterTeamsUserId : null;
-  if (!convo || !decider || !decision || !sessionId || !projectId || !requesterUserId || !requesterTeamsUserId || !activity.serviceUrl) {
+  if (!convo || !decider || !decision || !requesterTeamsUserId || !activity.serviceUrl) {
     return cardResponse(buildNoticeCard("I couldn't apply that decision."));
   }
+  if (!(await conversationInScope(inbound, convo))) return cardResponse(buildNoticeCard(OTHER_PROJECT_NOTICE));
   const ref: TeamsConversationRef = {
     serviceUrl: activity.serviceUrl,
     conversationId: convo.conversationId,
     botId: activity.recipient?.id,
     fromId: activity.from?.id,
     tenantId: convo.tenantId,
-    projectId,
   };
   const result = await decideTeamsThreadJoin({
     tenantId: convo.tenantId,
     conversationId: convo.conversationId,
     deciderTeamsUserId: decider,
-    projectId,
-    sessionId,
-    requesterUserId,
     requesterTeamsUserId,
     decision,
     ref,
@@ -502,18 +567,22 @@ async function handleRequestAccess(
   const outcome = await createChatAccessRequest(chatUser('teams', tenantId, userId), projectId);
   switch (outcome.status) {
     case 'created':
-    case 'pending':
+      // Admins hear about a request once, when it is filed: every press of a
+      // pending request's button used to DM them again.
       await notifyAdminsOfTeamsAccessRequest({
+        tenantId,
         projectId,
         accountId: outcome.accountId,
         requesterUserId: outcome.requesterUserId,
       });
       return cardResponse(buildNoticeCard('Access requested. An admin will approve it in Kortix.', '✅'));
+    case 'pending':
+      return cardResponse(buildNoticeCard("You've already requested access. It's waiting for an admin in Kortix."));
     case 'already-member':
       return cardResponse(buildNoticeCard("You already have access — send your message again and I'll pick it up."));
     case 'no-identity':
       return cardResponse(buildNoticeCard('Connect your Kortix account first, then request access.'));
     case 'no-project':
-      return cardResponse(buildNoticeCard("I couldn't find that project."));
+      return cardResponse(buildNoticeCard("That project isn't connected to this Teams tenant."));
   }
 }

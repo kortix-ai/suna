@@ -33,12 +33,12 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
-  DownloadSimple,
   SignOutIcon as LogOut,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
@@ -232,7 +232,7 @@ export function UserMenu({
             and has no `loading.tsx`. */}
         <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
           <Link href="/download" prefetch data-desktop-hidden>
-            <DownloadSimple />
+            <Download />
             {tI18nHardcoded.raw('autoFeaturesLayoutUserMenuJsxTextDownloadApps2765d8e7')}
           </Link>
         </DropdownMenuItem>

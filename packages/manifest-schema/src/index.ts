@@ -60,6 +60,26 @@ import {
 } from './index.v2';
 
 export {
+  AGENTS_DIR,
+  AGENT_FILE_PATTERN,
+  HARNESSES_DIR,
+  LEGACY_MEMORY_DIR,
+  LEGACY_OPENCODE_CONFIG_DIR,
+  MEMORY_DIR,
+  OPENCODE_CONFIG_DIR,
+  SKILLS_DIR,
+  agentFileCandidates,
+  defaultAgentFile,
+  legacyConfigDir,
+  manifestOpencodeConfigDir,
+  opencodeConfigDirCandidates,
+  piConfigDirCandidates,
+  safeAgentFile,
+  safeRepoPath,
+  skillDirs,
+} from './layout';
+
+export {
   type ManifestFormat,
   type ManifestCandidate,
   MANIFEST_FILENAME_TOML,
@@ -185,11 +205,11 @@ export {
  *
  * v1 = `[[agents]]` array overlay, TOML or YAML, `[[channels]]` allowed.
  * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/
- * workspace/enabled); OpenCode behavior (mode/model/temperature/top_p/steps/
- * variant/color/hidden/permission/prompt) lives entirely in the agent's own
- * native `.kortix/opencode/agents/<name>.md` frontmatter + body, never in
- * this manifest. YAML-only, `[[channels]]` removed, deny-by-default grant
- * sets. (decision 2026-07-05: "one home per concern").
+ * workspace/enabled) plus `file`, the path of the agent's `.md`; agent behavior
+ * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
+ * lives entirely in that `.md` frontmatter + body, never in this manifest.
+ * YAML-only, `[[channels]]` removed, deny-by-default grant sets. (decision
+ * 2026-07-05: "one home per concern").
  */
 const KNOWN_SCHEMA_VERSION = 2;
 
@@ -324,6 +344,7 @@ function validateManifestBodyV2(
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateOpenCode(parsed.pi, 'pi', issues);
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);

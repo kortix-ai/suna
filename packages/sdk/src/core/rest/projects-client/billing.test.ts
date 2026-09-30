@@ -17,6 +17,7 @@ import {
   createPortalSession,
   fetchAccountStateWithToken,
   getAccountState,
+  getAccountStateMinimal,
   getAutoTopupSettings,
   getAutoTopupSetupStatus,
   getDefaultAccountState,
@@ -82,6 +83,21 @@ test('getAccountState degrades to the default shape when billing is disabled (40
 test('getAccountState throws on a genuine server error (not the graceful-disabled case)', async () => {
   nextResponse = { status: 500, body: { message: 'internal error' } };
   await expect(getAccountState()).rejects.toBeTruthy();
+});
+
+test('getAccountStateMinimal hits /billing/account-state/minimal and forwards the same params', async () => {
+  nextResponse = { status: 200, body: getDefaultAccountState() };
+  const result = await getAccountStateMinimal({ skipCache: true, accountId: 'acc-1' });
+  expect(last().url).toContain('/billing/account-state/minimal');
+  expect(last().url).toContain('skip_cache=true');
+  expect(last().url).toContain('account_id=acc-1');
+  expect(result).toEqual(getDefaultAccountState());
+});
+
+test('getAccountStateMinimal degrades to the default shape when billing is disabled (404)', async () => {
+  nextResponse = { status: 404, body: { message: 'billing is not enabled for this deployment' } };
+  const result = await getAccountStateMinimal();
+  expect(result).toEqual(getDefaultAccountState());
 });
 
 test('fetchAccountStateWithToken sends an explicit bearer token, bypassing the ambient seam', async () => {

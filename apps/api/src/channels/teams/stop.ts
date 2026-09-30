@@ -1,6 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import { chatThreadParticipants } from '@kortix/db';
+import { config } from '../../config';
 import { db } from '../../shared/db';
+import { PROJECT_ACTIONS } from '../../iam/actions';
+import { chatUser, resolveProjectChatActor } from '../core/identity';
 import { claimFinalize, deleteTurn, finalizeTurn, loadTurn } from './turn';
 import type { TeamsLiveTurn } from './types';
 
@@ -16,12 +19,15 @@ const PLATFORM = 'teams';
  *  - whoever sent the message this turn is answering (`originatingActivity`),
  *    which is the only correct answer under `project_open`, where the session
  *    owner and the person actually waiting are routinely different people;
- *  - anyone already approved on this conversation, which is how the session
- *    owner and every accepted joiner are recorded.
+ *  - anyone approved on this session, which is how the session owner and
+ *    every accepted joiner are recorded. A person approved on an earlier
+ *    session of the chat (before `/new`) is not.
  *
- * Anyone else is refused. Failing closed on a stop is the safe direction: the
- * worst case is that a bystander waits for the run to end, instead of a
- * bystander ending someone else's work.
+ * Either one must also still be allowed to stop runs in the project: a linked
+ * Kortix account with `project.session.stop`. Someone removed from the
+ * project, or never linked, is refused. Anyone else is refused too. Failing
+ * closed on a stop is the safe direction: the worst case is that a bystander
+ * waits for the run to end, instead of a bystander ending someone else's work.
  */
 async function mayStopTeamsTurn(
   handle: TeamsLiveTurn,
@@ -34,23 +40,35 @@ async function mayStopTeamsTurn(
   // sent the message could not stop it unless a participant row also existed —
   // and under `project_open` a non-owner has none.
   const origin = handle.originatingActivity?.from;
-  if (origin && (origin.aadObjectId === teamsUserId || origin.id === teamsUserId)) return true;
+  const sentIt = Boolean(origin && (origin.aadObjectId === teamsUserId || origin.id === teamsUserId));
   try {
-    const [row] = await db
-      .select({ status: chatThreadParticipants.status })
-      .from(chatThreadParticipants)
-      .where(
-        and(
-          eq(chatThreadParticipants.platform, PLATFORM),
-          eq(chatThreadParticipants.workspaceId, handle.tenantId),
-          eq(chatThreadParticipants.threadId, handle.conversationId),
-          eq(chatThreadParticipants.platformUserId, teamsUserId),
-        ),
-      )
-      .limit(1);
-    return row?.status === 'approved';
+    if (!sentIt) {
+      const [row] = await db
+        .select({ status: chatThreadParticipants.status })
+        .from(chatThreadParticipants)
+        .where(
+          and(
+            eq(chatThreadParticipants.platform, PLATFORM),
+            eq(chatThreadParticipants.workspaceId, handle.tenantId),
+            eq(chatThreadParticipants.threadId, handle.conversationId),
+            eq(chatThreadParticipants.sessionId, handle.sessionId),
+            eq(chatThreadParticipants.platformUserId, teamsUserId),
+          ),
+        )
+        .limit(1);
+      if (row?.status !== 'approved') return false;
+    }
+    // Without linked identities the conversation runs as the installer, and
+    // there is nobody linked to check.
+    if (!config.TEAMS_REQUIRE_USER_IDENTITY) return true;
+    const actor = await resolveProjectChatActor(
+      chatUser('teams', handle.tenantId, teamsUserId),
+      handle.projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+    );
+    return 'userId' in actor;
   } catch (err) {
-    console.warn('[teams-webhook] stop participant lookup failed (refusing)', err);
+    console.warn('[teams-webhook] stop authorization failed (refusing)', err);
     return false;
   }
 }

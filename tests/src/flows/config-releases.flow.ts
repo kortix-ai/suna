@@ -13,9 +13,11 @@
  * (`/v1/git/<project>.git`) with an OWNER PAT, the way `kortix ship` pushes.
  */
 import { subscribe } from '../fixtures/billing';
-import { flow } from '../core/flow';
+import { flow, harnessFlow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
-import type { CreatedProject, FlowContext, TeamFixture } from '../core/types';
+import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
+import { assertRuntimeHarness, readTranscript, readTurn } from '../fixtures/session-run';
+import { isKe2eRetryableError } from '../core/client';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -87,7 +89,8 @@ interface Fixture {
     ownerUserId?: string;
   }): Promise<SessionToken>;
   descriptor(secret: string | null, sessionId: string, body?: unknown): Promise<{ status: number; body: any }>;
-  download(secret: string | null, treeId: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
+  /** `query` is the archive URL's query string (a composed release tree carries `?commit=`). */
+  download(secret: string | null, treeId: string, query?: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
   /** Commit files onto the base branch of the project repository. Returns the new tip. */
   commit(files: Record<string, string>, message: string): Promise<string>;
   /** Open another project's repository with the same credential. */
@@ -95,12 +98,12 @@ interface Fixture {
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
   /**
-   * The project's own switch for `config_releases`, through the published
-   * write path. `true` opts in, `false` opts out, `null` clears the override
-   * and returns the project to the platform default — which is OFF
-   * (`apps/api/src/feature-flags/registry.ts`, `platformDefault: () => false`).
+   * The project's own switch for `config_releases` (or `pi_harness`), through
+   * the published write path. `true` opts in, `false` opts out, `null` clears
+   * the override and returns the project to the platform default — which is
+   * OFF for both (`apps/api/src/feature-flags/registry.ts`).
    */
-  setFeature(enabled: boolean | null): Promise<void>;
+  setFeature(enabled: boolean | null, feature?: 'config_releases' | 'pi_harness'): Promise<void>;
   /** The project's effective `config_releases` value, read back from the API. */
   featureEnabled(): Promise<boolean>;
   cleanup(): Promise<void>;
@@ -113,6 +116,9 @@ const MANIFEST = [
   'default_agent: kortix',
   'agents:',
   '  kortix:',
+  // A declared agent boots without a checkout unless it opts in (#8454). The
+  // box flows run a repository-backed session, whose release carries an archive.
+  '    repository_access: true',
   '    skills: all',
   '  reviewer:',
   '    skills: none',
@@ -122,6 +128,25 @@ const MANIFEST = [
 function PACKAGE_JSON(pin: string, extra = ''): string {
   return `{\n  "dependencies": {\n    "@opencode-ai/plugin": "${pin}"${extra}\n  }\n}\n`;
 }
+
+/**
+ * `@kortix/starter`'s `base` template — the scaffold every managed project
+ * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
+ * default, not an opt-in") — ships the harness-agnostic layout PR #7681
+ * introduced: `harnesses/opencode/opencode.jsonc`, root `agents/`, root
+ * `skills/kortix-cli/`, root `memory/`. This flow deliberately drives the
+ * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
+ * (`CONFIG_FILES` below), so every managed project it creates clears that
+ * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
+ * `harnesses/opencode` (checked before the legacy dir,
+ * `opencodeConfigDirCandidates`) and the starter's root `skills/kortix-cli`
+ * (always composing the release, `rootSkillRecords`) win over this flow's own
+ * config on a managed (non-`local`) target, and every assertion below that
+ * names a config tree, a release ID, or an archive URL is comparing against
+ * the wrong tree. The `local` target never seeds a starter template
+ * (`createLocalGitRepository`), so this is a no-op there.
+ */
+const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'memory'];
 
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
@@ -212,14 +237,26 @@ async function extract(archive: Buffer): Promise<Map<string, Buffer>> {
   }
 }
 
-/** Clone `repo`, write `files`, commit, and push to its base branch. Returns the new tip. */
-async function commitTo(repo: ProjectRepo, files: Record<string, string>, message: string): Promise<string> {
+/**
+ * Clone `repo`, remove `removePaths` (repo-relative; a missing path is a
+ * no-op — see `STARTER_SCAFFOLD_PATHS`), write `files`, commit, and push to
+ * its base branch. Returns the new tip.
+ */
+async function commitTo(
+  repo: ProjectRepo,
+  files: Record<string, string>,
+  message: string,
+  removePaths: string[] = [],
+): Promise<string> {
   const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { dirname, join } = await import('node:path');
   const work = await mkdtemp(join(tmpdir(), 'ke2e-cfg-commit-'));
   try {
     await run('git', [...repo.auth, 'clone', '-q', '--branch', repo.branch, repo.url, '.'], work);
+    for (const path of removePaths) {
+      await rm(join(work, path), { recursive: true, force: true });
+    }
     for (const [path, body] of Object.entries(files)) {
       await mkdir(dirname(join(work, path)), { recursive: true });
       await writeFile(join(work, path), body);
@@ -352,12 +389,12 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     commit(files, message) {
       return commitTo(repo, files, message);
     },
-    async setFeature(enabled) {
+    async setFeature(enabled, feature = 'config_releases') {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'config_releases', enabled },
+          { feature, enabled },
           { params: { projectId: project.id } },
         );
       r.status(200);
@@ -380,8 +417,8 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
       } catch {}
       return { status: response.status, body: parsed };
     },
-    async download(secret, treeId) {
-      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}`, {
+    async download(secret, treeId, query = '') {
+      const response = await fetch(`${origin}/v1/projects/${project.id}/config-archives/${treeId}${query}`, {
         headers: secret ? { Authorization: `Bearer ${secret}` } : {},
         redirect: 'manual',
         signal: AbortSignal.timeout(60_000),
@@ -429,8 +466,9 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
   };
 
-  // The same config dir on every target, so every step asserts known bytes.
-  await commitTo(repo, CONFIG_FILES, 'config dir');
+  // The same config dir on every target, so every step asserts known bytes:
+  // clear the starter's scaffold (STARTER_SCAFFOLD_PATHS) in the same commit.
+  await commitTo(repo, CONFIG_FILES, 'config dir', STARTER_SCAFFOLD_PATHS);
   return fixture;
 }
 
@@ -670,6 +708,33 @@ flow(
         }
         const download = await fixture.download(restricted.secret, descriptor.config_tree_id!);
         if (download.status !== 403) throw new Error(`restricted download: expected 403, got ${download.status}`);
+      });
+
+      await ctx.step('a root skills/ folder joins the release, its archive URL names the commit, and the stored archive serves with or without it', async () => {
+        const tip = await fixture.commit(
+          { 'skills/root-demo/SKILL.md': '---\nname: root-demo\ndescription: root layout\n---\nRoot skill.\n' },
+          'root layout skill',
+        );
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const composed = r.body as Descriptor;
+        if (composed.source_commit !== tip) throw new Error(`source_commit ${composed.source_commit} is not the tip ${tip}`);
+        const query = `?commit=${tip}`;
+        if (composed.archive?.url !== `/v1/projects/${fixture.projectId}/config-archives/${composed.config_tree_id}${query}`) {
+          throw new Error(`archive url ${composed.archive?.url}`);
+        }
+        const download = await fixture.download(own.secret, composed.config_tree_id!, query);
+        if (download.status !== 200) throw new Error(`expected 200, got ${download.status}`);
+        const files = await assertArchiveMatches(composed, download.bytes);
+        for (const path of ['skills/root-demo/SKILL.md', 'skills/demo/SKILL.md', 'agents/kortix.md', 'opencode.json']) {
+          if (!files.has(path)) throw new Error(`archive lacks ${path}`);
+        }
+        // The composed tree is in no mirror. The release stored its archive, so
+        // the project-scoped store key serves it without the commit too (CFG-7);
+        // the commit only lets the API rebuild an archive the store lacks.
+        const bare = await fixture.download(own.secret, composed.config_tree_id!);
+        if (bare.status !== 200) throw new Error(`download without the commit: expected 200, got ${bare.status}`);
+        if (!bare.bytes.equals(download.bytes)) throw new Error('download without the commit returned different bytes');
       });
     } finally {
       await fixture.cleanup();
@@ -933,6 +998,7 @@ flow(
           otherRepo,
           { ...CONFIG_FILES, '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nNEW REPOSITORY.\n' },
           'new repository',
+          STARTER_SCAFFOLD_PATHS,
         );
         const { rows } = await fixture.db.query(
           `SELECT p.repo_url, p.default_branch, p.metadata,
@@ -1563,10 +1629,29 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
         .post(oc(`/session?directory=${encodeURIComponent('/workspace')}`, sandboxId), {});
       return r.statusCode >= 500 ? null : r;
     },
-    { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'opencode conversation' },
+    { until: (r) => Boolean(r), timeoutMs: 180_000, intervalMs: 3_000, description: 'runtime conversation' },
   );
   created!.status(200);
   const conversationId = String(created!.json<{ id: string }>().id);
+  // The boot prompt's turn must end first. A turn in flight blocks the
+  // turn-start convergence by design, so a prompt sent while "say hello" still
+  // runs is answered on the release the box was behind on (measured on a real
+  // box 2026-09-30: the boot turn ended 2.8 s after the flow pushed and prompted).
+  await waitFor(
+    async () => ({
+      turn: await readTurn(ctx, fixture.projectId, sessionId),
+      transcript: await readTranscript(ctx, fixture.projectId, sessionId),
+    }),
+    {
+      until: ({ turn, transcript }) =>
+        turn.turns.length === 0 &&
+        transcript.messages.some((m) => m.role === 'assistant' && (Boolean(m.completed) || Boolean(m.error))),
+      timeoutMs: 240_000,
+      intervalMs: 2_000,
+      description: `the boot prompt's turn to end in session ${sessionId}`,
+      retryOnError: isKe2eRetryableError,
+    },
+  );
 
   return {
     sessionId,
@@ -1590,6 +1675,23 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
         { timeoutMs: 180_000 },
       ),
   };
+}
+
+/**
+ * Run the flow on `harness`: a pi run turns the project's `pi_harness` flag on
+ * before the session boots, and every run proves which harness the box runs.
+ */
+async function optIntoHarness(ctx: FlowContext, fixture: Fixture, harness: Harness): Promise<void> {
+  if (harness !== 'pi') return;
+  await ctx.step('the project runs pi: `pi_harness` is on, so every session boots pi', async () => {
+    await fixture.setFeature(true, 'pi_harness');
+  });
+}
+
+async function proveHarness(ctx: FlowContext, sandboxId: string, harness: Harness): Promise<void> {
+  await ctx.step(`the box runs ${harness}`, async () => {
+    await assertRuntimeHarness(ctx, sandboxId, harness);
+  });
 }
 
 // ── CFG-11 — a prompt on a box that is behind converges FIRST, then RUNS ───
@@ -1672,7 +1774,7 @@ const MARKER2_AGENT = (marker: string, marker2: string): string =>
 const MARKER2_PROMPT =
   'Answer with the RELOAD_VERIFY_MARKER2 value from your instructions and nothing else.';
 
-flow(
+harnessFlow(
   'CFG-11',
   {
     domain: 'config-releases',
@@ -1684,10 +1786,12 @@ flow(
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       ...GIT_PROXY,
     ],
   },
-  async (ctx) => {
+  async (ctx, harness) => {
     const fixture = await setup(ctx);
     try {
       // The box's session runs a managed model (spec, `boxSession`). A free-tier
@@ -1714,10 +1818,13 @@ flow(
         if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
       });
 
+      await optIntoHarness(ctx, fixture, harness);
+
       let box!: Awaited<ReturnType<typeof boxSession>>;
-      await ctx.step('a session boots on the project and opens an OpenCode conversation', async () => {
+      await ctx.step('a session boots on the project and opens a runtime conversation', async () => {
         box = await boxSession(ctx, fixture);
       });
+      await proveHarness(ctx, box.sandboxId, harness);
       const releaseOf = () => box.releaseOf();
       const transcript = () => box.transcript();
       const send = (text: string) => box.send(text);
@@ -1788,21 +1895,70 @@ flow(
         if (after !== before + 1) throw new Error(`user rows ${before} -> ${after}; the re-send left no turn`);
       });
 
-      await ctx.step('DEF-FLAGON-2 — a broken base branch makes the session report a fallback', async () => {
+      await ctx.step('a skill merged to the base branch reaches the running session', async () => {
+        const before = String((await releaseOf())?.running_release_id ?? '');
+        const skill = (name: string) => `---\nname: ${name}\ndescription: merged while the session ran\n---\nUse it when asked.\n`;
+        // pi also reads its own config dir (`.kortix/pi` here), which a release carries as `pi/`.
+        const expected = harness === 'pi' ? ['cfg-merged-skill', 'cfg-pi-native-skill'] : ['cfg-merged-skill'];
         await fixture.commit(
-          { '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' },
-          'break the config',
+          {
+            '.kortix/opencode/skills/cfg-merged-skill/SKILL.md': skill('cfg-merged-skill'),
+            ...(harness === 'pi' ? { '.kortix/pi/skills/cfg-pi-native-skill/SKILL.md': skill('cfg-pi-native-skill') } : {}),
+          },
+          'merge a skill',
         );
-        const broken = await waitFor(releaseOf, {
-          until: (rel) => Boolean(rel?.fallback_reason) && Boolean(rel?.failed_release_id),
+        await waitFor(releaseOf, {
+          until: (rel) =>
+            Boolean(rel) &&
+            rel.running_release_id === rel.desired_release_id &&
+            rel.running_release_id !== before &&
+            rel.proven === true,
           timeoutMs: 300_000,
-          intervalMs: 5_000,
-          description: 'the session reports the broken release',
+          intervalMs: 3_000,
+          description: 'the box serves the release with the merged skill',
         });
-        if (broken.running_release_id === broken.failed_release_id) {
-          throw new Error('the box is running the release it reported as failed');
+        const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/skill'));
+        r.status(200);
+        const names = r.json<Array<{ name: string }>>().map((entry) => entry.name);
+        const missing = expected.filter((name) => !names.includes(name));
+        if (missing.length > 0) {
+          throw new Error(`the running session does not list ${missing.join(', ')}: ${names.join(', ')}`);
         }
       });
+
+      const brokenJson = { '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' };
+      if (harness === 'opencode') {
+        await ctx.step('DEF-FLAGON-2 — a broken base branch makes the session report a fallback', async () => {
+          await fixture.commit(brokenJson, 'break the config');
+          const broken = await waitFor(releaseOf, {
+            until: (rel) => Boolean(rel?.fallback_reason) && Boolean(rel?.failed_release_id),
+            timeoutMs: 300_000,
+            intervalMs: 5_000,
+            description: 'the session reports the broken release',
+          });
+          if (broken.running_release_id === broken.failed_release_id) {
+            throw new Error('the box is running the release it reported as failed');
+          }
+        });
+      } else {
+        // `opencode.json` is OpenCode's file. pi reads the agents and the skills
+        // of a release and nothing else, so the same commit is a working config.
+        await ctx.step('pi does not read OpenCode files: a broken opencode.json is applied with no fallback', async () => {
+          const before = String((await releaseOf())?.running_release_id ?? '');
+          await fixture.commit(brokenJson, 'break the config');
+          await waitFor(releaseOf, {
+            until: (rel) =>
+              Boolean(rel) &&
+              rel.running_release_id === rel.desired_release_id &&
+              rel.running_release_id !== before &&
+              rel.proven === true &&
+              rel.fallback_reason === null,
+            timeoutMs: 300_000,
+            intervalMs: 5_000,
+            description: 'pi applies the release that only breaks OpenCode',
+          });
+        });
+      }
 
       await ctx.step('DEF-FLAGON-2 — the fix clears the fallback with no further push', async () => {
         // The fix restores the config tree exactly, so the release the box is
@@ -1859,7 +2015,7 @@ const RACE_ROUNDS = Math.max(1, Number(process.env.KORTIX_CFG_RACE_ROUNDS ?? '5'
 /** Commit to `running_release_id === desired_release_id` on a box nobody is prompting. */
 const IDLE_CONVERGENCE_CEILING_MS = 65_000;
 
-flow(
+harnessFlow(
   'CFG-12',
   {
     domain: 'config-releases',
@@ -1871,10 +2027,12 @@ flow(
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       ...GIT_PROXY,
     ],
   },
-  async (ctx) => {
+  async (ctx, harness) => {
     const fixture = await setup(ctx);
     try {
       // See CFG-11's identical step for why: a free-tier account 400s
@@ -1891,14 +2049,17 @@ flow(
         if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
       });
 
+      await optIntoHarness(ctx, fixture, harness);
+
       let box!: Awaited<ReturnType<typeof boxSession>>;
-      await ctx.step('a session boots on a proven release and opens an OpenCode conversation', async () => {
+      await ctx.step('a session boots on a proven release and opens a runtime conversation', async () => {
         box = await boxSession(ctx, fixture);
         const release = await box.releaseOf();
         if (!release || release.source !== 'release' || release.proven !== true) {
           throw new Error(`the box is not on a proven release: ${JSON.stringify(release)}`);
         }
       });
+      await proveHarness(ctx, box.sandboxId, harness);
 
       /** Every assistant row that never completed. This must stay empty. */
       const openAssistantRows = async (): Promise<string[]> =>

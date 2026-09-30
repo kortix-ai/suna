@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,8 +34,10 @@ describe('renderJob', () => {
 // sandbox is ubuntu:24.04, and macOS has neither setsid nor GNU timeout.
 describe.skipIf(process.platform !== 'linux')('job scripts in a real shell', () => {
   const home = mkdtempSync(join(tmpdir(), 'kmcp-'));
+  // No login shell: a runner's /etc/profile can reset HOME, and the job dirs
+  // would then land outside this test's home (the cleanup test failed on CI).
   const sh = (script: string, env: Record<string, string>, cwd = home) =>
-    spawnSync('bash', ['-lc', script], { cwd, env: { ...process.env, HOME: home, ...env }, encoding: 'utf8' }).stdout;
+    spawnSync('bash', ['--noprofile', '--norc', '-c', script], { cwd, env: { ...process.env, HOME: home, ...env }, encoding: 'utf8' }).stdout;
   const poll = (job: string) => parseJobPoll(sh(JOB_POLL, { KMCP_JOB: job, KMCP_TAIL: '1000', KMCP_SEP: SEP }), SEP);
   const waitDone = async (job: string, ms = 10_000) => {
     const until = Date.now() + ms;
@@ -66,6 +68,34 @@ describe.skipIf(process.platform !== 'linux')('job scripts in a real shell', () 
     expect(poll('j3')).toMatchObject({ state: 'done', exit: 'cancelled' });
     expect(spawnSync('pgrep', ['-x', '-f', 'sleep 30[12]']).status).toBe(1);
     expect(sh(JOB_CANCEL, { KMCP_JOB: 'j3' }).trim()).toBe('finished');
+  });
+
+  test('the launch internals do not leak into the command environment', async () => {
+    sh(JOB_LAUNCH, { KMCP_JOB: 'j4', KMCP_CMD: 'env | grep -c KMCP', KMCP_TIMEOUT: '60' });
+    expect(await waitDone('j4')).toMatchObject({ state: 'done', stdout: '0\n' });
+  });
+
+  test('a launch deletes job dirs older than 24 h and keeps recent ones', async () => {
+    const jobs = join(home, '.cache/kortix-mcp/jobs');
+    mkdirSync(join(jobs, 'old'), { recursive: true });
+    // Backdate in-process and prove it took: `touch -d '2 days ago'` depends on
+    // the runner's coreutils and its exit status was never checked, so a CI
+    // failure could not say whether the mtime or the cleanup was wrong.
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    utimesSync(join(jobs, 'old'), twoDaysAgo, twoDaysAgo);
+    expect(Date.now() - statSync(join(jobs, 'old')).mtimeMs).toBeGreaterThan(24 * 60 * 60 * 1000);
+    sh(JOB_LAUNCH, { KMCP_JOB: 'j5', KMCP_CMD: 'true', KMCP_TIMEOUT: '60' });
+    expect(existsSync(join(jobs, 'old'))).toBe(false);
+    expect(existsSync(join(jobs, 'j5'))).toBe(true);
+  });
+
+  test('a cut tail starts on a line boundary, or says it started mid-line', async () => {
+    sh(JOB_LAUNCH, { KMCP_JOB: 'j6', KMCP_CMD: 'for i in $(seq 1 400); do echo line$i; done; head -c 3000 /dev/zero | tr "\\0" x >&2', KMCP_TIMEOUT: '60' });
+    const done = await waitDone('j6');
+    if (done.state === 'missing') throw new Error('job missing');
+    expect(done.sizes[0]).toBeGreaterThan(1000);
+    expect(done.stdout.split('\n').filter(Boolean).every((l) => /^line\d+$/.test(l))).toBe(true);
+    expect(done.stderr).toStartWith('(started mid-line) x');
   });
 
   test('an unknown job is missing', () => {

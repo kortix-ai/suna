@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import type { Skill, ToolListItem } from './keys';
 import { unwrap } from './shared';
 
@@ -10,10 +10,11 @@ import { unwrap } from './shared';
 // Tool Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeToolIds() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   return useQuery<string[]>({
-    queryKey: opencodeKeys.toolIds(),
+    queryKey: runtimeKeys.toolIds(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.tool.ids();
@@ -25,10 +26,10 @@ export function useOpenCodeToolIds() {
   });
 }
 
-export function useOpenCodeTools(providerID: string, modelID: string) {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeTools(providerID: string, modelID: string) {
+  const runtimeReady = useRuntimeReady();
   return useQuery<ToolListItem[]>({
-    queryKey: opencodeKeys.tools(providerID, modelID),
+    queryKey: runtimeKeys.tools(providerID, modelID),
     queryFn: async () => {
       const client = getClient();
       const result = await client.tool.list({ provider: providerID, model: modelID });
@@ -44,10 +45,11 @@ export function useOpenCodeTools(providerID: string, modelID: string) {
 // Skill Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeSkills() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   return useQuery<Skill[]>({
-    queryKey: opencodeKeys.skills(),
+    queryKey: runtimeKeys.skills(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.app.skills();
@@ -58,3 +60,7 @@ export function useOpenCodeSkills() {
     gcTime: 10 * 60 * 1000,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeTools`. Removed in the next major. */
+export const useOpenCodeTools = useRuntimeTools;

@@ -146,6 +146,9 @@ const ignoredPathParts = [
   '/src/app/[locale]/presentations/film/',
   '/src/features/marketing/launch/',
   '/src/app/[locale]/(public)/(marketing)/launch/',
+  // Legal texts are English only by design: one authoritative version, like
+  // the Terms of Service PDF (#8315). Their page chrome still uses i18n keys.
+  '/src/app/[locale]/(public)/(seo)/legal/',
 ];
 
 const ignoredFilePattern = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -201,6 +204,15 @@ const allowedLiteralValues = new Set([
   'Slack',
   'GitHub',
   'Linear',
+  // Framework names in the design-system Select demos: proper nouns, like the
+  // product names above.
+  'Next.js',
+  'Remix',
+  'Astro',
+  'Nuxt',
+  'Django',
+  'Ruby on Rails',
+  'Laravel',
   'Discover and read Kortix public API and documentation resources.',
 ]);
 
@@ -946,10 +958,6 @@ function scanFile(file) {
           catalogRoot === 'SLOTS') ||
         (file === path.join(srcDir, 'features/marketing/hero-surfaces.tsx') &&
           catalogRoot === 'SURFACES') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/filesystem-scope-editor.tsx') &&
-          catalogRoot === 'MAX_FILE_SIZE_OPTIONS') ||
-        (file === path.join(srcDir, 'features/tunnel/scope-editors/shell-scope-editor.tsx') &&
-          catalogRoot === 'TIMEOUT_OPTIONS') ||
         (file ===
           path.join(
             srcDir,

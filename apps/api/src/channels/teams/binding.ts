@@ -1,6 +1,7 @@
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
 
@@ -10,22 +11,31 @@ export function teamsChannelCtx(tenantId: string, conversationId: string): Chann
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
 }
 
+/**
+ * The tenant's installed projects that run Teams: the `teams` flag is on.
+ * Every list Teams shows or picks from reads this, so a project with Teams
+ * turned off is never offered, bound by `/use`, or picked for a new chat.
+ */
 export async function listTenantProjects(
   tenantId: string,
-): Promise<Array<{ projectId: string; name: string }>> {
+): Promise<Array<{ projectId: string; name: string; repoUrl: string | null }>> {
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
+  // Only the installed projects. This read had no `where`, so every `/status`,
+  // `/projects` and `/use` loaded the whole projects table to keep a handful.
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
-    .from(projects);
-  const byId = new Map(rows.map((r) => [r.projectId, r.name]));
-  return ids
-    .filter((id) => byId.has(id))
-    .map((id) => ({ projectId: id, name: byId.get(id) ?? id }));
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl, metadata: projects.metadata })
+    .from(projects)
+    .where(inArray(projects.projectId, ids));
+  const byId = new Map(rows.filter((r) => resolveFeatureFlag(r.metadata, 'teams')).map((r) => [r.projectId, r]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [{ projectId: id, name: row.name ?? id, repoUrl: row.repoUrl ?? null }] : [];
+  });
 }
 
 export async function resolveConversationProject(

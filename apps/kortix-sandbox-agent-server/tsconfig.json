@@ -39,6 +39,10 @@
       // by the kortixd/import-style lint rule).
       "@/*": ["./src/*"],
       "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
+      // The mapped contract imports zod (runtime-relay.ts), and this standalone
+      // build installs zod only here. `scripts/build.sh` passes this tsconfig to
+      // `bun build` so the bundler resolves it the same way.
+      "zod": ["./node_modules/zod"],
       // env-rpc-worker-integration.test.ts imports the worker's real source.
       // That source lazily references `ws`, but this standalone package keeps
       // its own node_modules below the worker's module-resolution ancestry.

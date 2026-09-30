@@ -12,8 +12,9 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  */
 
 const rows: Array<{ platform: string; channelId: string; projectId: string; workspaceId: string; channelName: string | null; channelType: string | null }> = [];
-const sent: Array<{ conversationId: string; tenantId?: string; kind: 'card' | 'text' }> = [];
+const sent: Array<{ conversationId: string; tenantId?: string; kind: 'card' | 'text' | 'update' | 'delete'; activityId?: string }> = [];
 let cardOk = true;
+let editOk = true;
 let storedServiceUrl: string | null = 'https://smba.trafficmanager.net/emea/';
 
 describe('postToTeamsConversation', () => {
@@ -21,6 +22,7 @@ describe('postToTeamsConversation', () => {
     rows.length = 0;
     sent.length = 0;
     cardOk = true;
+    editOk = true;
     storedServiceUrl = 'https://smba.trafficmanager.net/emea/';
     rows.push({
       platform: 'teams',
@@ -43,7 +45,7 @@ describe('postToTeamsConversation', () => {
   test('posts into a conversation bound to this project', async () => {
     const { postToTeamsConversation } = await import('../channels/teams/post');
     const res = await postToTeamsConversation('p1', { conversationId: '19:mine@thread.tacv2', text: 'hello' });
-    expect(res).toEqual({ ok: true, conversationId: '19:mine@thread.tacv2', delivered: 'card' });
+    expect(res).toEqual({ ok: true, conversationId: '19:mine@thread.tacv2', delivered: 'card', messageId: 'act-card' });
     expect(sent).toHaveLength(1);
     // The tenant comes from the binding row, never from the caller.
     expect(sent[0]!.tenantId).toBe('tenant-1');
@@ -81,7 +83,7 @@ describe('postToTeamsConversation', () => {
     cardOk = false;
     const { postToTeamsConversation } = await import('../channels/teams/post');
     const res = await postToTeamsConversation('p1', { conversationId: '19:mine@thread.tacv2', text: 'hello' });
-    expect(res).toEqual({ ok: true, conversationId: '19:mine@thread.tacv2', delivered: 'text' });
+    expect(res).toEqual({ ok: true, conversationId: '19:mine@thread.tacv2', delivered: 'text', messageId: 'act-text' });
     expect(sent.map((s) => s.kind)).toEqual(['card', 'text']);
   });
 
@@ -107,6 +109,34 @@ describe('postToTeamsConversation', () => {
     expect(await resolveTeamsProjectConversation('p1', '19:someone-elses@thread.tacv2')).toMatchObject({ ok: false, status: 404 });
     storedServiceUrl = null;
     expect(await resolveTeamsProjectConversation('p1', '19:mine@thread.tacv2')).toMatchObject({ ok: false, status: 409 });
+  });
+
+  // `teams edit` / `teams delete`: the message id a post returned, in a
+  // conversation authorized exactly as a post is.
+  test('edits and deletes a bot message in a bound conversation, by the id the post returned', async () => {
+    const { deleteTeamsMessage, editTeamsMessage } = await import('../channels/teams/post');
+    expect(await editTeamsMessage('p1', { conversationId: '19:mine@thread.tacv2', messageId: 'act-card', text: 'updated' }))
+      .toEqual({ ok: true, conversationId: '19:mine@thread.tacv2', messageId: 'act-card' });
+    expect(await deleteTeamsMessage('p1', { conversationId: '19:mine@thread.tacv2', messageId: 'act-card' }))
+      .toEqual({ ok: true, conversationId: '19:mine@thread.tacv2', messageId: 'act-card' });
+    expect(sent.map((x) => [x.kind, x.activityId, x.tenantId])).toEqual([['update', 'act-card', 'tenant-1'], ['delete', 'act-card', 'tenant-1']]);
+  });
+
+  test('edit and delete refuse another project\'s conversation, a missing id, and nothing to say', async () => {
+    const { deleteTeamsMessage, editTeamsMessage } = await import('../channels/teams/post');
+    expect(await editTeamsMessage('p1', { conversationId: '19:someone-elses@thread.tacv2', messageId: 'a', text: 'x' })).toMatchObject({ ok: false, status: 404 });
+    expect(await deleteTeamsMessage('p1', { conversationId: '19:someone-elses@thread.tacv2', messageId: 'a' })).toMatchObject({ ok: false, status: 404 });
+    expect(await editTeamsMessage('p1', { conversationId: '19:mine@thread.tacv2', messageId: '', text: 'x' })).toMatchObject({ ok: false, status: 400 });
+    expect(await editTeamsMessage('p1', { conversationId: '19:mine@thread.tacv2', messageId: 'a' })).toMatchObject({ ok: false, status: 400 });
+    expect(sent).toEqual([]);
+  });
+
+  test('a message Teams will not edit (not the bot\'s) is a 502 that says why', async () => {
+    editOk = false;
+    const { editTeamsMessage } = await import('../channels/teams/post');
+    const res = await editTeamsMessage('p1', { conversationId: '19:mine@thread.tacv2', messageId: 'someone-elses', text: 'x' });
+    expect(res).toMatchObject({ ok: false, status: 502 });
+    expect((res as { error: string }).error).toContain('Only a message this bot posted');
   });
 
   test('lists only the project own conversations as targets', async () => {
@@ -162,14 +192,24 @@ mock.module('../channels/install-store', () => ({
 mock.module('../channels/teams-api', () => ({
   sendCard: async (ref: { conversationId: string; tenantId?: string }) => {
     sent.push({ conversationId: ref.conversationId, tenantId: ref.tenantId, kind: 'card' });
-    return cardOk;
+    return cardOk ? 'act-card' : null;
   },
   sendActivity: async (ref: { conversationId: string; tenantId?: string }) => {
     sent.push({ conversationId: ref.conversationId, tenantId: ref.tenantId, kind: 'text' });
+    return 'act-text';
+  },
+  updateCard: async (ref: { conversationId: string; tenantId?: string }, activityId: string) => {
+    sent.push({ conversationId: ref.conversationId, tenantId: ref.tenantId, kind: 'update', activityId });
+    return editOk;
+  },
+  deleteActivity: async (ref: { conversationId: string; tenantId?: string }, activityId: string) => {
+    sent.push({ conversationId: ref.conversationId, tenantId: ref.tenantId, kind: 'delete', activityId });
     return true;
   },
 }));
 
+const realCards = await import('../channels/teams/cards');
 mock.module('../channels/teams/cards', () => ({
   buildNoticeCard: (t: string) => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: t }] }),
+  withoutPostbackActions: realCards.withoutPostbackActions,
 }));

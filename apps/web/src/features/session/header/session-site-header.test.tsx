@@ -22,7 +22,7 @@ describe('SessionSiteHeader sidebar toggle', () => {
     expect(source).toContain('<SidebarToggle />');
     const toggleAt = source.indexOf('<SidebarToggle />');
     expect(toggleAt).toBeGreaterThan(-1);
-    expect(toggleAt).toBeLessThan(source.indexOf('>{headerTitle}</span>'));
+    expect(toggleAt).toBeLessThan(source.indexOf('{titleButton}'));
   });
 
   // `sidebarState` survives for the title-bar indent (`sidebarHidden`), not
@@ -40,8 +40,9 @@ describe('SessionSiteHeader sidebar toggle', () => {
  */
 describe('SessionSiteHeader session title', () => {
   test('renders the session name in the leading cluster, after the home button and before leadingAction', () => {
-    const homeButtonIndex = source.indexOf('<HouseIcon');
-    const titleIndex = source.indexOf('>{headerTitle}</span>');
+    const homeButtonIndex = source.indexOf('<Home ');
+    expect(homeButtonIndex).toBeGreaterThan(-1);
+    const titleIndex = source.indexOf('{titleButton}');
     const leadingActionIndex = source.lastIndexOf('{leadingAction}');
     expect(titleIndex).toBeGreaterThan(-1);
     expect(titleIndex).toBeGreaterThan(homeButtonIndex);
@@ -115,6 +116,111 @@ describe('SessionSiteHeader session title', () => {
     expect(source).toContain('setExportOpen(true)');
     expect(source).toContain('setCompactOpen(true)');
     expect(source).toContain('setDeleteOpen(true)');
+  });
+
+  // KRTX-801: the desktop shell has no address bar, so the menu copies the
+  // session ID and link. The ID is the project session from the URL, not the
+  // runtime `sessionId` prop; the link is read at click time.
+  test('copies the project session ID and the current link through the shared clipboard helper', () => {
+    expect(source).toContain("copyValue(tPalette('copySessionId'), projectSessionId!)");
+    expect(source).toContain("copyValue(tPalette('copySessionLink'), window.location.href)");
+    expect(source).toContain('copyToClipboard(value)');
+    expect(source.indexOf("tPalette('copySessionId')")).toBeLessThan(
+      source.indexOf('setExportOpen(true)'),
+    );
+  });
+});
+
+/**
+ * A subsession shows its parent as the first breadcrumb: home icon and parent
+ * name, a slash, then the subsession's own name control. The parent link used
+ * to sit above the composer; it lives only here now.
+ */
+const cardSource = readFileSync(
+  fileURLToPath(new URL('./subagent-hover-card.tsx', import.meta.url)),
+  'utf8',
+);
+
+describe('SessionSiteHeader subsession breadcrumb', () => {
+  const composerSource = readFileSync(
+    fileURLToPath(new URL('../composer/composer.tsx', import.meta.url)),
+    'utf8',
+  );
+
+  test('the parent crumb renders after the sidebar toggle and before the session name', () => {
+    const crumbAt = source.indexOf('onClick={parent.onOpen}');
+    expect(crumbAt).toBeGreaterThan(source.indexOf('<SidebarToggle />'));
+    expect(crumbAt).toBeLessThan(source.indexOf('{titleButton}'));
+    const crumb = source.slice(crumbAt, source.indexOf('</Button>', crumbAt));
+    // The custom filled house mark, not the Phosphor outline.
+    expect(crumb).toContain('<Home ');
+    expect(source).toContain("import { Home } from '@/features/icon/icons/home';");
+    // Reads "Home", never the parent session's title.
+    expect(crumb).toContain("'i18nComplete.text3a78695388b3'");
+    expect(source).not.toContain('parent.title');
+  });
+
+  // `projectSession` is the PARENT's row on a subsession route, so its name and
+  // its rename must not leak onto the subsession's crumb.
+  test("a subsession shows its own title, not the project session's, and cannot rename it", () => {
+    expect(source).toContain('const headerTitle = parent');
+    expect(source).toContain('const canRename = isProjectSession && !!projectSession && !parent;');
+    const menuStart = source.indexOf('const sessionActionItems = (');
+    const renameItem = source.indexOf('startRename();', menuStart);
+    expect(source.lastIndexOf('{canRename && (', renameItem)).toBeGreaterThan(menuStart);
+    // Delete removes the whole project session, so it names that session.
+    expect(source).toContain('sessionLabel={projectTitle}');
+  });
+
+  test('the subagent suffix is stripped from the subsession title', () => {
+    expect(source).toContain('? subagentTitle(sessionTitle)');
+    const pattern = cardSource.match(/title\.replace\((\/.*\/), ''\)/)?.[1];
+    expect(pattern).toBeTruthy();
+    const re = new Function(`return ${pattern}`)() as RegExp;
+    expect('Research the topic (@general subagent)'.replace(re, '')).toBe('Research the topic');
+    expect('Plain title'.replace(re, '')).toBe('Plain title');
+  });
+
+  test('the composer no longer carries a back-to-parent control', () => {
+    expect(composerSource).not.toContain('threadContext');
+    expect(composerSource).not.toContain('onBackToParent');
+  });
+});
+
+/**
+ * A parent session's name, on hover, lists the subagents it spawned. Only on a
+ * root session with children: a subsession has its own crumb, and a session
+ * with no children keeps the plain "Rename" hint.
+ */
+describe('SessionSiteHeader subagent hover card', () => {
+  test('wraps the name only on a root session that has subsessions', () => {
+    expect(source).toContain(
+      'const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];',
+    );
+    const cardAt = source.indexOf('<SubagentHoverCard');
+    expect(source.lastIndexOf('canRename && subsessions.length > 0 ? (', cardAt)).toBeGreaterThan(-1);
+    expect(source.slice(cardAt, source.indexOf('</SubagentHoverCard>'))).toContain('{titleButton}');
+    // The Rename hint still wraps the same button when there are no children.
+    const cardEnd = source.indexOf('</SubagentHoverCard>');
+    const hintAt = source.indexOf('{titleButton}', cardEnd);
+    expect(source.lastIndexOf('<Hint', hintAt)).toBeGreaterThan(cardEnd);
+  });
+
+  test('the card uses the HoverCard primitive and links each row to its child-session route', () => {
+    expect(cardSource).toContain("from '@/components/ui/hover-card'");
+    expect(cardSource).toContain('href={childSessionHref(href, child.id)}');
+    expect(cardSource).toContain('<HoverPrefetchLink');
+    expect(cardSource).toContain("menuRow('sm', 'default'");
+    // A row click closes the card before the route changes under it.
+    expect(cardSource).toContain('onClick={() => setOpen(false)}');
+    expect(cardSource).toContain('animated={false}');
+  });
+
+  test('a long list scrolls inside a capped, edge-faded area', () => {
+    const area = cardSource.slice(cardSource.indexOf('<FadedScrollArea'), cardSource.indexOf('<ul'));
+    expect(area).toContain('max-h-64');
+    expect(area).toContain('overscroll-contain');
+    expect(area).toContain('fadeColor="from-popover"');
   });
 });
 

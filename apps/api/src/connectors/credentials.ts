@@ -10,7 +10,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * `userId: null`). Values are encrypted with the project key and resolved
  * server-side only.
  */
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
@@ -151,6 +151,74 @@ export async function credentialExists(
     )
     .limit(1);
   return !!row;
+}
+
+/**
+ * Did an account land on this connector at or after `since`, on a connection
+ * the member can use: a shared one, or their own?
+ *
+ * The question a connect link's card asks after a reload. A link adds an
+ * account even when the connector already has one, so "a credential exists"
+ * (`credentialExists`) would call a link nobody has acted on connected.
+ *
+ * An account is recorded in one of two places, and both are read:
+ * - a `connection_credentials` row (Pipedream, API keys, OAuth2), stamped
+ *   `updated_at` on every write;
+ * - for Composio, the connection row itself: `metadata.connected_account_id`
+ *   (or `is_no_auth`), stamped `updated_at` by connect and finalize. A row
+ *   whose authorization is still open has neither and does not count.
+ *
+ * So a row stamped since the link was minted is the connect that link asked
+ * for, or a connect of the same app made some other way, which settles the ask
+ * as well. Another member's private account and an agent-owned binding never
+ * count.
+ */
+export async function connectorAccountLandedSince(
+  connectorId: string,
+  memberId: string | null,
+  since: Date,
+): Promise<boolean> {
+  const reachable = memberId
+    ? or(
+        eq(connectorConnections.ownerType, 'project'),
+        and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, memberId)),
+      )
+    : eq(connectorConnections.ownerType, 'project');
+  // A credential not yet bound to a connection row is scoped by `user_id`.
+  const legacyOwner = memberId
+    ? or(isNull(connectionCredentials.userId), eq(connectionCredentials.userId, memberId))
+    : isNull(connectionCredentials.userId);
+  const [[credential], [connection]] = await Promise.all([
+    db
+      .select({ id: connectionCredentials.credentialId })
+      .from(connectionCredentials)
+      .leftJoin(
+        connectorConnections,
+        eq(connectorConnections.connectionId, connectionCredentials.connectionId),
+      )
+      .where(
+        and(
+          eq(connectionCredentials.connectorId, connectorId),
+          gte(connectionCredentials.updatedAt, since),
+          or(and(isNull(connectionCredentials.connectionId), legacyOwner), reachable),
+        ),
+      )
+      .limit(1),
+    db
+      .select({ id: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connectorId),
+          eq(connectorConnections.status, 'active'),
+          gte(connectorConnections.updatedAt, since),
+          reachable,
+          sql`(${connectorConnections.metadata}->>'connected_account_id' is not null or ${connectorConnections.metadata}->>'is_no_auth' = 'true')`,
+        ),
+      )
+      .limit(1),
+  ]);
+  return !!credential || !!connection;
 }
 
 export async function connectorIdsWithSharedCredentials(
@@ -546,6 +614,11 @@ export async function ensureDefaultConnection(input: {
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
+  // A computer account is one paired machine. A machine-less shared row would
+  // win unattended resolution and answer every call with computer_unpaired.
+  if (connector.providerType === 'computer') {
+    throw new Error('Computer accounts are added by pairing a computer, not by a credential');
+  }
 
   // Its own row: labelled `connector.name` on create, or marked as its slot
   // once finalize relabelled it to the authorized identity or someone renamed it.

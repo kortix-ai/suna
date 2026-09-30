@@ -159,10 +159,15 @@ export async function createPendingTeamsPickerMessage(input: {
   }
 }
 
-/** Consume a parked picker message by id + tenant (anyone in the conversation may pick). */
+/**
+ * Consume a parked picker message by id + tenant. Anyone in the conversation
+ * may pick, but only there: a pick from another conversation would replay
+ * this sender's message where they never sent it.
+ */
 export async function consumePendingTeamsPickerMessage(input: {
   pendingId: string | undefined;
   tenantId: string;
+  conversationId: string;
 }): Promise<TeamsActivity | null> {
   if (!input.pendingId || !input.tenantId) return null;
   try {
@@ -177,9 +182,10 @@ export async function consumePendingTeamsPickerMessage(input: {
         ),
       )
       .limit(1);
-    if (!row) return null;
+    const parked = row?.event as unknown as TeamsActivity | undefined;
+    if (!parked || parked.conversation?.id !== input.conversationId) return null;
     await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
-    return row.event as unknown as TeamsActivity;
+    return parked;
   } catch (err) {
     console.warn('[teams-webhook] failed to consume pending picker message', err);
     return null;

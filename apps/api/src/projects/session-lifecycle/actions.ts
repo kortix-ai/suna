@@ -41,7 +41,7 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { claimInPlaceRestart } from './runtime-restart-claim';
 import { transitionSandbox, transitionSession } from './status-transitions';
 import {
@@ -211,7 +211,7 @@ export async function restartSession(input: {
     sandboxProvider: string;
     baseRef: string | null;
     agentName: string | null;
-    opencodeSessionId: string | null;
+    runtimeSessionId: string | null;
     metadata?: Record<string, unknown> | null;
   };
   projectId: string;
@@ -247,7 +247,7 @@ export async function restartSession(input: {
     .limit(1);
 
   const provisionReplacementRuntime = async () => {
-    const initialPrompt = session.opencodeSessionId
+    const initialPrompt = session.runtimeSessionId
       ? null
       : typeof session.metadata?.initial_prompt === 'string'
         ? (session.metadata.initial_prompt as string)

@@ -2,10 +2,12 @@
 // 2026-07-05: "one home per concern").
 //
 // TWO homes, ONE wire contract: kortix.yaml carries governance ONLY
-// (connectors/secrets/skills/kortix_permissions/repository_access/enabled); the agent's own
-// native `.kortix/opencode/agents/<name>.md` frontmatter + body carries every
-// OpenCode-behavioral field (mode/model/temperature/top_p/steps/variant/
-// color/hidden/permission) plus the prompt itself. This route is the ONE
+// (connectors/secrets/skills/kortix_permissions/repository_access/enabled) plus
+// `file`, the path of the agent's `.md`; that `.md` frontmatter + body carries
+// every behavioral field (mode/model/temperature/top_p/steps/variant/
+// color/hidden/permission) plus the prompt itself. `file` is server-owned:
+// the wire never sends it, and PUT records the path it read or wrote, so a
+// save never drops it and an edited agent always names its file. This route is the ONE
 // place that merges them into a single wire shape (`block.opencode = {...}`)
 // so the dashboard editor's data binding never has to know two files exist —
 // see agent-editor.tsx. GET reads both; PUT writes governance to kortix.yaml
@@ -40,7 +42,6 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
 import { extractAgents } from '../agents';
-import { readRepoFile } from '../git';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from '../git/branches';
 import { isRemotePushPolicyRejection } from '../git/mirror';
 import {
@@ -52,6 +53,7 @@ import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
+  resolveBehaviorDraft,
   readAgentBlockV2,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
@@ -59,7 +61,7 @@ import { projectsApp } from '../lib/app';
 import {
   KNOWN_BEHAVIOR_KEYS,
   OpencodeAgentConfigSchema,
-  agentMarkdownPath,
+  readAgentMarkdownFile,
 } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -84,6 +86,7 @@ const GrantSetSchema = z.union([
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
+    tools: z.record(z.string(), z.boolean()).optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
     connectors: GrantSetSchema.optional(),
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
@@ -100,6 +103,12 @@ const AgentBlockSchema = z
     repository_access: z.boolean().optional(),
     // Deprecated input alias for older clients.
     workspace: z.enum(['runtime', 'read', 'branch']).optional(),
+    // Server-owned; accepted so a GET → PUT round trip keeps working. Only the
+    // value already in effect is allowed (see the PUT handler).
+    file: z.string().max(1024).optional(),
+    // The agent's behavior half (`.md` frontmatter + body as `prompt`).
+    behavior: OpencodeAgentConfigSchema.optional(),
+    // The pre-W4 name of `behavior`; see resolveBehaviorDraft.
     opencode: OpencodeAgentConfigSchema.optional(),
   })
   .strict();
@@ -130,21 +139,20 @@ function pushPolicyRejectedBody(branch: string) {
   };
 }
 
-/** Read + parse an agent's `.md` (governance-declared or not — behavior and
- *  governance are independently addressable). Never throws: a missing file
+/** Read + parse an agent's `.md` on `branch` (governance-declared or not —
+ *  behavior and governance are independently addressable): the first
+ *  candidate path that exists, else where a new one goes. A missing file
  *  (brand-new agent) reads as body-only/empty, same as a fresh start. */
 async function readAgentMarkdown(
   project: Parameters<typeof withProjectGitAuth>[0] | Awaited<ReturnType<typeof withProjectGitAuth>>,
   branch: string,
-  mdPath: string,
-): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
-  try {
-    const gitProject = 'gitAuthToken' in project ? project : await withProjectGitAuth(project);
-    const content = await readRepoFile(gitProject, mdPath, branch);
-    return parseAgentMarkdown(content);
-  } catch {
-    return { frontmatter: {}, body: '' };
-  }
+  manifestRaw: Record<string, unknown>,
+  agentName: string,
+): Promise<{ path: string; exists: boolean; frontmatter: Record<string, unknown>; body: string }> {
+  const gitProject = 'gitAuthToken' in project ? project : await withProjectGitAuth(project);
+  const md = await readAgentMarkdownFile(gitProject, manifestRaw, agentName, branch);
+  if (md.content === null) return { path: md.path, exists: false, frontmatter: {}, body: '' };
+  return { path: md.path, exists: true, ...parseAgentMarkdown(md.content) };
 }
 
 /** Merge the editor's draft behavior fields onto the file's EXISTING
@@ -166,13 +174,20 @@ function mergeFrontmatter(
 }
 
 /** Project the recognized behavior fields out of a `.md`'s parsed
- *  frontmatter, for the GET response's `block.opencode`. */
+ *  frontmatter, for the GET response's `block.behavior`. */
 function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of KNOWN_BEHAVIOR_KEYS) {
     if (frontmatter[key] !== undefined) out[key] = frontmatter[key];
   }
   return out;
+}
+
+/** The behavior half as GET serves it: the picked frontmatter, plus the body as `prompt`. */
+function behaviorOf(md: { frontmatter: Record<string, unknown>; body: string }): Record<string, unknown> {
+  const behavior = pickBehaviorFields(md.frontmatter);
+  if (md.body.trim()) behavior.prompt = md.body;
+  return behavior;
 }
 
 // GET /v1/projects/:projectId/agents/:agentName/config
@@ -185,7 +200,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/agents/{agentName}/config',
     tags: ['projects'],
-    summary: 'GET /:projectId/agents/:agentName/config',
+    summary: 'Get an agent\'s configuration',
     ...auth,
     request: { params: z.object({ projectId: z.string(), agentName: z.string() }) },
     responses: { 200: json(z.any(), 'The agent config block'), ...errors(400, 403, 404) },
@@ -219,17 +234,20 @@ projectsApp.openapi(
     const read = readAgentBlockV2(manifest, agentName);
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
-    let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
+    let block:
+      | (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> })
+      | null = read.block;
     if (read.schemaVersion === 2) {
-      const mdPath = agentMarkdownPath(manifest.raw, agentName);
-      const { frontmatter, body } = await readAgentMarkdown(
-        gitProject,
-        loaded.row.defaultBranch,
-        mdPath,
+      const behavior = behaviorOf(
+        await readAgentMarkdown(
+          gitProject,
+          loaded.row.defaultBranch,
+          manifest.raw,
+          agentName,
+        ).catch(() => ({ frontmatter: {}, body: '' })),
       );
-      const opencode = pickBehaviorFields(frontmatter);
-      if (body.trim()) opencode.prompt = body;
-      block = { ...(read.block ?? {}), opencode };
+      // `opencode` is the pre-W4 name of `behavior`, served until clients move.
+      block = { ...(read.block ?? {}), behavior, opencode: behavior };
     }
 
     return c.json({
@@ -357,7 +375,7 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/agents/{agentName}/config',
     tags: ['projects'],
-    summary: 'PUT /:projectId/agents/:agentName/config',
+    summary: 'Set an agent\'s configuration',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), agentName: z.string() }),
@@ -393,7 +411,14 @@ projectsApp.openapi(
     // Split the wire body into its two homes. Drop undefined keys
     // (governance side) so an omitted field never serializes as an explicit
     // `null`/`undefined` into the YAML block.
-    const { opencode: opencodeDraft, ...governanceRaw } = parsed.data;
+    const {
+      behavior: behaviorName,
+      opencode: preW4BehaviorName,
+      file: requestedFile,
+      ...governanceRaw
+    } = parsed.data;
+    // Resolved against the current `.md` below, once it is read (v2 only).
+    let behaviorDraft = behaviorName ?? preW4BehaviorName;
     const normalizedGovernance = normalizeRequiredConnectorAliases(governanceRaw);
     if (!normalizedGovernance.ok) {
       return c.json({ error: normalizedGovernance.error, code: 'invalid_body' }, 400);
@@ -434,6 +459,40 @@ projectsApp.openapi(
       }
     }
 
+    // `file` is server-owned (see the header). Resolve the `.md` against the
+    // CURRENT manifest, before the block is replaced: an explicit `file` stays,
+    // otherwise the path found (or about to be written) is recorded.
+    let agentMd: Awaited<ReturnType<typeof readAgentMarkdown>> | null = null;
+    if (manifest.schemaVersion === 2) {
+      try {
+        agentMd = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, manifest.raw, agentName);
+      } catch (err) {
+        return c.json(
+          { error: `Failed to read the agent's .md: ${(err as Error).message || String(err)}` },
+          502,
+        );
+      }
+      const resolved = resolveBehaviorDraft(
+        { behavior: behaviorName, opencode: preW4BehaviorName },
+        behaviorOf(agentMd),
+      );
+      if (!resolved.ok) return c.json({ error: resolved.error, code: 'invalid_body' }, 400);
+      behaviorDraft = resolved.draft;
+      const currentBlock = readAgentBlockV2(manifest, agentName);
+      const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
+      if (explicitFile !== undefined) governanceBlock.file = explicitFile;
+      else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;
+      if (requestedFile !== undefined && requestedFile !== governanceBlock.file) {
+        return c.json(
+          {
+            error: `agents.${agentName}.file is "${governanceBlock.file ?? agentMd.path}" and cannot be changed here. Move the file in the repository and update kortix.yaml in the same commit.`,
+            code: 'invalid_config',
+          },
+          400,
+        );
+      }
+    }
+
     const applied = applyAgentBlockV2(manifest, agentName, governanceBlock);
     if (!applied.ok) {
       return c.json({ error: applied.error, code: 'invalid_config', issues: applied.issues }, 400);
@@ -452,13 +511,13 @@ projectsApp.openapi(
     let mdPath: string | null = null;
     let nextFrontmatter: Record<string, unknown> | null = null;
     let nextBody: string | null = null;
-    if (opencodeDraft !== undefined) {
-      mdPath = agentMarkdownPath(applied.raw, agentName);
-      const existing = await readAgentMarkdown(loaded.row, loaded.row.defaultBranch, mdPath);
-      const draftRecord: Record<string, unknown> = { ...opencodeDraft };
+    if (behaviorDraft !== undefined && agentMd) {
+      mdPath = agentMd.path;
+      const existing = agentMd;
+      const draftRecord: Record<string, unknown> = { ...behaviorDraft };
       delete draftRecord.prompt;
       nextFrontmatter = mergeFrontmatter(existing.frontmatter, draftRecord);
-      nextBody = opencodeDraft.prompt ?? '';
+      nextBody = behaviorDraft.prompt ?? '';
 
       const issues: ManifestIssue[] = [];
       validateAgentMdFrontmatter(nextFrontmatter, `agents.${agentName}`, issues);
@@ -524,7 +583,7 @@ projectsApp.openapi(
     }
 
     const read = readAgentBlockV2(manifest, agentName);
-    const responseOpencode =
+    const responseBehavior =
       nextFrontmatter !== null
         ? { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) }
         : undefined;
@@ -533,7 +592,10 @@ projectsApp.openapi(
       agent: agentName,
       schema_version: manifest.schemaVersion,
       block: read.ok
-        ? { ...(read.block ?? {}), ...(responseOpencode ? { opencode: responseOpencode } : {}) }
+        ? {
+            ...(read.block ?? {}),
+            ...(responseBehavior ? { behavior: responseBehavior, opencode: responseBehavior } : {}),
+          }
         : governanceBlock,
     });
   },

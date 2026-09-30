@@ -630,8 +630,14 @@ jobs:
       - name: Install pnpm
         run: corepack enable pnpm
 
+      # The app bundles the computer agent (packages/agent-tunnel), built with
+      # bun by scripts/ensure-runtime.js before electron-builder runs.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 
@@ -663,6 +669,7 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            KORTIX_DESKTOP_SENTRY_DSN?
 
       # Never hard-fail on missing certs — a release should always ship an
       # installer. Sign (+ notarize on macOS) when the platform's secrets are
@@ -710,8 +717,10 @@ jobs:
             --publish never \
             --config.extraMetadata.version="${{ needs.version.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.extraMetadata.kortixDesktopSentryDsn="$KORTIX_DESKTOP_SENTRY_DSN" \
             --config.extraMetadata.kortixUpdateChannel="stable"
         env:
+          KORTIX_DESKTOP_SENTRY_DSN: ${{ env.KORTIX_DESKTOP_SENTRY_DSN || secrets.KORTIX_DESKTOP_SENTRY_DSN }}
           CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE || secrets.APPLE_CERTIFICATE) || '' }}
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD) || '' }}
           APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && env.APPLE_API_KEY_ID || '' }}

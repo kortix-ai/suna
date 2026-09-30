@@ -12,7 +12,7 @@
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
-import type { FlowContext, Harness } from '../core/types';
+import type { CreatedProject, FlowContext, Harness } from '../core/types';
 
 /** The preview-proxy path of a runtime route. Not a manifest route, so never in `meta.routes`. */
 export function runtimePath(sandboxId: string, suffix: string): string {
@@ -77,7 +77,9 @@ export async function assertRuntimeHarness(
 ): Promise<void> {
   const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
   r.status(200);
-  const reported = r.json<{ harness?: string }>()?.harness ?? 'opencode';
+  // Since W3 `harness` is the closed block `{ id, ... }`; W0 sent the id string.
+  const named = r.json<{ harness?: string | { id?: string } }>()?.harness;
+  const reported = (typeof named === 'object' ? named?.id : named) ?? 'opencode';
   if (reported !== harness) {
     throw new Error(`the session runtime is ${reported}, the flow asked for ${harness}`);
   }
@@ -102,13 +104,21 @@ export interface BootedSession {
 export async function bootSession(
   ctx: FlowContext,
   harness: Harness,
-  opts?: { prompt?: string; readinessTimeoutMs?: number; opencodeModel?: string },
+  opts?: {
+    prompt?: string;
+    readinessTimeoutMs?: number;
+    opencodeModel?: string;
+    /** A project already on `harness`; the shared seeded one by default. */
+    project?: CreatedProject;
+    agentName?: string;
+  },
 ): Promise<BootedSession> {
   return ctx.step(`a fresh ${harness} session boots to a ready runtime`, async () => {
-    const project = await ctx.fixtures.sharedSeededProject(harness);
+    const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject(harness));
     const session = await ctx.fixtures.session(project, {
       prompt: opts?.prompt ?? 'say hello',
       opencodeModel: opts?.opencodeModel,
+      agentName: opts?.agentName,
     });
     const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
     const sandboxId = sandboxIdOf(started);
@@ -188,6 +198,8 @@ export interface TranscriptMessage {
   created: string | null;
   completed: string | null;
   text: string;
+  /** The message's tool calls: name and final state (`completed`, `error`, …). */
+  tools?: Array<{ tool: string; status: string | null }>;
   error: { name?: string; message?: string } | null;
 }
 

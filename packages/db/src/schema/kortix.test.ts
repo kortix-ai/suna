@@ -181,6 +181,8 @@ describe('canonical audit ledger', () => {
         'delegation_depth',
         'authoritative_source',
         'client_reported_source',
+        'credential_kind',
+        'credential_id',
         'phase',
         'causation_id',
         'source_ledger',
@@ -293,6 +295,8 @@ describe('connectors', () => {
       'idx_connector_connections_project_label',
       'idx_connector_connections_project',
       'idx_connector_connections_connector',
+      'idx_connector_connections_tunnel',
+      'idx_connector_connections_owner_tunnel',
     ]);
     expect(indexNames(connectorCalls)).toEqual([
       'idx_connector_calls_project',

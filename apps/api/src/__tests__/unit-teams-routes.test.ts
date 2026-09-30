@@ -39,6 +39,13 @@ mock.module('../channels/teams/interactivity', () => ({
     return { statusCode: 200, type: 'application/vnd.microsoft.card.adaptive', value: {} };
   },
 }));
+const messageActionInbounds: unknown[] = [];
+mock.module('../channels/teams/message-action', () => ({
+  handleOpenInKortixAction: async (_activity: unknown, inbound: unknown) => {
+    messageActionInbounds.push(inbound);
+    return { task: { type: 'message', value: 'MESSAGE-ACTION' } };
+  },
+}));
 mock.module('../channels/teams/dispatch', () => ({
   handleTeamsActivity: (activity: { id: string }, inbound: unknown) =>
     new Promise<void>((resolve) => {
@@ -66,6 +73,7 @@ afterAll(() => mock.restore());
 
 const message = {
   type: 'message',
+  channelId: 'msteams',
   id: 'act-1',
   text: 'hi',
   serviceUrl: 'https://smba.trafficmanager.net/emea/',
@@ -103,10 +111,24 @@ describe('POST /messages acks before the dispatch finishes', () => {
     const res = await teamsWebhookApp.request('/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
-      body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-1', serviceUrl: 'https://smba.trafficmanager.net/emea/', conversation: { id: 'a:1' } }),
+      body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-1', channelId: 'msteams', serviceUrl: 'https://smba.trafficmanager.net/emea/', conversation: { id: 'a:1' } }),
     });
     expect(res.status).toBe(200);
     expect((await res.json()).type).toBe('application/vnd.microsoft.card.adaptive');
+    expect(dispatched).toEqual([]);
+  });
+});
+
+describe('the "Open in Kortix" message action', () => {
+  test('its fetchTask invoke answers synchronously with the task the handler returns, in the endpoint\'s scope', async () => {
+    const res = await teamsWebhookApp.request('/proj-1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ type: 'invoke', name: 'composeExtension/fetchTask', id: 'inv-9', channelId: 'msteams', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-1' } }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ task: { type: 'message', value: 'MESSAGE-ACTION' } });
+    expect(messageActionInbounds).toEqual([{ kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' }]);
     expect(dispatched).toEqual([]);
   });
 });
@@ -126,7 +148,7 @@ describe('the bring-your-own endpoint reaches only its own project and proven te
     const res = await teamsWebhookApp.request('/proj-1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
-      body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-2', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-other' } }),
+      body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-2', channelId: 'msteams', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-other' } }),
     });
     expect(res.status).toBe(403);
     expect(cardInbounds).toEqual([]);
@@ -153,4 +175,29 @@ describe('the bring-your-own endpoint reaches only its own project and proven te
     expect(inbounds).toEqual([{ kind: 'managed' }]);
     release();
   });
+});
+
+describe('only the Teams channel reaches the bot', () => {
+  // A Bot Framework token also signs Web Chat and Direct Line activities, where
+  // the client writes `from` and `channelData.tenant` itself.
+  for (const channelId of ['directline', 'webchat', undefined]) {
+    test(`a ${channelId ?? 'channel-less'} activity is refused on both endpoints and never dispatched`, async () => {
+      for (const path of ['/messages', '/proj-1/messages']) {
+        const res = await teamsWebhookApp.request(path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+          body: JSON.stringify({ ...message, id: 'act-6', channelId }),
+        });
+        expect(res.status).toBe(403);
+      }
+      const invoke = await teamsWebhookApp.request('/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-3', channelId, serviceUrl: message.serviceUrl, conversation: { id: 'a:1' } }),
+      });
+      expect(invoke.status).toBe(403);
+      expect(dispatched).toEqual([]);
+      expect(cardInbounds).toEqual([]);
+    });
+  }
 });

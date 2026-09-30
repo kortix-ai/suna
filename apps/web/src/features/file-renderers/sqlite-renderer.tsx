@@ -32,7 +32,6 @@ import {
   CodeSimpleIcon as Code2,
   CopyIcon as Copy,
   DatabaseIcon as Database,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   FileMagnifyingGlassIcon as FileQuestion,
   HashIcon as Hash,
@@ -65,6 +64,7 @@ import {
 import { AgGridReact } from 'ag-grid-react';
 import { useTheme } from 'next-themes';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 // Register AG Grid modules once
 ModuleRegistry.registerModules([AllCommunityModule]);

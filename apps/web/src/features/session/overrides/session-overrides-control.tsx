@@ -204,7 +204,9 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
   };
   // The trigger is an icon and nothing else, in the same muted tone as the
   // agent/model selectors beside it — the axes and their overrides live inside
-  // the panel, never on the composer bar.
+  // the panel, never on the composer bar. Only a save in progress locks it: an
+  // axis that is still loading says so inside the panel, and a slow catalog
+  // read must not hide the axes that are ready (provider keys, sandbox).
   return (
     <Popover open={open} onOpenChange={(next) => { if (!contentProps.saving) setOpen(next); }}>
       <PopoverTrigger asChild>
@@ -212,7 +214,7 @@ export function SessionOverridesControl({ onSave, ...contentProps }: SessionOver
           type="button"
           variant="ghost"
           size="icon"
-          disabled={contentProps.disabled || contentProps.saving}
+          disabled={contentProps.saving}
           aria-label={t('sessionOverrides')}
           className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground"
         >

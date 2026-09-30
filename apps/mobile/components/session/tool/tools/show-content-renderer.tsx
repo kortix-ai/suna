@@ -36,6 +36,7 @@ import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
 import { buildStaticFileLocalUrl, wsFavicon } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
@@ -56,7 +57,6 @@ import {
 } from '@/lib/icons';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { isLocalSandboxFilePath, languageFromPath, parseFrontmatter } from '@/lib/session/tool-part-accessors';
-import { safeHttpUrl } from '@/lib/session/tools/web-fetch';
 import { isShowBinaryPath, parseShowAspectRatio, showContentBranch, showDomain } from '@/lib/session/tools/web-show';
 import { webSpace } from '@/lib/session/user-message';
 import { decidePreviewNavigation } from '@/lib/utils/html-embed';

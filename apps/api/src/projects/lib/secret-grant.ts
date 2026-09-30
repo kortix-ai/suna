@@ -59,6 +59,7 @@ export class SecretGrantResolutionError extends Error {
       `could not resolve the secrets grant for agent '${agentName}': ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
+      { cause },
     );
     this.name = 'SecretGrantResolutionError';
   }

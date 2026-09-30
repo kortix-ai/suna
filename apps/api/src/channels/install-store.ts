@@ -769,8 +769,21 @@ export async function loadTeamsInstall(projectId: string): Promise<TeamsInstallS
   };
 }
 
+/**
+ * The tenant the project's Teams install proved, from `chat_installs`.
+ *
+ * Not the `MS_TEAMS_TENANT_ID` secret: this tenant selects whose Microsoft
+ * Graph data the connector reads, with the managed app every customer shares.
+ * A secret a project writer could overwrite would let one customer's project
+ * name another customer's tenant (found in the 2026-09-29 permissions audit).
+ */
 export async function loadTeamsTenantForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, MS_TEAMS_TENANT_ID);
+  const [row] = await db
+    .select({ workspaceId: chatInstalls.workspaceId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.projectId, projectId)))
+    .limit(1);
+  return row?.workspaceId || null;
 }
 
 export async function loadTeamsServiceUrlForProject(projectId: string): Promise<string | null> {

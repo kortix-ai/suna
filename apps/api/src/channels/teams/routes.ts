@@ -8,6 +8,7 @@ import { validateInboundActivityJwt } from './jwt';
 import { handleTeamsActivity } from './dispatch';
 import { handleFileConsentInvoke } from './file-proxy';
 import { handleAdaptiveCardAction } from './interactivity';
+import { handleOpenInKortixAction } from './message-action';
 import type { TeamsActivity } from './types';
 import { MANAGED_TEAMS_INBOUND, scopeProjectTeamsActivity, type TeamsInbound } from './inbound';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
@@ -26,6 +27,11 @@ async function processActivity(
   const authHeader = c.req.header('Authorization');
   const valid = await validateInboundActivityJwt(authHeader, activity.serviceUrl, byo?.appId);
   if (!valid) return c.json({ error: 'unauthorized' }, 401);
+
+  // Teams only. The same Bot Framework token also signs Web Chat and Direct
+  // Line activities, and there the client writes the sender and the tenant, so
+  // anyone holding the bot's Direct Line secret could name any Teams user.
+  if (activity.channelId !== 'msteams') return c.json({ error: 'Only the Microsoft Teams channel is supported' }, 403);
 
   // The token proves the audience (the app id), not the body. For a
   // bring-your-own bot the project admin registered that app, so the body's
@@ -48,9 +54,17 @@ async function processActivity(
         return c.json({ statusCode: 500, type: 'application/vnd.microsoft.error', value: {} }, 200);
       }
     }
+    if (activity.name === 'composeExtension/fetchTask') {
+      try {
+        return c.json(await handleOpenInKortixAction(activity, inbound), 200);
+      } catch (err) {
+        console.error('[teams-webhook] message action failed', err);
+        return c.json({ task: { type: 'message', value: 'Something went wrong. Try again in a moment.' } }, 200);
+      }
+    }
     if (activity.name === 'fileConsent/invoke') {
       try {
-        await handleFileConsentInvoke(activity);
+        await handleFileConsentInvoke(activity, inbound);
       } catch (err) {
         console.error('[teams-webhook] file consent invoke failed', err);
       }

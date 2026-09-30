@@ -56,7 +56,4 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('project_list', ProjectListTool);
 ToolRegistry.register('project-list', ProjectListTool);
-ToolRegistry.register('oc-project_list', ProjectListTool);
-ToolRegistry.register('oc-project-list', ProjectListTool);

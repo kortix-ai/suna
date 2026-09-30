@@ -46,6 +46,7 @@ import {
   setProjectSessionSharing,
   stopProjectSession,
   updateProjectSession,
+  type UpdateProjectSessionInput,
 } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -663,6 +664,14 @@ test('updateProjectSession PATCHes the name/metadata input', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ name: 'Renamed' });
+});
+
+test('updateProjectSession PATCHes labels and a null metadata value (removes the key)', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', labels: ['bug'] } };
+  const input: UpdateProjectSessionInput = { labels: ['bug'], metadata: { ticket: 'T-1', stale: null } };
+  await updateProjectSession('P1', 'S1', input);
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ labels: ['bug'], metadata: { ticket: 'T-1', stale: null } });
 });
 
 test('deleteProjectSession DELETEs the session', async () => {
@@ -1475,4 +1484,51 @@ test('ProjectSession.metadata types spawned_by_session as an optional string', (
   // No cast: the narrowing is the point of the typed metadata.
   const parent: string | undefined = session.metadata.spawned_by_session;
   expect(parent).toBe('parent-1');
+});
+
+// ── KRTX-639: attribution + hierarchy filters ──────────────────────────────
+
+test('listProjectSessionsPage forwards parent, startedBy and q as parent, started_by, q', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessionsPage('P1', { parent: 'root', startedBy: 'automated', q: 'nightly' });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('parent')).toBe('root');
+  expect(url.searchParams.get('started_by')).toBe('automated');
+  expect(url.searchParams.get('q')).toBe('nightly');
+});
+
+test('listProjectSessions sends a child parent id and trims q', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { parent: 'S9', q: '  hi  ' });
+  const url = new URL(last().url);
+  expect(url.searchParams.get('parent')).toBe('S9');
+  expect(url.searchParams.get('q')).toBe('hi');
+});
+
+test('listProjectSessions omits filter params that are absent or blank', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { q: '   ' });
+  expect(last().url).not.toContain('q=');
+  expect(last().url).not.toContain('parent=');
+  expect(last().url).not.toContain('started_by=');
+});
+
+test('listProjectSessionsPage repeats label once per label, free-form text intact', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessionsPage('P1', { labels: ['bug', 'customer: acme/eu'] });
+  expect(new URL(last().url).searchParams.getAll('label')).toEqual(['bug', 'customer: acme/eu']);
+  await listProjectSessions('P1', { labels: [] });
+  expect(last().url).not.toContain('label=');
+});
+
+test('sessionParentId prefers parent_session_id over metadata.spawned_by_session', () => {
+  const row = { session_id: 'c', parent_session_id: 'p-new', metadata: { spawned_by_session: 'p-old' } };
+  expect(sessionParentId(row as unknown as ProjectSession)).toBe('p-new');
+});
+
+test('sessionParentId falls back to metadata when parent_session_id is null or self', () => {
+  const nullRow = { session_id: 'c', parent_session_id: null, metadata: { spawned_by_session: 'p-old' } };
+  expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
+  const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
+  expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
 });

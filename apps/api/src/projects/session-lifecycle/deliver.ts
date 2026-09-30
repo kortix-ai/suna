@@ -1,4 +1,17 @@
-import type { SessionDeliveryOutcome } from './types';
+import type { ContinueSessionCommand, SessionDeliveryOutcome } from './types';
+import type { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { eq, sql } from 'drizzle-orm';
+import { db } from '../../shared/db';
+import { openSession } from '../routes/shared';
+import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { serviceKeyForExternalId } from '../../platform/service-key';
+import type { ProviderName } from '../../platform/providers';
+import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
+import { recordSessionActivity } from '../session-activity';
+import { deliveryCountsAsActivity } from './delivery-activity';
+import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
+import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the opencode daemon — and a just-woken sandbox is flaky for a beat: the
@@ -105,4 +118,262 @@ export async function deliverWithRetry(input: {
     if (healed.stage === 'failed' || healed.stage === 'stopped') return 'unreachable';
     current = healed;
   }
+}
+
+const READY_DEADLINE_MS = 300_000;
+const POLL_INTERVAL_MS = 3_000;
+
+const sleepWake = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+interface WakeDeliveryContext {
+  command: ContinueSessionCommand;
+  session: { projectId: string; accountId: string };
+  sessionId: string;
+  userId: string;
+  awakeEarly: Promise<DeliveryTarget | null>;
+  sendPrompt: (externalId: string, opencodeSessionId: string) => Promise<SendOutcome>;
+  beforeSend?: () => Promise<void>;
+  tl?: ProvisionTimeline;
+}
+
+export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<SessionDeliveryOutcome> {
+  const { command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl } = ctx;
+  // Loaded LAZILY: only `openSession` (the slow path that wakes a box) reads
+  // the project row, and the session's foreign key already proves it exists.
+  // On the fast path this saved a full round trip per delivery.
+  let projectRow: typeof projects.$inferSelect | undefined;
+  const loadProject = async () =>
+    (projectRow ??= (
+      await db.select().from(projects).where(eq(projects.projectId, session.projectId)).limit(1)
+    )[0]);
+
+
+    const openOnce = async () => {
+      const project = await loadProject();
+      if (!project) return null;
+      const loaded = { row: project, userId };
+      await beforeSend?.();
+      const [fresh] = await db
+        .select({
+          status: projectSessions.status,
+          sandboxProvider: projectSessions.sandboxProvider,
+          baseRef: projectSessions.baseRef,
+          agentName: projectSessions.agentName,
+          runtimeSessionId: projectSessions.runtimeSessionId,
+          accountId: projectSessions.accountId,
+          metadata: projectSessions.metadata,
+        })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      if (!fresh) return null;
+      return openSession({
+        loaded,
+        visible: { row: fresh },
+        projectId: session.projectId,
+        sessionId,
+      });
+    };
+
+    tl?.mark('session-read');
+
+    // FAST PATH — the box is already awake. `openSession` is /start: a provider
+    // status call plus a daemon health probe, ~0.5–0.9s per delivery even when
+    // nothing needs waking, and it ran on EVERY queued message. When the session
+    // row is running, its sandbox row is active and the OpenCode pin exists, the
+    // delivery target is fully known from the DB; the POST goes through the
+    // proxy, whose own wake-and-retry loop and `deliverWithRetry.reopen` (the
+    // full open) cover a box that turns out to be asleep after all. A cold or
+    // stopping session takes the slow path below exactly as before.
+    const awake = await awakeEarly;
+    if (awake && !command.opencodeEnv) {
+      tl?.mark('open-ready-fast');
+      return deliverWithRetry({
+        sessionId,
+        opened: awake,
+        reopen: async () => {
+          const healed = await openOnce();
+          if (!healed) return null;
+          return {
+            stage: healed.stage,
+            externalId: sandboxExternalId(healed),
+            opencodeSessionId: healed.opencode_session_id,
+          };
+        },
+        send: sendPrompt,
+      }).catch(notLandedOutcome);
+    }
+
+    const deadline = Date.now() + READY_DEADLINE_MS;
+    let opened: Awaited<ReturnType<typeof openOnce>>;
+    for (;;) {
+      opened = await openOnce();
+      if (!opened) return 'no-session';
+      if (opened.stage === 'ready') {
+        tl?.mark('open-ready');
+        break;
+      }
+      // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
+      if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
+      if (Date.now() >= deadline) {
+        console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
+          sessionId,
+          stage: opened.stage,
+        });
+        return 'pending';
+      }
+      await sleepWake(POLL_INTERVAL_MS);
+    }
+
+    // Converge the box BEFORE the prompt goes on the wire — every time, not only
+    // when this prompt carries an `opencodeEnv` override. The proxied
+    // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
+    // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
+    // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
+    // with whatever the box had at boot: a stale gateway base URL after a
+    // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
+    // cheap and self-deduping (revision + model signature); an unchanged box
+    // costs one skipped push.
+    {
+      const sandbox = opened.sandbox as {
+        external_id?: string | null;
+        provider?: string | null;
+      } | null;
+      const externalId = sandbox?.external_id ?? null;
+      const providerName = sandbox?.provider ?? null;
+      if (!externalId || !isProviderName(providerName)) {
+        console.warn('[session-lifecycle] runtime env sync target is incomplete', {
+          sessionId,
+          hasExternalId: !!externalId,
+          provider: providerName,
+        });
+        return 'pending';
+      }
+      try {
+        const [serviceKey, ingress] = await Promise.all([
+          serviceKeyForExternalId(externalId),
+          resolveSandboxIngress(externalId, { port: DAEMON_PORT, transport: 'http' }),
+        ]);
+        if (!serviceKey) throw new Error('sandbox service key is unavailable');
+        await syncSandboxEnvForPrompt({
+          projectId: session.projectId,
+          sessionId,
+          externalId,
+          serviceKey,
+          previewUrl: ingress.url,
+          providerHeaders: ingress.headers,
+          providerName,
+          opencodeEnv: command.opencodeEnv,
+        });
+      } catch (err) {
+        console.warn('[session-lifecycle] runtime env sync failed before prompt delivery', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return 'pending';
+      }
+    }
+
+    // Runtime is ready — hand off the prompt, healing + retrying through the
+    // transient failures a freshly-woken sandbox throws (rotated opencode session
+    // 404, daemon 5xx while it binds, externalId/opencode_session_id briefly
+    // null). Bounce to 'pending' only after the bounded window genuinely exhausts;
+    // the old code gave up on the first hiccup and dropped the user's message.
+    const toTarget = (o: NonNullable<Awaited<ReturnType<typeof openOnce>>>): DeliveryTarget => ({
+      stage: o.stage,
+      externalId: sandboxExternalId(o),
+      opencodeSessionId: o.opencode_session_id,
+    });
+
+    tl?.mark('env-sync');
+    return deliverWithRetry({
+      sessionId,
+      opened: toTarget(opened),
+      reopen: async () => {
+        const healed = await openOnce();
+        return healed ? toTarget(healed) : null;
+      },
+      send: sendPrompt,
+    })
+      .then((outcome) => {
+        // Stamp the sidebar's sort key for a prompt the PLATFORM delivered — a
+        // spawned sub-session, a trigger, a channel message, an approval resume.
+        // The preview proxy already does this for a prompt a browser sends; this
+        // path never did, so those sessions fell back to `updated_at`, which a
+        // dozen background writers advance with no turn behind them, and they
+        // visibly reordered themselves in the sidebar. Best-effort and never
+        // awaited, exactly as at the proxy: a failed stamp degrades ordering and
+        // must never degrade the prompt.
+        if (deliveryCountsAsActivity(outcome)) {
+          void recordSessionActivity({ sessionId, projectId: session.projectId });
+        }
+        return outcome;
+      })
+      .catch(notLandedOutcome);
+}
+
+/**
+ * Put a session the delivery woke back to the status it woke from — only
+ * while it still reads `running` and no `active` sandbox row backs it. A wake
+ * that did bring the box up (`openSession` finalized the sandbox row) keeps
+ * the session running.
+ */
+export async function undoDeliveryWake(sessionId: string, wokeFrom: string): Promise<void> {
+  await transitionSession(wokeFrom === 'completed' ? 'unwakeCompleted' : 'unwake', sessionId, {
+    guard: sql`NOT EXISTS (
+      SELECT 1 FROM ${sessionSandboxes} AS box
+       WHERE box.session_id = ${sessionId}
+         AND box.status = 'active')`,
+  });
+}
+
+/** A refused landing proof is its own outcome; anything else keeps throwing. */
+function notLandedOutcome(error: unknown): SessionDeliveryOutcome {
+  if (error instanceof PromptNeverLandedError) return 'not-landed';
+  throw error;
+}
+
+/**
+ * The delivery target for a session whose box is ALREADY awake, from the DB
+ * alone — or null, which means "take the full open path". Cheap: two indexed
+ * reads, no provider or daemon round-trip.
+ *
+ * The two reads are keyed on the same session id and neither consumes the
+ * other's result, so they go out TOGETHER: one round trip instead of two on
+ * every delivery, which is ~100 ms wherever the API and its database sit in
+ * different regions.
+ */
+export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTarget | null> {
+  const [[session], [box]] = await Promise.all([
+    db
+      .select({
+        status: projectSessions.status,
+        opencodeSessionId: projectSessions.runtimeSessionId,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1),
+    db
+      .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId))
+      .limit(1),
+  ]);
+  if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
+  if (!box || box.status !== 'active' || !box.externalId) return null;
+  return {
+    stage: 'ready',
+    externalId: box.externalId,
+    opencodeSessionId: session.opencodeSessionId,
+  };
+}
+
+function sandboxExternalId(
+  result: NonNullable<Awaited<ReturnType<typeof openSession>>>,
+): string | null {
+  return (result.sandbox as { external_id?: string } | null)?.external_id ?? null;
+}
+
+function isProviderName(value: string | null): value is ProviderName {
+  return value === 'daytona' || value === 'platinum' || value === 'e2b';
 }

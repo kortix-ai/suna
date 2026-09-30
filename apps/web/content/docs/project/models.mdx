@@ -46,6 +46,33 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+Each provider reads its own key. Some providers share one env var on
+models.dev, for example OpenCode Zen (`opencode`) and OpenCode Go
+(`opencode-go`) both list `OPENCODE_API_KEY`. The provider that owns the name
+keeps it. Every other provider reads `<PROVIDER_ID>_API_KEY`: OpenCode Go reads
+`OPENCODE_GO_API_KEY`, Z.ai Coding Plan reads `ZAI_CODING_PLAN_API_KEY`, and
+Moonshot China reads `MOONSHOTAI_CN_API_KEY`. A Zen key therefore never lists
+Go models. The connect form and `kortix providers set` use the right name.
+
+### OpenCode Zen and Go (sign in with OpenCode)
+
+Connect OpenCode Zen or OpenCode Go with an API key, or sign in with your
+OpenCode Console account instead:
+
+1. Open **Customize → Models → Providers** and find **OpenCode Go**.
+2. Choose **Sign in with OpenCode**. Copy the code, choose **Open auth page**,
+   and approve the device in your OpenCode workspace.
+3. The key field shows the provider as connected. Remove the key to sign out.
+
+From the CLI: `kortix providers login opencode-go`, or `kortix providers
+login opencode` for Zen. Zen models are used by id, for example
+`opencode/glm-5.3-flash`; the picker does not list them. Zen and Go
+each hold their own login, so signing in to one never connects the other. The
+login lasts 30 days, and Kortix renews it before it expires. When OpenCode
+refuses a login, Kortix renews it once and retries the request. When the
+renewal fails too, the request returns `provider_reauth_required`: sign in
+again.
+
 ### Kortix-managed models
 
 The picker lists these under **Kortix**, with their token rates. Every one
@@ -249,8 +276,11 @@ admins can delete any account.
 
 When an account's login stops working, the account shows **Needs
 reconnection**. This happens when ChatGPT rejects the renewal of the login, or
-when the stored login cannot be read. A brief outage at ChatGPT does not mark
-an account. The member who connected the account sees **Reconnect** beside it.
+when the stored login cannot be read. ChatGPT can also refuse a login before
+it expires. Kortix then renews the login once and retries the request. If the
+renewal is refused too, the account needs reconnection, and the request moves
+to the next selected account when there is one. A brief outage at ChatGPT does
+not mark an account. The member who connected the account sees **Reconnect** beside it.
 **Session overrides → Provider keys** shows the same mark. A turn that fails
 names the accounts that need reconnection. The account stays selected, and
 reconnecting it or a successful renewal clears the mark.
@@ -264,7 +294,8 @@ A turn that fails for this reason also shows the fix beside its error:
   is fixed in **Session overrides → Provider keys** instead.
 
 Both open your ChatGPT accounts. After you connect or reconnect, send your
-message again.
+message again. In Slack and Microsoft Teams the same failure reads **ChatGPT
+login needs reconnection**.
 
 A session can select multiple granted ChatGPT accounts in **Session overrides →
 Provider keys**. Without a selection, the member's newest usable connection is

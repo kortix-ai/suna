@@ -658,9 +658,7 @@ export async function ensureLocalStack(
           // Config archives go through the API's one object store, pointed at
           // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
           // means apps/api/.env is NOT read here, so the whole block has to be
-          // explicit — and it is required: billing is on in this profile, so a
-          // missing bucket is a startup error, not a warning.
-          CONFIG_RELEASES_ENABLED: "true",
+          // explicit.
           KORTIX_CONFIG_ARCHIVE_S3_BUCKET: "kortix-config-releases",
           KORTIX_CONFIG_ARCHIVE_S3_REGION: "local",
           KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
@@ -672,6 +670,8 @@ export async function ensureLocalStack(
             ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
             : {}),
           SCHEDULER_ENABLED: "false",
+          // OAU-7 replays a rotated refresh token after this window; keep it short.
+          KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",
           KORTIX_TRIGGER_SCHEDULER_ENABLED: "false",
           KORTIX_WORKERS_ENABLED: "false",
           KORTIX_BILLING_INTERNAL_ENABLED: "true",

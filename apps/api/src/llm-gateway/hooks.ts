@@ -142,10 +142,12 @@ function logGatewayBudgetWarnings(
 }
 
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
+export class GatewayBudgetExceededError extends Error {}
+
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
   const { exceeded, message, warnings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
-  if (exceeded) throw new Error(message ?? 'Budget exceeded');
+  if (exceeded) throw new GatewayBudgetExceededError(message ?? 'Budget exceeded');
 }
 
 /**

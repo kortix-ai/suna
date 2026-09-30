@@ -132,14 +132,20 @@ describe('KNOWN_BEHAVIOR_KEYS / OpencodeAgentConfigSchema coordination', () => {
   });
 });
 
-describe('agentMarkdownPath', () => {
-  test('defaults to .kortix/opencode/agents/<name>.md', () => {
-    expect(agentMarkdownPath({}, 'support')).toBe('.kortix/opencode/agents/support.md');
+describe('agentMarkdownPath (where a new or edited .md is written)', () => {
+  test('defaults to agents/<name>.md', () => {
+    expect(agentMarkdownPath({}, 'support')).toBe('agents/support.md');
   });
 
-  test('honors a custom top-level [opencode] config_dir', () => {
+  test('an OpenCode config_dir no longer moves agents', () => {
     expect(agentMarkdownPath({ opencode: { config_dir: 'custom/dir' } }, 'support')).toBe(
-      'custom/dir/agents/support.md',
+      'agents/support.md',
+    );
+  });
+
+  test('agents.<name>.file wins', () => {
+    expect(agentMarkdownPath({ agents: { support: { file: 'team/support.md' } } }, 'support')).toBe(
+      'team/support.md',
     );
   });
 });
@@ -237,6 +243,32 @@ agents:
       '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),
     }) as OpencodeConfig;
     expect(compiled.model).toBeUndefined();
+  });
+
+  // W1 B5: pi reads `default_agent` for a session with no agent chosen; OpenCode reads the same key.
+  test('names the manifest default_agent, so every runtime runs it when no agent is chosen', () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    expect(compiled.default_agent).toBe('support');
+  });
+
+  test('omits default_agent when that agent cannot run as the primary one', () => {
+    const subagent = parseYaml(`
+kortix_version: 2
+default_agent: pr-bot
+agents:
+  pr-bot:
+    kortix_permissions: []
+`);
+    const disabled = parseYaml(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    enabled: false
+`);
+    const md = { '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs') };
+    expect((compileAgentConfig(subagent, 'opencode', md) as OpencodeConfig).default_agent).toBeUndefined();
+    expect((compileAgentConfig(disabled, 'opencode', {}) as OpencodeConfig).default_agent).toBeUndefined();
   });
 });
 
@@ -497,18 +529,25 @@ agents:
 
 describe('selectSessionHarness — flag OR manifest', () => {
   test('pi when the project flag is on, whatever the manifest says', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode' })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi' })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
   });
 
   test('pi when the manifest says runtime: pi, even with the flag off', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
   });
 
   test('opencode in every other case', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode' })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
+  });
+
+  // W1 B7: pi calls models only through the gateway; without it the box would never start.
+  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
   });
 });
 
@@ -775,7 +814,39 @@ describe('resolveSelectedAgentConfigForSession', () => {
     expect(Object.keys(parsed.agent)).toEqual(['support']);
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.model).toBe('anthropic/claude-sonnet-4-5');
-    expect(readRepoFileCalls).toEqual(['.kortix/opencode/agents/support.md']);
+    // Root layout first, then the legacy layout that holds the file.
+    expect(readRepoFileCalls).toEqual(['agents/support.md', '.kortix/opencode/agents/support.md']);
+  });
+
+  test('reads the root-layout agents/<name>.md without touching the legacy path', async () => {
+    manifestFile = { path: 'kortix.yaml', content: GOVERNANCE_FIXTURE };
+    mdFileContent = {
+      'agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Root body.'),
+      '.kortix/opencode/agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Legacy body.'),
+    };
+    readRepoFileCalls = [];
+
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as OpencodeConfig;
+
+    expect(parsed.agent.support.prompt).toBe('Root body.');
+    expect(readRepoFileCalls).toEqual(['agents/support.md']);
+  });
+
+  test('an explicit agents.<name>.file is the only path read', async () => {
+    manifestFile = {
+      path: 'kortix.yaml',
+      content: GOVERNANCE_FIXTURE.replace('  support:\n', '  support:\n    file: team/support.md\n'),
+    };
+    mdFileContent = {
+      'team/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Team body.'),
+      'agents/support.md': supportMd('model: anthropic/claude-sonnet-4-5', 'Root body.'),
+    };
+    readRepoFileCalls = [];
+
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as OpencodeConfig;
+
+    expect(parsed.agent.support.prompt).toBe('Team body.');
+    expect(readRepoFileCalls).toEqual(['team/support.md']);
   });
 
   test('fails closed when the selected agent configuration cannot be read', async () => {
@@ -799,4 +870,10 @@ describe('resolveSelectedAgentConfigForSession', () => {
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
   });
+});
+
+ test('manifest tool toggles compile per agent without changing other agents', () => {
+  const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
+  expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
+  expect(config?.agent.other.tools).toBeUndefined();
 });

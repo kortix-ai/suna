@@ -68,6 +68,7 @@
  * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
+import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
@@ -115,27 +116,10 @@ export interface FeatureFlagDef {
 /**
  * The registry. Order here is the order shown in Settings → Feature flags.
  *
- * agent_tunnel → connector: paired machines are selectable accounts inside a
- * regular `computer` connector profile. A profile can contain one or more
- * machines and uses the normal connector grant, policy, call, and audit paths.
- * Pairing does not auto-create project access. This flag gates the dedicated
- * fleet surface (Customize → Computers, device auth, and tunnel permissions).
- * Connector profiles remain API-managed because tunnel ids do not belong in
- * repository configuration.
+ * Computers need no flag: a paired machine is an account on the project's
+ * `computer` connector. The platform-wide `TUNNEL_ENABLED` env is the only gate.
  */
 const FLAGS: readonly FeatureFlagDef[] = [
-  {
-    key: 'session_transcript_history',
-    name: 'Session Transcript History',
-    description:
-      'Save the whole chat history after each turn, tool calls and sub-agents included, and show it from the database while the session computer starts.',
-    stability: 'beta',
-    available: () => true,
-    // On by default: saved history is how web, mobile and the CLI show a
-    // session while its computer is off. A project can still turn it off.
-    platformDefault: () => true,
-    enforcement: 'behavioral',
-  },
   {
     key: 'marketplace',
     name: 'Marketplace',
@@ -148,30 +132,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'agent_tunnel',
-    name: 'Agent Computer Tunnel',
-    description:
-      'Let agents securely reach a local machine — files, shell, and desktop control — over a permissioned reverse tunnel. Connect a computer, then grant access per capability.',
-    stability: 'experimental',
-    // The backend service must be running platform-wide for the surface to work.
-    available: () => config.TUNNEL_ENABLED,
-    // Explicit opt-in: off by default even where the service is available.
-    platformDefault: () => false,
-    enforcement: 'ui-only',
-    enforcementNote:
-      'Tunnel state is account-scoped (device auth, machines) and the computer ' +
-      'connector deliberately materializes independent of this flag — see the ' +
-      'registry header. The platform-wide TUNNEL_ENABLED env is the hard gate.',
-  },
-  {
     key: 'connectors_api_discover',
     name: 'Connectors API Discover',
     description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
-    stability: 'experimental',
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
+    stability: 'beta',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
-    platformDefault: () => false,
+    // The direct catalogue is available even when no managed provider is configured.
+    // Explicit project overrides still provide a rollback path.
+    platformDefault: () => true,
     enforcement: 'routes',
   },
   {
@@ -347,7 +316,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode. Distinct from `pi_worker`, which is the split worker/environment topology.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
@@ -360,11 +329,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'config_releases',
     name: 'Config Releases',
     description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
     stability: 'experimental',
-    // Operator kill switch (config.ts CONFIG_RELEASES_ENABLED). Off ⇒ the
-    // Settings row disappears and the surface is dark for every project.
-    available: () => config.CONFIG_RELEASES_ENABLED,
+    available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
     // "its off for now, as its untested"). The behaviour it gates is the
     // intended one; the default is a rollout decision, not a design opinion.
@@ -410,6 +377,22 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '(iam/agent-principal.ts agentPrincipalModeFor → iam/actor.ts actingPrincipal, ' +
       'iam/authorize.ts), the manual trigger fire and child-session run gates, and ' +
       'the change-request merge governance guard.',
+  },
+  {
+    key: 'us_region',
+    name: 'US Region',
+    description:
+      "Run this project's new sessions in Platinum's US East region instead of EU West. A running session keeps its region until it restarts. The first session after a new sandbox image waits while the image is copied to the region.",
+    stability: 'experimental',
+    // Two operator gates: Platinum must be the configured provider, and the
+    // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
+    // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
+    available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
+    platformDefault: () => false,
+    // Read at provisioning (platform/services/session-sandbox.ts
+    // resolveSessionSandboxRegion) and sent as `region` on the Platinum
+    // create. Off ⇒ no region is sent and Platinum places in its home region.
+    enforcement: 'behavioral',
   },
 ];
 

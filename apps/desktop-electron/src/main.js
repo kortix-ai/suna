@@ -16,13 +16,13 @@
 // `window.__TAURI__` bridge shape (see preload.js) so the web app's desktop
 // bridge (apps/web/src/lib/desktop.ts) runs UNCHANGED.
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeTheme, safeStorage, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
-const { menuContextForUrl } = require('./menu-state');
+const { menuContextForUrl, copyableUrl } = require('./menu-state');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
 const { backgroundForTheme, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
@@ -34,8 +34,10 @@ const { createInstanceStore } = require('./instance-store');
 const { isConfiguredAppUrl, isTrustedAppSender } = require('./native-sender');
 const { isAppPath, isPreviewHost } = require('./nav-rules');
 const { rendererGoneNeedsRecovery } = require('./renderer-recovery');
+const { setupCrashTelemetry } = require('./crash-telemetry');
 const { NAVIGATION_SHORTCUTS, historyTarget } = require('./navigation');
 const { DESKTOP_CHROME_JS, configureNativeWindowControls, macTrafficLightPosition } = require('./window-chrome');
+const { setupComputer } = require('./computer-tray');
 
 // Name comes from the bundle (productName): "Kortix" for prod, "Kortix Dev" for
 // dev builds. Per-name data dir so dev + prod coexist without sharing a session,
@@ -48,6 +50,11 @@ app.setPath(
   'userData',
   process.env.KORTIX_DESKTOP_USER_DATA || path.join(app.getPath('appData'), `${app.getName()} Desktop`),
 );
+
+const reportCrash = setupCrashTelemetry({
+  app,
+  dsn: process.env.KORTIX_DESKTOP_SENTRY_DSN || require('../package.json').kortixDesktopSentryDsn,
+});
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
@@ -235,6 +242,8 @@ function handleDeepLink(deepLink) {
 let mainWindow = null;
 /** @type {BrowserWindow | null} */
 let splashWindow = null;
+/** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
+let computerShell = null;
 
 function launchSize() {
   // ~85% of the primary display, clamped to [1280,1700] × [820,1080] — same as
@@ -491,6 +500,7 @@ function createMainWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     if (!rendererGoneNeedsRecovery(details)) return;
     console.warn(`[kortix] renderer gone: ${details?.reason} (exit ${details?.exitCode}).`);
+    reportCrash?.('renderer', `${details?.reason || 'unknown'} (exit ${details?.exitCode ?? 'unknown'})`);
     if (!mainWindow || mainWindow.isDestroyed()) return;
     void dialog
       .showMessageBox(mainWindow, {
@@ -514,7 +524,7 @@ function createMainWindow() {
   });
 
   // did-fail-load reports failures; the rejected promise carries nothing more.
-  mainWindow.loadURL(instanceStore.appUrl()).catch(() => {});
+  mainWindow.loadURL(instanceStore.homeUrl()).catch(() => {});
 }
 
 /**
@@ -565,13 +575,16 @@ function navigateWindow(direction) {
 function refreshNavigationMenu() {
   const menu = Menu.getApplicationMenu();
   if (!menu) return;
+  const url = mainWindow?.webContents.getURL() || '';
   const forward = menu.getMenuItemById('kx-go-forward');
   if (forward) forward.enabled = mainHistoryTarget('forward') >= 0;
-  const context = menuContextForUrl(mainWindow?.webContents.getURL() || '');
+  const context = menuContextForUrl(url);
   const newSession = menu.getMenuItemById('kx-file-new-session');
   const closeTab = menu.getMenuItemById('kx-file-close-tab');
+  const copyUrl = menu.getMenuItemById('kx-go-copy-url');
   if (newSession) newSession.enabled = context.inProject;
   if (closeTab) closeTab.enabled = context.hasActiveTab;
+  if (copyUrl) copyUrl.enabled = copyableUrl(url) !== null;
 }
 
 function sendDesktopCommand(command) {
@@ -593,15 +606,15 @@ function goBackInApp() {
   else mainWindow.webContents.navigationHistory.goToIndex(index);
 }
 
-/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the configured app URL, from any page. */
+/** Go ▸ Home (Cmd/Ctrl+Shift+H): a full load of the app's home, from any page. */
 function goHome() {
-  navigateMainWindow(instanceStore.appUrl());
+  navigateMainWindow(instanceStore.homeUrl());
 }
 
 /** Save a choice (menu, web bridge) and load the app onto it. Returns the save error, or null. */
 function switchInstance(choice) {
   const error = instanceStore.save(choice);
-  if (!error) navigateMainWindow(instanceStore.appUrl());
+  if (!error) navigateMainWindow(instanceStore.homeUrl());
   return error;
 }
 
@@ -609,7 +622,7 @@ function switchInstance(choice) {
 async function changeInstance(mode, error = null) {
   const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   if (await openInstanceChooser({ mode, error, parent, store: instanceStore })) {
-    navigateMainWindow(instanceStore.appUrl());
+    navigateMainWindow(instanceStore.homeUrl());
   }
 }
 
@@ -1003,6 +1016,20 @@ function buildMenu() {
           accelerator: shortcuts.home,
           click: () => navigateWindow('home'),
         },
+        { type: 'separator' },
+        {
+          // The shell has no address bar, so a session link is otherwise
+          // unshareable. Copy the page the window is on; enabled state follows
+          // the same URL as refreshNavigationMenu.
+          id: 'kx-go-copy-url',
+          label: 'Copy Current URL',
+          accelerator: 'CommandOrControl+L',
+          enabled: false,
+          click: () => {
+            const url = copyableUrl(mainWindow?.webContents.getURL() || '');
+            if (url) clipboard.writeText(url);
+          },
+        },
       ],
     },
     { role: 'windowMenu' },
@@ -1076,6 +1103,11 @@ function registerIpc() {
         return null;
       }
       default:
+        // computer_status / _connect / _pause / _resume / _disconnect / _open_logs.
+        // Same trusted-sender gate as every command above.
+        if (typeof cmd === 'string' && cmd.startsWith('computer_') && computerShell) {
+          return computerShell.invoke(cmd, args);
+        }
         throw new Error(`Unknown command: ${cmd}`);
     }
   });
@@ -1129,6 +1161,16 @@ function applyUserAgent() {
 
 /* ─── App lifecycle ───────────────────────────────────────────────────────*/
 
+/** Show the app window, recreating it when only the tray is left. */
+function openMainWindow() {
+  if (needsMainWindow(mainWindow)) {
+    createSplash();
+    createMainWindow();
+  } else {
+    revealMainWindow(mainWindow);
+  }
+}
+
 // Single-instance lock: a second launch (incl. a kortix:// deep link on
 // Windows/Linux where the URL arrives as an argv) routes to the running window
 // instead of spawning a new process.
@@ -1171,7 +1213,12 @@ if (!gotLock) {
 
   app.on('second-instance', (_event, argv) => {
     const deepLink = argv.find((a) => a.startsWith(`${URL_SCHEME}://`));
-    if (deepLink) handleDeepLink(deepLink);
+    // Running in the tray with no window (a paired computer): open one again.
+    // Not during first-launch setup, where the chooser is the only window.
+    const reopened = needsMainWindow(mainWindow) && app.isReady() && !instanceStore.needsSetup();
+    if (reopened) openMainWindow();
+    if (deepLink && reopened) mainWindow?.webContents.once('did-finish-load', () => handleDeepLink(deepLink));
+    else if (deepLink) handleDeepLink(deepLink);
     revealMainWindow(mainWindow);
     // First launch: the chooser is the only window.
     focusInstanceChooser();
@@ -1193,6 +1240,15 @@ if (!gotLock) {
     }
 
     applyUserAgent();
+    computerShell = setupComputer({
+      channel: CHANNEL,
+      appUrl: () => instanceStore.appUrl(),
+      isConfiguredAppUrl,
+      shouldLoadInApp,
+      getMainWindow: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+      openMainWindow,
+      backgroundColor: currentBackgroundColor,
+    });
     registerIpc();
     nativeTheme.themeSource = readTheme();
     nativeTheme.on('updated', () => {
@@ -1228,17 +1284,15 @@ if (!gotLock) {
       });
     }
 
-    app.on('activate', () => {
-      if (needsMainWindow(mainWindow)) {
-        createSplash();
-        createMainWindow();
-      } else {
-        revealMainWindow(mainWindow);
-      }
-    });
+    app.on('activate', openMainWindow);
+
+    // Tray + state watch. After the window, so a slow status never delays it.
+    computerShell.start();
   });
 
+  // With a paired computer the app stays in the tray on every platform; the
+  // agent itself is an OS service and keeps running either way.
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin' && !computerShell?.keepRunning()) app.quit();
   });
 }

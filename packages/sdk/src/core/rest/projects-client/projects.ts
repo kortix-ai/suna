@@ -24,6 +24,12 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
+ * `review_center`, `agent_tunnel` and `session_transcript_history` are
+ * deprecated. `agent_tunnel` graduated like `review_center` below: a paired
+ * computer is a connector account and needs no flag. So did
+ * `session_transcript_history`: every session saves its transcript and shows
+ * it while its computer is off.
+ *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
  * or accepts the key. It stays in this union so code written against the older
@@ -32,6 +38,7 @@ import {
  * `KortixProject.experimental`. Removed in the next major.
  */
 export type FeatureFlagKey =
+  /** @deprecated Graduated — computers need no flag (the platform's `TUNNEL_ENABLED` is the only gate). Removed in the next major. */
   | 'agent_tunnel'
   | 'marketplace'
   | 'connectors_api_discover'
@@ -47,11 +54,13 @@ export type FeatureFlagKey =
   | 'warm_sessions'
   | 'secrets_egress'
   | 'pi_worker'
+  /** @deprecated Graduated — every session saves its transcript. Removed in the next major. */
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
   | 'config_releases'
-  | 'agent_principal';
+  | 'agent_principal'
+  | 'us_region';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -59,7 +68,6 @@ export type FeatureFlagKey =
  * drift tests compare this against the API's `FEATURE_FLAG_KEYS`.
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
-  'agent_tunnel',
   'marketplace',
   'connectors_api_discover',
   'agentmail_email',
@@ -72,11 +80,11 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
-  'session_transcript_history',
   'pooled_provider_secrets',
   'pi_harness',
   'config_releases',
   'agent_principal',
+  'us_region',
 ] as const;
 
 /**
@@ -129,7 +137,7 @@ export interface KortixProject {
   effective_project_role?: ProjectRole | null;
   /** Effective on/off for each feature flag for THIS project. The field name is
    *  a stable wire detail — the system is called "Feature flags". Deprecated
-   *  graduated keys (`review_center`) are absent from the wire. */
+   *  graduated keys (`review_center`, `agent_tunnel`) are absent from the wire. */
   experimental?: Record<FeatureFlagKey, boolean>;
   /** Full feature-flag catalog (drives Customize → Feature flags).
    *  Self-describing so the UI never hard-codes the list. */
@@ -231,6 +239,8 @@ export interface GatewayCatalogModel {
    * split-on-slash heuristic cannot recover it.
    */
   provider?: string;
+  /** The real provider's display name ("OpenCode Go"). Absent on managed models. */
+  provider_name?: string;
   release_date?: string;
   released?: string;
   family?: string;

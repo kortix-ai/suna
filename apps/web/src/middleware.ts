@@ -414,7 +414,10 @@ export async function middleware(request: NextRequest) {
   // docs/external links in the user's real browser.
   if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
     const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
+    // The site root passes: the identity-aware `/` redirects below send it into
+    // the remembered project, exactly as on web. The shell launches here.
     const isAllowed =
+      pathname === '/' ||
       isAuthPath ||
       DESKTOP_ALLOWED_ROUTES.some(
         (route) => pathname === route || pathname.startsWith(route + '/'),

@@ -37,7 +37,7 @@ describe('gatewayModelCatalog — served catalog', () => {
       attachment: true,
       tool_call: true,
       temperature: true,
-      limit: { context: 1_048_576, output: 16_384 },
+      limit: { context: 1_000_000, output: 16_384 },
       cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
     });
   });
@@ -189,6 +189,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/enriched']).toEqual({
       name: 'Enriched',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released,
       release_date: released,
       family,
@@ -200,6 +201,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released: undefined,
       release_date: undefined,
       family: undefined,

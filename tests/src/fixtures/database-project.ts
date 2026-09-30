@@ -184,6 +184,8 @@ export async function createDatabaseSession(
     userId: string;
     visibility?: "private" | "project" | "restricted";
     metadata?: Record<string, unknown>;
+    parentSessionId?: string;
+    initiator?: { type: "member" | "trigger" | "channel" | "api" | "system"; id: string | null };
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
@@ -199,7 +201,10 @@ export async function createDatabaseSession(
          branch_name,
          created_by,
          visibility,
-         metadata
+         metadata,
+         parent_session_id,
+         initiator_type,
+         initiator_id
        )
        VALUES (
          $1,
@@ -208,7 +213,10 @@ export async function createDatabaseSession(
          'session/' || $1,
          $4::uuid,
          $5::kortix.project_session_visibility,
-         $6::jsonb
+         $6::jsonb,
+         $7,
+         $8::kortix.project_session_initiator,
+         $9
        )`,
       [
         sessionId,
@@ -216,7 +224,13 @@ export async function createDatabaseSession(
         input.projectId,
         input.userId,
         input.visibility ?? "private",
-        JSON.stringify(input.metadata ?? {}),
+        JSON.stringify({
+          ...(input.metadata ?? {}),
+          ...(input.parentSessionId ? { spawned_by_session: input.parentSessionId } : {}),
+        }),
+        input.parentSessionId ?? null,
+        input.initiator?.type ?? "member",
+        input.initiator ? input.initiator.id : input.userId,
       ],
     );
   } finally {

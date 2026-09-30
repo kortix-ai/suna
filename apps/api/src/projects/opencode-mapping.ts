@@ -134,13 +134,17 @@ export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
 export async function listSandboxOpencodeSessions(
   externalId: string,
   userId: string | undefined,
+  opts: { endpoint?: { url: string; headers: Record<string, string> } } = {},
 ): Promise<ListResult> {
   try {
     // Endpoint resolution itself can throw (provider preview-link API errors,
     // rate limits, archived/deleted sandboxes). Keep it INSIDE the try so any
     // failure degrades to a clean `unreachable` instead of rejecting up the
     // call stack and 500ing the caller (e.g. the session list title-sync).
-    const ep = await sandboxOpencodeEndpoint(externalId, userId);
+    // A caller that already resolved the endpoint hands it in and skips its
+    // own resolution — the transcript read resolves it once per request, not
+    // once per stage.
+    const ep = opts.endpoint ?? (await sandboxOpencodeEndpoint(externalId, userId));
     if (!ep) return { ok: false, reason: 'no_key', cause: 'no_key' };
     const res = await fetch(
       `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
@@ -244,10 +248,17 @@ export async function ensureOpencodeSessionPin(input: {
   externalId: string;
   userId: string | undefined;
   currentPin: string | null;
+  /** Pre-resolved daemon endpoint. When given, the session list below skips
+   *  its own (provider-hitting) resolution. */
+  endpoint?: { url: string; headers: Record<string, string> };
 }): Promise<EnsureResult> {
   const { projectId, sessionId, accountId, externalId, userId, currentPin } = input;
 
-  const listed = await listSandboxOpencodeSessions(externalId, userId);
+  const listed = await listSandboxOpencodeSessions(
+    externalId,
+    userId,
+    input.endpoint ? { endpoint: input.endpoint } : undefined,
+  );
   if (!listed.ok) {
     return {
       pin: currentPin,
@@ -274,7 +285,7 @@ export async function ensureOpencodeSessionPin(input: {
 
   await db
     .update(projectSessions)
-    .set({ opencodeSessionId: resolved, updatedAt: new Date() })
+    .set({ runtimeSessionId: resolved, updatedAt: new Date() })
     .where(
       and(
         eq(projectSessions.sessionId, sessionId),

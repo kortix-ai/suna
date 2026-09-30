@@ -75,7 +75,7 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	if (envelope.messages.length === 0) return false;
 	// THE IDENTITY GUARD: ids from another OpenCode root can never be settled by
 	// this root's runtime read.
-	if (envelope.opencode_session_id !== runtimeSessionId) return false;
+	if ((envelope.runtime_session_id ?? envelope.opencode_session_id) !== runtimeSessionId) return false;
 	return true;
 }
 
@@ -184,10 +184,9 @@ export async function loadSessionTranscriptMirror(input: {
  * FIRST window and must never be handed back for a second request. This is
  * always a fresh read.
  *
- * `history: true` is not sent. It gates on the project flag and adds the
- * current-root check, so passing it would 403 paging on a legacy mirror
- * captured before the flag existed — the rows are the same either way, and
- * `shouldHydrateFromMirror` already applies the root guard client-side.
+ * `history: true` is not sent. It only adds the server's current-root check,
+ * and `shouldHydrateFromMirror` already applies that guard client-side — the
+ * rows are the same either way.
  *
  * Never throws, for the same reason the first window does not: paging further
  * back is an accelerator, and its absence costs only the page the user cannot

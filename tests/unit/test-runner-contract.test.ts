@@ -156,6 +156,7 @@ describe('local test runner contract', () => {
     // decision to carry that risk.
     const isolated: Record<string, string> = {
       '@kortix/cli': '107 test files; serial would cost minutes, not seconds',
+      kortix: '221 mobile test files whose mock.module calls leak across files without isolation',
       'Kortix-Computer-Frontend': '762 test files; serial is not viable',
       '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
     };

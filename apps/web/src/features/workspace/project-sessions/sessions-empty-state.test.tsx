@@ -73,7 +73,7 @@ describe('both empty session lists use it', () => {
   // after the last page.
   test('the sidebar, with sessions', () => {
     const list = sidebar.slice(sidebar.indexOf('<FadedScrollArea fadeColor="from-background"'));
-    expect(list.indexOf('{firstChatPending && !hasNextPage && (')).toBeGreaterThan(
+    expect(list.indexOf('{firstChatPending &&')).toBeGreaterThan(
       list.indexOf('grouped.sections.map('),
     );
   });

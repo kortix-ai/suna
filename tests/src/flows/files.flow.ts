@@ -290,3 +290,60 @@ flow(
     });
   },
 );
+
+flow(
+  "FILE-11",
+  {
+    domain: "files",
+    routes: ["GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content"],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return; // deployed pushes go through the git proxy; local pushes hit the bare repo
+    const { execFileSync } = await import("node:child_process");
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { Client: PgClient } = await import("pg");
+    const p = await ctx.fixtures.sharedProject();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl! });
+    await db.connect();
+    const work = mkdtempSync(join(tmpdir(), "ke2e-file11-"));
+    try {
+      const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [p.id]);
+      const repoUrl = String(rows[0]?.repo_url ?? "");
+      const base = String(rows[0]?.default_branch || "main");
+      const branch = `ke2e-fresh-${Date.now().toString(36)}`;
+      await ctx.step("warm the mirror with a default-branch read", async () => {
+        (await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id } })).status(200);
+      });
+      await ctx.step("push a new branch straight to the repository, then read it at that ref at once → 200 + listed", async () => {
+        const git = (...a: string[]) => execFileSync("git", a, { cwd: work, stdio: "pipe" });
+        git("clone", "-q", "--branch", base, repoUrl, ".");
+        git("checkout", "-q", "-b", branch);
+        writeFileSync(join(work, "fresh.txt"), "pushed just now\n");
+        git("add", "-A");
+        git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "fresh");
+        git("push", "-q", "origin", `HEAD:refs/heads/${branch}`);
+        const read = await owner.get("/v1/projects/:projectId/files/content", {
+          params: { projectId: p.id },
+          query: { path: "fresh.txt", ref: branch },
+        });
+        read.status(200).body().has("$.content", "pushed just now\n");
+        const list = await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id }, query: { ref: branch } });
+        list.status(200);
+        if (!list.json<Array<{ path: string }>>().some((e) => e.path === "fresh.txt")) throw new Error("fresh.txt missing from the branch listing");
+      });
+      await ctx.step("an unknown branch → 404", async () => {
+        const r = await owner.get("/v1/projects/:projectId/files/content", {
+          params: { projectId: p.id },
+          query: { path: "fresh.txt", ref: "ke2e-no-such-branch" },
+        });
+        r.status(404);
+      });
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+      await db.end();
+    }
+  },
+);

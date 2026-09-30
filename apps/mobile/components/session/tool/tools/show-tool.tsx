@@ -33,13 +33,13 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { isShowContentUnavailable, isShowPayloadEmpty, parseLocalhostUrl, type ShowLoadStatus } from '@kortix/sdk';
+import { prefersPreviewLink, safeHttpUrl } from '@kortix/shared';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { ArrowSquareOutIcon, GlobeIcon, MonitorIcon } from '@/lib/icons';
-import { prefersPreviewLink, safeHttpUrl } from '@/lib/session/tools/web-fetch';
 import {
   SHOW_IMAGE_EXT_RE,
   parseShowItems,
@@ -72,7 +72,8 @@ import {
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { SettingsGroup } from '@/components/kortix/settings-list';
-import { ShowFileActions, ShowResultRow, showFileTypeIcon, useShowOpenInTab } from '../shared/show-helpers';
+import { showFileTypeIcon } from '../shared/tool-icons';
+import { ShowFileActions, ShowResultRow, useShowOpenInTab } from '../shared/show-helpers';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { ShowCarousel } from './show-carousel';

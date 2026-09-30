@@ -491,6 +491,24 @@ connectors:
 `,
   },
   {
+    name: 'v2: `file` names the agent .md',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: agents/a.md\n',
+  },
+  {
+    name: 'v2: `file` rejects a traversal segment',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: ../a.md\n',
+  },
+  {
+    name: 'v2: `file` rejects a non-.md file',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    file: agents/a.txt\n',
+  },
+  {
     name: 'v2: flat `mode` on agent block rejected (moved to .md)',
     format: 'yaml',
     valid: false,
@@ -705,6 +723,18 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    workspace: everywhere\n',
   },
   {
+    name: 'v2: declarative agent egress policy accepted (not enforced)',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    network_egress:\n      version: 1\n      default: deny\n      rules: []\n',
+  },
+  {
+    name: 'v2: unknown egress policy version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    network_egress:\n      version: 2\n      default: deny\n      rules: []\n',
+  },
+  {
     name: 'v2: skills explicit list accepted',
     format: 'yaml',
     valid: true,
@@ -790,6 +820,18 @@ connectors:
     valid: false,
     input:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
+  },
+  {
+    name: 'v2: OpenCode plugins per agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nharnesses:\n  opencode:\n    plugins: [audit.ts]\nagents:\n  w:\n    harnesses:\n      opencode:\n        exclude: [audit.ts]\n        plugins: [other.js]\n',
+  },
+  {
+    name: 'v2: OpenCode plugin path traversal rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      opencode:\n        plugins: [../bad.ts]\n',
   },
   {
     name: 'v2: harnesses.pi.packages with npm pins, a filtered entry and a repo path is accepted',

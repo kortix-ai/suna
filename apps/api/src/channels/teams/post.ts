@@ -2,8 +2,8 @@ import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings } from '@kortix/db';
 import { db } from '../../shared/db';
 import { loadTeamsServiceUrlForProject } from '../install-store';
-import { sendActivity, sendCard } from '../teams-api';
-import { buildNoticeCard } from './cards';
+import { deleteActivity, sendActivity, sendCard, updateCard } from '../teams-api';
+import { buildNoticeCard, withoutPostbackActions } from './cards';
 import type { TeamsConversationRef } from './types';
 
 /**
@@ -22,7 +22,8 @@ import type { TeamsConversationRef } from './types';
  */
 
 export type TeamsPostError = { ok: false; error: string; status: number };
-export type TeamsPostResult = { ok: true; conversationId: string; delivered: 'text' | 'card' };
+/** `messageId` is the Teams activity id: what `editTeamsMessage` and `deleteTeamsMessage` take. */
+export type TeamsPostResult = { ok: true; conversationId: string; delivered: 'text' | 'card'; messageId: string };
 
 /** Conversations this project may post into, for the agent to choose from. */
 export async function listTeamsPostTargets(
@@ -119,17 +120,54 @@ export async function postToTeamsConversation(
   const { ref } = conversation;
 
   if (args.card) {
-    const posted = await sendCard(ref, args.card);
+    const posted = await sendCard(ref, withoutPostbackActions(args.card));
     if (!posted) return { ok: false, error: 'Teams refused the card', status: 502 };
-    return { ok: true, conversationId, delivered: 'card' };
+    return { ok: true, conversationId, delivered: 'card', messageId: posted };
   }
 
   // Markdown lands as a notice card so a proactive post reads like every other
   // Kortix message in the conversation instead of raw text.
   const posted = await sendCard(ref, buildNoticeCard(text!));
-  if (posted) return { ok: true, conversationId, delivered: 'card' };
+  if (posted) return { ok: true, conversationId, delivered: 'card', messageId: posted };
 
   const plain = await sendActivity(ref, { type: 'message', text: text! });
   if (!plain) return { ok: false, error: 'Teams refused the message', status: 502 };
-  return { ok: true, conversationId, delivered: 'text' };
+  return { ok: true, conversationId, delivered: 'text', messageId: plain };
+}
+
+/**
+ * Replace a message the bot posted (`postToTeamsConversation`'s `messageId`),
+ * as `slack edit` does. The conversation is authorized exactly as a post is;
+ * Bot Framework itself refuses a message the bot did not send.
+ */
+export async function editTeamsMessage(
+  projectId: string,
+  args: { conversationId: string; messageId: string; text?: string; card?: Record<string, unknown> },
+): Promise<{ ok: true; conversationId: string; messageId: string } | TeamsPostError> {
+  const conversationId = args.conversationId?.trim();
+  const messageId = args.messageId?.trim();
+  if (!conversationId || !messageId) return { ok: false, error: 'conversation_id and message_id are required', status: 400 };
+  const text = args.text?.trim();
+  if (!text && !args.card) return { ok: false, error: 'text or card is required', status: 400 };
+  const conversation = await resolveTeamsProjectConversation(projectId, conversationId);
+  if (!conversation.ok) return conversation;
+  const updated = await updateCard(conversation.ref, messageId, args.card ? withoutPostbackActions(args.card) : buildNoticeCard(text!));
+  if (!updated) return { ok: false, error: 'Teams refused the edit. Only a message this bot posted can be edited.', status: 502 };
+  return { ok: true, conversationId, messageId };
+}
+
+/** Delete a message the bot posted, as `slack delete` does. */
+export async function deleteTeamsMessage(
+  projectId: string,
+  args: { conversationId: string; messageId: string },
+): Promise<{ ok: true; conversationId: string; messageId: string } | TeamsPostError> {
+  const conversationId = args.conversationId?.trim();
+  const messageId = args.messageId?.trim();
+  if (!conversationId || !messageId) return { ok: false, error: 'conversation_id and message_id are required', status: 400 };
+  const conversation = await resolveTeamsProjectConversation(projectId, conversationId);
+  if (!conversation.ok) return conversation;
+  if (!(await deleteActivity(conversation.ref, messageId))) {
+    return { ok: false, error: 'Teams refused the delete. Only a message this bot posted can be deleted.', status: 502 };
+  }
+  return { ok: true, conversationId, messageId };
 }

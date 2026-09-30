@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -75,8 +76,9 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
-import { canOverride, resolveSessionOrigin } from './session-origin';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
+import { canOverride, inheritParentOrigin, resolveSessionOrigin } from './session-origin';
+import { resolveRootSessionInitiator, type SessionInitiator } from './session-initiator';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
   projectImageAllowedForSession,
@@ -178,26 +180,47 @@ export function resolveSessionAgentName(input: {
 }
 
 /**
- * Read the SPAWNING session's own sharing (visibility + grants), scoped to
- * the same account and project as the session being created — a stale or
- * cross-project caller id (should not happen; defense in depth) falls back
- * to the caller's normal default rather than inheriting nothing.
+ * Read the SPAWNING session, scoped to the same account and project as the
+ * session being created. A stale or cross-project caller id (should not happen;
+ * defense in depth) returns null: the new session is then a root, and takes
+ * the caller's normal defaults instead of inheriting anything.
  */
-async function loadParentSessionSharing(
+async function loadParentSession(
   callerSessionId: string,
   accountId: string,
   projectId: string,
-): Promise<{ visibility: SessionVisibility; grants: SecretGrant[] } | null> {
+): Promise<{
+  sessionId: string;
+  visibility: SessionVisibility;
+  origin: string;
+  initiator: SessionInitiator | null;
+} | null> {
   const [parent] = await db
-    .select({ visibility: projectSessions.visibility, projectId: projectSessions.projectId })
+    .select({
+      visibility: projectSessions.visibility,
+      projectId: projectSessions.projectId,
+      origin: projectSessions.origin,
+      initiatorType: projectSessions.initiatorType,
+      initiatorId: projectSessions.initiatorId,
+    })
     .from(projectSessions)
     .where(and(eq(projectSessions.sessionId, callerSessionId), eq(projectSessions.accountId, accountId)))
     .limit(1);
   if (!parent || parent.projectId !== projectId) return null;
-  const visibility = parent.visibility as SessionVisibility;
-  if (visibility !== 'restricted') return { visibility, grants: [] };
-  const grants = (await loadSessionGrants([callerSessionId])).get(callerSessionId) ?? [];
-  return { visibility, grants };
+  return {
+    sessionId: callerSessionId,
+    visibility: parent.visibility as SessionVisibility,
+    origin: parent.origin,
+    initiator: parent.initiatorType ? { type: parent.initiatorType, id: parent.initiatorId } : null,
+  };
+}
+
+async function loadParentSessionGrants(
+  parent: { sessionId: string; visibility: SessionVisibility },
+): Promise<{ visibility: SessionVisibility; grants: SecretGrant[] }> {
+  if (parent.visibility !== 'restricted') return { visibility: parent.visibility, grants: [] };
+  const grants = (await loadSessionGrants([parent.sessionId])).get(parent.sessionId) ?? [];
+  return { visibility: parent.visibility, grants };
 }
 
 export async function createProjectSession(input: {
@@ -258,10 +281,11 @@ export async function createProjectSession(input: {
   // session's sharing instead of defaulting to private — see
   // resolveInheritedSessionSharing. Automation callers (triggers, channels)
   // always pass `visibility` explicitly, so the lookup is skipped for them.
+  const parentSession = input.callerSessionId
+    ? await loadParentSession(input.callerSessionId, accountId, projectId)
+    : null;
   const parentSharing =
-    input.visibility === undefined && input.callerSessionId
-      ? await loadParentSessionSharing(input.callerSessionId, accountId, projectId)
-      : null;
+    input.visibility === undefined && parentSession ? await loadParentSessionGrants(parentSession) : null;
   const { visibility, grants: inheritedGrants } = resolveInheritedSessionSharing(
     input.visibility,
     parentSharing,
@@ -311,12 +335,15 @@ export async function createProjectSession(input: {
   // Origin is a POLICY CLASS derived from the caller's token kind (authType)
   // + invocation source (metadata.source), NEVER the body. It gates which
   // override fields the caller may set.
-  const origin = resolveSessionOrigin({
-    authType: input.authType,
-    apiKeyType: input.apiKeyType,
-    inSession: input.inSession,
-    source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
-  });
+  const origin = inheritParentOrigin(
+    resolveSessionOrigin({
+      authType: input.authType,
+      apiKeyType: input.apiKeyType,
+      inSession: input.inSession,
+      source: (input.metadata as Record<string, unknown> | undefined)?.source as string | undefined,
+    }),
+    parentSession?.origin,
+  );
   // Backend-only per-session secrets allowlist. Presence-gate on the raw body
   // FIRST (a non-backend caller that even mentions the field is rejected, before
   // shape is considered), then validate shape, then existence — narrowing the
@@ -341,7 +368,9 @@ export async function createProjectSession(input: {
   }
   const secretsAllowlist = parsedSecrets.value ?? null;
   if (secretsAllowlist && secretsAllowlist.length > 0) {
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // The creator's own audience: a value shared only with them is a valid
+    // allowlist entry. Delivery re-applies the session's audience at boot.
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, userId);
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
@@ -476,7 +505,7 @@ export async function createProjectSession(input: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
   if (requestedModel) {
@@ -918,7 +947,6 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     origin,
     invocationSource,
-    clientReportedSource: input.request?.clientReportedSource ?? null,
     callerSessionId: input.callerSessionId,
     agentName,
     visibility,
@@ -926,6 +954,26 @@ export async function createProjectSession(input: {
     connectorBindingCount: validatedConnectorBindings.bindings.length,
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
+  // The surface the create came through. The route stamps every HTTP create
+  // `ui`; a spawn from another session's credential is an `agent`. Derived from
+  // the authenticated credential, never a client header. Informational only:
+  // no policy reads these values (origin keys on `trigger:`/`system:` and channels).
+  const sessionSource =
+    invocationSource === 'ui' && input.callerSessionId ? 'agent' : invocationSource;
+  const initiator: SessionInitiator =
+    parentSession?.initiator ??
+    resolveRootSessionInitiator({
+      source: invocationSource,
+      triggerSlug: normalizeString((input.metadata as Record<string, unknown> | undefined)?.trigger_slug),
+      userId,
+      requestingPrincipalType: input.requestingPrincipalType,
+      channelSenderIsLinked:
+        invocationSource === 'slack'
+          ? config.SLACK_REQUIRE_USER_IDENTITY !== false
+          : invocationSource === 'teams'
+            ? config.TEAMS_REQUIRE_USER_IDENTITY !== false
+            : false,
+    });
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
@@ -945,6 +993,7 @@ export async function createProjectSession(input: {
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
     ...(input.callerSessionId ? { spawned_by_session: input.callerSessionId } : {}),
+    ...(sessionSource && sessionSource !== invocationSource ? { source: sessionSource } : {}),
     repository_access: repositoryAccess,
     repository_generation: repositoryGeneration(project.metadata as Record<string, unknown>),
     // Rollback compatibility: older API replicas must also enforce this restriction.
@@ -953,7 +1002,6 @@ export async function createProjectSession(input: {
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
-      client_reported_source: auditAttribution.clientReportedSource,
       initiator_actor_type: auditAttribution.initiatorActorType,
       initiator_actor_id: auditAttribution.initiatorActorId,
       delegation_depth: auditAttribution.delegationDepth,
@@ -1004,7 +1052,11 @@ export async function createProjectSession(input: {
         createdBy: userId,
         visibility,
         origin,
+        parentSessionId: parentSession?.sessionId ?? null,
+        initiatorType: initiator.type,
+        initiatorId: initiator.id,
         secretsAllowlist,
+        labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
@@ -1287,7 +1339,6 @@ export async function createProjectSession(input: {
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             repositoryAccess,

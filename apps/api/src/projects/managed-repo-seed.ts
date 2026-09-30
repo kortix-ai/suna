@@ -124,6 +124,28 @@ export class ManagedRepoSeedError extends Error {
 const MAX_SEED_ATTEMPTS = 2;
 
 /**
+ * Backoff between pushes while a freshly created repo is not yet reachable over
+ * git. GitHub acknowledges `POST /repos` before the git transport (and the
+ * installation token's repo scope) sees the repo, so the first pushes answer
+ * `Repository not found` / `HTTP 404` / `Write access ... not granted`.
+ * Total 39 s: long enough for the lag seen in prod (6 provision rollbacks of
+ * ~254 in 7 days, all after 2 instant pushes), short of any client giving up;
+ * `/provision` and `/provision-stream` are exempt from the request deadline.
+ */
+const REPO_REACHABLE_BACKOFF_MS = [1000, 2000, 4000, 8000, 8000, 8000, 8000];
+
+/** Is this push failure "the repo I just created is not visible to git yet"? */
+export function isRepoNotYetReachableError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return (
+    text.includes('Repository not found') ||
+    text.includes('HTTP 404') ||
+    text.includes('returned error: 404') ||
+    text.includes('Write access to repository not granted')
+  );
+}
+
+/**
  * Push the scaffold, then PROVE the default branch exists. Resolves only when
  * the remote observably carries `refs/heads/<branch>`.
  *
@@ -141,19 +163,36 @@ export async function pushVerifiedSeed(input: {
   push: () => Promise<void>;
   remoteHasBranch: () => Promise<boolean>;
   maxAttempts?: number;
+  /** Injected so tests do not wait out the backoff. */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<void> {
   const maxAttempts = Math.max(1, input.maxAttempts ?? MAX_SEED_ATTEMPTS);
+  const sleep = input.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let lastDetail = 'the default branch was still absent after the seed push';
   let lastStage: ManagedRepoSeedStage = 'verify';
   let lastCause: unknown;
+  let attempts = 0; // pushes made (logged)
+  let failures = 0; // failures that spend the generic `maxAttempts` budget
+  let waits = 0; // backoff sleeps spent on "repo not reachable yet"
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+  while (failures < maxAttempts) {
+    attempts += 1;
     try {
       await input.push();
     } catch (error) {
       lastStage = 'push';
       lastCause = error;
       lastDetail = error instanceof Error ? error.message : String(error);
+      // A push that errored client-side may still have landed (observed:
+      // `! [rejected] main -> main (fetch first)` on the retry). Never re-push
+      // over a branch that is already there.
+      if (await input.remoteHasBranch().catch(() => false)) return;
+      if (isRepoNotYetReachableError(error)) {
+        if (waits >= REPO_REACHABLE_BACKOFF_MS.length) break;
+        await sleep(REPO_REACHABLE_BACKOFF_MS[waits++]);
+      } else {
+        failures += 1;
+      }
       continue;
     }
     try {
@@ -168,6 +207,7 @@ export async function pushVerifiedSeed(input: {
         error instanceof Error ? error.message : String(error)
       }`;
     }
+    failures += 1;
   }
 
   const failure = new ManagedRepoSeedError({
@@ -179,7 +219,7 @@ export async function pushVerifiedSeed(input: {
   });
   console.error(
     `[managed-repo-seed] project=${input.projectId} branch=${input.branch} ` +
-      `stage=${lastStage} attempts=${maxAttempts}: ${lastDetail}`,
+      `stage=${lastStage} attempts=${attempts}: ${lastDetail}`,
   );
   throw failure;
 }

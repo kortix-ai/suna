@@ -23,6 +23,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
+import { AGENTS_DIR, agentFileCandidates, SKILLS_DIR } from "@kortix/manifest-schema";
 import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
@@ -149,7 +150,10 @@ function projectAgentsAndTriggers(
 
   const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
   const agents: ProjectAgent[] = agentNames.map((name) => {
-    const md = files.find((f) => pathOf(f) === `.kortix/opencode/agents/${name}.md`);
+    const candidates = agentFileCandidates(manifest, name);
+    const md = candidates
+      .map((candidate) => files.find((f) => pathOf(f) === candidate))
+      .find((file) => file !== undefined);
     // Parse the agent's own `.md` frontmatter with the YAML parser (not a
     // line-based one) so folded block scalars (`description: >-`) resolve to the
     // real text, and collapse it to a single line for the card.
@@ -560,10 +564,9 @@ agents that run them.
   [use-case pages](https://kortix.com/use-cases) — the wizard wires the agent,
   its skill, grants, and any scheduled trigger into your project.
 - **Bulk clone:** clone this pack as a project to get every runbook skill under
-  \`.kortix/opencode/skills/\` and every persona agent file under
-  \`.kortix/opencode/agents/\`. Agent files ship undeclared — add the ones you
-  want to \`kortix.yaml\`'s \`agents:\` map (grants are deny-by-default) before
-  using them.
+  \`skills/\` and every persona agent file under \`agents/\`. Agent files ship
+  undeclared — add the ones you want to \`kortix.yaml\`'s \`agents:\` map
+  (grants are deny-by-default, \`file: agents/<name>.md\`) before using them.
 
 Everything is plain files in your repo: read, edit, and adapt them to how your
 team actually works.
@@ -571,13 +574,13 @@ team actually works.
 
 /** Rewrite a marketplace-template `runtime/` path to its conventional
  *  in-project location, mirroring the install wizard's target mapping
- *  (`@skills/y` → `.kortix/opencode/skills/y`, `@agents/x.md` →
- *  `.kortix/opencode/agents/x.md`). Non-runtime paths return undefined. */
+ *  (`@skills/y` → `skills/y`, `@agents/x.md` → `agents/x.md`). Non-runtime
+ *  paths return undefined. */
 function useCasePackRepoPath(path: string): string | undefined {
   if (path.startsWith("runtime/skills/"))
-    return `.kortix/opencode/skills/${path.slice("runtime/skills/".length)}`;
+    return `${SKILLS_DIR}/${path.slice("runtime/skills/".length)}`;
   if (path.startsWith("runtime/agents/"))
-    return `.kortix/opencode/agents/${path.slice("runtime/agents/".length)}`;
+    return `${AGENTS_DIR}/${path.slice("runtime/agents/".length)}`;
   return undefined;
 }
 

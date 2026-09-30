@@ -209,11 +209,12 @@ describe('the gate codemod is complete', () => {
   });
 
   test('every project gate goes through the alias table, not a hand-rolled action string', () => {
-    // `loadProjectForUser` is the only caller of `iamActionForProjectAccess`;
+    // `loadProjectForUser` is the only caller of `iamActionForProjectAccess`
+    // and both live in project-access.ts (the access.ts split, KRTX-301);
     // a route that wants a leaf calls `assertProjectCapability` with the leaf.
     const offenders = PRODUCTION.filter(
       (f) =>
-        rel(f) !== 'projects/lib/access.ts' &&
+        rel(f) !== 'projects/lib/project-access.ts' &&
         /\biamActionForProjectAccess\s*\(/.test(code(f)),
     ).map(rel);
     expect(offenders).toEqual([]);
@@ -233,7 +234,7 @@ describe('the gate codemod is complete', () => {
     expect(tokens).toContain("loadProjectForUser(c, projectId, 'credentials')");
   });
 
-  test('index.ts registers its whole route table synchronously', () => {
+  test('app.ts registers its whole route table synchronously', () => {
     // A top-level `await` above the last `app.route(...)` leaves the route
     // table, the error handler and the 404 handler unregistered for any
     // importer that observes `app` before it settles — which is how every
@@ -245,7 +246,8 @@ describe('the gate codemod is complete', () => {
     // mounting section runs to the end of the last call on `app` that executes
     // at import — today the 404 handler, below the last `app.route(...)`. Every
     // form that suspends module evaluation counts, not only `await import(...)`.
-    const file = join(SRC, 'index.ts');
+    // The route table lives in app.ts since the KRTX-347 split.
+    const file = join(SRC, 'app.ts');
     const text = readFileSync(file, 'utf8');
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const mounts: ts.CallExpression[] = [];
@@ -282,7 +284,7 @@ describe('the gate codemod is complete', () => {
       .filter((node) => node.getStart(sf) < end)
       .map((node) => {
         const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-        return `index.ts:${line + 1}: ${lines[line].trim()}`;
+        return `app.ts:${line + 1}: ${lines[line].trim()}`;
       });
     expect(topLevelAwaits).toEqual([]);
   });

@@ -1,9 +1,20 @@
-/** Project secrets: list, create, delete, personal values, and sandbox sync. */
+/**
+ * Project secrets: list, create, delete. The personal-override routes live in
+ * secret-personal.ts and the sandbox-sync route in secret-sync.ts; this file
+ * imports both below, after its secret-write rate limit, for their
+ * side-effect registration. The create handler's validation ladder lives in
+ * lib/secret-write-input.ts.
+ */
+import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
 import { agentMayUseEnv, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
+import {
+  SecretConsumerSchema,
+  SecretDeliveryStrategySchema,
+  SecretEgressPolicySchema,
+} from '@kortix/api-contract';
 import { inferAuditSource, runAuditedTransaction } from '../../shared/audit';
-import { createProjectSecretWriteRateLimitMiddleware } from '../../shared/rate-limit';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
@@ -12,32 +23,27 @@ import {
   encryptProjectSecret,
   identifierKeyConflicts,
   isValidIdentifier,
-  isValidSecretName,
 } from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes, syncSessionSecretsToSandbox } from '../lib/sandbox-env-sync';
-import { reconcileStoredSessionAgentGrant } from '../lib/session-token-grant';
+import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
-import { SecretConsumerSchema } from '@kortix/api-contract';
-import { parseEgressPolicy } from '../../secrets/strategy';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { networkBoundaryPolicyError } from '../../secrets/network-boundary';
 import { projectSecrets } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
-import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
+import { SecretSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   isSystemProjectSecretName,
+  isTeamsInstallSecretName,
   loadSecretViewsForUser,
-  normalizeString,
   type SecretAgentGrantConfig,
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -49,14 +55,45 @@ import {
   connectorSecretBindings,
   summarizeDeliverySync,
 } from '../lib/secret-writes';
+import { resolveSecretWriteInput } from '../lib/secret-write-input';
+import { callerKortixSessionId } from '../lib/caller-session';
+import { loadSecretAudience } from '../lib/connection-audience';
+import { loadConnectionSharing } from '../lib/connection-sharing';
+import {
+  clearSecretAudience,
+  secretAudiencePerson,
+  setSecretAudience,
+  type SecretAudiencePrincipal,
+} from '../lib/secret-audience';
 
-// Registered before this file's routes so it runs for every secret WRITE
-// (including /broker and /sync) and for nothing else. See the middleware's
-// doc comment for the 2026-08-21 storm it exists to stop. The pattern is
-// concatenated because unit-iam-gate-codemod-pin.test.ts strips block comments
-// with a regex, and a literal slash-star inside this string would read as a
-// comment-opener and swallow the next hundred lines of this file from its view.
-projectsApp.use('/:projectId/secrets/' + '*', createProjectSecretWriteRateLimitMiddleware());
+// Route registration order is dispatch order in Hono: the write rate limit
+// must register before every secrets route. secret-rate-limit.ts holds that
+// registration and secret-personal.ts / secret-sync.ts import it first, so
+// the order of the imports below IS the registration order.
+import './secret-rate-limit';
+import './secret-personal';
+import './secret-sync';
+
+const SecretSharePrincipalSchema = z.object({
+  principal_type: z.enum(['user', 'group']),
+  principal_id: z.string().uuid(),
+});
+
+/** `shared_with` of a secret write: null = leave the audience unchanged. */
+function parseSecretSharedWith(
+  raw: unknown,
+): { ok: true; value: SecretAudiencePrincipal[] | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  const parsed = z.array(SecretSharePrincipalSchema).max(50).safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: 'shared_with must be a list of at most 50 { principal_type: "user" | "group", principal_id: <uuid> }',
+    };
+  }
+  const unique = new Map(parsed.data.map((p) => [`${p.principal_type}:${p.principal_id}`, p]));
+  return { ok: true, value: [...unique.values()] };
+}
 
 // GET /v1/projects/:projectId/secrets
 // Readable by any project member: returns each secret IDENTIFIER as the
@@ -71,7 +108,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/secrets',
     tags: ['secrets'],
-    summary: 'GET /:projectId/secrets',
+    summary: 'List project secrets (names only, no values)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -100,12 +137,16 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
+  const started = performance.now();
+  const stages: Record<string, number> = {};
   const loaded = await loadProjectForUser(c, projectId, 'read');
+  stages.project = Math.round(performance.now() - started);
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
   // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
+  stages.capability = Math.round(performance.now() - started);
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
   // Manifest is optional — a project without kortix.yaml just gets empty
@@ -126,7 +167,9 @@ projectsApp.openapi(
   // dominates this route's server time).
   const personalOwnerPromise = requestPersonalOwner(c, loaded);
   try {
-    const projectConfig = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
+    const gitRow = await withProjectGitAuth(loaded.row);
+    stages.git_auth = Math.round(performance.now() - started);
+    const projectConfig = await loadProjectConfig(gitRow, []);
     required = projectConfig?.env?.required ?? [];
     optional = projectConfig?.env?.optional ?? [];
     manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';
@@ -141,6 +184,8 @@ projectsApp.openapi(
     });
   }
 
+  stages.manifest = Math.round(performance.now() - started);
+
   // Per-agent secrets scoping: a scoped agent token only sees the IDENTIFIERS
   // in its standing agent grant. A session secretsAllowlist is a delivery
   // policy, not a configuration-plane read policy. Applying it here made a
@@ -152,7 +197,7 @@ projectsApp.openapi(
   // standing agent grant remains the enumeration ceiling for agent tokens.
   const agentGrant = getAgentGrant(c);
 
-  const items = (await loadSecretViewsForUser({
+  const viewItems = (await loadSecretViewsForUser({
     projectId,
     // Spec 2026-09-22 §2.3: an agent-principal session sees personal
     // overrides of its on-behalf-of human in a private session only.
@@ -162,6 +207,46 @@ projectsApp.openapi(
   }))
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
+
+  // Audience of each shared value, for the person this read acts for. A value
+  // narrowed away from the caller stays listed for someone who manages shared
+  // secrets from outside a session (so they can widen it again), marked
+  // `usable: false`; a session never sees it — it could not use it anyway.
+  const callerSessionId = callerKortixSessionId(c);
+  const [sharing, reachOf] = await Promise.all([
+    loadConnectionSharing({
+      projectId,
+      accountId: loaded.row.accountId,
+      projectName: loaded.row.name,
+      objectType: 'secret',
+    }),
+    secretAudiencePerson({
+      projectId,
+      accountId: loaded.row.accountId,
+      sessionId: callerSessionId,
+      actorUserId: loaded.userId,
+    }).then((personId) =>
+      loadSecretAudience({ projectId, accountId: loaded.row.accountId, userId: personId }),
+    ),
+  ]);
+  const items = viewItems
+    .map((item) => ({
+      ...item,
+      shared_with: item.secret_id ? (sharing.get(item.secret_id) ?? []) : [],
+      usable: !item.secret_id || reachOf(item.secret_id) !== 'out',
+    }))
+    .filter((item) => item.usable || (canManageShared && !callerSessionId));
+
+  const elapsed = Math.round(performance.now() - started);
+  if (elapsed >= 3_000) {
+    console.warn('[projects] secrets: slow read', {
+      project_ms: stages.project,
+      capability_ms: stages.capability - stages.project,
+      git_auth_ms: (stages.git_auth ?? stages.manifest) - stages.capability,
+      manifest_ms: stages.manifest - (stages.git_auth ?? stages.manifest),
+      secrets_ms: elapsed - stages.manifest,
+    });
+  }
 
   return c.json({
     items,
@@ -191,11 +276,37 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/secrets',
     tags: ['secrets'],
-    summary: 'POST /:projectId/secrets',
+    summary: 'Set a project secret',
+    description:
+      'Create or update a project secret by `name` (upper-cased; A-Z, 0-9, _; max 64; KORTIX_* is reserved). The value is write-only: responses never echo it.',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: {
+          content: {
+            'application/json': {
+              schema: lenientBody({
+                name: z.string().openapi({ description: 'Env var name, e.g. OPENAI_API_KEY' }),
+                value: z.string().optional().openapi({
+                  description: 'Secret value. Required when creating; omit to change only delivery settings.',
+                }),
+                identifier: z.string().optional().openapi({
+                  description: 'Handle agents grant and the UI shows (A-Z, 0-9, _, ., -; max 128). Defaults to name.',
+                }),
+                strategy: SecretDeliveryStrategySchema.optional().openapi({
+                  description: 'Delivery mode: runtime, egress, broker, or denied.',
+                }),
+                consumer: SecretConsumerSchema.nullable().optional(),
+                egress_policy: SecretEgressPolicySchema.optional(),
+                handle_prefix: z.string().optional().openapi({ description: 'For consumer http_broker only.' }),
+                shared_with: z.array(SecretSharePrincipalSchema).max(50).optional().openapi({
+                  description:
+                    'Who can use this value: people and groups. [] = everyone in the project. Omit to keep it unchanged. A person sets it; an agent session gets 403.',
+                }),
+              }),
+            },
+          },
+        },
       },
     responses: {
         200: json(SecretWriteResultSchema, 'The created secret'),
@@ -209,154 +320,26 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
 
-  const name = normalizeString(body.name)?.toUpperCase();
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!isValidSecretName(name)) {
-    return c.json({ error: 'name must be a valid env var name (A-Z, 0-9, _; max 64 chars)' }, 400);
-  }
-  if (name.startsWith('KORTIX_')) {
-    return c.json({ error: 'KORTIX_* names are reserved for platform/runtime-managed variables' }, 400);
-  }
-  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
-    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
-  }
-
-  // Identifier — the unique-per-project handle agents grant + the UI shows.
-  // Defaults to the KEY when omitted (the simple/migrated case).
-  const identifier = normalizeString(body.identifier) ?? name;
-  if (!isValidIdentifier(identifier)) {
-    return c.json({ error: 'identifier must be alphanumeric (A-Z, 0-9, _, ., -; max 128 chars)' }, 400);
+  const resolved = resolveSecretWriteInput(body, isProjectSessionPrincipal(c));
+  if (!resolved.ok) return c.json(resolved.body, resolved.status);
+  const { name, identifier, value, explicitStrategy, explicitConsumer, explicitPolicy, explicitHandlePrefix } =
+    resolved.input;
+  const sharedWith = parseSecretSharedWith(body.shared_with);
+  if (!sharedWith.ok) return c.json({ error: sharedWith.error }, 400);
+  if (sharedWith.value && isProjectSessionPrincipal(c)) {
+    return c.json(
+      { error: 'An agent cannot change who can use a secret. A person changes it in Customize → Secrets.' },
+      403,
+    );
   }
 
-  const value = typeof body.value === 'string' ? body.value : null;
-  const requestedConsumer =
-    body.consumer === undefined ? undefined : SecretConsumerSchema.nullable().safeParse(body.consumer);
-  if (requestedConsumer && !requestedConsumer.success) {
-    return c.json({ error: 'consumer is invalid' }, 400);
-  }
-  const requestedConsumerData = requestedConsumer?.success
-    ? requestedConsumer.data
-    : undefined;
-  const requestedStrategy = body.strategy;
-  if (
-    requestedStrategy !== undefined &&
-    !['runtime', 'broker', 'egress', 'denied'].includes(String(requestedStrategy))
-  ) {
-    return c.json({ error: 'secret creation supports runtime, broker, egress, or denied delivery' }, 400);
-  }
-  if (
-    requestedStrategy === 'broker' &&
-    requestedConsumerData !== 'llm_gateway' &&
-    requestedConsumerData !== 'connector' &&
-    requestedConsumerData !== 'http_broker'
-  ) {
-    return c.json({ error: 'broker creation requires a supported server consumer' }, 400);
-  }
-  if (
-    requestedStrategy === 'runtime' &&
-    requestedConsumer !== undefined &&
-    requestedConsumerData !== 'sandbox'
-  ) {
-    return c.json({ error: 'runtime creation requires the sandbox consumer' }, 400);
-  }
-  if (
-    requestedStrategy === 'egress' &&
-    requestedConsumer !== undefined &&
-    requestedConsumerData !== 'network'
-  ) {
-    return c.json({ error: 'egress creation requires the network consumer' }, 400);
-  }
-  if (
-    requestedStrategy === 'denied' &&
-    requestedConsumer !== undefined &&
-    requestedConsumerData !== null
-  ) {
-    return c.json({ error: 'denied creation cannot have a consumer' }, 400);
-  }
-  if (requestedStrategy === undefined && requestedConsumer !== undefined) {
-    return c.json({ error: 'consumer requires a strategy' }, 400);
-  }
-  // Agent sessions must not choose a delivery policy. This mirrors the
-  // PUT /:identifier/strategy guard below: an agent-session PAT that can create
-  // a secret must not also set egress/broker/denied delivery or an outbound
-  // host list, because a later session mints a spendable handle against that
-  // policy — widening a host list is exactly the exfil vector. Two shapes stay
-  // allowed, the same two an agent-minted setup link can write
-  // (writeSharedProjectSecret): a plain runtime/sandbox secret, and a
-  // connector-scoped one (broker/connector, no host list) whose value only
-  // the connector gateway spends.
-  const agentAllowedDelivery =
-    body.egress_policy === undefined &&
-    (requestedStrategy === undefined || requestedStrategy === 'runtime'
-      ? requestedConsumerData === undefined || requestedConsumerData === 'sandbox'
-      : requestedStrategy === 'broker' && requestedConsumerData === 'connector');
-  if (isProjectSessionPrincipal(c) && !agentAllowedDelivery) {
-    return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
-  }
-  // The server does NOT infer delivery from the secret's NAME.
-  //
-  // It used to: a create with no `strategy`/`consumer` whose name matched any
-  // provider credential env in the models.dev catalogue was stamped
-  // `broker`/`llm_gateway`. That catalogue has 204 providers and one of them,
-  // `github-copilot`, claims `GITHUB_TOKEN` — so an ordinary GitHub PAT was
-  // classified as a model credential and withheld from the sandbox. The user
-  // set a secret, the agent could not read it, and nothing said why (prod
-  // 2026-08-27). Any name a provider happens to claim had the same problem;
-  // carving out one name would only move it.
-  //
-  // The callers that actually mean "model credential" all say so explicitly —
-  // web provider-connect, the custom-provider form, `kortix providers set`, and
-  // the Codex OAuth flow, which writes its row directly with `strategyLocked`.
-  // Every other caller means "a secret for my sandbox", which is now what they
-  // get. The web secrets manager already sent `runtime`/`sandbox` outright, so
-  // this also ends a split-brain where the same name landed differently
-  // depending on which surface created it.
-  const explicitStrategy = requestedStrategy as
-    | 'runtime'
-    | 'broker'
-    | 'egress'
-    | 'denied'
-    | undefined;
-  const explicitConsumer =
-    requestedConsumer === undefined
-      ? requestedStrategy === 'runtime'
-        ? 'sandbox'
-        : requestedStrategy === 'egress'
-          ? 'network'
-          : requestedStrategy === 'denied'
-            ? null
-            : undefined
-      : requestedConsumerData;
-  let explicitPolicy = null;
-  if (explicitConsumer === 'http_broker' || explicitConsumer === 'network') {
-    const policy = parseEgressPolicy(body.egress_policy);
-    if (!policy.ok) {
-      return c.json({ error: policy.error, code: 'secret_delivery_policy_invalid' }, 400);
-    }
-    if (explicitConsumer === 'http_broker' && policy.policy.backend !== 'kortix_fetch') {
-      return c.json({ error: 'HTTP broker requires the kortix_fetch backend' }, 400);
-    }
-    if (explicitConsumer === 'network') {
-      const boundaryError = networkBoundaryPolicyError(policy.policy);
-      if (boundaryError) {
-        return c.json(
-          { error: boundaryError, code: 'secret_delivery_policy_invalid' },
-          400,
-        );
-      }
-      const conflict = await boundaryDestinationConflict(projectId, identifier, policy.policy);
-      if (conflict) return c.json(boundaryConflictBody(identifier, conflict), 409);
-    }
-    explicitPolicy = policy.policy;
-  } else if (body.egress_policy !== undefined) {
-    return c.json({ error: 'This consumer does not accept an outbound policy' }, 400);
-  }
-  const explicitHandlePrefix =
-    explicitConsumer === 'http_broker' && typeof body.handle_prefix === 'string'
-      ? body.handle_prefix.trim()
-      : null;
-  if (explicitHandlePrefix && explicitHandlePrefix.length > 48) {
-    return c.json({ error: 'handle_prefix must contain at most 48 characters' }, 400);
+  // The one ladder check that needs the database: a policy that parses and
+  // passes the boundary rules can still claim a (host, header) destination
+  // another network secret already pins. Network always carries the parsed
+  // policy — resolveSecretWriteInput returns ok with it.
+  if (explicitConsumer === 'network') {
+    const conflict = await boundaryDestinationConflict(projectId, identifier, explicitPolicy!);
+    if (conflict) return c.json(boundaryConflictBody(identifier, conflict), 409);
   }
 
   // Look up the existing SHARED row by IDENTIFIER so a key-unchanged edit
@@ -400,6 +383,21 @@ projectsApp.openapi(
     }, 409);
   }
 
+  // A NEW secret narrowed to an audience: write the audience first, under the
+  // id the row will get, so the value is never open to everyone in between.
+  const pendingSecretId =
+    !existing && value !== null && sharedWith.value && sharedWith.value.length > 0 ? randomUUID() : null;
+  if (pendingSecretId) {
+    await setSecretAudience({
+      accountId: loaded.row.accountId,
+      projectId,
+      secretId: pendingSecretId,
+      principals: sharedWith.value!,
+      grantedBy: loaded.userId,
+      pending: true,
+    });
+  }
+
   const now = new Date();
   const actorType =
     c.get('authType') === 'service_account'
@@ -407,70 +405,92 @@ projectsApp.openapi(
       : isProjectSessionPrincipal(c)
         ? 'agent'
         : 'human';
-  await runAuditedTransaction(
-    async (tx) => {
-      if (value !== null) {
-        const [row] = await tx
-          .insert(projectSecrets)
-          .values({
-            projectId,
-            identifier,
-            name,
-            valueEnc: encryptProjectSecret(projectId, value),
-            ...(explicitStrategy ? { strategy: explicitStrategy } : {}),
-            ...(explicitConsumer !== undefined ? { consumer: explicitConsumer } : {}),
-            ...(explicitPolicy ? { egressPolicy: explicitPolicy } : {}),
-            ...(explicitHandlePrefix ? { handlePrefix: explicitHandlePrefix } : {}),
-            createdBy: loaded.userId,
-            rotatedAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [projectSecrets.projectId, projectSecrets.identifier],
-            targetWhere: isNull(projectSecrets.ownerUserId),
-            set: {
+  let writtenSecretId: string;
+  try {
+    writtenSecretId = await runAuditedTransaction(
+      async (tx) => {
+        if (value !== null) {
+          const [row] = await tx
+            .insert(projectSecrets)
+            .values({
+              ...(pendingSecretId ? { secretId: pendingSecretId } : {}),
+              projectId,
+              identifier,
+              name,
               valueEnc: encryptProjectSecret(projectId, value),
               ...(explicitStrategy ? { strategy: explicitStrategy } : {}),
               ...(explicitConsumer !== undefined ? { consumer: explicitConsumer } : {}),
-              ...(explicitConsumer !== undefined ? { egressPolicy: explicitPolicy } : {}),
-              ...(explicitConsumer !== undefined ? { handlePrefix: explicitHandlePrefix } : {}),
+              ...(explicitPolicy ? { egressPolicy: explicitPolicy } : {}),
+              ...(explicitHandlePrefix ? { handlePrefix: explicitHandlePrefix } : {}),
+              createdBy: loaded.userId,
               rotatedAt: now,
               updatedAt: now,
-            },
-          })
-          .returning({ secretId: projectSecrets.secretId });
-        return row.secretId;
-      }
+            })
+            .onConflictDoUpdate({
+              target: [projectSecrets.projectId, projectSecrets.identifier],
+              targetWhere: isNull(projectSecrets.ownerUserId),
+              set: {
+                valueEnc: encryptProjectSecret(projectId, value),
+                ...(explicitStrategy ? { strategy: explicitStrategy } : {}),
+                ...(explicitConsumer !== undefined ? { consumer: explicitConsumer } : {}),
+                ...(explicitConsumer !== undefined ? { egressPolicy: explicitPolicy } : {}),
+                ...(explicitConsumer !== undefined ? { handlePrefix: explicitHandlePrefix } : {}),
+                rotatedAt: now,
+                updatedAt: now,
+              },
+            })
+            .returning({ secretId: projectSecrets.secretId });
+          return row.secretId;
+        }
 
-      await tx
-        .update(projectSecrets)
-        .set({ updatedAt: now })
-        .where(eq(projectSecrets.secretId, existing!.secretId));
-      return existing!.secretId;
-    },
-    (resourceId) => ({
+        await tx
+          .update(projectSecrets)
+          .set({ updatedAt: now })
+          .where(eq(projectSecrets.secretId, existing!.secretId));
+        return existing!.secretId;
+      },
+      (resourceId) => ({
+        accountId: loaded.row.accountId,
+        projectId,
+        actorUserId: loaded.userId,
+        actorType,
+        source: inferAuditSource(c, actorType),
+        action: existing ? 'secret.updated' : 'secret.created',
+        resourceType: 'project_secret',
+        resourceId,
+        before: existing
+          ? { configured: true, strategy: existing.strategy, consumer: existing.consumer }
+          : null,
+        after: {
+          configured: true,
+          strategy: explicitStrategy ?? existing?.strategy ?? 'runtime',
+          consumer:
+            explicitConsumer !== undefined ? explicitConsumer : (existing?.consumer ?? 'sandbox'),
+          egress_policy: explicitPolicy,
+          rotated: value !== null,
+        },
+        metadata: { identifier, name },
+      }),
+    );
+  } catch (error) {
+    if (pendingSecretId) {
+      await clearSecretAudience({ accountId: loaded.row.accountId, projectId, secretId: pendingSecretId });
+    }
+    throw error;
+  }
+  if (pendingSecretId && writtenSecretId !== pendingSecretId) {
+    // A concurrent create won the identifier: its row keeps its own id.
+    await clearSecretAudience({ accountId: loaded.row.accountId, projectId, secretId: pendingSecretId });
+  }
+  if (sharedWith.value && writtenSecretId !== pendingSecretId) {
+    await setSecretAudience({
       accountId: loaded.row.accountId,
       projectId,
-      actorUserId: loaded.userId,
-      actorType,
-      source: inferAuditSource(c, actorType),
-      action: existing ? 'secret.updated' : 'secret.created',
-      resourceType: 'project_secret',
-      resourceId,
-      before: existing
-        ? { configured: true, strategy: existing.strategy, consumer: existing.consumer }
-        : null,
-      after: {
-        configured: true,
-        strategy: explicitStrategy ?? existing?.strategy ?? 'runtime',
-        consumer:
-          explicitConsumer !== undefined ? explicitConsumer : (existing?.consumer ?? 'sandbox'),
-        egress_policy: explicitPolicy,
-        rotated: value !== null,
-      },
-      metadata: { identifier, name },
-    }),
-  );
+      secretId: writtenSecretId,
+      principals: sharedWith.value,
+      grantedBy: loaded.userId,
+    });
+  }
 
   // Only a network-boundary secret waits for the fan-out. Its value never
   // reaches the sandbox, so a failed push is the difference between "the agent
@@ -525,7 +545,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/secrets/{name}',
     tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:identifier',
+    summary: 'Delete a project secret',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), name: z.string() }),
@@ -549,6 +569,9 @@ projectsApp.openapi(
   // DB read needed before the delete.
   if (isSystemProjectSecretName(identifier)) {
     return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
+  }
+  if (isTeamsInstallSecretName(identifier)) {
+    return c.json({ error: `${identifier} is managed by the Microsoft Teams connection. Disconnect Teams instead.` }, 403);
   }
   if (identifier.toUpperCase() === CODEX_AUTH_JSON_SECRET_NAME) {
     return c.json(
@@ -621,6 +644,8 @@ projectsApp.openapi(
         metadata: { identifier, name: existing.name },
       }),
     );
+    // No dead audience grant outlives its value.
+    await clearSecretAudience({ accountId: loaded.row.accountId, projectId, secretId: existing.secretId });
   } else {
     await db
       .delete(projectSecrets)
@@ -639,247 +664,3 @@ projectsApp.openapi(
 },
 );
 
-// PUT /v1/projects/:projectId/secrets/:name/personal
-// Any project member sets/updates THEIR OWN per-key override (the "use mine"
-// value) and/or flips whether it's active. Operates only on the caller's row;
-// never touches the shared value or anyone else's override.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/secrets/{name}/personal',
-    tags: ['secrets'],
-    summary: 'PUT /:projectId/secrets/:name/personal',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), name: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readJsonObject(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
-  // override only for its on-behalf-of human, inside a private session.
-  if ((await requestPersonalOwner(c, loaded)) !== loaded.userId) {
-    return c.json(
-      { error: 'This session cannot change a personal secret', code: 'personal_resource_unreachable' },
-      403,
-    );
-  }
-
-  const name = c.req.param('name')?.trim().toUpperCase();
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
-  }
-  if (isSystemProjectSecretName(name)) {
-    return c.json({ error: 'KORTIX_* names are reserved and cannot be overridden' }, 400);
-  }
-  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
-    return c.json({ error: `${CODEX_AUTH_JSON_SECRET_NAME} is managed by ChatGPT subscription onboarding` }, 400);
-  }
-  // LLM provider credentials are always project-wide. The gateway resolves
-  // BYOK keys from the SHARED row only (getProjectSecretValue), so a personal
-  // override would show the provider as connected in the UI while every model
-  // turn 400s with "No upstream configured" (2026-07-07 prod incident).
-  if (isGatewayManagedEnv(name)) {
-    return c.json(
-      {
-        error: `${name} is an LLM provider credential — provider keys are always project-wide, update the shared value instead`,
-        code: 'llm_credentials_project_wide',
-      },
-      400,
-    );
-  }
-
-  const value = typeof body.value === 'string' ? body.value : null;
-  const active = typeof body.active === 'boolean' ? body.active : undefined;
-  if (value === null && active === undefined) {
-    return c.json({ error: 'value or active is required' }, 400);
-  }
-
-  const [existingMine] = await db
-    .select({ secretId: projectSecrets.secretId })
-    .from(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-      eq(projectSecrets.ownerUserId, loaded.userId),
-    ))
-    .limit(1);
-
-  const now = new Date();
-  if (!existingMine) {
-    if (value === null) {
-      return c.json({ error: 'value is required to create an override' }, 400);
-    }
-    await db.insert(projectSecrets).values({
-      projectId,
-      identifier: name,
-      name,
-      valueEnc: encryptProjectSecret(projectId, value),
-      ownerUserId: loaded.userId,
-      active: active ?? true,
-      createdBy: loaded.userId,
-      updatedAt: now,
-    });
-  } else {
-    await db
-      .update(projectSecrets)
-      .set({
-        ...(value !== null ? { valueEnc: encryptProjectSecret(projectId, value) } : {}),
-        ...(active !== undefined ? { active } : {}),
-        updatedAt: now,
-      })
-      .where(eq(projectSecrets.secretId, existingMine.secretId));
-  }
-
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
-
-  const views = await loadSecretViewsForUser({
-    projectId,
-    userId: loaded.userId,
-    canManageShared: roleAllows(loaded.effectiveRole, 'manage'),
-  });
-  return c.json(views.find((v) => v.name === name) ?? { name }, 200);
-},
-);
-
-// DELETE /v1/projects/:projectId/secrets/:name/personal
-// Remove the caller's own override for this key (falls back to the shared value).
-
-projectsApp.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/{projectId}/secrets/{name}/personal',
-    tags: ['secrets'],
-    summary: 'DELETE /:projectId/secrets/:name/personal',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), name: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const name = c.req.param('name')?.trim().toUpperCase();
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
-  }
-  if (name === CODEX_AUTH_JSON_SECRET_NAME) {
-    return c.json(
-      { error: `${CODEX_AUTH_JSON_SECRET_NAME} must be disconnected as an OAuth provider` },
-      400,
-    );
-  }
-  // Spec 2026-09-22 §2.3: an agent-principal session writes a personal
-  // override only for its on-behalf-of human, inside a private session.
-  if ((await requestPersonalOwner(c, loaded)) !== loaded.userId) {
-    return c.json(
-      { error: 'This session cannot change a personal secret', code: 'personal_resource_unreachable' },
-      403,
-    );
-  }
-
-  await db
-    .delete(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-      eq(projectSecrets.ownerUserId, loaded.userId),
-    ));
-
-  void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
-
-  return c.json({ ok: true });
-},
-);
-
-// POST /v1/projects/:projectId/secrets/sync
-// Force a re-push of all project secrets to all active sandboxes. Use after
-// setting a secret via the intake link or when secrets are missing from a
-// session's environment despite being set in the store.
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/secrets/sync',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/secrets/sync — force re-push secrets to active sandboxes',
-    ...auth,
-    request: { params: z.object({ projectId: z.string() }) },
-    responses: {
-      200: json(
-        z.object({
-          ok: z.boolean(),
-          active_sandboxes: z.number().int().nonnegative(),
-          targeted: z.number().int().nonnegative(),
-          synced: z.number().int().nonnegative(),
-          failed: z.number().int().nonnegative(),
-          exported: z.number().int().nonnegative(),
-          results: z.array(z.object({
-            session_id: z.string(),
-            sandbox_id: z.string().nullable(),
-            status: z.enum(['synced', 'failed']),
-            scope: z.enum(['inherit', 'restricted', 'none']).nullable(),
-            revision: z.string().nullable(),
-            exported: z.number().int().nonnegative(),
-            managed: z.number().int().nonnegative().nullable(),
-            withheld: z.number().int().nonnegative().nullable(),
-            agent_env_written: z.boolean(),
-            reason: z.string().optional(),
-          })),
-        }),
-        'Secret delivery verification result',
-      ),
-      ...errors(403, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // An agent session pulls ITS OWN session: re-push this sandbox's env from
-    // the store and its current grant. Every prompt already does exactly this
-    // (pre-prompt env sync), so it grants nothing new — it lets the agent pick
-    // up a secret or grant a person just saved without waiting for the next
-    // message. It never reaches another session's box: the project-wide
-    // re-push below stays a person's action, because re-minting every handle
-    // in every sandbox is the re-mint half of the policy-widening chain
-    // (d649d08932, finding F6).
-    if (isProjectSessionPrincipal(c)) {
-      const sessionId = c.get('sessionId') as string | undefined;
-      if (!sessionId) {
-        return c.json(
-          { error: 'Only a session can sync its own secrets', code: 'agent_human_only_action' },
-          403,
-        );
-      }
-      // Pulling into its own box writes nothing: read is the gate.
-      await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
-      // Refresh the token's stored grant too, as a prompt does, so
-      // `kortix secrets ls` in this same turn reflects a just-widened grant.
-      // Best-effort: env delivery resolves the grant on its own.
-      await reconcileStoredSessionAgentGrant({ projectId, sessionId }).catch((err: unknown) => {
-        console.warn('[secrets] sync: could not refresh the session grant', {
-          sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      return c.json(await syncSessionSecretsToSandbox(projectId, sessionId));
-    }
-    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
-    const result = await propagateProjectSecretsToActiveSandboxes(projectId);
-    return c.json(result);
-  },
-);

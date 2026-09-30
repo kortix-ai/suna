@@ -54,7 +54,7 @@ mock.module('../../shared/audit', () => ({
 }));
 
 const { accountSecretResources, projectSecrets } = await import('@kortix/db');
-const { CodexRefreshError, resolveCodexCredential, resolveCodexAccountCredential } = await import('./codex');
+const { CodexRefreshError, resolveCodexCredential, resolveCodexAccountCredential, refreshRefusedCodexAccountLogin } = await import('./codex');
 
 describe('resolveCodexCredential consumer boundary', () => {
   beforeEach(() => {
@@ -239,5 +239,94 @@ describe('resolveCodexAccountCredential marks a login that needs reconnection', 
     }
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(marks()).toHaveLength(3);
+  });
+});
+
+// Seen on dev 2026-09-29: ChatGPT refused a stored login with 401 "Could not
+// parse your authentication token" while its stored expiry was weeks away, so
+// the gateway never refreshed it and every turn failed. The gateway now asks
+// for a forced refresh when the provider refuses a login.
+describe('refreshRefusedCodexAccountLogin', () => {
+  const sha256 = (value: string) => new Bun.CryptoHasher('sha256').update(value).digest('hex');
+  const login = (access: string, extra: Record<string, unknown> = {}) => ({
+    value: JSON.stringify({ openai: { type: 'oauth', access, refresh: 'refresh-token', expires: Date.now() + 86_400_000, accountId: 'chatgpt-acct' } }),
+    updatedAt: LOADED_AT,
+    needsReauthAt: null as Date | null,
+    ...extra,
+  });
+  const input = (refusedAccess: string) => ({
+    projectId: PROJECT_ID, accountId: ACCOUNT_ID, sessionId: SESSION_ID, userId: USER_ID,
+    secretId: SECRET_ID, failedKeySha256: sha256(refusedAccess),
+  });
+  const marks = () => updates.map((update) => update.value).filter((value) => 'needsReauthAt' in value && value.needsReauthAt !== null);
+
+  beforeEach(() => {
+    audits.length = 0;
+    updates.length = 0;
+    wheres.length = 0;
+  });
+
+  test('forces a refresh of an unexpired login and stores the new token', async () => {
+    const fetchImpl = mock(async () => Response.json({ access_token: 'fresh-access', refresh_token: 'rotated', expires_in: 864000 }));
+    const result = await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => login('refused-access'), fetchImpl,
+    });
+    expect(result).toEqual({ access: 'fresh-access', accountId: 'chatgpt-acct' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(updates.map((update) => update.table)).toEqual([accountSecretResources]);
+    expect(updates[0]?.value).toHaveProperty('needsReauthAt', null);
+  });
+
+  test('a login another request already refreshed is returned without a second refresh', async () => {
+    const fetchImpl = mock(async () => Response.json({ access_token: 'never' }));
+    const result = await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => login('already-fresh'), fetchImpl,
+    });
+    expect(result).toEqual({ access: 'already-fresh', accountId: 'chatgpt-acct' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
+  });
+
+  test('a refresh the provider refuses marks the login for reconnection and yields no token', async () => {
+    const fetchImpl = mock(async () => Response.json({ error: { code: 'invalid_refresh_token' } }, { status: 401 }));
+    const result = await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => login('refused-access'), fetchImpl,
+    });
+    expect(result).toBeNull();
+    expect(marks()).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ action: 'secret.consumer.refresh_failed', metadata: { permanent: true } });
+  });
+
+  test('a refresh lost to another replica uses the winner\'s token', async () => {
+    let reads = 0;
+    const fetchImpl = mock(async () => Response.json({ error: { code: 'refresh_token_reused' } }, { status: 400 }));
+    const result = await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => (reads++ === 0 ? login('refused-access') : login('winner-access', { updatedAt: new Date() })),
+      fetchImpl,
+    });
+    expect(result).toEqual({ access: 'winner-access', accountId: 'chatgpt-acct' });
+  });
+
+  test('a login already marked for reconnection, missing, or unreadable is not refreshed', async () => {
+    const fetchImpl = mock(async () => Response.json({ access_token: 'never' }));
+    expect(await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => login('refused-access', { needsReauthAt: new Date() }), fetchImpl,
+    })).toBeNull();
+    expect(await refreshRefusedCodexAccountLogin(input('refused-access'), { load: async () => null, fetchImpl })).toBeNull();
+    expect(await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => ({ value: '{}', updatedAt: LOADED_AT, needsReauthAt: null }), fetchImpl,
+    })).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(marks()).toHaveLength(1);
+  });
+
+  test('a refused login with no refresh token is marked for reconnection', async () => {
+    const fetchImpl = mock(async () => Response.json({ access_token: 'never' }));
+    const value = JSON.stringify({ openai: { type: 'oauth', access: 'refused-access', expires: Date.now() + 86_400_000 } });
+    expect(await refreshRefusedCodexAccountLogin(input('refused-access'), {
+      load: async () => ({ value, updatedAt: LOADED_AT, needsReauthAt: null }), fetchImpl,
+    })).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(marks()).toHaveLength(1);
   });
 });

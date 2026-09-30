@@ -50,7 +50,6 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  * below are deprecated aliases kept for published-SDK compatibility.
  */
 export const FeatureFlagMapSchema = z.object({
-  agent_tunnel: z.boolean(),
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
@@ -63,11 +62,11 @@ export const FeatureFlagMapSchema = z.object({
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),
-  session_transcript_history: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   config_releases: z.boolean(),
   agent_principal: z.boolean(),
+  us_region: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -496,6 +495,28 @@ export const ConnectionShareSchema = z.object({
 });
 export type ConnectionShare = z.infer<typeof ConnectionShareSchema>;
 
+/** Live status of the machine behind a computer account. */
+export const ComputerMachineStatusSchema = z.object({
+  online: z.boolean(),
+  last_heartbeat_at: z.string().nullable(),
+  hostname: z.string().optional(),
+  platform: z.string().optional(),
+  /**
+   * The access mode the machine last reported (`tunnel.access.state`):
+   * `ask` needs its owner to allow each grant on the computer, `always` runs,
+   * `off` refuses every call. `granted_until` is the end of the current `ask`
+   * grant. `null` or absent: the agent never reported one (treat as `always`).
+   */
+  access: z
+    .object({
+      mode: z.enum(['ask', 'always', 'off']),
+      granted_until: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+export type ComputerMachineStatus = z.infer<typeof ComputerMachineStatusSchema>;
+
 export const ConnectionSchema = z.object({
   connection_id: z.string().uuid(),
   connector_alias: z.string(),
@@ -523,6 +544,16 @@ export const ConnectionSchema = z.object({
    * a session. Absent on older servers: treat as `true`.
    */
   usable: z.boolean().optional(),
+  /**
+   * Computer accounts only: the paired machine this account reaches. `null`
+   * when the machine was unpaired. Absent on every other connector.
+   */
+  tunnel_id: z.string().uuid().nullable().optional(),
+  /**
+   * Computer accounts only: live status of the paired machine, or `null` when
+   * it was unpaired. Absent on every other connector.
+   */
+  machine: ComputerMachineStatusSchema.nullable().optional(),
 });
 export type Connection = z.infer<typeof ConnectionSchema>;
 
@@ -907,6 +938,25 @@ export const PendingSessionPromptSchema = z
   });
 export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
 
+/**
+ * Free-form session labels, for classifying and filtering sessions. Each label
+ * is trimmed and 1..64 characters; at most 20; duplicates drop in first-seen
+ * order. Matching (`?label=`) is exact and case-sensitive.
+ */
+export const SessionLabelsSchema = z
+  .array(z.string().trim().min(1).max(64))
+  .max(20)
+  .transform((labels) => [...new Set(labels)]);
+
+/** JSON characters one session-metadata write may carry (create or PATCH). */
+export const SESSION_METADATA_MAX_CHARS = 16_384;
+
+/** Client metadata on create / PATCH: a free-form object, bounded in size. */
+export const SessionMetadataInputSchema = JsonObjectSchema.refine(
+  (metadata) => JSON.stringify(metadata).length <= SESSION_METADATA_MAX_CHARS,
+  { message: `metadata must be at most ${SESSION_METADATA_MAX_CHARS} characters of JSON` },
+);
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -923,8 +973,12 @@ export const SessionCreateInputSchema = z
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
     title_source: z.string().optional(),
+    /** The session's `provider/model` pin. Wins over `opencode_model`. */
+    model: z.string().min(1).optional(),
+    /** @deprecated The pre-W4 name of `model`. */
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
+    labels: SessionLabelsSchema.optional(),
     session_id: z
       .string()
       .regex(
@@ -934,7 +988,7 @@ export const SessionCreateInputSchema = z
       .optional(),
     provider: SandboxProviderSchema.optional(),
     branch_already_created: z.boolean().optional(),
-    metadata: JsonObjectSchema.optional(),
+    metadata: SessionMetadataInputSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
     connector_bindings: SessionConnectorBindingsInputSchema.optional(),
     // When `connector_bindings` is set, unbound aliases fail closed.
@@ -974,6 +1028,18 @@ export const SessionCreateInputSchema = z
   .strict();
 export type SessionCreateInput = z.infer<typeof SessionCreateInputSchema>;
 
+/**
+ * Public body for PATCH /v1/projects/:projectId/sessions/:sessionId.
+ * `labels` replaces the list. `metadata` merges top-level keys; a `null`
+ * value removes that key. `name` "" or null clears the rename.
+ */
+export const SessionUpdateInputSchema = z.object({
+  name: z.string().nullable().optional(),
+  labels: SessionLabelsSchema.optional(),
+  metadata: SessionMetadataInputSchema.optional(),
+});
+export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
+
 /** A project session as serialized by `serializeSession`. */
 export const ProjectSessionSchema = z.object({
   session_id: z.string(),
@@ -984,15 +1050,22 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
+  /** The session's root conversation in its runtime (OpenCode or pi). */
+  runtime_session_id: z.string().nullable(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
   custom_name: z.string().nullable(),
+  labels: z.array(z.string()),
   agent_name: z.string(),
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
+  /** The runtime's conversation tree snapshot; `[]` for a caller who cannot open the session. */
+  runtime_sessions: z.array(z.unknown()),
+  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
   opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
@@ -1001,6 +1074,21 @@ export const ProjectSessionSchema = z.object({
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
+  /** The session that spawned this one (a coordinator's worker); null for a top-level session. */
+  parent_session_id: z.string().nullable().optional(),
+  /** Who started the run this session belongs to (a child carries its parent's). Derived, never client-set. */
+  initiator: z
+    .object({
+      type: z.enum(['member', 'trigger', 'channel', 'api', 'system']),
+      id: z.string().nullable(),
+      label: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+  /** List with `parent=root` only: the session's non-deleted children. */
+  child_count: z.number().int().optional(),
+  /** List with `parent=root&q=` only: the session matched itself, or only a child matched. */
+  search_match: z.enum(['self', 'child']).optional(),
   /** Backend-set per-session secrets allowlist (identifiers); null = no narrowing. */
   secrets_allowlist: SessionSecretsAllowlistSchema.nullable(),
   sharing: SharingIntentSchema,
@@ -1232,7 +1320,9 @@ export const SessionStartResultSchema = z.object({
   retriable: z.boolean(),
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
-  /** Canonical OpenCode root pin, resolved server-side once the box is up. */
+  /** Canonical runtime root pin, resolved server-side once the box is up. */
+  runtime_session_id: z.string().nullable().optional(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
@@ -1476,6 +1566,12 @@ export const SecretSchema = z.object({
   strategy_locked: z.boolean(),
   last_rotated_at: z.string().nullable(),
   requires_rotation: z.boolean(),
+  /** Who can use the shared value: each audience grant. Empty = everyone in
+   *  the project. Present on `GET /secrets`. */
+  shared_with: z.array(ConnectionShareSchema).optional(),
+  /** Can the caller's sessions use the shared value? False only when it is
+   *  shared with specific people and the caller is not one of them. */
+  usable: z.boolean().optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 

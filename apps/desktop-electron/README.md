@@ -54,6 +54,18 @@ remembered across launches (stored in `userData/frontend_url`).
 `KORTIX_DESKTOP_USER_DATA=<dir>` runs against an isolated profile instead of
 the real one.
 
+Launch and **Go ▸ Home** load the instance's site root (`homeUrl()` in
+`src/instance-store.js`), not the saved `/projects` URL. The web middleware
+sends a signed-in `/` into the project this profile had open last, from the
+owner-scoped `kortix_last_project` cookie — the same as `kortix.com` in a
+browser. With no remembered project it lands on the `/projects/start` door. A
+saved URL with any other path loads as saved.
+
+**Go ▸ Copy Current URL** (⌘/Ctrl+L) copies the address the window is on — the
+session URL inside a session — so it can be pasted and shared. It is enabled
+only on app pages (the same in-app routes the navigation gate allows); on a
+blank, error, or external page it is disabled.
+
 ### First launch: choose a Kortix instance
 
 A new profile asks which instance to connect to before any page loads. The
@@ -131,6 +143,100 @@ pnpm --filter @kortix/desktop-electron dev:macos   # builds an unpacked .app + o
 Plain `pnpm dev` (unpackaged `electron .`) is great for fast iteration, and your
 session persists across relaunches — but a *fresh* login won't round-trip back
 until you run the bundled build above.
+
+## This computer (local agent + tray)
+
+The app bundles the computer agent, `@kortix/agent-tunnel`
+(`packages/agent-tunnel/dist/agent-cli.js`), as
+`Resources/agent-tunnel/agent-cli.js`, with the package's `package.json` beside
+it for the version (electron-builder `extraResources`; `desktop.yml` stamps the
+release version into that `package.json`, because the checked-in value is inert). It
+runs that file with its own binary: `process.execPath` +
+`ELECTRON_RUN_AS_NODE=1`. The installed OS service (launchd / systemd user unit
+/ Scheduled Task) does the same, so a connected computer needs no Node install.
+Dev runs load the repo build; `scripts/ensure-runtime.js` builds it with bun
+when it is missing.
+
+Pieces: `src/computer.js` (rules, NDJSON parsing, spawning, access.json;
+unit-tested) and `src/computer-tray.js` (commands, approval window, access
+prompt, tray).
+
+| `kortix:invoke` command | Result |
+| --- | --- |
+| `computer_status` | `{ available, paired, tunnelId?, apiUrl?, status?, state?, paused, serviceInstalled, serviceActive, needsRepair, error? }`. `state` is `online`, `connecting`, `offline`, `rejected` (needs reconnect) or `standby`. Answered from the cached status; file changes keep it fresh. |
+| `computer_connect { projectId?, share?, apiUrl?, reauth? }` | Runs `connect --json --daemon --api-url <backend>/tunnel [--project-id <id>] [--reauth]`; opens the approval page in a modal window; resolves `{ ok, tunnelId, existing? }` or `{ ok: false, error }` once the service is installed. `share` is chosen on the approval page. |
+| `computer_pause` / `computer_resume` | The agent's durable `stop` / `start`. Returns `{ ok, error?, status }`. Pause survives login and reboot. |
+| `computer_disconnect` | `logout --json`: removes the machine in Kortix with its own credential (`DELETE /v1/tunnel/self`), then the local credential and the service. Returns `{ ok, serverUnpaired, error?, status }`. |
+| `computer_open_logs` | Opens `logs/agent-tunnel.out.log`; rejects when the OS cannot open it. |
+| `computer_access_get` | `{ mode, grantedUntil, deniedUntil, keepAwake, keepAwakeSupported, pendingRequest }` |
+| `computer_access_set { mode?, grantMinutes?, revoke?, keepAwake? }` | Writes `access.json` (grant at most 24 h); returns the same shape. |
+
+Rules:
+
+- The commands pass the same trusted-sender gate as every other command: the
+  main frame of the main window, on the configured app origin.
+- **The backend comes from the instance, not the page.** The main process reads
+  `BACKEND_URL` from `<app origin>/api/runtime-config` (https, or http on
+  loopback) and caches it in `<userData>/computer-backend.json` for offline
+  starts. A page that still passes `apiUrl` must name exactly that backend.
+- The approval URL loads in-app only when it is this app's `/tunnel/` route;
+  anything else opens in the system browser. Closing that window cancels the
+  pairing only when no approval arrives within 10 s: the agent learns of an
+  approval on its next 2 s poll.
+- The approval window is a dialog, not a second app window. On macOS it is a
+  sheet with no close button. **Esc** and the page's **Back** close it; so
+  does any navigation to an app page outside `/tunnel/*` and `/auth*`
+  (`isApprovalDialogPath` in `src/nav-rules.js`). Each counts as closing the
+  window, with the same 10 s grace. The app never loads inside the dialog.
+- A packaged macOS app must run from `/Applications`; a translocated copy would
+  leave the service pointing at a path that disappears.
+- **Isolation, one identity per backend.** A packaged **stable** build on
+  `https://api.kortix.com` uses the default `~/.agent-tunnel` and service
+  `ai.kortix.agent-tunnel`, the same identity as the npm CLI. So does a stable
+  build whose `~/.agent-tunnel` already pairs the same backend. Every other
+  backend gets `AGENT_TUNNEL_HOME=<userData>/agent-tunnel/<sha8(api origin)>`
+  and a suffixed service `ai.kortix.agent-tunnel.<8 hex>`. A pre-v2
+  `<userData>/agent-tunnel` keeps being used while it pairs the same backend.
+  A packaged stable build uses `~/.agent-tunnel` only when it is unpaired or
+  paired with this same backend. A saved token is never sent to another
+  backend, and `pnpm dev` never touches the real agent.
+- **Service repair.** On start, and from the periodic status refresh at most
+  once every 5 minutes, a paired service that is not paused is reinstalled
+  (`install-service`) when it is missing, not running, its unit differs from
+  what this app would write (app moved or updated), or it runs an agent version
+  other than the bundled one. A foreground `agent-tunnel connect` that holds
+  the tunnel is left alone. On macOS a copy that does not run from the
+  Applications folder (disk image, App Translocation) never repairs and never
+  records itself.
+- **Access prompt.** The app records itself in `<home>/desktop-app.json` (the
+  AppImage file on Linux) and touches it every 5 s, so the agent can tell a
+  running app from a reused pid and start it. When `access-request.json`
+  appears and access is not already decided, the app shows a native dialog on
+  top of every app ("Allow Kortix to use <machine>?": Allow for 24 hours, Allow
+  for 1 hour (default), Deny). The dialog says a grant covers files, the shell,
+  and the screen and keyboard for any agent that can reach the computer. A
+  system notification appears when no window has focus. An answer clears every
+  request asked before it.
+- **Access from the web page.** `computer_access_set` narrows access at once
+  (Off, Ask each time, Revoke, keep awake). Widening it (Always allowed, or a
+  new grant) applies only after the owner clicks Allow in a native dialog: the
+  page is remote content and never decides alone. A mode change drops the old
+  grant and denial.
+
+The tray (macOS menu bar template icon, Windows/Linux notification area) exists
+while a computer is paired. Its status line follows `state.json` (fs.watch plus
+a 5 s mtime poll; a full status refresh every 60 s). Items: Open Kortix; Access
+(Ask each time / Always allowed / Off); "Allowed until HH:MM" and Revoke now
+while a grant runs; Keep this computer awake while plugged in (macOS, Linux;
+shown disabled on Windows); Pause/Resume computer access; Show logs;
+Open at login (macOS and Windows); Disconnect this computer… (same self-unpair
+as the web); Quit Kortix. Failures show an error dialog. With a paired
+computer, closing the last window keeps the app in the tray on every platform.
+The agent is a separate OS service and stays connected after Quit.
+
+Tray icons are in `assets/tray/`: `trayTemplate.png` / `@2x` (black + alpha,
+from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
+`build/icon.png`).
 
 ## Package
 

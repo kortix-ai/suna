@@ -5,6 +5,7 @@ import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context
 import { logger } from '@/lib/log/logger'
 import { runConvergence } from './config'
 import { authorizeControl } from './control-auth'
+import { legacyRefreshFields } from './legacy-names'
 
 export function createRefreshRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
@@ -73,6 +74,10 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
     // trigger from a UI click. An older daemon ignores the flag and runs its
     // `--ff-only` pull, which cannot discard anything.
     const skipRepo = c.req.query('repo') === '0'
+    // `?base_config=1` — bring the base branch's OpenCode config dir into the
+    // checkout for a project without config releases (`syncConfigDirToBase`).
+    // An older daemon ignores the flag and answers without `config_dir`.
+    const syncBaseConfig = c.req.query('base_config') === '1'
     const baseSha = c.req.query('base_sha')
     if (baseSha !== undefined && !/^[0-9a-f]{40}$/i.test(baseSha)) {
       return c.json({ error: 'invalid base_sha' }, 400)
@@ -80,13 +85,15 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
 
     refreshInFlight = (async () => {
       try {
-        return c.json(await control.refresh({
+        const result = await control.refresh({
           syncBase,
           skipRestart,
           skipRepo,
+          syncBaseConfig,
           baseSha,
           forceFail: c.req.query('verify_fail') === '1',
-        }))
+        })
+        return c.json({ ...result, ...legacyRefreshFields(result) })
       } catch (err) {
         const message = (err as Error).message || 'refresh failed'
         logger.error('[refresh] failed', err)

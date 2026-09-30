@@ -53,7 +53,10 @@ kortix channels disconnect --platform teams
 Each chat or channel conversation is its own session. The first message creates
 it; later messages continue it, even after the sandbox stops and resumes. A
 tenant connected to more than one project shows a **project picker** on the
-first unrouted message, and remembers the choice.
+first unrouted message, and remembers the choice. In a channel only a message
+that mentions the bot gets the picker, and a command about the project, such as
+`/models`, asks which project first. Teams offers only projects that have the
+Teams feature flag on.
 
 In a channel, every new post starts its own session. A personal or group chat
 is one conversation for its whole life, so it keeps one session until you send
@@ -70,6 +73,11 @@ bindings table on the Channels page:
 - **approval** — the session owner gets an Approve / Deny card for each new person.
 - **owner** — only the person who started the session.
 
+Under **approval** and **owner**, the session is not visible to the whole
+project in Kortix either: only to its owner, the people approved into it, and
+account admins who oversee sessions. A decision on a review or approval card
+resumes the agent under any policy.
+
 ## Identity linking
 
 The sender links their Kortix account once with `/login`; the agent then runs
@@ -79,9 +87,43 @@ access instead of a session.
 
 The sign-in link appears only in a one-to-one chat with the bot. It links the
 person it was issued for to whoever opens it, so in a channel or group chat,
-where everyone sees the card, the bot instead asks you to open a private chat
-with it and send `/login` there. A message you sent in the channel while
-unlinked runs once you connect, if you do so within 10 minutes.
+where everyone sees the card, the bot sends the link to your private chat with
+it and says so. Teams allows that only when you have added the app for
+yourself; otherwise the card asks you to open a private chat with the bot and
+send `/login` there. A message you sent in the channel while unlinked runs once
+you connect, if you do so within 10 minutes. When you finish connecting in the
+browser, your private chat with the bot confirms which Kortix account you are
+linked as.
+
+A sign-in link works once and expires after 10 minutes. A Teams account that is
+connected to one Kortix account cannot be connected to another: send `/logout`
+first. If your organization requires two-factor authentication, Kortix asks for
+your second factor before it connects you, and the chat runs on the factor you
+connected with. A link made without it asks you to connect again.
+
+When someone without access asks for it, every account owner and admin gets
+the request in Kortix. Those who linked Teams also get it in their private chat
+with the bot, with a **Review in Kortix** button.
+
+## Roles and permissions
+
+A chat carries no Kortix credential of its own, so every action runs as the
+linked Kortix account of the person who took it, with that account's project
+role. Account owners and admins count as project managers.
+
+| Action | Who may do it |
+| --- | --- |
+| Send a message the agent answers | A linked account with access to the project, within the conversation's join policy |
+| Stop a run | The person who sent the message being answered, or anyone approved into that session, who can still use the project |
+| `/new` in a group chat | A linked project member; under `approval` or `owner`, someone approved into the current session |
+| Change the project, agent, model or policy | A project manager; in a personal chat with the bot, any project member |
+| Approve or deny a review | A project manager |
+| Approve or deny a connector call | A project manager, or the person who started the session |
+| Approve someone into an `approval` session | The session owner |
+| Request access | Anyone linked; each account owner and admin is notified once |
+
+A person scoped out of an agent cannot start a session on it from Teams, as in
+Kortix.
 
 ## Commands
 
@@ -91,13 +133,20 @@ Type these in a chat with the bot (in a channel, `@`-mention it first):
 | --- | --- |
 | `/help` | List the commands |
 | `/login`, `/logout`, `/whoami` | Link, unlink, or show your Kortix account |
-| `/status` | The effective project, agent and model here, and the run in progress |
+| `/status` | The project, agent, model, session policy and run here, with buttons to change the model, agent or project |
+| `/sessions` | Your five most recent sessions started from Teams, each with an Open button |
 | `/stop` | Stop the run in progress here |
 | `/new [message]` | Start a new session in this chat (personal and group chats) |
 | `/models`, `/model <ref>` | Pick the model for this conversation — see [Models and keys](#models-and-keys) |
 | `/agents`, `/agent <name>` | Pick the agent for this conversation |
-| `/projects`, `/use <name>` | List connected projects, or point this one at another |
+| `/projects`, `/use <name>` | List connected projects, or point this one at another (not on a project's own bot) |
 | `/policy [open\|approval\|owner]` | Who may join sessions started here |
+| `/unbind` | Disconnect this conversation from its project; the next message picks one again |
+| `/home` | The organization's projects and what to try |
+
+On any message, **⋯ → Open in Kortix** opens the session that conversation
+belongs to. When you add the app for yourself, your private chat with the bot
+starts with the same overview as `/home`.
 
 ## Models and keys
 
@@ -130,6 +179,10 @@ The agent answers in one card: its steps while it works, then the reply. A
 long reply that does not fit in one Teams message is cut at a line, marked as
 cut, and links to the full session in Kortix.
 
+A link you are meant to open is a button, not a word in a sentence: a link to
+connect an app (**Connect Gmail**), and any link the agent puts on a line of
+its own. Other links, code, and tables render as they do in Kortix.
+
 Send another message while it works and it waits for the current run, then
 gets its own card. A run can take as long as it needs: a card is closed as
 dead only when the runtime reports that the run has ended, not because a long
@@ -143,7 +196,9 @@ the runtime, not just on the card — a run that is left open swallows the next
 message in the conversation instead of answering it.
 
 The person who sent the message being answered can stop it, as can anyone
-already working in that session. A bystander in the channel cannot.
+approved into that session, while they can still use the project. A bystander
+in the channel cannot, and neither can someone approved into an earlier session
+of the chat.
 
 ## Files
 
@@ -198,7 +253,8 @@ second round trip to ask what you meant. It is optional by design — a plain
 Approve should not need typing.
 
 Anyone in the conversation sees the card, but acting on it needs a linked
-Kortix account with access to the project.
+Kortix account that manages the project. The decision resumes the agent
+whatever the conversation's join policy is.
 
 ## Posting on its own
 
@@ -228,8 +284,28 @@ a team. A team that added the app before that permission was requested must
 remove and re-add it. In a personal chat every message already reaches the
 session, so there is nothing earlier to read.
 
+Every project connected to the same Microsoft 365 tenant uses the same app, so
+Kortix keeps each read inside the project's own conversations. In a channel,
+every new post is its own conversation:
+
+| Read | Allowed when |
+| --- | --- |
+| A thread (`teams thread`) | The thread is a conversation of this project, or of no project and the channel is readable |
+| A channel's recent posts (`teams history`) | This project has a conversation in the channel. Posts that start another project's conversation are left out |
+| A channel no project has a conversation in | No other project is connected to the tenant |
+
+A refused read answers `403` with the reason `conversation_not_in_project` and
+a message that names the channel or thread. To read a channel of the first kind
+in a tenant with several projects, mention the bot in it and pick this project.
+
+`get_channel` and `list_channels` answer for standard channels. A private or
+shared channel appears only when the agent may read it by the rules above.
+`get_team`, `list_members`, `get_user` and `list_teams` read the tenant
+directory and are not limited.
+
 ## Limits
 
 Teams bots cannot add message reactions, send ephemeral (only-you) messages, or
 search messages — those Slack affordances have no Teams equivalent. The agent
-can read a channel only in a team the app was added to.
+can read a channel only in a team the app was added to, and only by the rules
+in [Reading a channel](#reading-a-channel).

@@ -1,5 +1,4 @@
-import { getProjectModelAccess } from '../../repositories/project-model-access';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
+import { getProjectGatewayResolution, type getProjectModelAccess } from '../../repositories/project-model-access';
 import {
   resolveDefaultCodexAccountSecret,
   resolveProjectSharedProviderSecrets,
@@ -20,6 +19,7 @@ import {
   resolveProjectSecretsForConsumer,
 } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
+import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';
 import {
   canonicalManagedModelId,
@@ -65,14 +65,20 @@ const BRING_YOUR_OWN_KEY_SUGGESTION =
   'this model, or pick a model your key covers.';
 
 type ResolutionOptions = { providerSecretPools?: Record<string, string[]>; probe?: boolean };
-type Context = { principal: AuthedPrincipal; effectiveModel: string; personalUserId: string | null; options?: ResolutionOptions };
+type Context = {
+  principal: AuthedPrincipal;
+  effectiveModel: string;
+  personalUserId: string | null;
+  pooledEnabled: boolean;
+  options?: ResolutionOptions;
+};
 
-async function selectedPool(context: Context, providerId: string, name: string, enabled?: boolean) {
+async function selectedPool(context: Context, providerId: string, name: string) {
   const { principal, options, personalUserId } = context;
   if (!principal.projectId) return null;
   const prospectiveIds = options?.providerSecretPools?.[providerId];
   if ((prospectiveIds === undefined && !principal.sessionId) || !principal.userId ||
-    !(enabled ?? await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets'))) return null;
+    !context.pooledEnabled) return null;
   return resolveSessionProviderSecrets({
     accountId: principal.accountId, projectId: principal.projectId,
     ...(prospectiveIds !== undefined ? { secretIds: prospectiveIds } : { sessionId: principal.sessionId! }),
@@ -117,9 +123,10 @@ async function codexAccountCandidates(context: Context, secrets: Array<{ secretI
       });
       if (!credential) { failed.push(secret.label); continue; }
       // `poolSecretId`: a 429 on one account records its cooldown and moves
-      // the request to the next account.
+      // the request to the next account. `refreshableCredential`: a 401 forces
+      // one refresh of this login (internal-routes /refresh-credential).
       candidates.push({ ...codexDescriptor(credential, effectiveModel),
-        credentialRef: secret.secretId, poolSecretId: secret.secretId });
+        credentialRef: secret.secretId, poolSecretId: secret.secretId, refreshableCredential: true });
     } catch (err) {
       if (!(err instanceof CodexRefreshError)) throw err;
       failed.push(secret.label);
@@ -185,11 +192,10 @@ async function codexFallback(context: Context, sharedFailure: GatewayResolutionE
 }
 
 async function resolveCodexCandidates(context: Context): Promise<UpstreamDescriptor[]> {
-  const { principal, effectiveModel, personalUserId } = context;
+  const { principal, effectiveModel, personalUserId, pooledEnabled } = context;
   if (!principal.projectId) throw new GatewayResolutionError('provider_not_connected',
     'Connect Codex to use this model.', 'Connect your ChatGPT/Codex account in project settings, then retry.');
-  const pooledEnabled = await projectFeatureFlagEnabled(principal.projectId, 'pooled_provider_secrets');
-  const pool = await selectedPool(context, 'codex', 'CODEX_AUTH_JSON', pooledEnabled);
+  const pool = await selectedPool(context, 'codex', 'CODEX_AUTH_JSON');
   if (pool?.configured) {
     if (!codexGrantAllowed(principal)) throw codexGrantRefusal();
     if (!pool.secrets.length) throw new GatewayResolutionError(
@@ -216,7 +222,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           sessionId: principal.sessionId ?? null, userId: principal.userId,
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
         });
-        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId }];
+        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
       } catch (err) {
         if (!(err instanceof CodexRefreshError)) throw err;
       }
@@ -231,6 +237,20 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
 }
 
 /**
+ * OpenCode (Zen and Go) refuses a request without `x-opencode-session`
+ * (`MissingSessionID`) and routes and prompt-caches by it. It also asks clients
+ * to name themselves in User-Agent (https://opencode.ai/docs/go). The Kortix
+ * session is the stable conversation id; a gateway API key call has none.
+ */
+function opencodeHeaders(baseUrl: string, principal: AuthedPrincipal): Record<string, string> | undefined {
+  if (URL.parse(baseUrl)?.hostname !== 'opencode.ai') return undefined;
+  // ponytail: an API-key caller shares one session id across its conversations;
+  // forward the caller's own x-opencode-session if that ever costs cache hits.
+  const session = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return { 'x-opencode-session': session, 'User-Agent': 'Kortix (https://kortix.com)' };
+}
+
+/**
  * BYOK bills the provider account directly (`billingMode: 'none'`). Bedrock has
  * no static catalog baseUrl: its endpoint and AI-SDK region come from the
  * project's own AWS_REGION secret, and a wrong-geography inference-profile
@@ -238,7 +258,7 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
  */
 async function byokDescriptors(context: Context, provider: string,
   byok: NonNullable<ReturnType<typeof resolveCatalogUpstream>>,
-  keys: Array<{ identifier: string; value: string }>, pooled: boolean): Promise<UpstreamDescriptor[]> {
+  keys: Array<{ identifier: string; secretId: string; value: string }>, pooled: boolean): Promise<UpstreamDescriptor[]> {
   const { principal, effectiveModel } = context;
   const resolvedModelId = effectiveModel.slice(provider.length + 1);
   const capabilities = capabilitiesForModel(provider, resolvedModelId);
@@ -255,16 +275,42 @@ async function byokDescriptors(context: Context, provider: string,
   const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
   const invokeModelId = byok.kind === 'bedrock'
     ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion) : resolvedModelId;
-  return keys.map(({ identifier, value }) => ({
-    provider, kind: byok.kind, npm: byok.npm, baseUrl,
-    ...(bedrockRegion ? { region: bedrockRegion } : {}),
-    apiKey: value, credentialRef: identifier,
-    ...(pooled ? { poolSecretId: identifier } : {}),
-    billingMode: 'none', markup: 0, resolvedModel: invokeModelId,
-    pricing: livePricing(provider, byok.kind === 'bedrock'
-      ? stripBedrockInferenceProfilePrefix(invokeModelId) : invokeModelId),
-    reasoning: capabilities.reasoning, temperature: capabilities.temperature,
-  }));
+  const headers = opencodeHeaders(baseUrl, principal);
+  const descriptors: UpstreamDescriptor[] = [];
+  let expiredLogin = false;
+  for (const { identifier, secretId, value } of keys) {
+    const base: UpstreamDescriptor = {
+      provider, kind: byok.kind, npm: byok.npm, baseUrl,
+      ...(headers ? { headers } : {}),
+      ...(bedrockRegion ? { region: bedrockRegion } : {}),
+      apiKey: value, credentialRef: identifier,
+      ...(pooled ? { poolSecretId: identifier } : {}),
+      billingMode: 'none', markup: 0, resolvedModel: invokeModelId,
+      pricing: livePricing(provider, byok.kind === 'bedrock'
+        ? stripBedrockInferenceProfilePrefix(invokeModelId) : invokeModelId),
+      reasoning: capabilities.reasoning, temperature: capabilities.temperature,
+    };
+    // An OpenCode Console login ("Sign in with OpenCode") stored in place of
+    // the API key: its token only works on the inference endpoints.
+    const loginBase = byok.kind === 'bedrock' ? null : opencodeInferenceBaseUrl(provider, byok.kind, byok.npm);
+    if (loginBase && parseOpencodeLogin(value)) {
+      const login = await resolveOpencodeLogin({
+        storage: pooled ? 'account_resource' : 'project', accountId: principal.accountId,
+        projectId: principal.projectId!, secretId, value,
+        sessionId: principal.sessionId ?? null, actorUserId: principal.userId,
+      }).catch(() => null);
+      if (!login) { expiredLogin = true; continue; }
+      descriptors.push({
+        ...base, baseUrl: loginBase, apiKey: login.access, credentialRef: secretId, refreshableCredential: true,
+        headers: { ...opencodeHeaders(loginBase, principal), ...(login.orgId ? { 'x-opencode-org-id': login.orgId } : {}) },
+      });
+      continue;
+    }
+    descriptors.push(base);
+  }
+  if (!descriptors.length && expiredLogin) throw new GatewayResolutionError('provider_reauth_required',
+    'Your OpenCode login has expired or was revoked.', 'Sign in with OpenCode again in project settings, then retry.');
+  return descriptors;
 }
 
 async function resolveByokCandidates(context: Context, provider: string,
@@ -278,7 +324,7 @@ async function resolveByokCandidates(context: Context, provider: string,
   }
   const keys = pool?.configured
     // A pooled key this API cannot decrypt is skipped, as if it were not selected.
-    ? pool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, value: secret.value }])
+    ? pool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, secretId: secret.secretId, value: secret.value }])
     : await resolveProjectSecretsForConsumer({
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId, actorUserId: principal.userId,
@@ -314,7 +360,10 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
     const tier = await getCachedAccountTier(principal.accountId);
     throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }
-  return managedCandidates(managed);
+  return managedCandidates(managed).map((candidate) => {
+    const headers = opencodeHeaders(candidate.baseUrl, principal);
+    return headers ? { ...candidate, headers } : candidate;
+  });
 }
 
 function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
@@ -350,9 +399,10 @@ export async function resolveCandidates(
   // Whose PERSONAL keys apply (spec 2026-09-22 §2.3): absent = the token user
   // (legacy); null = none (agent-principal session with no on-behalf-of human).
   const personalUserId = principal.personalUserId === undefined ? principal.userId : principal.personalUserId;
-  const access = principal.projectId
-    ? await getProjectModelAccess(principal.projectId)
-    : { disabledProviders: [], disabledModels: [] };
+  // Avoid a second projects-row query on every resolution (KRTX-586).
+  const { access, pooledEnabled } = principal.projectId
+    ? await getProjectGatewayResolution(principal.projectId)
+    : { access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false };
   if (!modelAccessAllows(access, effectiveModel)) {
     const providerDisabled = access.disabledProviders.includes(modelAccessProvider(effectiveModel));
     throw new GatewayResolutionError(
@@ -362,10 +412,10 @@ export async function resolveCandidates(
     );
   }
   const provider = effectiveModel.includes('/') ? effectiveModel.split('/')[0] : '';
-  const context = { principal, effectiveModel, personalUserId, options };
+  const context = { principal, effectiveModel, personalUserId, pooledEnabled, options };
   if (provider === 'codex') return resolveCodexCandidates(context);
 
-  const byok = resolveCatalogUpstream(provider);
+  const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);
   if (byok && principal.projectId) {
     const candidates = await resolveByokCandidates(context, provider, byok);
     if (candidates.length) return candidates;
