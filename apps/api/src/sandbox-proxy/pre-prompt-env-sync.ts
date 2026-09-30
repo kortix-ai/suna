@@ -390,13 +390,13 @@ export async function runPrePromptEnvSync(
       modelHint: prompt.model ?? undefined,
     });
   }
-  // `userId` is load-bearing, not decorative: without it the snapshot's daemon
-  // call carries no X-Kortix-User-Context header and the daemon answers 401,
-  // so the refresh silently never lands. See scheduleOpencodeSnapshotSync.
+  // `userId` is load-bearing, not decorative: without it the snapshot cannot
+  // pull the projection from the box, so a child spawned this turn never
+  // lands. See scheduleOpencodeSnapshotSync.
   deps.scheduleSnapshot({
     sessionId: record.sessionId,
     projectId: record.projectId,
-    externalId: record.externalId,
+    accountId: record.accountId,
     userId,
   });
   try {

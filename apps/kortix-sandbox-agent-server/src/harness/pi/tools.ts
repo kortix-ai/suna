@@ -140,7 +140,7 @@ export function createGrepTool(): Harness {
 export function createQuestionTool(
   questions: QuestionBroker,
   ref: (toolCallId: string) => { messageID: string; callID: string } | undefined,
-): AgentTool<typeof questionSchema, undefined> {
+): AgentTool<typeof questionSchema, { answers: string[][] }> {
   return {
     name: 'question',
     label: 'question',
@@ -152,7 +152,8 @@ export function createQuestionTool(
       const answers = await questions.ask(asked, ref(toolCallId))
       if (answers === null) throw new Error('The user dismissed the question.')
       const text = asked.map((q, i) => `${q.header}: ${(answers[i] ?? []).join(', ') || '(no answer)'}`).join('\n')
-      return { content: [{ type: 'text', text: `User answered:\n${text}` }], details: undefined }
+      // `details` becomes the part's `state.metadata`: the answers a client shows.
+      return { content: [{ type: 'text', text: `User answered:\n${text}` }], details: { answers } }
     },
   }
 }

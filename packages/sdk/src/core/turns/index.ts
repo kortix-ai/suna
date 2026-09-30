@@ -12,6 +12,7 @@ export * from './parts';
 export * from './segments';
 export * from './shell';
 export * from './state';
+export * from './tool-kind';
 export * from './tool-registry';
 export * from './tools';
 export * from './view-model';

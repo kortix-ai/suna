@@ -1,5 +1,5 @@
 import type { UiTranslator } from '@/i18n/translator';
-import type { ProjectSession } from '@kortix/sdk';
+import { runtimeSessionsOf, type ProjectSession } from '@kortix/sdk';
 
 import {
   matchesSourceFilters,
@@ -120,9 +120,10 @@ export function sessionDetailFields(
   push('Runtime', session.sandbox_provider);
   push('Runtime state', session.runtime_status);
 
-  const conversationCount = (session.opencode_sessions ?? []).length;
+  const conversations = runtimeSessionsOf(session);
+  const conversationCount = conversations.length;
   if (conversationCount > 0) {
-    const archived = (session.opencode_sessions ?? []).filter((item) => item.archived_at).length;
+    const archived = conversations.filter((item) => item.archived_at).length;
     fields.push({
       label: tI18nComplete.raw('text1d432f58690c'),
       value: `${conversationCount}${archived > 0 ? ` · ${archived} archived` : ''}`,

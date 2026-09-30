@@ -9,7 +9,7 @@ import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
 import { listCreatedSession, projectKeys, useCreateProjectSession } from '@/lib/projects/hooks';
-import { getProjectSession } from '@kortix/sdk';
+import { getProjectSession, projectSessionForRuntimeId } from '@kortix/sdk';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -22,7 +22,7 @@ import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { threadOpenTarget, returnThreadForPage, type PendingThreadFocus } from '@/lib/session/project-stack';
-import { projectSessionForOpenCodeId, resolveSessionTitle } from '@/lib/session/session-list';
+import { resolveSessionTitle } from '@/lib/session/session-list';
 import type { OpenedThread } from '@/lib/session/session-sandbox';
 import type { AttachedFile } from '@/lib/session/attachments';
 import type { ProjectHomeSubmit } from '@/components/session/ProjectHome';
@@ -442,7 +442,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   // the row's `opencode_sessions` snapshot. Every
   // /projects/:id/sessions/:sid API call needs the Kortix UUID.
   const activeProjectSession = useMemo(
-    () => projectSessionForOpenCodeId(projectSessions, activeSessionId),
+    () => projectSessionForRuntimeId(projectSessions, activeSessionId),
     [projectSessions, activeSessionId]
   );
   // The loading page's header title and first message, so it reads as the

@@ -16,7 +16,7 @@
 
 import { useContext, useMemo } from 'react';
 import { View } from 'react-native';
-import { getFilename, isErrorOutput } from '@kortix/sdk';
+import { getFilename, isErrorOutput, toToolView } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { PencilSimpleIcon } from '@/lib/icons';
 import { generateLineDiff } from '@/lib/opencode/diff-utils';
@@ -41,7 +41,6 @@ import {
   getToolDiagnostics,
   InlineDiffView,
   partInput,
-  partMetadata,
   partOutput,
   partStatus,
   partStreamingInput,
@@ -52,6 +51,7 @@ import {
   useToolIndent,
   useToolNavigation,
 } from '../shared/infrastructure';
+import { RawPatchDiffView } from '../shared/patch-helpers';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, muted, useTurnPalette } from '../shared/styles';
 import { getToolInput } from '../shared/tool-part';
@@ -65,12 +65,12 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const { openFile } = useToolNavigation();
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
-  const metadata = partMetadata(part);
   const status = partStatus(part);
-  const { filePath, before, after, codeEdit, morphInstructions, hasDiff } = editSources(
+  const file = useMemo(() => toToolView(part).files?.[0], [part]);
+  const { filePath, before, after, patch, patchStat, codeEdit, morphInstructions, hasDiff } = editSources(
     input,
     streamingInput,
-    metadata,
+    file,
   );
   const { filename, ext } = useMemo(() => {
     const name = getFilename(filePath) || '';
@@ -80,8 +80,11 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const isStalePending = isStalePendingFile({ running, filename, status });
   const output = partOutput(part);
   const isError = status === 'completed' && isErrorOutput(output);
-  const diffCounts = useMemo(() => editStat({ status, hasDiff, before, after }), [status, hasDiff, before, after]);
-  const kind = editBodyKind({ isError, hasDiff, codeEdit, isStalePending });
+  const diffCounts = useMemo(
+    () => editStat({ status, hasDiff, before, after, patchStat }),
+    [status, hasDiff, before, after, patchStat],
+  );
+  const kind = editBodyKind({ isError, hasDiff, patch, codeEdit, isStalePending });
 
   return (
     <BasicTool
@@ -102,6 +105,10 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       ) : kind === 'diff' ? (
         <ToolResultCard>
           <InlineDiffView oldValue={before} newValue={after} filename={filename} />
+        </ToolResultCard>
+      ) : kind === 'patch' ? (
+        <ToolResultCard>
+          <RawPatchDiffView patch={patch} filename={filename} />
         </ToolResultCard>
       ) : kind === 'morph' ? (
         <>
