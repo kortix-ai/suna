@@ -37,6 +37,7 @@ import {
   type SessionRuntimeEntry,
 } from '../session/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
+import { mintWireMessageId } from '../session/wire-message-id';
 import {
   openEventStream,
   type EventStreamHandle,
@@ -1331,23 +1332,35 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _agent = agent;
       },
       /**
-       * Provision/resume if needed, then send a text prompt to the agent. A
-       * per-call `{ model, agent }` overrides the sticky setModel/setAgent
-       * choices for this message only.
+       * Provision/resume if needed, then put a text prompt in this session's
+       * durable inbox (`POST .../prompts`), the path every other producer
+       * uses. Resolves when the prompt is durable, not when the turn ends: the
+       * reply arrives on `stream()` and in the transcript. A per-call
+       * `{ model, agent }` overrides the sticky setModel/setAgent choices for
+       * this message only.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { runtimeSessionId, runtimeUrl } = await ensureReady();
+        await ensureReady();
         const selectedModel = opts?.model ?? _model;
         const selectedAgent = opts?.agent ?? _agent;
         const persisted = selectedModel && selectedAgent ? {} : await persistedPromptDefaults();
         const model = selectedModel ?? persisted.model;
         const agent = selectedAgent ?? persisted.agent;
-        return getClientForUrl(runtimeUrl).session.prompt({
-          sessionID: runtimeSessionId,
+        // Minted with no transcript to place it against, so the server places
+        // it at delivery (`remintOnDelivery`), as the CLI does.
+        const messageId = mintWireMessageId();
+        const result = await P.createSessionPrompt(projectId, sessionId, {
+          clientMessageId: messageId,
+          messageId,
+          remintOnDelivery: true,
           parts: [{ type: 'text', text }],
-          ...(model ? { model } : {}),
-          ...(agent ? { agent } : {}),
+          clientSentAtMs: Date.now(),
+          ...(model || agent ? { overrides: { ...(model ? { model } : {}), ...(agent ? { agent } : {}) } } : {}),
         });
+        if (result.state === 'failed') {
+          throw new ApiError('This prompt was refused: its earlier delivery already failed.', { code: 'PROMPT_FAILED' });
+        }
+        return result;
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {

@@ -642,6 +642,9 @@ beforeAll(async () => {
       default: MERGED[name].default ?? Empty,
     }));
   }
+  // Sends go to the prompt inbox through the real SDK (W5 E4).
+  const { configureKortix } = await import('@kortix/sdk');
+  configureKortix({ backendUrl: 'https://api.test/v1', getToken: async () => 'token-1' });
   ({ useMessageQueueStore } = await import('@/stores/message-queue-store'));
   SessionPage = (await import('./SessionPage')).SessionPage;
   SessionConnecting = (await import('./SessionConnecting')).SessionConnecting;
@@ -694,6 +697,16 @@ beforeEach(() => {
     fetchCalls.push({ url, method, body });
     if (method === 'POST' && url.endsWith(`/session/${SID}/prompt_async`))
       return respond(promptResponder);
+    if (method === 'POST' && url.endsWith('/sessions/ps-1/prompts')) {
+      // The SDK reads a real Response from the prompt inbox.
+      const answer = promptResponder();
+      return new Response(
+        answer.ok
+          ? JSON.stringify({ prompt_id: 'prompt-1', state: 'queued', message_id: body?.message_id, deduped: false })
+          : JSON.stringify({ error: answer.text }),
+        { status: answer.status, headers: { 'content-type': 'application/json' } },
+      );
+    }
     if (method === 'POST' && url.endsWith('/abort')) return respond(abortResponder);
     if (method === 'POST' && url.endsWith('/command')) return respond(commandResponder);
     if (url.endsWith('/question') || url.endsWith('/permission')) return okResponse([]);
@@ -1024,9 +1037,11 @@ describe('SessionPage send, retry and stop', () => {
       retryTurn.uploadStatus.onRetry();
       await sleep(15);
     });
-    const promptPosts = fetchCalls.filter((c) => c.url.endsWith('/prompt_async'));
+    const promptPosts = fetchCalls.filter((c) => c.url.endsWith('/sessions/ps-1/prompts'));
     expect(promptPosts).toHaveLength(2);
-    expect(JSON.stringify(promptPosts[1].body)).toBe(JSON.stringify(promptPosts[0].body));
+    const { client_sent_at_ms: _first, ...firstBody } = promptPosts[0].body;
+    const { client_sent_at_ms: _retry, ...retryBody } = promptPosts[1].body;
+    expect(retryBody).toEqual(firstBody);
     // One 'hello' user message again, under the failed attempt's wire id —
     // the prompt inbox dedupes on `clientMessageId`, so a retry cannot double-run.
     const after = (useSyncStore.getState().messages[SID] ?? []).filter(
@@ -1083,12 +1098,10 @@ describe('SessionPage prompt-options assembly', () => {
       useSessionPromptRequestStore.getState().requestSend(SID, 'open change text');
       await sleep(15);
     });
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    const post = fetchCalls.find((c) => c.url.endsWith('/sessions/ps-1/prompts'));
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'open change text' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
     expect(useSessionPromptRequestStore.getState().request).toBeNull();
   });
@@ -1117,12 +1130,10 @@ describe('SessionPage prompt-options assembly', () => {
     // The messages the revert hides leave the thread; the edit goes out as a send.
     const after = useSyncStore.getState().messages[SID] ?? [];
     expect(after.map((m) => [(m.parts[0] as any).text, m.info.role])).toEqual([['edited', 'user']]);
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    const post = fetchCalls.find((c) => c.url.endsWith('/sessions/ps-1/prompts'));
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'edited' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
   });
 

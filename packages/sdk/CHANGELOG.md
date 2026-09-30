@@ -72,6 +72,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   LSP diagnostics store and quota-safe storage instead of keeping its own
   copies. Not covered by semver.
 
+### Changed
+- Every turn start goes through the session's durable prompt inbox
+  (`POST .../prompts`), as the web composer and the CLI already did.
+  `session(pid, sid).send(text)` resolves with the `CreateSessionPromptResult`
+  once the prompt is durable, no longer with the runtime's reply message; the
+  reply arrives on `stream()` and in the transcript. A `failed` verdict throws
+  `ApiError` with code `PROMPT_FAILED`. This is a breaking change to the
+  return type. `useSession().send` and `sendParts` post the same inbox prompt
+  (the wire id is placed by the server, `remintOnDelivery`); a text part's
+  `id` stays the host's local correlation key and no longer goes on the wire.
+
 ### Deprecated
 - The `session_transcript_history` member of `FeatureFlagKey`. Saved session
   history graduated out of the flag system: every session saves its transcript
