@@ -132,7 +132,12 @@
     "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
     "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
     "selectedOneForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
-    "selectedOne": "{count} Schlüssel ausgewählt"
+    "selectedOne": "{count} Schlüssel ausgewählt",
+    "opencodeSignIn": "Mit OpenCode anmelden",
+    "opencodeSignInDescription": "Nutzen Sie Ihren OpenCode-Workspace statt eines API-Schlüssels.",
+    "opencodeDeviceDescription": "Kopieren Sie diesen Code. Öffnen Sie dann die OpenCode-Seite und geben Sie ihn ein, um Ihren Workspace zu verbinden.",
+    "opencodeStarting": "Verbindung zu OpenCode wird hergestellt…",
+    "opencodeConnected": "Mit OpenCode angemeldet"
   },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
@@ -19045,7 +19050,16 @@
       "text2bbd1ec2197d": "Verbundene App",
       "textda3d3fb8f598": "Agent-Sitzung",
       "text4dcb7e3b10a9": "SCIM-Token",
-      "text36fe0f55b7f5": "Beliebige Zugangsdaten"
+      "text36fe0f55b7f5": "Beliebige Zugangsdaten",
+      "textbfda026e6c59": "Verknüpft",
+      "text72ea4fa7caf9": "Diktat beendet: {value0}",
+      "text557b623f9a33": "Diktat konnte nicht gestartet werden. Prüfe den Mikrofonzugriff.",
+      "textb43c4884c3be": "Diktiersteuerung",
+      "textd31d065a762c": "Diktat abbrechen",
+      "textbbb4106e8144": "Hört zu…",
+      "text7458028e0d1d": "Diktat beenden",
+      "text9c84d6622566": "Nachricht diktieren",
+      "textf164e4b031dc": "Sitzungspräsenz aktualisiert"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

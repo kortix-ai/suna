@@ -132,7 +132,12 @@
     "rateLimitDescription": "プロバイダーがレート制限を返した場合、ゲートウェイは選択したキーを順に使用します。",
     "enableGateway": "キープールを使用するには、プロジェクト設定で LLM ゲートウェイを有効にしてください。",
     "selectedOneForSession": "このセッションで {count} 個のキーを選択済み",
-    "selectedOne": "{count} 個のキーを選択済み"
+    "selectedOne": "{count} 個のキーを選択済み",
+    "opencodeSignIn": "OpenCode でサインイン",
+    "opencodeSignInDescription": "API キーの代わりに OpenCode ワークスペースを使用します。",
+    "opencodeDeviceDescription": "このコードをコピーしてから OpenCode のページを開き、入力してワークスペースを接続します。",
+    "opencodeStarting": "OpenCode に接続しています…",
+    "opencodeConnected": "OpenCode でサインインしました"
   },
   "useCases": {
     "headline": "会社を動かすループ"
@@ -19045,7 +19050,16 @@
       "text2bbd1ec2197d": "接続済みアプリ",
       "textda3d3fb8f598": "エージェントセッション",
       "text4dcb7e3b10a9": "SCIMトークン",
-      "text36fe0f55b7f5": "すべての認証情報"
+      "text36fe0f55b7f5": "すべての認証情報",
+      "textbfda026e6c59": "連携済み",
+      "text72ea4fa7caf9": "音声入力が停止しました: {value0}",
+      "text557b623f9a33": "音声入力を開始できませんでした。マイクへのアクセスを確認してください。",
+      "textb43c4884c3be": "音声入力の操作",
+      "textd31d065a762c": "音声入力をキャンセル",
+      "textbbb4106e8144": "聞き取り中…",
+      "text7458028e0d1d": "音声入力を完了",
+      "text9c84d6622566": "メッセージを音声入力",
+      "textf164e4b031dc": "セッションのプレゼンスを更新しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

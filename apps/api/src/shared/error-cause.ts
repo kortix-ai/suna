@@ -31,6 +31,22 @@ export function errorSqlstate(error: unknown): string | null {
 }
 
 /**
+ * Complement to a consistent lock order (never a substitute): a deadlock victim (40P01) rolled back
+ * whole, so re-running the idempotent transaction is safe. Two retries, short
+ * jittered backoff; any other error, or the third deadlock, propagates.
+ */
+export async function retryOnDeadlock<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      if (attempt >= 3 || errorSqlstate(err) !== '40P01') throw err;
+      await Bun.sleep(50 * attempt + Math.random() * 50);
+    }
+  }
+}
+
+/**
  * Deepest `message` on the chain. Drizzle wraps the driver error, and it is the
  * driver's message ("canceling statement due to statement timeout") that names
  * the fault.
