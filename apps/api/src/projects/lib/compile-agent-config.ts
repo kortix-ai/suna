@@ -294,7 +294,7 @@ export function compileSelectedAgentConfig(
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
 
-  let compiledAgent: OpencodeAgentConfig;
+  let compiledAgent: CompiledAgentEntry;
   if (manifestSchemaVersion(manifest) === 3) {
     compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles);
   } else {
@@ -320,7 +320,7 @@ function compileYamlAgentBlock(
   name: string,
   block: AgentBlockV2,
   files: Record<string, string>,
-): OpencodeAgentConfig {
+): CompiledAgentEntry {
   const raw = block as Record<string, unknown>;
   const issues: ManifestIssue[] = [];
   validateAgentMdFrontmatter(raw, `agents.${name}`, issues);
@@ -337,7 +337,7 @@ function compileYamlAgentBlock(
   if (issues.some((issue) => issue.severity === 'error')) {
     throw new CompileAgentConfigError(issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), name);
   }
-  const compiled: OpencodeAgentConfig = {};
+  const compiled: CompiledAgentEntry = {};
   for (const key of BEHAVIOR_FRONTMATTER_KEYS) {
     if (raw[key] !== undefined) (compiled as Record<string, unknown>)[key] = raw[key];
   }
