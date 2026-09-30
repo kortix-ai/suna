@@ -1158,6 +1158,11 @@ export async function ensureProjectComputer(projectId: string, userId: string | 
       )
       .orderBy(tunnelConnections.createdAt);
   if ((await missing(db)).length === 0) return;
+  // The same read, with the tunnel rows locked FOR KEY SHARE. A concurrent
+  // tunnel DELETE waits for this transaction, and a DELETE already in flight
+  // makes the read wait, then drop the vanished tunnel. Either way the
+  // connection insert never references a missing tunnel_id (FK 23503).
+  const missingLocked = (tx: Reader) => missing(tx).for('key share');
 
   await db.transaction(async (tx) => {
     await tx
@@ -1166,7 +1171,7 @@ export async function ensureProjectComputer(projectId: string, userId: string | 
       .where(eq(connectors.connectorId, connectorId))
       .for('update');
     // Re-read under the lock: a concurrent ensure may have created them.
-    for (const machine of await missing(tx)) {
+    for (const machine of await missingLocked(tx)) {
       await attachComputerConnection(tx, {
         accountId: project.accountId,
         projectId,
