@@ -372,9 +372,13 @@ describe('pi harness', () => {
 
     // The state document and the turn probes the control plane polls.
     const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
+    expect(state.schema).toBe('kortix.runtime.v1')
     expect(state.identity.runtime_session_id).toBe(root)
-    expect(state.identity.opencode_session_id).toBe(root)
     expect(state.identity.harness).toBe('pi')
+    expect(state.identity.harness_version).toMatch(/^pi-agent-core@/)
+    // pi writes no OpenCode-named identity fields.
+    expect(state.identity.opencode_session_id).toBeUndefined()
+    expect(state.identity.opencode_version).toBeUndefined()
     // `/kortix/opencode/*` is the pre-W3 path of the same router, for an older API.
     const legacy = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
     expect(legacy.identity.runtime_session_id).toBe(root)

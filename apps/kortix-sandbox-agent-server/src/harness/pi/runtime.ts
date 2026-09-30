@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
+import { KORTIX_RUNTIME_SCHEMA } from '@kortix/api-contract/runtime-relay'
 import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -1208,19 +1209,17 @@ export class PiRuntime {
             : null,
     }))
     return {
+      schema: KORTIX_RUNTIME_SCHEMA,
       epoch: bus.epoch,
       seq: bus.headSeq,
       built_at: new Date(this.now()).toISOString(),
       identity: {
+        harness: 'pi',
         runtime_session_id: this.rootId,
         harness_version: PI_HARNESS_VERSION,
-        // Pre-W3 names of the two fields above, for an API that predates them.
-        opencode_session_id: this.rootId,
-        opencode_version: PI_HARNESS_VERSION,
         daemon_build: null,
         agent_config_etag: this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
         head_seq: null,
-        harness: 'pi',
       },
       agents: { known: true, value: agents },
       commands: { known: true, value: [] },

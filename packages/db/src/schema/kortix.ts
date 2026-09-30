@@ -2380,6 +2380,10 @@ export const sessionRuntimeProjections = kortixSchema.table(
     /** The sandbox that produced it. Names the winner when a warm fork adopts. */
     externalId: text('external_id').notNull(),
     // ── identity (the freshness check reads these, never the jsonb) ──────────
+    /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
+    schema: text('schema'),
+    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    harness: text('harness'),
     runtimeSessionId: text('opencode_session_id'),
     harnessVersion: text('opencode_version'),
     agentConfigEtag: text('agent_config_etag'),
