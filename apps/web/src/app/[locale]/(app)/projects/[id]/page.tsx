@@ -5,11 +5,6 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import { promptFileParts } from '@/features/session/uploaded-file-refs';
 import { useTranslations } from '@/i18n/use-translations';
 
-import {
-  postWhenUploaded,
-  sentFailureMessage,
-  type AttachmentSubmission,
-} from '@/features/session/composer/attachment-submission';
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
   ProjectHome,
@@ -28,6 +23,11 @@ import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import {
+  postWhenUploaded,
+  sentFailureMessage,
+  type AttachmentSubmission,
+} from '@/features/session/composer/attachment-submission';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, startSessionWithPrompt, writeStartStash } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
@@ -223,7 +223,6 @@ export default function ProjectIndexPage() {
         newSession({
           create: {
             ...buildNewSessionCreateInput(options),
-            ...(options?.labels?.length ? { labels: options.labels } : {}),
             ...(heldAttachments
               ? {}
               : {
@@ -289,7 +288,14 @@ export default function ProjectIndexPage() {
       }
       startHeldPost(heldAttachments, sessionId);
     },
-    [billing, newSession, openUpgradeDialog, projectId, tI18nComplete, tComposerAttachments],
+    [
+      billing,
+      newSession,
+      openUpgradeDialog,
+      projectId,
+      tI18nComplete,
+      tComposerAttachments,
+    ],
   );
 
   return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;

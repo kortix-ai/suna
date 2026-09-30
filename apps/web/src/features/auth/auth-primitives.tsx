@@ -70,15 +70,27 @@ export function StepHeader({
   title,
   tagline,
   description,
+  mark,
 }: {
-  title: string;
+  /** A string, or a string led by a status mark (a decided approval). */
+  title: React.ReactNode;
+  /**
+   * Replaces the Kortix mark above the title, for a screen about two parties
+   * (the Kortix ··· Slack handshake on a channel install). Desktop only, like
+   * the mark it replaces: below `md` the frame's own corner logo stands.
+   */
+  mark?: React.ReactNode;
   /** Second line in the same size as the title, dimmed (entry step only). */
   tagline?: string;
   description?: React.ReactNode;
 }) {
   return (
     <div className="mb-10">
-      <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+      {mark ? (
+        <div className="hidden md:block">{mark}</div>
+      ) : (
+        <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+      )}
       <h1 className="text-foreground text-2xl font-medium tracking-tight md:mt-6">{title}</h1>
       {tagline ? (
         <p className="text-muted-foreground/60 text-2xl font-medium tracking-tight">{tagline}</p>

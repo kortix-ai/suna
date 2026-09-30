@@ -4,12 +4,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { SessionSourceFilter, SessionStatusFilter } from '@/components/projects/session-label';
-import type { SessionAccessFilter } from '@/features/workspace/project-sessions/session-owner-filters';
 import {
   DEFAULT_SESSION_GROUP_MODE,
   type SessionGroupMode,
   type SessionOrderMode,
 } from '@/features/workspace/project-sidebar/session-grouping';
+import type { SessionAccessFilter } from '@/features/workspace/project-sessions/session-owner-filters';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
@@ -96,7 +96,6 @@ interface State {
   orderByProject: Record<string, SessionOrderMode>;
   statusFiltersByProject: Record<string, SessionStatusFilter[]>;
   sourceFiltersByProject: Record<string, SessionSourceFilter[]>;
-  labelFiltersByProject: Record<string, string[]>;
   hiddenSectionsByProject: Record<string, string[]>;
   collapsedSectionsByProject: Record<string, string[]>;
   /** Owner facet: `created_by` ids (see `sessionOwnerKey`). Sessions page only. */
@@ -122,7 +121,6 @@ interface Actions {
     value: SessionSourceFilter,
     surface?: SessionViewSurface,
   ) => void;
-  toggleLabelFilter: (projectId: string, label: string, surface?: SessionViewSurface) => void;
   toggleOwnerFilter: (projectId: string, ownerKey: string, surface?: SessionViewSurface) => void;
   toggleAccessFilter: (
     projectId: string,
@@ -163,8 +161,6 @@ export const selectStatusFilters = makeScopedSelector('statusFiltersByProject', 
 
 export const selectSourceFilters = makeScopedSelector('sourceFiltersByProject', EMPTY_LIST);
 
-export const selectLabelFilters = makeScopedSelector('labelFiltersByProject', EMPTY_LIST);
-
 export const selectOwnerFilters = makeScopedSelector('ownerFiltersByProject', EMPTY_LIST);
 
 export const selectAccessFilters = makeScopedSelector('accessFiltersByProject', EMPTY_LIST);
@@ -187,7 +183,7 @@ export const selectCollapsedSections = makeScopedSelector('collapsedSectionsByPr
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
     (set, get) => {
-      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'labelFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
+      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
         return (projectId: string, value: State[K][string][number], surface: SessionViewSurface = 'sidebar') => {
           const current = readScoped(get()[mapKey], projectId, surface, inherit) ?? [];
           set({ [mapKey]: { ...get()[mapKey], [scopeKey(projectId, surface)]: toggleValue(current, value) } });
@@ -223,8 +219,6 @@ export const useSessionFilterStore = create<State & Actions>()(
       toggleStatusFilter: toggleScoped('statusFiltersByProject'),
 
       sourceFiltersByProject: {},
-      labelFiltersByProject: {},
-      toggleLabelFilter: toggleScoped('labelFiltersByProject'),
       toggleSourceFilter: toggleScoped('sourceFiltersByProject'),
 
       ownerFiltersByProject: {},
@@ -238,7 +232,6 @@ export const useSessionFilterStore = create<State & Actions>()(
         set({
           statusFiltersByProject: { ...get().statusFiltersByProject, [key]: [] },
           sourceFiltersByProject: { ...get().sourceFiltersByProject, [key]: [] },
-          labelFiltersByProject: { ...get().labelFiltersByProject, [key]: [] },
           ownerFiltersByProject: { ...get().ownerFiltersByProject, [key]: [] },
           accessFiltersByProject: { ...get().accessFiltersByProject, [key]: [] },
         });
@@ -285,7 +278,6 @@ export const useSessionFilterStore = create<State & Actions>()(
         orderByProject: pruneProjects(state.orderByProject),
         statusFiltersByProject: pruneProjects(state.statusFiltersByProject),
         sourceFiltersByProject: pruneProjects(state.sourceFiltersByProject),
-        labelFiltersByProject: pruneProjects(state.labelFiltersByProject),
         hiddenSectionsByProject: pruneProjects(state.hiddenSectionsByProject),
         collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
         ownerFiltersByProject: pruneProjects(state.ownerFiltersByProject),

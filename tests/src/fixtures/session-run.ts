@@ -77,7 +77,9 @@ export async function assertRuntimeHarness(
 ): Promise<void> {
   const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
   r.status(200);
-  const reported = r.json<{ harness?: string }>()?.harness ?? 'opencode';
+  // Since W3 `harness` is the closed block `{ id, ... }`; W0 sent the id string.
+  const named = r.json<{ harness?: string | { id?: string } }>()?.harness;
+  const reported = (typeof named === 'object' ? named?.id : named) ?? 'opencode';
   if (reported !== harness) {
     throw new Error(`the session runtime is ${reported}, the flow asked for ${harness}`);
   }

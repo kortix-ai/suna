@@ -144,7 +144,12 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
       attempt += 1;
       wireMessageId = replaced;
     }
-    tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
+    // Timeline starts at admission; include the durable queue wait without logging prompt contents.
+    const elapsed = Date.now() - row.createdAt.getTime();
+    tl.log({
+      sessionId: row.sessionId, source: row.source, outcome: delivery,
+      queueWaitMs: Math.max(0, elapsed - tl.totalMs), enqueueToDeliveryMs: elapsed,
+    });
     return delivery === 'delivered' ? 'succeeded' : settleDelivery(row, delivery);
   } catch (e) {
     if (e instanceof InboxDeliveryPaused) {

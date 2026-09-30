@@ -1,5 +1,7 @@
 'use client';
 
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -23,22 +25,22 @@ import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useDebounce } from '@/hooks/use-debounced-value';
+import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
 import { useTranslations } from '@/i18n/use-translations';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
-import { selectExpandedIds, useSessionExpandedStore } from '@/stores/session-expanded-store';
 import {
-  selectAccessFilters,
+  selectExpandedIds,
+  useSessionExpandedStore,
+} from '@/stores/session-expanded-store';
+import {
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
-  selectLabelFilters,
   selectOrderMode,
-  selectOwnerFilters,
   selectSourceFilters,
+  selectAccessFilters,
+  selectOwnerFilters,
   selectStatusFilters,
   useSessionFilterStore,
 } from '@/stores/session-filter-store';
@@ -55,7 +57,7 @@ import {
   useSessionChildren,
 } from '@kortix/sdk/react';
 import { CaretRightIcon, MagnifyingGlassIcon } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -183,7 +185,7 @@ function SessionsSection({
           </span>
           <CaretRightIcon
             aria-hidden
-            className="duration-normal size-3 shrink-0 opacity-0 transition-[opacity,transform] ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-normal ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
         </div>
       </DisclosureTrigger>
@@ -212,9 +214,7 @@ function SessionChildrenRows({
   const children = useSessionChildren(projectId, parentId, { limit: CHILDREN_PAGE_SIZE, q });
   if (children.isError && children.sessions.length === 0) {
     return (
-      <div className="text-destructive/80 px-3 py-1 text-xs">
-        {tSidebar('sessionList.loadError')}
-      </div>
+      <div className="text-destructive/80 px-3 py-1 text-xs">{tSidebar('sessionList.loadError')}</div>
     );
   }
   if (children.data === undefined) {
@@ -326,7 +326,6 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const orderMode = useSessionFilterStore(selectOrderMode(projectId, SURFACE));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId, SURFACE));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId, SURFACE));
-  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId, SURFACE));
   const ownerFilters = useSessionFilterStore(selectOwnerFilters(projectId, SURFACE));
   const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, SURFACE));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId, SURFACE));
@@ -344,17 +343,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       filterProjectSessions(sessions, statusFilters, sourceFilters, tI18nComplete, {
         owners: ownerFilters,
         access: accessFilters,
-        labels: labelFilters,
       }),
-    [
-      sessions,
-      statusFilters,
-      sourceFilters,
-      ownerFilters,
-      accessFilters,
-      labelFilters,
-      tI18nComplete,
-    ],
+    [sessions, statusFilters, sourceFilters, ownerFilters, accessFilters, tI18nComplete],
   );
 
   const grouped = useMemo(
@@ -573,7 +563,8 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   };
   const handleToggleChildren = (session: ProjectSession) => {
     if (searching && session.search_match === 'child') {
-      const ids = closedInSearch.q === searchQuery ? closedInSearch.ids : ([] as string[]);
+      const ids =
+        closedInSearch.q === searchQuery ? closedInSearch.ids : ([] as string[]);
       setClosedInSearch({
         q: searchQuery,
         ids: ids.includes(session.session_id)
@@ -588,8 +579,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   /** One session row. Top-level rows carry the spawned-sessions toggle and the
    *  rows beneath it; a spawned row is a plain row (no orphan, no nesting). */
   const renderRow = (session: ProjectSession, topLevel = false): ReactNode => {
-    const time =
-      timestamps.get(session.session_id) ?? formatTimestamp(sessionLastActivityAt(session));
+    const time = timestamps.get(session.session_id) ?? formatTimestamp(sessionLastActivityAt(session));
     const isOpen = expanded === session.session_id;
     const childCount = topLevel ? (session.child_count ?? 0) : 0;
     const childrenOpen = childCount > 0 && isParentOpen(session);

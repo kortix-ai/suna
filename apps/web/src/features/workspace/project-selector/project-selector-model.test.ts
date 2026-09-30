@@ -32,14 +32,20 @@ function list(accountId: string, data: KortixProject[] | undefined, isError = fa
 }
 
 describe('buildAccountSections — one section per user state', () => {
+  test('a member with project.create can create; an owner without it cannot', () => {
+    const sections = buildAccountSections({ accounts: [account('member', 'member'), account('owner', 'owner')], lists: [list('member', []), list('owner', [])], creatableAccountIds: new Set(['member']) });
+    expect(sections.find((s) => s.accountId === 'member')?.state).toBe('empty-creatable');
+    expect(sections.find((s) => s.accountId === 'owner')?.state).toBe('empty-member');
+  });
+
   test('new user: an owned account with no project is empty-creatable', () => {
-    const sections = buildAccountSections({ accounts: [account('a', 'owner')], lists: [list('a', [])] });
+    const sections = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner')], lists: [list('a', [])] });
     expect(sections).toHaveLength(1);
     expect(sections[0]).toMatchObject({ state: 'empty-creatable', canCreate: true, projects: [] });
   });
 
   test('account member with no shared project is empty-member, never dropped', () => {
-    const sections = buildAccountSections({ accounts: [account('m', 'member')], lists: [list('m', [])] });
+    const sections = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('m', 'member')], lists: [list('m', [])] });
     expect(sections[0]).toMatchObject({ state: 'empty-member', canCreate: false });
   });
 
@@ -53,13 +59,14 @@ describe('buildAccountSections — one section per user state', () => {
   });
 
   test('a failed list is its own state with no projects', () => {
-    const sections = buildAccountSections({ accounts: [account('a', 'admin')], lists: [list('a', undefined, true)] });
+    const sections = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'admin')], lists: [list('a', undefined, true)] });
     expect(sections[0].state).toBe('failed');
   });
 
   test('archived projects are not offered', () => {
     const sections = buildAccountSections({
       accounts: [account('a', 'owner')],
+      creatableAccountIds: new Set(['a']),
       lists: [list('a', [project('p1', 'a', { status: 'archived' })])],
     });
     expect(sections[0].state).toBe('empty-creatable');
@@ -127,8 +134,8 @@ describe('decideDoor — skip the selector only for one obvious answer', () => {
     accounts: [account('a', 'owner')],
     lists: [list('a', [project('p1', 'a'), project('p2', 'a')])],
   });
-  const one = buildAccountSections({ accounts: [account('a', 'owner')], lists: [list('a', [project('p1', 'a')])] });
-  const none = buildAccountSections({ accounts: [account('a', 'owner')], lists: [list('a', [])] });
+  const one = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner')], lists: [list('a', [project('p1', 'a')])] });
+  const none = buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner')], lists: [list('a', [])] });
 
   test('the remembered project opens directly', () => {
     expect(decideDoor({ sections: two, inviteCount: 0, rememberedProjectId: 'p2' })).toEqual({
@@ -184,7 +191,7 @@ describe('joinDestination', () => {
 describe('accountNameStepAccount — the onboarding name step (KRTX-638)', () => {
   const USER = 'u1';
   const fresh = () =>
-    buildAccountSections({ accounts: [account(USER, 'owner', "Ada's workspace")], lists: [list(USER, [])] });
+    buildAccountSections({ creatableAccountIds: new Set([USER]), accounts: [account(USER, 'owner', "Ada's workspace")], lists: [list(USER, [])] });
 
   test('a brand-new user is asked to name their personal account', () => {
     expect(

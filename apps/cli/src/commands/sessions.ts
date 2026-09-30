@@ -709,6 +709,9 @@ async function sessionsNew(
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
   if (decision !== 'no') {
+    // A runtime without `session.attach` (pi) makes `connect` exit 1 with the
+    // reason and the shell/chat alternatives; asking first keeps an OpenCode
+    // user who answers "n" from waiting for the sandbox.
     const go =
       decision === 'connect' ||
       (await confirm('  Connect to it now?', true, { onEndOfInput: false }));

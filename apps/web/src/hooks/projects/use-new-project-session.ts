@@ -102,7 +102,6 @@ export type NewProjectSessionOpts = {
   create?: {
     sandbox_slug?: string;
     agent_name?: string;
-    labels?: string[];
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
@@ -219,13 +218,11 @@ export function useNewProjectSession(projectId: string | undefined) {
       // null whenever there is nothing suitable, so the create path below stays
       // the authority on billing, the session cap and connector requirements.
       const takeOrCreateSession = async () => {
-        const warm = opts?.create?.labels?.length
-          ? null
-          : takeWarmSessionEntry(projectId, {
-              create: opts?.create,
-              // Replenish after /start, not beside the claim and /start requests.
-              replenish: false,
-            });
+        const warm = takeWarmSessionEntry(projectId, {
+          create: opts?.create,
+          // Replenish after /start, not beside the claim and /start requests.
+          replenish: false,
+        });
         if (warm) {
           // The first prompt is a DURABLE inbox row, never a client-side
           // replay (the start stash carries picks only — see the producers).

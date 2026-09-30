@@ -116,7 +116,15 @@ export function ConnectorHandshake({
   connected = false,
   size = 'md',
   collapsible = true,
+  mark,
 }: {
+  /**
+   * The app's own mark as an element, for an app the codebase draws itself
+   * (Slack, Teams) and has no logo URL for. It sits in a white tile with a
+   * hairline edge: unlike a catalogue logo it does not fill the tile, so the
+   * tile needs its own edge on a white page.
+   */
+  mark?: React.ReactNode;
   name: string;
   /** `undefined` while loading (skeleton), `null` when the app has no logo. */
   iconUrl: string | null | undefined;
@@ -136,7 +144,10 @@ export function ConnectorHandshake({
     >
       <HandshakeTile
         size={size}
-        className={cn('bg-foreground text-background', collapsible && 'hidden @md/connect:flex')}
+        className={cn(
+          'bg-background text-foreground ring-border ring-1 ring-inset',
+          collapsible && 'hidden @md/connect:flex',
+        )}
       >
         <KortixLogo variant="icon" size={KORTIX_MARK_PX[size]} />
       </HandshakeTile>
@@ -160,7 +171,16 @@ export function ConnectorHandshake({
         <circle cx="22" cy="3" r="1" opacity="0.3" />
       </svg>
       <span className="relative flex">
-        <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
+        {mark ? (
+          <HandshakeTile
+            size={size}
+            className={cn(LOGO_TILE_BACKGROUND, 'ring-border ring-1 ring-inset')}
+          >
+            {mark}
+          </HandshakeTile>
+        ) : (
+          <ConnectorAppMark name={name} iconUrl={iconUrl} size={size} />
+        )}
         {connected ? (
           <span className="bg-kortix-green ring-background absolute -right-1 -bottom-1 flex size-3.5 items-center justify-center rounded-full ring-2">
             <CheckIcon weight="bold" className="text-background size-2" />

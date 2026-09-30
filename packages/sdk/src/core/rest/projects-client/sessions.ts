@@ -882,9 +882,7 @@ export interface SessionTurnFailure {
   error: SessionTurnEndError | null;
 }
 
-/** How the most recent turn ended. Present only when no turn is running —
- *  it is what separates "this session has never run a turn" from "the last
- *  one just finished". */
+/** How the most recent turn ended, even when another turn remains active. */
 export interface SessionTurnEnded {
   turn_token: string;
   /** The user message the turn answered. Absent for a turn nobody named. */
@@ -901,9 +899,9 @@ export interface SessionTurnStatus {
    *  prompt, say), so this is a list and never a single turn. */
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
-  /** Recent turns that failed, newest first, with the cause when one was named. Reported whether
-   *  or not a turn is running — `last_ended` is one row and vanishes when the
-   *  next turn starts. Absent when there are none. */
+  /** Recent turns that failed, newest first, with the cause when one was named.
+   *  Reported whether or not a turn is running; `last_ended` is only one row.
+   *  Absent when there are none. */
   recent_failures?: SessionTurnFailure[];
 }
 

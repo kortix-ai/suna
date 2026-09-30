@@ -58,7 +58,6 @@ import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import { matchesLabelFilters } from '@/features/workspace/project-sidebar/session-label-filter';
 import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
@@ -74,7 +73,6 @@ import {
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
-  selectLabelFilters,
   selectOrderMode,
   selectSourceFilters,
   selectStatusFilters,
@@ -138,10 +136,10 @@ const SESSION_MENU_TRIGGER_CLASS = cn(
   // punched a translucent hole in it and the title bled through: the washed-out
   // grey square in the bug report, with a muted `⋯` floating in it.
   //
-  // `sidebar-accent` is surface-2, one opaque step above the row's own
-  // surface-1 (`--card`) on hover. The square reads as lifted, stays a solid
+  // `sidebar-row-control` is one opaque step above the row's own fill
+  // (`--sidebar-row`) on hover, in both themes. The square reads as lifted, stays a solid
   // mask, and needs no pseudo-element to stack a tint above a fill.
-  'hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent',
+  'hover:bg-sidebar-row-control data-[state=open]:bg-sidebar-row-control',
   // Full contrast once the pointer is on it — the glyph is a control now, not a
   // marker.
   'hover:text-foreground data-[state=open]:text-foreground',
@@ -316,7 +314,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const orderMode = useSessionFilterStore(selectOrderMode(projectId));
   const statusFilters = useSessionFilterStore(selectStatusFilters(projectId));
   const sourceFilters = useSessionFilterStore(selectSourceFilters(projectId));
-  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId));
   const hiddenSections = useSessionFilterStore(selectHiddenSections(projectId));
   const collapsedSections = useSessionFilterStore(selectCollapsedSections(projectId));
   const collapsedSectionIds = useMemo(() => new Set(collapsedSections), [collapsedSections]);
@@ -358,8 +355,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // only applies the two ANDed multi-select facets from the store.
   const passesFacets = (session: ProjectSession) =>
     matchesStatusFilters(session, statusFilters) &&
-    matchesSourceFilters(session, sourceFilters, tI18nComplete) &&
-    matchesLabelFilters(session, labelFilters);
+    matchesSourceFilters(session, sourceFilters, tI18nComplete);
   const visibleSessions = sessions.filter(passesFacets);
   const visibleShared = sharedQuery.sessions.filter(passesFacets);
   const visibleAutomated = automatedQuery.sessions.filter(passesFacets);
@@ -569,7 +565,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             {section.sessions.map((session) => renderSessionNode(session, false))}
           </SessionListSection>
         ))}
-
         {hasNextPage && (
           <div className="px-2 pt-1 pb-2">
             <Button
@@ -1170,7 +1165,7 @@ function ProjectSessionRow({
         <Badge
           variant="transparent"
           size="tabular"
-          className="bg-sidebar-accent/60 text-muted-foreground"
+          className="bg-sidebar-row-control/60 text-muted-foreground"
         >
           {childCount}
         </Badge>
@@ -1258,8 +1253,8 @@ function ProjectSessionRow({
           '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
           '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
           isActive
-            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--card)]'
-            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--card)]',
+            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--sidebar-row)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--sidebar-row)]',
         )}
       >
         {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
@@ -1409,8 +1404,8 @@ function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: bo
         '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         isActive
-          ? 'bg-card text-sidebar-foreground'
-          : 'text-muted-foreground hover:bg-card hover:text-sidebar-foreground',
+          ? 'bg-sidebar-row text-sidebar-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-row hover:text-sidebar-foreground',
       )}
     >
       <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">

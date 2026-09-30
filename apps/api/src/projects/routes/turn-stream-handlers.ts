@@ -43,7 +43,8 @@ export type TurnStreamBody = {
   card?: Record<string, unknown>;
   form?: Record<string, unknown>;
   status?: string;
-  opencode_session_id?: string;
+  /** The runtime session (`normalizeRuntimeRelayBody` maps the pre-W3 `opencode_session_id`). */
+  runtime_session_id?: string;
   turn_message_id?: string;
   turn_token?: string;
   // Turn-end error detail (opencode AssistantMessage.error / session.error),
@@ -100,6 +101,8 @@ export function claimInitialTurn(
 ): Response {
   const denial = requireSandboxCredential(c, authenticatedSandboxId, 'initial_turn_claim');
   if (denial) return denial;
+  // The pinned root, under its W3 name and its pre-W3 name (an older daemon reads it).
+  const pin = { runtime_session_id: opencodeSessionId, opencode_session_id: opencodeSessionId };
   const sandboxMetadata = (authenticatedSandboxMetadata ?? {}) as Record<string, unknown>;
   const activeTurns =
     sandboxMetadata.activeTurns &&
@@ -115,11 +118,11 @@ export function claimInitialTurn(
     typeof turnStreamMetadata.initial_prompt === 'string'
       ? turnStreamMetadata.initial_prompt.trim()
       : '';
-  if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null, opencode_session_id: opencodeSessionId });
+  if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null, ...pin });
   const [turnToken, rawTurn] = delivering;
   const messageId = (rawTurn as Record<string, unknown>).messageId;
   if (typeof messageId !== 'string' || !messageId.trim()) {
-    return c.json({ ok: true, initial_turn: null, opencode_session_id: opencodeSessionId });
+    return c.json({ ok: true, initial_turn: null, ...pin });
   }
   return c.json({
     ok: true,
@@ -128,7 +131,7 @@ export function claimInitialTurn(
       turn_token: turnToken,
       message_id: messageId,
     },
-    opencode_session_id: opencodeSessionId,
+    ...pin,
   });
 }
 
@@ -164,12 +167,12 @@ export async function acceptTurn(
     return requireSandboxCredential(c, authenticatedSandboxId, 'turn_accepted');
   }
   const turnToken = body.turn_token?.trim();
-  const opencodeSessionId = body.opencode_session_id?.trim();
+  const opencodeSessionId = body.runtime_session_id?.trim();
   const messageId = body.turn_message_id?.trim();
   if (!turnToken || !opencodeSessionId || !messageId) {
     return c.json(
       {
-        error: 'turn_token, opencode_session_id, and turn_message_id are required',
+        error: 'turn_token, runtime_session_id, and turn_message_id are required',
       },
       400,
     );
@@ -195,10 +198,10 @@ export async function beginTurn(
   if (!authenticatedSandboxId) {
     return requireSandboxCredential(c, authenticatedSandboxId, 'turn_begin');
   }
-  const opencodeSessionId = body.opencode_session_id?.trim();
+  const opencodeSessionId = body.runtime_session_id?.trim();
   const messageId = body.turn_message_id?.trim();
   if (!opencodeSessionId || !messageId) {
-    return c.json({ error: 'opencode_session_id and turn_message_id are required' }, 400);
+    return c.json({ error: 'runtime_session_id and turn_message_id are required' }, 400);
   }
   const outcome = await adoptRuntimeSandboxTurn(authenticatedSandboxId, {
     opencodeSessionId,
@@ -243,7 +246,7 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
     status,
     {
       opencodeSessionId:
-        typeof body.opencode_session_id === 'string' ? body.opencode_session_id : undefined,
+        typeof body.runtime_session_id === 'string' ? body.runtime_session_id : undefined,
       messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
     },
     errorInfo,
@@ -262,7 +265,7 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
   ) {
     const causeOutcome = await recordUnidentifiedTurnCause(
       sessionId,
-      typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+      typeof body.runtime_session_id === 'string' ? body.runtime_session_id : null,
       {
         name: body.error_name,
         message: typeof body.error_message === 'string' ? body.error_message : null,
@@ -298,7 +301,7 @@ async function promoteAfterTurnEnd(
     void reconcileForwardedTurnsAtEnd({
       sessionId,
       opencodeSessionId:
-        typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+        typeof body.runtime_session_id === 'string' ? body.runtime_session_id : null,
       endedMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
     }).catch((err) =>
       console.warn(
@@ -349,7 +352,7 @@ async function promoteAfterTurnEnd(
     console.info('[turn-stream] terminal turn settlement', {
       sessionId,
       opencodeSessionId:
-        typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+        typeof body.runtime_session_id === 'string' ? body.runtime_session_id : null,
       turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
       outcome: turnCompletion.outcome,
       activeTurnCount: turnCompletion.activeTurnCount,
@@ -455,7 +458,7 @@ export async function settleTurnEnd(
   return publishTurnEnd(c, ctx, body, settled, promotedPromptId);
 }
 
-// `opencode_session` carries the canonical opencode ROOT id the sandbox just
+// `runtime_session` carries the canonical runtime ROOT id the sandbox just
 // bootstrapped (or reused after a restart). Persist it as the durable pin so
 // the Kortix session resolves to the LIVE root with NO dependency on a browser
 // ever opening it — closing the null-pin gap that left Slack/trigger/cron
@@ -468,8 +471,8 @@ export async function pinOpencodeSession(
   projectId: string,
   sessionId: string,
 ): Promise<Response> {
-  const ocId = body.opencode_session_id?.trim();
-  if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
+  const ocId = body.runtime_session_id?.trim();
+  if (!ocId) return c.json({ error: 'runtime_session_id is required' }, 400);
   const updated = await db
     .update(projectSessions)
     .set({ opencodeSessionId: ocId, updatedAt: new Date() })

@@ -127,7 +127,8 @@ export {
  * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
-export type { SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export { runtimeSupports } from './core/session/health';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox

@@ -118,6 +118,7 @@ import {
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
   normalizeAppPathname,
+  runtimeSupports,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
@@ -133,6 +134,7 @@ import {
   useCreateRuntimeSession,
   useModelStore,
   useProjectSessions,
+  useRuntimeConnectionStore,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
@@ -813,6 +815,19 @@ function FeatureFlagsPage({
   );
 }
 
+const sessionName = (s: ProjectSession) =>
+  s.name ||
+  (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
+  s.branch_name ||
+  s.session_id.slice(0, 8);
+
+export function sessionMatchesPaletteQuery(session: ProjectSession, query: string): boolean {
+  return (
+    sessionName(session).toLowerCase().includes(query) ||
+    session.session_id.toLowerCase().startsWith(query)
+  );
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -861,6 +876,8 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
+  // What the active session's runtime serves (E1): a pi session has no compact.
+  const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
   // SDK's one selectable-agent rule: the same list the composer offers. Never
@@ -1126,6 +1143,7 @@ export function CommandPalette() {
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
+      if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
@@ -1154,6 +1172,7 @@ export function CommandPalette() {
   }, [
     billingEnabled,
     currentSessionId,
+    runtimeCapabilities,
     projectId,
     selectedAccountId,
     sidebarCtx,
@@ -1394,12 +1413,6 @@ export function CommandPalette() {
     [projectId, openProjectTab, router, close],
   );
 
-  const sessionName = (s: ProjectSession) =>
-    s.name ||
-    (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
-    s.branch_name ||
-    s.session_id.slice(0, 8);
-
   /**
    * Every workspace the user can switch to, in the sidebar's order — active
    * account first, then alphabetical, most-recently-opened first inside each.
@@ -1468,7 +1481,7 @@ export function CommandPalette() {
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
     if (!q) return sorted.slice(0, 50);
     // Instant local matches first, then the server's answer for the rest.
-    const local = sorted.filter((s) => sessionName(s).toLowerCase().includes(q));
+    const local = sorted.filter((s) => sessionMatchesPaletteQuery(s, q));
     const seen = new Set(local.map((s) => s.session_id));
     const remote = serverSessionMatches.filter((s) => !seen.has(s.session_id));
     return [...local, ...remote].slice(0, 50);

@@ -10,6 +10,7 @@ export { resetIdentityState } from './reset-identity-state';
 // verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
+export { useRuntimeSupports } from './use-runtime-supports';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.

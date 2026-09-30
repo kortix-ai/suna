@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
 import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
@@ -15,7 +17,7 @@ const TURN_RETRY_DEFAULT_BASE_MS = 2_000
  * state lives.
  *
  * Model, agent, prompts and the gateway are read from the SAME variables the
- * OpenCode path receives (`KORTIX_OPENCODE_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
+ * OpenCode path receives (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
  * `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`, `KORTIX_TOKEN`): the control plane
  * does not know which harness reads them, and it must not have to.
  */
@@ -95,9 +97,24 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
  * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
  * a project authored for OpenCode, so switching `runtime:` never loses them.
  */
-export function resolvePiSkillDirectories(cfg: HostConfig): string[] {
+export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string | null> {
+  const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
+  const manifest = await readProjectManifest(await import('node:fs/promises'), workspace)
+  const raw = manifest && extractNestedString(manifest.body, manifest.format, 'pi', 'config_dir')
+  // Repo-relative only. A manifest must never make the harness load host files.
+  if (raw && !raw.startsWith('/') && !raw.startsWith('-') && raw.split('/').every((segment) => segment && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))) {
+    const path = join(workspace, raw)
+    return existsSync(path) ? path : null
+  }
+  for (const path of ['harnesses/pi', '.kortix/pi']) {
+    if (existsSync(join(workspace, path))) return join(workspace, path)
+  }
+  return null
+}
+
+export function resolvePiSkillDirectories(cfg: HostConfig, piDir?: string | null): string[] {
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
   // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
   // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).
-  return [managedSkillsDir(), join(workspace, 'skills'), join(workspace, '.kortix', 'opencode', 'skills')]
+  return [managedSkillsDir(), join(workspace, 'skills'), ...(piDir ? [join(piDir, 'skills')] : []), join(workspace, '.kortix', 'opencode', 'skills')]
 }

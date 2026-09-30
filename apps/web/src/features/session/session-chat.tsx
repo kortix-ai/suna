@@ -65,6 +65,7 @@ import {
   queuedBubbleTone,
   type QueuedPromptState,
   QueuedPromptFailure,
+  QueuedPromptProgress,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
 import { ShowGroupRenderer } from './tool/show-group-renderer';
@@ -284,6 +285,7 @@ import {
   useRuntimeReady,
   useRuntimeSession,
   useRuntimeSessions,
+  useRuntimeSupports,
   useSessionModelSelection,
   useSessionPrompts,
   isOptimisticSessionPrompt,
@@ -1722,6 +1724,8 @@ function SessionTurnImpl({
                       : undefined
                   }
                 />
+              ) : queuedStatus === 'sending' || queuedStatus === 'queued' || queuedStatus === 'interrupted' ? (
+                <QueuedPromptProgress state={queuedStatus} />
               ) : undefined
             }
           />
@@ -2348,6 +2352,10 @@ export function SessionChat({
   // also every ordinary boot. Only the composer notice reads it, to tell a probe
   // that has not answered yet from one that keeps failing.
   const runtimeUnreachable = useRuntimeConnectionStore((s) => s.status === 'unreachable');
+  // E1: the features this session's runtime serves. A pi session has no
+  // rewind and no on-demand compaction, so their controls do not render.
+  const runtimeCanRewind = useRuntimeSupports('session.rewind');
+  const runtimeCanCompact = useRuntimeSupports('session.compact');
   const { data: session, isFetched: sessionFetched } = useRuntimeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
@@ -2456,10 +2464,6 @@ export function SessionChat({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
-  // The agent picker defaults to the session's agent (seeded via useRuntimeLocal's
-  // boundAgentName) but stays switchable: sends use the current pick. Switching
-  // mid-session is allowed everywhere — the grant re-mint re-resolves the
-  // connector tokens for the newly picked agent on every turn.
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -6100,6 +6104,7 @@ export function SessionChat({
                               onEditSend={stableEditSend}
                               rewindDisabled={
                                 !!readOnly ||
+                                !runtimeCanRewind ||
                                 !sessionState ||
                                 isBusy ||
                                 sessionState.rewindPending ||
@@ -6261,7 +6266,8 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={handleAgentChange}
+                onAgentChange={boundAgentName ? undefined : handleAgentChange}
+                agentSelectorLocked={!!boundAgentName}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}
@@ -6280,7 +6286,7 @@ export function SessionChat({
                 modelRequired={!allowSendBeforeReady}
                 modelsLoading={providersLoading}
                 onContextClick={handleContextClick}
-                onCompactClick={handleCompactClick}
+                onCompactClick={runtimeCanCompact ? handleCompactClick : undefined}
                 quoteRequests={quoteRequests}
                 onQuoteRequestsApplied={handleQuoteRequestsApplied}
                 // Only lock the input into question-answer mode while the session is

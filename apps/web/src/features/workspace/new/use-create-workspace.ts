@@ -14,13 +14,13 @@ import {
 } from '@/features/workspace/new/github-source';
 import {
   buildProvisionPayload,
-  filterCreatableAccounts,
   isForeignAccountList,
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { createRepoWithGitHubAuthorization } from '@/features/workspace/new/github-user-authorization';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
@@ -748,7 +748,7 @@ export function useCreateWorkspace(): {
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
   const accountsQuery = useAccountsList();
-  const creatableAccounts = filterCreatableAccounts(accountsQuery.data ?? []);
+  const creatableAccounts = useCreatableAccounts(accountsQuery.data ?? []);
 
   const create = useCallback(
     async (state: NewWorkspaceFormState) => {

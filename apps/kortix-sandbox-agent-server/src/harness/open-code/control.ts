@@ -5,7 +5,7 @@ import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { syncEgressShim } from '@/services/egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
 import { noteOpencodeStopRequested } from './instance-guard'
-import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
+import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import { convergeManagedModelCatalog, requiresRespawn, type Opencode } from './lifecycle'
@@ -30,6 +30,8 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
+  // Its harness-neutral name (D3). The API sends both for one release.
+  'KORTIX_MODEL',
   // Channel sessions can opt into the Connector MCP face after a deploy. This
   // must restart OpenCode because MCP servers are registered only at spawn.
   'KORTIX_CONNECTORS_MCP_ENABLED',
@@ -454,15 +456,15 @@ export function createOpenCodeControlService(
             // catalog landed, and the credential still will not be injected.
             egress_shim: egressShim.outcome,
             egress_shim_hosts: egressShim.hosts,
-            opencode_env_changed: opencodeEnvChanged,
-            opencode_env_names: opencodeEnvNames,
-            opencode: opencode.getState(),
-            opencode_pid: opencode.getPid(),
+            runtime_env_changed: opencodeEnvChanged,
+            runtime_env_names: opencodeEnvNames,
+            runtime: opencode.getState(),
+            runtime_pid: opencode.getPid(),
             // 'disposed' | 'restarted' | 'kept-old' | null (no reload needed).
             // 'kept-old' is the verified swap declining a config that would not
             // boot — a successful safety outcome, and a FAILED reload.
-            opencode_reload: reloadOutcome,
-            opencode_turn_ended: reloadTurnEnded,
+            runtime_reload: reloadOutcome,
+            runtime_turn_ended: reloadTurnEnded,
           }
         },
         async refresh({ syncBase, skipRestart, skipRepo, baseSha, forceFail }: HarnessRefreshInput) {
@@ -545,8 +547,8 @@ export function createOpenCodeControlService(
                   },
                 }
               : {}),
-            opencode: opencode.getState(),
-            opencode_pid: opencode.getPid(),
+            runtime: opencode.getState(),
+            runtime_pid: opencode.getPid(),
           }
         },
         // Config releases. The descriptor is
@@ -611,14 +613,14 @@ export function createOpenCodeControlService(
               return { outcome: 'failed', body: { ok: false, error: `opencode abort failed: ${res.status}`, detail: body } }
             }
             logger.info('[abort] opencode turn aborted', { sessionId })
-            return { outcome: 'aborted', body: { ok: true, opencode_session_id: sessionId } }
+            return { outcome: 'aborted', body: { ok: true, runtime_session_id: sessionId } }
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err)
             logger.warn('[abort] opencode abort threw', { sessionId, error: message })
             return { outcome: 'failed', body: { ok: false, error: message } }
           }
         },
-        armAbortAfterTool: (input) => quickQueue.arm(input),
+        armAbortAfterTool: ({ runtimeSessionId, ...input }) => quickQueue.arm({ ...input, opencodeSessionId: runtimeSessionId }),
         disarmAbortAfterTool: (promptId) => quickQueue.disarm(promptId),
       }
     },

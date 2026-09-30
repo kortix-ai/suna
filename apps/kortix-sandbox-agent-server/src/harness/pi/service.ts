@@ -16,7 +16,7 @@ import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiC
 import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
 import { createPiQueryService } from './queries'
-import { schedulePiProjectionPush } from './relay'
+import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
 
@@ -38,13 +38,13 @@ export function createPiHarnessService(
   const live = () => (started ? runtime : null)
   registerPiSkillReload(async () => live()?.reloadSkills())
   const surface = createPiSurface(live)
-  const pushProjection = (reason: string) =>
-    schedulePiProjectionPush(() => {
-      const rt = live()
-      if (!rt) return null
-      const doc = rt.stateDoc()
-      return { doc, etag: rt.stateEtag(doc) }
-    }, reason)
+  registerRuntimeStateReader(async () => {
+    const rt = live()
+    if (!rt) return null
+    const doc = rt.stateDoc()
+    return { doc, etag: rt.stateEtag(doc) }
+  })
+  const pushProjection = scheduleRuntimeProjectionPush
 
   return {
     id: 'pi',
@@ -111,7 +111,7 @@ export const piDefinition: HarnessDefinition = {
   createBootState: (): PiBootState => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1',
+    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1',
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
   }),
