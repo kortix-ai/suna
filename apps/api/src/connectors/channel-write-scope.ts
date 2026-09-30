@@ -186,7 +186,7 @@ function postMisfire(checked: string, data: unknown): ChannelWriteMisfire | null
   const answer = data != null && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const landed = typeof answer.channel === 'string' ? answer.channel : null;
   const toPerson = checked.startsWith('U') || checked.startsWith('W');
-  if (landed && (toPerson ? landed.startsWith('D') : landed === checked)) return null;
+  if (landed === checked || (toPerson && landed?.startsWith('D'))) return null;
   return {
     refusal: {
       reason: CONVERSATION_NOT_IN_PROJECT,

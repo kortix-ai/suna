@@ -187,6 +187,7 @@ describe('where a post landed', () => {
   test('a post that landed in the checked conversation, or a DM for a user id, stands', async () => {
     expect((await gate('send_message', { channel: 'C0NOBODY01', text: 'hi' })).misfire({ ok: true, channel: 'C0NOBODY01', ts: '1.2' })).toBeNull();
     expect((await gate('send_message', { channel: 'U0PERSON01', text: 'hi' })).misfire({ ok: true, channel: 'D0PERSON01', ts: '1.2' })).toBeNull();
+    expect((await gate('send_message', { channel: 'U0PERSON01', text: 'hi' })).misfire({ ok: true, channel: 'U0PERSON01', ts: '1.2' })).toBeNull();
   });
 
   test('a post Slack delivered elsewhere (a resolved name) is refused, with the call that takes it back', async () => {
