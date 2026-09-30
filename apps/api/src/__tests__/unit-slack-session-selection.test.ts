@@ -341,6 +341,15 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
   expect(lastFinalize?.error ?? '').not.toContain('Give it a moment and send your message again');
 });
 
+test('follow-ups to one session identify the originating thread for each reply', async () => {
+  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const first = renderFollowUpPrompt(envelope, { ...event, channel: 'CONE', thread_ts: '100.1' });
+  const second = renderFollowUpPrompt(envelope, { ...event, channel: 'CTWO', thread_ts: '200.2' });
+  expect(first).toContain('slack send --channel CONE --thread 100.1');
+  expect(second).toContain('slack send --channel CTWO --thread 200.2');
+  expect(second).not.toContain('CONE');
+});
+
 // A non-agent failure still renders honest, specific copy (not the picker).
 // The thread-create claim lives 5 minutes. A failed start kept it, so the
 // re-send the picker asks for ("Pick a current agent, then send your message
