@@ -147,6 +147,9 @@ it, so a commit that breaks only those files is a working config on pi.
   owns the governance, a `/kortix/env` push of `KORTIX_COMPILED_AGENT_CONFIG`
   is dropped. The session notice (`/tmp/kortix/config-release.md`) is part of
   pi's system prompt while a release runs.
+- **Not in a release.** pi packages (`harnesses.pi.packages`) and repo-local
+  `.pi/extensions` load when the runtime starts, as before. A change to them
+  reaches a session at its next boot or restart.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
