@@ -76,7 +76,7 @@ describe('a computer unpaired while it is attached', () => {
     const machine = await pairMachine('Race desktop');
     const res = await interleave(
       unpair(machine),
-      () =>
+      async () =>
         app.request(`/v1/projects/${project.project_id}/computers`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
