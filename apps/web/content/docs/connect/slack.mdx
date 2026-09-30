@@ -64,7 +64,7 @@ account's project role. Account owners and admins count as project managers.
 A connected channel's bot token is a connector-scoped
 [secret](/docs/project/secrets). It does not appear on the project's Secrets
 page. Kortix never injects it into a sandbox. Kortix resolves the token
-server-side when the agent sends a chat message.
+server-side when the agent sends or reads a chat message.
 
 ## Connect Slack
 
@@ -117,6 +117,40 @@ to `kortix.yaml` for you. You never write this entry by hand.
 Mention the bot with a task, in any channel it has joined, or open a direct
 message. The thread keeps its session as described above. A bare mention with
 no task gets a reminder to add one instead of starting a session.
+
+## What the agent can read
+
+The agent reads Slack through the project's Slack
+[connector](/docs/connect/connectors) (`kortix_slack`, or the `slack` command
+in the sandbox). Every project connected to the same Slack workspace uses the
+same bot, so Kortix keeps each read inside the project's own conversations:
+
+| Conversation | Read |
+|---|---|
+| A channel or DM connected to this project | Allowed |
+| A thread that a session of this project started or joined, in any channel | Allowed |
+| A channel, DM or thread of another project | Refused |
+| A conversation no project is connected to | Allowed only while no other project is connected to the workspace |
+
+A refused read answers `403` with the reason `conversation_not_in_project` and
+a message that names the conversation. To read a conversation that no project
+is connected to, connect it first: run `/kortix switch` in it and pick this
+project.
+
+- Channel history leaves out the messages of another project's thread.
+- `list_channels` lists every public channel, and the private channels and DMs
+  the agent may read.
+- `channel_info` answers for any public channel. A private channel or DM
+  follows the table above.
+- `file_info` answers when the file is shared in a conversation the agent may
+  read.
+- `search_messages` runs only while no other project is connected to the
+  workspace, because a search cannot be limited to one project's
+  conversations.
+- `list_users`, `user_info` and `auth_test` read the workspace directory and are
+  not limited.
+
+These rules apply to reads. Sending a message is not limited by them.
 
 ## Control a session with slash commands
 
