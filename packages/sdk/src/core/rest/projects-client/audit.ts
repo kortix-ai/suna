@@ -5,6 +5,7 @@
 // `audit.read` + the account's `auditAccess` entitlement server-side.
 
 import { backendApi } from '../../http/api-client';
+import { type AuditExportFilter, auditFilterQuery } from './audit-filter';
 import { unwrap } from './shared';
 
 export interface AuditEvent {
@@ -108,26 +109,36 @@ export interface ListAccountAuditOptions {
   limit?: number;
 }
 
+/** camelCase SDK options → the wire `AuditExportFilter`, in the canonical
+ *  field order. The one mapping for every audit list and export; `format`
+ *  is only present on the export path and lands first on the wire. */
+function auditFilter(
+  options: ListAccountAuditOptions & { format?: 'csv' | 'jsonl' } = {},
+): AuditExportFilter {
+  return {
+    format: options.format,
+    action: options.action,
+    actor: options.actor,
+    actor_type: options.actorType,
+    project_id: options.projectId,
+    session_id: options.sessionId,
+    source: options.source,
+    credential_kind: options.credentialKind,
+    phase: options.phase,
+    outcome: options.outcome,
+    resource_type: options.resourceType,
+    request_id: options.requestId,
+    correlation_id: options.correlationId,
+    since: options.since,
+    until: options.until,
+    q: options.q,
+    cursor: options.cursor,
+    limit: options.limit,
+  };
+}
+
 export async function listAccountAudit(accountId: string, options?: ListAccountAuditOptions) {
-  const search = new URLSearchParams();
-  if (options?.action) search.set('action', options.action);
-  if (options?.actor) search.set('actor', options.actor);
-  if (options?.actorType) search.set('actor_type', options.actorType);
-  if (options?.projectId) search.set('project_id', options.projectId);
-  if (options?.sessionId) search.set('session_id', options.sessionId);
-  if (options?.source) search.set('source', options.source);
-  if (options?.credentialKind) search.set('credential_kind', options.credentialKind);
-  if (options?.phase) search.set('phase', options.phase);
-  if (options?.outcome) search.set('outcome', options.outcome);
-  if (options?.resourceType) search.set('resource_type', options.resourceType);
-  if (options?.requestId) search.set('request_id', options.requestId);
-  if (options?.correlationId) search.set('correlation_id', options.correlationId);
-  if (options?.since) search.set('since', options.since);
-  if (options?.until) search.set('until', options.until);
-  if (options?.q) search.set('q', options.q);
-  if (options?.cursor) search.set('cursor', options.cursor);
-  if (options?.limit != null) search.set('limit', String(options.limit));
-  const qs = search.toString();
+  const qs = auditFilterQuery(auditFilter(options)).toString();
   return unwrap(
     await backendApi.get<AuditEventList>(`/accounts/${accountId}/audit${qs ? `?${qs}` : ''}`),
   );
@@ -135,48 +146,16 @@ export async function listAccountAudit(accountId: string, options?: ListAccountA
 
 /** Canonical project-scoped audit timeline. The API binds project scope server-side. */
 export async function listProjectAudit(projectId: string, options?: ListAccountAuditOptions) {
-  const search = new URLSearchParams();
-  if (options?.action) search.set('action', options.action);
-  if (options?.actor) search.set('actor', options.actor);
-  if (options?.actorType) search.set('actor_type', options.actorType);
-  if (options?.sessionId) search.set('session_id', options.sessionId);
-  if (options?.source) search.set('source', options.source);
-  if (options?.credentialKind) search.set('credential_kind', options.credentialKind);
-  if (options?.phase) search.set('phase', options.phase);
-  if (options?.outcome) search.set('outcome', options.outcome);
-  if (options?.resourceType) search.set('resource_type', options.resourceType);
-  if (options?.requestId) search.set('request_id', options.requestId);
-  if (options?.correlationId) search.set('correlation_id', options.correlationId);
-  if (options?.since) search.set('since', options.since);
-  if (options?.until) search.set('until', options.until);
-  if (options?.q) search.set('q', options.q);
-  if (options?.cursor) search.set('cursor', options.cursor);
-  if (options?.limit != null) search.set('limit', String(options.limit));
-  const qs = search.toString();
+  // The path carries the project; a caller-passed projectId stays off the wire.
+  const qs = auditFilterQuery(auditFilter({ ...options, projectId: undefined })).toString();
   return unwrap(
     await backendApi.get<AuditEventList>(`/projects/${projectId}/audit${qs ? `?${qs}` : ''}`),
   );
 }
 
-export interface ExportAccountAuditOptions {
+export interface ExportAccountAuditOptions extends ListAccountAuditOptions {
+  /** Export format. */
   format?: 'csv' | 'jsonl';
-  action?: string;
-  actor?: string;
-  actorType?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
-  projectId?: string;
-  sessionId?: string;
-  /** Trusted execution source (`authoritative_source`): `human`, `agent`, `api_key`, … */
-  source?: string;
-  /** Credential class the API authenticated, e.g. `oauth_app`. */
-  credentialKind?: string;
-  phase?: string;
-  outcome?: 'success' | 'failure' | 'denied' | 'pending';
-  resourceType?: string;
-  requestId?: string;
-  correlationId?: string;
-  since?: string;
-  until?: string;
-  q?: string;
   /** Export continuation cursor from the previous response header. */
   cursor?: string;
   /** Page size. Default and maximum are 10,000. */
@@ -195,26 +174,7 @@ export async function exportAccountAudit(
   accountId: string,
   options?: ExportAccountAuditOptions,
 ): Promise<string | Blob> {
-  const search = new URLSearchParams();
-  if (options?.format) search.set('format', options.format);
-  if (options?.action) search.set('action', options.action);
-  if (options?.actor) search.set('actor', options.actor);
-  if (options?.actorType) search.set('actor_type', options.actorType);
-  if (options?.projectId) search.set('project_id', options.projectId);
-  if (options?.sessionId) search.set('session_id', options.sessionId);
-  if (options?.source) search.set('source', options.source);
-  if (options?.credentialKind) search.set('credential_kind', options.credentialKind);
-  if (options?.phase) search.set('phase', options.phase);
-  if (options?.outcome) search.set('outcome', options.outcome);
-  if (options?.resourceType) search.set('resource_type', options.resourceType);
-  if (options?.requestId) search.set('request_id', options.requestId);
-  if (options?.correlationId) search.set('correlation_id', options.correlationId);
-  if (options?.since) search.set('since', options.since);
-  if (options?.until) search.set('until', options.until);
-  if (options?.q) search.set('q', options.q);
-  if (options?.cursor) search.set('cursor', options.cursor);
-  if (options?.limit != null) search.set('limit', String(options.limit));
-  const qs = search.toString();
+  const qs = auditFilterQuery(auditFilter(options)).toString();
   return unwrap(
     await backendApi.get<string | Blob>(`/accounts/${accountId}/audit/export${qs ? `?${qs}` : ''}`),
   );

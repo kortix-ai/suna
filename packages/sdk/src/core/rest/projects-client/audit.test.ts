@@ -72,6 +72,60 @@ test('exportAccountAudit sends the same reconstruction filters', async () => {
   });
 });
 
+// Characterization: the exact querystring every audit surface sends for a
+// fully-populated filter. Pins field order, snake_case names, and URL encoding
+// so the shared querystring builder cannot drift from the wire contract.
+test('the audit querystring is byte-stable for a fully-populated filter', async () => {
+  const full = {
+    action: 'iam.policy.',
+    actor: 'actor-1',
+    actorType: 'agent',
+    projectId: 'project-1',
+    sessionId: 'session-1',
+    source: 'api_key',
+    credentialKind: 'oauth_app',
+    phase: 'completed',
+    outcome: 'success',
+    resourceType: 'session',
+    requestId: 'request-1',
+    correlationId: 'correlation-1',
+    since: '2026-01-01T00:00:00.000Z',
+    until: '2026-01-02T00:00:00.000Z',
+    q: 'gmail + inbox',
+    cursor: 'cursor|1',
+    limit: 200,
+  } as const;
+
+  await listAccountAudit('account-1', full);
+  await exportAccountAudit('account-1', { format: 'csv', ...full });
+  // listProjectAudit binds the project into the path; a caller-passed
+  // projectId is ignored (no project_id param), as today.
+  await listProjectAudit('project-1', full);
+
+  const [listQs, exportQs, projectQs] = calls.map((call) => new URL(call.url).search);
+  expect(listQs).toBe(
+    '?action=iam.policy.&actor=actor-1&actor_type=agent&project_id=project-1' +
+      '&session_id=session-1&source=api_key&credential_kind=oauth_app&phase=completed' +
+      '&outcome=success&resource_type=session&request_id=request-1' +
+      '&correlation_id=correlation-1&since=2026-01-01T00%3A00%3A00.000Z' +
+      '&until=2026-01-02T00%3A00%3A00.000Z&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200',
+  );
+  expect(exportQs).toBe(
+    '?format=csv&action=iam.policy.&actor=actor-1&actor_type=agent&project_id=project-1' +
+      '&session_id=session-1&source=api_key&credential_kind=oauth_app&phase=completed' +
+      '&outcome=success&resource_type=session&request_id=request-1' +
+      '&correlation_id=correlation-1&since=2026-01-01T00%3A00%3A00.000Z' +
+      '&until=2026-01-02T00%3A00%3A00.000Z&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200',
+  );
+  expect(projectQs).toBe(
+    '?action=iam.policy.&actor=actor-1&actor_type=agent' +
+      '&session_id=session-1&source=api_key&credential_kind=oauth_app&phase=completed' +
+      '&outcome=success&resource_type=session&request_id=request-1' +
+      '&correlation_id=correlation-1&since=2026-01-01T00%3A00%3A00.000Z' +
+      '&until=2026-01-02T00%3A00%3A00.000Z&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200',
+  );
+});
+
 test('listAuditEvents sends project and session reconstruction filters', async () => {
   await listAuditEvents('account-1', {
     project_id: 'project-1',
