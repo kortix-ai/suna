@@ -251,6 +251,14 @@ const INITIAL_TURNS_TO_RENDER = 4;
 
 /** Keeps the first visible turn in place while older turns prepend (COR-144). */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+/**
+ * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
+ * shows what lies under it; the list ends at the composer, so without this
+ * only the flat page is under the keyboard and it reads as a solid panel.
+ * The later rows now draw under the composer (opaque, `bottomBackground`) and
+ * under the keyboard, as in Messages. Layout and scroll geometry do not change.
+ */
+const LIST_DRAWS_UNDER_KEYBOARD = Platform.OS === 'ios' ? ({ overflow: 'visible' } as const) : undefined;
 
 function readSavedScrollOffset(sessionId: string): number {
   const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
@@ -1946,6 +1954,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         <MarkdownActionsProvider value={markdownActions}>
         <FlatList
           ref={flatListRef}
+          style={LIST_DRAWS_UNDER_KEYBOARD}
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
@@ -2034,6 +2043,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         />
       )}
 
+      {/* Opaque: the list draws under this block on iOS (LIST_DRAWS_UNDER_KEYBOARD). */}
+      <View style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
@@ -2095,6 +2106,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         )}
         </View>
       </Reanimated.View>
+      </View>
 
       <ConnectProviderSheet
         ref={connectSheetRef}
