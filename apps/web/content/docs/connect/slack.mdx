@@ -172,7 +172,8 @@ and a message that names the conversation. `slack send --file` and
 
 `channel` must be the conversation or user id, such as `C0123ABCD` or
 `U0123ABCD`, not a channel name. Slack posts to a name, and a name cannot be
-checked against the rule.
+checked against the rule. If Slack still posts a message anywhere but the
+conversation that was checked, Kortix deletes the message and refuses the post.
 
 To post in a channel that another project runs, run `/kortix switch` in it and
 pick this project, or post from that project.
