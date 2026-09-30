@@ -92,6 +92,12 @@ mock.module('../projects/codex-device-auth', () => ({
   pollCodexDeviceAuth: async () => ({ status: 'authorized', authJson: '{"openai":{"access":"a","refresh":"r","expires":1}}' }),
 }));
 
+const actualOpencode = await import('../llm-gateway/credentials/opencode-console');
+mock.module('../llm-gateway/credentials/opencode-console', () => ({
+  ...actualOpencode,
+  pollOpencodeDeviceAuth: async () => ({ status: 'authorized', authJson: '{"type":"oauth","access":"st","refresh":"rt","expires":1}' }),
+}));
+
 // The flow handle is opaque to clients; a readable envelope lets the test
 // assert what the server sealed into it.
 mock.module('../projects/secrets', () => ({
@@ -101,6 +107,7 @@ mock.module('../projects/secrets', () => ({
 }));
 mock.module('../secrets/account-resource', () => ({
   encryptAccountSecret: (_accountId: string, value: string) => `account-sealed:${value}`,
+  decryptAccountSecret: (_accountId: string, value: string) => value.replace(/^account-sealed:/, ''),
   memberMayReadProject: async () => true,
 }));
 mock.module('../projects/lib/sandbox-env-sync', () => ({ propagateProjectSecretsToActiveSandboxes: async () => {} }));
@@ -128,8 +135,8 @@ async function start(userId: string, body: Record<string, unknown>) {
   return { status: res.status, body: await res.json() as Record<string, any> };
 }
 
-async function poll(userId: string, flowId: string) {
-  const res = await app(userId).request(`/v1/projects/${PROJECT_ID}/oauth/openai/poll`, {
+async function poll(userId: string, flowId: string, provider = 'openai') {
+  const res = await app(userId).request(`/v1/projects/${PROJECT_ID}/oauth/${provider}/poll`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flow_id: flowId }),
   });
   return { status: res.status, body: await res.json() as Record<string, any> };
@@ -270,5 +277,25 @@ describe('POST /oauth/openai/poll — reconnect writes the new login into the sa
     expect(result.status).toBe(200);
     expect(result.body).toEqual({ status: 'failed', error: 'This ChatGPT account is no longer available. Add it again.' });
     expect(auditEvents).toEqual([]);
+  });
+});
+
+describe('POST /oauth/opencode-go/poll — an OpenCode Console login', () => {
+  const handle = (extra: Record<string, unknown>) => `sealed:${JSON.stringify({
+    d: 'device-1', u: 'ABCD-EFGH', s: null, uid: MEMBER_ID, e: Date.now() + 60_000, ...extra,
+  })}`;
+
+  test('reconnect writes the login into the Go account under OPENCODE_GO_API_KEY', async () => {
+    updatedRows = [{ secretId: RESOURCE_ID, label: 'OpenCode Go · Member' }];
+    const result = await poll(MEMBER_ID, handle({ p: 'opencode-go', rid: RESOURCE_ID, rc: 1 }), 'opencode-go');
+    expect(result.body).toMatchObject({ status: 'success', credential: { provider_id: 'opencode-go', secret_id: RESOURCE_ID } });
+    expect(updates[0]!.values).toMatchObject({ valueEnc: 'account-sealed:{"type":"oauth","access":"st","refresh":"rt","expires":1}' });
+    expect(auditEvents).toContainEqual(expect.objectContaining({ metadata: expect.objectContaining({ provider_id: 'opencode-go' }) }));
+  });
+
+  test('a ChatGPT flow handle never completes an OpenCode login', async () => {
+    const result = await poll(MEMBER_ID, handle({ rid: RESOURCE_ID, rc: 1 }), 'opencode-go');
+    expect(result.body).toEqual({ status: 'expired' });
+    expect(updates).toHaveLength(0);
   });
 });

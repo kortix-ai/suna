@@ -132,7 +132,12 @@
     "rateLimitDescription": "La pasarela alterna entre las claves seleccionadas cuando un proveedor indica un límite de solicitudes.",
     "enableGateway": "Activa la pasarela LLM en la configuración del proyecto para usar grupos de claves.",
     "selectedOneForSession": "{count} clave seleccionada para esta sesión",
-    "selectedOne": "{count} clave seleccionada"
+    "selectedOne": "{count} clave seleccionada",
+    "opencodeSignIn": "Iniciar sesión con OpenCode",
+    "opencodeSignInDescription": "Usa tu espacio de trabajo de OpenCode en lugar de una clave de API.",
+    "opencodeDeviceDescription": "Copia este código. Luego abre la página de OpenCode e introdúcelo para conectar tu espacio de trabajo.",
+    "opencodeStarting": "Conectando con OpenCode…",
+    "opencodeConnected": "Sesión iniciada con OpenCode"
   },
   "useCases": {
     "headline": "Los ciclos que hacen funcionar una empresa"
@@ -19045,7 +19050,16 @@
       "text2bbd1ec2197d": "App conectada",
       "textda3d3fb8f598": "Sesión de agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Cualquier credencial"
+      "text36fe0f55b7f5": "Cualquier credencial",
+      "textbfda026e6c59": "Vinculado",
+      "text72ea4fa7caf9": "Dictado detenido: {value0}",
+      "text557b623f9a33": "No se pudo iniciar el dictado. Comprueba el acceso al micrófono.",
+      "textb43c4884c3be": "Controles de dictado",
+      "textd31d065a762c": "Cancelar dictado",
+      "textbbb4106e8144": "Escuchando…",
+      "text7458028e0d1d": "Terminar dictado",
+      "text9c84d6622566": "Dictar mensaje",
+      "textf164e4b031dc": "Presencia en la sesión actualizada"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

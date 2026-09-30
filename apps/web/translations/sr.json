@@ -132,7 +132,12 @@
     "rateLimitDescription": "Мрежни пролаз мења изабране кључеве када провајдер пријави ограничење захтева.",
     "enableGateway": "Укључите LLM мрежни пролаз у подешавањима пројекта да бисте користили скупове кључева.",
     "selectedOneForSession": "{count} кључ изабран за ову сесију",
-    "selectedOne": "{count} кључ изабран"
+    "selectedOne": "{count} кључ изабран",
+    "opencodeSignIn": "Prijavi se preko OpenCode-a",
+    "opencodeSignInDescription": "Koristi svoj OpenCode radni prostor umesto API ključa.",
+    "opencodeDeviceDescription": "Kopiraj ovaj kod. Zatim otvori OpenCode stranicu i unesi ga da povežeš radni prostor.",
+    "opencodeStarting": "Povezivanje sa OpenCode-om…",
+    "opencodeConnected": "Prijavljen preko OpenCode-a"
   },
   "useCases": {
     "headline": "Циклуси који покрећу компанију"
@@ -19045,7 +19050,16 @@
       "text2bbd1ec2197d": "Повезана апликација",
       "textda3d3fb8f598": "Сесија агента",
       "text4dcb7e3b10a9": "SCIM токен",
-      "text36fe0f55b7f5": "Било који креденцијал"
+      "text36fe0f55b7f5": "Било који креденцијал",
+      "textbfda026e6c59": "Повезано",
+      "text72ea4fa7caf9": "Диктирање је заустављено: {value0}",
+      "text557b623f9a33": "Диктирање није могло да почне. Проверите приступ микрофону.",
+      "textb43c4884c3be": "Контроле диктирања",
+      "textd31d065a762c": "Откажи диктирање",
+      "textbbb4106e8144": "Слушам…",
+      "text7458028e0d1d": "Заврши диктирање",
+      "text9c84d6622566": "Диктирај поруку",
+      "textf164e4b031dc": "Присуство у сесији је ажурирано"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
