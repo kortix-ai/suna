@@ -973,6 +973,9 @@ export const SessionCreateInputSchema = z
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
     title_source: z.string().optional(),
+    /** The session's `provider/model` pin. Wins over `opencode_model`. */
+    model: z.string().min(1).optional(),
+    /** @deprecated The pre-W4 name of `model`. */
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
@@ -1047,6 +1050,9 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
+  /** The session's root conversation in its runtime (OpenCode or pi). */
+  runtime_session_id: z.string().nullable(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
@@ -1057,6 +1063,9 @@ export const ProjectSessionSchema = z.object({
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
+  /** The runtime's conversation tree snapshot; `[]` for a caller who cannot open the session. */
+  runtime_sessions: z.array(z.unknown()),
+  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
   opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
@@ -1311,7 +1320,9 @@ export const SessionStartResultSchema = z.object({
   retriable: z.boolean(),
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
-  /** Canonical OpenCode root pin, resolved server-side once the box is up. */
+  /** Canonical runtime root pin, resolved server-side once the box is up. */
+  runtime_session_id: z.string().nullable().optional(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),

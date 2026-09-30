@@ -81,14 +81,14 @@ mock.module('../../projects/opencode-session-snapshot', () => ({
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
-let begunTurns: Array<{ opencodeSessionId: string; messageId: string | null }> = [];
+let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (
     _target: unknown,
-    turn: { opencodeSessionId: string; messageId: string | null },
+    turn: { runtimeSessionId: string; messageId: string | null },
   ) => {
-    begunTurns.push({ opencodeSessionId: turn.opencodeSessionId, messageId: turn.messageId });
+    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId });
     return 'granted';
   },
   acceptSandboxTurn: async () => true,
@@ -363,7 +363,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(wireIdTime(delivered.messageID)! > tip.time).toBe(true);
     expect(delivered.parts).toEqual([{ type: 'text', text: 'stop looping' }]);
     // The turn ledger was begun under the EFFECTIVE id, not the stale one.
-    expect(begunTurns).toEqual([{ opencodeSessionId: 'ses_child', messageId: delivered.messageID }]);
+    expect(begunTurns).toEqual([{ runtimeSessionId: 'ses_child', messageId: delivered.messageID }]);
     // And the sender can correlate.
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
     expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Kortix-Effective-Message-Id');

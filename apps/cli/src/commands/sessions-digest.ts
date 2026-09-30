@@ -25,7 +25,7 @@ and outputs are intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
-  --messages, -n <N>   Recent OpenCode messages per session (default 40).
+  --messages, -n <N>   Recent messages per session (default 40).
   --chars <N>          Max text chars per message after whitespace compaction
                        (default 700).
   --all                Ignore --since and include every listable session.
@@ -74,7 +74,13 @@ interface SessionDigest {
     created_at: string;
     updated_at: string;
     error: string | null;
+    /** The session's root conversation in its runtime (OpenCode or pi). */
+    runtime_session_id: string | null;
+    /** Titles of the runtime's conversations. */
+    runtime_titles: string[];
+    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
     opencode_session_id: string | null;
+    /** @deprecated The pre-W4 name of `runtime_titles`. Same value. */
     opencode_titles: string[];
   };
   transcript: {
@@ -86,6 +92,8 @@ interface SessionDigest {
     /** The mirror proved it holds the session's first message AND returned
      *  every row it holds. Never a guess — see `mirrorIsComplete`. */
     complete: boolean;
+    runtime_session_id: string | null;
+    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
     opencode_session_id: string | null;
     message_count: number;
     messages: CompactMessage[];
@@ -202,7 +210,7 @@ async function buildDigest(
     const transcript = await client.get<unknown>(
       `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
     );
-    base.transcript = sanitizeTranscript(transcript, s.opencode_session_id);
+    base.transcript = sanitizeTranscript(transcript, runtimeSessionIdOf(s));
     return base;
   } catch (err) {
     base.transcript.reason = `could not read session transcript: ${(err as Error).message}`;
@@ -210,7 +218,7 @@ async function buildDigest(
   }
 }
 
-export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | null): SessionDigest['transcript'] {
+export function sanitizeTranscript(raw: unknown, fallbackRuntimeSessionId: string | null): SessionDigest['transcript'] {
   const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
   const messages = Array.isArray(obj.messages)
     ? obj.messages.map(sanitizeCompactMessage)
@@ -218,6 +226,9 @@ export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: stri
   const count = typeof obj.message_count === 'number' && Number.isFinite(obj.message_count)
     ? obj.message_count
     : messages.length;
+  // A W4 API names it `runtime_session_id`; an older one only `opencode_session_id`.
+  const served = [obj.runtime_session_id, obj.opencode_session_id].find((id) => typeof id === 'string');
+  const runtimeSessionId = typeof served === 'string' ? served : fallbackRuntimeSessionId;
   return {
     available: obj.available === true,
     reason: typeof obj.reason === 'string' ? obj.reason : null,
@@ -228,9 +239,8 @@ export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: stri
       ? obj.source
       : obj.available === true ? 'live' : 'none',
     complete: obj.complete === true,
-    opencode_session_id: typeof obj.opencode_session_id === 'string'
-      ? obj.opencode_session_id
-      : fallbackOpencodeSessionId,
+    runtime_session_id: runtimeSessionId,
+    opencode_session_id: runtimeSessionId,
     message_count: count,
     messages,
   };
@@ -285,15 +295,18 @@ function baseDigest(s: ProjectSession): SessionDigest {
       created_at: s.created_at,
       updated_at: s.updated_at,
       error: s.error,
-      opencode_session_id: s.opencode_session_id,
-      opencode_titles: opencodeTitles(s),
+      runtime_session_id: runtimeSessionIdOf(s),
+      runtime_titles: runtimeTitles(s),
+      opencode_session_id: runtimeSessionIdOf(s),
+      opencode_titles: runtimeTitles(s),
     },
     transcript: {
       available: false,
       reason: null,
       source: 'none',
       complete: false,
-      opencode_session_id: s.opencode_session_id,
+      runtime_session_id: runtimeSessionIdOf(s),
+      opencode_session_id: runtimeSessionIdOf(s),
       message_count: 0,
       messages: [],
     },
@@ -325,8 +338,8 @@ function printHumanDigest(
     process.stdout.write(`  ${C.dim}branch${C.reset} ${s.branch}  ${C.dim}base${C.reset} ${s.base_ref}  ${C.dim}provider${C.reset} ${s.provider}\n`);
     process.stdout.write(`  ${C.dim}created${C.reset} ${s.created_at}  ${C.dim}updated${C.reset} ${s.updated_at}\n`);
     if (s.error) process.stdout.write(`  ${C.red}error${C.reset} ${s.error}\n`);
-    if (s.opencode_titles.length > 0) {
-      process.stdout.write(`  ${C.dim}opencode titles${C.reset} ${s.opencode_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
+    if (s.runtime_titles.length > 0) {
+      process.stdout.write(`  ${C.dim}runtime titles${C.reset} ${s.runtime_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
     }
 
     if (!d.transcript.available) {
@@ -372,8 +385,13 @@ function summarizeTools(tools: CompactToolCall[]): string {
   return parts.length > 12 ? `${parts.slice(0, 12).join(', ')}, … +${parts.length - 12}` : parts.join(', ');
 }
 
-function opencodeTitles(s: ProjectSession): string[] {
-  const raw = s.metadata?.opencode_sessions;
+/** The runtime root id: a W4 API serves `runtime_session_id`, an older one `opencode_session_id`. */
+function runtimeSessionIdOf(s: ProjectSession): string | null {
+  return s.runtime_session_id ?? s.opencode_session_id ?? null;
+}
+
+function runtimeTitles(s: ProjectSession): string[] {
+  const raw = s.runtime_sessions ?? s.metadata?.opencode_sessions;
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry) => {

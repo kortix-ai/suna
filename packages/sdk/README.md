@@ -323,8 +323,8 @@ await s.reloadConfigStream(
 // Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
 // `.runtime` throws until the runtime is resolved, and the runtime is keyed by
 // the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { opencodeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
+const { runtimeSessionId } = await s.ensureReady();
+await s.runtime.session.prompt({ sessionID: runtimeSessionId, parts });
 ```
 
 React consumers use `useAccountSecretResources(accountId)` and
@@ -410,7 +410,7 @@ A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.opencode_session_id,
+  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -554,7 +554,7 @@ handle.close();
 
 `session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
 
-`@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
+`@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
 
 ## Kortix as a Backend (server-side)
@@ -673,7 +673,7 @@ the root import — offers the same agents and models and sends the same pick.
 
 | Function | Input → output |
 |---|---|
-| `projectConfigAgentsToOpenCodeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
 | `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
@@ -758,7 +758,7 @@ That is the whole map — learn it once.
 | import | when you use it | why it is separate |
 | --- | --- | --- |
 | `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |

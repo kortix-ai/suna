@@ -23,8 +23,19 @@ import { type SQL, sql } from 'drizzle-orm';
 import { mintWireMessageId } from './wire-message-id';
 
 export interface SandboxTurnIdentity {
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   messageId: string | null;
+}
+
+/**
+ * A stored turn record names its runtime session under `runtimeSessionId` and,
+ * for an API instance built before W4 that still serves during a rolling
+ * deploy, under `opencodeSessionId` too. Writers set both; readers take the
+ * neutral key first.
+ * ponytail: drop the `opencodeSessionId` write once no pre-W4 API instance runs.
+ */
+function storedTurnRuntimeSessionId(turn: Record<string, unknown>): unknown {
+  return turn.runtimeSessionId ?? turn.opencodeSessionId;
 }
 
 let databasePromise: Promise<typeof import('../shared/db')['db']> | null = null;
@@ -99,7 +110,7 @@ export function removeAndReturnTurns(): SQL {
              (SELECT coalesce(
                        jsonb_agg(jsonb_build_object(
                          'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'runtimeSessionId', coalesce(selected.value->>'runtimeSessionId', selected.value->>'opencodeSessionId'),
                          'messageId', selected.value->>'messageId',
                          'startedAtMs', selected.value->>'startedAtMs'))
                          FILTER (WHERE selected.token IS NOT NULL),
@@ -130,6 +141,7 @@ export function initialSandboxTurnMetadata(
   return {
     token: turn.token,
     state: 'delivering',
+    runtimeSessionId: null,
     opencodeSessionId: null,
     messageId: turn.messageId,
     startedAtMs: turn.startedAtMs,
@@ -147,10 +159,11 @@ function parseStoredSandboxTurn(value: unknown, expectedToken?: string): StoredS
     return null;
   }
   if (expectedToken !== undefined && turn.token !== expectedToken) return null;
+  const runtimeSessionId = storedTurnRuntimeSessionId(turn);
   return {
     token: turn.token,
     state: turn.state,
-    opencodeSessionId: typeof turn.opencodeSessionId === 'string' ? turn.opencodeSessionId : '',
+    runtimeSessionId: typeof runtimeSessionId === 'string' ? runtimeSessionId : '',
     messageId: typeof turn.messageId === 'string' ? turn.messageId : null,
     startedAtMs:
       typeof turn.startedAtMs === 'number' && Number.isFinite(turn.startedAtMs)
@@ -218,7 +231,7 @@ export function extractTurnIdentity(
       // remains session-scoped and the delivery token still provides CAS safety.
     }
   }
-  return { opencodeSessionId: decodeURIComponent(match[1]), messageId };
+  return { runtimeSessionId: decodeURIComponent(match[1]), messageId };
 }
 
 export interface SandboxTurnStart extends SandboxTurnIdentity {
@@ -318,7 +331,7 @@ export function ledgerIdentity(row: Record<string, unknown> | undefined): Sessio
 /** One turn the authority write just erased, as the ledger has to record it. */
 interface EndedTurnRecord {
   token: string;
-  opencodeSessionId: string | null;
+  runtimeSessionId: string | null;
   messageId: string | null;
   startedAtMs: number | null;
 }
@@ -331,7 +344,7 @@ function toEndedTurnRecord(value: unknown): EndedTurnRecord | null {
   const startedAtMs = Number(turn.startedAtMs);
   return {
     token,
-    opencodeSessionId: ledgerText(turn.opencodeSessionId),
+    runtimeSessionId: ledgerText(storedTurnRuntimeSessionId(turn)),
     messageId: ledgerText(turn.messageId),
     startedAtMs: Number.isFinite(startedAtMs) && startedAtMs > 0 ? startedAtMs : null,
   };
@@ -625,7 +638,7 @@ export function endedTurnLedger(
     turns.map(
       (turn) => sql`(${turn.token}, ${owner.sessionId}, ${owner.sandboxId}::uuid,
           ${owner.projectId}::uuid, ${owner.accountId}::uuid,
-          ${turn.opencodeSessionId}, ${turn.messageId}, 'ended', ${reason},
+          ${turn.runtimeSessionId}, ${turn.messageId}, 'ended', ${reason},
           ${endErrorJson}::jsonb,
           ${
             turn.startedAtMs === null
@@ -836,9 +849,9 @@ export function refineEndedTurnError(
        AND t.message_id = ${identity.messageId ?? null}
        AND t.state = 'ended'
        AND t.end_reason = 'failed'
-       AND (${identity.opencodeSessionId ?? null}::text IS NULL
+       AND (${identity.runtimeSessionId ?? null}::text IS NULL
          OR t.opencode_session_id IS NULL
-         OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})
+         OR t.opencode_session_id = ${identity.runtimeSessionId ?? null})
        AND NOT ${protectedEndErrorPredicate(sql`t.end_error`)}`;
 }
 
@@ -878,9 +891,9 @@ export function reviveAbandonedTurnOnCompletion(
        AND t.message_id = ${identity.messageId ?? null}
        AND t.state = 'ended'
        AND t.end_reason = 'abandoned'
-       AND (${identity.opencodeSessionId ?? null}::text IS NULL
+       AND (${identity.runtimeSessionId ?? null}::text IS NULL
          OR t.opencode_session_id IS NULL
-         OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})`;
+         OR t.opencode_session_id = ${identity.runtimeSessionId ?? null})`;
 }
 
 export async function wasSandboxTurnAlreadyClosed(
@@ -895,9 +908,9 @@ export async function wasSandboxTurnAlreadyClosed(
        WHERE t.session_id = ${sessionId}
          AND t.message_id = ${identity.messageId}
          AND t.state = 'ended'
-         AND (${identity.opencodeSessionId ?? null}::text IS NULL
+         AND (${identity.runtimeSessionId ?? null}::text IS NULL
            OR t.opencode_session_id IS NULL
-           OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})
+           OR t.opencode_session_id = ${identity.runtimeSessionId ?? null})
     ) AS already_ended`);
   return normalizeRows(result)?.[0]?.already_ended === true;
 }

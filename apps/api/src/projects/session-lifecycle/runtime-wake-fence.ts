@@ -17,7 +17,7 @@ export const RUNTIME_WAKE_LEASE_MS = 240_000;
  * changes; this one never does, so a provider that flaps between two states
  * forever is still bounded and nothing downstream stays fenced off.
  *
- * Same shape as `STALE_OPENCODE_BOOT_HARD_MS` (readiness-clocks.ts) and for the
+ * Same shape as `STALE_RUNTIME_BOOT_HARD_MS` (readiness-clocks.ts) and for the
  * same reason — see the learning "A boot budget measures lack of progress, not
  * wall-clock".
  */

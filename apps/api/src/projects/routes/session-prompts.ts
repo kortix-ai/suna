@@ -6,7 +6,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
-import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
@@ -257,19 +256,6 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
-    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
-    // the session's `on_behalf_of` clears it permanently. The agent keeps its
-    // own authority; it loses the creator's personal resources, so the person
-    // prompting never acts through another person's accounts. An agent-session
-    // credential is not a human prompter and clears nothing.
-    if (!isProjectSessionPrincipal(c)) {
-      await clearSessionOnBehalfOfForPrompt({
-        accountId: loaded.row.accountId,
-        sessionId,
-        prompterUserId: loaded.userId,
-      });
-    }
-
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
     // nothing connected. That gate could not be cleared from the product: a
@@ -315,6 +301,11 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       sessionId,
       actorUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3 (closes V6): the session token acts as the person
+      // who sent this prompt, from the moment its turn is delivered — not now,
+      // while it may still wait behind another member's turn. An agent-session
+      // credential is not a person and never changes the token's identity.
+      bindTurnIdentity: !isProjectSessionPrincipal(c),
       text,
       idempotencyKey,
       clientMessageId,
@@ -647,7 +638,7 @@ projectsApp.openapi(
     // the proxy stamp. The write never throws.
     if (body.held) {
       await markTurnStopRequested(sessionId, 'UserStop', {
-        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+        opencodeSessionId: visible.row.runtimeSessionId ?? null,
       });
     }
     await holdInboxPrompts(sessionId, body.held);

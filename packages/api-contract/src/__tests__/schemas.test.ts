@@ -168,6 +168,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_provider: 'daytona',
     sandbox_id: null,
     sandbox_url: null,
+    runtime_session_id: 'ses_abc',
     opencode_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
@@ -176,6 +177,7 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
+    runtime_sessions: [],
     opencode_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
@@ -814,6 +816,11 @@ describe('SessionCreateInputSchema runtime_context', () => {
     expect(
       SessionCreateInputSchema.safeParse({ mcp: { url: 'https://attacker.test' } }).success,
     ).toBe(false);
+  });
+
+  test('accepts the model under its neutral name', () => {
+    expect(SessionCreateInputSchema.safeParse({ model: 'kortix/glm-5.3-flash' }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ model: '' }).success).toBe(false);
   });
 
   test('retains deprecated camelCase inputs already accepted by the route', () => {

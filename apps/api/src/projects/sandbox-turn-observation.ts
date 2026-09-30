@@ -70,14 +70,14 @@ export async function observeSandboxTurn(
   provider: Pick<SandboxProvider, 'resolveEndpoint'>,
   externalId: string,
   _sandboxId?: string,
-  identity?: { token?: string; opencodeSessionId: string; messageId: string | null },
+  identity?: { token?: string; runtimeSessionId: string; messageId: string | null },
 ): Promise<SandboxTurnReading> {
   try {
     const endpoint = await provider.resolveEndpoint(externalId);
     const url = new URL(`${endpoint.url.replace(/\/$/, '')}/kortix/health`);
     url.searchParams.set('turn', '1');
-    if (identity?.opencodeSessionId) {
-      url.searchParams.set('turn_session_id', identity.opencodeSessionId);
+    if (identity?.runtimeSessionId) {
+      url.searchParams.set('turn_session_id', identity.runtimeSessionId);
     }
     if (identity?.messageId) {
       url.searchParams.set('turn_message_id', identity.messageId);

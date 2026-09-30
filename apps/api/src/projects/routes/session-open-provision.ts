@@ -447,7 +447,7 @@ export function openRecoveryClaimAnswer(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: visible.row.opencodeSessionId,
+      opencode_session_id: visible.row.runtimeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_recovery_in_progress',
     };

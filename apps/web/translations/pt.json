@@ -5168,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "A sandbox desta sessão foi interrompida. Abra uma nova sessão para continuar.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "O runtime do OpenCode não está pronto",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "O runtime da sessão não está pronto",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "A sandbox foi iniciada, mas o runtime do projeto não ficou utilizável.",
       "line395JsxTextRestartSession": "Reiniciar sessão",
       "line424JsxTextRestartSession": "Reiniciar sessão"
@@ -12496,7 +12496,7 @@
       "text5a0cac0326d5": "Baixar o Kortix",
       "text5a219a418ec7": "Não foi possível ler esta entrada do arquivo.",
       "text5a23444828db": "Gerenciar",
-      "text5a26f4425c82": "Sessão do OpenCode",
+      "text92fbc8484002": "Sessão do runtime",
       "text5a32374d30b4": "Atividade diária da plataforma e queima de crédito. Cada intervalo é um dia UTC.",
       "text5a37d20f1235": "Agente do canal atualizado",
       "text5a41803b2dd1": "Negar todas",
