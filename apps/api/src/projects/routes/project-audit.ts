@@ -364,7 +364,7 @@ projectsApp.openapi(
     const [scope] = await db
       .select({
         sessionId: sessionSandboxes.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
         agentName: projectSessions.agentName,
         createdBy: projectSessions.createdBy,
         origin: projectSessions.origin,

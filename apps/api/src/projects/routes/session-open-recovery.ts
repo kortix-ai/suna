@@ -65,7 +65,7 @@ export async function openRemovedBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.opencodeSessionId,
+        opencode_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_recovery_in_progress',
       };
@@ -92,7 +92,7 @@ export async function openRemovedBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(recoveringRow),
-        opencode_session_id: visible.row.opencodeSessionId,
+        opencode_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason:
           recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
@@ -136,7 +136,7 @@ export async function openNotRunningBox(
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.opencodeSessionId,
+        opencode_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_restoring_in_place',
       };

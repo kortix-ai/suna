@@ -95,6 +95,7 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       rec.remint.push({ sessionAgent: input.sessionAgent, requestedAgent: input.requestedAgent });
       return { action: 'skip' };
     }) as PrePromptEnvSyncDeps['remintGrant'],
+    bindTurnIdentity: (async () => false) as PrePromptEnvSyncDeps['bindTurnIdentity'],
     scheduleSnapshot: ((input) => {
       rec.snapshot.push({
         sessionId: input.sessionId,
@@ -122,6 +123,7 @@ function runSync(rec: Recorder, body: ArrayBuffer, requestedAgent: string | null
       providerHeaders: {},
       serviceKey: 'svc-key',
       requestedAgent,
+      bindTurnIdentity: false,
       body,
       incomingHeaders: jsonHeaders(),
     },

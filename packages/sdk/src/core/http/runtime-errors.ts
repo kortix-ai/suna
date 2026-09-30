@@ -1,15 +1,21 @@
-export interface OpenCodeConfigIssue {
+export interface RuntimeConfigIssue {
   path?: unknown[];
   message?: string;
 }
 
-export interface OpenCodeConfigInvalidError {
+/** OpenCode's `ConfigInvalidError`: its own config (`opencode.jsonc`, agent frontmatter) failed to load. */
+export interface RuntimeConfigInvalidError {
   name: 'ConfigInvalidError';
   data?: {
     path?: string;
-    issues?: OpenCodeConfigIssue[];
+    issues?: RuntimeConfigIssue[];
   };
 }
+
+/** @deprecated Renamed to `RuntimeConfigIssue`. Removed in the next major. */
+export type OpenCodeConfigIssue = RuntimeConfigIssue;
+/** @deprecated Renamed to `RuntimeConfigInvalidError`. Removed in the next major. */
+export type OpenCodeConfigInvalidError = RuntimeConfigInvalidError;
 
 function rawErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -24,7 +30,7 @@ function rawErrorMessage(error: unknown): string {
   return String(error ?? '');
 }
 
-export function parseOpenCodeErrorPayload(error: unknown): unknown {
+export function parseRuntimeErrorPayload(error: unknown): unknown {
   const raw = rawErrorMessage(error).trim();
   if (!raw) return null;
 
@@ -48,20 +54,29 @@ export function parseOpenCodeErrorPayload(error: unknown): unknown {
   return null;
 }
 
-export function getOpenCodeConfigInvalidError(error: unknown): OpenCodeConfigInvalidError | null {
-  const payload = parseOpenCodeErrorPayload(error);
+/** @deprecated Renamed to `parseRuntimeErrorPayload`. Removed in the next major. */
+export const parseOpenCodeErrorPayload = parseRuntimeErrorPayload;
+
+export function getRuntimeConfigInvalidError(error: unknown): RuntimeConfigInvalidError | null {
+  const payload = parseRuntimeErrorPayload(error);
   if (!payload || typeof payload !== 'object') return null;
-  const maybe = payload as Partial<OpenCodeConfigInvalidError>;
-  return maybe.name === 'ConfigInvalidError' ? (maybe as OpenCodeConfigInvalidError) : null;
+  const maybe = payload as Partial<RuntimeConfigInvalidError>;
+  return maybe.name === 'ConfigInvalidError' ? (maybe as RuntimeConfigInvalidError) : null;
 }
 
-export function isOpenCodeConfigInvalidError(error: unknown): boolean {
-  return getOpenCodeConfigInvalidError(error) !== null;
+/** @deprecated Renamed to `getRuntimeConfigInvalidError`. Removed in the next major. */
+export const getOpenCodeConfigInvalidError = getRuntimeConfigInvalidError;
+
+export function isRuntimeConfigInvalidError(error: unknown): boolean {
+  return getRuntimeConfigInvalidError(error) !== null;
 }
+
+/** @deprecated Renamed to `isRuntimeConfigInvalidError`. Removed in the next major. */
+export const isOpenCodeConfigInvalidError = isRuntimeConfigInvalidError;
 
 // Every readiness phrase the API can answer with while a sandbox (or the
-// OpenCode server inside it) is provisioning, resuming, or parked. Each line
-// maps to a production site in apps/api:
+// runtime inside it) is provisioning, resuming, or parked. Each line maps to a
+// production site in apps/api:
 //   - `sandbox not ready (status: X)` / bare `sandbox not ready`
 //     → sandbox-proxy/routes/preview.ts (HTTP proxy + WebSocket resolver)
 //   - `Sandbox is not running` → sandbox-proxy/routes/public-share.ts
@@ -121,13 +136,14 @@ export class SandboxNotReadyError extends Error {
   }
 }
 
-export function formatOpenCodeRuntimeError(error: unknown): {
+export function formatRuntimeError(error: unknown): {
   title: string;
   message: string;
   detail?: string;
 } {
-  const configError = getOpenCodeConfigInvalidError(error);
+  const configError = getRuntimeConfigInvalidError(error);
   if (configError) {
+    // `ConfigInvalidError` is OpenCode's own error about its own config files.
     const workspacePath = configError.data?.path ?? 'OpenCode config';
     const repoPath = workspacePath.replace(/^\/workspace\//, '');
     const issue = configError.data?.issues?.[0]?.message;
@@ -148,10 +164,10 @@ export function formatOpenCodeRuntimeError(error: unknown): {
   // A parked or still-provisioning box is not a crash. The proxy answers with
   // a readiness phrase for a sandbox the control plane stopped ON PURPOSE to
   // save compute (or has not finished booting), and the conversation is intact
-  // behind it. Reserve "OpenCode failed to load" for a runtime that genuinely
-  // broke.
+  // behind it. Reserve "The session runtime failed to load" for a runtime that
+  // genuinely broke.
   //
-  // Matched against the raw string, not a `parseOpenCodeErrorPayload` field:
+  // Matched against the raw string, not a `parseRuntimeErrorPayload` field:
   // `unwrap()` (react/use-opencode-sessions/shared.ts) is what actually
   // produces the error this function receives for the session-list poll that
   // drives the page's runtime-error card, and it throws `new Error(body.error)`
@@ -166,7 +182,10 @@ export function formatOpenCodeRuntimeError(error: unknown): {
   }
 
   return {
-    title: 'OpenCode failed to load',
-    message: raw || 'The sandbox is running, but OpenCode returned an error.',
+    title: 'The session runtime failed to load',
+    message: raw || 'The sandbox is running, but its runtime returned an error.',
   };
 }
+
+/** @deprecated Renamed to `formatRuntimeError`. Removed in the next major. */
+export const formatOpenCodeRuntimeError = formatRuntimeError;

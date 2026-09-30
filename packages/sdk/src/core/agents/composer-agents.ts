@@ -13,7 +13,7 @@ import { isSelectableAgent } from '../rest/projects-client/project-agents';
  * "first visible agent" fallback agrees with the project contract. Explicit
  * per-session/user picks still resolve by name and therefore keep precedence.
  */
-export function projectConfigAgentsToOpenCodeAgents(config: ProjectConfigSummary): Agent[] {
+export function projectConfigAgentsToRuntimeAgents(config: ProjectConfigSummary): Agent[] {
   const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
   const defaultName = config.default_agent ?? config.open_code_default_agent;
   if (!defaultName) return agents;
@@ -143,3 +143,7 @@ export function resolveComposerAgent(input: {
   // what the send carries.
   return { selected: selectable[0].name, disabled: false, reason: 'first_accessible' };
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `projectConfigAgentsToRuntimeAgents`. Removed in the next major. */
+export const projectConfigAgentsToOpenCodeAgents = projectConfigAgentsToRuntimeAgents;

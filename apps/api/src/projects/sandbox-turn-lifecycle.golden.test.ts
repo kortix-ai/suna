@@ -73,7 +73,7 @@ const OWNER = {
 
 const ENDED_TURN = {
   token: 'turn-token',
-  opencodeSessionId: 'ses_root',
+  runtimeSessionId: 'ses_root',
   messageId: 'msg_turn_1',
   startedAtMs: 1_700_000_000_000,
 };
@@ -90,7 +90,7 @@ const REAPER_CAUSE = {
   message: 'The sandbox stopped unexpectedly while this turn was running.',
 };
 
-const IDENTITY = { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' };
+const IDENTITY = { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' };
 
 beforeEach(() => {
   executed = [];
@@ -232,7 +232,7 @@ describe('golden SQL: runtime adoption', () => {
       [{ ...OWNER, accepted: true, turn_message_id: 'msg_adopt' }],
     ];
     await adoptRuntimeSandboxTurn('sb-1', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_adopt',
     });
     expect(executed).toMatchSnapshot();
@@ -241,7 +241,7 @@ describe('golden SQL: runtime adoption', () => {
   test('adoptRuntimeSandboxTurn refuses a message the ledger already knows', async () => {
     executeResults = [[{ known: true, open: false }]];
     await adoptRuntimeSandboxTurn('sb-1', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_adopt',
     });
     expect(executed).toMatchSnapshot();

@@ -100,7 +100,7 @@ export function staleRuntimeWakeReason(
   const metadata = sandboxMetadata(row);
   // An active repair is progress: never park a session the platform is fixing.
   //
-  // This is the same rule `staleOpencodeReadyReason` carries (#7954), and this
+  // This is the same rule `staleRuntimeReadyReason` carries (#7954), and this
   // is its SECOND call site — a session open has two clocks that park, and
   // guarding one of them fixed one of the two failure shapes. The budgets are
   // structurally incompatible without this line: the wake fence is
