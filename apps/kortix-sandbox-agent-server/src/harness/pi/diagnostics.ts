@@ -1,52 +1,58 @@
 /**
  * `/kortix/health`, `/kortix/diag` and `/kortix/logs` for a pi session.
  *
- * The health shape keeps every field the control plane reads for OpenCode:
- * `opencode` carries the runtime state (the API's readiness readers key on
- * `opencode === 'ok'`), `opencode_session_id` the root. `harness: 'pi'`
- * names what is actually answering.
+ * Health is pi's closed `harness` block; `routes/kortix/health.ts` adds the
+ * host facts, the pre-W3 flat fields the API still reads, and `runtimeReady`.
  */
-import type { HarnessDiagnosticsContext, HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'
-import { readHostHealth } from '../shared/host-health'
+import type { HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'
 import { daemonLogFilePath } from '@/lib/log/logger'
 import { tailFile } from '@/lib/log/log-tail'
 import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import type { PiBootState } from './boot-state'
+import type { PiConfigReleases } from './config-release'
 import type { PiRuntime } from './runtime'
+import { PI_HARNESS_VERSION } from './version'
 
 // `startError` reads the runtime even before start() resolves: `runtime()` is
 // null until then, and a failed start must still surface as boot_error.
-export function createPiDiagnosticsService(runtime: () => PiRuntime | null, startError: () => string | null): HarnessDiagnosticsService {
+export function createPiDiagnosticsService(
+  runtime: () => PiRuntime | null,
+  startError: () => string | null,
+  releases: Pick<PiConfigReleases, 'report' | 'sourceCommit'>,
+): HarnessDiagnosticsService {
   return {
+    // Subagents (the `task` tool) are native; rewind, compact, commands, fork,
+    // MCP, todo, shell and the harness's own terminal client are not yet
+    // (pi/surface.ts answers them 501 `feature_not_supported`).
+    capabilities: ['session.subagents'],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
-      const host = await readHostHealth(context)
       const rt = runtime()
       const state = rt?.getState() ?? 'down'
       const initialSessionReady = !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-      const initialSessionError = bootState.initialOpenCodeSessionError ?? null
-      const startFailure = startError()
-      const runtimeReady = host.repo_ready && !bootState.repoMaterializationError && !initialSessionError && !startFailure && state === 'ok' && initialSessionReady
-      const status = runtimeReady ? 'ok' : bootState.repoMaterializationError || initialSessionError || startFailure ? 'error' : state
+      const error = bootState.initialOpenCodeSessionError ?? startError() ?? bootState.auditRelayError ?? null
       const probe = query.turn !== undefined && rt ? rt.turnProbe(query.turn.messageId || null) : null
+      const model = rt?.selectedModel()
+      // The same read the `config` block reports, so `ready` never disagrees with it.
+      const config = releases.report()
       return {
-        ...host,
-        daemon: 'ok',
-        status,
-        runtimeReady,
-        opencode: state,
-        opencode_pid: null,
-        opencode_port: null,
-        compiled_runtime: false,
-        compiled_runtime_format: null,
-        compiled_runtime_source_sha: null,
-        model: rt?.selectedModel() ? `${rt.selectedModel()!.providerID}/${rt.selectedModel()!.modelID}` : null,
-        // Which pi extensions loaded, and why any package did not (not installed, load error).
-        extensions: rt?.extensionStatus() ?? null,
-        ...(probe ? { turn_in_flight: probe.inFlight, turn_end: probe.end, turn_orphaned_prompt: probe.orphanedPrompt } : {}),
-        boot_error: bootState.repoMaterializationError ?? initialSessionError ?? startFailure,
-        opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
-        opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
+        harness: {
+          id: 'pi',
+          version: PI_HARNESS_VERSION,
+          state,
+          ready: !error && state === 'ok' && config.proven && initialSessionReady,
+          error,
+          session: { id: bootState.initialOpenCodeSessionId ?? null, required: !!bootState.initialOpenCodeSessionRequired },
+          turn: probe ? { in_flight: probe.inFlight, end: probe.end, orphaned_prompt: probe.orphanedPrompt } : null,
+          details: {
+            model: model ? `${model.providerID}/${model.modelID}` : null,
+            // Which pi extensions loaded, and why any package did not (not installed, load error).
+            extensions: rt?.extensionStatus() ?? null,
+          },
+        },
+        config,
+        // The running release's source commit, for API readers that predate `config`.
+        configDirSha: releases.sourceCommit(),
       }
     },
     async report(context, tail) {

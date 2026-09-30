@@ -1,5 +1,6 @@
 import { requireOpenCodeConfig, type OpenCodeConfig } from './config'
-import { ConvergeBusyError, configReleaseReport, convergeConfigRelease } from './config-release'
+import { ConvergeBusyError } from '@/services/config-release/release'
+import { configReleaseReport, convergeConfigRelease } from './config-release'
 import {
   cachedManagedModels,
   configuredKortixProviderModelIds,

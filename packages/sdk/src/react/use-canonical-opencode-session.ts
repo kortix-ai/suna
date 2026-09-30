@@ -8,7 +8,7 @@ import {
   resolveSessionPin,
   writePersistedSessionPin,
 } from './initial-session-pin';
-import { useOpenCodeSessions, type Session } from './use-opencode-sessions';
+import { useRuntimeSessions, type Session } from './use-opencode-sessions';
 import { useProjectSession } from './use-project-session';
 
 // SSR-safe: `localStorage` does not exist on the server, and reading it
@@ -43,11 +43,11 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 
 /** Back-compat no-op: the pin is server-owned now, so there's no client guard to
  *  clear. Kept exported because the session page still calls it on teardown. */
-export function clearOpencodeEnsureGuard(): void {
+export function clearRuntimeEnsureGuard(): void {
   /* no-op */
 }
 
-export interface CanonicalOpenCodeSession {
+export interface CanonicalRuntimeSession {
   /** The authoritative pinned root id (server-managed), or null while resolving. */
   rootSessionId: string | null;
   /**
@@ -66,7 +66,7 @@ export interface CanonicalOpenCodeSession {
   error: unknown;
 }
 
-export function useCanonicalOpenCodeSession(params: {
+export function useCanonicalRuntimeSession(params: {
   projectId: string;
   sessionId: string;
   /** The pin POST /start resolved server-side this render (preferred source). */
@@ -75,9 +75,9 @@ export function useCanonicalOpenCodeSession(params: {
   initialPin?: string | null;
   /** Do not list runtime sessions before this session owns the runtime. */
   listRuntimeSessions?: boolean;
-}): CanonicalOpenCodeSession {
+}): CanonicalRuntimeSession {
   const { projectId, sessionId, pinFromStart, initialPin, listRuntimeSessions = true } = params;
-  const sessionsQuery = useOpenCodeSessions(listRuntimeSessions);
+  const sessionsQuery = useRuntimeSessions(listRuntimeSessions);
 
   // The Kortix session row carries the authoritative, server-managed pin — used
   // as a fallback when /start's value isn't in this render's props yet.
@@ -99,7 +99,10 @@ export function useCanonicalOpenCodeSession(params: {
   const projectSessionQuery = useProjectSession(projectId, sessionId, {
     enabled: !pinFromStart && !initialPin,
   });
-  const networkPin = projectSessionQuery.data?.opencode_session_id ?? null;
+  const networkPin =
+    projectSessionQuery.data?.runtime_session_id ??
+    projectSessionQuery.data?.opencode_session_id ??
+    null;
 
   // T6 — a synchronous local mirror of the persisted pin, so a cold
   // mount (no /start response yet, no host-warm `initialPin`) can still
@@ -147,3 +150,11 @@ export function useCanonicalOpenCodeSession(params: {
     error: sessionsQuery.error ?? null,
   };
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `CanonicalRuntimeSession`. Removed in the next major. */
+export type CanonicalOpenCodeSession = CanonicalRuntimeSession;
+/** @deprecated Renamed to `clearRuntimeEnsureGuard`. Removed in the next major. */
+export const clearOpencodeEnsureGuard = clearRuntimeEnsureGuard;
+/** @deprecated Renamed to `useCanonicalRuntimeSession`. Removed in the next major. */
+export const useCanonicalOpenCodeSession = useCanonicalRuntimeSession;

@@ -63,6 +63,12 @@ export class AmbiguousSecretGrantError extends Error {
  *     KEY is an AmbiguousSecretGrantError — a deliberate list naming both is a
  *     misconfiguration, not something to silently resolve.
  */
+/** Sort key among values of one KEY: a value narrowed to and shared with this
+ *  session's person (`audience: 'in'`) before one shared with everyone. */
+export function secretAudienceRank(audience: ResolvedProjectSecret['audience']): number {
+  return audience === 'in' ? 0 : 1;
+}
+
 export function resolveGrantedSecretSelection(
   rows: ResolvedProjectSecret[],
   grant: string[] | 'all' | undefined,
@@ -84,7 +90,11 @@ export function resolveGrantedSecretSelection(
 
   const env: Record<string, string> = {};
   const selected: ResolvedProjectSecret[] = [];
-  for (const [key, candidates] of byKey) {
+  for (const [key, all] of byKey) {
+    // A value shared with this session's person outranks one shared with
+    // everyone (secret-audience.ts); only the best rank competes below.
+    const best = Math.min(...all.map((c) => secretAudienceRank(c.audience)));
+    const candidates = all.filter((c) => secretAudienceRank(c.audience) === best);
     if (candidates.length === 1) {
       env[key] = candidates[0]!.value;
       selected.push(candidates[0]!);

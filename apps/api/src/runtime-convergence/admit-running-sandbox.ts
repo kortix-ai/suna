@@ -25,7 +25,7 @@ import { resolveDesiredRelease } from '../config-releases/desired';
 import { sandboxOpencodeEndpoint } from '../projects/opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../projects/sandbox-fetch';
 import { admitSandboxForSession } from './admit-sandbox';
-import type { RuntimeAdmissionVerdict } from './admission';
+import { runtimeAdmissionEnforced, type RuntimeAdmissionVerdict } from './admission';
 
 export interface AdmitRunningSandboxInput {
   externalId: string;
@@ -97,11 +97,13 @@ export async function admitRunningSandbox(
       {
         releaseId: () => deps.resolveReleaseId(input),
         onRefused: (event) => {
-          logger.error('[runtime-convergence] admission refused — box replaced, not used', {
-            session_id: input.sessionId,
-            failed_check: event.failedCheck,
-            cause: event.cause,
-          });
+          const enforced = runtimeAdmissionEnforced();
+          logger[enforced ? 'error' : 'warn'](
+            enforced
+              ? '[runtime-convergence] admission refused — box replaced, not used'
+              : '[runtime-convergence] admission refused — observe only, box still used',
+            { session_id: input.sessionId, failed_check: event.failedCheck, cause: event.cause },
+          );
         },
       },
     );

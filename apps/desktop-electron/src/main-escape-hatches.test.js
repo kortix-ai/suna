@@ -32,9 +32,19 @@ describe('desktop escape hatches', () => {
     expect(back).not.toContain('.goBack()');
   });
 
-  test('Home reloads the configured app URL', () => {
+  test('Home reloads the app home (the last project, via the site root)', () => {
     const home = main.slice(main.indexOf('function goHome('));
-    expect(home).toContain('navigateMainWindow(instanceStore.appUrl())');
+    expect(home).toContain('navigateMainWindow(instanceStore.homeUrl())');
+  });
+
+  test('Go ▸ Copy Current URL copies the page URL through the shared builder', () => {
+    expect(main).toMatch(
+      /id: 'kx-go-copy-url',\s*label: 'Copy Current URL',\s*accelerator: 'CommandOrControl\+L',\s*enabled: false,\s*click: \(\) => \{\s*const url = copyableUrl\(mainWindow\?\.webContents\.getURL\(\) \|\| ''\);\s*if \(url\) clipboard\.writeText\(url\);/,
+    );
+    // The enabled state follows every committed navigation, like the other
+    // Go items.
+    expect(main).toContain("menu.getMenuItemById('kx-go-copy-url')");
+    expect(main).toMatch(/copyUrl\.enabled = copyableUrl\(url\) !== null/);
   });
 
   test('a renderer that dies offers Reload instead of leaving an empty window', () => {

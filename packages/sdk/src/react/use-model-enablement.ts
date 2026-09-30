@@ -44,7 +44,7 @@ export function useModelEnablement(projectId: string | null | undefined): UseMod
   // invalidates — see `qk.project.modelPicker`'s doc comment.
   const queryKey = useMemo(() => qk.project.modelPicker(projectId ?? ''), [projectId]);
   // The session picker does NOT render from the query above — it renders from
-  // the gateway provider list (`useOpenCodeProviders`), a SECOND cache of the
+  // the gateway provider list (`useRuntimeProviders`), a SECOND cache of the
   // same `/model-picker` payload with `staleTime: Infinity`. Every write must
   // restamp + invalidate it too, or the composer keeps offering the
   // pre-toggle list until a hard refresh.

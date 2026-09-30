@@ -115,6 +115,7 @@ mock.module('../channels/teams/binding', () => ({
   teamsChannelCtx: (tenantId: string, conversationId: string) => ({ platform: 'teams', teamId: tenantId, channelId: conversationId }),
 }));
 mock.module('../projects/review-items', () => ({ getReviewItemById: async () => null, applyVerdict: async () => {} }));
+mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 
 const realModelChoice = await import('../channels/teams/model-choice');
 mock.module('../channels/teams/model-choice', () => ({
@@ -309,6 +310,18 @@ describe('/unbind, /home and /projects', () => {
     await handleTeamsCommand({ command: parseTeamsCommand('/unbind')!, activity: message('/unbind') as never, tenantId: TENANT, projectId: PROJECT, projectScoped: true });
     expect(deletes).toBe(0);
     expect(posted[0]).toContain('nothing to unbind');
+  });
+
+  test('a per-project bot never binds the conversation to another project', async () => {
+    // `/use` there bound the conversation elsewhere; the bot then declined it
+    // for good, and `/unbind` (above) is refused on a per-project bot.
+    for (const text of ['/use Second', '/switch Second', '/projects']) {
+      await handleTeamsCommand({ command: parseTeamsCommand(text)!, activity: message(text) as never, tenantId: TENANT, projectId: PROJECT, projectScoped: true });
+    }
+    expect(inserts).toEqual([]);
+    expect(actorChecks).toEqual([]);
+    expect(posted).toHaveLength(3);
+    for (const card of posted) expect(card).toContain('always runs its own project');
   });
 
   test('/projects lists each project with Open and Use, the current one marked', async () => {

@@ -30,9 +30,15 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import {
+  SessionStarterMark,
+  useSessionStarter,
+} from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionsEmptyState } from '@/features/workspace/project-sessions/sessions-empty-state';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
@@ -53,24 +59,22 @@ import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import {
-  SessionStarterMark,
-  useSessionStarter,
-} from '@/features/workspace/project-sessions/session-starter-mark';
+import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
-import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
-import { firstChatHref, isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
 import {
-  selectExpandedIds,
-  useSessionExpandedStore,
-} from '@/stores/session-expanded-store';
+  firstChatHref,
+  isFirstChatRequested,
+  useFirstChatPending,
+} from '@/stores/first-chat-store';
+import { selectExpandedIds, useSessionExpandedStore } from '@/stores/session-expanded-store';
 import {
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
+  selectLabelFilters,
   selectOrderMode,
   selectSourceFilters,
   selectStatusFilters,
@@ -80,22 +84,18 @@ import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/sessio
 import {
   listChangeRequests,
   restartProjectSession,
-  stopProjectSession,
   sessionParentId,
+  stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import {
-  qk,
-  useProjectSession,
-  useProjectSessions,
-  useSessionChildren,
-} from '@kortix/sdk/react';
+import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
   FolderSimpleIcon as MetaFolder,
   PencilSimpleIcon,
+  TagIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
@@ -105,7 +105,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { useAuth } from '@/features/providers/auth-provider';
+import {
+  childSessionHref,
+  readRuntimeSessionParam,
+} from '@/features/session/tool/tools/session-spawn-urls';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -140,10 +143,10 @@ const SESSION_MENU_TRIGGER_CLASS = cn(
   // punched a translucent hole in it and the title bled through: the washed-out
   // grey square in the bug report, with a muted `⋯` floating in it.
   //
-  // `sidebar-accent` is surface-2, one opaque step above the row's own
-  // surface-1 (`--card`) on hover. The square reads as lifted, stays a solid
+  // `sidebar-row-control` is one opaque step above the row's own fill
+  // (`--sidebar-row`) on hover, in both themes. The square reads as lifted, stays a solid
   // mask, and needs no pseudo-element to stack a tint above a fill.
-  'hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent',
+  'hover:bg-sidebar-row-control data-[state=open]:bg-sidebar-row-control',
   // Full contrast once the pointer is on it — the glyph is a control now, not a
   // marker.
   'hover:text-foreground data-[state=open]:text-foreground',
@@ -216,7 +219,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
-  const activeOpenCodeSessionId = searchParams.get('oc');
+  const activeRuntimeSessionId = readRuntimeSessionParam(searchParams);
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
@@ -227,6 +230,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
+  const [sessionToLabel, setSessionToLabel] = useState<ProjectSession | null>(null);
+  // The Labels facet filters server-side: each section asks for sessions that
+  // carry every selected label, so a match on an unloaded page still shows.
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId));
+  const labels = labelFilters.length > 0 ? labelFilters : undefined;
 
   // Paged, not the whole inventory. This list is the always-mounted poller: it
   // re-fetches every 5s while any loaded row is still provisioning, so its cost
@@ -250,6 +258,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // sections below, each its own paged query.
     parent: 'root',
     startedBy: 'me',
+    labels,
     refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
         sessions: loaded,
@@ -268,12 +277,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const sharedQuery = useProjectSessions(projectId, {
     parent: 'root',
     startedBy: 'others',
+    labels,
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
   const automatedQuery = useProjectSessions(projectId, {
     parent: 'root',
     startedBy: 'automated',
+    labels,
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
@@ -371,6 +382,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     isError,
     totalCount: sessions.length + otherCount,
     visibleCount: visibleSessions.length + visibleOtherCount,
+    serverFiltered: labels !== undefined,
   });
 
   // One session row, its opencode sub-sessions, and (top-level rows only) the
@@ -389,7 +401,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         <ProjectSessionRow
           session={session}
           href={href}
-          isActive={!!isActive && !activeOpenCodeSessionId}
+          isActive={!!isActive && !activeRuntimeSessionId}
           isSwitching={isSwitchTarget}
           onNavigate={(event) => {
             if (switchingToSessionId && session.session_id === activeSessionId) {
@@ -413,10 +425,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onDelete={(id, label) => setSessionToDelete({ id, label })}
           onShare={(s) => setSessionToShare(s)}
           onRename={(id, name) => setSessionToRename({ id, name })}
+          onEditLabels={setSessionToLabel}
           onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
           isRestarting={
-            restartMutation.isPending &&
-            restartMutation.variables?.sessionId === session.session_id
+            restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
           }
           onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
           isStopping={
@@ -449,8 +461,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               />
             )}
             {children.map((child) => {
-              const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-              const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+              const childHref = childSessionHref(href, child.id);
+              const activeChild = !!isActive && activeRuntimeSessionId === child.id;
               return (
                 <div key={child.id} className="relative h-8">
                   <SubAgentConnector />
@@ -477,7 +489,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       </div>
     );
   };
-
 
   // Everything below the header — skeleton, error, empty, or the grouped list.
   // Kept as one function so the header stays mounted across all four states
@@ -572,22 +583,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           </SessionListSection>
         ))}
         {hasNextPage && (
-          <div className="px-2 pt-1 pb-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
-              disabled={isFetchingNextPage}
-              onClick={() => fetchNextPage()}
-            >
-              {/* A failed page keeps the rows above it; the button is the retry. */}
-              {isFetchingNextPage
-                ? t('loadingMore')
-                : isFetchNextPageError
-                  ? t('retry')
-                  : t('loadMore')}
-            </Button>
-          </div>
+          <ShowMoreButton
+            loading={isFetchingNextPage}
+            failed={isFetchNextPageError}
+            label={t('loadMore')}
+            onClick={() => fetchNextPage()}
+          />
         )}
         <StarterSection
           title={t('startedBy.others')}
@@ -607,12 +608,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         />
         {/* The first chat never leaves. It is the oldest conversation, so it
             sits at the very bottom — after the last page, never mid-list. */}
-        {firstChatPending && !hasNextPage && !sharedQuery.hasNextPage && !automatedQuery.hasNextPage && (
-          <FirstChatRow
-          projectId={projectId}
-          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
-        />
-        )}
+        {firstChatPending &&
+          !hasNextPage &&
+          !sharedQuery.hasNextPage &&
+          !automatedQuery.hasNextPage && (
+            <FirstChatRow
+              projectId={projectId}
+              isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+            />
+          )}
       </FadedScrollArea>
     );
   }
@@ -638,6 +642,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         }
       />
 
+      <SessionLabelsModal
+        projectId={projectId}
+        session={sessionToLabel}
+        open={!!sessionToLabel}
+        onOpenChange={(open) => !open && setSessionToLabel(null)}
+      />
       <RenameSessionModal
         projectId={projectId}
         sessionId={sessionToRename?.id ?? null}
@@ -899,7 +909,10 @@ function SpawnedToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      <CaretRightIcon aria-hidden className={cn('size-3 transition-transform', open && 'rotate-90')} />
+      <CaretRightIcon
+        aria-hidden
+        className={cn('size-3 transition-transform', open && 'rotate-90')}
+      />
       {count}
     </span>
   );
@@ -981,7 +994,7 @@ function ShowMoreButton({
     <Button
       variant="ghost"
       size="sm"
-      className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
+      className="text-muted-foreground hover:text-foreground h-8 w-full justify-start px-2 text-xs"
       disabled={loading}
       onClick={onClick}
     >
@@ -1058,6 +1071,7 @@ interface ProjectSessionRowProps {
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
+  onEditLabels: (session: ProjectSession) => void;
   onRestart: (sessionId: string, label: string) => void;
   isRestarting: boolean;
   onStop: (sessionId: string, label: string) => void;
@@ -1083,6 +1097,7 @@ function ProjectSessionRow({
   onDelete,
   onShare,
   onRename,
+  onEditLabels,
   onRestart,
   isRestarting,
   onStop,
@@ -1165,7 +1180,7 @@ function ProjectSessionRow({
         <Badge
           variant="transparent"
           size="tabular"
-          className="bg-sidebar-accent/60 text-muted-foreground"
+          className="bg-sidebar-row-control/60 text-muted-foreground"
         >
           {childCount}
         </Badge>
@@ -1217,20 +1232,17 @@ function ProjectSessionRow({
         >
           {showStarter && (
             <span
-              className="flex size-4 shrink-0 items-center justify-center"
+              className="flex size-5 shrink-0 items-center justify-center"
               data-session-source="true"
               data-session-starter={starter.type}
             >
-              <Hint
-                side="top"
-                label={t('startedByLabel', { name: starter.label })}
-              >
-                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+              <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
+                <span className="text-muted-foreground/70 flex size-5 items-center justify-center">
                   <SessionStarterMark
                     session={session}
                     starter={starter}
                     iconClassName="size-3"
-                    avatarClassName="size-4"
+                    avatarClassName="size-5"
                   />
                 </span>
               </Hint>
@@ -1256,8 +1268,8 @@ function ProjectSessionRow({
           '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
           '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
           isActive
-            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--card)]'
-            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--card)]',
+            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--sidebar-row)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--sidebar-row)]',
         )}
       >
         {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
@@ -1273,6 +1285,7 @@ function ProjectSessionRow({
             createdAt={session.created_at}
             source={source}
             changeRequests={changeRequests}
+            labels={session.labels}
             projectId={session.project_id}
           >
             {sessionLink}
@@ -1338,6 +1351,13 @@ function ProjectSessionRow({
             >
               <PencilSimpleIcon />
               {tI18nComplete.raw('text3064d79a295c')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onEditLabels(session))}
+            >
+              <TagIcon />
+              {t('labels.menu')}
             </DropdownMenuItem>
             {/* Shown to everyone who can open the session: the owner
                 changes access here, everyone else reads who has it. */}
@@ -1407,8 +1427,8 @@ function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: bo
         '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         isActive
-          ? 'bg-card text-sidebar-foreground'
-          : 'text-muted-foreground hover:bg-card hover:text-sidebar-foreground',
+          ? 'bg-sidebar-row text-sidebar-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-row hover:text-sidebar-foreground',
       )}
     >
       <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">

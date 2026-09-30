@@ -11,12 +11,10 @@ import {
   CheckIcon as Check,
   CaretUpDownIcon as ChevronsUpDown,
   CopyIcon as Copy,
-  DownloadIcon as Download,
   GitBranchIcon as FolderGit2,
   QuestionIcon as HelpCircle,
   InfoIcon as Info,
   EnvelopeIcon as Mail,
-  DotsThreeIcon as MoreHorizontal,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
   GearSixIcon as Settings,
@@ -76,14 +74,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { EmojiPicker, type EmojiSelection } from '@/components/ui/emoji-picker';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
@@ -116,13 +106,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section as BrandSection } from '@/components/ui/section';
 import { SectionCard } from '@/components/ui/section-card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
@@ -170,6 +153,8 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { WALLPAPER_DOWNLOADS, type WallpaperDownload } from '@/lib/wallpaper-downloads';
 import {
   PlugsConnectedIcon as Cable,
+  CloudIcon,
+  GithubLogoIcon,
   PlugIcon as Plug,
   RadioIcon as Radio,
   LightningIcon as Zap,
@@ -178,6 +163,8 @@ import {
 import { CardSection } from './card-section';
 import { ConfettiSection } from './confetti-section';
 import { IconsSection } from './icons-section';
+import { DropdownDemos, SelectDemos } from './menu-demos';
+import { Download } from '@/features/icon/icons/download';
 
 // Filtered once at module load — the catalog is a static constant, so the
 // per-render filter().map() chain in the JSX collapses to a single map.
@@ -588,6 +575,7 @@ const TOC_SECTIONS = [
       { id: 'comp-input', label: 'Input' },
       { id: 'comp-textarea', label: 'Textarea' },
       { id: 'comp-select', label: 'Select' },
+      { id: 'comp-dropdown', label: 'Dropdown' },
       { id: 'comp-checkbox', label: 'Checkbox Group' },
       { id: 'comp-switch', label: 'Switch' },
       { id: 'comp-toggle', label: 'Toggle' },
@@ -596,7 +584,6 @@ const TOC_SECTIONS = [
       { id: 'comp-dialog', label: 'Dialog' },
       { id: 'comp-modal', label: 'Modal' },
       { id: 'comp-sheet', label: 'Sheet' },
-      { id: 'comp-dropdown', label: 'Dropdown' },
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-emoji-picker', label: 'Emoji Picker' },
@@ -2245,31 +2232,25 @@ export default function BrandPage() {
                     )}
                   </ComponentDesc>
                   <DemoContainer>
-                    <div className="max-w-xs">
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line1259JsxAttrPlaceholderSelectAFramework',
-                            )}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="next">
-                            {tI18nHardcoded.raw('i18nComplete.text30b7f8482c4f')}
-                          </SelectItem>
-                          <SelectItem value="remix">
-                            {tI18nHardcoded.raw('i18nComplete.textf84ed4375595')}
-                          </SelectItem>
-                          <SelectItem value="astro">
-                            {tI18nHardcoded.raw('i18nComplete.textc490cce12748')}
-                          </SelectItem>
-                          <SelectItem value="nuxt">
-                            {tI18nHardcoded.raw('i18nComplete.texte88c87da3c8c')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <SelectDemos />
+                  </DemoContainer>
+                </div>
+
+                <div id="comp-dropdown" className="mb-12">
+                  <ComponentLabel>
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}
+                  </ComponentLabel>
+                  <ComponentDesc>
+                    {tHardcodedUi.raw(
+                      'appHomeDesignSystemPage.line1528JsxTextContextualMenuTriggeredByAButtonRowsStay',
+                    )}{' '}
+                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
+                    {tHardcodedUi.raw(
+                      'appHomeDesignSystemPage.line1529JsxTextEvenDestructiveOnesLikeDeleteOrRemoveRed',
+                    )}
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <DropdownDemos />
                   </DemoContainer>
                 </div>
 
@@ -2519,7 +2500,7 @@ export default function BrandPage() {
                           {tI18nHardcoded.raw('i18nComplete.texteabbf3abaf8d')}
                         </p>
                         <Tabs defaultValue="outline-account">
-                          <TabsList animate="none">
+                          <TabsList animate="none" className="bg-transparent p-0">
                             <TabsTrigger variant="outline" value="outline-account">
                               {tI18nHardcoded.raw('i18nComplete.text7e1b0d5641f2')}
                             </TabsTrigger>
@@ -2576,6 +2557,33 @@ export default function BrandPage() {
                           <TabsContent value="underline-settings">
                             <p className="text-muted-foreground mt-2 text-sm">
                               {tI18nHardcoded.raw('i18nComplete.text54b316135c61')}
+                            </p>
+                          </TabsContent>
+                        </Tabs>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs">
+                          {tI18nHardcoded.raw('i18nComplete.textd71a0c697cce')}
+                        </p>
+                        <Tabs defaultValue="segmented-managed" className="max-w-sm">
+                          <TabsList variant="segmented" className="w-full">
+                            <TabsTrigger value="segmented-managed">
+                              <CloudIcon />
+                              {tI18nHardcoded.raw('i18nComplete.text9ae34cca7f2d')}
+                            </TabsTrigger>
+                            <TabsTrigger value="segmented-github">
+                              <GithubLogoIcon />
+                              GitHub
+                            </TabsTrigger>
+                          </TabsList>
+                          <TabsContent value="segmented-managed">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {tI18nHardcoded.raw('i18nComplete.textafecbae4466e')}
+                            </p>
+                          </TabsContent>
+                          <TabsContent value="segmented-github">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {tI18nHardcoded.raw('i18nComplete.text6cb9b40da8a0')}
                             </p>
                           </TabsContent>
                         </Tabs>
@@ -2754,50 +2762,6 @@ export default function BrandPage() {
                         </div>
                       </SheetContent>
                     </Sheet>
-                  </DemoContainer>
-                </div>
-
-                <div id="comp-dropdown" className="mb-12">
-                  <ComponentLabel>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}
-                  </ComponentLabel>
-                  <ComponentDesc>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1528JsxTextContextualMenuTriggeredByAButtonRowsStay',
-                    )}{' '}
-                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1529JsxTextEvenDestructiveOnesLikeDeleteOrRemoveRed',
-                    )}
-                  </ComponentDesc>
-                  <DemoContainer>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline">
-                          <MoreHorizontal className="size-4" />
-                          {tI18nHardcoded.raw('i18nComplete.textd0db8b5e364b')}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuLabel>
-                          {tI18nHardcoded.raw('i18nComplete.textff8059dc6752')}
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.text464c4ffd019e')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.text02cdaabfca80')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.text66f4804ee23d')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </DemoContainer>
                 </div>
 

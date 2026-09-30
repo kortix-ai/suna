@@ -174,7 +174,7 @@ function sorted(set: Iterable<string>): string[] {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(45);
+    expect(PROJECT_LEAVES.length).toBe(46);
     expect(ACCOUNT_LEAVES.length).toBe(29);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
@@ -241,14 +241,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(45);
+    expect(fold.totalCount).toBe(46);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(45);
+    expect(fold.selectedCount).toBe(46);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

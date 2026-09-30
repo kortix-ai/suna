@@ -79,6 +79,13 @@ mock.module('./credentials/codex', () => ({
   },
 }));
 
+let opencodeResult: { access: string } | null = null;
+const actualOpencode = await import('./credentials/opencode-console');
+mock.module('./credentials/opencode-console', () => ({
+  ...actualOpencode,
+  refreshRefusedOpencodeLogin: async () => opencodeResult,
+}));
+
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
 
@@ -332,6 +339,15 @@ describe('POST /refresh-credential', () => {
     expect(refreshCalls).toEqual([{
       projectId: PROJECT, accountId: ACCOUNT, userId: USER, sessionId: 'session-1', secretId: SECRET, failedKeySha256: 'a'.repeat(64),
     }]);
+  });
+
+  test('an OpenCode Console login returns only its new token', async () => {
+    refreshCalls.length = 0;
+    opencodeResult = { access: 'fresh-console-token' };
+    const res = await post(body);
+    opencodeResult = null;
+    expect(await res.json()).toEqual({ descriptor: { apiKey: 'fresh-console-token' } });
+    expect(refreshCalls).toEqual([]);
   });
 
   test('a login that cannot be refreshed answers null', async () => {

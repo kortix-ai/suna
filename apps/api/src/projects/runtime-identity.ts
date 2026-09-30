@@ -6,7 +6,7 @@ import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
-import { settleOpenSandboxTurns } from './sandbox-turn-lifecycle';
+import { settleOpenSandboxTurns } from './session-turn-ledger';
 import type { StopReason } from './stop-reason';
 import {
   STAMPED_RUNTIME_FAILURE_STOP_REASONS,

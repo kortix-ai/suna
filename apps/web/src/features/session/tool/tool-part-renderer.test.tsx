@@ -1,3 +1,4 @@
+import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -129,11 +130,10 @@ describe('ToolPartRenderer forwards the open props to every branch', () => {
  * prompt, an ask — puts its own question on screen. Drop it and the prompt is
  * behind a shut row the reader has no reason to click, so the run just stalls.
  * Nine body-bearing renderers were dropping it when this half of the rule went
- * in: `context-info`, `dcp-compress`, `dcp-distill`, `dcp-prune`,
- * `project-create`, `project-select`, `session-message`, `session-stats`,
- * `task-list`. Two of those (`session-message`, `task-list`) hardcode
- * `defaultOpen={false}` — which is exactly the shape where the latch is the
- * only way the row ever opens by itself.
+ * in, among them `project-create`, `project-select`, `session-message`,
+ * `session-stats`, `task-list`. Two of those (`session-message`, `task-list`)
+ * hardcode `defaultOpen={false}` — which is exactly the shape where the latch
+ * is the only way the row ever opens by itself.
  */
 describe('every BasicTool with a body accepts defaultOpen and forceOpen', () => {
   const toolDir = join(__dirname, 'tools');

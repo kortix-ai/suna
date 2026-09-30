@@ -70,7 +70,7 @@ agents:
     secrets: all                  # renamed from v1's "env" — names | "all" | "none"
     kortix_permissions: all        # project.* permission names | "all" | "none"
     skills: all                    # names of skills/* this agent may invoke | "all" | "none"
-    repository_access: false       # optional — true (default) | false
+    repository_access: false       # optional — false (default) | true
 \`\`\`
 
 That's the WHOLE block. No \`description\`, no \`model\`, no \`opencode:\` sub-object, no \`mode\`/\`temperature\`/\`permission\`/\`prompt\` — every one of those is a hard schema error if authored here. They already live in the \`.md\` and are staying there.

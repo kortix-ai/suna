@@ -4,7 +4,7 @@ import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 import { configureKortix } from '../core/http/config';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
-import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
+import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const originalFetch = globalThis.fetch;
@@ -34,9 +34,9 @@ async function settle() {
 async function mount(params: { pinFromStart?: string | null; initialPin?: string | null }) {
   configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let value!: ReturnType<typeof useCanonicalOpenCodeSession>;
+  let value!: ReturnType<typeof useCanonicalRuntimeSession>;
   function Probe() {
-    value = useCanonicalOpenCodeSession({
+    value = useCanonicalRuntimeSession({
       projectId: 'p1',
       sessionId: SESSION_ID,
       listRuntimeSessions: false,

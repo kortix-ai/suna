@@ -1,6 +1,6 @@
 'use client';
 
-import { WarningIcon as AlertTriangle, DownloadIcon as Download } from '@phosphor-icons/react';
+import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import { PowerPointViewer, type ViewerTheme } from 'pptx-react-viewer';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 
 import { getPptxI18n } from './pptx-i18n';
 import './pptx-viewer.css';
+import { Download } from '@/features/icon/icons/download';
 
 interface PptxRendererProps {
   content?: string | null;

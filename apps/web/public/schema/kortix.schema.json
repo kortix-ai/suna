@@ -820,6 +820,7 @@
                           "project.trigger.fire",
                           "project.gateway.logs.read",
                           "project.gateway.spend.read",
+                          "project.usage.read",
                           "project.gateway.budget.set",
                           "project.gateway.keys.manage",
                           "project.agent.read",
@@ -898,6 +899,7 @@
                           "project.trigger.fire",
                           "project.gateway.logs.read",
                           "project.gateway.spend.read",
+                          "project.usage.read",
                           "project.gateway.budget.set",
                           "project.gateway.keys.manage",
                           "project.agent.read",
@@ -1086,6 +1088,19 @@
           "harnesses": {
             "type": "object",
             "properties": {
+              "opencode": {
+                "type": "object",
+                "properties": {
+                  "plugins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
               "pi": {
                 "type": "object",
                 "properties": {
@@ -1175,9 +1190,37 @@
                 "enabled": {
                   "type": "boolean"
                 },
+                "tools": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "boolean"
+                  }
+                },
                 "sandbox": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "network_egress": {
+                  "type": "object",
+                  "required": [
+                    "version",
+                    "default",
+                    "rules"
+                  ],
+                  "properties": {
+                    "version": {
+                      "const": 1
+                    },
+                    "default": {
+                      "const": "deny"
+                    },
+                    "rules": {
+                      "type": "array",
+                      "maxItems": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
                 },
                 "connectors": {
                   "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
@@ -1296,6 +1339,7 @@
                           "project.trigger.fire",
                           "project.gateway.logs.read",
                           "project.gateway.spend.read",
+                          "project.usage.read",
                           "project.gateway.budget.set",
                           "project.gateway.keys.manage",
                           "project.agent.read",
@@ -1364,6 +1408,7 @@
                           "project.trigger.fire",
                           "project.gateway.logs.read",
                           "project.gateway.spend.read",
+                          "project.usage.read",
                           "project.gateway.budget.set",
                           "project.gateway.keys.manage",
                           "project.agent.read",
@@ -1425,6 +1470,26 @@
                 "harnesses": {
                   "type": "object",
                   "properties": {
+                    "opencode": {
+                      "type": "object",
+                      "properties": {
+                        "plugins": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                          }
+                        },
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "pi": {
                       "type": "object",
                       "properties": {
@@ -2466,6 +2531,21 @@
                 }
               ]
             }
+          },
+          "pi": {
+            "type": "object",
+            "properties": {
+              "config_dir": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                  "pattern": "^/|(^|/)\\.\\.($|/)"
+                },
+                "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
+              }
+            },
+            "additionalProperties": true,
+            "description": "Pi native config directory (defaults to harnesses/pi, then .kortix/pi)."
           },
           "channels": false
         },

@@ -3,7 +3,9 @@
 
 const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|.well-known|oauth-authorization-server",
+  "GET|.well-known|oauth-protected-resource",
   "GET|.well-known|oauth-protected-resource|v1|mcp",
+  "GET|.well-known|openid-configuration",
   "GET|health",
   "GET|health|live",
   "GET|health|ready",
@@ -566,6 +568,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|sessions|:sessionId|events",
   "PUT|v1|projects|:projectId|sessions|:sessionId|model",
   "GET|v1|projects|:projectId|sessions|:sessionId|open-bundle",
+  "PUT|v1|projects|:projectId|sessions|:sessionId|presence",
   "GET|v1|projects|:projectId|sessions|:sessionId|previews",
   "GET|v1|projects|:projectId|sessions|:sessionId|prompts",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts",

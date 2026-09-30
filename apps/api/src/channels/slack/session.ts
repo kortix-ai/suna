@@ -284,6 +284,18 @@ export async function createOrJoinThreadSession(input: {
   });
   const createModel = start.model;
 
+  // A retired selection with no usable replacement cannot complete a turn.
+  // Fail once here instead of starting a session that repeatedly reports the
+  // same model error on every mention in this thread.
+  if (start.unavailableModel) {
+    if (claimKey) await releaseThreadCreate(claimKey);
+    if (handle) await finalizeTurn(handle, {
+      title: 'Model unavailable',
+      error: `The model \`${start.unavailableModel}\` isn't available. Pick another model with \`/kortix models\`, then send your message again.`,
+    });
+    return;
+  }
+
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',
     project,
@@ -513,7 +525,10 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent)
   const user = event.user ?? 'unknown';
   const text = event.text ?? '';
   return [
-    `New message from ${user} in the same Slack thread:`,
+    `New message from ${user} in Slack channel ${event.channel ?? 'unknown'}, thread ${event.thread_ts ?? event.ts ?? 'unknown'}:`,
+    'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
+    `slack send --channel ${event.channel ?? 'unknown'} --thread ${event.thread_ts ?? event.ts ?? 'unknown'} --text "<answer>"`,
+    'The live slack step stream follows this message automatically. Do not use the session\'s original Slack thread for this reply.',
     '',
     text,
     renderFileInfo(event),

@@ -22,6 +22,10 @@ describe('tool registry lookup order', () => {
     ['prefix/task', ['task', 'prefix/task'], 'prefix/task'],
     ['prefix/task', ['task'], 'task'],
     ['other', ['task'], undefined],
+    // A prefixed name takes the LONGEST registered suffix, whatever the registration order.
+    ['oc-trigger-list', ['list', 'trigger-list'], 'trigger-list'],
+    ['oc-task_list', ['list', 'task-list'], 'task-list'],
+    ['kortix_pty-read', ['read', 'pty-read'], 'pty-read'],
   ])('%s resolves against %j', (name, keys, expected) => {
     expect(resolveRegisteredKey(toolRegistryCandidates(name), keys)).toBe(expected);
   });

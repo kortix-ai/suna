@@ -208,6 +208,8 @@ mock.module('../channels/teams-api', () => ({
   },
 }));
 
+const realCards = await import('../channels/teams/cards');
 mock.module('../channels/teams/cards', () => ({
   buildNoticeCard: (t: string) => ({ type: 'AdaptiveCard', body: [{ type: 'TextBlock', text: t }] }),
+  withoutPostbackActions: realCards.withoutPostbackActions,
 }));

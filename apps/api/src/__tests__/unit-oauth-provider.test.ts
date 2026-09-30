@@ -239,7 +239,7 @@ describe('POST /v1/oauth/token', () => {
     }
   });
 
-  test('refresh_token rotates: old pair revoked, new pair issued with the same scopes', async () => {
+  test('refresh_token rotates: old refresh token consumed, old access token live, new pair issued with the same scopes', async () => {
     requestedClientId = CONFIDENTIAL_ID;
     const code = seedCode(CONFIDENTIAL_ID, 'https://client.example/callback', ['profile', 'kortix']);
     const first = await (
@@ -257,7 +257,9 @@ describe('POST /v1/oauth/token', () => {
     expect(second.access_token).not.toBe(first.access_token);
     expect(second.scope).toBe('profile kortix');
     expect(refreshTokens[0].revokedAt).toBeInstanceOf(Date);
-    expect(accessTokens[0].revokedAt).toBeInstanceOf(Date);
+    // #8314: rotation leaves the old access token live until its own expiry,
+    // so a sibling process or a lost refresh response keeps working.
+    expect(accessTokens[0].revokedAt).toBeUndefined();
     expect(accessTokens[1].revokedAt).toBeUndefined();
   });
 });

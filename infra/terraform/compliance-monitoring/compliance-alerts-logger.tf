@@ -36,7 +36,11 @@ data "aws_iam_policy_document" "compliance_alerts_logger_assume_role" {
 resource "aws_iam_role" "compliance_alerts_logger" {
   name               = "KortixComplianceAlertsLogger"
   assume_role_policy = data.aws_iam_policy_document.compliance_alerts_logger_assume_role.json
-  tags               = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "compliance_alerts_logger" {

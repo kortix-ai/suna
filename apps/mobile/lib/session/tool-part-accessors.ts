@@ -118,7 +118,7 @@ export function partStreamingInput(part: ToolPart): Record<string, unknown> {
       return parsed;
     }
   }
-  return input ?? EMPTY_RECORD;
+  return (part as ToolPart & { input?: Record<string, unknown> }).input || input || EMPTY_RECORD;
 }
 
 export function partInput(part: ToolPart): Record<string, unknown> {

@@ -178,6 +178,23 @@ describe('boot config composition', () => {
     expect(models['openai/gpt-5.5']).toBeDefined()
   })
 
+  // Dev 2026-09-30: the builder swapped a new daemon into an image baked
+  // before the managed limit changed, so OpenCode booted with the old
+  // 1,048,576 window and compacted only at the context wall.
+  test('a baked managed record takes the bundled limit, and keeps every other field', async () => {
+    globalThis.fetch = (async () => new Response('down', { status: 500 })) as unknown as typeof fetch
+    const [id, bundled] = Object.entries(BUNDLED_MANAGED_MODELS)[0]!
+    const raw = await buildOpencodeConfigContent({
+      ...GATEWAY,
+      KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
+        models: { [id]: { name: 'Baked Name', provider: 'kortix', limit: { context: 1_048_576, output: 16_384 } } },
+      }),
+    } as NodeJS.ProcessEnv)
+    const model = providerModels(raw)[id] as { name?: string; limit?: unknown }
+    expect(model.limit).toEqual(bundled.limit)
+    expect(model.name).toBe('Baked Name')
+  })
+
   // THE latency regression this design exists to prevent. `opencode serve`
   // cannot bind its port until this config is written, so the build must never
   // wait on a fetch — a hanging gateway has to cost ~0ms, not the fetch budget.

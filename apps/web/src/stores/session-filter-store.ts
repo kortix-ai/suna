@@ -102,6 +102,8 @@ interface State {
   ownerFiltersByProject: Record<string, string[]>;
   /** Access facet: who else can open the session. Sessions page only. */
   accessFiltersByProject: Record<string, SessionAccessFilter[]>;
+  /** Label facet: the list asks the server for sessions carrying EVERY label. */
+  labelFiltersByProject: Record<string, string[]>;
 }
 
 /**
@@ -122,6 +124,7 @@ interface Actions {
     surface?: SessionViewSurface,
   ) => void;
   toggleOwnerFilter: (projectId: string, ownerKey: string, surface?: SessionViewSurface) => void;
+  toggleLabelFilter: (projectId: string, label: string, surface?: SessionViewSurface) => void;
   toggleAccessFilter: (
     projectId: string,
     value: SessionAccessFilter,
@@ -148,40 +151,34 @@ interface Actions {
  * Each returns either a stored reference or the frozen `EMPTY_LIST`/a scalar —
  * never a fresh array — because zustand v5 compares snapshots with `Object.is`.
  */
-export const selectGroupMode =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): SessionGroupMode =>
-    readScoped(s.groupByProject, projectId, surface) ?? DEFAULT_SESSION_GROUP_MODE;
+function makeScopedSelector<K extends keyof State>(
+  mapKey: K,
+  fallback: State[K][string] | typeof EMPTY_LIST,
+  inherit = true,
+) {
+  // TypeScript cannot narrow `s[mapKey]` through the generic K, so the map is
+  // named as the record it always is.
+  return (projectId: string, surface: SessionViewSurface = 'sidebar') =>
+    (s: State): State[K][string] =>
+      readScoped(s[mapKey] as Record<string, State[K][string]>, projectId, surface, inherit) ??
+      (fallback as State[K][string]);
+}
 
-export const selectOrderMode =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): SessionOrderMode =>
-    readScoped(s.orderByProject, projectId, surface) ?? 'activity';
+export const selectGroupMode = makeScopedSelector('groupByProject', DEFAULT_SESSION_GROUP_MODE);
 
-export const selectStatusFilters =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): readonly SessionStatusFilter[] =>
-    readScoped(s.statusFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+export const selectOrderMode = makeScopedSelector('orderByProject', 'activity');
 
-export const selectSourceFilters =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): readonly SessionSourceFilter[] =>
-    readScoped(s.sourceFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+export const selectStatusFilters = makeScopedSelector('statusFiltersByProject', EMPTY_LIST);
 
-export const selectOwnerFilters =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): readonly string[] =>
-    readScoped(s.ownerFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+export const selectSourceFilters = makeScopedSelector('sourceFiltersByProject', EMPTY_LIST);
 
-export const selectAccessFilters =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): readonly SessionAccessFilter[] =>
-    readScoped(s.accessFiltersByProject, projectId, surface) ?? EMPTY_LIST;
+export const selectOwnerFilters = makeScopedSelector('ownerFiltersByProject', EMPTY_LIST);
 
-export const selectHiddenSections =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): readonly string[] =>
-    readScoped(s.hiddenSectionsByProject, projectId, surface) ?? EMPTY_LIST;
+export const selectAccessFilters = makeScopedSelector('accessFiltersByProject', EMPTY_LIST);
+
+export const selectLabelFilters = makeScopedSelector('labelFiltersByProject', EMPTY_LIST);
+
+export const selectHiddenSections = makeScopedSelector('hiddenSectionsByProject', EMPTY_LIST);
 
 /**
  * The ONE piece of state a surface does not inherit: every section starts
@@ -194,14 +191,18 @@ export const selectHiddenSections =
  * already shut, which is the opposite of what a page you navigated to in order
  * to see everything should do.
  */
-export const selectCollapsedSections =
-  (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-  (s: State): readonly string[] =>
-    readScoped(s.collapsedSectionsByProject, projectId, surface, false) ?? EMPTY_LIST;
+export const selectCollapsedSections = makeScopedSelector('collapsedSectionsByProject', EMPTY_LIST, false);
 
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'labelFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
+        return (projectId: string, value: State[K][string][number], surface: SessionViewSurface = 'sidebar') => {
+          const current = readScoped(get()[mapKey], projectId, surface, inherit) ?? [];
+          set({ [mapKey]: { ...get()[mapKey], [scopeKey(projectId, surface)]: toggleValue(current, value) } });
+        };
+      }
+      return {
       // Every write below targets THIS surface's key, while the `readScoped`
       // reads still inherit the sidebar's value until that first write lands —
       // so a toggle on the page starts from what the page is showing, and ends
@@ -228,48 +229,19 @@ export const useSessionFilterStore = create<State & Actions>()(
       },
 
       statusFiltersByProject: {},
-      toggleStatusFilter: (projectId, value, surface = 'sidebar') => {
-        const current = readScoped(get().statusFiltersByProject, projectId, surface) ?? [];
-        set({
-          statusFiltersByProject: {
-            ...get().statusFiltersByProject,
-            [scopeKey(projectId, surface)]: toggleValue(current, value),
-          },
-        });
-      },
+      toggleStatusFilter: toggleScoped('statusFiltersByProject'),
 
       sourceFiltersByProject: {},
-      toggleSourceFilter: (projectId, value, surface = 'sidebar') => {
-        const current = readScoped(get().sourceFiltersByProject, projectId, surface) ?? [];
-        set({
-          sourceFiltersByProject: {
-            ...get().sourceFiltersByProject,
-            [scopeKey(projectId, surface)]: toggleValue(current, value),
-          },
-        });
-      },
+      toggleSourceFilter: toggleScoped('sourceFiltersByProject'),
 
       ownerFiltersByProject: {},
-      toggleOwnerFilter: (projectId, ownerKey, surface = 'sidebar') => {
-        const current = readScoped(get().ownerFiltersByProject, projectId, surface) ?? [];
-        set({
-          ownerFiltersByProject: {
-            ...get().ownerFiltersByProject,
-            [scopeKey(projectId, surface)]: toggleValue(current, ownerKey),
-          },
-        });
-      },
+      toggleOwnerFilter: toggleScoped('ownerFiltersByProject'),
 
       accessFiltersByProject: {},
-      toggleAccessFilter: (projectId, value, surface = 'sidebar') => {
-        const current = readScoped(get().accessFiltersByProject, projectId, surface) ?? [];
-        set({
-          accessFiltersByProject: {
-            ...get().accessFiltersByProject,
-            [scopeKey(projectId, surface)]: toggleValue(current, value),
-          },
-        });
-      },
+      toggleAccessFilter: toggleScoped('accessFiltersByProject'),
+
+      labelFiltersByProject: {},
+      toggleLabelFilter: toggleScoped('labelFiltersByProject'),
 
       resetFilters: (projectId, surface = 'sidebar') => {
         const key = scopeKey(projectId, surface);
@@ -278,34 +250,18 @@ export const useSessionFilterStore = create<State & Actions>()(
           sourceFiltersByProject: { ...get().sourceFiltersByProject, [key]: [] },
           ownerFiltersByProject: { ...get().ownerFiltersByProject, [key]: [] },
           accessFiltersByProject: { ...get().accessFiltersByProject, [key]: [] },
+          labelFiltersByProject: { ...get().labelFiltersByProject, [key]: [] },
         });
       },
 
       hiddenSectionsByProject: {},
-      toggleSectionHidden: (projectId, sectionId, surface = 'sidebar') => {
-        const current = readScoped(get().hiddenSectionsByProject, projectId, surface) ?? [];
-        set({
-          hiddenSectionsByProject: {
-            ...get().hiddenSectionsByProject,
-            [scopeKey(projectId, surface)]: toggleValue(current, sectionId),
-          },
-        });
-      },
+      toggleSectionHidden: toggleScoped('hiddenSectionsByProject'),
 
       collapsedSectionsByProject: {},
-      toggleSectionCollapsed: (projectId, sectionId, surface = 'sidebar') => {
-        // `inherit: false` to match `selectCollapsedSections` — a toggle must
-        // start from the list this surface is actually rendering, never the
-        // sidebar's.
-        const current =
-          readScoped(get().collapsedSectionsByProject, projectId, surface, false) ?? [];
-        set({
-          collapsedSectionsByProject: {
-            ...get().collapsedSectionsByProject,
-            [scopeKey(projectId, surface)]: toggleValue(current, sectionId),
-          },
-        });
-      },
+      // `inherit: false` to match `selectCollapsedSections` — a toggle must
+      // start from the list this surface is actually rendering, never the
+      // sidebar's.
+      toggleSectionCollapsed: toggleScoped('collapsedSectionsByProject', false),
       collapseAllSections: (projectId, sectionIds, surface = 'sidebar') => {
         set({
           collapsedSectionsByProject: {
@@ -314,7 +270,8 @@ export const useSessionFilterStore = create<State & Actions>()(
           },
         });
       },
-    }),
+      };
+    },
     {
       name: STORAGE_KEY,
       // v1 dropped the client-side 'mine' source facet (the server's
@@ -342,6 +299,7 @@ export const useSessionFilterStore = create<State & Actions>()(
         collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
         ownerFiltersByProject: pruneProjects(state.ownerFiltersByProject),
         accessFiltersByProject: pruneProjects(state.accessFiltersByProject),
+        labelFiltersByProject: pruneProjects(state.labelFiltersByProject),
       }),
     },
   ),

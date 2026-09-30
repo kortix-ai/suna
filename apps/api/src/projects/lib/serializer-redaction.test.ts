@@ -18,7 +18,7 @@ const row = (over: Record<string, unknown> = {}) =>
     sandboxProvider: 'daytona',
     sandboxId: 's',
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'running',
     error: null,
@@ -63,6 +63,7 @@ describe('serializeSession redaction', () => {
     expect(out.name).toBeNull();
     expect(out.custom_name).toBeNull();
     expect(out.opencode_sessions).toEqual([]);
+    expect(out.runtime_sessions).toEqual([]);
   });
 
   test('an ACCESSIBLE row keeps its title and conversation tree', () => {
@@ -72,6 +73,15 @@ describe('serializeSession redaction', () => {
     ) as Record<string, unknown>;
     expect(out.name).toBe('Migrating the payroll database');
     expect(out.opencode_sessions).toEqual([{ id: 'oc1' }]);
+    expect(out.runtime_sessions).toEqual([{ id: 'oc1' }]);
+  });
+
+  test('the runtime session id is served under its neutral name too', () => {
+    const out = serializeSession(row({ runtimeSessionId: 'ses_root' }), {
+      canAccess: true,
+    }) as Record<string, unknown>;
+    expect(out.runtime_session_id).toBe('ses_root');
+    expect(out.opencode_session_id).toBe('ses_root');
   });
 
   test('defensive redaction preserves only non-content identity fields', () => {

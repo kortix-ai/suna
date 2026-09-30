@@ -1,11 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import type {
-  HarnessActionResult,
-  HarnessAttachmentService,
-  HarnessQueryFactory,
-  HarnessQueryService,
-  HarnessReadResult,
-} from '../contract/queries'
+import type { HarnessAttachmentService, HarnessQueryFactory, HarnessQueryService } from '../contract/queries'
 import type { OpenCodeConfig } from './config'
 import { requireOpenCodeConfig } from './config'
 import type { Opencode } from './lifecycle'
@@ -15,7 +9,6 @@ import { configureRuntimeState, runtimeStateStore, type RuntimeStateStore } from
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { OPENCODE_EVENT_RECOVERY } from './event-bus'
 import { readOpenCodeSessionPin } from './runtime-state'
-import { observeRequestedTurn, resolveTurnObservationIdentity } from './diagnostics'
 import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import { OPENCODE_HOME } from './paths'
 import {
@@ -31,11 +24,10 @@ import { logger } from '@/lib/log/logger'
 interface OpenCodeQueryOptions {
   db?: OpencodeDb
   state?: RuntimeStateStore
-  pinnedSessionId?: () => string | null
   sidecarDir?: string | null
 }
 
-/** Native reads and actions. HTTP controllers consume the returned data only. */
+/** Native reads. HTTP controllers consume the returned data only. */
 export function createOpenCodeQueryService(
   opencode: Opencode,
   options: OpenCodeQueryOptions = {},
@@ -44,7 +36,6 @@ export function createOpenCodeQueryService(
     bind({ cfg }) {
       const native = requireOpenCodeConfig(cfg)
       const db = options.db ?? new OpencodeDb(opencodeDbPath(OPENCODE_HOME))
-      const pinnedSessionId = options.pinnedSessionId ?? readOpenCodeSessionPin
       const state =
         options.state ??
         runtimeStateStore() ??
@@ -52,10 +43,10 @@ export function createOpenCodeQueryService(
           opencode,
           cfg: native,
           db,
-          pinnedSessionId,
+          pinnedSessionId: readOpenCodeSessionPin,
           daemonBuild: async () => (await runtimeConvergenceReport()).build,
         })
-      return bindQueries(opencode, native, db, state, pinnedSessionId, options.sidecarDir)
+      return bindQueries(opencode, native, db, state, options.sidecarDir)
     },
   }
 }
@@ -65,65 +56,9 @@ function bindQueries(
   cfg: OpenCodeConfig,
   db: OpencodeDb,
   state: RuntimeStateStore,
-  pinnedSessionId: () => string | null,
   sidecarDir: string | null | undefined,
 ): HarnessQueryService {
   const workspace = () => cfg.workspace || process.env.KORTIX_WORKSPACE || '/workspace'
-  const read = async (path: string, extraQuery = ''): Promise<HarnessReadResult> => {
-    const qs = [`directory=${encodeURIComponent(workspace())}`, extraQuery].filter(Boolean).join('&')
-    try {
-      const res = await fetch(`${opencode.getInternalUrl()}${path}?${qs}`, {
-        signal: AbortSignal.timeout(15_000),
-      })
-      const text = await res.text()
-      return {
-        ok: true,
-        upstreamStatus: res.status,
-        contentType: res.headers.get('content-type') ?? 'application/json',
-        text,
-      }
-    } catch (err) {
-      return {
-        ok: false,
-        body: { error: 'opencode read failed', detail: err instanceof Error ? err.message : String(err) },
-      }
-    }
-  }
-  const act = async (
-    kind: string,
-    sessionId: string | null,
-    path: string,
-    payload: unknown,
-  ): Promise<HarnessActionResult> => {
-    const dir = `directory=${encodeURIComponent(workspace())}`
-    try {
-      const res = await fetch(`${opencode.getInternalUrl()}${path}${path.includes('?') ? '&' : '?'}${dir}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload ?? {}),
-        signal: AbortSignal.timeout(15_000),
-      })
-      const text = await res.text()
-      if (!res.ok) {
-        logger.warn('[kortix-runtime] act forward failed', { kind, path, status: res.status })
-        return {
-          ok: false,
-          reason: res.status === 404 ? 'not-found' : 'upstream',
-          body: { ok: false, kind, error: `opencode ${res.status}`, detail: text.slice(0, 300) },
-        }
-      }
-      return { ok: true, body: { ok: true, kind, session_id: sessionId, seq: kortixEventBus().headSeq } }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      logger.warn('[kortix-runtime] act threw', { kind, path, error: message })
-      return { ok: false, reason: 'upstream', body: { ok: false, kind, error: message } }
-    }
-  }
-  const noSession = (): HarnessActionResult => ({
-    ok: false,
-    reason: 'no-session',
-    body: { ok: false, error: 'no opencode session pinned' },
-  })
   return {
     readState: () => state.read(),
     async readMessages({ sessionId, limit, before, after, afterSeq }) {
@@ -197,50 +132,6 @@ function bindQueries(
         })
       }
       return { ok: true, body, source, readMs }
-    },
-    readVcsDiff: (mode) => read('/vcs/diff', mode ? `mode=${encodeURIComponent(mode)}` : ''),
-    readCurrentProject: () => read('/project/current'),
-    readConfiguration: () => read('/config'),
-    readSession: (sessionId) => read(`/session/${encodeURIComponent(sessionId)}`),
-    readTodo: (sessionId) => read(`/session/${encodeURIComponent(sessionId)}/todo`),
-    pinnedSessionId,
-    replyPermission: ({ id, reply, message, sessionId }) =>
-      act('permission', sessionId, `/permission/${encodeURIComponent(id)}/reply`, {
-        reply,
-        ...(typeof message === 'string' ? { message } : {}),
-      }),
-    replyQuestion: ({ id, answers, sessionId }) =>
-      act('question', sessionId, `/question/${encodeURIComponent(id)}/reply`, { answers }),
-    rejectQuestion: ({ id, sessionId }) =>
-      act('question', sessionId, `/question/${encodeURIComponent(id)}/reject`, {}),
-    stopSession: async (sessionId) =>
-      sessionId ? act('stop', sessionId, `/session/${encodeURIComponent(sessionId)}/abort`, {}) : noSession(),
-    revertSession: async ({ sessionId, messageId, partId }) =>
-      sessionId
-        ? act('revert', sessionId, `/session/${encodeURIComponent(sessionId)}/revert`, {
-            messageID: messageId,
-            ...(typeof partId === 'string' ? { partID: partId } : {}),
-          })
-        : noSession(),
-    unrevertSession: async (sessionId) =>
-      sessionId
-        ? act('revert', sessionId, `/session/${encodeURIComponent(sessionId)}/unrevert`, {})
-        : noSession(),
-    async observeTurn({ messageId, sessionId }) {
-      const identity = resolveTurnObservationIdentity(sessionId, messageId, pinnedSessionId())
-      const readStart = performance.now()
-      const turn = await observeRequestedTurn(opencode.getInternalUrl(), workspace(), identity)
-      return {
-        body: {
-          message_id: messageId,
-          opencode_session_id: identity.sessionId,
-          in_flight: turn.inFlight,
-          end: turn.end,
-          orphaned_prompt: turn.orphanedPrompt ?? false,
-          seq: kortixEventBus().headSeq,
-        },
-        readMs: performance.now() - readStart,
-      }
     },
     events: {
       get epoch() {

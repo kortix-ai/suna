@@ -450,6 +450,9 @@ export async function loadProjectConfig(
   );
   const skills = await scanSkills(project, repoFiles, skillDirs(manifest));
   const commands = await scanCommands(project, repoFiles, commandRe);
+  // v2 makes the manifest's declared default authoritative. Legacy projects
+  // keep reading OpenCode's native default_agent for backwards compatibility.
+  const defaultAgent = loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent');
 
   const signals = {
     manifest: Boolean(manifestRaw),
@@ -474,10 +477,8 @@ export async function loadProjectConfig(
     }),
     env: envRequirements(manifest),
     open_code_raw: openCodeRaw,
-    // v2 makes the manifest's declared default authoritative. Legacy projects
-    // keep reading OpenCode's native default_agent for backwards compatibility.
-    open_code_default_agent:
-      loadedAgents.defaultAgent ?? parseJsonCString(openCodeRaw, 'default_agent'),
+    default_agent: defaultAgent,
+    open_code_default_agent: defaultAgent,
     agent_discovery,
     agents,
     skills,

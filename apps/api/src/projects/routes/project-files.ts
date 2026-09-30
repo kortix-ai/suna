@@ -58,7 +58,7 @@ projectsApp.openapi(
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'));
+    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'), { freshOnMiss: true });
   } catch (error) {
     console.warn('[projects] repo file listing unavailable', {
       projectId,
@@ -254,7 +254,7 @@ projectsApp.openapi(
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   try {
-    const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
+    const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref, { freshOnMiss: true });
     return c.json({ path, ref, content });
   } catch (error) {
     if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);

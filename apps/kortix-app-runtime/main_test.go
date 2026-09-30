@@ -324,3 +324,24 @@ func TestRunStopsChildrenWhenContextEnds(t *testing.T) {
 		t.Fatal("run did not stop after context cancellation")
 	}
 }
+
+// The access log is readable through `kortix apps logs`. Request headers carry
+// credentials the App never owns: the viewer's Kortix token
+// (X-Kortix-App-Viewer-Token), the signed viewer identity, and the provider's
+// ingress token. Caddy redacts only Cookie and Authorization by default.
+func TestCaddyAccessLogDropsRequestHeaders(t *testing.T) {
+	for _, spec := range []appSpec{
+		{Command: []string{"server"}, TargetPort: 3000},
+		{StaticRoot: "/srv"},
+	} {
+		config, err := renderCaddyfile(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, expected := range []string{"format filter {", "wrap json", "request>headers delete"} {
+			if !strings.Contains(config, expected) {
+				t.Fatalf("missing %q in Caddyfile:\n%s", expected, config)
+			}
+		}
+	}
+}

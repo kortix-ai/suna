@@ -128,15 +128,47 @@ const PROVIDER_AUTH_REQUIREMENT_OVERRIDES: Record<string, ProviderAuthRequiremen
   },
 };
 
+/** `opencode-go` → `OPENCODE_GO_API_KEY`: the provider's own key name. */
+export function providerOwnKeyName(providerId: string): string {
+  return `${providerId.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`;
+}
+
+// models.dev gives several providers ONE api-key env var: `opencode` (Zen) and
+// `opencode-go` both list OPENCODE_API_KEY, the four Z.ai/Zhipu offerings list
+// ZHIPU_API_KEY, the regional MiniMax/Moonshot/Alibaba endpoints share theirs.
+// Kortix stores a key under that name, so one key connected every claimant:
+// a Zen key listed Go models, a China key listed international models. Each
+// claimant keeps its own key. The owner keeps the shared name: the provider
+// whose own key name it is, else the shortest id (alphabetical on a tie).
+// Every other claimant uses `providerOwnKeyName`. Secrets stored before this
+// rule moved by migration 20260930220000000_provider_own_key_names.
+const SHARED_KEY_OWNER = (() => {
+  const claimants = new Map<string, string[]>();
+  for (const { id, env } of providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>) {
+    if (env.length !== 1) continue;
+    claimants.set(env[0]!, [...(claimants.get(env[0]!) ?? []), id]);
+  }
+  const owner = new Map<string, string>();
+  for (const [envVar, ids] of claimants) {
+    if (ids.length < 2) continue;
+    const sorted = [...ids].sort((a, b) => a.length - b.length || a.localeCompare(b));
+    owner.set(envVar, ids.find((id) => providerOwnKeyName(id) === envVar) ?? sorted[0]!);
+  }
+  return owner;
+})();
+
 /**
  * The auth requirement Kortix actually enforces for a catalog provider.
  * Falls back to a single method requiring every var in `provider.env`
- * (unchanged behavior) unless an override above corrects it.
+ * (unchanged behavior) unless an override above corrects it. A key name
+ * several providers claim belongs to one of them (see SHARED_KEY_OWNER).
  */
 export function providerAuthRequirement(provider: CatalogProviderLike): ProviderAuthRequirement {
   const override = PROVIDER_AUTH_REQUIREMENT_OVERRIDES[provider.id];
   if (override) return override;
   const env = provider.env ?? [];
+  const owner = env.length === 1 ? SHARED_KEY_OWNER.get(env[0]!) : undefined;
+  if (owner && owner !== provider.id) return { methods: [{ envVars: [providerOwnKeyName(provider.id)] }] };
   return { methods: env.length > 0 ? [{ envVars: env }] : [] };
 }
 
@@ -483,7 +515,10 @@ export interface ManagedModel {
   // Effort values the upstream accepts, probed live through the gateway. They
   // become the thinking control's variants. Wins over the models.dev record.
   reasoningOptions?: CatalogReasoningOption[];
-  // A conservative OpenCode output ceiling inside the upstream context window.
+  // What OpenCode sizes the conversation by. It compacts when a step used
+  // `context - min(output, 32_000)` tokens, so `context` sits below the
+  // smallest window a serving route accepts: enough for one more step to fit.
+  // managed.test.ts holds the measured windows and the margin.
   limit: { context: number; output: number };
   // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
   openrouterProvider?: Record<string, unknown>;
@@ -545,7 +580,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
     pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
     openrouterEndpointPricing: { 'coreweave/fp8': { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 } },
-    tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 16_384 },
     reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
     openrouterProvider: {
       only: ['coreweave/fp8'],
@@ -563,7 +598,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
       'decart/fp4': { inputPerMillion: 0.1275, cachedInputPerMillion: 0.0255, outputPerMillion: 0.425 },
       'coreweave/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
     },
-    tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    tier: 'fast', vision: true, limit: { context: 1_000_000, output: 16_384 },
     // `none` returns 400 upstream, so GLM has no off switch.
     reasoningOptions: [{ type: 'effort', values: ['low', 'high', 'max'] }],
     openrouterProvider: {
@@ -579,7 +614,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'openrouter/moonshotai/kimi-k3',
     pricing: { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 },
     openrouterEndpointPricing: { 'fireworks/us': { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 } },
-    tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    tier: 'flagship', vision: true, limit: { context: 1_000_000, output: 16_384 },
     openrouterProvider: {
       only: ['fireworks/us'],
       ...OPENROUTER_POOL_PRIVACY,
@@ -627,6 +662,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   moonshotai: 'Moonshot',
   'moonshotai-cn': 'Moonshot',
   opencode: 'OpenCode Zen',
+  'opencode-go': 'OpenCode Go',
   kortix: 'Kortix',
   firmware: 'Firmware',
   // models.dev's canonical provider id is `amazon-bedrock` (see

@@ -74,6 +74,10 @@ flow(
           [{ prompt: 'x' }, 'Say when the reminder fires'],
           [{ prompt: 'x', at: '2020-01-01T00:00:00Z' }, 'at must be in the future'],
           [{ every: '1h' }, 'prompt is required'],
+          [{ prompt: 'x', in: '99999999999d' }, 'in must be at most 366d'],
+          [{ prompt: 'x', in: 1e30 }, 'in must be at most 366d'],
+          [{ prompt: 'x', at: '9999-12-31T00:00:00Z' }, 'must be at most 366d from now'],
+          [{ prompt: 'x', in: '1h', every: '99999999999d' }, 'every must be at most 366d'],
         ] as const) {
           const r = await owner.post(REMINDERS, body, { params });
           r.status(400);

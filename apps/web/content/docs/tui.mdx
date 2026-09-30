@@ -247,6 +247,10 @@ seam as [`kortix sessions connect`](/docs/cli).
 The first attach is slow because of that one download. A session that is not
 running is started first, and a cold sandbox boot is minutes, not seconds.
 
+A session on the pi harness has no opencode server to attach to. Its runtime
+does not list `session.attach`, so the composer offers no `/attach`, and
+`Alt+O` or `a` shows a toast instead. `Alt+t` opens a shell in its sandbox.
+
 Leaving opencode is `Ctrl+C` twice **within one second** — `Esc` does not do it,
 and two presses spaced further apart are two separate interrupts that opencode
 ignores. The Kortix TUI repaints as soon as opencode exits.
