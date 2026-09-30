@@ -14,13 +14,17 @@ import { ToolPartRenderer } from './tool-part-renderer';
  *
  * They pin the behavior the later phases restructure, and must pass before and
  * after them: a registered tool part renders its REGISTERED component, an
- * unknown tool part falls back to `GenericTool`. Importing the renderer runs
- * its bottom side-effect `import '@/features/session/tool/tools/register'`, so
- * every assertion below drives the real registry — no registration is faked.
+ * unknown tool part falls back to `GenericTool`. The test drives the real
+ * registry — it imports the real register module directly (phase 2 moves the
+ * renderer's own side-effect import to the app entry) and asserts membership
+ * before dispatch; no registration is faked. The registered component's own
+ * standalone rendering is covered by `agent-status-tool.test.tsx`.
  *
  * Harness: static markup (this app has no DOM in tests — no jsdom,
  * no happy-dom, no react-test-renderer), same as `tool-part-renderer.stale.test.tsx`.
  */
+
+import './tools/register';
 
 const agentStatusPart = {
   type: 'tool',
@@ -78,25 +82,6 @@ describe('ToolPartRenderer dispatches a registered tool to its registered compon
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('Draft the outline');
     expect(html).toContain('Fill the sections');
-  });
-
-  test('the dispatched markup is what the registered component itself renders', () => {
-    const Registered = ToolRegistry.get('agent_status');
-    if (!Registered) throw new Error('agent_status is not registered');
-
-    const direct = renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-          <ToolSurfaceContext.Provider value="panel">
-            <Registered part={agentStatusPart} sessionId="s-synthetic" defaultOpen />
-          </ToolSurfaceContext.Provider>
-        </NextIntlClientProvider>
-      </QueryClientProvider>,
-    );
-
-    expect(direct).toContain('Agent status');
-    expect(direct).toContain('2 tasks');
-    expect(direct).toContain('Draft the outline');
   });
 });
 
