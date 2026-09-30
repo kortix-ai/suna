@@ -1,0 +1,1680 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`golden SQL: turn authority statements beginSandboxTurn grants and inserts the delivering ledger row 1`] = `
+[
+  
+"
+      UPDATE kortix.session_sandboxes s
+         SET metadata = jsonb_set(
+                CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  - 'lifecycleStopClaim',
+               '{activeTurns}',
+                CASE
+    WHEN jsonb_typeof( s.metadata->'activeTurns' ) = 'object' THEN  s.metadata->'activeTurns' 
+    ELSE '{}'::jsonb
+  END  || jsonb_build_object(
+                  turn-token ::text,
+                 jsonb_build_object(
+                   'token',  turn-token ::text,
+                   'state', 'delivering',
+                   'opencodeSessionId',  ses_root ::text,
+                   'messageId',  msg_turn_1 ::text,
+                   'startedAtMs', floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000))),
+               true),
+             deadline_at = GREATEST(
+               s.deadline_at,
+                 2023-11-14T22:13:20.000Z ::timestamptz  + make_interval(secs =>  60 )),
+             updated_at = now()
+      WHERE  s.external_id =  ext-box  
+        AND s.status IN ('active', 'provisioning')
+        AND (
+          s.metadata->'lifecycleStopClaim' IS NULL
+          OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
+          OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
+            <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted"
+,
+  
+"INSERT INTO kortix.session_turns
+            (turn_token, session_id, sandbox_id, project_id, account_id,
+             opencode_session_id, message_id, state, started_at, created_at, updated_at)
+          SELECT  turn-token , owner.session_id, owner.sandbox_id,
+                 owner.project_id, owner.account_id,
+                  ses_root ,  msg_turn_1 , 'delivering',
+                   2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
+            FROM ( SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
+               FROM kortix.session_sandboxes s
+              WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
+                AND s.status IN ('active', 'provisioning')
+                AND (
+                  s.metadata->'activeTurns'-> turn-token  IS NOT NULL
+                  -- The legacy single-record arm every writer still accepts
+                  -- during a rolling deploy. The stop erases it in the same
+                  -- statement, so it gates this INSERT identically.
+                  OR s.metadata->'activeTurn'->>'token' =  turn-token )
+              FOR UPDATE ) owner
+          ON CONFLICT (turn_token) DO NOTHING"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements beginSandboxTurn with no matching box writes one statement 1`] = `
+[
+  
+"
+      UPDATE kortix.session_sandboxes s
+         SET metadata = jsonb_set(
+                CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  - 'lifecycleStopClaim',
+               '{activeTurns}',
+                CASE
+    WHEN jsonb_typeof( s.metadata->'activeTurns' ) = 'object' THEN  s.metadata->'activeTurns' 
+    ELSE '{}'::jsonb
+  END  || jsonb_build_object(
+                  turn-token ::text,
+                 jsonb_build_object(
+                   'token',  turn-token ::text,
+                   'state', 'delivering',
+                   'opencodeSessionId',  ses_root ::text,
+                   'messageId',  msg_turn_1 ::text,
+                   'startedAtMs', floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000))),
+               true),
+             deadline_at = GREATEST(
+               s.deadline_at,
+                 2023-11-14T22:13:20.000Z ::timestamptz  + make_interval(secs =>  60 )),
+             updated_at = now()
+      WHERE  s.external_id =  ext-box  
+        AND s.status IN ('active', 'provisioning')
+        AND (
+          s.metadata->'lifecycleStopClaim' IS NULL
+          OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
+          OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
+            <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements acceptSandboxTurn promotes the token and upserts the ledger row 1`] = `
+[
+  
+"
+    UPDATE kortix.session_sandboxes s
+       SET metadata = CASE
+             WHEN s.metadata->'activeTurns'-> turn-token  IS NOT NULL THEN
+               jsonb_set(
+                 s.metadata,
+                 ARRAY['activeTurns',  turn-token ]::text[],
+                 (s.metadata->'activeTurns'-> turn-token ) || jsonb_strip_nulls(jsonb_build_object(
+                   'state', 'active',
+                   'opencodeSessionId',  ses_root ::text,
+                   'messageId',  msg_turn_1 ::text)),
+                 false)
+             ELSE jsonb_set(
+               s.metadata,
+               '{activeTurn}',
+               (s.metadata->'activeTurn') || jsonb_strip_nulls(jsonb_build_object(
+                 'state', 'active',
+                 'opencodeSessionId',  ses_root ::text,
+                 'messageId',  msg_turn_1 ::text)),
+               false)
+           END,
+           deadline_at = GREATEST(
+             s.deadline_at,
+             now() + make_interval(secs =>  60 )),
+           updated_at = now()
+     WHERE  s.external_id =  ext-box  
+       AND s.status IN ('active', 'provisioning')
+       AND (
+         (s.metadata->'activeTurns'-> turn-token ->>'token' =  turn-token 
+           AND s.metadata->'activeTurns'-> turn-token ->>'state' IN ('delivering', 'active'))
+         OR (s.metadata->'activeTurn'->>'token' =  turn-token 
+           AND s.metadata->'activeTurn'->>'state' IN ('delivering', 'active')))
+    RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
+              coalesce(s.metadata->'activeTurns'-> turn-token ->>'messageId',
+                       s.metadata->'activeTurn'->>'messageId') AS turn_message_id"
+,
+  
+"INSERT INTO kortix.session_turns
+            (turn_token, session_id, sandbox_id, project_id, account_id,
+             opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
+          SELECT  turn-token , owner.session_id, owner.sandbox_id,
+                 owner.project_id, owner.account_id,
+                  ses_root ,  msg_turn_1 ,
+                 'active', now(), now(), now(), now()
+            FROM ( SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
+               FROM kortix.session_sandboxes s
+              WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
+                AND s.status IN ('active', 'provisioning')
+                AND (
+                  s.metadata->'activeTurns'-> turn-token  IS NOT NULL
+                  -- The legacy single-record arm every writer still accepts
+                  -- during a rolling deploy. The stop erases it in the same
+                  -- statement, so it gates this INSERT identically.
+                  OR s.metadata->'activeTurn'->>'token' =  turn-token )
+              FOR UPDATE ) owner
+          ON CONFLICT (turn_token) DO UPDATE SET
+                state = 'active',
+                accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
+                opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
+                message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
+                updated_at = now()
+          WHERE kortix.session_turns.state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements acceptSandboxTurn with no matching record writes one statement 1`] = `
+[
+  
+"
+    UPDATE kortix.session_sandboxes s
+       SET metadata = CASE
+             WHEN s.metadata->'activeTurns'-> turn-token  IS NOT NULL THEN
+               jsonb_set(
+                 s.metadata,
+                 ARRAY['activeTurns',  turn-token ]::text[],
+                 (s.metadata->'activeTurns'-> turn-token ) || jsonb_strip_nulls(jsonb_build_object(
+                   'state', 'active',
+                   'opencodeSessionId',   ::text,
+                   'messageId',   ::text)),
+                 false)
+             ELSE jsonb_set(
+               s.metadata,
+               '{activeTurn}',
+               (s.metadata->'activeTurn') || jsonb_strip_nulls(jsonb_build_object(
+                 'state', 'active',
+                 'opencodeSessionId',   ::text,
+                 'messageId',   ::text)),
+               false)
+           END,
+           deadline_at = GREATEST(
+             s.deadline_at,
+             now() + make_interval(secs =>  60 )),
+           updated_at = now()
+     WHERE  s.external_id =  ext-box  
+       AND s.status IN ('active', 'provisioning')
+       AND (
+         (s.metadata->'activeTurns'-> turn-token ->>'token' =  turn-token 
+           AND s.metadata->'activeTurns'-> turn-token ->>'state' IN ('delivering', 'active'))
+         OR (s.metadata->'activeTurn'->>'token' =  turn-token 
+           AND s.metadata->'activeTurn'->>'state' IN ('delivering', 'active')))
+    RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
+              coalesce(s.metadata->'activeTurns'-> turn-token ->>'messageId',
+                       s.metadata->'activeTurn'->>'messageId') AS turn_message_id"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements abandonSandboxTurn erases the delivering record and settles the ledger 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id, s.session_id, s.project_id, s.account_id,
+             coalesce(s.metadata->'activeTurns'-> turn-token , s.metadata->'activeTurn') AS turn,
+             CASE
+               WHEN s.metadata->'activeTurns'-> turn-token  IS NOT NULL THEN
+                 jsonb_set(
+                   coalesce(s.metadata, '{}'::jsonb),
+                   '{activeTurns}',
+                   coalesce(s.metadata->'activeTurns', '{}'::jsonb) -  turn-token ,
+                   true)
+               ELSE coalesce(s.metadata, '{}'::jsonb) - 'activeTurn'
+             END AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE  s.external_id =  ext-box  
+         AND (
+           (s.metadata->'activeTurns'-> turn-token ->>'token' =  turn-token 
+             AND s.metadata->'activeTurns'-> turn-token ->>'state' = 'delivering')
+           OR (s.metadata->'activeTurn'->>'token' =  turn-token 
+             AND s.metadata->'activeTurn'->>'state' = 'delivering'))
+       FOR UPDATE OF s
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = target.metadata,
+           updated_at = now()
+      FROM target
+     WHERE s.sandbox_id = target.sandbox_id
+    RETURNING target.sandbox_id, target.session_id, target.project_id, target.account_id,
+              target.turn, true AS abandoned"
+,
+  
+"INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         ended_at, created_at, updated_at)
+      VALUES  ( turn-token ,  sess-1 ,  11111111-1111-4111-8111-111111111111 ::uuid,
+           22222222-2222-4222-8222-222222222222 ::uuid,  33333333-3333-4333-8333-333333333333 ::uuid,
+           ses_root ,  msg_turn_1 , 'ended',  abandoned ,
+            ::jsonb,
+            2023-11-14T22:13:20.000Z ::timestamptz ,
+          now(), now(), now()) 
+      ON CONFLICT (turn_token) DO UPDATE SET
+            state = 'ended',
+            end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN  false 
+                THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND  ( kortix.session_turns.end_error  IS NOT NULL
+    AND coalesce( kortix.session_turns.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+               AND NOT  ( EXCLUDED.end_error  IS NOT NULL
+    AND coalesce( EXCLUDED.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
+            ended_at = now(),
+            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
+                                           EXCLUDED.opencode_session_id),
+            message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
+            updated_at = now()
+      WHERE kortix.session_turns.state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements clearSandboxTurn with a reaper cause ends the ledger row 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id, s.session_id, s.project_id, s.account_id,
+             coalesce( CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns'-> turn-token ,  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurn') AS turn,
+             CASE
+               WHEN  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns'-> turn-token  IS NOT NULL THEN
+                 jsonb_set(
+                    CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ,
+                   '{activeTurns}',
+                   coalesce( CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns', '{}'::jsonb) -  turn-token ,
+                   true)
+               ELSE  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  - 'activeTurn'
+             END AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.sandbox_id =  sb-1 ::uuid
+         AND s.status = 'active'
+         AND (
+            CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns'-> turn-token ->>'token' =  turn-token 
+           OR  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurn'->>'token' =  turn-token )
+       FOR UPDATE OF s
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = target.metadata,
+           deadline_at = CASE
+             WHEN target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  90 ))
+           END,
+           updated_at = now()
+      FROM target
+     WHERE s.sandbox_id = target.sandbox_id
+    RETURNING target.sandbox_id, target.session_id, target.project_id, target.account_id,
+              target.turn, true AS cleared"
+,
+  
+"INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         ended_at, created_at, updated_at)
+      VALUES  ( turn-token ,  sess-1 ,  11111111-1111-4111-8111-111111111111 ::uuid,
+           22222222-2222-4222-8222-222222222222 ::uuid,  33333333-3333-4333-8333-333333333333 ::uuid,
+            ,   , 'ended',  runtime_gone ,
+           {"name":"SandboxStoppedMidTurn","message":"The sandbox stopped unexpectedly while this turn was running."} ::jsonb,
+           now() ,
+          now(), now(), now()) 
+      ON CONFLICT (turn_token) DO UPDATE SET
+            state = 'ended',
+            end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN  true 
+                THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND  ( kortix.session_turns.end_error  IS NOT NULL
+    AND coalesce( kortix.session_turns.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+               AND NOT  ( EXCLUDED.end_error  IS NOT NULL
+    AND coalesce( EXCLUDED.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
+            ended_at = now(),
+            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
+                                           EXCLUDED.opencode_session_id),
+            message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
+            updated_at = now()
+      WHERE kortix.session_turns.state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements clearSandboxTurn without a cause keeps end_error untouched 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id, s.session_id, s.project_id, s.account_id,
+             coalesce( CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns'-> turn-token ,  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurn') AS turn,
+             CASE
+               WHEN  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns'-> turn-token  IS NOT NULL THEN
+                 jsonb_set(
+                    CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ,
+                   '{activeTurns}',
+                   coalesce( CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns', '{}'::jsonb) -  turn-token ,
+                   true)
+               ELSE  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  - 'activeTurn'
+             END AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.sandbox_id =  sb-1 ::uuid
+         AND s.status = 'active'
+         AND (
+            CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurns'-> turn-token ->>'token' =  turn-token 
+           OR  CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END ->'activeTurn'->>'token' =  turn-token )
+       FOR UPDATE OF s
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = target.metadata,
+           deadline_at = CASE
+             WHEN target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  900 ))
+           END,
+           updated_at = now()
+      FROM target
+     WHERE s.sandbox_id = target.sandbox_id
+    RETURNING target.sandbox_id, target.session_id, target.project_id, target.account_id,
+              target.turn, true AS cleared"
+,
+  
+"INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         ended_at, created_at, updated_at)
+      VALUES  ( turn-token ,  sess-1 ,  11111111-1111-4111-8111-111111111111 ::uuid,
+           22222222-2222-4222-8222-222222222222 ::uuid,  33333333-3333-4333-8333-333333333333 ::uuid,
+            ,   , 'ended',  runtime_gone ,
+            ::jsonb,
+           now() ,
+          now(), now(), now()) 
+      ON CONFLICT (turn_token) DO UPDATE SET
+            state = 'ended',
+            end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN  false 
+                THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND  ( kortix.session_turns.end_error  IS NOT NULL
+    AND coalesce( kortix.session_turns.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+               AND NOT  ( EXCLUDED.end_error  IS NOT NULL
+    AND coalesce( EXCLUDED.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
+            ended_at = now(),
+            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
+                                           EXCLUDED.opencode_session_id),
+            message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
+            updated_at = now()
+      WHERE kortix.session_turns.state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: turn authority statements renewActiveSandboxTurn renews the deadline of the exact token 1`] = `
+[
+  
+"
+    UPDATE kortix.session_sandboxes s
+       SET deadline_at = GREATEST(
+             s.deadline_at,
+             now() + make_interval(secs =>  60 )),
+           updated_at = now()
+     WHERE s.sandbox_id =  sb-1 ::uuid
+       AND s.status = 'active'
+       AND (
+         (s.metadata->'activeTurn'->>'token' =  turn-token 
+           AND s.metadata->'activeTurn'->>'state' = 'active')
+         OR (s.metadata->'activeTurns'-> turn-token ->>'token' =  turn-token 
+           AND s.metadata->'activeTurns'-> turn-token ->>'state' = 'active'))
+    RETURNING true AS renewed"
+,
+]
+`;
+
+exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched turn and ends its ledger row 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id,
+              CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id =  sess-1 
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), all_active_turns AS (
+      SELECT target.sandbox_id,
+             coalesce(entry.value->>'token', entry.key) AS token
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+      UNION
+      SELECT target.sandbox_id,
+             target.metadata->'activeTurn'->>'token' AS token
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+    ), turn_candidates AS (
+      SELECT target.sandbox_id,
+             'activeTurns'::text AS source,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND (entry.value->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND entry.value->>'opencodeSessionId' =  ses_root ))
+      UNION ALL
+      SELECT target.sandbox_id,
+             'activeTurn'::text AS source,
+             'activeTurn'::text AS key,
+             target.metadata->'activeTurn'->>'token' AS token,
+             target.metadata->'activeTurn' AS value
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+         AND (target.metadata->'activeTurn'->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND target.metadata->'activeTurn'->>'opencodeSessionId' =  ses_root ))
+    ), exact_matches AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE  msg_turn_1 ::text IS NOT NULL
+         AND candidate.value->>'messageId' =  msg_turn_1 
+    ), fallback_match AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE candidate.value->>'messageId' IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+             FROM exact_matches exact
+            WHERE exact.sandbox_id = candidate.sandbox_id)
+       ORDER BY CASE
+         WHEN candidate.value->>'startedAtMs' ~ '^[0-9]+$'
+           THEN (candidate.value->>'startedAtMs')::bigint
+         ELSE 9223372036854775807
+       END, candidate.key
+       LIMIT 1
+    ), selected AS (
+      SELECT * FROM exact_matches
+      UNION ALL
+      SELECT * FROM fallback_match
+    ), next_state AS (
+      SELECT target.sandbox_id,
+             jsonb_set(
+               CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM selected
+                    WHERE selected.sandbox_id = target.sandbox_id
+                      AND selected.source = 'activeTurn')
+                 THEN target.metadata - 'activeTurn'
+                 ELSE target.metadata
+               END,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.source = 'activeTurns'
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = next_state.metadata,
+           deadline_at = CASE
+             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                       THEN next_state.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  900 ))
+           END,
+           updated_at = now()
+      FROM next_state
+     WHERE s.sandbox_id = next_state.sandbox_id
+    RETURNING next_state.ended_turns,
+              (SELECT count(*)::int
+                 FROM all_active_turns candidate
+                WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
+              s.session_id, s.sandbox_id, s.project_id, s.account_id,
+              true AS completed"
+,
+  
+"INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         ended_at, created_at, updated_at)
+      VALUES  ( turn-token ,  sess-1 ,  11111111-1111-4111-8111-111111111111 ::uuid,
+           22222222-2222-4222-8222-222222222222 ::uuid,  33333333-3333-4333-8333-333333333333 ::uuid,
+           ses_root ,  msg_turn_1 , 'ended',  completed ,
+            ::jsonb,
+            2023-11-14T22:13:20.000Z ::timestamptz ,
+          now(), now(), now()) 
+      ON CONFLICT (turn_token) DO UPDATE SET
+            state = 'ended',
+            end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN  false 
+                THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND  ( kortix.session_turns.end_error  IS NOT NULL
+    AND coalesce( kortix.session_turns.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+               AND NOT  ( EXCLUDED.end_error  IS NOT NULL
+    AND coalesce( EXCLUDED.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
+            ended_at = now(),
+            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
+                                           EXCLUDED.opencode_session_id),
+            message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
+            updated_at = now()
+      WHERE kortix.session_turns.state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: terminal evidence completeSandboxTurn records a named failure 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id,
+              CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id =  sess-1 
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), all_active_turns AS (
+      SELECT target.sandbox_id,
+             coalesce(entry.value->>'token', entry.key) AS token
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+      UNION
+      SELECT target.sandbox_id,
+             target.metadata->'activeTurn'->>'token' AS token
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+    ), turn_candidates AS (
+      SELECT target.sandbox_id,
+             'activeTurns'::text AS source,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND (entry.value->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND entry.value->>'opencodeSessionId' =  ses_root ))
+      UNION ALL
+      SELECT target.sandbox_id,
+             'activeTurn'::text AS source,
+             'activeTurn'::text AS key,
+             target.metadata->'activeTurn'->>'token' AS token,
+             target.metadata->'activeTurn' AS value
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+         AND (target.metadata->'activeTurn'->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND target.metadata->'activeTurn'->>'opencodeSessionId' =  ses_root ))
+    ), exact_matches AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE  msg_turn_1 ::text IS NOT NULL
+         AND candidate.value->>'messageId' =  msg_turn_1 
+    ), fallback_match AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE candidate.value->>'messageId' IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+             FROM exact_matches exact
+            WHERE exact.sandbox_id = candidate.sandbox_id)
+       ORDER BY CASE
+         WHEN candidate.value->>'startedAtMs' ~ '^[0-9]+$'
+           THEN (candidate.value->>'startedAtMs')::bigint
+         ELSE 9223372036854775807
+       END, candidate.key
+       LIMIT 1
+    ), selected AS (
+      SELECT * FROM exact_matches
+      UNION ALL
+      SELECT * FROM fallback_match
+    ), next_state AS (
+      SELECT target.sandbox_id,
+             jsonb_set(
+               CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM selected
+                    WHERE selected.sandbox_id = target.sandbox_id
+                      AND selected.source = 'activeTurn')
+                 THEN target.metadata - 'activeTurn'
+                 ELSE target.metadata
+               END,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.source = 'activeTurns'
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = next_state.metadata,
+           deadline_at = CASE
+             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                       THEN next_state.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  900 ))
+           END,
+           updated_at = now()
+      FROM next_state
+     WHERE s.sandbox_id = next_state.sandbox_id
+    RETURNING next_state.ended_turns,
+              (SELECT count(*)::int
+                 FROM all_active_turns candidate
+                WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
+              s.session_id, s.sandbox_id, s.project_id, s.account_id,
+              true AS completed"
+,
+  
+"INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         ended_at, created_at, updated_at)
+      VALUES  ( turn-token ,  sess-1 ,  11111111-1111-4111-8111-111111111111 ::uuid,
+           22222222-2222-4222-8222-222222222222 ::uuid,  33333333-3333-4333-8333-333333333333 ::uuid,
+           ses_root ,  msg_turn_1 , 'ended',  failed ,
+           {"name":"ModelError","message":"upstream 500"} ::jsonb,
+            2023-11-14T22:13:20.000Z ::timestamptz ,
+          now(), now(), now()) 
+      ON CONFLICT (turn_token) DO UPDATE SET
+            state = 'ended',
+            end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN  false 
+                THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND  ( kortix.session_turns.end_error  IS NOT NULL
+    AND coalesce( kortix.session_turns.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+               AND NOT  ( EXCLUDED.end_error  IS NOT NULL
+    AND coalesce( EXCLUDED.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
+            ended_at = now(),
+            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
+                                           EXCLUDED.opencode_session_id),
+            message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
+            updated_at = now()
+      WHERE kortix.session_turns.state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-closed row with the cause 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id,
+              CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id =  sess-1 
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), all_active_turns AS (
+      SELECT target.sandbox_id,
+             coalesce(entry.value->>'token', entry.key) AS token
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+      UNION
+      SELECT target.sandbox_id,
+             target.metadata->'activeTurn'->>'token' AS token
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+    ), turn_candidates AS (
+      SELECT target.sandbox_id,
+             'activeTurns'::text AS source,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND (entry.value->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND entry.value->>'opencodeSessionId' =  ses_root ))
+      UNION ALL
+      SELECT target.sandbox_id,
+             'activeTurn'::text AS source,
+             'activeTurn'::text AS key,
+             target.metadata->'activeTurn'->>'token' AS token,
+             target.metadata->'activeTurn' AS value
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+         AND (target.metadata->'activeTurn'->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND target.metadata->'activeTurn'->>'opencodeSessionId' =  ses_root ))
+    ), exact_matches AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE  msg_turn_1 ::text IS NOT NULL
+         AND candidate.value->>'messageId' =  msg_turn_1 
+    ), fallback_match AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE candidate.value->>'messageId' IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+             FROM exact_matches exact
+            WHERE exact.sandbox_id = candidate.sandbox_id)
+       ORDER BY CASE
+         WHEN candidate.value->>'startedAtMs' ~ '^[0-9]+$'
+           THEN (candidate.value->>'startedAtMs')::bigint
+         ELSE 9223372036854775807
+       END, candidate.key
+       LIMIT 1
+    ), selected AS (
+      SELECT * FROM exact_matches
+      UNION ALL
+      SELECT * FROM fallback_match
+    ), next_state AS (
+      SELECT target.sandbox_id,
+             jsonb_set(
+               CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM selected
+                    WHERE selected.sandbox_id = target.sandbox_id
+                      AND selected.source = 'activeTurn')
+                 THEN target.metadata - 'activeTurn'
+                 ELSE target.metadata
+               END,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.source = 'activeTurns'
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = next_state.metadata,
+           deadline_at = CASE
+             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                       THEN next_state.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  900 ))
+           END,
+           updated_at = now()
+      FROM next_state
+     WHERE s.sandbox_id = next_state.sandbox_id
+    RETURNING next_state.ended_turns,
+              (SELECT count(*)::int
+                 FROM all_active_turns candidate
+                WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
+              s.session_id, s.sandbox_id, s.project_id, s.account_id,
+              true AS completed"
+,
+  
+"
+    SELECT EXISTS(
+      SELECT 1
+        FROM kortix.session_turns t
+       WHERE t.session_id =  sess-1 
+         AND t.message_id =  msg_turn_1 
+         AND t.state = 'ended'
+         AND ( ses_root ::text IS NULL
+           OR t.opencode_session_id IS NULL
+           OR t.opencode_session_id =  ses_root )
+    ) AS already_ended"
+,
+  
+"
+    UPDATE kortix.session_turns t
+       SET end_error =  {"name":"SandboxMemoryGuard","message":"sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped"} ::jsonb,
+           updated_at = now()
+     WHERE t.session_id =  sess-1 
+       AND t.message_id =  msg_turn_1 
+       AND t.state = 'ended'
+       AND t.end_reason = 'failed'
+       AND ( ses_root ::text IS NULL
+         OR t.opencode_session_id IS NULL
+         OR t.opencode_session_id =  ses_root )
+       AND NOT  ( t.end_error  IS NOT NULL
+    AND coalesce( t.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) "
+,
+  
+"
+    UPDATE kortix.session_turns t
+       SET end_reason =  failed ,
+           end_error =  {"name":"SandboxMemoryGuard","message":"sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped"} ::jsonb,
+           updated_at = now()
+     WHERE t.session_id =  sess-1 
+       AND t.message_id =  msg_turn_1 
+       AND t.state = 'ended'
+       AND t.end_reason = 'abandoned'
+       AND ( ses_root ::text IS NULL
+         OR t.opencode_session_id IS NULL
+         OR t.opencode_session_id =  ses_root )"
+,
+]
+`;
+
+exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned row on a late completion 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id,
+              CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id =  sess-1 
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), all_active_turns AS (
+      SELECT target.sandbox_id,
+             coalesce(entry.value->>'token', entry.key) AS token
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+      UNION
+      SELECT target.sandbox_id,
+             target.metadata->'activeTurn'->>'token' AS token
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+    ), turn_candidates AS (
+      SELECT target.sandbox_id,
+             'activeTurns'::text AS source,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND (entry.value->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND entry.value->>'opencodeSessionId' =  ses_root ))
+      UNION ALL
+      SELECT target.sandbox_id,
+             'activeTurn'::text AS source,
+             'activeTurn'::text AS key,
+             target.metadata->'activeTurn'->>'token' AS token,
+             target.metadata->'activeTurn' AS value
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+         AND (target.metadata->'activeTurn'->>'opencodeSessionId' IS NULL
+           OR ( ses_root ::text IS NOT NULL
+             AND target.metadata->'activeTurn'->>'opencodeSessionId' =  ses_root ))
+    ), exact_matches AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE  msg_turn_1 ::text IS NOT NULL
+         AND candidate.value->>'messageId' =  msg_turn_1 
+    ), fallback_match AS (
+      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE candidate.value->>'messageId' IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+             FROM exact_matches exact
+            WHERE exact.sandbox_id = candidate.sandbox_id)
+       ORDER BY CASE
+         WHEN candidate.value->>'startedAtMs' ~ '^[0-9]+$'
+           THEN (candidate.value->>'startedAtMs')::bigint
+         ELSE 9223372036854775807
+       END, candidate.key
+       LIMIT 1
+    ), selected AS (
+      SELECT * FROM exact_matches
+      UNION ALL
+      SELECT * FROM fallback_match
+    ), next_state AS (
+      SELECT target.sandbox_id,
+             jsonb_set(
+               CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM selected
+                    WHERE selected.sandbox_id = target.sandbox_id
+                      AND selected.source = 'activeTurn')
+                 THEN target.metadata - 'activeTurn'
+                 ELSE target.metadata
+               END,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.source = 'activeTurns'
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = next_state.metadata,
+           deadline_at = CASE
+             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                       THEN next_state.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  900 ))
+           END,
+           updated_at = now()
+      FROM next_state
+     WHERE s.sandbox_id = next_state.sandbox_id
+    RETURNING next_state.ended_turns,
+              (SELECT count(*)::int
+                 FROM all_active_turns candidate
+                WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
+              s.session_id, s.sandbox_id, s.project_id, s.account_id,
+              true AS completed"
+,
+  
+"
+    SELECT EXISTS(
+      SELECT 1
+        FROM kortix.session_turns t
+       WHERE t.session_id =  sess-1 
+         AND t.message_id =  msg_turn_1 
+         AND t.state = 'ended'
+         AND ( ses_root ::text IS NULL
+           OR t.opencode_session_id IS NULL
+           OR t.opencode_session_id =  ses_root )
+    ) AS already_ended"
+,
+  
+"
+    UPDATE kortix.session_turns t
+       SET end_reason =  completed ,
+           end_error =   ::jsonb,
+           updated_at = now()
+     WHERE t.session_id =  sess-1 
+       AND t.message_id =  msg_turn_1 
+       AND t.state = 'ended'
+       AND t.end_reason = 'abandoned'
+       AND ( ses_root ::text IS NULL
+         OR t.opencode_session_id IS NULL
+         OR t.opencode_session_id =  ses_root )"
+,
+]
+`;
+
+exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by message and settles the ledger 1`] = `
+[
+  
+"
+    WITH target AS (
+      SELECT s.sandbox_id,
+              CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id =  sess-1 
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s
+    ), selected AS (
+      SELECT target.sandbox_id,
+             'activeTurns'::text AS source,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND entry.value->>'messageId' =  msg_turn_1 
+      UNION ALL
+      SELECT target.sandbox_id,
+             'activeTurn'::text AS source,
+             'activeTurn'::text AS key,
+             target.metadata->'activeTurn'->>'token' AS token,
+             target.metadata->'activeTurn' AS value
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+         AND target.metadata->'activeTurn'->>'messageId' =  msg_turn_1 
+    ), next_state AS (
+      SELECT target.sandbox_id,
+             jsonb_set(
+               CASE
+                 WHEN EXISTS (
+                   SELECT 1 FROM selected
+                    WHERE selected.sandbox_id = target.sandbox_id
+                      AND selected.source = 'activeTurn')
+                 THEN target.metadata - 'activeTurn'
+                 ELSE target.metadata
+               END,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.source = 'activeTurns'
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target
+       WHERE EXISTS (SELECT 1 FROM selected WHERE selected.sandbox_id = target.sandbox_id)
+    )
+    UPDATE kortix.session_sandboxes s
+       SET metadata = next_state.metadata,
+           deadline_at = CASE
+             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
+               OR EXISTS (
+                 SELECT 1
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                       THEN next_state.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) remaining
+                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs =>  900 ))
+           END,
+           updated_at = now()
+      FROM next_state
+     WHERE s.sandbox_id = next_state.sandbox_id
+    RETURNING next_state.ended_turns, s.session_id, s.sandbox_id, s.project_id, s.account_id"
+,
+  
+"INSERT INTO kortix.session_turns
+        (turn_token, session_id, sandbox_id, project_id, account_id,
+         opencode_session_id, message_id, state, end_reason, end_error, started_at,
+         ended_at, created_at, updated_at)
+      VALUES  ( turn-token ,  sess-1 ,  11111111-1111-4111-8111-111111111111 ::uuid,
+           22222222-2222-4222-8222-222222222222 ::uuid,  33333333-3333-4333-8333-333333333333 ::uuid,
+           ses_root ,  msg_turn_1 , 'ended',  abandoned ,
+            ::jsonb,
+            2023-11-14T22:13:20.000Z ::timestamptz ,
+          now(), now(), now()) 
+      ON CONFLICT (turn_token) DO UPDATE SET
+            state = 'ended',
+            end_reason = EXCLUDED.end_reason,
+            end_error = CASE
+              WHEN  false 
+                THEN coalesce(kortix.session_turns.end_error, EXCLUDED.end_error)
+              WHEN EXCLUDED.end_reason = 'failed'
+               AND  ( kortix.session_turns.end_error  IS NOT NULL
+    AND coalesce( kortix.session_turns.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+               AND NOT  ( EXCLUDED.end_error  IS NOT NULL
+    AND coalesce( EXCLUDED.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+                THEN kortix.session_turns.end_error
+              ELSE EXCLUDED.end_error
+            END,
+            ended_at = now(),
+            opencode_session_id = coalesce(kortix.session_turns.opencode_session_id,
+                                           EXCLUDED.opencode_session_id),
+            message_id = coalesce(kortix.session_turns.message_id, EXCLUDED.message_id),
+            updated_at = now()
+      WHERE kortix.session_turns.state <> 'ended'"
+,
+  
+"UPDATE kortix.session_turns
+         SET state = 'ended', end_reason =  abandoned , ended_at = now(), updated_at = now()
+       WHERE session_id =  sess-1 
+         AND message_id =  msg_turn_1 
+         AND state <> 'ended'
+       RETURNING turn_token"
+,
+]
+`;
+
+exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen box-initiated turn 1`] = `
+[
+  
+"
+    SELECT
+      EXISTS(
+        SELECT 1 FROM kortix.session_turns t
+         WHERE t.sandbox_id =  sb-1 ::uuid
+           AND t.message_id =  msg_adopt ) AS known,
+      EXISTS(
+        SELECT 1 FROM kortix.session_turns t
+         WHERE t.sandbox_id =  sb-1 ::uuid
+           AND t.state <> 'ended') AS open"
+,
+  
+"
+      UPDATE kortix.session_sandboxes s
+         SET metadata = jsonb_set(
+                CASE
+    WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
+    ELSE '{}'::jsonb
+  END  - 'lifecycleStopClaim',
+               '{activeTurns}',
+                CASE
+    WHEN jsonb_typeof( s.metadata->'activeTurns' ) = 'object' THEN  s.metadata->'activeTurns' 
+    ELSE '{}'::jsonb
+  END  || jsonb_build_object(
+                  3d91c86f-e4a8-44ea-94c8-0188db0efa73 ::text,
+                 jsonb_build_object(
+                   'token',  3d91c86f-e4a8-44ea-94c8-0188db0efa73 ::text,
+                   'state', 'delivering',
+                   'opencodeSessionId',  ses_root ::text,
+                   'messageId',  msg_adopt ::text,
+                   'startedAtMs', floor(extract(epoch from  now() ) * 1000))),
+               true),
+             deadline_at = GREATEST(
+               s.deadline_at,
+                now()  + make_interval(secs =>  60 )),
+             updated_at = now()
+      WHERE  s.sandbox_id =  sb-1 ::uuid 
+        AND s.status IN ('active', 'provisioning')
+        AND (
+          s.metadata->'lifecycleStopClaim' IS NULL
+          OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
+          OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
+            <= floor(extract(epoch from  now() ) * 1000) -  120000 )
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted"
+,
+  
+"INSERT INTO kortix.session_turns
+            (turn_token, session_id, sandbox_id, project_id, account_id,
+             opencode_session_id, message_id, state, started_at, created_at, updated_at)
+          SELECT  3d91c86f-e4a8-44ea-94c8-0188db0efa73 , owner.session_id, owner.sandbox_id,
+                 owner.project_id, owner.account_id,
+                  ses_root ,  msg_adopt , 'delivering',
+                  now() , now(), now()
+            FROM ( SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
+               FROM kortix.session_sandboxes s
+              WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
+                AND s.status IN ('active', 'provisioning')
+                AND (
+                  s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73  IS NOT NULL
+                  -- The legacy single-record arm every writer still accepts
+                  -- during a rolling deploy. The stop erases it in the same
+                  -- statement, so it gates this INSERT identically.
+                  OR s.metadata->'activeTurn'->>'token' =  3d91c86f-e4a8-44ea-94c8-0188db0efa73 )
+              FOR UPDATE ) owner
+          ON CONFLICT (turn_token) DO NOTHING"
+,
+  
+"
+    UPDATE kortix.session_sandboxes s
+       SET metadata = CASE
+             WHEN s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73  IS NOT NULL THEN
+               jsonb_set(
+                 s.metadata,
+                 ARRAY['activeTurns',  3d91c86f-e4a8-44ea-94c8-0188db0efa73 ]::text[],
+                 (s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ) || jsonb_strip_nulls(jsonb_build_object(
+                   'state', 'active',
+                   'opencodeSessionId',  ses_root ::text,
+                   'messageId',  msg_adopt ::text)),
+                 false)
+             ELSE jsonb_set(
+               s.metadata,
+               '{activeTurn}',
+               (s.metadata->'activeTurn') || jsonb_strip_nulls(jsonb_build_object(
+                 'state', 'active',
+                 'opencodeSessionId',  ses_root ::text,
+                 'messageId',  msg_adopt ::text)),
+               false)
+           END,
+           deadline_at = GREATEST(
+             s.deadline_at,
+             now() + make_interval(secs =>  60 )),
+           updated_at = now()
+     WHERE  s.sandbox_id =  sb-1 ::uuid 
+       AND s.status IN ('active', 'provisioning')
+       AND (
+         (s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ->>'token' =  3d91c86f-e4a8-44ea-94c8-0188db0efa73 
+           AND s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ->>'state' IN ('delivering', 'active'))
+         OR (s.metadata->'activeTurn'->>'token' =  3d91c86f-e4a8-44ea-94c8-0188db0efa73 
+           AND s.metadata->'activeTurn'->>'state' IN ('delivering', 'active')))
+    RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
+              coalesce(s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ->>'messageId',
+                       s.metadata->'activeTurn'->>'messageId') AS turn_message_id"
+,
+]
+`;
+
+exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn refuses a message the ledger already knows 1`] = `
+[
+  
+"
+    SELECT
+      EXISTS(
+        SELECT 1 FROM kortix.session_turns t
+         WHERE t.sandbox_id =  sb-1 ::uuid
+           AND t.message_id =  msg_adopt ) AS known,
+      EXISTS(
+        SELECT 1 FROM kortix.session_turns t
+         WHERE t.sandbox_id =  sb-1 ::uuid
+           AND t.state <> 'ended') AS open"
+,
+]
+`;
+
+exports[`golden SQL: requested-stop marks markTurnStopRequested scopes to one OpenCode session 1`] = `
+[
+  
+"UPDATE kortix.session_turns
+           SET end_error =  {"name":"UserStop","message":null} ::jsonb,
+               updated_at = now()
+         WHERE session_id =  sess-1 
+           AND state <> 'ended'
+           AND ( ses_root ::text IS NULL
+             OR opencode_session_id IS NULL
+             OR opencode_session_id =  ses_root )
+           AND (  ::text IS NULL
+             OR message_id =   )"
+,
+]
+`;
+
+exports[`golden SQL: requested-stop marks markTurnStopRequested without a scope matches every open turn 1`] = `
+[
+  
+"UPDATE kortix.session_turns
+           SET end_error =  {"name":"QueueInterrupt","message":null} ::jsonb,
+               updated_at = now()
+         WHERE session_id =  sess-1 
+           AND state <> 'ended'
+           AND (  ::text IS NULL
+             OR opencode_session_id IS NULL
+             OR opencode_session_id =   )
+           AND (  ::text IS NULL
+             OR message_id =   )"
+,
+]
+`;
+
+exports[`golden SQL: requested-stop marks clearTurnStopRequest withdraws the mark 1`] = `
+[
+  
+"UPDATE kortix.session_turns
+           SET end_error = NULL,
+               updated_at = now()
+         WHERE session_id =  sess-1 
+           AND state <> 'ended'
+           AND end_error->>'name' =  QueueInterrupt "
+,
+]
+`;
+
+exports[`golden SQL: unidentified-cause recorder recordUnidentifiedTurnCause refines the newest bare abort 1`] = `
+[
+  
+"
+      UPDATE kortix.session_turns
+         SET end_error =  {"name":"SandboxMemoryGuard","message":"sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped"} ::jsonb, updated_at = now()
+       WHERE turn_token = (
+         SELECT t.turn_token
+           FROM kortix.session_turns t
+          WHERE t.session_id =  sess-1 
+            AND t.state = 'ended'
+            AND t.end_reason = 'failed'
+            AND t.ended_at > now() - make_interval(secs =>  60 )
+            AND  ( ses_root ::text IS NULL
+                         OR t.opencode_session_id IS NULL
+                         OR t.opencode_session_id =  ses_root ) 
+          ORDER BY t.ended_at DESC
+          LIMIT 1)
+         AND NOT  ( end_error  IS NOT NULL
+    AND coalesce( end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+      RETURNING turn_token"
+,
+]
+`;
+
+exports[`golden SQL: unidentified-cause recorder recordUnidentifiedTurnCause marks the open turn when nothing ended 1`] = `
+[
+  
+"
+      UPDATE kortix.session_turns
+         SET end_error =  {"name":"SandboxMemoryGuard","message":"sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped"} ::jsonb, updated_at = now()
+       WHERE turn_token = (
+         SELECT t.turn_token
+           FROM kortix.session_turns t
+          WHERE t.session_id =  sess-1 
+            AND t.state = 'ended'
+            AND t.end_reason = 'failed'
+            AND t.ended_at > now() - make_interval(secs =>  60 )
+            AND  ( ses_root ::text IS NULL
+                         OR t.opencode_session_id IS NULL
+                         OR t.opencode_session_id =  ses_root ) 
+          ORDER BY t.ended_at DESC
+          LIMIT 1)
+         AND NOT  ( end_error  IS NOT NULL
+    AND coalesce( end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+      RETURNING turn_token"
+,
+  
+"
+      UPDATE kortix.session_turns t
+         SET end_error =  {"name":"SandboxMemoryGuard","message":"sandbox memory at 97% (opencode 513 MB RSS of 3915 MB): turn stopped"} ::jsonb, updated_at = now()
+       WHERE t.session_id =  sess-1 
+         AND t.state <> 'ended'
+         AND  ( ses_root ::text IS NULL
+                         OR t.opencode_session_id IS NULL
+                         OR t.opencode_session_id =  ses_root ) 
+         AND NOT  ( t.end_error  IS NOT NULL
+    AND coalesce( t.end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  )) 
+      RETURNING t.turn_token"
+,
+]
+`;
+
+exports[`golden SQL: settle backstops settleOpenSandboxTurnsQuery ends every open row with the cause 1`] = `
+"UPDATE kortix.session_turns
+                SET state = 'ended', end_reason =  runtime_gone , ended_at = now(), updated_at = now()
+                     , end_error = CASE WHEN NOT  ( end_error  IS NOT NULL
+    AND coalesce( end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  ))  THEN  {"name":"SandboxStoppedMidTurn","message":"The sandbox stopped unexpectedly while this turn was running."} ::jsonb ELSE end_error END 
+              WHERE sandbox_id =  sb-1 ::uuid
+                AND state <> 'ended'"
+`;
+
+exports[`golden SQL: settle backstops settleOpenSandboxTurnsQuery without a cause leaves end_error alone 1`] = `
+"UPDATE kortix.session_turns
+                SET state = 'ended', end_reason =  runtime_gone , ended_at = now(), updated_at = now()
+                      
+              WHERE sandbox_id =  sb-1 ::uuid
+                AND state <> 'ended'"
+`;
+
+exports[`golden SQL: settle backstops settleOpenSandboxTurns runs inside the caller transaction 1`] = `
+[
+  
+"UPDATE kortix.session_turns
+                SET state = 'ended', end_reason =  runtime_gone , ended_at = now(), updated_at = now()
+                     , end_error = CASE WHEN NOT  ( end_error  IS NOT NULL
+    AND coalesce( end_error ->>'name', '') NOT IN (  MessageAbortedError  ,   AbortError  ))  THEN  {"name":"SandboxStoppedMidTurn","message":"The sandbox stopped unexpectedly while this turn was running."} ::jsonb ELSE end_error END 
+              WHERE sandbox_id =  sb-1 ::uuid
+                AND state <> 'ended'"
+,
+]
+`;
+
+exports[`golden SQL: settle backstops settleOrphanedSandboxTurnsQuery closes rows on sandboxes that stopped 1`] = `
+"UPDATE kortix.session_turns t
+                SET state = 'ended',
+                    end_reason = coalesce(t.end_reason, 'runtime_gone'),
+                    ended_at = coalesce(t.ended_at, now()),
+                    updated_at = now()
+              WHERE t.state <> 'ended'
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM kortix.session_sandboxes s
+                   WHERE s.sandbox_id = t.sandbox_id
+                     AND s.status IN ('active', 'provisioning'))"
+`;
+
+exports[`golden SQL: settle backstops settleOrphanedSandboxTurns returns the row count 1`] = `
+[
+  
+"UPDATE kortix.session_turns t
+                SET state = 'ended',
+                    end_reason = coalesce(t.end_reason, 'runtime_gone'),
+                    ended_at = coalesce(t.ended_at, now()),
+                    updated_at = now()
+              WHERE t.state <> 'ended'
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM kortix.session_sandboxes s
+                   WHERE s.sandbox_id = t.sandbox_id
+                     AND s.status IN ('active', 'provisioning'))"
+,
+]
+`;
