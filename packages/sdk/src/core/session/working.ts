@@ -257,6 +257,9 @@ export interface WorkingStreamInput {
  * The pull path is what answers when the wire itself is the thing that died
  * (sampleco, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
  * the open turn row, transcript minutes behind).
+ *
+ * Closing frames (a completed or errored message, a finished part) do not
+ * stamp, because the runtime writes them after its idle frame.
  */
 export interface WorkingActivityInput {
   atMs: number;

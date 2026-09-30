@@ -8,6 +8,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
+import { projectWorking } from "../../core/session/working";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
@@ -225,6 +226,121 @@ describe("hydrate stamps runtime activity for a moved, still-open transcript", (
 			{ source: "cache" },
 		);
 		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+});
+
+/**
+ * The push half of the same rule. `projectWorking` lets activity outrank a
+ * wire idle frame it postdates, and the runtime keeps writing CLOSING frames
+ * after that idle frame — measured on the local stack, 2026-09-30: the user
+ * message's `summary` update 1–16ms later on every turn, and on Stop the
+ * aborted tool part plus the assistant message's `completed` + `error` stamp
+ * 0–41ms later. A closing frame that passed the 1s quantizer put "Gathering
+ * thoughts…" and Stop back on a finished turn for up to 45s.
+ */
+describe("applyEvent stamps runtime activity only for open frames", () => {
+	const sid = "ses_act_push";
+	const STALE = 1;
+
+	function messageUpdated(info: unknown) {
+		useSyncStore.getState().applyEvent({
+			type: "message.updated",
+			properties: { info },
+		} as never);
+	}
+	function partUpdated(part: Record<string, unknown>) {
+		useSyncStore.getState().applyEvent({
+			type: "message.part.updated",
+			properties: { part: { sessionID: sid, messageID: "msg_a1", ...part } },
+		} as never);
+	}
+	/** A stamp old enough that the 1s quantizer lets the next frame through. */
+	function ageActivity() {
+		useSyncStore.setState({ sessionActivityAt: { [sid]: STALE } });
+	}
+	const activity = () => useSyncStore.getState().sessionActivityAt[sid];
+
+	beforeEach(() => {
+		useSyncStore.getState().upsertMessage(sid, userMessage("msg_u1", sid));
+		ageActivity();
+	});
+
+	test("an open assistant message stamps", () => {
+		messageUpdated(assistantMessage("msg_a1", sid));
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test("a completed assistant message does not stamp", () => {
+		const message = assistantMessage("msg_a1", sid);
+		messageUpdated({ ...message, time: { ...message.time, completed: 2 } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test("an errored assistant message does not stamp", () => {
+		messageUpdated({
+			...assistantMessage("msg_a1", sid),
+			error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+		});
+		expect(activity()).toBe(STALE);
+	});
+
+	test("a user message update does not stamp", () => {
+		messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test.each([
+		["a running tool", { id: "prt_1", type: "tool", state: { status: "running" } }],
+		["a pending tool", { id: "prt_1", type: "tool", state: { status: "pending" } }],
+		["streaming text", { id: "prt_1", type: "text", text: "hel", time: { start: 1 } }],
+		["a step start", { id: "prt_1", type: "step-start" }],
+	])("%s stamps", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test.each([
+		["a completed tool", { id: "prt_1", type: "tool", state: { status: "completed" } }],
+		["an errored tool", { id: "prt_1", type: "tool", state: { status: "error" } }],
+		["finished text", { id: "prt_1", type: "text", text: "done", time: { start: 1, end: 2 } }],
+		["finished reasoning", { id: "prt_1", type: "reasoning", text: "ok", time: { start: 1, end: 2 } }],
+		["a step finish", { id: "prt_1", type: "step-finish" }],
+	])("%s does not stamp", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBe(STALE);
+	});
+
+	// The captured order, end to end: a finished turn must project idle.
+	test("closing frames after the idle frame leave the session idle", () => {
+		const realNow = Date.now;
+		let now = 1_000_000;
+		Date.now = () => now;
+		try {
+			useSyncStore.setState({ sessionActivityAt: { [sid]: now - 5_000 } });
+			const apply = useSyncStore.getState().applyEvent;
+			apply({ type: "session.idle", properties: { sessionID: sid } } as never);
+			now += 16;
+			messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+			partUpdated({ id: "prt_1", type: "tool", state: { status: "completed" } });
+			const message = assistantMessage("msg_a1", sid);
+			messageUpdated({
+				...message,
+				time: { ...message.time, completed: now },
+				error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+			});
+
+			const state = useSyncStore.getState();
+			const projection = projectWorking({
+				optimistic: null,
+				server: null,
+				stream: { type: "idle", origin: "wire", atMs: state.sessionStatusAt[sid] },
+				activity: { atMs: state.sessionActivityAt[sid] },
+				nowMs: now + 100,
+			});
+			expect(projection.state).toBe("idle");
+		} finally {
+			Date.now = realNow;
+		}
 	});
 });
 

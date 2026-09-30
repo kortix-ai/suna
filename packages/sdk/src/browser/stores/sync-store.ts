@@ -112,6 +112,34 @@ function isTextLikePart(part: Part): part is TextLikePart {
  */
 const ACTIVITY_STAMP_RESOLUTION_MS = 1_000;
 
+/**
+ * Is this frame the runtime still PRODUCING output, or the record of output
+ * that has finished? Only the first is activity.
+ *
+ * `projectWorking` lets `sessionActivityAt` outrank a wire idle frame it
+ * postdates, and the runtime keeps writing closing frames after that frame:
+ * the user message's `summary` update (1–16ms later, every turn), and on Stop
+ * the aborted tool part and the assistant message's `completed` + `error`
+ * stamp (0–41ms later) — measured on the local stack, 2026-09-30. Stamping
+ * them put the busy row and Stop back on a finished turn for up to
+ * `STREAM_OBSERVATION_MAX_MS`, whenever the 1s quantizer let one through.
+ * `hydrate` applies the same rule to a pulled transcript (`tailOpen`).
+ */
+function isOpenMessage(info: Message | undefined): boolean {
+	if (info?.role !== "assistant") return false;
+	const { time, error } = info as { time?: { completed?: number }; error?: unknown };
+	return !time?.completed && !error;
+}
+
+function isOpenPart(part: Part): boolean {
+	if (part.type === "step-finish") return false;
+	if (part.type === "tool") {
+		const status = (part as { state?: { status?: string } }).state?.status;
+		return status !== "completed" && status !== "error";
+	}
+	return !(part as { time?: { end?: number } }).time?.end;
+}
+
 /** The index of `id` in `list`, or `-1`. Binary first, linear on a miss. */
 function indexOfId<T>(list: readonly T[], id: string, idOf: (item: T) => string): number {
 	const result = Binary.search(list as T[], id, idOf);
@@ -195,7 +223,8 @@ interface SyncState {
 	/**
 	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
 	 *
-	 * Not a status, not a poll — the instant a streamed part or message landed.
+	 * Not a status, not a poll — the instant an OPEN streamed part or message
+	 * landed (output still being produced; see `isOpenMessage`).
 	 * `projectWorking` reads it as the one input that is not an observer of the
 	 * runtime but the runtime itself (see `WorkingActivityInput`): a composer
 	 * showing its send arrow over a transcript that is visibly streaming is what
@@ -2282,7 +2311,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					const info = (event.properties as { info?: { sessionID?: string } })?.info;
 					const sid =
 						info?.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid);
+					if (sid && isOpenMessage(info as Message | undefined)) get().noteSessionActivity(sid);
 				}
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
@@ -2482,12 +2511,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					}
 				}
 
-				// The runtime just produced output. This is the evidence
+				// The runtime just produced OPEN output. This is the evidence
 				// `projectWorking` trusts above every observer — see
-				// `sessionActivityAt`. Stamp AFTER the message-id fallback: some
-				// producers omit sessionID from the part while still updating a
-				// known message, and that visible output is runtime activity too.
-				if (resolvedSessionID) get().noteSessionActivity(resolvedSessionID);
+				// `sessionActivityAt`. A closing part is not activity (`isOpenPart`).
+				// Stamp AFTER the message-id fallback: some producers omit
+				// sessionID from the part while still updating a known message,
+				// and that visible output is runtime activity too.
+				if (resolvedSessionID && isOpenPart(part)) get().noteSessionActivity(resolvedSessionID);
 
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]
