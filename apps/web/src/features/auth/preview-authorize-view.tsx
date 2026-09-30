@@ -11,7 +11,7 @@
  */
 
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { DetailPanel, DetailRow } from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
@@ -66,9 +66,11 @@ export function PreviewAuthorizeView({
               <DetailRow label={tI18nComplete.raw('text7e1b0d5641f2')} value={email} />
             ) : null}
           </DetailPanel>
-          <div role="status" className="text-muted-foreground mt-5 flex items-center gap-2 text-sm">
-            <Loading className="size-4 shrink-0" />
-            <span>{t('previewAuthorize.signingIn')}</span>
+          {/* The page leaves by itself within a second. A placeholder where the
+              next thing will be, with the sentence kept for a screen reader. */}
+          <div role="status">
+            <Skeleton className="mt-5 h-10 w-full py-0" />
+            <span className="sr-only">{t('previewAuthorize.signingIn')}</span>
           </div>
         </Rise>
       </AuthFrame>

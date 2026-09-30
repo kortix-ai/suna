@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { ApprovalLinkDetails } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { ApprovalDecisionView } from './approval-decision';
@@ -177,5 +177,30 @@ describe('ApprovalDecisionView', () => {
     const html = render({ error: 'Could not record your decision.' });
     expect(html).toContain('Could not record your decision.');
     expect(html).toContain('Approve this call');
+  });
+
+  test('one fact per row: what runs, the tool path, and the access level', () => {
+    const html = render({});
+    expect(html).toContain('>Run<');
+    expect(html).toContain('>Tool<');
+    expect(html).toContain('>Access<');
+    expect(html).toContain('>Write<');
+  });
+
+  test('a call with no parameters shows no parameters box, and keeps the agent description', () => {
+    const html = render({ details: { ...pending, args_preview: null } });
+    expect(html).not.toContain('>Parameters<');
+    expect(html).not.toContain('No parameters were recorded');
+    expect(html).toContain('Merge pull request #482 into main');
+    // Nothing was withheld, so the call is still decidable.
+    expect(html).toContain('Approve this call');
+  });
+
+  test('no agent description and no parameters shows neither box', () => {
+    const html = render({
+      details: { ...pending, args_preview: null, approval_context: null },
+    });
+    expect(html).not.toContain('Agent&#x27;s description');
+    expect(html).not.toContain('>Parameters<');
   });
 });

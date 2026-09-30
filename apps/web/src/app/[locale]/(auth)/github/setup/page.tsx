@@ -1,22 +1,13 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import {
-  AuthPendingScreen,
-  DetailPanel,
-  DetailRow,
-} from '@/features/auth/auth-consent';
-import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { GitHubSetupView, type GitHubSetupState } from '@/features/auth/github-setup-view';
 import { useAuth } from '@/features/providers/auth-provider';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { requestGitHubUserProof } from '@/lib/github-user-proof';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import {
@@ -25,10 +16,6 @@ import {
   saveGitHubInstallation,
   type LinkableGitHubInstallation,
 } from '@kortix/sdk';
-import { GithubLogoIcon as Github } from '@phosphor-icons/react';
-import { requestGitHubUserProof } from '@/lib/github-user-proof';
-
-type SetupState = 'verify' | 'loading' | 'select' | 'empty' | 'saving' | 'done' | 'error';
 
 /**
  * `?github=error&reason=<slug>` — what the backend says when an account link
@@ -50,7 +37,7 @@ function setupErrorMessage(reason: string | null): string {
     case 'owner_unresolved':
       return 'GitHub did not return a usable installation. Install the Kortix App again and pick an account.';
     default:
-      return 'GitHub did not finish connecting this account. Start again from this account\'s Git settings.';
+      return "GitHub did not finish connecting this account. Start again from this account's Git settings.";
   }
 }
 
@@ -63,13 +50,12 @@ export default function GitHubSetupPage() {
 }
 
 function GitHubSetup() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appHome = useAppHome();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
   const redirectTimer = useRef<number | undefined>(undefined);
-  const [state, setState] = useState<SetupState>('verify');
+  const [state, setState] = useState<GitHubSetupState>('verify');
   const [message, setMessage] = useState(
     'Confirm that your GitHub user owns this account or administers this organization.',
   );
@@ -258,156 +244,22 @@ function GitHubSetup() {
     return <AuthPendingScreen />;
   }
 
-  const heading = getHeading(state, setupAction, selectingExistingInstallation);
-
-  // The live region wraps only the status content — not the frame — so
-  // screen readers don't re-announce the mark and legal footer on updates.
-  // Desktop Back returns to the page that opened this flow, like the in-page
-  // Back below. The account hub opens it with router.replace, so history alone
-  // would skip the hub's Git tab.
   return (
-    <AuthFrame backHref={returnPath ?? undefined}>
-      <div role="status" aria-live="polite" aria-label={heading}>
-        <Rise>
-          <StepHeader title={heading} description={message} />
-        </Rise>
-        {state === 'verify' ? (
-          <Rise delay={0.06}>
-            <DetailPanel>
-              <DetailRow
-                label={tI18nComplete.raw('text7e1b0d5641f2')}
-                value={user.email ?? 'You'}
-              />
-            </DetailPanel>
-            <Button size="lg" className="mt-5 w-full" onClick={handleVerify}>
-              <Github className="size-4 shrink-0" />
-              {selectingExistingInstallation
-                ? tI18nComplete.raw('text7b9db77e0178')
-                : tI18nComplete.raw('text8130db25eca7')}
-            </Button>
-          </Rise>
-        ) : state === 'loading' || state === 'saving' ? (
-          <Rise delay={0.06}>
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Loading className="size-4 shrink-0" />
-              <span>{tI18nComplete.raw('text147251df4759')}</span>
-            </div>
-          </Rise>
-        ) : state === 'select' ? (
-          <Rise delay={0.06}>
-            <ul className="space-y-2">
-              {installations.map((installation) => (
-                <li
-                  key={installation.installation_id}
-                  className="bg-popover flex items-center gap-3 rounded-md border px-3 py-2.5"
-                >
-                  <span className="bg-primary/[0.06] flex size-9 shrink-0 items-center justify-center rounded-sm">
-                    <Github className="size-5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-foreground truncate text-sm font-medium">
-                      {installation.owner_login ?? tI18nComplete.raw('textd686f873a566')}
-                    </p>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <Badge variant="outline" size="xs">
-                        {installation.owner_type === 'User' ? 'Personal' : 'Organization'}
-                      </Badge>
-                      {installation.repository_selection ? (
-                        <span className="text-muted-foreground text-xs">
-                          {installation.repository_selection === 'all'
-                            ? tI18nComplete.raw('text77fe4eba38d8')
-                            : tI18nComplete.raw('texte0a8d25fe959')}
-                        </span>
-                      ) : null}
-                    </div>
-                    {/* One GitHub installation can back several Kortix
-                        accounts. Linking it again is legal, so this is a
-                        warning on the row and not a disabled button. */}
-                    {installation.linked_to_other_accounts > 0 ? (
-                      <p className="text-kortix-orange mt-1 text-xs">
-                        {tI18nComplete('text0b0e4c425624', {
-                          value0: installation.linked_to_other_accounts,
-                        })}
-                      </p>
-                    ) : null}
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={installation.linked ? 'outline' : 'secondary'}
-                    disabled={installation.linked}
-                    onClick={() => void handleLink(installation)}
-                  >
-                    {installation.linked ? 'Linked' : 'Link'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </Rise>
-        ) : state === 'empty' ? (
-          <Rise delay={0.06}>
-            <div className="space-y-3">
-              {installUrl ? (
-                <Button
-                  size="lg"
-                  className="w-full"
-                  onClick={() => window.location.assign(installUrl)}
-                >
-                  <Github className="size-4 shrink-0" />
-                  {tI18nComplete.raw('text8d3f36f31348')}
-                </Button>
-              ) : null}
-              <Button size="lg" variant="outline" className="w-full" asChild>
-                <Link href={backHref} replace prefetch onClick={clearGitHubSetupReturn}>
-                  {tI18nComplete.raw('text76900f1bfd16')}
-                </Link>
-              </Button>
-            </div>
-          </Rise>
-        ) : state === 'error' ? (
-          // Back to the page that opened this flow when there is one — a
-          // failed link should return the user to the Git tab they started
-          // from, not strand them on the app's landing page.
-          <Rise delay={0.06}>
-            <Button size="lg" className="w-full" asChild>
-              <Link href={backHref} replace prefetch onClick={clearGitHubSetupReturn}>
-                {returnPath
-                  ? tI18nComplete.raw('text76900f1bfd16')
-                  : tI18nComplete.raw('text5fae82827f98')}
-              </Link>
-            </Button>
-          </Rise>
-        ) : null}
-      </div>
-    </AuthFrame>
+    <GitHubSetupView
+      state={state}
+      message={message}
+      setupAction={setupAction}
+      selectingExistingInstallation={selectingExistingInstallation}
+      email={user.email ?? null}
+      installations={installations}
+      installUrl={installUrl}
+      backHref={backHref}
+      returnPath={returnPath}
+      onVerify={handleVerify}
+      onLink={(installation) => void handleLink(installation)}
+      onBack={clearGitHubSetupReturn}
+    />
   );
-}
-
-function getHeading(
-  state: SetupState,
-  setupAction: string,
-  selectingExistingInstallation: boolean,
-): string {
-  switch (state) {
-    case 'verify':
-      return selectingExistingInstallation ? 'Link a GitHub account' : 'Verify GitHub access';
-    case 'loading':
-      return 'Loading GitHub accounts';
-    case 'select':
-      return 'Select a GitHub account';
-    case 'empty':
-      return 'Install the Kortix App';
-    case 'saving':
-      return 'Linking GitHub';
-    case 'done':
-      return setupAction === 'uninstall' ? 'GitHub disconnected' : 'GitHub connected';
-    case 'error':
-      return 'Could not connect GitHub';
-    default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
-    }
-  }
 }
 
 /** The stored return path, validated, WITHOUT clearing it. */

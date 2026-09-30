@@ -5,19 +5,22 @@ import {
   ApprovalDecisionActions,
   type ApprovalDecisionValue,
   ApprovalParameters,
-  ApprovalUnreviewableNotice,
   approvalReviewable,
   resolvedLabel,
   resolvedTone,
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen, DetailPanel, DetailRow } from '@/features/auth/auth-consent';
+import { DetailPanel, DetailRow, OutcomeTitle } from '@/features/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
-import { CheckCircleIcon, MinusCircleIcon, XCircleIcon } from '@phosphor-icons/react';
+import { ShieldWarningIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { ConnectorHandshake } from './connector-handshake';
@@ -47,23 +50,27 @@ function connectorLogoUrl(details: ApprovalLinkDetails): string | null {
     : null;
 }
 
-const RESOLVED_MARK = {
-  success: { icon: CheckCircleIcon, className: 'text-kortix-green' },
-  destructive: { icon: XCircleIcon, className: 'text-kortix-red' },
-  muted: { icon: MinusCircleIcon, className: 'text-muted-foreground' },
-} as const;
+/** The catalogue word for a risk level; an unknown level is shown as sent. */
+const RISK_LABEL_KEY: Record<string, string> = {
+  read: 'text9b9a8d05a7ec',
+  write: 'text3f00927a7193',
+  destructive: 'textc3e58a73609d',
+};
 
 /**
  * The standalone approval screen: which connector, which call, with which
  * parameters, then the decision — or, once decided, how it was decided.
  *
  * One layout for every connector. The handshake names the connector by its
- * logo; the first panel names the call; the parameters panel is the evidence
- * and is never collapsed (`ApprovalParameters`, shared with the session notice
- * and the Review Center, so all three show the same redacted values).
+ * logo. The first panel is one fact per row: what runs, the tool path, the
+ * access level, the project, the time. The agent's description follows when
+ * there is one, then the parameters when there are any
+ * (`ApprovalParameters`, shared with the session notice and the Review Center,
+ * so all three show the same redacted values). A call with no parameters shows
+ * no empty parameters box.
  *
- * A decided call leads with its outcome: a filled check or cross beside the
- * title, in the outcome's colour, with the word itself. Never colour alone.
+ * A decided call leads with its outcome: the words at the leading edge and a
+ * filled mark at the trailing edge, in the outcome's colour. Never colour alone.
  */
 
 export function ApprovalDecision({ token }: { token: string }) {
@@ -152,16 +159,46 @@ export function ApprovalDecisionView({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  if (loading) return <AuthPendingScreen footer={false} />;
+  if (loading) {
+    // The shape of the screen that is coming, so the panel and the two
+    // decisions do not jump in under a spinner.
+    return (
+      <AuthFrame footerVariant="none">
+        <div role="status" aria-label={tI18nComplete.raw('textdc380888c4e2')}>
+          <div className="mb-10">
+            <Skeleton className="hidden h-10 w-28 py-0 md:block" />
+            <Skeleton className="h-8 w-3/4 py-0 md:mt-6" />
+            <Skeleton className="mt-3 h-4 w-full py-0" />
+          </div>
+          <div className="space-y-5">
+            <Skeleton className="h-40 w-full py-0" />
+            <Skeleton className="h-24 w-full py-0" />
+            <div className="flex gap-2">
+              <Skeleton className="h-9 flex-1 py-0" />
+              <Skeleton className="h-9 flex-1 py-0" />
+            </div>
+          </div>
+        </div>
+      </AuthFrame>
+    );
+  }
 
   if (!details) {
     return (
       <AuthFrame footerVariant="none">
         <Rise>
           <StepHeader
-            title={tI18nComplete.raw('text4c05fac320dc')}
+            title={
+              <OutcomeTitle tone="muted">{tI18nComplete.raw('text4c05fac320dc')}</OutcomeTitle>
+            }
             description={error ?? tI18nComplete.raw('text301fe0058472')}
           />
+        </Rise>
+        {/* A dead link still needs a way on: nothing here can be retried. */}
+        <Rise delay={0.06}>
+          <Button size="lg" variant="secondary" className="w-full" asChild>
+            <Link href="/">{tI18nComplete.raw('text5fae82827f98')}</Link>
+          </Button>
         </Rise>
       </AuthFrame>
     );
@@ -181,9 +218,8 @@ export function ApprovalDecisionView({
     },
     outcome,
   );
-  const mark = RESOLVED_MARK[resolvedTone(label)];
-  const MarkIcon = mark.icon;
   const readable = actionLabel(details.action);
+  const hasParameters = !!details.args_preview && Object.keys(details.args_preview).length > 0;
 
   // Named by the connector when the API says what it is called; a slug is not
   // a name ("github", "googledrive") and never goes into a title.
@@ -197,12 +233,7 @@ export function ApprovalDecisionView({
         : label === 'Denied'
           ? tI18nComplete.raw('text4341be8eb7f0')
           : label;
-    title = (
-      <span className="inline-flex items-center gap-2">
-        <MarkIcon weight="fill" aria-hidden className={`size-6 shrink-0 ${mark.className}`} />
-        {words}
-      </span>
-    );
+    title = <OutcomeTitle tone={resolvedTone(label)}>{words}</OutcomeTitle>;
   }
 
   return (
@@ -227,63 +258,70 @@ export function ApprovalDecisionView({
           <DetailPanel>
             <DetailRow
               label={tI18nComplete.raw('text00d60e31a4e6')}
-              value={
-                <span className="flex min-w-0 flex-col items-end gap-0.5">
-                  {readable ? <span className="truncate">{readable}</span> : null}
-                  <span className="flex max-w-full items-center gap-1.5">
-                    <code className="text-muted-foreground truncate font-mono text-xs">
-                      {details.action}
-                    </code>
-                    {details.risk ? (
-                      <Badge
-                        variant={
-                          details.risk === 'destructive'
-                            ? 'destructive'
-                            : details.risk === 'write'
-                              ? 'warning'
-                              : 'muted'
-                        }
-                        size="xs"
-                        className="capitalize"
-                      >
-                        {details.risk}
-                      </Badge>
-                    ) : null}
-                  </span>
-                </span>
-              }
+              value={readable ?? details.action}
+              mono={!readable}
             />
-            <DetailRow
-              label={tI18nComplete.raw('text985959785319')}
-              value={details.project_name}
-            />
+            {readable ? (
+              <DetailRow
+                label={tI18nComplete.raw('text2e53bdcd0740')}
+                value={details.action}
+                mono
+              />
+            ) : null}
+            {details.risk ? (
+              <DetailRow
+                label={tI18nComplete.raw('textec5ba0abb717')}
+                value={
+                  <Badge
+                    variant={
+                      details.risk === 'destructive'
+                        ? 'destructive'
+                        : details.risk === 'write'
+                          ? 'warning'
+                          : 'badgeSuccess'
+                    }
+                    size="xs"
+                    className="capitalize"
+                  >
+                    {RISK_LABEL_KEY[details.risk]
+                      ? tI18nComplete.raw(RISK_LABEL_KEY[details.risk])
+                      : details.risk}
+                  </Badge>
+                }
+              />
+            ) : null}
+            <DetailRow label={tI18nComplete.raw('text985959785319')} value={details.project_name} />
             <DetailRow
               label={tI18nComplete.raw('text2d9e28289fac')}
               value={requestedAtFormat.format(new Date(details.requested_at))}
             />
           </DetailPanel>
 
-          <ApprovalAgentContext
-            context={details.approval_context}
-            className="rounded-md border"
-          />
+          <ApprovalAgentContext context={details.approval_context} className="rounded-md border" />
 
-          <ApprovalParameters
-            argsPreview={details.args_preview}
-            reviewComplete={details.review_complete !== false}
-            className="overflow-hidden rounded-md border"
-          />
+          {hasParameters ? (
+            <ApprovalParameters
+              argsPreview={details.args_preview}
+              reviewComplete={details.review_complete !== false}
+              className="overflow-hidden rounded-md border"
+            />
+          ) : null}
 
           {error ? <ErrorStrip message={error} /> : null}
 
           {details.pending && !resolved ? (
             <>
-              {reviewable ? null : <ApprovalUnreviewableNotice className="border-0 p-0" />}
+              {reviewable ? null : (
+                <InfoBanner tone="warning" icon={ShieldWarningIcon}>
+                  {tI18nComplete.raw('text7c4a3e7e2251')}
+                </InfoBanner>
+              )}
               <ApprovalDecisionActions
                 onDecision={onDecision}
                 busyDecision={busyDecision}
                 approvable={reviewable}
                 stretch
+                sessionId={details.session_id}
                 className="border-0 p-0"
               />
             </>

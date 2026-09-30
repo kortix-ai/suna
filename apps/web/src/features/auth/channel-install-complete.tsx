@@ -16,6 +16,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { ConnectorHandshake } from '@/components/setup-links/connector-handshake';
+import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import {
@@ -49,7 +50,10 @@ export function ChannelInstallComplete({
   icon: React.ComponentType<{ className?: string }>;
   /** This page's path, used as the sign-in return target. */
   path: string;
-  complete: (projectId: string, input: ChannelInstallCompletionInput) => Promise<ChannelInstallCompletion>;
+  complete: (
+    projectId: string,
+    input: ChannelInstallCompletionInput,
+  ) => Promise<ChannelInstallCompletion>;
 }) {
   const t = useTranslations('hardcodedUi');
   const { user, isLoading } = useAuth();
@@ -122,14 +126,11 @@ export function ChannelInstallComplete({
       description={t(`channelInstall.${shown}`)}
       action={
         projectId ? (
-          <p className="text-muted-foreground text-sm">
-            <Link
-              href={`/projects/${encodeURIComponent(projectId)}`}
-              className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
-            >
+          <Button size="lg" variant="secondary" className="w-full" asChild>
+            <Link href={`/projects/${encodeURIComponent(projectId)}`}>
               {t('channelInstall.backToProject')}
             </Link>
-          </p>
+          </Button>
         ) : null
       }
     />
