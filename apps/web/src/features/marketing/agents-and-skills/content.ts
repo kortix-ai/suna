@@ -35,7 +35,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *    the other harnesses are behind `KORTIX_ACP_RUNTIME`, default false.
  *  - The scoping field is `permission`. It is NOT called `tools` —
  *    `packages/manifest-schema/src/index.v2.ts` raises a hard error on `tools`:
- *    "`tools` is deprecated upstream — use `permission` instead."
+ *    "`tools` is not an agent setting — use `permission` instead."
  *    Values are exactly `allow` | `ask` | `deny`.
  *  - Governance is deny-by-default. `packages/starter/templates/base/kortix.yaml`:
  *    "Omitted grants resolve to `none` in this schema version. Grant explicitly."

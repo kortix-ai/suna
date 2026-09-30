@@ -63,6 +63,7 @@ export type SessionHealthResponse = {
  *   - `session.todo`      the runtime's todo list
  *   - `session.shell`     a shell command run as a turn
  *   - `session.attach`    attach the harness's own terminal client
+ *   - `session.config`    a runtime config document (`/global/config`)
  */
 export type RuntimeCapability =
   | 'session.rewind'
@@ -73,7 +74,8 @@ export type RuntimeCapability =
   | 'session.mcp'
   | 'session.todo'
   | 'session.shell'
-  | 'session.attach';
+  | 'session.attach'
+  | 'session.config';
 
 /**
  * Does the session's runtime serve `capability`? Pass the health

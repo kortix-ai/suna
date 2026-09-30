@@ -731,6 +731,7 @@
     "mintWireMessageIdAbove",
     "mkdir",
     "modelInDefaultView",
+    "modelRefToKey",
     "narrateFailedStep",
     "narrateStep",
     "narrationToolName",

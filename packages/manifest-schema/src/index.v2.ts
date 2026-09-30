@@ -555,7 +555,7 @@ const MOVED_TO_AGENT_MD_KEYS = [
 ] as const;
 
 /**
- * Validate an agent's native `.md` frontmatter as parsed OpenCode behavior
+ * Validate an agent's `.md` frontmatter: its behavior on every harness
  * (spec §2.2, 2026-07-05 redirect — the ONE home for mode/model/temperature/
  * top_p/steps/variant/color/hidden/permission/description). This is NOT part
  * of `validateManifest`'s pipeline (frontmatter lives in a repo file the
@@ -563,8 +563,8 @@ const MOVED_TO_AGENT_MD_KEYS = [
  * (compile-agent-config.ts), which DOES read the file, to reuse the exact
  * same field rules instead of re-deriving them. A stock OpenCode agent `.md`
  * with none of these fields set is valid as-is (every field optional); the
- * deprecated upstream `tools`/`maxSteps` fields are still flagged so an
- * author gets a pointer instead of a silently-ignored key.
+ * retired `tools`/`maxSteps` names are still flagged so an author gets a
+ * pointer instead of a silently-ignored key.
  */
 export function validateAgentMdFrontmatter(
   frontmatter: Record<string, unknown>,
@@ -634,18 +634,18 @@ export function validateAgentMdFrontmatter(
     validatePermissionConfig(frontmatter.permission, `${where}.permission`, issues);
   }
 
-  // Deprecated upstream fields — pointer errors, not silent pass-through.
+  // Retired field names — pointer errors, not silent pass-through.
   if (frontmatter.tools !== undefined) {
     issues.push({
       path: `${where}.tools`,
-      message: '`tools` is deprecated upstream — use `permission` instead.',
+      message: '`tools` is not an agent setting — use `permission` instead.',
       severity: 'error',
     });
   }
   if (frontmatter.maxSteps !== undefined) {
     issues.push({
       path: `${where}.maxSteps`,
-      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
+      message: '`maxSteps` is not an agent setting — use `steps` instead.',
       severity: 'error',
     });
   }

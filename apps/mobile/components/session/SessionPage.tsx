@@ -827,7 +827,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     () => ({ projectId: projectId ?? null, requestConnect: requestConnectorConnect }),
     [projectId, requestConnectorConnect],
   );
-  const { data: config } = useOpenCodeConfig(sandboxUrl);
+  // Only a runtime with a config document (OpenCode) is asked for it; pi
+  // has none, and the project's model defaults cover the composer.
+  const hasRuntimeConfig = useRuntimeSupports(sandboxUrl, 'session.config');
+  const { data: config } = useOpenCodeConfig(hasRuntimeConfig ? sandboxUrl : undefined);
   // A runtime without slash commands (pi) gets no list: no "/" or "#"
   // suggestions and no AutoContinue, so nothing dispatches to /command (E1).
   const canRunCommands = useRuntimeSupports(sandboxUrl, 'session.commands');

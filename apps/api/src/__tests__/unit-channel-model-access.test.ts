@@ -236,7 +236,7 @@ describe('checkChannelModel — checked as the gateway will run it', () => {
 
     const verdict = await access.checkChannelModel(scope({ personalUserId: null }), 'codex/gpt-6-astra');
 
-    expect(verdict).toMatchObject({ ok: true, model: 'kortix/codex/gpt-6-astra' });
+    expect(verdict).toMatchObject({ ok: true, model: 'codex/gpt-6-astra' });
     expect(probes[0]).toMatchObject({
       userId: 'ivan', personalUserId: null, providerSecretPools: { codex: ['k1'] }, model: 'codex/gpt-6-astra',
     });

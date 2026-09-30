@@ -45,7 +45,7 @@ session (a restart or resume re-reads the selection).
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
-| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts` | Permissions/questions, workspace tools, gateway model |
+| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
 
 ## One host relay (E12)
@@ -74,7 +74,7 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1`, and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities`: all nine on OpenCode,
+(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode,
 `session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
