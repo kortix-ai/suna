@@ -797,6 +797,7 @@ mock.module('../shared/db', () => ({
               lastErrorCode: values.lastErrorCode ?? null,
               lastErrorMessage: values.lastErrorMessage ?? null,
               labels: values.labels ?? [],
+            labels: values.labels ?? [],
             metadata: values.metadata ?? {},
               createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,

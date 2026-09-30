@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -1053,7 +1054,7 @@ export async function createProjectSession(input: {
         initiatorType: initiator.type,
         initiatorId: initiator.id,
         secretsAllowlist,
-        labels: body.labels ?? [],
+        labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
