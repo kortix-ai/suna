@@ -113,6 +113,7 @@ triggers:
 | `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, and `apps` merge into this manifest. See [`imports:`](#imports) |
 | `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same agent `.md` files and skills. The project's `pi_harness` feature flag selects pi without this line. |
 | `harnesses.pi.packages`                             | no       | pi packages ([pi.dev/packages](https://pi.dev/packages)) the project's pi sessions load. See [`harnesses:`](#harnesses) |
+| `pi.config_dir`                                    | no       | `harnesses/pi`, then `.kortix/pi` if present. Pi-native `settings.json`, `extensions/`, `skills/`, and `prompts/`. |
 | `project.name` / `project.description`              | no       | display metadata; the platform does not read `project.name` for the project's display name |
 | `env.required` / `env.optional`                     | no       | env var names; `required` is advisory only, never enforced at session start                |
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |
@@ -282,7 +283,7 @@ When `config_dir` is not set, Kortix uses the first of `harnesses/opencode` and 
 
 ## `harnesses:`
 
-Per-harness settings. Today one key exists: `pi.packages`, the pi packages every pi session of this project loads (`runtime: pi`, or the `pi_harness` flag). A package is anything from [pi.dev/packages](https://pi.dev/packages): extensions (tools, hooks, commands), and the skills and prompts a package ships.
+Per-harness settings. `pi.config_dir` points to a repository-relative directory of Pi-native configuration (default: `harnesses/pi`, then `.kortix/pi`). The directory is imported on Pi boot. `pi.packages` is separate: it installs packages from the manifest's `harnesses.pi.packages` per agent. Today one package key exists: `pi.packages`, the pi packages every pi session of this project loads (`runtime: pi`, or the `pi_harness` flag). A package is anything from [pi.dev/packages](https://pi.dev/packages): extensions (tools, hooks, commands), and the skills and prompts a package ships.
 
 ```yaml
 runtime: pi

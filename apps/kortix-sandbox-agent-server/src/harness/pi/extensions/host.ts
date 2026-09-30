@@ -21,7 +21,7 @@
  * load (~13 s for two packages, measured), so a source that is not on disk is
  * dropped and reported in the runtime's extension status instead.
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent, AgentOptions, AgentTool } from '@earendil-works/pi-agent-core'
@@ -156,6 +156,7 @@ export interface PiSessionInput {
   ref: RunnerRef
   cwd: string
   agentDir: string
+  projectConfigDir?: string | null
   projectPackages: readonly PackageSource[]
   /** The unpacked node_modules fallback (`<root>/node_modules/<name>`) for npm entries in `projectPackages`, or null. */
   projectBundleRoot: string | null
@@ -279,6 +280,13 @@ export function resolveProjectPackages(
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
   const project = resolveProjectPackages(input.projectPackages, { cwd: input.cwd, bundleRoot: input.projectBundleRoot })
+  const projectSettings = input.projectConfigDir ? readSettings(join(input.projectConfigDir, 'settings.json')) : {}
+  // The repository supplies pi-native settings as-is; explicit agent packages
+  // from the manifest remain additive and are already installed by the API.
+  const localPackages = (Array.isArray(projectSettings.packages) ? projectSettings.packages : []).filter(
+    (entry): entry is string => typeof entry === 'string' && entry.startsWith('./'),
+  )
+  project.kept.push(...localPackages.map((source) => join(input.projectConfigDir!, source)))
   for (const name of input.prebuilt?.names ?? []) project.npmNames.add(name)
   project.kept.push(...(input.prebuilt?.resources ?? []))
   // A package the project pins itself replaces the system one (pi would load both: a path and an npm name differ).
@@ -293,7 +301,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
       // turn is the product's to retry (a silent pi retry would double-bill and reorder the wire).
       // They live in storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
       global: JSON.stringify({ ...globalSettings, packages: system.kept, compaction: { enabled: false }, retry: { enabled: false } }),
-      project: JSON.stringify({ packages: project.kept }),
+      project: JSON.stringify({ ...projectSettings, packages: project.kept }),
     }),
     { projectTrusted: true },
   )
@@ -305,6 +313,11 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
       agentDir: input.agentDir,
       settingsManager,
       extensionFactories: [...input.extensions],
+      additionalExtensionPaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'extensions'))
+        ? readdirSync(join(input.projectConfigDir, 'extensions')).filter((file) => /\.[cm]?[jt]s$/.test(file)).map((file) => join(input.projectConfigDir!, 'extensions', file))
+        : [],
+      additionalPromptTemplatePaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'prompts'))
+        ? [join(input.projectConfigDir, 'prompts')] : [],
       noContextFiles: true,
       noThemes: true,
     },
