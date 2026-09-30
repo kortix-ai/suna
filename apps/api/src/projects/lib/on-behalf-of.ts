@@ -208,7 +208,9 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
  *     cleared and stamped, `user_id` is kept — the same result as
  *     `clearSessionOnBehalfOfForPrompt`.
  *
- * One conditional UPDATE: it writes nothing when the token already acts as the
+ * One statement: the token UPDATE and the session stamp run in one
+ * data-modifying CTE, so they land together and the prompt waits for one
+ * round trip, not two. It writes nothing when the token already acts as the
  * prompter, which is every turn but the first after a change of hands.
  * Returns true when it changed a token.
  */
@@ -218,37 +220,32 @@ export async function bindSessionTurnIdentity(input: {
   prompterUserId: string;
 }): Promise<boolean> {
   const prompter = sql`${input.prompterUserId}::uuid`;
-  const member = sql`exists (select 1 from ${accountMemberships} where ${accountMemberships.userId} = ${prompter} and ${accountMemberships.accountId} = ${input.accountId})`;
-  const changed = await db
-    .update(accountTokens)
-    .set({
-      userId: sql`case when ${member} then ${prompter} else ${accountTokens.userId} end`,
-      onBehalfOfUserId: sql`case when ${member} then ${prompter} else null end`,
-    })
-    .where(
-      and(
-        eq(accountTokens.sessionId, input.sessionId),
-        eq(accountTokens.accountId, input.accountId),
-        eq(accountTokens.status, 'active'),
-        isNull(accountTokens.revokedAt),
-        sql`case when ${member}
-          then (${accountTokens.userId} is distinct from ${prompter} or ${accountTokens.onBehalfOfUserId} is distinct from ${prompter})
-          else ${accountTokens.onBehalfOfUserId} is not null end`,
-      ),
+  const member = sql`exists (select 1 from kortix.account_memberships m where m.user_id = ${prompter} and m.account_id = ${input.accountId})`;
+  const changed = await db.execute<{ token_id: string }>(sql`
+    with changed as (
+      update kortix.account_tokens t
+         set user_id = case when ${member} then ${prompter} else t.user_id end,
+             on_behalf_of_user_id = case when ${member} then ${prompter} else null end
+       where t.session_id = ${input.sessionId}
+         and t.account_id = ${input.accountId}
+         and t.status = 'active'
+         and t.revoked_at is null
+         and case when ${member}
+               then (t.user_id is distinct from ${prompter} or t.on_behalf_of_user_id is distinct from ${prompter})
+               else t.on_behalf_of_user_id is not null end
+      returning t.token_id
+    ), stamped as (
+      update kortix.project_sessions s
+         set metadata = case when ${member}
+               then coalesce(s.metadata, '{}'::jsonb) - ${ON_BEHALF_OF_CLEARED_KEY}::text
+               else coalesce(s.metadata, '{}'::jsonb) || jsonb_build_object(${ON_BEHALF_OF_CLEARED_KEY}::text, now()::text) end
+       where s.session_id = ${input.sessionId}
+         and exists (select 1 from changed)
     )
-    .returning({ tokenId: accountTokens.tokenId, onBehalfOfUserId: accountTokens.onBehalfOfUserId });
-  if (changed.length === 0) return false;
-  for (const row of changed) loadTokenBinding.invalidate(row.tokenId);
-  const bound = changed[0]!.onBehalfOfUserId !== null;
-  await db
-    .update(projectSessions)
-    .set({
-      metadata: bound
-        ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - ${ON_BEHALF_OF_CLEARED_KEY}::text`
-        : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(${ON_BEHALF_OF_CLEARED_KEY}::text, now()::text)`,
-    })
-    .where(eq(projectSessions.sessionId, input.sessionId));
-  return true;
+    select token_id from changed
+  `);
+  for (const row of changed) loadTokenBinding.invalidate(row.token_id);
+  return changed.length > 0;
 }
 
 /** Fresh per-request value set by the auth middleware; null for non-session tokens. */
