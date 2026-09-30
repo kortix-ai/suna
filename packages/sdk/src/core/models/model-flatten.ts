@@ -33,6 +33,7 @@ type LooseModel =
       open_weights?: boolean;
       last_updated?: string;
       enabled?: boolean;
+      free?: boolean;
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -96,6 +97,7 @@ export interface FlatModel {
    * `/model-picker`), which callers read as "not applicable".
    */
   enabled?: boolean;
+  free?: boolean;
 }
 
 /**
@@ -126,6 +128,7 @@ type WithGatewayFields = {
   open_weights?: boolean;
   last_updated?: string;
   enabled?: boolean;
+  free?: boolean;
   attachment?: boolean;
 };
 
@@ -208,6 +211,7 @@ export function flattenModels(
         openWeights: (model as WithGatewayFields).open_weights,
         lastUpdated: (model as WithGatewayFields).last_updated,
         enabled: (model as WithGatewayFields).enabled,
+        free: (model as WithGatewayFields).free === true,
       });
     }
   }

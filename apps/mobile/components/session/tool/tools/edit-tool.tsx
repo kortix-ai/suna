@@ -136,7 +136,6 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('edit', EditTool);
-ToolRegistry.register('morph_edit', EditTool);
 
 // ─── Legacy (tool-part-renderer.tsx switch) ──────────────────────────────────
 

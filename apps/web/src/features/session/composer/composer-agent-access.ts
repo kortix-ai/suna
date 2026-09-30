@@ -98,7 +98,7 @@ export function resolveComposerAgent(input: {
   // before any query lands.
   if (!Array.isArray(input.agents)) {
     const picked = input.selectedAgent?.trim();
-    if (picked) return { selected: picked, disabled: false, reason: 'loading' };
+    if (picked && !bound) return { selected: picked, disabled: false, reason: 'loading' };
     return { selected: bound, disabled: false, reason: 'loading' };
   }
 
@@ -111,7 +111,7 @@ export function resolveComposerAgent(input: {
   }
 
   const picked = input.selectedAgent?.trim();
-  if (picked && selectable.some((a) => a.name === picked)) {
+  if (!bound && picked && selectable.some((a) => a.name === picked)) {
     return { selected: picked, disabled: false, reason: 'selected' };
   }
 

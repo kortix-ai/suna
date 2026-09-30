@@ -1,5 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 
+import { runtimeSupports } from '@kortix/sdk';
+
 import type { Auth } from './api/auth.ts';
 import { clientFromAuth } from './api/client.ts';
 import {
@@ -12,6 +14,7 @@ import type { ProjectSession } from './api/types.ts';
 import { ensureOpencodeBin, isValidOpencodeVersion } from './opencode-bin.ts';
 import {
   fetchProjectSession,
+  readRuntimeCapabilities,
   resolveSessionRuntime,
   SessionRuntimeError,
   type SessionRuntime,
@@ -67,6 +70,7 @@ export interface AttachResolveRequest {
 /** Test seams. Every default talks to the real API / filesystem / process. */
 export interface AttachOpenCodeDeps {
   resolveRuntime?: (request: AttachResolveRequest) => Promise<SessionRuntime>;
+  probeCapabilities?: (runtime: SessionRuntime) => Promise<readonly string[] | undefined>;
   probeRuntimeVersion?: (runtime: SessionRuntime) => Promise<string | undefined>;
   ensureBin?: (options: { version?: string }) => Promise<{ bin: string }>;
   startProxy?: (options: {
@@ -124,6 +128,13 @@ export class AttachOpenCodeError extends Error {
   }
 }
 
+/**
+ * Why attach stops for a runtime without `session.attach` (a pi session): it
+ * has no terminal client of its own to attach.
+ */
+export const ATTACH_UNSUPPORTED =
+  "This session's runtime does not support attaching a terminal client.";
+
 /** Display name for a session row — the custom/auto name, else its short id. */
 export function attachSessionLabel(session: ProjectSession): string {
   return session.name ?? session.session_id.split('-')[0];
@@ -134,6 +145,7 @@ export async function attachOpenCodeSession(
 ): Promise<AttachOpenCodeResult> {
   const deps = options.deps ?? {};
   const resolveRuntime = deps.resolveRuntime ?? resolveRuntimeViaApi;
+  const probeCapabilities = deps.probeCapabilities ?? readRuntimeCapabilities;
   const probeRuntimeVersion = deps.probeRuntimeVersion ?? runtimeOpencodeVersion;
   const ensureBin = deps.ensureBin ?? ensureOpencodeBin;
   const startProxy = deps.startProxy ?? startOpenCodeProxy;
@@ -157,6 +169,10 @@ export async function attachOpenCodeSession(
     });
   } catch (err) {
     throw new AttachOpenCodeError(resolveFailureStage(err), (err as Error).message, err);
+  }
+  // Before the binary: an `opencode` client cannot drive a runtime that is not OpenCode.
+  if (!runtimeSupports(await probeCapabilities(runtime), 'session.attach')) {
+    throw new AttachOpenCodeError('resolving', ATTACH_UNSUPPORTED);
   }
   if (!runtime.opencodeSessionId) {
     throw new AttachOpenCodeError(

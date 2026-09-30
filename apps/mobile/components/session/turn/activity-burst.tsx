@@ -29,11 +29,11 @@ import { ownsBurst } from '@/lib/session/activity-sheet';
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
-import type { ActivityContextValue } from './activity-step';
+import type { ActivityContextValue } from '@/lib/session/activity-sheet-store';
 
 // ─── Burst ───────────────────────────────────────────────────────────────────
 
-export interface ActivityBurstProps {
+interface ActivityBurstProps {
   segment: { kind: 'burst'; parts: Part[] };
   /** The owning turn is still working (web `working`). */
   turnLive: boolean;

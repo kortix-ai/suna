@@ -1,37 +1,38 @@
 import { describe, expect, test } from 'bun:test';
 import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../routes/shared';
 import {
+  IN_PLACE_RESTART_CLEARED_KEYS,
   RUNTIME_READINESS_CLOCK_KEYS,
-  STALE_OPENCODE_BOOT_HARD_MS,
-  opencodeReadyWaitPatch,
+  STALE_RUNTIME_BOOT_HARD_MS,
   RUNTIME_PROVEN_AT_KEY,
   runtimeBootEpochMs,
+  runtimeReadyWaitPatch,
   servesThroughProbeMiss,
-  staleOpencodeReadyReason,
+  staleRuntimeReadyReason,
 } from './readiness-clocks';
 import { STOPPED_SANDBOX_CLEARED_KEYS } from './status-transitions';
 
 describe('readiness clocks', () => {
   test('tracks unreachable and not-ready deadlines independently across reason changes', () => {
     const metadata = {
-      opencodeReadyWaitStartedAt: '2026-07-24T01:59:59.000Z',
-      opencodeReadyWaitReason: 'not_ready',
-      opencodeUnreachableWaitStartedAt: '2026-07-24T01:59:29.000Z',
-      opencodeNotReadyWaitStartedAt: '2026-07-24T01:58:29.000Z',
+      runtimeReadyWaitStartedAt: '2026-07-24T01:59:59.000Z',
+      runtimeReadyWaitReason: 'not_ready',
+      runtimeUnreachableWaitStartedAt: '2026-07-24T01:59:29.000Z',
+      runtimeNotReadyWaitStartedAt: '2026-07-24T01:58:29.000Z',
     };
     const now = Date.parse('2026-07-24T02:00:00.000Z');
 
-    expect(staleOpencodeReadyReason(metadata, 'unreachable', now, 30_000)).toBe(
+    expect(staleRuntimeReadyReason(metadata, 'unreachable', now, 30_000)).toBe(
       'runtime_unreachable_timeout',
     );
-    expect(staleOpencodeReadyReason(metadata, 'not_ready', now, 90_000)).toBe(
+    expect(staleRuntimeReadyReason(metadata, 'not_ready', now, 90_000)).toBe(
       'runtime_not_ready_timeout',
     );
   });
 
   test('does not treat an old initial boot as a stale post-restart OpenCode wait', () => {
     expect(
-      staleOpencodeReadyReason(
+      staleRuntimeReadyReason(
         { initSucceededAt: '2026-07-24T01:00:00.000Z' },
         'unreachable',
         Date.parse('2026-07-24T02:00:00.000Z'),
@@ -39,8 +40,8 @@ describe('readiness clocks', () => {
     ).toBeNull();
 
     expect(
-      staleOpencodeReadyReason(
-        { opencodeReadyWaitStartedAt: '2026-07-24T01:54:59.000Z' },
+      staleRuntimeReadyReason(
+        { runtimeReadyWaitStartedAt: '2026-07-24T01:54:59.000Z' },
         'unreachable',
         Date.parse('2026-07-24T02:00:00.000Z'),
       ),
@@ -52,60 +53,60 @@ describe('progress-aware OpenCode boot budget (SampleCo 2026-08-25 17:23 double 
   const t0 = new Date('2026-08-25T17:23:04.000Z');
 
   test('a phase change restarts the reason clock; the first-seen clock never moves', () => {
-    const first = opencodeReadyWaitPatch({}, 'not_ready', 'config-deps|opencode=starting', t0)!;
-    expect(first.opencodeBootWaitFirstSeenAt).toBe(t0.toISOString());
-    expect(first.opencodeNotReadyWaitStartedAt).toBe(t0.toISOString());
-    expect(first.opencodeBootPhase).toBe('config-deps|opencode=starting');
+    const first = runtimeReadyWaitPatch({}, 'not_ready', 'config-deps|opencode=starting', t0)!;
+    expect(first.runtimeBootWaitFirstSeenAt).toBe(t0.toISOString());
+    expect(first.runtimeNotReadyWaitStartedAt).toBe(t0.toISOString());
+    expect(first.runtimeBootPhase).toBe('config-deps|opencode=starting');
 
     // Same phase 60 s later: nothing to write.
     const t1 = new Date(t0.getTime() + 60_000);
-    expect(opencodeReadyWaitPatch(first, 'not_ready', 'config-deps|opencode=starting', t1)).toBeNull();
+    expect(runtimeReadyWaitPatch(first, 'not_ready', 'config-deps|opencode=starting', t1)).toBeNull();
 
     // New phase 80 s later (install finished, OpenCode spawned): clock restarts.
     const t2 = new Date(t0.getTime() + 80_000);
-    const second = opencodeReadyWaitPatch(first, 'not_ready', 'opencode-spawned|opencode=starting', t2)!;
-    expect(second.opencodeNotReadyWaitStartedAt).toBe(t2.toISOString());
-    expect(second.opencodeBootWaitFirstSeenAt).toBe(t0.toISOString());
+    const second = runtimeReadyWaitPatch(first, 'not_ready', 'opencode-spawned|opencode=starting', t2)!;
+    expect(second.runtimeNotReadyWaitStartedAt).toBe(t2.toISOString());
+    expect(second.runtimeBootWaitFirstSeenAt).toBe(t0.toISOString());
 
     // 85 s after the FIRST poll the old rule parked the box; with progress it is not stale.
     const t3 = new Date(t0.getTime() + 85_000);
-    expect(staleOpencodeReadyReason(second, 'not_ready', t3.getTime(), 90_000)).toBeNull();
+    expect(staleRuntimeReadyReason(second, 'not_ready', t3.getTime(), 90_000)).toBeNull();
     // ...but 90 s of NO progress after the last phase change still is.
     const t4 = new Date(t2.getTime() + 90_001);
-    expect(staleOpencodeReadyReason(second, 'not_ready', t4.getTime(), 90_000)).toBe(
+    expect(staleRuntimeReadyReason(second, 'not_ready', t4.getTime(), 90_000)).toBe(
       'runtime_not_ready_timeout',
     );
   });
 
   test('a legacy row (single clock + reason) counts as a running clock for that reason', () => {
     const legacy = {
-      opencodeReadyWaitStartedAt: '2026-08-25T17:23:04.000Z',
-      opencodeReadyWaitReason: 'unreachable',
+      runtimeReadyWaitStartedAt: '2026-08-25T17:23:04.000Z',
+      runtimeReadyWaitReason: 'unreachable',
     };
-    expect(opencodeReadyWaitPatch(legacy, 'unreachable', undefined, new Date(t0.getTime() + 31_000))).toBeNull();
-    expect(staleOpencodeReadyReason(legacy, 'unreachable', t0.getTime() + 31_000, 30_000)).toBe(
+    expect(runtimeReadyWaitPatch(legacy, 'unreachable', undefined, new Date(t0.getTime() + 31_000))).toBeNull();
+    expect(staleRuntimeReadyReason(legacy, 'unreachable', t0.getTime() + 31_000, 30_000)).toBe(
       'runtime_unreachable_timeout',
     );
   });
 
   test('a daemon that reports no phase keeps the old fixed budget', () => {
-    const first = opencodeReadyWaitPatch({}, 'not_ready', undefined, t0)!;
-    expect(first.opencodeBootPhase).toBeUndefined();
-    expect(opencodeReadyWaitPatch(first, 'not_ready', undefined, new Date(t0.getTime() + 80_000))).toBeNull();
+    const first = runtimeReadyWaitPatch({}, 'not_ready', undefined, t0)!;
+    expect(first.runtimeBootPhase).toBeUndefined();
+    expect(runtimeReadyWaitPatch(first, 'not_ready', undefined, new Date(t0.getTime() + 80_000))).toBeNull();
     expect(
-      staleOpencodeReadyReason(first, 'not_ready', t0.getTime() + 90_001, 90_000),
+      staleRuntimeReadyReason(first, 'not_ready', t0.getTime() + 90_001, 90_000),
     ).toBe('runtime_not_ready_timeout');
   });
 
   test('the hard cap bounds a boot that keeps changing phase without ever becoming ready', () => {
-    let metadata = opencodeReadyWaitPatch({}, 'not_ready', 'p0', t0)!;
+    let metadata = runtimeReadyWaitPatch({}, 'not_ready', 'p0', t0)!;
     for (let i = 1; i <= 12; i += 1) {
       const t = new Date(t0.getTime() + i * 60_000);
-      metadata = opencodeReadyWaitPatch(metadata, 'not_ready', `p${i}`, t) ?? metadata;
+      metadata = runtimeReadyWaitPatch(metadata, 'not_ready', `p${i}`, t) ?? metadata;
     }
     const now = t0.getTime() + 12 * 60_000 + 1_000;
     // Reason clock is only 1 s old, yet 12 min have passed since first seen.
-    expect(staleOpencodeReadyReason(metadata, 'not_ready', now, 90_000, 10 * 60_000)).toBe(
+    expect(staleRuntimeReadyReason(metadata, 'not_ready', now, 90_000, 10 * 60_000)).toBe(
       'runtime_not_ready_timeout',
     );
   });
@@ -127,10 +128,10 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
 
   /** The row as attempt 1 left it, after the park and the rung's resume. */
   const inherited = {
-    opencodeBootWaitFirstSeenAt: attempt1.toISOString(),
-    opencodeNotReadyWaitStartedAt: attempt1.toISOString(),
-    opencodeReadyWaitReason: 'not_ready',
-    opencodeBootPhase: 'config-deps|opencode=starting',
+    runtimeBootWaitFirstSeenAt: attempt1.toISOString(),
+    runtimeNotReadyWaitStartedAt: attempt1.toISOString(),
+    runtimeReadyWaitReason: 'not_ready',
+    runtimeBootPhase: 'config-deps|opencode=starting',
     providerRunningConfirmedAt: attempt2.toISOString(),
     // Survives the rung on purpose — it drives the cooldown escalation.
     runtimeStartFailureCount: 1,
@@ -138,20 +139,20 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
 
   test('THE INCIDENT: the inherited hard cap no longer parks attempt 2 mid-boot', () => {
     // 10m49s after attempt 1's first observation, 59s into attempt 2's boot.
-    expect(park.getTime() - attempt1.getTime()).toBeGreaterThan(STALE_OPENCODE_BOOT_HARD_MS);
-    expect(park.getTime() - attempt2.getTime()).toBeLessThan(STALE_OPENCODE_BOOT_HARD_MS);
-    expect(staleOpencodeReadyReason(inherited, 'not_ready', park.getTime())).toBeNull();
+    expect(park.getTime() - attempt1.getTime()).toBeGreaterThan(STALE_RUNTIME_BOOT_HARD_MS);
+    expect(park.getTime() - attempt2.getTime()).toBeLessThan(STALE_RUNTIME_BOOT_HARD_MS);
+    expect(staleRuntimeReadyReason(inherited, 'not_ready', park.getTime())).toBeNull();
   });
 
   test('the inherited PER-REASON clock does not stale a fresh boot either', () => {
     // 5-minute default budget, ~11 minutes of inherited clock.
     expect(
-      staleOpencodeReadyReason(inherited, 'not_ready', park.getTime(), 5 * 60_000),
+      staleRuntimeReadyReason(inherited, 'not_ready', park.getTime(), 5 * 60_000),
     ).toBeNull();
   });
 
   test('the next observation re-baselines both clocks onto this attempt', () => {
-    const patch = opencodeReadyWaitPatch(
+    const patch = runtimeReadyWaitPatch(
       inherited,
       'not_ready',
       'config-deps|opencode=starting',
@@ -160,8 +161,8 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
     // Written even though the phase is UNCHANGED: the clock it would have
     // returned null for belongs to the previous attempt.
     if (!patch) throw new Error('expected a re-baselining patch');
-    expect(patch.opencodeBootWaitFirstSeenAt).toBe(park.toISOString());
-    expect(patch.opencodeNotReadyWaitStartedAt).toBe(park.toISOString());
+    expect(patch.runtimeBootWaitFirstSeenAt).toBe(park.toISOString());
+    expect(patch.runtimeNotReadyWaitStartedAt).toBe(park.toISOString());
     // The cooldown accounting is untouched by a re-baseline.
     expect(patch.runtimeStartFailureCount).toBe(1);
   });
@@ -172,19 +173,19 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
     let row: Record<string, unknown> = { providerRunningConfirmedAt: attempt2.toISOString() };
     for (let i = 0; i < 40; i += 1) {
       const t = new Date(attempt2.getTime() + i * 20_000);
-      row = opencodeReadyWaitPatch(row, 'not_ready', `phase-${i}`, t) ?? row;
+      row = runtimeReadyWaitPatch(row, 'not_ready', `phase-${i}`, t) ?? row;
     }
-    const past = attempt2.getTime() + STALE_OPENCODE_BOOT_HARD_MS + 1_000;
-    expect(row.opencodeBootWaitFirstSeenAt).toBe(attempt2.toISOString());
-    expect(staleOpencodeReadyReason(row, 'not_ready', past)).toBe('runtime_not_ready_timeout');
+    const past = attempt2.getTime() + STALE_RUNTIME_BOOT_HARD_MS + 1_000;
+    expect(row.runtimeBootWaitFirstSeenAt).toBe(attempt2.toISOString());
+    expect(staleRuntimeReadyReason(row, 'not_ready', past)).toBe('runtime_not_ready_timeout');
   });
 
   test('a boot with advancing phase is never staled inside the cap', () => {
     let row: Record<string, unknown> = { providerRunningConfirmedAt: attempt2.toISOString() };
     for (let i = 0; i < 8; i += 1) {
       const t = new Date(attempt2.getTime() + i * 60_000);
-      row = opencodeReadyWaitPatch(row, 'not_ready', `phase-${i}`, t) ?? row;
-      expect(staleOpencodeReadyReason(row, 'not_ready', t.getTime() + 59_000, 5 * 60_000)).toBeNull();
+      row = runtimeReadyWaitPatch(row, 'not_ready', `phase-${i}`, t) ?? row;
+      expect(staleRuntimeReadyReason(row, 'not_ready', t.getTime() + 59_000, 5 * 60_000)).toBeNull();
     }
   });
 
@@ -198,8 +199,8 @@ describe('an automatic rung never inherits the previous attempt boot budget', ()
     ).toBe(attempt2.getTime());
     // No epoch ⇒ the guard cannot fire, so legacy rows behave exactly as before.
     expect(
-      staleOpencodeReadyReason(
-        { opencodeBootWaitFirstSeenAt: attempt1.toISOString() },
+      staleRuntimeReadyReason(
+        { runtimeBootWaitFirstSeenAt: attempt1.toISOString() },
         'not_ready',
         park.getTime(),
       ),
@@ -257,5 +258,80 @@ describe('servesThroughProbeMiss — a box proven this boot is never parked by i
 
   test('a stopped row cannot keep the proof', () => {
     expect(STOPPED_SANDBOX_CLEARED_KEYS).toContain(RUNTIME_PROVEN_AT_KEY);
+  });
+});
+
+describe('neutral readiness keys: runtime* written, pre-W4 opencode* still read', () => {
+  const t0 = new Date('2026-09-30T10:00:00.000Z');
+  const PRE_W4_SPELLING: Record<string, string> = {
+    runtimeReadyWaitStartedAt: 'opencodeReadyWaitStartedAt',
+    runtimeReadyWaitReason: 'opencodeReadyWaitReason',
+    runtimeUnreachableWaitStartedAt: 'opencodeUnreachableWaitStartedAt',
+    runtimeNotReadyWaitStartedAt: 'opencodeNotReadyWaitStartedAt',
+    runtimeBootPhase: 'opencodeBootPhase',
+    runtimeBootWaitFirstSeenAt: 'opencodeBootWaitFirstSeenAt',
+    runtimeUnreachableCause: 'opencodeUnreachableCause',
+    runtimeUnreachableCauseAt: 'opencodeUnreachableCauseAt',
+    runtimeUnreachableResponder: 'opencodeUnreachableResponder',
+    runtimeUnreachableDetail: 'opencodeUnreachableDetail',
+  };
+
+  test('an observation writes only runtime* keys', () => {
+    expect(runtimeReadyWaitPatch({}, 'unreachable', 'boot|state=starting', t0)).toEqual({
+      runtimeReadyWaitStartedAt: t0.toISOString(),
+      runtimeReadyWaitReason: 'unreachable',
+      runtimeUnreachableWaitStartedAt: t0.toISOString(),
+      runtimeBootWaitFirstSeenAt: t0.toISOString(),
+      runtimeBootPhase: 'boot|state=starting',
+    });
+  });
+
+  test('a row an older API stamped keeps its budgets', () => {
+    const preW4 = {
+      opencodeReadyWaitStartedAt: t0.toISOString(),
+      opencodeReadyWaitReason: 'not_ready',
+      opencodeNotReadyWaitStartedAt: t0.toISOString(),
+      opencodeBootWaitFirstSeenAt: t0.toISOString(),
+      opencodeBootPhase: 'p0',
+    };
+    // Same phase, clock running: nothing to write.
+    expect(runtimeReadyWaitPatch(preW4, 'not_ready', 'p0', new Date(t0.getTime() + 60_000))).toBeNull();
+    // The per-reason clock still spends.
+    expect(staleRuntimeReadyReason(preW4, 'not_ready', t0.getTime() + 90_001, 90_000)).toBe(
+      'runtime_not_ready_timeout',
+    );
+    // The hard cap still spends.
+    expect(
+      staleRuntimeReadyReason(
+        { opencodeBootWaitFirstSeenAt: t0.toISOString() },
+        'not_ready',
+        t0.getTime() + STALE_RUNTIME_BOOT_HARD_MS + 1_000,
+      ),
+    ).toBe('runtime_not_ready_timeout');
+    // A new phase moves the first-seen clock to the neutral key without resetting it.
+    const next = runtimeReadyWaitPatch(preW4, 'not_ready', 'p1', new Date(t0.getTime() + 80_000))!;
+    expect(next.runtimeBootWaitFirstSeenAt).toBe(t0.toISOString());
+    expect(next.runtimeBootPhase).toBe('p1');
+  });
+
+  test('the neutral key wins over a pre-W4 key on the same row', () => {
+    const both = {
+      opencodeNotReadyWaitStartedAt: t0.toISOString(),
+      runtimeNotReadyWaitStartedAt: new Date(t0.getTime() + 80_000).toISOString(),
+    };
+    expect(staleRuntimeReadyReason(both, 'not_ready', t0.getTime() + 90_001, 90_000)).toBeNull();
+  });
+
+  test('every clearing list strips both spellings', () => {
+    for (const [neutral, preW4] of Object.entries(PRE_W4_SPELLING)) {
+      for (const list of [
+        RUNTIME_READINESS_CLOCK_KEYS,
+        RUNTIME_WAKE_CLAIM_CLEARED_KEYS,
+        IN_PLACE_RESTART_CLEARED_KEYS,
+      ]) {
+        expect(list as readonly string[]).toContain(neutral);
+        expect(list as readonly string[]).toContain(preW4);
+      }
+    }
   });
 });

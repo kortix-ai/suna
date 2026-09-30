@@ -11,7 +11,11 @@ import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { config } from '../../config';
-import { channelPrompterForOnBehalfOf, clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
+import {
+  bindSessionTurnIdentity,
+  channelPrompterForOnBehalfOf,
+  clearSessionOnBehalfOfForPrompt,
+} from '../lib/on-behalf-of';
 import { logger } from '../../lib/logger';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded } from './prompt-landing-proof';
@@ -94,22 +98,35 @@ export async function continueSession(
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
   }
-  // Spec 2026-09-22 §2.3: a prompt from anyone other than the session's
-  // `on_behalf_of` human clears it. The HTTP prompt route clears for human
-  // prompters itself; trigger and channel deliveries arrive here.
-  const channelPrompter = channelPrompterForOnBehalfOf({
-    source: command.source,
-    userId: command.userId ?? null,
-    slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
-    teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
-  });
-  if (channelPrompter !== undefined) {
-    await clearSessionOnBehalfOfForPrompt({
-      accountId: session.accountId,
-      sessionId,
-      prompterUserId: channelPrompter,
-    });
+  // The session token acts as the person who starts this turn (spec
+  // 2026-09-22 §2.3). The prompt route marks its human prompts
+  // `bindTurnIdentity`; trigger and channel deliveries are classified by
+  // source. A person binds `user_id` + `on_behalf_of`; a non-person (`null`)
+  // clears `on_behalf_of` and keeps `user_id` — never the automation actor,
+  // which is the account owner.
+  const turnPrompter = command.bindTurnIdentity
+    ? (command.userId ?? undefined)
+    : channelPrompterForOnBehalfOf({
+        source: command.source,
+        userId: command.userId ?? null,
+        slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
+        teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
+      });
+  // The clear lands BEFORE the wake: a wake that re-mints the token reads its
+  // stamp and must not restore `on_behalf_of` for the automation actor.
+  if (turnPrompter === null) {
+    await clearSessionOnBehalfOfForPrompt({ accountId: session.accountId, sessionId, prompterUserId: null });
   }
+  // The bind runs alongside the wake (a re-mint mints for this same person) and
+  // is awaited before the prompt is posted: a failed bind fails the delivery,
+  // so no turn runs as the previous prompter.
+  const turnIdentity =
+    typeof turnPrompter === 'string'
+      ? bindSessionTurnIdentity({ accountId: session.accountId, sessionId, prompterUserId: turnPrompter })
+      : Promise.resolve(false);
+  // Observed here so a delivery that never reaches `sendPrompt` leaves no
+  // unhandled rejection; `sendPrompt` awaits the original and throws.
+  turnIdentity.catch(() => undefined);
   const pendingAttachmentNames = sessionMeta.pending_prompt?.attachment_names;
   const shouldRepairLegacyInlineAttachments =
     command.isPendingFirstPrompt !== true &&
@@ -169,6 +186,7 @@ export async function continueSession(
   const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
     await beforeSend?.();
+    await turnIdentity;
     const delivery = await postPrompt(
       externalId,
       opencodeSessionId,

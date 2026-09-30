@@ -130,7 +130,7 @@ export async function syncOpencodeSessionSnapshot(input: {
   if (snapshots.length === 0) return input.row;
 
   const resolvedRootId = resolveRootSessionId({
-    pinnedRootId: input.row.opencodeSessionId,
+    pinnedRootId: input.row.runtimeSessionId,
     sessions: listed.sessions,
   });
   if (!resolvedRootId) return input.row;

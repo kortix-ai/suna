@@ -26,7 +26,7 @@ import { logger } from '../http/logger';
  * `react/use-opencode-events/types.ts` so existing importers keep working —
  * this module is now the canonical definition.
  */
-export type OpenCodeEvent =
+export type RuntimeEvent =
   | OpenCodeSdkEvent
   | {
       id: string;
@@ -71,7 +71,7 @@ export interface OpenEventStreamOptions {
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
-  onEvent: (event: OpenCodeEvent) => void;
+  onEvent: (event: RuntimeEvent) => void;
   /** Called once a reconnect is ESTABLISHED, with the gap in ms from the last
    *  frame received to the new connection. Fires when the dropped stream had
    *  delivered events, or when the gap exceeds 5s. Lets the host re-hydrate
@@ -180,7 +180,7 @@ const MAX_CONSECUTIVE_HARD_FAILURES = 8;
  * efficiently rejects stale snapshots with a no-op return, so processing every
  * snapshot has minimal cost.
  */
-function getCoalesceKey(event: OpenCodeEvent): string | undefined {
+function getCoalesceKey(event: RuntimeEvent): string | undefined {
   if (event.type === 'session.status') {
     return `session.status:${(event.properties as any).sessionID}`;
   }
@@ -209,7 +209,7 @@ function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: ()
 /** One `openEventStream()` caller's callbacks, held by the shared connection
  *  for the lifetime of its subscription — see `LiveStream` below. */
 interface StreamSubscriber {
-  onEvent: (event: OpenCodeEvent) => void;
+  onEvent: (event: RuntimeEvent) => void;
   onGapRehydrate?: (gapMs: number) => void;
   onParked?: (reason: EventStreamParkedInfo) => void;
 }
@@ -297,7 +297,7 @@ function createLiveStream(
   let pendingGap: { lastActivityAt: number; eventful: boolean } | null = null;
 
   // Event coalescing queue (like the SolidJS reference)
-  let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
+  let queue: ({ type: string; event: RuntimeEvent } | undefined)[] = [];
   let flushTimer: EventStreamTimerHandle | undefined;
   let lastFlush = 0;
 
@@ -488,7 +488,7 @@ function createLiveStream(
           const raw = outcome.result.value as any;
           const e = (
             raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
-          ) as OpenCodeEvent;
+          ) as RuntimeEvent;
           if (!e?.type) continue;
           // The connection's own greeting is not work that a drop could lose.
           if (e.type !== 'server.connected') streamHadWork = true;
@@ -721,7 +721,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   return { close: leave };
 }
 
-// The curated chat-event union built on top of this stream's `OpenCodeEvent` —
+// The curated chat-event union built on top of this stream's `RuntimeEvent` —
 // re-exported here (additive only) so a host that imports the SSE primitive
 // from this subpath (`@kortix/sdk/event-stream`) can reach the chat-narrowing
 // helpers from the same import without a second subpath. Canonical definition
@@ -748,3 +748,7 @@ export {
   type KortixChatQuestionOption,
   type KortixChatToolRef,
 } from './chat-events';
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `RuntimeEvent`. Removed in the next major. */
+export type OpenCodeEvent = RuntimeEvent;

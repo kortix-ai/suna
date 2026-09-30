@@ -54,11 +54,6 @@ export interface ProjectListResult {
   isError: boolean;
 }
 
-/** Owners and admins hold `ACCOUNT_ACTIONS.PROJECT_CREATE`; members get `403`. */
-export function canCreateInAccount(account: Pick<KortixAccount, 'account_role'>): boolean {
-  return account.account_role === 'owner' || account.account_role === 'admin';
-}
-
 function openedAt(project: KortixProject): number {
   return project.last_opened_at ? new Date(project.last_opened_at).getTime() : 0;
 }
@@ -88,6 +83,7 @@ const STATE_ORDER: Record<AccountSectionState, number> = {
 export function buildAccountSections(input: {
   accounts: KortixAccount[];
   lists: ProjectListResult[];
+  creatableAccountIds?: ReadonlySet<string>;
 }): AccountSection[] {
   const listByAccount = new Map(input.lists.map((list) => [list.accountId, list]));
   const projectsByAccount = new Map<string, KortixProject[]>();
@@ -101,7 +97,7 @@ export function buildAccountSections(input: {
   }
 
   const sections: AccountSection[] = input.accounts.map((account) => {
-    const canCreate = canCreateInAccount(account);
+    const canCreate = input.creatableAccountIds?.has(account.account_id) === true;
     const projects = sortByRecent(projectsByAccount.get(account.account_id) ?? []);
     projectsByAccount.delete(account.account_id);
     const list = listByAccount.get(account.account_id);
@@ -202,40 +198,4 @@ export function decideDoor(input: {
     return { kind: 'open', projectId: all[0].project_id, accountId: all[0].account_id };
   }
   return { kind: 'select' };
-}
-
-/** Mirrors the rename route's own ceiling (`PATCH /v1/accounts/:accountId`). */
-export const ACCOUNT_NAME_MAX_LENGTH = 255;
-
-/**
- * The account a brand-new user is asked to name, or `null` (KRTX-638).
- *
- * Naming the account is the FIRST onboarding step: it happens once, on this
- * page, before the first project — not on `/new`, which every user reaches
- * again and again. "New" means all of:
- *
- * - never named it here (`namedAt`, stored on the auth user's metadata);
- * - no project in any account, and no invite waiting — someone joining a
- *   team is not setting one up;
- * - every project list answered — a failed read is not an empty one;
- * - a personal account they may create in.
- *
- * Until they answer, the account carries the API's suggested name (never the
- * email), and the step pre-fills it.
- */
-export function accountNameStepAccount({
-  sections,
-  inviteCount,
-  userId,
-  namedAt,
-}: {
-  sections: AccountSection[];
-  inviteCount: number;
-  userId: string | null;
-  namedAt: string | null;
-}): AccountSection | null {
-  if (namedAt || !userId || inviteCount > 0) return null;
-  if (countProjects(sections) > 0) return null;
-  if (sections.some((section) => section.state === 'failed')) return null;
-  return sections.find((section) => section.accountId === userId && section.canCreate) ?? null;
 }

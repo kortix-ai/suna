@@ -25,6 +25,7 @@ import {
   type SettledConnection,
 } from '@kortix/sdk';
 import { useStreamHealthStore } from '@/lib/opencode/stream-health';
+import { recordRuntimeCapabilities } from '@/lib/opencode/runtime-capabilities';
 
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;
@@ -48,6 +49,8 @@ async function probeSandboxConnection(sandboxUrl: string): Promise<SessionConnec
   const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
     const result = await getSessionHealth(sandboxUrl.replace(/\/$/, ''), { signal: controller.signal });
+    // What the runtime serves rides on the same answer: no second poller (E1).
+    recordRuntimeCapabilities(sandboxUrl, result.health?.capabilities);
     return connectionFromHealth(result);
   } catch {
     return 'unreachable';

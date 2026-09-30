@@ -17,7 +17,7 @@ describe('session environment routes', () => {
   test('a session-scoped caller may only address its OWN environment, before any capability check', async () => {
     const source = await routeSource();
     const gate = source.indexOf('async function authorizeEnvironmentCall');
-    const load = source.indexOf('loadProjectForUser(c, projectId', gate);
+    const load = source.indexOf('resolveSessionBinding(c, projectId', gate);
     const selfScope = source.indexOf('callerSession !== sessionId', gate);
     const capability = source.indexOf('assertProjectCapability(', gate);
     expect(gate).toBeGreaterThan(-1);

@@ -95,8 +95,9 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // 20260819015727000 when the cli-token / project-PAT routes stopped gating on
     // the coarse `manage` alias (routes.md §5.2), + `project.gitops.ref.any` /
     // `.ref.delete` (20260901124321557), + `token.personal.create` /
-    // `.revoke` (20260921121500000 — a member may mint their own PAT).
-    expect(seeded).toHaveLength(74);
+    // `.revoke` (20260921121500000 — a member may mint their own PAT), and
+    // `project.usage.read` (project-scoped costs).
+    expect(seeded).toHaveLength(75);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -149,7 +150,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
   test('the project roles are a strict chain: member ⊂ manager', async () => {
     const manager = await systemRoleActions('manager', 'project');
     const member = await systemRoleActions('member', 'project');
-    expect([manager.length, member.length]).toEqual([45, 15]);
+    expect([manager.length, member.length]).toEqual([46, 15]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this

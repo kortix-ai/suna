@@ -8,6 +8,7 @@
  */
 
 import { type AuditExportFilter, auditFilterQuery } from '../projects-client/audit-filter';
+import { platformApiBase } from './shared';
 
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
@@ -29,12 +30,6 @@ export class HostBoundaryError extends Error {
     super(message);
     this.name = 'HostBoundaryError';
   }
-}
-
-function apiBase(backendUrl: string): string {
-  let trimmed = backendUrl;
-  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
 function requestHeaders(options: HostRequestOptions, json: boolean): Headers {
@@ -74,7 +69,7 @@ async function requestJson<T>(
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
   const json = init?.body !== undefined;
-  const response = await fetch(`${apiBase(options.backendUrl)}${path}`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}${path}`, {
     method: init?.method ?? 'GET',
     headers: requestHeaders(options, json),
     ...(json ? { body: JSON.stringify(init.body) } : {}),
@@ -223,6 +218,13 @@ export interface ConnectorSetupLinkInfo {
   name?: string | null;
   /** The app's logo. `null` when the catalog has none; absent on older servers. */
   icon_url?: string | null;
+  /**
+   * An account landed on this connector after the link was minted: the ask is
+   * settled, and a card that reloads shows it as done. `false` for a link
+   * nobody has completed, even when the connector already had an account.
+   * Absent on older servers and for links minted before they recorded when.
+   */
+  connected?: boolean;
   expires_at: string;
 }
 
@@ -413,7 +415,7 @@ export async function downloadAccountAudit(
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
   const response = await fetch(
-    `${apiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
+    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
     {
       headers: requestHeaders(options, false),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -437,7 +439,7 @@ export async function openStressTestStream(
   input: Record<string, unknown>,
   options: HostRequestOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${apiBase(options.backendUrl)}/admin/stress-test/run`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}/admin/stress-test/run`, {
     method: 'POST',
     headers: requestHeaders(options, true),
     body: JSON.stringify(input),
@@ -457,7 +459,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
   if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(`templates/public/${shareId.toLowerCase()}`, `${apiBase(backendUrl)}/`);
+  return new URL(`templates/public/${shareId.toLowerCase()}`, `${platformApiBase(backendUrl)}/`);
 }
 
 export async function getPublicTemplate<T>(

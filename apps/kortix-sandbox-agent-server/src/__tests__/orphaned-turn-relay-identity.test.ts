@@ -149,7 +149,7 @@ describe('finalizeOrphanedTurn relays the orphaned turn by its OWN identity', ()
         expect(m2.turnStreamCalls()).toBe(1)
         const body = m2.turnStreamBodies()[0]
         expect(body?.kind).toBe('end')
-        expect(body?.opencode_session_id).toBe(ROOT)
+        expect(body?.runtime_session_id).toBe(ROOT)
         expect(body?.turn_message_id).toBe('msg_turn_2')
         expect(body?.status).toBe('error')
       } finally {

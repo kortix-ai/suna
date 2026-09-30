@@ -20,8 +20,8 @@
  *   traffic never transits the control plane (gate G0: per-call proxied HTTP
  *   is the tax the split exists to avoid).
  * - **OpenCode is not required.** The box boots with
- *   KORTIX_BOOTSTRAP_OPENCODE_SESSION=0 — the daemon serves files/find/pty
- *   without an OpenCode session.
+ *   KORTIX_BOOTSTRAP_RUNTIME_SESSION=0 — the daemon serves files/find/pty
+ *   without a runtime session.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -249,8 +249,10 @@ export async function ensureSessionEnvironment(
       envVars: {
         ...envVars,
         KORTIX_TOKEN: token,
-        // The daemon serves /file, /find and /pty without an OpenCode
-        // session; the worker is this session's harness, not OpenCode.
+        // The daemon serves /file, /find and /pty without a runtime
+        // session; the worker is this session's harness. Both names: the
+        // second is what a daemon built before W3 reads.
+        KORTIX_BOOTSTRAP_RUNTIME_SESSION: '0',
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
       },
     } as never);

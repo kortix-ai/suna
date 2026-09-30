@@ -29,12 +29,6 @@ export interface SessionRuntimeEnvInput {
   /** Delta too large for the env: daemon downloads it with one authenticated GET. */
   gitDeltaBundleRemote?: boolean;
   /**
-   * OpenCode config dir at `baseSha` (repo-relative), `null` when the tip ships
-   * none, undefined when unknown. The daemon spawns OpenCode on it BEFORE the
-   * checkout exists and only falls back to the serial boot without a hint.
-   */
-  opencodeConfigDir?: string | null;
-  /**
    * S3 config provider rollout mode for THIS session (platform env, or the
    * project's `metadata.project_snapshot_mode` canary override). `git`/absent
    * emits nothing, so the daemon never attempts S3.
@@ -139,13 +133,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
             : {}),
         }
       : {};
-  // Known for fresh sessions only (resolved at the same tip as the clone).
-  // '' = "this revision has no project OpenCode config"; the daemon then
-  // spawns on its baked default dir without waiting for the checkout.
-  const opencodeConfigDirHintEnv: Record<string, string> =
-    allowsFullRepository && input.freshSession && input.opencodeConfigDir !== undefined
-      ? { KORTIX_OPENCODE_CONFIG_DIR_HINT: input.opencodeConfigDir ?? '' }
-      : {};
   const restoreGitEnv: Record<string, string> =
     allowsFullRepository && input.restoreSessionBranch
       ? { KORTIX_SESSION_BRANCH_RESTORE: '1' }
@@ -167,7 +154,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
-    ...opencodeConfigDirHintEnv,
     ...restoreGitEnv,
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
@@ -193,8 +179,16 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // The sandbox daemon owns OpenCode root creation for every cold session.
     // The API adopts/persists that root; it must not create a competing one.
+    KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1',
+    // The pre-W3 name of the variable above, for a daemon built before W3.
     KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
+    ...(input.opencodeModel
+      ? {
+          KORTIX_MODEL: input.opencodeModel,
+          // The pre-W3 name of `KORTIX_MODEL`; the OpenCode adapter still falls back to it.
+          KORTIX_OPENCODE_MODEL: input.opencodeModel,
+        }
+      : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (connector MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). Per-call

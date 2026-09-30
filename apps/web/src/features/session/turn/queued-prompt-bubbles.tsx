@@ -26,10 +26,20 @@ export function queuedBubbleTone(
   return 'pending';
 }
 
+/** Show delivery progress on the message itself, not only on the send button. */
+export function QueuedPromptProgress({ state }: { state: 'queued' | 'sending' | 'interrupted' }) {
+  const t = useTranslations('threads');
+  return (
+    <InlineMeta>
+      <span role="status" data-queued-status={state} className="text-muted-foreground text-xs">
+        {state === 'sending' ? t('sending') : t('queued')}
+      </span>
+    </InlineMeta>
+  );
+}
+
 /**
- * The only status text a queued user message renders: a delivery failure and
- * its recovery actions. Waiting, sending, paused, and interrupted prompts show
- * no words — the bubble's queue tone carries them.
+ * A delivery failure retains its cause and recovery actions.
  */
 export function QueuedPromptFailure({
   lastError,

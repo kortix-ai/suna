@@ -14,7 +14,8 @@ import {
   markInitialCheckDone,
   resetForServerSwitch,
   resetSandboxFail,
-  setOpenCodeHealth,
+  setRuntimeHealth,
+  setRuntimeCapabilities,
   setSandboxStatus,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
@@ -115,7 +116,7 @@ export function shouldIgnoreProbeFailure(
  *    not answer), `provider_ingress`, or — for a `CHECK_TIMEOUT` abort — no hop
  *    at all. All three count. On a box saturated by a heavy turn that is the
  *    2026-08-17 incident verbatim: two missed probes flip `sandboxStatus` to
- *    `unreachable`, `useOpenCodeEventStream` (gated on `=== 'connected'`) tears
+ *    `unreachable`, `useRuntimeEventStream` (gated on `=== 'connected'`) tears
  *    the live stream down, and the transcript freezes mid-turn on a runtime
  *    that is provably up — it is delivering the frames. A frame is a fact from
  *    the runtime itself, not an inference, and it outranks a probe that timed
@@ -431,13 +432,15 @@ export function useRuntimeReconnect() {
               break;
             }
             if (parked) {
-              setOpenCodeHealth(false, outcome.health?.version, null, { parked: true });
+              setRuntimeHealth(false, outcome.health?.version, null, { parked: true });
             } else {
               setSandboxStatus('connected');
+              // The daemon answered: what its runtime serves is known (E1).
+              setRuntimeCapabilities(outcome.health?.capabilities ?? null);
               // Only a real `boot_error` is an error; the routine boot `reason`
               // ("schema not ready") is progress and must not paint a terminal
               // card (RC-1). See `runtimeErrorFromHealth`.
-              setOpenCodeHealth(
+              setRuntimeHealth(
                 false,
                 outcome.health?.version,
                 runtimeErrorFromHealth(outcome.health),
@@ -467,10 +470,11 @@ export function useRuntimeReconnect() {
               }
             }
             setSandboxStatus('connected');
+            setRuntimeCapabilities(outcome.health?.capabilities ?? null);
             // Same rule as the booting branch: a `200` that is not yet ready
             // still carries only routine progress in `reason`/`message`; only a
             // real `boot_error` is an error (RC-1).
-            setOpenCodeHealth(
+            setRuntimeHealth(
               ready,
               outcome.health?.version,
               runtimeErrorFromHealth(outcome.health),

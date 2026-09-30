@@ -29,10 +29,12 @@ import {
 } from './helpers/open-code-harness'
 import { resolveHarness } from '@/harness/harness'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
+import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 
 // Production registers this lookup in main.ts before anything runs.
 beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
 afterAll(() => resetHarnessAssetsForTests())
+afterAll(restoreTestConfigRoot)
 
 const roots: string[] = []
 
@@ -316,6 +318,112 @@ describe('repo work and reload', () => {
     expect(readFileSync(join(repo.worktree, 'README.md'), 'utf8')).toBe('v2\n')
     expect(git(['rev-parse', 'HEAD'], repo.worktree)).toBe(baseSha)
     expect(lifecycle.reloads).toHaveLength(0)
+  })
+})
+
+/**
+ * `base_config=1` — a project without config releases runs the agent files in
+ * the session's checkout, and pulling the session branch never brings the base
+ * branch's changes to them. Prod 2026-09-30: an agent `.md` fix merged to main
+ * never reached a live session through two reloads.
+ */
+describe('base_config=1 brings the base branch agent config into the checkout', () => {
+  const AGENT = '.kortix/opencode/agents/kortix.md'
+
+  function writeAgent(dir: string, body: string): void {
+    mkdirSync(join(dir, '.kortix/opencode/agents'), { recursive: true })
+    writeFileSync(join(dir, AGENT), body)
+  }
+
+  /** A session branch cut from base, then base's agent file changes. */
+  async function sessionBehindBase() {
+    const repo = clonedRepo()
+    writeAgent(repo.seed, 'model: codex/gpt-6-sol\n')
+    git(['add', '-A'], repo.seed)
+    git(['commit', '-q', '-m', 'agent'], repo.seed)
+    git(['push', '-q', 'origin', 'main'], repo.seed)
+    git(['pull', '-q', 'origin', 'main'], repo.worktree)
+    git(['checkout', '-q', '-b', 'ses-1'], repo.worktree)
+    writeAgent(repo.seed, 'model: kortix/codex/gpt-6-sol\n')
+    git(['commit', '-q', '-am', 'fix agent model'], repo.seed)
+    git(['push', '-q', 'origin', 'main'], repo.seed)
+    await serveTestConfigDir(join(repo.worktree, '.kortix/opencode'))
+    return repo
+  }
+
+  function refresh(repo: { worktree: string; remote: string }, lifecycle: FakeLifecycle, query: string) {
+    return app(
+      { projectTarget: repo.worktree, repoUrl: repo.remote, branchName: 'ses-1', defaultBranch: 'main' },
+      lifecycle,
+    ).request(`/kortix/refresh?${query}`, { method: 'POST', headers: SERVICE })
+  }
+
+  it('updates the agent file and reloads OpenCode even with restart=0', async () => {
+    const repo = await sessionBehindBase()
+    const lifecycle = fakeOpencode()
+
+    const res = await refresh(repo, lifecycle, 'restart=0&repo=0&base_config=1')
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { config_dir: unknown; reload: { outcome: string } }
+    expect(body.config_dir).toEqual({ synced: true })
+    expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: kortix/codex/gpt-6-sol\n')
+    // OpenCode reads agent files only when it loads its config.
+    expect(lifecycle.reloads).toHaveLength(1)
+    expect(body.reload.outcome).toBe('swapped')
+    // The session branch did not move.
+    expect(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo.worktree)).toBe('ses-1')
+  })
+
+  it('a second reload reports "already matches base" and does not restart OpenCode', async () => {
+    const repo = await sessionBehindBase()
+    await refresh(repo, fakeOpencode(), 'restart=0&repo=0&base_config=1')
+    const lifecycle = fakeOpencode()
+
+    const res = await refresh(repo, lifecycle, 'restart=0&repo=0&base_config=1')
+
+    const body = (await res.json()) as { config_dir: unknown; reload?: unknown }
+    expect(body.config_dir).toEqual({ synced: false, skipped: 'already matches base' })
+    expect(lifecycle.reloads).toHaveLength(0)
+    expect(body.reload).toBeUndefined()
+  })
+
+  it('keeps the session\'s own edit to the agent file', async () => {
+    const repo = await sessionBehindBase()
+    writeAgent(repo.worktree, 'model: my-own-model\n')
+    const lifecycle = fakeOpencode()
+
+    const res = await refresh(repo, lifecycle, 'restart=0&repo=0&base_config=1')
+
+    expect(((await res.json()) as { config_dir: unknown }).config_dir).toEqual({ synced: false, skipped: 'local changes' })
+    expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: my-own-model\n')
+    expect(lifecycle.reloads).toHaveLength(0)
+  })
+
+  it('writes nothing when OpenCode does not read a config dir from the checkout', async () => {
+    const repo = await sessionBehindBase()
+    const elsewhere = mkdtempSync(join(tmpdir(), 'kortix-release-dir-'))
+    roots.push(elsewhere)
+    await serveTestConfigDir(elsewhere)
+    const lifecycle = fakeOpencode()
+
+    const res = await refresh(repo, lifecycle, 'restart=0&repo=0&base_config=1')
+
+    expect(((await res.json()) as { config_dir: unknown }).config_dir).toEqual({
+      synced: false,
+      skipped: 'no tracked config dir',
+    })
+    expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: codex/gpt-6-sol\n')
+    expect(lifecycle.reloads).toHaveLength(0)
+  })
+
+  it('without the flag the checkout keeps its agent file and the answer has no config_dir', async () => {
+    const repo = await sessionBehindBase()
+
+    const res = await refresh(repo, fakeOpencode(), 'restart=0&repo=0')
+
+    expect(((await res.json()) as Record<string, unknown>).config_dir).toBeUndefined()
+    expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: codex/gpt-6-sol\n')
   })
 })
 

@@ -3,7 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
+import { CopyCommandBadge } from '@/features/auth/auth-consent';
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
+import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { bindTeamsIdentity, previewTeamsIdentity } from '@kortix/sdk';
 
 /**
@@ -19,6 +21,7 @@ export default function TeamsLoginPage() {
   return (
     <ChatIdentityConnect
       service="Teams"
+      icon={MicrosoftTeams}
       token={token}
       loginPath={`/teams/login/${token}`}
       bind={bindTeamsIdentity}
@@ -27,7 +30,7 @@ export default function TeamsLoginPage() {
       disconnectNote={
         <>
           {tI18nComplete.raw('textbf7e9458c251')}{' '}
-          <span className="text-foreground font-mono">{tI18nComplete.raw('text00270cf63f93')}</span>{' '}
+          <CopyCommandBadge command={tI18nComplete.raw('text00270cf63f93')} />{' '}
           {tI18nComplete.raw('text55706ffa93eb')}
         </>
       }
