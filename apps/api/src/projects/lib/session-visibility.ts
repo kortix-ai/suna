@@ -9,9 +9,8 @@ import {
   type SessionNarrowingContext,
   type ShareSubject,
 } from '../../connectors/share';
-// Straight from the engine + the actor builder, not the barrel: the barrel is
-// replaced wholesale by `mock.module` in several route tests, so every name
-// imported from it is a name those stubs must also declare.
+// Straight from the engine, not the barrel (see project-access.ts): the barrel
+// is replaced wholesale by `mock.module` in several route tests.
 import { authorize } from '../../iam/authorize';
 import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { agentSessionStanding } from './agent-session-standing';

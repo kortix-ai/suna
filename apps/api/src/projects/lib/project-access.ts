@@ -25,10 +25,7 @@ import { isUuid } from '../../shared/validate';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { normalizeString } from './serializers';
-import {
-  isRepositoryProjectAction,
-  sessionWorkspaceAllowsRepositoryAccess,
-} from './session-workspace-access';
+import { isRepositoryProjectAction, sessionWorkspaceAllowsRepositoryAccess } from './session-workspace-access';
 import { getAccountMembership } from './user-identity';
 
 // Memoized briefly (positive hits only) — same rationale and trade-off as
