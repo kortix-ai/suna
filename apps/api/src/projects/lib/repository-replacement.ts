@@ -1,4 +1,5 @@
 import { changeRequests, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
+import { loadObjectGrants } from '../../iam/authorize';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -145,9 +146,15 @@ export async function persistProjectRepositoryReplacement(input: {
         isNull(projectSecrets.ownerUserId),
       ));
       if (existing.length) throw new RepositorySecretCopyError(`Target already has ${existing[0]!.identifier}`);
+      // A value narrowed to an audience stays in its project: a copy would be
+      // open to everyone in the target (secret-audience.ts).
+      const narrowed = await loadObjectGrants(sourceProjectId, 'secret');
       for (const identifier of unique) {
         const row = sourceByIdentifier.get(identifier);
         if (!row || !row.active) throw new RepositorySecretCopyError(`Source has no active shared ${identifier}`);
+        if (narrowed.has(row.secretId)) {
+          throw new RepositorySecretCopyError(`${identifier} is shared with specific people and cannot be copied`);
+        }
         if (row.scope !== 'runtime' || row.strategy !== 'runtime' || identifier.toUpperCase().startsWith('KORTIX_') || identifier.toUpperCase() === 'CODEX_AUTH_JSON') {
           throw new RepositorySecretCopyError(`${identifier} cannot be copied with a repository replacement`);
         }
