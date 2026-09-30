@@ -27,6 +27,7 @@ import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/sec
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { PiConfig } from './config'
 import { resolvePiSkillDirectories } from './config'
+import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
@@ -171,6 +172,8 @@ export interface PiRuntimeOptions {
   sessionId: string
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
+  /** The config release the runtime reads skills and the session notice from (config-release.ts). */
+  releases?: Pick<PiConfigReleases, 'skillDirs' | 'notice'>
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -235,6 +238,7 @@ export class PiRuntime {
   private readonly env: NodeJS.ProcessEnv
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
+  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'notice'> | null
   private readonly clock = new WireIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
@@ -268,6 +272,8 @@ export class PiRuntime {
   private runningTools = 0
   private abortAfterTool: { promptId: string; messageId: string } | null = null
   private status: 'idle' | 'busy' = 'idle'
+  /** Turns admitted and not yet finished, the running one included. */
+  private pendingTurns = 0
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
   /** The retry state of the root turn in flight (transient-retry.ts). */
   private turnRetry: TransientRetry | null = null
@@ -279,6 +285,7 @@ export class PiRuntime {
     this.env = opts.env ?? process.env
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
+    this.releases = opts.releases ?? null
     this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
@@ -521,6 +528,11 @@ export class PiRuntime {
     return this.status === 'busy'
   }
 
+  /** No turn running and none admitted behind it: a config applied now reaches the next turn whole. */
+  idle(): boolean {
+    return this.status === 'idle' && this.pendingTurns === 0
+  }
+
   activeTurnMessageId(): string | null {
     return this.active?.messageId ?? null
   }
@@ -546,7 +558,13 @@ export class PiRuntime {
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, resolve, outcome }
-    this.queue = this.queue.then(() => this.runTurn(turn)).catch(() => {})
+    this.pendingTurns += 1
+    this.queue = this.queue
+      .then(() => this.runTurn(turn))
+      .catch(() => {})
+      .finally(() => {
+        this.pendingTurns -= 1
+      })
     return { messageId, done: outcome }
   }
 
@@ -1005,7 +1023,7 @@ export class PiRuntime {
 
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
     if (!this.executionEnv) return []
-    const dirs = resolvePiSkillDirectories(this.cfg).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.cfg, this.releases?.skillDirs() ?? null).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')
@@ -1037,6 +1055,8 @@ export class PiRuntime {
     if (skills.length > 0) parts.push(formatSkills(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
+    const releaseNotice = this.releases?.notice()
+    if (releaseNotice) parts.push(releaseNotice)
     parts.push(
       [
         '## Runtime capabilities',

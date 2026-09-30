@@ -167,9 +167,9 @@ export interface HarnessControlService {
    * `app/server.ts`: the harness ownership boundary (eslint.config.mjs,
    * ARCHITECTURE.md) forbids host production code from
    * importing a concrete adapter directly. Absent, or answering `false`
-   * unconditionally, on a runtime without a config-convergence concept (the
-   * `pi` harness) — it never blocks there, which is correct: nothing is
-   * mid-verify on a runtime that never verifies one.
+   * unconditionally, on a runtime without a config-convergence concept — it
+   * never blocks there, which is correct: nothing is mid-verify on a runtime
+   * that never verifies one.
    */
   convergenceInFlight?(): boolean
 }

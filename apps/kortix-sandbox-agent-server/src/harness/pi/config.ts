@@ -95,7 +95,10 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
  * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
  * a project authored for OpenCode, so switching `runtime:` never loses them.
  */
-export function resolvePiSkillDirectories(cfg: HostConfig): string[] {
+export function resolvePiSkillDirectories(cfg: HostConfig, releaseSkillDirs: string[] | null = null): string[] {
+  // A config release decides the project's skills (config-release.ts); the
+  // working tree is read only while releases are not in play.
+  if (releaseSkillDirs) return [managedSkillsDir(), ...releaseSkillDirs]
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
   // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
   // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).

@@ -73,7 +73,7 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 (`HarnessDiagnosticsService.health`; OpenCode's pid/port and pi's model and
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
-`config.release.v1`, and the session features the runtime serves
+`config.release.v1` (both harnesses), and the session features the runtime serves
 (`HarnessDiagnosticsService.capabilities`: all nine on OpenCode,
 `session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
@@ -118,6 +118,35 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 (agent prompt, model, permission policy), `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
+
+### Config releases
+
+With the project's `config_releases` flag on, pi runs the base branch's
+current config release, exactly as OpenCode does (`pi/config-release.ts`,
+contract in `services/config-release/`). A release is the same archive under
+`/opt/kortix/config/<release_id>`, verified against its Git blob IDs and
+sealed read-only. pi reads two things from it: the compiled governance
+(`KORTIX_COMPILED_AGENT_CONFIG`, the agents) and `skills/`. The rest of the
+archive (`opencode.json`, `tools/`, `plugins/`) is OpenCode's and pi ignores
+it, so a commit that breaks only those files is a working config on pi.
+
+- **Boot.** `runPi` starts the choice beside the repository checkout, and
+  `lifecycle.start()` waits for it: the desired release, then the last release
+  this box proved (`current.json`), then the image default (managed skills and
+  the provisioned governance). `/workspace` is read only while the flag is off.
+- **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
+  one pass after ready). pi applies a release in place: the governance goes
+  into the runtime's env, the skill directory moves to `<release>/skills`, and
+  `PiRuntime.reconfigure()` re-reads both. Nothing restarts, so the answer
+  carries `reload: null`. A turn in flight, or one admitted behind it
+  (`PiRuntime.idle()`), defers the apply; it is asked again after the download,
+  right before the swap. A runtime that refuses the config keeps the previous
+  one, and the release is quarantined on the box.
+- **Reporting.** Health carries the same `config` block and `config_dir_sha`
+  as OpenCode, and `harness.ready` requires `config.proven`. While a release
+  owns the governance, a `/kortix/env` push of `KORTIX_COMPILED_AGENT_CONFIG`
+  is dropped. The session notice (`/tmp/kortix/config-release.md`) is part of
+  pi's system prompt while a release runs.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
