@@ -133,11 +133,17 @@
     "enableGateway": "Укључите LLM мрежни пролаз у подешавањима пројекта да бисте користили скупове кључева.",
     "selectedOneForSession": "{count} кључ изабран за ову сесију",
     "selectedOne": "{count} кључ изабран",
-    "opencodeSignIn": "Prijavi se preko OpenCode-a",
-    "opencodeSignInDescription": "Koristi svoj OpenCode radni prostor umesto API ključa.",
     "opencodeDeviceDescription": "Kopiraj ovaj kod. Zatim otvori OpenCode stranicu i unesi ga da povežeš radni prostor.",
     "opencodeStarting": "Povezivanje sa OpenCode-om…",
-    "opencodeConnected": "Prijavljen preko OpenCode-a"
+    "opencodeConnected": "Prijavljen preko OpenCode-a",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Prijavi se svojim OpenCode nalogom. Prijavu čuvamo kao šifrovanu tajnu projekta da bi je buduće sesije ponovo koristile.",
+    "opencodeGoConnectedBanner": "OpenCode Go je povezan.",
+    "opencodeGoDisconnected": "OpenCode Go je isključen",
+    "opencodeGoConnect": "Poveži OpenCode Go",
+    "opencodeGoReconnect": "Ponovo poveži OpenCode Go",
+    "opencodeGoDisconnect": "Isključi OpenCode Go",
+    "opencodeGoFailed": "Povezivanje OpenCode Go nije uspelo"
   },
   "useCases": {
     "headline": "Циклуси који покрећу компанију"

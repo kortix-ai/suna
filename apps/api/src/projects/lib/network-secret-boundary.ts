@@ -7,6 +7,7 @@ import { resolveNetworkBoundaryBindings } from '../../secrets/network-boundary';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { listResolvedProjectSecrets } from '../secrets';
 import { resolveSessionPersonalOwner } from './personal-resources';
+import { secretAudiencePerson } from './secret-audience';
 import { resolveSessionSecretGrant } from './secret-grant';
 
 export async function resolveSessionNetworkBoundary(
@@ -55,7 +56,9 @@ export async function resolveSessionNetworkBoundary(
     sessionId,
     legacyUserId: session.createdBy ?? null,
   });
-  const rows = await listResolvedProjectSecrets(projectId, personalUserId);
+  const rows = await listResolvedProjectSecrets(projectId, personalUserId, () =>
+    secretAudiencePerson({ projectId, sessionId }),
+  );
   return resolveNetworkBoundaryBindings(rows, {
     sessionId,
     agentGrantEnv: agentGrantEnv ?? null,

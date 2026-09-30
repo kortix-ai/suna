@@ -45,6 +45,38 @@ describe('callUpstream OpenAI-compatible passthrough', () => {
     expect(JSON.parse(String(received?.init.body))).toMatchObject({ model: 'provider-model' });
   });
 
+  test('strictChatSchema drops OpenRouter-only fields and keeps prior reasoning as reasoning_content', async () => {
+    let body: any;
+    await callUpstream(
+      {
+        model: 'requested',
+        reasoning: { effort: 'high' },
+        usage: { include: true },
+        provider: { only: ['x'] },
+        tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } }] },
+          { role: 'assistant', content: 'a', reasoning: 'r', annotations: [],
+            reasoning_details: [{ type: 'reasoning.text', text: 'thought ' }, { type: 'reasoning.text', text: 'more' }] },
+          { role: 'assistant', content: 'b', reasoning_content: 'kept', reasoning_details: [{ type: 'reasoning.text', text: 'x' }] },
+        ],
+      },
+      { ...descriptor, strictChatSchema: true },
+      { fetchImpl: async (_input, init) => { body = JSON.parse(String(init.body)); return new Response('{}'); } },
+    );
+
+    expect(body).toEqual({
+      model: 'provider-model',
+      reasoning_effort: 'high',
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'hi' }] },
+        { role: 'assistant', content: 'a', reasoning_content: 'thought more' },
+        { role: 'assistant', content: 'b', reasoning_content: 'kept' },
+      ],
+    });
+  });
+
   test('does not dispatch when the client already aborted', async () => {
     const controller = new AbortController();
     controller.abort();

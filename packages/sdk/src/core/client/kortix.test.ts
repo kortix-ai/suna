@@ -458,7 +458,11 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).secrets covers provider OAuth start, poll, and removal', async () => {
+test('project(id).secrets covers provider OAuth list, start, poll, and removal', async () => {
+  await kortix.project('PID123').secrets.listProviderOAuth();
+  expect(last().url.endsWith('/projects/PID123/oauth')).toBe(true);
+  expect(last().method).toBe('GET');
+
   await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');
   expect(last().method).toBe('POST');

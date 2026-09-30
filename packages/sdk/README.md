@@ -274,6 +274,16 @@ await kortix.project(pid).secrets.upsert({
   strategy: "runtime",
   consumer: "sandbox",
 });
+// Who can use a value: [] = everyone (default), or people and groups. A
+// narrowed value reaches only them — directly, or in their own private
+// sessions; never a shared session or a trigger.
+await kortix.project(pid).secrets.upsert({
+  name: "DEEL_API_TOKEN",
+  value: deelToken,
+  strategy: "broker",
+  consumer: "connector",
+  shared_with: [{ principal_type: "user", principal_id: userId }],
+});
 await kortix.project(pid).secrets.upsert({
   identifier: "anthropic-primary",
   name: "ANTHROPIC_API_KEY",

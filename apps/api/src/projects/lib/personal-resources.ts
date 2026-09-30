@@ -98,15 +98,20 @@ export async function resolveSessionPersonalOwner(input: {
   accountId?: string | null;
   /** A pending visibility to resolve against instead of the stored one. */
   visibility?: PersonalSessionVisibility;
+  /** Apply the strict rule whatever the project flag and the agent grant say:
+   *  the on-behalf-of human of a PRIVATE session, else null. Secret audiences
+   *  (`secret-audience.ts`) use it — a narrowed value has no legacy answer. */
+  strict?: boolean;
 }): Promise<string | null> {
-  if (!input.sessionId) return input.legacyUserId;
+  const legacy = input.strict ? null : input.legacyUserId;
+  if (!input.sessionId) return legacy;
   let flag = false;
   try {
-    flag = await loadAgentPrincipalFlag(input.projectId);
+    flag = input.strict || (await loadAgentPrincipalFlag(input.projectId));
   } catch {
-    return input.legacyUserId;
+    return legacy;
   }
-  if (!flag) return input.legacyUserId;
+  if (!flag) return legacy;
   try {
     const [session] = await db
       .select({
@@ -134,9 +139,13 @@ export async function resolveSessionPersonalOwner(input: {
         ),
       )
       .limit(1);
-    if (token) {
+    // Strict: a token with NO on_behalf_of either predates the column (minted
+    // before 2026-09-22, never re-minted) or was cleared by a foreign prompt.
+    // Every clear stamps ON_BEHALF_OF_CLEARED_KEY, which the mint rule below
+    // reads, so the mint rule answers both exactly as a re-mint would.
+    if (token && !(input.strict && !token.onBehalfOfUserId)) {
       const grant = readStoredAgentGrant(token.agentGrant);
-      if (!isGovernedAgentGrant(grant)) return input.legacyUserId;
+      if (!input.strict && !isGovernedAgentGrant(grant)) return input.legacyUserId;
       return personalResourceOwner({
         agentPrincipal: true,
         legacyUserId: input.legacyUserId,
