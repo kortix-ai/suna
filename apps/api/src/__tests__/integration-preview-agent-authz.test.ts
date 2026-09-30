@@ -47,6 +47,8 @@ const SANDBOX = crypto.randomUUID();
 /** The provider external id the proxy addresses the box by. */
 const EXTERNAL_ID = `ext-${SANDBOX}`;
 
+/** The agent the proxy sees the session bound to. `default` is the legacy non-binding sentinel. */
+let boundAgent = SESSION_AGENT;
 let remintCalls: string[] = [];
 let envSyncCalls = 0;
 let upstreamCalls = 0;
@@ -94,7 +96,7 @@ mock.module('../sandbox-proxy/backend', () => ({
     accountId: ACCOUNT,
     externalId: EXTERNAL_ID,
     sandboxId: SANDBOX,
-    agentName: SESSION_AGENT,
+    agentName: boundAgent,
     provider: 'daytona',
   }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
@@ -249,13 +251,18 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  boundAgent = SESSION_AGENT;
   remintCalls = [];
   envSyncCalls = 0;
   upstreamCalls = 0;
   __resetPromptDedupe();
 });
 
+// A session bound to a concrete agent refuses any other agent with 409 before
+// authorization (KRTX-805), so the IAM agent gate is reached only by a
+// `default`-bound session: the legacy client echoes its resolved default.
 test('a member scoped OUT of the agent cannot prompt as it, and never reaches the re-mint', async () => {
+  boundAgent = 'default';
   const response = await promptAs(scopedOut, SCOPED_AGENT);
 
   expect(response.status).toBe(403);
@@ -263,6 +270,15 @@ test('a member scoped OUT of the agent cannot prompt as it, and never reaches th
   expect(remintCalls).toEqual([]);
   expect(envSyncCalls).toBe(0);
   expect(upstreamCalls).toBe(0);
+});
+
+test('the member an agent IS scoped to passes the gate on a default-bound session and re-mints for it', async () => {
+  boundAgent = 'default';
+  const response = await promptAs(scopedIn, SCOPED_AGENT);
+
+  expect(response.status).toBe(200);
+  expect(remintCalls).toEqual([SCOPED_AGENT]);
+  expect(upstreamCalls).toBe(1);
 });
 
 test('a grant on another agent does not permit switching a running session', async () => {
@@ -273,19 +289,31 @@ test('a grant on another agent does not permit switching a running session', asy
   expect(upstreamCalls).toBe(0);
 });
 
+test('a member scoped OUT is refused a switch with 409 before any grant work', async () => {
+  const response = await promptAs(scopedOut, SCOPED_AGENT);
+
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+  expect(remintCalls).toEqual([]);
+  expect(upstreamCalls).toBe(0);
+});
+
+// Same-agent turns re-point the token's grant at the running agent, so a
+// manifest that narrowed it is enforced from the first call of the turn.
 test('the member the session agent IS scoped to prompts as it normally', async () => {
   const response = await promptAs(scopedIn, SESSION_AGENT);
 
   expect(response.status).toBe(200);
-  expect(remintCalls).toEqual([]);
+  expect(remintCalls).toEqual([SESSION_AGENT]);
   expect(upstreamCalls).toBe(1);
 });
 
 test('an account owner keeps the implicit-Manager bypass over resource scoping', async () => {
-  const response = await promptAs(owner, SESSION_AGENT);
+  boundAgent = 'default';
+  const response = await promptAs(owner, SCOPED_AGENT);
 
   expect(response.status).toBe(200);
-  expect(remintCalls).toEqual([]);
+  expect(remintCalls).toEqual([SCOPED_AGENT]);
 });
 
 test('the scoped-out member can still run the session own agent, though it is scoped away', async () => {

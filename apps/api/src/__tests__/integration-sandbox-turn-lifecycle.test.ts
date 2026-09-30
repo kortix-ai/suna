@@ -826,10 +826,10 @@ describe('session_turns ledger', () => {
     });
   });
 
-  test('acceptSandboxTurn creates the row for a legacy single-record turn', async () => {
-    // The rolling-deploy arm: a turn written by an older writer lives under
-    // `activeTurn`, not `activeTurns`. The insert's authority guard has to
-    // accept it too, or a whole deploy window records no history at all.
+  test('acceptSandboxTurn ignores a retired single-record turn and creates no row', async () => {
+    // The legacy `activeTurn` arm was removed 2026-09-30 (KRTX-255): only a
+    // token-keyed `activeTurns` entry is authority, so accepting a token that
+    // lives only under the old key is refused and records no history.
     await setLifecycleState({
       activeTurn: {
         token: t('ledger-legacy-accept'),
@@ -845,14 +845,9 @@ describe('session_turns ledger', () => {
         runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_legacy_accept',
       }),
-    ).toBe(true);
+    ).toBe(false);
 
-    expect(await readTurn(t('ledger-legacy-accept'))).toMatchObject({
-      session_id: SESSION_ID,
-      state: 'active',
-      opencode_session_id: 'ses_root',
-      message_id: 'msg_ledger_legacy_accept',
-    });
+    expect(await readTurn(t('ledger-legacy-accept'))).toBeUndefined();
   });
 
   test('completeSandboxTurn retains the row as ended while activeTurns loses the entry', async () => {
