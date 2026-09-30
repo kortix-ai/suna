@@ -483,7 +483,6 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PUT /v1/projects/:projectId/connections/:connectionId/credential': { action: 'connector.connection.credential.update', title: 'Updated connector account credential' },
   'PUT /v1/projects/:projectId/connections/:connectionId/default': { action: 'connector.connection.default.set', title: 'Set default connector account' },
   'PUT /v1/projects/:projectId/connections/:connectionId/label': { action: 'connector.connection.rename', title: 'Renamed connector account' },
-  'PATCH /v1/projects/:projectId/connections/:connectionId': { action: 'connector.connection.rename', title: 'Renamed connector account' },
   'GET /v1/projects/:projectId/connections/:connectionId/oauth2/application': { action: 'connector.connection.oauth.application.read', title: 'Viewed connector OAuth application' },
   'PUT /v1/projects/:projectId/connections/:connectionId/oauth2/application': { action: 'connector.connection.oauth.application.update', title: 'Updated connector OAuth application' },
   'POST /v1/projects/:projectId/connections/:connectionId/oauth2/authorize': { action: 'connector.connection.oauth.authorize', title: 'Started connector OAuth authorization' },
