@@ -128,15 +128,47 @@ const PROVIDER_AUTH_REQUIREMENT_OVERRIDES: Record<string, ProviderAuthRequiremen
   },
 };
 
+/** `opencode-go` → `OPENCODE_GO_API_KEY`: the provider's own key name. */
+export function providerOwnKeyName(providerId: string): string {
+  return `${providerId.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_API_KEY`;
+}
+
+// models.dev gives several providers ONE api-key env var: `opencode` (Zen) and
+// `opencode-go` both list OPENCODE_API_KEY, the four Z.ai/Zhipu offerings list
+// ZHIPU_API_KEY, the regional MiniMax/Moonshot/Alibaba endpoints share theirs.
+// Kortix stores a key under that name, so one key connected every claimant:
+// a Zen key listed Go models, a China key listed international models. Each
+// claimant keeps its own key. The owner keeps the shared name: the provider
+// whose own key name it is, else the shortest id (alphabetical on a tie).
+// Every other claimant uses `providerOwnKeyName`. Secrets stored before this
+// rule moved by migration 20260930220000000_provider_own_key_names.
+const SHARED_KEY_OWNER = (() => {
+  const claimants = new Map<string, string[]>();
+  for (const { id, env } of providerEnvJson as ReadonlyArray<{ id: string; env: string[] }>) {
+    if (env.length !== 1) continue;
+    claimants.set(env[0]!, [...(claimants.get(env[0]!) ?? []), id]);
+  }
+  const owner = new Map<string, string>();
+  for (const [envVar, ids] of claimants) {
+    if (ids.length < 2) continue;
+    const sorted = [...ids].sort((a, b) => a.length - b.length || a.localeCompare(b));
+    owner.set(envVar, ids.find((id) => providerOwnKeyName(id) === envVar) ?? sorted[0]!);
+  }
+  return owner;
+})();
+
 /**
  * The auth requirement Kortix actually enforces for a catalog provider.
  * Falls back to a single method requiring every var in `provider.env`
- * (unchanged behavior) unless an override above corrects it.
+ * (unchanged behavior) unless an override above corrects it. A key name
+ * several providers claim belongs to one of them (see SHARED_KEY_OWNER).
  */
 export function providerAuthRequirement(provider: CatalogProviderLike): ProviderAuthRequirement {
   const override = PROVIDER_AUTH_REQUIREMENT_OVERRIDES[provider.id];
   if (override) return override;
   const env = provider.env ?? [];
+  const owner = env.length === 1 ? SHARED_KEY_OWNER.get(env[0]!) : undefined;
+  if (owner && owner !== provider.id) return { methods: [{ envVars: [providerOwnKeyName(provider.id)] }] };
   return { methods: env.length > 0 ? [{ envVars: env }] : [] };
 }
 

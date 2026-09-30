@@ -94,7 +94,6 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
-import { ComposerDictation } from './composer-dictation';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
