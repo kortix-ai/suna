@@ -15,7 +15,8 @@ mock.module('../shared/db', () => ({
         where: () => ({
           returning: async () => {
             dbUpdates.push(values);
-            return [values];
+            // No row back: the sync then returns the row with the metadata it merged.
+            return [];
           },
         }),
       }),
@@ -23,26 +24,39 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-let listResult: { ok: boolean; sessions: unknown[]; reason?: string } = { ok: true, sessions: [] };
-mock.module('../projects/opencode-mapping', () => ({
-  listSandboxOpencodeSessions: async () => listResult,
-  resolveRootSessionId: ({ sessions }: { sessions: Array<{ id: string }> }) =>
-    sessions[0]?.id ?? null,
-}));
-
 const { syncOpencodeSessionSnapshot, scheduleOpencodeSnapshotSync, pendingSnapshotSyncs } =
   await import('../projects/opencode-session-snapshot');
+type RuntimeLeg = Awaited<ReturnType<typeof import('../projects/lib/session-runtime-projection').readRuntimeLeg>>;
 
 function row(over: Partial<ProjectSessionRow> = {}): ProjectSessionRow {
   return {
     sessionId: 's',
     projectId: 'p',
     accountId: 'a',
-    opencodeSessionId: 'ses_root',
+    runtimeSessionId: 'ses_root',
     metadata: {},
     ...over,
   } as unknown as ProjectSessionRow;
 }
+
+/** A stored runtime projection whose `sessions` lists these conversations. */
+function knownLeg(sessions: unknown[], root: string | null = 'ses_root'): RuntimeLeg {
+  return {
+    known: true,
+    identity: { opencode_session_id: root },
+    state: { sessions: { known: true, value: sessions } },
+  } as unknown as RuntimeLeg;
+}
+
+const conv = (id: string, parent: string | null, extra: Record<string, unknown> = {}) => ({
+  id,
+  title: id,
+  parent_id: parent,
+  directory: '/workspace',
+  time: { created: 1, updated: 2, compacting: null, archived: null },
+  revert: null,
+  ...extra,
+});
 
 async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -53,29 +67,78 @@ async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<voi
 }
 
 describe('syncOpencodeSessionSnapshot', () => {
-  it('no-ops when the snapshot is unchanged and on unreachable sandboxes', async () => {
+  it('writes the root and its children from the runtime projection, scoped to the pinned root', async () => {
+    dbUpdates.length = 0;
+    const synced = await syncOpencodeSessionSnapshot(
+      { row: row() },
+      {
+        // The box reports another root; the pin decides.
+        readLeg: async () =>
+          knownLeg([
+            conv('ses_root', null),
+            conv('ses_child', 'ses_root', { time: { created: 3, updated: 9, compacting: null, archived: 7 } }),
+            conv('ses_other_root', null),
+          ], 'ses_other_root'),
+      },
+    );
+    expect(dbUpdates).toHaveLength(1);
+    expect((synced.metadata as { opencode_sessions: unknown }).opencode_sessions).toEqual([
+      { id: 'ses_child', title: 'ses_child', parent_id: 'ses_root', project_id: null, created_at: 3, updated_at: 9, archived_at: 7 },
+      { id: 'ses_root', title: 'ses_root', parent_id: null, project_id: null, created_at: 1, updated_at: 2, archived_at: null },
+    ]);
+  });
+
+  it('pulls the projection from the box as the caller, then reads what was stored (a 304 included)', async () => {
+    dbUpdates.length = 0;
+    const pulls: unknown[] = [];
+    await syncOpencodeSessionSnapshot(
+      { row: row(), userId: 'u1' },
+      {
+        refresh: (async (target: unknown, options: unknown) => {
+          pulls.push({ target, options });
+          return { refreshed: false, reason: 'not_modified' };
+        }) as never,
+        readLeg: async () => knownLeg([conv('ses_root', null), conv('ses_child', 'ses_root')]),
+      },
+    );
+    expect(pulls).toEqual([
+      { target: { sessionId: 's', projectId: 'p', accountId: 'a', userId: 'u1' }, options: { force: true } },
+    ]);
+    expect(dbUpdates).toHaveLength(1);
+  });
+
+  it('no-ops when the snapshot is unchanged, the projection is unknown, or its list is unknown', async () => {
     dbUpdates.length = 0;
     const existing = [
-      {
-        id: 'ses_root',
-        title: null,
-        parent_id: null,
-        project_id: null,
-        created_at: null,
-        updated_at: null,
-        archived_at: null,
-      },
+      { id: 'ses_root', title: null, parent_id: null, project_id: null, created_at: null, updated_at: null, archived_at: null },
     ];
-    listResult = { ok: true, sessions: [{ id: 'ses_root', parentID: null }] };
-    await syncOpencodeSessionSnapshot({
-      row: row({ metadata: { opencode_sessions: existing } } as Partial<ProjectSessionRow>),
-      externalId: 'ext',
-    });
+    await syncOpencodeSessionSnapshot(
+      { row: row({ metadata: { opencode_sessions: existing } } as Partial<ProjectSessionRow>) },
+      { readLeg: async () => knownLeg([{ id: 'ses_root', parent_id: null }]) },
+    );
     expect(dbUpdates).toHaveLength(0);
 
-    listResult = { ok: false, sessions: [], reason: 'unreachable' };
-    await syncOpencodeSessionSnapshot({ row: row(), externalId: 'ext' });
+    await syncOpencodeSessionSnapshot(
+      { row: row() },
+      { readLeg: async () => ({ known: false, reason: 'identity_mismatch' }) as RuntimeLeg },
+    );
+    await syncOpencodeSessionSnapshot(
+      { row: row() },
+      {
+        readLeg: async () =>
+          ({ known: true, identity: {}, state: { sessions: { known: false, value: [] } } }) as unknown as RuntimeLeg,
+      },
+    );
     expect(dbUpdates).toHaveLength(0);
+  });
+
+  it('with no pin, scopes to the root the box reports', async () => {
+    const synced = await syncOpencodeSessionSnapshot(
+      { row: row({ runtimeSessionId: null } as Partial<ProjectSessionRow>) },
+      { readLeg: async () => knownLeg([conv('ses_box_root', null), conv('ses_kid', 'ses_box_root')], 'ses_box_root') },
+    );
+    const ids = (synced.metadata as { opencode_sessions: Array<{ id: string }> }).opencode_sessions.map((c) => c.id);
+    expect(ids.sort()).toEqual(['ses_box_root', 'ses_kid']);
   });
 });
 
@@ -92,12 +155,12 @@ describe('scheduleOpencodeSnapshotSync', () => {
       },
     };
     scheduleOpencodeSnapshotSync(
-      { sessionId: 's', projectId: 'p', externalId: 'ext', userId: 'u1' },
+      { sessionId: 's', projectId: 'p', accountId: 'a', userId: 'u1' },
       opts,
     );
     // A second schedule while the first is in flight is deduped.
     scheduleOpencodeSnapshotSync(
-      { sessionId: 's', projectId: 'p', externalId: 'ext', userId: 'u1' },
+      { sessionId: 's', projectId: 'p', accountId: 'a', userId: 'u1' },
       opts,
     );
     expect(pendingSnapshotSyncs()).toBe(1);
@@ -115,7 +178,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
     process.on('unhandledRejection', onUnhandled);
     try {
       scheduleOpencodeSnapshotSync(
-        { sessionId: 's2', projectId: 'p', externalId: 'ext', userId: 'u1' },
+        { sessionId: 's2', projectId: 'p', accountId: 'a', userId: 'u1' },
         {
           firstMs: 0,
           retryMs: 0,
@@ -131,7 +194,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
 
       const calls: string[] = [];
       scheduleOpencodeSnapshotSync(
-        { sessionId: 's2', projectId: 'p', externalId: 'ext', userId: 'u1' },
+        { sessionId: 's2', projectId: 'p', accountId: 'a', userId: 'u1' },
         {
           firstMs: 0,
           retryMs: 0,
@@ -160,7 +223,7 @@ describe('scheduleOpencodeSnapshotSync', () => {
   it('carries the caller userId through to the sync that talks to the daemon', async () => {
     const seen: Array<string | undefined> = [];
     scheduleOpencodeSnapshotSync(
-      { sessionId: 's3', projectId: 'p', externalId: 'ext', userId: 'user-42' },
+      { sessionId: 's3', projectId: 'p', accountId: 'a', userId: 'user-42' },
       {
         firstMs: 0,
         retryMs: 0,
