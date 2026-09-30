@@ -200,6 +200,7 @@ export function withStartEnvelope(
 ): SessionStartResult {
   return {
     ...result,
+    runtime_session_id: result.opencode_session_id,
     observed_at: log.observedAt.toISOString(),
     action: log.action,
     observation: log.observation,

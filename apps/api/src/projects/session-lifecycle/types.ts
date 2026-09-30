@@ -164,7 +164,7 @@ export interface StartSessionCommand {
       sandboxProvider: string;
       baseRef: string | null;
       agentName: string | null;
-      opencodeSessionId: string | null;
+      runtimeSessionId: string | null;
       accountId: string;
       metadata?: Record<string, unknown> | null;
     };

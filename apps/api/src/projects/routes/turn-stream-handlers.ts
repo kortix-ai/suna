@@ -178,7 +178,7 @@ export async function acceptTurn(
     );
   }
   const ok = await acceptSandboxTurn({ sandboxId: authenticatedSandboxId }, turnToken, {
-    opencodeSessionId,
+    runtimeSessionId: opencodeSessionId,
     messageId,
   });
   return c.json({ ok });
@@ -204,7 +204,7 @@ export async function beginTurn(
     return c.json({ error: 'runtime_session_id and turn_message_id are required' }, 400);
   }
   const outcome = await adoptRuntimeSandboxTurn(authenticatedSandboxId, {
-    opencodeSessionId,
+    runtimeSessionId: opencodeSessionId,
     messageId,
   });
   return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
@@ -245,7 +245,7 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
     sessionId,
     status,
     {
-      opencodeSessionId:
+      runtimeSessionId:
         typeof body.runtime_session_id === 'string' ? body.runtime_session_id : undefined,
       messageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : undefined,
     },
@@ -475,7 +475,7 @@ export async function pinOpencodeSession(
   if (!ocId) return c.json({ error: 'runtime_session_id is required' }, 400);
   const updated = await db
     .update(projectSessions)
-    .set({ opencodeSessionId: ocId, updatedAt: new Date() })
+    .set({ runtimeSessionId: ocId, updatedAt: new Date() })
     .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
     .returning({ sessionId: projectSessions.sessionId });
   return c.json({ ok: updated.length > 0 });

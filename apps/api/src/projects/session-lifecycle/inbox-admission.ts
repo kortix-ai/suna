@@ -250,7 +250,7 @@ export async function admitInboxPrompt(
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
         active?.state === 'active' &&
         active.messageId
-          ? { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId }
+          ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
       return {
         admit: false,

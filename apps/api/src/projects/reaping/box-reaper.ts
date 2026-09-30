@@ -509,11 +509,11 @@ export async function reapAndReconcileSandboxes(
               // `messageId` is what keeps that abort honest: every prompt of a
               // session shares one root, so the finalizer must prove the open
               // assistant message answers THIS record before it aborts.
-              if (observation === 'terminal' && turn.opencodeSessionId) {
+              if (observation === 'terminal' && turn.runtimeSessionId) {
                 const huskOutcome = await dependencies.finalizeHuskTurn({
                   sandboxId: row.sandboxId,
                   externalId: row.externalId,
-                  opencodeSessionId: turn.opencodeSessionId,
+                  opencodeSessionId: turn.runtimeSessionId,
                   messageId: turn.messageId,
                 });
                 if (huskOutcome === 'finalized') {

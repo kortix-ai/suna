@@ -111,6 +111,61 @@ afterAll(async () => {
     .catch(() => undefined);
 });
 
+describe('the turn record names its runtime session under both keys during W4', () => {
+  test('begin and accept write runtimeSessionId and the pre-W4 opencodeSessionId', async () => {
+    await setLifecycleState({});
+    const identity = { runtimeSessionId: 'ses_root', messageId: 'msg_dual' };
+    expect(
+      await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('dual'), ...identity }),
+    ).toBe('granted');
+    const turns = async () =>
+      (await readRow()).metadata.activeTurns as Record<string, Record<string, unknown>>;
+    expect((await turns())[t('dual')]).toMatchObject({
+      state: 'delivering',
+      runtimeSessionId: 'ses_root',
+      opencodeSessionId: 'ses_root',
+    });
+    expect(await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('dual'), identity)).toBe(true);
+    expect((await turns())[t('dual')]).toMatchObject({
+      state: 'active',
+      runtimeSessionId: 'ses_root',
+      opencodeSessionId: 'ses_root',
+    });
+  });
+
+  test('a record with only the neutral key ends for its own runtime session, not another', async () => {
+    const other = {
+      token: t('other-root'),
+      state: 'active',
+      runtimeSessionId: 'ses_other',
+      messageId: 'msg_same',
+      startedAtMs: 2,
+    };
+    await setLifecycleState({
+      activeTurns: {
+        [t('neutral')]: {
+          token: t('neutral'),
+          state: 'active',
+          runtimeSessionId: 'ses_root',
+          messageId: 'msg_same',
+          startedAtMs: 1,
+        },
+        [t('other-root')]: other,
+      },
+    });
+
+    await completeSandboxTurn(
+      SESSION_ID,
+      'idle',
+      { runtimeSessionId: 'ses_root', messageId: 'msg_same' },
+      undefined,
+      60_000,
+    );
+
+    expect((await readRow()).metadata.activeTurns).toEqual({ [t('other-root')]: other });
+  });
+});
+
 describe('per-turn terminal isolation', () => {
   test('a terminal identified turn leaves a concurrent turn and its deadline intact', async () => {
     await setLifecycleState({
@@ -136,7 +191,7 @@ describe('per-turn terminal isolation', () => {
     await completeSandboxTurn(
       SESSION_ID,
       'idle',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_first' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_first' },
       undefined,
       60_000,
     );
@@ -170,7 +225,7 @@ describe('per-turn terminal isolation', () => {
     await completeSandboxTurn(
       SESSION_ID,
       'idle',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_only' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_only' },
       undefined,
       60_000,
     );
@@ -215,7 +270,7 @@ describe('per-turn terminal isolation', () => {
     const before = await readRow();
 
     const result = await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_old',
     });
 
@@ -244,7 +299,7 @@ describe('per-turn terminal isolation', () => {
     const before = await readRow();
 
     const result = await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_stale_root',
+      runtimeSessionId: 'ses_stale_root',
       messageId: 'msg_stale_root',
     });
 
@@ -261,18 +316,18 @@ describe('per-turn terminal isolation', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('retry-complete'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_retry_complete',
       },
       60_000,
     );
 
     const first = await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_retry_complete',
     });
     const retry = await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_retry_complete',
     });
 
@@ -294,7 +349,7 @@ describe('per-turn terminal isolation', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('closed-before-newer'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_closed_before_newer',
       },
       60_000,
@@ -302,7 +357,7 @@ describe('per-turn terminal isolation', () => {
     expect(
       (
         await completeSandboxTurn(SESSION_ID, 'idle', {
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_closed_before_newer',
         })
       ).outcome,
@@ -312,7 +367,7 @@ describe('per-turn terminal isolation', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('newer-after-closed'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_newer_after_closed',
       },
       60_000,
@@ -320,7 +375,7 @@ describe('per-turn terminal isolation', () => {
     const before = await readRow();
 
     const retry = await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_closed_before_newer',
     });
 
@@ -354,7 +409,7 @@ describe('per-turn terminal isolation', () => {
     });
 
     await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_exact',
     });
 
@@ -390,7 +445,7 @@ describe('per-turn terminal isolation', () => {
     });
 
     await completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: null,
     });
 
@@ -539,7 +594,7 @@ describe('per-turn terminal isolation', () => {
     await locked;
 
     const cleanup = completeSandboxTurn(SESSION_ID, 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_first',
     });
     await Bun.sleep(50);
@@ -565,7 +620,7 @@ describe('prompt-versus-stop linearization', () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('at-cap'), opencodeSessionId: 'ses_root', messageId: 'msg_at_cap' },
+        { token: t('at-cap'), runtimeSessionId: 'ses_root', messageId: 'msg_at_cap' },
         60_000,
         observedAtMs,
       ),
@@ -584,7 +639,7 @@ describe('prompt-versus-stop linearization', () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('normalized'), opencodeSessionId: 'ses_root', messageId: 'msg_normalized' },
+        { token: t('normalized'), runtimeSessionId: 'ses_root', messageId: 'msg_normalized' },
         60_000,
       ),
     ).toBe('granted');
@@ -611,7 +666,7 @@ describe('prompt-versus-stop linearization', () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('prompt-first'), opencodeSessionId: 'ses_root', messageId: 'msg_first' },
+        { token: t('prompt-first'), runtimeSessionId: 'ses_root', messageId: 'msg_first' },
         60_000,
       ),
     ).toBe('granted');
@@ -625,7 +680,7 @@ describe('prompt-versus-stop linearization', () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('prompt-second'), opencodeSessionId: 'ses_root', messageId: 'msg_second' },
+        { token: t('prompt-second'), runtimeSessionId: 'ses_root', messageId: 'msg_second' },
         60_000,
       ),
     ).toBe('no_box');
@@ -648,7 +703,7 @@ describe('prompt-versus-stop linearization', () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('recovery'), opencodeSessionId: 'ses_root', messageId: 'msg_recovery' },
+        { token: t('recovery'), runtimeSessionId: 'ses_root', messageId: 'msg_recovery' },
         60_000,
       ),
     ).toBe('granted');
@@ -698,7 +753,7 @@ describe('session_turns ledger', () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('ledger-begin'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_begin' },
+        { token: t('ledger-begin'), runtimeSessionId: 'ses_root', messageId: 'msg_ledger_begin' },
         60_000,
       ),
     ).toBe('granted');
@@ -722,13 +777,13 @@ describe('session_turns ledger', () => {
   test('acceptSandboxTurn promotes the same row and stamps accepted_at', async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
-      { token: t('ledger-accept'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_accept' },
+      { token: t('ledger-accept'), runtimeSessionId: 'ses_root', messageId: 'msg_ledger_accept' },
       60_000,
     );
 
     expect(
       await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-accept'), {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_accept',
       }),
     ).toBe(true);
@@ -756,7 +811,7 @@ describe('session_turns ledger', () => {
 
     expect(
       await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-boot'), {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_boot',
       }),
     ).toBe(true);
@@ -785,7 +840,7 @@ describe('session_turns ledger', () => {
 
     expect(
       await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('ledger-legacy-accept'), {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_legacy_accept',
       }),
     ).toBe(true);
@@ -803,7 +858,7 @@ describe('session_turns ledger', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('ledger-complete'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_complete',
       },
       60_000,
@@ -813,7 +868,7 @@ describe('session_turns ledger', () => {
       await completeSandboxTurn(
         SESSION_ID,
         'idle',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_complete' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_ledger_complete' },
         undefined,
         60_000,
       ),
@@ -831,14 +886,14 @@ describe('session_turns ledger', () => {
   test("completeSandboxTurn records 'failed' for a terminal error end", async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
-      { token: t('ledger-failed'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_failed' },
+      { token: t('ledger-failed'), runtimeSessionId: 'ses_root', messageId: 'msg_ledger_failed' },
       60_000,
     );
 
     await completeSandboxTurn(
       SESSION_ID,
       'error',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_failed' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_ledger_failed' },
       undefined,
       60_000,
     );
@@ -852,7 +907,7 @@ describe('session_turns ledger', () => {
   test('clearSandboxTurn records runtime_gone and retains the row', async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
-      { token: t('ledger-clear'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_clear' },
+      { token: t('ledger-clear'), runtimeSessionId: 'ses_root', messageId: 'msg_ledger_clear' },
       60_000,
     );
 
@@ -870,7 +925,7 @@ describe('session_turns ledger', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('ledger-abandon'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_abandon',
       },
       60_000,
@@ -935,7 +990,7 @@ describe('session_turns ledger', () => {
       await completeSandboxTurn(
         SESSION_ID,
         'idle',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_boot_complete' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_boot_complete' },
         undefined,
         60_000,
       ),
@@ -968,7 +1023,7 @@ describe('session_turns ledger', () => {
       await completeSandboxTurn(
         SESSION_ID,
         'idle',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_legacy' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_ledger_legacy' },
         undefined,
         60_000,
       ),
@@ -1002,7 +1057,7 @@ describe('session_turns ledger', () => {
     await completeSandboxTurn(
       SESSION_ID,
       'idle',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_ledger_race' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_ledger_race' },
       undefined,
       60_000,
     );
@@ -1010,7 +1065,7 @@ describe('session_turns ledger', () => {
 
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
-      { token: t('ledger-race'), opencodeSessionId: 'ses_root', messageId: 'msg_ledger_race' },
+      { token: t('ledger-race'), runtimeSessionId: 'ses_root', messageId: 'msg_ledger_race' },
       60_000,
     );
 
@@ -1025,7 +1080,7 @@ describe('session_turns ledger', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('ledger-terminal'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_terminal',
       },
       60_000,
@@ -1053,7 +1108,7 @@ describe('session_turns ledger', () => {
       { sandboxId: SANDBOX_ID },
       {
         token: t('ledger-terminal-done'),
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_terminal_done',
       },
       60_000,
@@ -1077,7 +1132,7 @@ describe('session_turns ledger', () => {
   test('session_turns_open_idx serves the stop writer predicate', async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
-      { token: t('ledger-plan'), opencodeSessionId: 'ses_root', messageId: 'msg_plan' },
+      { token: t('ledger-plan'), runtimeSessionId: 'ses_root', messageId: 'msg_plan' },
       60_000,
     );
 
@@ -1139,7 +1194,7 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
   test('adopts a box-initiated turn: active ledger row, activeTurns record, deadline grant', async () => {
     const before = deadlineMs(await readRow());
     const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: SYNTH,
     });
     expect(outcome).toBe('adopted');
@@ -1161,10 +1216,10 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
   test('any open turn means authority is already held — nothing is written', async () => {
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
-      { token: t('already-open'), opencodeSessionId: 'ses_root', messageId: 'msg_delivered_1' },
+      { token: t('already-open'), runtimeSessionId: 'ses_root', messageId: 'msg_delivered_1' },
     );
     const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: SYNTH,
     });
     expect(outcome).toBe('open_turn_exists');
@@ -1180,7 +1235,7 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
       VALUES (${t('closed')}, ${SESSION_ID}, ${SANDBOX_ID}::uuid,
               ${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid, ${SYNTH}, 'ended', 'completed')`);
     const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: SYNTH,
     });
     expect(outcome).toBe('known_message');
@@ -1214,7 +1269,7 @@ describe('end_error: causes, requested stops, and which one wins', () => {
     return token;
   }
   const end = (error: { name: string; message: string } | undefined, status: 'idle' | 'error' = 'error') =>
-    completeSandboxTurn(SESSION_ID, status, { opencodeSessionId: ROOT, messageId: MSG }, error, 60_000);
+    completeSandboxTurn(SESSION_ID, status, { runtimeSessionId: ROOT, messageId: MSG }, error, 60_000);
 
   test('an abort nobody asked for is recorded as the abort it is', async () => {
     const token = await openTurn();
@@ -1346,7 +1401,7 @@ describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn
     return token;
   }
   const end = (messageId: string, error: { name: string; message: string } | undefined, status: 'idle' | 'error' = 'error') =>
-    completeSandboxTurn(SESSION_ID, status, { opencodeSessionId: ROOT, messageId }, error, 60_000);
+    completeSandboxTurn(SESSION_ID, status, { runtimeSessionId: ROOT, messageId }, error, 60_000);
   const cause = () => recordUnidentifiedTurnCause(SESSION_ID, ROOT, GUARD);
 
   test('the abort closed the turn first: the cause replaces that abort', async () => {

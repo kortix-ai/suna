@@ -162,7 +162,7 @@ function resetState() {
     sandboxProvider: 'daytona',
     sandboxId: SESSION_ID,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'provisioning',
     error: null,
@@ -859,7 +859,7 @@ mock.module('../shared/db', () => ({
             sandboxProvider: values.sandboxProvider,
             sandboxId: values.sandboxId,
             sandboxUrl: null,
-            opencodeSessionId: null,
+            runtimeSessionId: null,
             agentName: values.agentName,
             status: values.status,
             error: null,
@@ -2179,6 +2179,28 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_AGENT_NAME).toBe('reviewer');
   });
 
+  test('create takes the model under its neutral name `model`', async () => {
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
+      },
+      body: JSON.stringify({
+        provider: 'daytona',
+        base_ref: 'main',
+        model: 'anthropic/claude-opus-4-8',
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { metadata: Record<string, unknown> }).metadata.opencode_model).toBe(
+      'anthropic/claude-opus-4-8',
+    );
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_MODEL).toBe('anthropic/claude-opus-4-8');
+  });
+
   test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
     projectRow.repoUrl = 'https://git.example.test/legacy-private-project';
     projectRow.metadata = {};
@@ -2317,7 +2339,7 @@ describe('project session API contract', () => {
   // polls these routes, and one runtime round-trip per session made them slow.
   test('session list and detail read rows only, even for a running sandbox', async () => {
     const app = createApp();
-    sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_root_existing' };
+    sessionRow = { ...sessionRow!, status: 'running', runtimeSessionId: 'ses_root_existing' };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -2656,7 +2678,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2709,7 +2731,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2769,7 +2791,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2832,7 +2854,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2890,7 +2912,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2942,7 +2964,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -2994,7 +3016,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3044,7 +3066,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'stopped',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3097,7 +3119,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
@@ -3149,7 +3171,7 @@ describe('project session API contract', () => {
       },
     });
     expect(sessionRow?.status).toBe('stopped');
-    expect(sessionRow?.opencodeSessionId).toBe('ses_root_existing');
+    expect(sessionRow?.runtimeSessionId).toBe('ses_root_existing');
   });
 
   // The wake cooldown is a "the provider did not confirm this wake, retry
@@ -3164,7 +3186,7 @@ describe('project session API contract', () => {
   // cooldown of the wake that just failed — so the cooldown must yield to it.
   test('a preserved-unavailable identity is not reported as a retryable wake cooldown', async () => {
     const app = createApp();
-    sessionRow = { ...sessionRow!, status: 'stopped', opencodeSessionId: 'ses_root_existing' };
+    sessionRow = { ...sessionRow!, status: 'stopped', runtimeSessionId: 'ses_root_existing' };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -3213,7 +3235,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3275,7 +3297,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3335,7 +3357,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3399,7 +3421,7 @@ describe('project session API contract', () => {
   // every /start parked the box and resumed the same dead snapshot for 18 h.
   test('dashboard start relaunches a dead daemon on a running Platinum box instead of parking it', async () => {
     const app = createApp();
-    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', opencodeSessionId: 'ses_root_existing' };
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
     sessionSandboxRows = [
       {
         sandboxId: SESSION_ID,
@@ -3444,7 +3466,7 @@ describe('project session API contract', () => {
     // prod 2026-09-29: ~18 min of provider-ingress timeouts to a healthy daemon
     // flipped a live session to `starting` and asked for a relaunch mid-answer.
     const app = createApp();
-    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', opencodeSessionId: 'ses_root_existing' };
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
     const proven = (extra: Record<string, unknown> = {}): Array<SandboxRowFixture> => [
       {
         sandboxId: SESSION_ID,
@@ -3503,7 +3525,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3587,7 +3609,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3632,7 +3654,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'platinum',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3715,7 +3737,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'stopped',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
       sandboxUrl: 'https://box-restart-restorable.test',
     };
     sessionSandboxRows = [
@@ -3760,7 +3782,7 @@ describe('project session API contract', () => {
     // The box keeps its identity, so the session keeps its runtime URL.
     expect(sessionRow).toMatchObject({
       status: 'provisioning',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
       sandboxUrl: 'https://box-restart-restorable.test',
     });
   });
@@ -3770,7 +3792,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3813,7 +3835,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3860,7 +3882,7 @@ describe('project session API contract', () => {
     const warn = spyOn(logger, 'warn');
     try {
       const app = createApp();
-      sessionRow = { ...sessionRow!, status: 'running', opencodeSessionId: 'ses_root_existing' };
+      sessionRow = { ...sessionRow!, status: 'running', runtimeSessionId: 'ses_root_existing' };
       sessionSandboxRows = [
         {
           sandboxId: SESSION_ID,
@@ -3918,7 +3940,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
     };
     sessionSandboxRows = [
       {
@@ -3960,7 +3982,7 @@ describe('project session API contract', () => {
       ...sessionRow!,
       sandboxProvider: 'daytona',
       status: 'running',
-      opencodeSessionId: 'ses_root_existing',
+      runtimeSessionId: 'ses_root_existing',
       metadata: {
         existing: true,
         initial_prompt: 'DO NOT REPLAY',
@@ -4318,7 +4340,7 @@ describe('project session API contract', () => {
     await flushUntil(() => branchCreateCalls === 1);
     expect(branchCreateCalls).toBe(1);
     expect(sessionRow?.baseRef).toBe('dev');
-    expect(sessionRow?.opencodeSessionId).toBeNull();
+    expect(sessionRow?.runtimeSessionId).toBeNull();
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
@@ -4436,7 +4458,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_existing',
+      runtimeSessionId: 'ses_existing',
     };
     sessionSandboxRows = [];
 
@@ -4463,7 +4485,7 @@ describe('project session API contract', () => {
     sessionRow = {
       ...sessionRow!,
       status: 'running',
-      opencodeSessionId: 'ses_existing',
+      runtimeSessionId: 'ses_existing',
       sandboxUrl: 'https://replaced-box.test',
     };
     sessionSandboxRows = [];

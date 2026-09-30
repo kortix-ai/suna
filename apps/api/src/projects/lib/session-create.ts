@@ -502,7 +502,7 @@ export async function createProjectSession(input: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
   if (requestedModel) {

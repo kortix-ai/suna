@@ -1197,7 +1197,7 @@ export async function openSession(args: {
       sandboxProvider: string;
       baseRef: string | null;
       agentName: string | null;
-      opencodeSessionId: string | null;
+      runtimeSessionId: string | null;
       accountId: string;
       metadata?: Record<string, unknown> | null;
     };
@@ -1262,7 +1262,7 @@ async function runOpenSession(args: {
       sandboxProvider: string;
       baseRef: string | null;
       agentName: string | null;
-      opencodeSessionId: string | null;
+      runtimeSessionId: string | null;
       accountId: string;
       metadata?: Record<string, unknown> | null;
     };
@@ -1291,7 +1291,7 @@ async function runOpenSession(args: {
   const existingWake = stoppedWakeResult(
     row,
     visible.row.agentName,
-    visible.row.opencodeSessionId,
+    visible.row.runtimeSessionId,
     log.observedAt,
   );
   if (existingWake) {
@@ -1347,7 +1347,7 @@ async function runOpenSession(args: {
   const resumedWake = stoppedWakeResult(
     row,
     visible.row.agentName,
-    visible.row.opencodeSessionId,
+    visible.row.runtimeSessionId,
     log.observedAt,
   );
   if (resumedWake) {
@@ -1425,7 +1425,7 @@ async function runOpenSession(args: {
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: visible.row.opencodeSessionId,
+      opencode_session_id: visible.row.runtimeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_recovery_in_progress',
     };
@@ -1492,7 +1492,7 @@ async function runOpenSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.opencodeSessionId,
+        opencode_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_recovery_in_progress',
       };
@@ -1519,7 +1519,7 @@ async function runOpenSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(recoveringRow),
-        opencode_session_id: visible.row.opencodeSessionId,
+        opencode_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason:
           recovery === 'running' ? 'runtime_recovered_in_place' : 'runtime_restoring_in_place',
@@ -1547,7 +1547,7 @@ async function runOpenSession(args: {
         agent_name: visible.row.agentName ?? 'default',
         retriable: true,
         sandbox: serializeSandboxRow(row),
-        opencode_session_id: visible.row.opencodeSessionId,
+        opencode_session_id: visible.row.runtimeSessionId,
         runtime_url: sessionRuntimeUrlPath(row.externalId),
         reason: 'runtime_restoring_in_place',
       };
@@ -1701,7 +1701,7 @@ async function runOpenSession(args: {
     accountId,
     externalId: runningExternalId,
     userId: loaded.userId,
-    currentPin: visible.row.opencodeSessionId ?? null,
+    currentPin: visible.row.runtimeSessionId ?? null,
   });
   const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   log.sawRuntime(

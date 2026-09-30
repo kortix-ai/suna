@@ -323,7 +323,7 @@ export function parseOpenCodeAuditBatch(
       accountId: scope.accountId,
       projectId: scope.projectId,
       sessionId: scope.sessionId,
-      opencodeSessionId: trusted?.opencodeSessionId ?? null,
+      runtimeSessionId: trusted?.opencodeSessionId ?? null,
       turnId: optionalIdentifier(event.turn_id, index, 'turn_id'),
       messageId: optionalIdentifier(event.message_id, index, 'message_id'),
       toolCallId: optionalIdentifier(event.tool_call_id, index, 'tool_call_id'),

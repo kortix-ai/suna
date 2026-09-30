@@ -50,7 +50,7 @@ export async function resolveSessionOpencodeEndpoint(
   if (!sessionId) return null;
   const [session] = await db
     .select({
-      opencodeSessionId: projectSessions.opencodeSessionId,
+      opencodeSessionId: projectSessions.runtimeSessionId,
       sandboxUrl: projectSessions.sandboxUrl,
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
