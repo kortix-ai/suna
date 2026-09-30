@@ -2240,3 +2240,68 @@ flow(
     });
   },
 );
+
+/**
+ * SESS-40 — browser tab presence lease (KRTX-588). A visible tab renews a
+ * 90-second lease; hiding the tab clears it. Only a human login may hold one.
+ */
+flow(
+  'SESS-40',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/presence'],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const project = await ctx.fixtures.project();
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: project.accountId,
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'project',
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const url = '/v1/projects/:projectId/sessions/:sessionId/presence';
+    const put = (as: typeof owner, body: unknown, id = sessionId) =>
+      as.put(url, body, { params: { projectId: project.id, sessionId: id } });
+    const tabId = crypto.randomUUID();
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    const leases = async () =>
+      (await db.query('SELECT expires_at FROM kortix.session_presence_leases WHERE session_id = $1 AND tab_id = $2', [sessionId, tabId])).rows;
+    try {
+      await ctx.step('an anonymous caller is rejected with 401', async () => {
+        (await put(ctx.client.as(ctx.P.ANON), { tab_id: tabId, active: true })).status(401);
+      });
+
+      await ctx.step('a body without a UUID tab_id is rejected with 400 and writes nothing', async () => {
+        (await put(owner, { tab_id: 'not-a-uuid', active: true })).status(400);
+        if ((await leases()).length !== 0) throw new Error('invalid body wrote a lease');
+      });
+
+      await ctx.step('an unknown session answers 404', async () => {
+        (await put(owner, { tab_id: tabId, active: true }, 'ses_unknown')).status(404);
+      });
+
+      await ctx.step('active=true stores one lease that expires in the future; renewing keeps one row', async () => {
+        (await put(owner, { tab_id: tabId, active: true })).status(200).body().has('$.ok', true);
+        (await put(owner, { tab_id: tabId, active: true })).status(200);
+        const rows = await leases();
+        if (rows.length !== 1 || new Date(rows[0].expires_at).getTime() <= Date.now()) {
+          throw new Error(`expected one live lease, got ${JSON.stringify(rows)}`);
+        }
+      });
+
+      await ctx.step('active=false clears the lease', async () => {
+        (await put(owner, { tab_id: tabId, active: false })).status(200).body().has('$.ok', true);
+        if ((await leases()).length !== 0) throw new Error('lease not cleared');
+      });
+    } finally {
+      await db.end();
+    }
+  },
+);
