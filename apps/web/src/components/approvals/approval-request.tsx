@@ -114,7 +114,10 @@ function renderArgValue(value: unknown): string {
   return String(value);
 }
 
-function resolvedLabel(request: ApprovalRequestData, outcome?: ApprovalDecisionValue | null) {
+export function resolvedLabel(
+  request: Pick<ApprovalRequestData, 'resolution' | 'status'>,
+  outcome?: ApprovalDecisionValue | null,
+) {
   const decision = outcome ?? request.resolution;
   if (decision === 'approve') return 'Approved';
   if (decision === 'deny') return 'Denied';
@@ -124,7 +127,7 @@ function resolvedLabel(request: ApprovalRequestData, outcome?: ApprovalDecisionV
   return 'Completed';
 }
 
-function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
+export function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
   if (label === 'Approved' || label === 'Allowed') return 'success';
   if (label === 'Denied' || label === 'Failed') return 'destructive';
   return 'muted';
@@ -284,8 +287,12 @@ export function ApprovalDecisionActions({
   busyDecision = null,
   approvable = true,
   dense = false,
+  stretch = false,
   className,
 }: DenseProp & {
+  /** The two decisions share the row in equal halves (the standalone page's
+   *  narrow column), instead of sitting at its trailing edge. */
+  stretch?: boolean;
   onDecision: ApprovalDecisionHandler;
   busyDecision?: ApprovalDecisionValue | null;
   /** False only when the call shows nothing to review — Approve is then not
@@ -311,7 +318,12 @@ export function ApprovalDecisionActions({
         maxHeight={160}
         className={cn('font-normal', dense ? 'text-xs' : 'text-sm')}
       />
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div
+        className={cn(
+          'flex gap-2',
+          stretch ? '[&>button]:flex-1' : 'flex-col-reverse sm:flex-row sm:justify-end',
+        )}
+      >
         <Button
           type="button"
           size={size}

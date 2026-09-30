@@ -7,6 +7,12 @@
  */
 
 import { CopyButton } from '@/components/markdown/copy-button';
+import { Badge } from '@/components/ui/badge';
+import { Copy } from '@/features/icon/icons/copy';
+import { useTranslations } from '@/i18n/use-translations';
+import { CheckIcon } from '@phosphor-icons/react';
+import { AnimatePresence, m } from 'motion/react';
+import { useState } from 'react';
 import Loading from '@/components/ui/loading';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
@@ -63,6 +69,52 @@ export function CopyCommand({ command }: { command: string }) {
       <code className="text-foreground truncate font-mono text-sm">{command}</code>
       <CopyButton code={command} />
     </div>
+  );
+}
+
+/**
+ * A command named inside a sentence ("Disconnect anytime with `/kortix logout`"),
+ * as a badge that copies itself on click. The badge base is uppercase with
+ * tight tracking, which is wrong for a command someone will type: it keeps its
+ * own case and normal mono tracking.
+ */
+export function CopyCommandBadge({ command }: { command: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // A blocked clipboard leaves the command readable in place.
+    }
+  };
+  return (
+    <Badge asChild variant="secondary">
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={copied ? 'Copied' : `${tI18nComplete.raw('texte21f935f11d7')} ${command}`}
+        className="hover:bg-secondary focus-visible:ring-ring gap-1.5 align-baseline tracking-normal normal-case transition-[background-color,scale] outline-none focus-visible:ring-2 active:scale-[0.96]"
+      >
+        {command}
+        <span aria-hidden className="relative inline-flex size-3 shrink-0">
+          <AnimatePresence initial={false} mode="popLayout">
+            <m.span
+              key={copied ? 'check' : 'copy'}
+              initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+              animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
+              exit={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
+              transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
+              className="absolute inset-0 inline-flex items-center justify-center"
+            >
+              {copied ? <CheckIcon className="size-3" /> : <Copy className="size-3" />}
+            </m.span>
+          </AnimatePresence>
+        </span>
+      </button>
+    </Badge>
   );
 }
 

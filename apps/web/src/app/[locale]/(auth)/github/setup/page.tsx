@@ -9,7 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import {
+  AuthPendingScreen,
+  DetailPanel,
+  DetailRow,
+} from '@/features/auth/auth-consent';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
@@ -269,7 +273,14 @@ function GitHubSetup() {
         </Rise>
         {state === 'verify' ? (
           <Rise delay={0.06}>
-            <Button size="lg" className="w-full" onClick={handleVerify}>
+            <DetailPanel>
+              <DetailRow
+                label={tI18nComplete.raw('text7e1b0d5641f2')}
+                value={user.email ?? 'You'}
+              />
+            </DetailPanel>
+            <Button size="lg" className="mt-5 w-full" onClick={handleVerify}>
+              <Github className="size-4 shrink-0" />
               {selectingExistingInstallation
                 ? tI18nComplete.raw('text7b9db77e0178')
                 : tI18nComplete.raw('text8130db25eca7')}
