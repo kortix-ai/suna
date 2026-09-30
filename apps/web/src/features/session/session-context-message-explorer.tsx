@@ -152,7 +152,7 @@ export function filterRawMessages(
         m.info.id.toLowerCase().includes(query) ||
         m.parts.some(
           (p) =>
-            typeof (p as any).text === 'string' && (p as any).text.toLowerCase().includes(query),
+            'text' in p && typeof p.text === 'string' && p.text.toLowerCase().includes(query),
         ),
     );
   }
