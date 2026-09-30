@@ -188,11 +188,7 @@
       "label": "アカウント",
       "createIn": "{account} に作成",
       "choose": "アカウントを選択",
-      "loggedInAs": "ログイン中のアカウント",
-      "nameLabel": "アカウント名",
-      "nameHint": "チームにはサイドバーと招待で表示されます。後から変更できます。",
-      "nameRequired": "アカウント名は必須です",
-      "renameFailed": "アカウント名を保存できませんでした。もう一度お試しください。"
+      "loggedInAs": "ログイン中のアカウント"
     },
     "name": {
       "label": "プロジェクト名",
@@ -19955,9 +19951,6 @@
   },
   "projectSelector": {
     "welcome": "Kortix へようこそ",
-    "nameAccountTitle": "アカウントに名前を付ける",
-    "nameAccountBody": "プロジェクト、エージェント、チームメンバーはここにまとまります。",
-    "nameAccountContinue": "続ける",
     "welcomeBack": "おかえりなさい",
     "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
     "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",
