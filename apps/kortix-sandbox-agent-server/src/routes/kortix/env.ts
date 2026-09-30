@@ -3,6 +3,7 @@ import type { Config } from '@/lib/config/config'
 import type { HarnessControlOperations } from '@/harness/contract/control'
 import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { logger } from '@/lib/log/logger'
+import { legacyEnvFields, legacyRuntimeEnv } from './legacy-names'
 
 function bearerToken(header: string | undefined): string | null {
   if (!header?.startsWith('Bearer ')) return null
@@ -42,7 +43,7 @@ export function createEnvRouter(
           env?: unknown
           names?: unknown
           refreshModels?: unknown
-          opencodeEnv?: unknown
+          runtimeEnv?: unknown
           llmGatewayEnabled?: unknown
           llmGatewayBaseUrl?: unknown
           llmGatewayDenyEnv?: unknown
@@ -55,15 +56,16 @@ export function createEnvRouter(
           return c.json({ error: 'env object is required' }, 400)
         }
 
-        return c.json(await control.applyEnvironment({
+        const result = await control.applyEnvironment({
           revision: body.revision,
           env: body.env as Record<string, unknown>,
           names: body.names,
           refreshModels: body.refreshModels,
-          runtimeEnv: body.opencodeEnv,
+          runtimeEnv: body.runtimeEnv ?? legacyRuntimeEnv(body),
           llmGatewayEnabled: body.llmGatewayEnabled,
           llmGatewayBaseUrl: body.llmGatewayBaseUrl,
-        }))
+        })
+        return c.json({ ...result, ...legacyEnvFields(result) })
       } catch (err) {
         const message = (err as Error).message || 'env sync failed'
         logger.error('[env] sync failed', err)

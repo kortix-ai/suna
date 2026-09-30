@@ -543,6 +543,35 @@ flow(
       });
     }
 
+    await ctx.step(
+      'the behavior half reads and writes as `behavior`; a round trip that edits only its pre-W4 name `opencode` keeps that edit; two different edits → 400',
+      async () => {
+        const params = { projectId: project.id, agentName: 'kortix' };
+        const path = '/v1/projects/:projectId/agents/:agentName/config';
+        const owner = ctx.client.as(ctx.P.OWNER);
+        const current = (await owner.get(path, { params })).status(200).json<any>().block.behavior;
+        const neutral = { ...current, description: 'Written as behavior' };
+        const saved = await owner.put(path, { behavior: neutral }, { params });
+        saved.status(200).body()
+          .has('$.block.behavior.description', 'Written as behavior')
+          .has('$.block.opencode.description', 'Written as behavior');
+        const served = (await owner.get(path, { params })).status(200).json<any>().block;
+        if (JSON.stringify(served.behavior) !== JSON.stringify(served.opencode)) {
+          throw new Error('GET serves different values under behavior and opencode');
+        }
+        const olderClient = { ...served.opencode, description: 'Edited as opencode' };
+        (await owner.put(path, { behavior: served.behavior, opencode: olderClient }, { params }))
+          .status(200);
+        (await owner.get(path, { params })).status(200).body()
+          .has('$.block.behavior.description', 'Edited as opencode');
+        (await owner.put(
+          path,
+          { behavior: { ...current, description: 'A' }, opencode: { ...current, description: 'B' } },
+          { params },
+        )).status(400);
+      },
+    );
+
     await ctx.step('PUT a body with unrecognized top-level keys → 400', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { renderSql as render } from './reaping/test-support/render-sql';
 import { WIRE_MESSAGE_ID } from './wire-message-id';
 
 let executed: string[] = [];
@@ -10,16 +11,7 @@ let executeError: Error | null = null;
 // expressible per statement, not with the global `executeError`.
 let executeErrorByIndex: Record<number, Error> = {};
 
-function render(query: unknown): string {
-  if (query === null || query === undefined) return '';
-  if (typeof query !== 'object') return String(query);
-  const node = query as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
-  if (Array.isArray(node.queryChunks)) return node.queryChunks.map(render).join(' ');
-  if (Array.isArray(node.value)) return node.value.join('');
-  if (node.value !== undefined) return String(node.value);
-  if (node.name !== undefined) return String(node.name);
-  return '';
-}
+
 
 mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
@@ -49,16 +41,17 @@ const {
   beginSandboxTurn,
   clearSandboxTurn,
   completeSandboxTurn,
-  deliveringSandboxTurn,
+  reconcileSandboxTurnDelivery,
+  renewActiveSandboxTurn,
+} = await import('./sandbox-turn-lifecycle');
+
+const {
   extractTurnIdentity,
   initialSandboxTurnMetadata,
   prepareInitialSandboxTurn,
-  reconcileSandboxTurnDelivery,
-  renewActiveSandboxTurn,
-  storedSandboxTurn,
   storedSandboxTurns,
   turnCompletionAllowsQueuePromotion,
-} = await import('./sandbox-turn-lifecycle');
+} = await import('./session-turn-ledger');
 
 beforeEach(() => {
   executed = [];
@@ -74,7 +67,7 @@ describe('extractTurnIdentity', () => {
     const body = new TextEncoder().encode(JSON.stringify({ messageID: 'msg_turn_1', parts: [] }));
     expect(
       extractTurnIdentity('/session/ses_root/prompt_async?directory=/workspace', body.buffer),
-    ).toEqual({ opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' });
+    ).toEqual({ runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' });
   });
 
   test('a noReply prompt has no turn to track', () => {
@@ -87,7 +80,7 @@ describe('extractTurnIdentity', () => {
         JSON.stringify({ messageID: 'msg_turn_1', parts: [], ...flag }),
       );
       expect(extractTurnIdentity('/session/ses_root/prompt_async', body.buffer)).toEqual({
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_turn_1',
       });
     }
@@ -95,7 +88,7 @@ describe('extractTurnIdentity', () => {
 
   test('returns a null message ID for command turns that OpenCode identifies later', () => {
     expect(extractTurnIdentity('/session/ses_root/command', undefined)).toEqual({
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: null,
     });
   });
@@ -110,6 +103,7 @@ describe('daemon-delivered initial turn authority', () => {
     expect(initialSandboxTurnMetadata(turn)).toEqual({
       token: turn.token,
       state: 'delivering',
+      runtimeSessionId: null,
       opencodeSessionId: null,
       messageId: turn.messageId,
       startedAtMs: 1234,
@@ -118,41 +112,35 @@ describe('daemon-delivered initial turn authority', () => {
 
   test('parses only a token-bound delivering record', () => {
     expect(
-      deliveringSandboxTurn({
-        activeTurn: {
-          token: 'turn-token',
-          state: 'delivering',
-          opencodeSessionId: 'ses_root',
-          messageId: 'msg_turn_1',
+      storedSandboxTurns({
+        activeTurns: {
+          'turn-token': {
+            token: 'turn-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
         },
-      }),
+      }).find((turn) => turn.state === 'delivering'),
     ).toEqual({
       token: 'turn-token',
       state: 'delivering',
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
-      // A legacy `activeTurn` record predates `startedAtMs`. Null, never a
-      // synthesized "now": GET .../turn publishes this instant, and inventing
-      // one would report a start nobody measured.
+      // A record written before `startedAtMs` existed carries no start instant.
+      // Null, never a synthesized "now": GET .../turn publishes this instant,
+      // and inventing one would report a start nobody measured.
       startedAtMs: null,
     });
     expect(
-      deliveringSandboxTurn({ activeTurn: { token: 'turn-token', state: 'active' } }),
-    ).toBeNull();
-    expect(
-      storedSandboxTurn({
-        activeTurn: {
-          token: 'turn-token',
-          state: 'active',
-          opencodeSessionId: 'ses_root',
-          messageId: 'msg_turn_1',
-        },
-      })?.state,
-    ).toBe('active');
-    expect(deliveringSandboxTurn(null)).toBeNull();
+      storedSandboxTurns({
+        activeTurns: { 'turn-token': { token: 'turn-token', state: 'active' } },
+      }).find((turn) => turn.state === 'delivering'),
+    ).toBeUndefined();
+    expect(storedSandboxTurns(null)).toEqual([]);
   });
 
-  test('keeps concurrent token-keyed turns independent and reads legacy state', () => {
+  test('keeps concurrent token-keyed turns independent', () => {
     expect(
       storedSandboxTurns({
         activeTurns: {
@@ -166,39 +154,26 @@ describe('daemon-delivered initial turn authority', () => {
           'token-delivering': {
             token: 'token-delivering',
             state: 'delivering',
-            opencodeSessionId: 'ses_b',
+            runtimeSessionId: 'ses_b',
             messageId: 'msg_b',
             // Not a number: a corrupt instant reads as "unknown", not as 1970.
             startedAtMs: 'soon',
           },
-        },
-        activeTurn: {
-          token: 'legacy-token',
-          state: 'active',
-          opencodeSessionId: 'ses_legacy',
-          messageId: null,
         },
       }),
     ).toEqual([
       {
         token: 'token-active',
         state: 'active',
-        opencodeSessionId: 'ses_a',
+        runtimeSessionId: 'ses_a',
         messageId: 'msg_a',
         startedAtMs: 1700,
       },
       {
         token: 'token-delivering',
         state: 'delivering',
-        opencodeSessionId: 'ses_b',
+        runtimeSessionId: 'ses_b',
         messageId: 'msg_b',
-        startedAtMs: null,
-      },
-      {
-        token: 'legacy-token',
-        state: 'active',
-        opencodeSessionId: 'ses_legacy',
-        messageId: null,
         startedAtMs: null,
       },
     ]);
@@ -215,7 +190,8 @@ describe('daemon-delivered initial turn authority', () => {
           },
           missingToken: { state: 'active', opencodeSessionId: 'ses_root' },
         },
-        activeTurn: { state: 'active', opencodeSessionId: 'ses_root' },
+        // The retired single-record arm is inert: only `activeTurns` is read.
+        activeTurn: { token: 'legacy-token', state: 'active', opencodeSessionId: 'ses_root' },
       }),
     ).toEqual([]);
   });
@@ -227,7 +203,7 @@ describe('control-plane active-turn state', () => {
     expect(
       await beginSandboxTurn(
         { externalId: 'ext-1' },
-        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       ),
     ).toBe('granted');
 
@@ -248,7 +224,7 @@ describe('control-plane active-turn state', () => {
     await expect(
       beginSandboxTurn(
         { externalId: 'ext-1' },
-        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       ),
     ).rejects.toThrow('database unavailable');
   });
@@ -259,7 +235,7 @@ describe('control-plane active-turn state', () => {
     await expect(
       beginSandboxTurn(
         { externalId: 'ext-1' },
-        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       ),
     ).rejects.toThrow('unsupported database result');
   });
@@ -268,7 +244,7 @@ describe('control-plane active-turn state', () => {
     executeResults = [[{ accepted: true }]];
     expect(
       await acceptSandboxTurn({ externalId: 'ext-1' }, 'turn-token', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_turn_1',
       }),
     ).toBe(true);
@@ -292,7 +268,6 @@ describe('control-plane active-turn state', () => {
 
     expect(executed[0]).toContain("->>'token'");
     expect(executed[0]).toContain('turn-token');
-    expect(executed[0]).toContain("- 'activeTurn'");
     expect(executed[0]).toContain('-  turn-token');
     // The record has to be read before it is erased: RETURNING sees the new row
     // version, so the entry the ledger settle needs is gone by then.
@@ -332,7 +307,7 @@ describe('terminal turn handling', () => {
 
     expect(
       await completeSandboxTurn('sess-1', 'idle', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_turn_1',
       }),
     ).toEqual({ outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 });
@@ -351,7 +326,7 @@ describe('terminal turn handling', () => {
 
     expect(
       await completeSandboxTurn('sess-1', 'idle', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_stale',
       }),
     ).toEqual({
@@ -380,7 +355,7 @@ describe('terminal turn handling', () => {
     await completeSandboxTurn(
       'sess-1',
       'error',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       { name: 'MessageAbortedError', message: 'Aborted' },
     );
 
@@ -393,7 +368,7 @@ describe('terminal turn handling', () => {
     const result = await completeSandboxTurn(
       'sess-1',
       'error',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       { ...MEMORY_GUARD, isRetryable: true },
     );
 
@@ -409,7 +384,7 @@ describe('terminal turn handling', () => {
 
     expect(
       await completeSandboxTurn('sess-1', 'idle', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_turn_1',
       }),
     ).toEqual({ outcome: 'already_closed', activeTurnCount: 0, closedTurnCount: 0 });
@@ -423,7 +398,7 @@ describe('terminal turn handling', () => {
 
     expect(
       await completeSandboxTurn('sess-1', 'idle', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_old',
       }),
     ).toEqual({ outcome: 'already_closed', activeTurnCount: 1, closedTurnCount: 0 });
@@ -442,7 +417,7 @@ describe('terminal turn handling', () => {
     ];
 
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
 
@@ -462,7 +437,7 @@ describe('terminal turn handling', () => {
     await completeSandboxTurn(
       'sess-1',
       'error',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       { name: 'ModelError', message: 'upstream 500', isRetryable: false },
     );
 
@@ -480,7 +455,7 @@ describe('terminal turn handling', () => {
     await completeSandboxTurn(
       'sess-1',
       'error',
-      { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       { name: 'MessageAbortedError', message: 'Aborted' },
     );
 
@@ -492,7 +467,7 @@ describe('terminal turn handling', () => {
 
     expect(
       await completeSandboxTurn('sess-1', 'idle', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_unknown',
       }),
     ).toEqual({ outcome: 'no_active_turn', activeTurnCount: 0, closedTurnCount: 0 });
@@ -500,13 +475,11 @@ describe('terminal turn handling', () => {
 
   test('idle clears the matching message and shortens to the idle timeout', async () => {
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
 
     expect(executed).toHaveLength(1);
-    expect(executed[0]).toContain("- 'activeTurn'");
-    expect(executed[0]).toContain('jsonb_object_agg');
     expect(executed[0]).toContain('msg_turn_1');
     expect(executed[0]).toContain('LEAST');
     expect(executed[0]).toContain("IN ('active', 'provisioning')");
@@ -515,7 +488,7 @@ describe('terminal turn handling', () => {
 
   test('a stale terminal message cannot close a newer identified turn', async () => {
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_old',
     });
 
@@ -525,7 +498,7 @@ describe('terminal turn handling', () => {
 
   test('a legacy terminal event without a message ID cannot close an identified turn', async () => {
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: null,
     });
 
@@ -541,7 +514,7 @@ describe('terminal turn handling', () => {
       await completeSandboxTurn(
         'sess-1',
         'error',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
         { isRetryable: true },
       ),
     ).toEqual({ outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 });
@@ -611,7 +584,7 @@ describe('session_turns ledger dual-write', () => {
     executeResults = [[{ ...OWNER, granted: true }]];
     await beginSandboxTurn(
       { externalId: 'ext-1' },
-      { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+      { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
     );
 
     expect(executed[0]).toContain('s.sandbox_id');
@@ -625,7 +598,7 @@ describe('session_turns ledger dual-write', () => {
     expect(
       await beginSandboxTurn(
         { externalId: 'ext-1' },
-        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       ),
     ).toBe('granted');
 
@@ -653,7 +626,7 @@ describe('session_turns ledger dual-write', () => {
     expect(
       await beginSandboxTurn(
         { externalId: 'ext-1' },
-        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       ),
     ).toBe('granted');
 
@@ -667,7 +640,7 @@ describe('session_turns ledger dual-write', () => {
     expect(
       await beginSandboxTurn(
         { externalId: 'ext-1' },
-        { token: 'turn-token', opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { token: 'turn-token', runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       ),
     ).toBe('granted');
     expect(executed).toHaveLength(2);
@@ -677,7 +650,7 @@ describe('session_turns ledger dual-write', () => {
     executeResults = [[{ ...OWNER, accepted: true }]];
     expect(
       await acceptSandboxTurn({ externalId: 'ext-1' }, 'turn-token', {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_turn_1',
       }),
     ).toBe(true);
@@ -691,7 +664,7 @@ describe('session_turns ledger dual-write', () => {
   test('acceptSandboxTurn creates the ledger row for a daemon-delivered initial turn', async () => {
     executeResults = [[{ ...OWNER, accepted: true }]];
     await acceptSandboxTurn({ externalId: 'ext-1' }, 'boot-token', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_boot',
     });
 
@@ -707,20 +680,19 @@ describe('session_turns ledger dual-write', () => {
     // committed — a row on a parked box that no settle can ever reach again.
     executeResults = [[{ ...OWNER, accepted: true }]];
     await acceptSandboxTurn({ externalId: 'ext-1' }, 'boot-token', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_boot',
     });
 
     expect(executed[1]).toContain("s.status IN ('active', 'provisioning')");
     expect(executed[1]).toContain('FOR UPDATE');
-    // The legacy single-record arm counts as authority too, or a whole rolling
-    // deploy would record no history at all.
-    expect(executed[1]).toContain("s.metadata->'activeTurn'->>'token'");
+    expect(executed[1]).toContain("s.metadata->'activeTurns'->");
+    expect(executed[1]).not.toMatch(/'activeTurn'->/);
   });
 
   const ENDED_TURN = {
     token: 'turn-token',
-    opencodeSessionId: 'ses_root',
+    runtimeSessionId: 'ses_root',
     messageId: 'msg_turn_1',
     startedAtMs: 1_700_000_000_000,
   };
@@ -728,7 +700,7 @@ describe('session_turns ledger dual-write', () => {
   test('completeSandboxTurn ends the ledger row instead of deleting it', async () => {
     executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
 
@@ -743,7 +715,7 @@ describe('session_turns ledger dual-write', () => {
   test('completeSandboxTurn writes history for a turn that has no ledger row yet', async () => {
     executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
 
@@ -761,7 +733,7 @@ describe('session_turns ledger dual-write', () => {
   test("completeSandboxTurn records 'failed' for an error end and 'completed' for idle", async () => {
     executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
     await completeSandboxTurn('sess-1', 'error', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
     expect(executed[1]).toContain('failed');
@@ -769,7 +741,7 @@ describe('session_turns ledger dual-write', () => {
     executed = [];
     executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
     expect(executed[1]).toContain('completed');
@@ -778,17 +750,17 @@ describe('session_turns ledger dual-write', () => {
   test('completeSandboxTurn aggregates TOKENS, not metadata keys', async () => {
     executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], completed: true }]];
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
 
-    // The legacy single-record arm's KEY is the literal 'activeTurn'; the
-    // aggregate must carry the record's TOKEN instead, or the settle ends a row
-    // that never existed. Asserting the ledger statement's text cannot prove
-    // this — that statement is built from whatever this mock returned. The real
-    // guard drives the legacy shape through real Postgres:
-    // __tests__/integration-sandbox-turn-lifecycle.test.ts, "the legacy
-    // activeTurn record settles its ledger row under its own token".
+    // The map's KEY is its entry key, not the record's token; the aggregate
+    // must carry the record's TOKEN instead, or the settle ends a row that
+    // never existed. Asserting the ledger statement's text cannot prove this —
+    // that statement is built from whatever this mock returned. The real guard
+    // drives a mismatched key through real Postgres:
+    // __tests__/integration-sandbox-turn-lifecycle.test.ts, "a map key that
+    // does not match the token settles the ledger row under the token".
     expect(executed[0]).toContain("entry.value->>'token'");
     expect(executed[0]).toContain("'token', selected.token");
     expect(executed[0]).toContain('ended_turns');
@@ -797,7 +769,7 @@ describe('session_turns ledger dual-write', () => {
   test('completeSandboxTurn skips the ledger when the authority write returned no identity', async () => {
     executeResults = [[{ ended_turns: [ENDED_TURN], completed: true }]];
     await completeSandboxTurn('sess-1', 'idle', {
-      opencodeSessionId: 'ses_root',
+      runtimeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
     });
 

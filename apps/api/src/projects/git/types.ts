@@ -29,7 +29,11 @@ export interface ProjectConfigSummary {
    *  to decide whether to offer an upgrade. See `../lib/manifest-verdict`. */
   manifest_version: ProjectManifestVerdict;
   env: { required: string[]; optional: string[] };
+  /** The text of the project's `opencode.jsonc`: OpenCode's own config file. */
   open_code_raw: string | null;
+  /** The project's default agent. */
+  default_agent: string | null;
+  /** @deprecated The pre-W4 name of `default_agent`. Same value. */
   open_code_default_agent: string | null;
   agent_discovery: 'opencode' | 'declarative';
   agents: Array<{

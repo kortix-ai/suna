@@ -15,18 +15,93 @@
  * sections). Such errors render through the plain branch.
  */
 
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 import { View } from 'react-native';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Badge } from '@/components/ui/badge';
 import { Text } from '@/components/ui/text';
 import { ProhibitIcon, WarningCircleIcon } from '@/lib/icons';
-import { parseErrorContent } from '@/lib/session/activity';
+import { parseErrorContent, type ValidationIssue } from '@/lib/session/activity';
 import { webSpace } from '@/lib/session/user-message';
-import { disclosureKey, useDisclosureChoice, useDisclosureStore } from '@/lib/session/disclosure-store';
+import { disclosureKey, useDisclosureState } from '@/lib/session/disclosure-store';
 import { DisclosureCaret } from '@/components/session/chain-of-thought';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from './shared/styles';
 import { ToolCardFrame } from './shared/surface';
+
+function ValidationErrorCard({ errorType, toolName, validationIssues }: {
+  errorType: string | null;
+  toolName?: string;
+  validationIssues: ValidationIssue[];
+}) {
+  const palette = useTurnPalette();
+  return (
+    <ToolCardFrame padded={false} framePad={TURN_SPACE.resultFramePad}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: TURN_SPACE.gap2,
+          paddingHorizontal: TURN_SPACE.errorPadX,
+          paddingTop: TURN_SPACE.errorPadY,
+          paddingBottom: webSpace(1),
+        }}
+      >
+        <ProhibitIcon size={TURN_SPACE.caret} color={palette.muted70} />
+        <Text variant="small" style={[TURN_TYPE.xs, { fontFamily: FONT_MEDIUM, color: palette.mutedForeground }]}>
+          {errorType || 'Error'}
+        </Text>
+        {toolName ? (
+          <Text variant="muted"
+            numberOfLines={1}
+            style={[TURN_TYPE.xs, { marginLeft: 'auto', fontFamily: monoFont, color: palette.muted50 }]}
+          >
+            {toolName}
+          </Text>
+        ) : null}
+      </View>
+      <View
+        style={{
+          rowGap: webSpace(2.5),
+          paddingHorizontal: TURN_SPACE.errorPadX,
+          paddingTop: webSpace(1),
+          paddingBottom: TURN_SPACE.errorPadX,
+        }}
+      >
+        {validationIssues.map((issue) => (
+          <View key={`${issue.path.join('.')}:${issue.message}`} style={{ rowGap: TURN_SPACE.gap1_5 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: TURN_SPACE.gap2 }}>
+              <View style={{ marginTop: webSpace(0.5) }}>
+                <WarningCircleIcon size={TURN_SPACE.caret} color={palette.muted60} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
+                {issue.path.length > 0 ? (
+                  <Badge variant="secondary" style={{ marginRight: TURN_SPACE.gap1_5 }}>
+                    <Text style={{ fontFamily: monoFont }}>{issue.path.join('.')}</Text>
+                  </Badge>
+                ) : null}
+                <Text style={[TURN_TYPE.xs, { color: palette.foreground80 }]}>{issue.message}</Text>
+              </View>
+            </View>
+            {issue.values && issue.values.length > 0 ? (
+              <View style={{ marginLeft: webSpace(5.5) }}>
+                <Text variant="muted" style={[TURN_TYPE.xs, { marginBottom: webSpace(1), color: palette.muted50 }]}>
+                  Expected one of:
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: webSpace(1) }}>
+                  {issue.values.map((value, i) => (
+                    <Badge key={i} variant="secondary">
+                      <Text style={{ fontFamily: monoFont }}>{value}</Text>
+                    </Badge>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </View>
+        ))}
+      </View>
+    </ToolCardFrame>
+  );
+}
 
 function ToolErrorImpl({
   error,
@@ -44,82 +119,10 @@ function ToolErrorImpl({
     [error],
   );
   const key = partId ? disclosureKey('trace', partId) : undefined;
-  const storedChoice = useDisclosureChoice(key ?? '');
-  const [localOpen, setLocalOpen] = useState(false);
-  const showTrace = key ? (storedChoice ?? false) : localOpen;
-  const toggleTrace = () => {
-    if (key) useDisclosureStore.getState().setChoice(key, !showTrace);
-    else setLocalOpen((v) => !v);
-  };
+  const { open: showTrace, toggle: toggleTrace } = useDisclosureState(key, { auto: false });
 
   if (validationIssues && validationIssues.length > 0) {
-    return (
-      <ToolCardFrame padded={false} framePad={TURN_SPACE.resultFramePad}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: TURN_SPACE.gap2,
-            paddingHorizontal: TURN_SPACE.errorPadX,
-            paddingTop: TURN_SPACE.errorPadY,
-            paddingBottom: webSpace(1),
-          }}
-        >
-          <ProhibitIcon size={TURN_SPACE.caret} color={palette.muted70} />
-          <Text variant="small" style={[TURN_TYPE.xs, { fontFamily: FONT_MEDIUM, color: palette.mutedForeground }]}>
-            {errorType || 'Error'}
-          </Text>
-          {toolName ? (
-            <Text variant="muted"
-              numberOfLines={1}
-              style={[TURN_TYPE.xs, { marginLeft: 'auto', fontFamily: monoFont, color: palette.muted50 }]}
-            >
-              {toolName}
-            </Text>
-          ) : null}
-        </View>
-        <View
-          style={{
-            rowGap: webSpace(2.5),
-            paddingHorizontal: TURN_SPACE.errorPadX,
-            paddingTop: webSpace(1),
-            paddingBottom: TURN_SPACE.errorPadX,
-          }}
-        >
-          {validationIssues.map((issue) => (
-            <View key={`${issue.path.join('.')}:${issue.message}`} style={{ rowGap: TURN_SPACE.gap1_5 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: TURN_SPACE.gap2 }}>
-                <View style={{ marginTop: webSpace(0.5) }}>
-                  <WarningCircleIcon size={TURN_SPACE.caret} color={palette.muted60} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
-                  {issue.path.length > 0 ? (
-                    <Badge variant="secondary" style={{ marginRight: TURN_SPACE.gap1_5 }}>
-                      <Text style={{ fontFamily: monoFont }}>{issue.path.join('.')}</Text>
-                    </Badge>
-                  ) : null}
-                  <Text style={[TURN_TYPE.xs, { color: palette.foreground80 }]}>{issue.message}</Text>
-                </View>
-              </View>
-              {issue.values && issue.values.length > 0 ? (
-                <View style={{ marginLeft: webSpace(5.5) }}>
-                  <Text variant="muted" style={[TURN_TYPE.xs, { marginBottom: webSpace(1), color: palette.muted50 }]}>
-                    Expected one of:
-                  </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: webSpace(1) }}>
-                    {issue.values.map((value, i) => (
-                      <Badge key={i} variant="secondary">
-                        <Text style={{ fontFamily: monoFont }}>{value}</Text>
-                      </Badge>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      </ToolCardFrame>
-    );
+    return <ValidationErrorCard errorType={errorType} toolName={toolName} validationIssues={validationIssues} />;
   }
 
   return (

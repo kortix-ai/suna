@@ -26,7 +26,7 @@ import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { PiConfig } from './config'
-import { resolvePiSkillDirectories } from './config'
+import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
@@ -37,7 +37,7 @@ import { PiWireAdapter, assistantMessageError, type WireEmission } from './wire'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
 
-export const PI_HARNESS_VERSION = 'pi-agent-core@0.85.1'
+import { PI_HARNESS_VERSION } from './version'
 
 /** OpenCode `AgentConfig`, as apps/api compiles it (compile-agent-config.ts). */
 export interface CompiledAgent {
@@ -162,6 +162,8 @@ export interface PiRuntimeHooks {
   onQuestionAsked?: (request: QuestionRequestWire, answer: (answers: string[][]) => void) => void
   /** A tool call waits for the user's approval (root or subagent). Report only: the reply comes over the permission routes. */
   onPermissionAsked?: (request: PermissionRequestWire) => void
+  /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
+  onFrame?: (frame: WireFrame) => void
 }
 
 export interface PiRuntimeOptions {
@@ -375,9 +377,9 @@ export class PiRuntime {
       this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
         env: this.env,
-        defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+        defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
       })
-      this.selected = this.models.select(nativeModelId(this.env.KORTIX_OPENCODE_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
+      this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
       // pi spreads the live process.env into every shell itself; BASH_ENV adds
       // the egress shim's proxy + CA, which only the agent env file carries.
       this.executionEnv = new node.NodeExecutionEnv({ cwd: this.workspace, shellEnv: { ...AGENT_SHELL_ENV } })
@@ -420,6 +422,7 @@ export class PiRuntime {
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
       this.pi = await host.createPiSession({
+        projectConfigDir: await resolvePiProjectConfigDir(this.cfg),
         agent,
         ref: this.runner,
         cwd: this.workspace,
@@ -487,9 +490,9 @@ export class PiRuntime {
     this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
       env: this.env,
-      defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+      defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
     })
-    this.selected = this.models.select(nativeModelId(this.env.KORTIX_OPENCODE_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
+    this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
     const core = await import('@earendil-works/pi-agent-core')
@@ -563,8 +566,8 @@ export class PiRuntime {
    * Quick Queue: end the named turn once no tool is running. A tool in flight
    * is never killed; the model's own streaming may be cut.
    */
-  armAbortAfterTool(input: { promptId: string; opencodeSessionId: string; messageId: string }): void {
-    if (input.opencodeSessionId !== this.rootId) return
+  armAbortAfterTool(input: { promptId: string; runtimeSessionId: string; messageId: string }): void {
+    if (input.runtimeSessionId !== this.rootId) return
     this.abortAfterTool = { promptId: input.promptId, messageId: input.messageId }
     this.checkAbortAfterTool()
   }
@@ -909,6 +912,7 @@ export class PiRuntime {
     }
     if (opts.transcriptOnly) return
     kortixEventBus().publish(frame.type, p, session)
+    this.hooks.onFrame?.(frame)
   }
 
   private publishUserMessage(
@@ -1002,7 +1006,7 @@ export class PiRuntime {
 
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
     if (!this.executionEnv) return []
-    const dirs = resolvePiSkillDirectories(this.cfg).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.cfg, await resolvePiProjectConfigDir(this.cfg)).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')
@@ -1206,6 +1210,9 @@ export class PiRuntime {
       seq: bus.headSeq,
       built_at: new Date(this.now()).toISOString(),
       identity: {
+        runtime_session_id: this.rootId,
+        harness_version: PI_HARNESS_VERSION,
+        // Pre-W3 names of the two fields above, for an API that predates them.
         opencode_session_id: this.rootId,
         opencode_version: PI_HARNESS_VERSION,
         daemon_build: null,

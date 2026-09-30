@@ -145,12 +145,9 @@ function StartSignOutButton() {
 }
 
 /**
- * Failure stays on this route. Falling back to `/projects` would quietly make
- * the list the default destination again, which is exactly what this flow
- * removes — so the recovery is an explicit retry, and the secondary action
- * goes to `/new`, not `/projects`: the list is gone (Task 21), and `/projects`
- * is now a redirect back to THIS route, which would just re-run the same
- * failing resolve a beat later instead of offering anything new.
+ * Failure stays on this route with an explicit retry. `/projects` would
+ * re-run the same failing reads, so the secondary action goes to `/new`,
+ * which the user chooses here. No default path forwards a user to `/new`.
  */
 function ProjectStartError({ onRetry }: { onRetry: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

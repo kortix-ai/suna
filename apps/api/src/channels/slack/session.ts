@@ -284,6 +284,18 @@ export async function createOrJoinThreadSession(input: {
   });
   const createModel = start.model;
 
+  // A retired selection with no usable replacement cannot complete a turn.
+  // Fail once here instead of starting a session that repeatedly reports the
+  // same model error on every mention in this thread.
+  if (start.unavailableModel) {
+    if (claimKey) await releaseThreadCreate(claimKey);
+    if (handle) await finalizeTurn(handle, {
+      title: 'Model unavailable',
+      error: `The model \`${start.unavailableModel}\` isn't available. Pick another model with \`/kortix models\`, then send your message again.`,
+    });
+    return;
+  }
+
   const result = await slackSessionLifecycle.createSession({
     source: 'slack',
     project,

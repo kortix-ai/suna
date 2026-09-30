@@ -17,10 +17,18 @@ export interface ConnectorHandoffRequest {
   projectId: string;
   slug: string;
   label: string;
+  /** The project a connect link names, for the sheet's title. */
+  projectName?: string | null;
   logoUri?: string | null;
   /** The tool's own `connect_url` — a `/connect/<token>` public page, opened
    *  only when the project-scoped Pipedream connect can't start. */
   fallbackConnectUrl: string;
+  /**
+   * Called after a connect attempt with whether the app is connected now. A
+   * browser that closes without the redirect cannot say whether THIS attempt
+   * landed, so an app that already had an account answers true either way.
+   */
+  onSettled?: (connected: boolean) => void;
 }
 
 export interface ConnectorHandoffApi {

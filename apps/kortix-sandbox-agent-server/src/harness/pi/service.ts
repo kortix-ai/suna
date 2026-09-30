@@ -16,7 +16,7 @@ import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiC
 import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
 import { createPiQueryService } from './queries'
-import { schedulePiProjectionPush } from './relay'
+import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
 
@@ -38,13 +38,13 @@ export function createPiHarnessService(
   const live = () => (started ? runtime : null)
   registerPiSkillReload(async () => live()?.reloadSkills())
   const surface = createPiSurface(live)
-  const pushProjection = (reason: string) =>
-    schedulePiProjectionPush(() => {
-      const rt = live()
-      if (!rt) return null
-      const doc = rt.stateDoc()
-      return { doc, etag: rt.stateEtag(doc) }
-    }, reason)
+  registerRuntimeStateReader(async () => {
+    const rt = live()
+    if (!rt) return null
+    const doc = rt.stateDoc()
+    return { doc, etag: rt.stateEtag(doc) }
+  })
+  const pushProjection = scheduleRuntimeProjectionPush
 
   return {
     id: 'pi',
@@ -81,10 +81,10 @@ export function createPiHarnessService(
         if (current.autoClone && !(await isRepoMaterialized(current.projectTarget))) return notReady('repo_not_materialized', { reason: 'repo_not_materialized' })
         if (state.workspaceReady === false) return notReady('workspace_not_ready', { reason: 'workspace_not_ready' })
         if (state.initialOpenCodeSessionError) {
-          return notReady('initial_session_failed', { reason: 'initial_opencode_session_failed', message: state.initialOpenCodeSessionError })
+          return notReady('initial_session_failed', { reason: 'initial_runtime_session_failed', message: state.initialOpenCodeSessionError })
         }
         if (state.initialOpenCodeSessionRequired && !state.initialOpenCodeSessionId) {
-          return notReady('initial_session_pending', { reason: 'initial_opencode_session_pending' })
+          return notReady('initial_session_pending', { reason: 'initial_runtime_session_pending' })
         }
         if (runtime.getState() !== 'ok' || !started) return notReady('pi_not_ready', { reason: 'pi_not_ready', opencode: runtime.getState() })
         return { ready: true }
@@ -111,7 +111,7 @@ export const piDefinition: HarnessDefinition = {
   createBootState: (): PiBootState => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1',
+    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1',
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
   }),

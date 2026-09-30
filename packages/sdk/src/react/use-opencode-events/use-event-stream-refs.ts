@@ -5,10 +5,10 @@ import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 import { useRef } from 'react';
 import { authenticatedFetch } from '../../core/http/auth';
 import { useDiagnosticsStore, type RawDiagnostic } from '../../browser/stores/diagnostics-store';
-import { getActiveOpenCodeUrl } from '../../browser/stores/server-store';
+import { getActiveRuntimeUrl } from '../../browser/stores/server-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import type { SyntheticAbortError } from '../../browser/stores/sync-store/types';
-import { type Project, type PathInfo, type SessionStatus, opencodeKeys } from '../use-opencode-sessions';
+import { type Project, type PathInfo, type SessionStatus, runtimeKeys } from '../use-opencode-sessions';
 import { qk } from '../query-keys';
 import type { NormalizeDiagnosticPaths } from './types';
 
@@ -68,9 +68,9 @@ export function useEventStreamRefs(deps: {
     // Collect prefixes from cached project/path data
     const prefixes: string[] = [];
     try {
-      const project = queryClient.getQueryData<Project>(opencodeKeys.currentProject());
+      const project = queryClient.getQueryData<Project>(runtimeKeys.currentProject());
       if (project?.worktree) prefixes.push(project.worktree);
-      const pathInfo = queryClient.getQueryData<PathInfo>(opencodeKeys.pathInfo());
+      const pathInfo = queryClient.getQueryData<PathInfo>(runtimeKeys.pathInfo());
       if (pathInfo?.directory) prefixes.push(pathInfo.directory);
       if (pathInfo?.worktree) prefixes.push(pathInfo.worktree);
     } catch {
@@ -119,7 +119,7 @@ export function useEventStreamRefs(deps: {
         timer = setTimeout(async () => {
           timer = null;
           try {
-            const baseUrl = getActiveOpenCodeUrl();
+            const baseUrl = getActiveRuntimeUrl();
             const resp = await authenticatedFetch(`${baseUrl}/lsp/diagnostics`);
             if (!resp.ok) return;
             const data = (await resp.json()) as Record<string, RawDiagnostic[]>;

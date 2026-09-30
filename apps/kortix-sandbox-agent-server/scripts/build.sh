@@ -30,7 +30,7 @@ compile_with_retry() {
   local delay=5
 
   while true; do
-    if bun build --compile --target="$target" --outfile=dist/kortix-agent src/main.ts; then
+    if bun build --compile --target="$target" --tsconfig-override ./tsconfig.json --outfile=dist/kortix-agent src/main.ts; then
       return 0
     fi
 
@@ -57,7 +57,7 @@ compile_with_retry() {
 echo "Typechecking (tsc --noEmit) before compile…"
 bun run typecheck
 
-bun build --target=bun --format=esm --outfile=dist/server.mjs src/main.ts
+bun build --target=bun --format=esm --tsconfig-override ./tsconfig.json --outfile=dist/server.mjs src/main.ts
 compile_with_retry
 chmod +x dist/kortix-agent
 

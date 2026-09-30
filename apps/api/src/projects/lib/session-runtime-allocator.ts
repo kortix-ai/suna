@@ -8,11 +8,11 @@ import { provisionSessionSandbox } from '../../platform/services/session-sandbox
 import { db } from '../../shared/db';
 import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
-import type { PreparedInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { transitionSession } from '../session-lifecycle/status-transitions';
+import type { PreparedInitialSandboxTurn } from '../session-turn-ledger';
 import type { ProjectRow } from './serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
-import { transitionSession } from '../session-lifecycle/status-transitions';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 

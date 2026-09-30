@@ -57,7 +57,7 @@
  * web `tool/shared/patch-helpers`      → `../shared/patch-helpers`  PatchFileLite, PATCH_TYPE_STYLE, RawPatchDiffView
  * web `tool/shared/todo-helpers`       → `../shared/todo-helpers`   parseTodos, TodoItem, TodoStatusIcon (`size`/`color` props)
  * web `tool/shared/session-helpers`    → `../shared/session-helpers`
- * web `tool/shared/show-helpers`       → `../shared/show-helpers`   (icons return `AppIcon`; no ShowCarousel/ShowContentRenderer)
+ * web `tool/shared/show-helpers`       → `../shared/show-helpers`   (`useShowOpenInTab`, rows, actions; the type/file glyphs → `../shared/tool-icons`; no ShowCarousel/ShowContentRenderer)
  * web `tool/shared/sub-agent`          → not a primitive: it renders `ToolPartRenderer`; port with the agents family
  * web `tool/shared/{file-verb,search-query,web-helpers,…}` → `@kortix/sdk`
  *
@@ -80,11 +80,8 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
-  useEffect,
   useMemo,
-  useState,
   type ReactNode,
 } from 'react';
 import { Pressable, View } from 'react-native';
@@ -94,8 +91,7 @@ import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { CheckIcon, MagnifyingGlassIcon, WarningCircleIcon, WarningIcon } from '@/lib/icons';
-import { resolveDisclosureOpen } from '@/lib/session/activity';
-import { useDisclosureChoice, useDisclosureStore } from '@/lib/session/disclosure-store';
+import { useDisclosureState } from '@/lib/session/disclosure-store';
 import {
   cleanErrorMessage,
   formatJsonFailureOutput,
@@ -416,27 +412,11 @@ export function BasicTool({
   const activate = useContext(BoundActivateContext);
   const detail = useContext(ToolDetailContext);
   const { chain } = useToolRowVariant();
-  const storedChoice = useDisclosureChoice(disclosureId ?? '');
-  const [localChoice, setLocalChoice] = useState<boolean | undefined>(undefined);
-  const choice = disclosureId ? storedChoice : localChoice;
-  const open = resolveDisclosureOpen({ userChoice: choice, auto: defaultOpen, forceOpen });
+  const { open, toggle } = useDisclosureState(disclosureId, { auto: defaultOpen, forceOpen, locked });
   const hasBody = Boolean(children);
   const press = onPress ?? onClick;
   const activates = Boolean(activate) && !locked && !forceOpen && !defaultOpen;
 
-  // `forceOpen` latches: once a permission or question opened the row, it
-  // stays open after the prompt resolves.
-  useEffect(() => {
-    if (!forceOpen) return;
-    if (disclosureId) useDisclosureStore.getState().setChoice(disclosureId, true);
-    else setLocalChoice(true);
-  }, [forceOpen, disclosureId]);
-
-  const toggle = useCallback(() => {
-    if (locked && open) return;
-    if (disclosureId) useDisclosureStore.getState().setChoice(disclosureId, !open);
-    else setLocalChoice(!open);
-  }, [disclosureId, locked, open]);
 
   const rowStyle = useMemo(
     () => ({
@@ -461,6 +441,27 @@ export function BasicTool({
     );
   }
 
+  return <BasicToolRow {...{ icon, trigger, running, outcome, triggerAction, onSubtitleClick, press, activates, activate, locked, open, toggle, rowStyle, hasBody, children }} />;
+
+}
+
+function BasicToolRow({ icon, trigger, running, outcome, triggerAction, onSubtitleClick, press, activates, activate, locked, open, toggle, rowStyle, hasBody, children }: {
+  icon?: ToolIcon;
+  trigger: TriggerTitle | ReactNode;
+  running: boolean;
+  outcome: ToolOutcome;
+  triggerAction?: ReactNode;
+  onSubtitleClick?: () => void;
+  press?: () => void;
+  activates: boolean;
+  activate: (() => void) | null;
+  locked?: boolean;
+  open: boolean;
+  toggle: () => void;
+  rowStyle: { flexDirection: 'row'; alignItems: 'center'; gap: number; paddingVertical: number; maxWidth: '100%' };
+  hasBody: boolean;
+  children?: ReactNode;
+}) {
   const header = (
     <ToolHeaderRow
       icon={icon}
@@ -472,17 +473,9 @@ export function BasicTool({
     />
   );
 
-  if (press) {
+  if (press || (activates && activate)) {
     return (
-      <Pressable accessibilityRole="button" onPress={locked ? undefined : press} style={rowStyle}>
-        {header}
-      </Pressable>
-    );
-  }
-
-  if (activates && activate) {
-    return (
-      <Pressable accessibilityRole="button" onPress={activate} style={rowStyle}>
+      <Pressable accessibilityRole="button" onPress={press ? (locked ? undefined : press) : activate} style={rowStyle}>
         {header}
       </Pressable>
     );

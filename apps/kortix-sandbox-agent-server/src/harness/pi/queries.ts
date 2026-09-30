@@ -8,7 +8,7 @@ import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessAttachmentService, HarnessQueryFactory, HarnessQueryService } from '../contract/queries'
 import type { PiRuntime } from './runtime'
 
-export const PI_EVENT_RECOVERY = ['GET /kortix/opencode/state', 'GET /kortix/opencode/messages/:sessionId?limit=20'] as const
+export const PI_EVENT_RECOVERY = ['GET /kortix/runtime/state', 'GET /kortix/runtime/messages/:sessionId?limit=20'] as const
 
 const TOOL_OUTPUT_MAX_BYTES = 64 * 1024
 

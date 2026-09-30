@@ -7,7 +7,7 @@ const detailWith = (experimental: Record<string, boolean> | undefined): ProjectD
   ({ project: { experimental } }) as unknown as ProjectDetail;
 
 // The one predicate every gateway-gated query (/model-defaults, /model-picker,
-// routing policy) forks on. It must agree with useOpenCodeProviders' provider
+// routing policy) forks on. It must agree with useRuntimeProviders' provider
 // mode: flag off ⇒ native mode ⇒ those routes 404 llm_gateway_disabled and
 // must never be fetched.
 describe('projectDetailLlmGatewayEnabled', () => {

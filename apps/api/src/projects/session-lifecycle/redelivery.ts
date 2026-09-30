@@ -2,7 +2,7 @@ import { sessionLifecycleCommands } from '@kortix/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import type { SessionTurnEndReason } from '../sandbox-turn-lifecycle';
+import type { SessionTurnEndReason } from '../session-turn-ledger';
 import { INBOX_HOLD_MS, isStopPausedInboxRow } from './inbox-rows';
 import {
   type QueuedContinueSessionPayload,

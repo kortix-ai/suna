@@ -158,6 +158,7 @@ describe('loadProjectConfig characterization', () => {
     expect(config.env).toEqual({ required: ['FOO_TOKEN', 'BAR_KEY'], optional: ['OPTIONAL_ONE'] });
     expect(config.open_code_raw).toBe(OPENCODE_JSONC);
     expect(config.open_code_default_agent).toBe('builder');
+    expect(config.default_agent).toBe('builder');
   });
 
   test('pins the agents list and its ordering (sorted by path)', async () => {

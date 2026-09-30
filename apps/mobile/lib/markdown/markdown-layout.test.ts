@@ -92,9 +92,9 @@ describe('orderedListGutter', () => {
 
 describe('inline code chip', () => {
   test("matches web's INLINE_CODE class", () => {
-    // rounded-[5px] border px-1.5 text-[0.8rem] tracking-tight
+    // rounded-[5px] px-1.5 text-[0.8rem] tracking-tight; the border is half of web's 1px.
     expect(RADIUS.inlineCode).toBe(5);
-    expect(INLINE_CODE.borderWidth).toBe(1);
+    expect(INLINE_CODE.borderWidth).toBe(0.5);
     expect(INLINE_CODE.paddingX).toBe(web(1.5));
     expect(INLINE_CODE.fontSize).toBe(12.8);
     expect(INLINE_CODE.letterSpacing).toBe(-0.32);
@@ -113,7 +113,7 @@ describe('inline code chip', () => {
     const textBaseline = (INLINE_CODE.lineHeight - content) / 2 + descent;
     expect(INLINE_CODE.textBaselineFromBottom).toBeCloseTo(textBaseline, 5);
     expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(textBaseline + INLINE_CODE.paddingY + INLINE_CODE.borderWidth, 5);
-    expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(4.56, 2);
+    expect(INLINE_CODE.chipBaselineFromBottom).toBeCloseTo(4.06, 2);
   });
 
   test('the widest piece fits a table cell and a nested list on a 320pt phone', () => {
@@ -128,16 +128,16 @@ describe('inline code chip', () => {
 describe('inlineCodeAnchor', () => {
   const body = { fontSize: TYPE.body.fontSize, lineHeight: TYPE.body.lineHeight };
   const table = { fontSize: TYPE.sm.fontSize, lineHeight: TYPE.sm.lineHeight };
-  // Chip text baseline above the chip's bottom edge: 2.56 + 1 + 1.
+  // Chip text baseline above the chip's bottom edge: 2.56 + 1 + 0.5.
   const hang = INLINE_CODE.chipBaselineFromBottom;
 
   test('the inline view is the whole chip, so nothing hangs outside it to be clipped', () => {
     // A view that holds only the part above the text baseline let Android clip
-    // the bottom 5.07px: Jay saw about 70% of the chip (13.93 / 19).
+    // the bottom 5.07px: Jay saw about 70% of the chip (13.93 / 19, with the 1px border of the time).
     expect(inlineCodeAnchor('android', body).height).toBeCloseTo(INLINE_CODE.height, 5);
-    expect(inlineCodeAnchor('android', body).height).toBeCloseTo(19, 5);
-    expect(inlineCodeAnchor('ios', body).height).toBeCloseTo(19, 5);
-    // Border and padding stay 4px; the text line scales with the system text size.
+    expect(inlineCodeAnchor('android', body).height).toBeCloseTo(18, 5);
+    expect(inlineCodeAnchor('ios', body).height).toBeCloseTo(18, 5);
+    // Border and padding stay 3px; the text line scales with the system text size.
     expect(inlineCodeAnchor('android', body, 1.5).height).toBeCloseTo(
       1.5 * INLINE_CODE.lineHeight + 2 * INLINE_CODE.paddingY + 2 * INLINE_CODE.borderWidth,
       5,
@@ -155,9 +155,9 @@ describe('inlineCodeAnchor', () => {
 
   test('iOS puts the view bottom on the line bottom minus a Helvetica 12 descender', () => {
     // Roobert: unitsPerEm 1000, hhea ascent 1018, descent 246. Helvetica 12 descender 2.76.
-    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 4.56 = 0.495
+    // body: -(3.936 + (26 - 20.224) / 2 - 2.76) + 4.06 = -0.005
     expect(inlineCodeAnchor('ios', body).translateY).toBeCloseTo(-4.064 + hang, 2);
-    // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 4.56 = 2.723
+    // table: -(3.444 + (20 - 17.696) / 2 - 2.76) + 4.06 = 2.223
     expect(inlineCodeAnchor('ios', table).translateY).toBeCloseTo(-1.836 + hang, 2);
     // No line height: TextKit adds no half-leading.
     expect(inlineCodeAnchor('ios', { fontSize: 15 }).translateY).toBeCloseTo(-(3.69 - 2.76) + hang, 2);
