@@ -3444,7 +3444,7 @@ describe('project session API contract', () => {
     // flipped a live session to `starting` and asked for a relaunch mid-answer.
     const app = createApp();
     sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', opencodeSessionId: 'ses_root_existing' };
-    const proven = (extra: Record<string, unknown> = {}) => [
+    const proven = (extra: Record<string, unknown> = {}): Array<SandboxRowFixture> => [
       {
         sandboxId: SESSION_ID,
         sessionId: SESSION_ID,
