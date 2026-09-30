@@ -18,6 +18,7 @@ import {
   groupShowSegments,
   hasRetryingAssistantTurn,
   listSessionPrompts,
+  getSessionMessageAuthors,
   projectSessionConnection,
 } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
@@ -35,7 +36,9 @@ import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
+import { visibleMessageAuthors } from './turn/message-authors';
 import { QueuedPromptList } from './composer/queued-prompt-list';
 import { SessionPrintHeader } from './print/session-print-header';
 import { useSessionPrint } from './print/use-session-print';
@@ -651,6 +654,7 @@ export function deriveTurnErrorPresentation(input: {
 
 interface SessionTurnProps {
   turn: Turn;
+  authorName?: string;
   /** What the control plane recorded about how THIS session's turns ended. */
   turnOutcome: SessionTurnOutcome;
   /**
@@ -853,6 +857,7 @@ function resolveTurnError(turn: Turn): string | undefined {
 
 function SessionTurnImpl({
   turn,
+  authorName,
   turnOutcome,
   isLast,
   ownsPlan,
@@ -1695,6 +1700,7 @@ function SessionTurnImpl({
         >
           <UserMessage
             message={turn.userMessage}
+            authorName={authorName}
             pendingAttachments={pendingAttachments}
             uploadStatus={uploadStatus}
             pendingText={pendingText}
@@ -2386,6 +2392,13 @@ export function SessionChat({
   const syncMessages = sessionState ? liveSessionMessages : hookMessages;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
+  const { data: messageAuthors } = useQuery({
+    queryKey: ['session-message-authors', projectId, projectSessionId],
+    queryFn: () => getSessionMessageAuthors(projectId!, projectSessionId!),
+    enabled: !!projectId && !!projectSessionId && !savedHistoryScope,
+    refetchInterval: 15_000,
+  });
+  const visibleAuthors = useMemo(() => visibleMessageAuthors(messageAuthors ?? {}), [messageAuthors]);
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
@@ -6027,6 +6040,7 @@ export function SessionChat({
                                     : 'mt-12'
                               }
                               turn={turn}
+                              authorName={visibleAuthors[turn.userMessage.info.id]}
                               turnOutcome={turnOutcome}
                               isLast={turn.userMessage.info.id === lastUserMessageId}
                               ownsPlan={turn.userMessage.info.id === planAnchorId}

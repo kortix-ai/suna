@@ -1153,3 +1153,9 @@ describe('editablePromptText for a /command', () => {
     expect(editablePromptText('TEMPLATE BODY', { name: 'webapp' })).toBe('/webapp');
   });
 });
+
+
+test('user bubble labels a known shared-session author only when supplied', () => {
+  expect(renderText('synthetic prompt', { authorName: 'Avery' })).toContain('>Avery</span>');
+  expect(renderText('synthetic prompt')).not.toContain('>Avery</span>');
+});

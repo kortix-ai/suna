@@ -1073,6 +1073,7 @@ export function UserMessageEditor({
 
 export function UserMessage({
   message,
+  authorName,
   agentNames,
   commandInfo,
   commands,
@@ -1090,6 +1091,7 @@ export function UserMessage({
   pendingText,
 }: {
   message: MessageWithParts;
+  authorName?: string;
   agentNames?: string[];
   commandInfo?: {
     name: string;
@@ -1591,6 +1593,7 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
+      {authorName && <span className="text-muted-foreground text-xs font-medium">{authorName}</span>}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />

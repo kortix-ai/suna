@@ -1817,3 +1817,12 @@ export async function setProjectSessionModel(
     ),
   );
 }
+
+/** Authenticated human senders of this session's delivered prompts, keyed by runtime message id. */
+export async function getSessionMessageAuthors(projectId: string, sessionId: string): Promise<Record<string, string>> {
+  const response = unwrap(await backendApi.get<{ authors: Record<string, string> }>(
+    `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+    { showErrors: false },
+  ));
+  return response.authors;
+}

@@ -15,6 +15,7 @@ import {
   buildSessionTranscriptSyncEnvelope,
 } from '../lib/session-transcript';
 import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
+import { sessionMessageAuthors } from '../lib/session-message-authors';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/transcript
 // Server-side transcript read for project automation. Unlike the raw /v1/p
@@ -137,5 +138,29 @@ projectsApp.openapi(
       full: c.req.query('detail') === 'full',
     });
     return c.json(transcript);
+  },
+);
+
+// The live runtime does not carry a human actor. The authenticated prompt ledger does.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/message-authors',
+    tags: ['sessions'],
+    summary: 'Read session message authors',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: { 200: json(AnyObject, 'Message authors by runtime id'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    return c.json({ authors: await sessionMessageAuthors(sessionId, loaded.row.accountId) });
   },
 );

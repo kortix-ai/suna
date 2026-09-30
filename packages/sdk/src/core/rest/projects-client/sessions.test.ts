@@ -31,6 +31,7 @@ import {
   getSessionOpenBundle,
   getSessionTranscript,
   getSessionTranscriptSync,
+  getSessionMessageAuthors,
   getSessionTurn,
   listProjectSessions,
   listProjectSessionsPage,
@@ -1514,4 +1515,10 @@ test('sessionParentId falls back to metadata when parent_session_id is null or s
   expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
   const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
   expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
+});
+
+test('getSessionMessageAuthors reads session-scoped attribution', async () => {
+  nextResponse = { status: 200, body: { authors: { msg_one: 'Avery' } } };
+  expect(await getSessionMessageAuthors('P1', 'S1')).toEqual({ msg_one: 'Avery' });
+  expect(last().url).toContain('/projects/P1/sessions/S1/message-authors');
 });
