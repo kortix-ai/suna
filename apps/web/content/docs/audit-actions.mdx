@@ -275,7 +275,7 @@ This page lists 696 route actions and 64 other events.
 | `connector.connection.oauth.resource.discover` | Discovered MCP authorization server | `POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource` |
 | `connector.connection.oauth.status.read` | Viewed connector OAuth status | `GET /v1/projects/:projectId/connections/:connectionId/oauth2/status` |
 | `connector.connection.personal.create` | Created personal connector account | `POST /v1/projects/:projectId/connections/me` |
-| `connector.connection.rename` | Renamed connector account | `PUT /v1/projects/:projectId/connections/:connectionId/label` |
+| `connector.connection.rename` | Renamed connector account | `PUT /v1/projects/:projectId/connections/:connectionId/label` (also `PATCH /v1/projects/:projectId/connections/:connectionId`) |
 | `connector.connection.revoke` | Revoked connector account | `PUT /v1/projects/:projectId/connections/:connectionId/revoke` |
 | `connector.connection.roster.list` | Listed all connector accounts | `GET /v1/projects/:projectId/connections/all` |
 | `connector.connection.share` | Shared a private connector account | `POST /v1/projects/:projectId/connections/:connectionId/share` |
