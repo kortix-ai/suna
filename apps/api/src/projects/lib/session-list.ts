@@ -78,6 +78,8 @@ export interface SessionListFilter {
   startedBy?: SessionStartedByFilter | null;
   /** Trimmed, 1..200 chars. Case-insensitive substring. */
   q?: string | null;
+  /** The session carries every one of these labels (exact match). */
+  labels?: string[] | null;
 }
 
 type SessionTable = typeof projectSessions;
@@ -107,6 +109,7 @@ function searchMatchSql(t: SessionTable, q: string): SQL {
               or owner_users.raw_user_meta_data->>'name' ilike ${pattern})
     )
     or ${t.sessionId} ilike ${`${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`}
+    or exists (select 1 from jsonb_array_elements_text(${t.labels}) as l(label) where l.label ilike ${pattern})
     or exists (
       select 1 from jsonb_array_elements(
         case when jsonb_typeof(${t.metadata}->'opencode_sessions') = 'array'
@@ -138,6 +141,19 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
+  if (filter.labels?.length) {
+    const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
+    conditions.push(
+      filter.parent === 'root'
+        ? sql`(${has(t)} or exists (
+            select 1 from ${projectSessions} as child_sessions
+             where ${childSessions.parentSessionId} = ${t.sessionId}
+               and ${childSessions.projectId} = ${t.projectId}
+               and ${has(childSessions as unknown as SessionTable)}
+          ))`
+        : has(t),
+    );
+  }
   if (filter.q) {
     conditions.push(
       filter.parent === 'root'
@@ -162,6 +178,7 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
   if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
+  if ((row.labels ?? []).some(hit)) return true;
   const snapshot = Array.isArray(meta.opencode_sessions) ? meta.opencode_sessions : [];
   return snapshot.some((entry) => hit((entry as Record<string, unknown> | null)?.title));
 }
