@@ -259,9 +259,6 @@ function ToolPartRendererImpl({
   );
 }
 
-// Register all tool renderers after ToolPartRenderer is defined (avoids circular imports).
-import '@/features/session/tool/tools/register';
-
 /**
  * The boundary that stops a settled tool row re-rendering with the stream.
  *
