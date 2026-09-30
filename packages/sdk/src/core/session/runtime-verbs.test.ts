@@ -53,6 +53,22 @@ describe('session runtime verbs', () => {
     ]);
   });
 
+  test('messages() pages backwards past the 200-message page for a larger limit', async () => {
+    const page = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => message(`msg_${from + i}`));
+    const { fetch, requests } = fakeRuntime({
+      'GET /kortix/runtime/messages/ses_root?limit=200': { body: { messages: page(100, 300), has_more: true } },
+      'GET /kortix/runtime/messages/ses_root?limit=50&before=msg_100': { body: { messages: page(50, 100), has_more: true } },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    const result = await verbs.messages({ limit: 250 });
+    expect(result.messages.map((m) => m.info.id)).toEqual(page(50, 300).map((m) => m.info.id));
+    expect(result.hasMore).toBe(true);
+    expect(requests.map((r) => r.path)).toEqual([
+      '/kortix/runtime/messages/ses_root?limit=200',
+      '/kortix/runtime/messages/ses_root?limit=50&before=msg_100',
+    ]);
+  });
+
   test('messages() of another conversation in the session (a subagent child)', async () => {
     const { fetch } = fakeRuntime({
       'GET /kortix/runtime/messages/ses_child?limit=5': { body: { messages: [], has_more: false } },

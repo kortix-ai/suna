@@ -89,6 +89,22 @@ export async function runtimeServesTurnVerbs(
   }
 }
 
+/** The header kortixd sets on every answer of a Kortix turn verb (`routes/kortix/runtime.ts`). */
+export const TURN_VERB_HEADER = 'x-kortix-turn-verb';
+
+/**
+ * A Kortix-route answer from a daemon that does not have the route: a 404
+ * without {@link TURN_VERB_HEADER}, from a daemon rolled back in place past
+ * the memo. Forgets the sandbox's capability, so the caller resends on the
+ * legacy route and the next request reads `/kortix/health` again. A 404 the
+ * verb itself answered (the message is gone) carries the header and counts.
+ */
+export function turnVerbMissing(externalId: string | undefined, res: Response): boolean {
+  if (res.status !== 404 || res.headers.get(TURN_VERB_HEADER)) return false;
+  if (externalId) turnVerbs.delete(externalId);
+  return true;
+}
+
 /** Test-only. */
 export function __resetRuntimeTurnVerbsMemo(): void {
   turnVerbs.clear();

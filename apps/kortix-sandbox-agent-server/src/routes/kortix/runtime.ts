@@ -6,6 +6,7 @@ import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/korti
 import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
+import type { HarnessReadiness } from '@/harness/contract/proxy'
 import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
 
 /** Existing transcript page-size contract. */
@@ -87,15 +88,37 @@ function intParam(value: string | undefined, fallback: number, max: number): num
 export function createRuntimeRouter(
   cfg: Config,
   queries: HarnessQueryService,
-  options: { now?: () => number; turns?: HarnessTurnService } = {},
+  options: {
+    now?: () => number
+    turns?: HarnessTurnService
+    /** The runtime gate the compatibility proxy runs before every request. */
+    readiness?: () => Promise<HarnessReadiness>
+  } = {},
 ): Hono {
   const app = new Hono()
   const now = options.now ?? (() => Date.now())
   const turns = options.turns
 
   if (turns) {
-    const answer = (c: Context, result: { status: number; body: unknown }) =>
-      c.json(result.body as Record<string, unknown>, result.status as 200)
+    // The same gate and upstream failure as the compatibility proxy these
+    // verbs replace: 503 with the boot phase while the runtime cannot take a
+    // request, 502 when it cannot be reached (the API retries both).
+    const answer = async (c: Context, verb: () => Promise<{ status: number; body: unknown }>) => {
+      // Marks the answer as the verb's own: a 404 without it is a daemon that
+      // lacks the route, and apps/api resends on the legacy route.
+      c.header('X-Kortix-Turn-Verb', '1')
+      const readiness = await options.readiness?.()
+      if (readiness && !readiness.ready) {
+        c.header('X-Kortix-Boot-Phase', readiness.phase)
+        return c.json({ ...readiness.details, phase: readiness.phase }, 503)
+      }
+      try {
+        const result = await verb()
+        return c.json(result.body as Record<string, unknown>, result.status as 200)
+      } catch (err) {
+        return c.json({ error: 'upstream unreachable', details: (err as Error).message }, 502)
+      }
+    }
 
     app.post('/sessions/:sessionId/prompt', async (c) => {
       const auth = authorize(cfg, c)
@@ -103,31 +126,31 @@ export function createRuntimeRouter(
       const raw = await c.req.json().catch(() => undefined)
       const input = parseRuntimePromptBody(raw)
       if (typeof input === 'string') return c.json({ error: input }, 400)
-      return answer(c, await turns.prompt(c.req.param('sessionId'), input))
+      return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
     })
 
     app.post('/sessions/:sessionId/abort', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
-      return answer(c, await turns.abort(c.req.param('sessionId')))
+      return answer(c, () => turns.abort(c.req.param('sessionId')))
     })
 
     app.get('/messages/:sessionId/:messageId', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
-      return answer(c, await turns.readMessage(c.req.param('sessionId'), c.req.param('messageId')))
+      return answer(c, () => turns.readMessage(c.req.param('sessionId'), c.req.param('messageId')))
     })
 
     app.delete('/messages/:sessionId/:messageId', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
-      return answer(c, await turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
+      return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
     })
 
     app.get('/agents', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
-      return answer(c, await turns.agents(c.req.query('directory')?.trim() || null))
+      return answer(c, () => turns.agents(c.req.query('directory')?.trim() || null))
     })
   }
 

@@ -1,5 +1,5 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { runtimeServesTurnVerbs, runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
+import { runtimeServesTurnVerbs, runtimeVerbPaths, sessionRuntimeFetch, turnVerbMissing } from './runtime-fetch';
 import { legacyRuntimePaths } from './legacy-runtime-rest';
 
 /**
@@ -49,10 +49,11 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    const path = (await runtimeServesTurnVerbs(resolved.externalId, async () => resolved.endpoint))
-      ? runtimeVerbPaths.abort(resolved.opencodeSessionId)
-      : legacyRuntimePaths.abort(resolved.opencodeSessionId);
-    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', path);
+    if (await runtimeServesTurnVerbs(resolved.externalId, async () => resolved.endpoint)) {
+      const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.opencodeSessionId));
+      if (!turnVerbMissing(resolved.externalId, res)) return res.ok;
+    }
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', legacyRuntimePaths.abort(resolved.opencodeSessionId));
     return res.ok;
   } catch {
     return false;

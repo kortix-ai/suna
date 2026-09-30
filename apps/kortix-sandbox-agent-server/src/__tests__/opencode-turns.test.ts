@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { HarnessForwardInput } from '@/harness/contract/proxy'
 import { createOpenCodeTurnService } from '@/harness/open-code/turns'
-import { parseRuntimePromptBody } from '@/routes/kortix/runtime'
+import { createRuntimeRouter, parseRuntimePromptBody } from '@/routes/kortix/runtime'
 
 /** A proxy forward that records the native request and answers from a script. */
 function fakeProxy(answer: (input: HarnessForwardInput) => { status: number; body: unknown }) {
@@ -94,5 +94,50 @@ describe('parseRuntimePromptBody', () => {
     [{ parts: [{}], no_reply: 'yes' }, 'no_reply must be a boolean'],
   ])('%j is refused', (body, error) => {
     expect(parseRuntimePromptBody(body)).toBe(error)
+  })
+})
+
+describe('the Kortix turn routes keep the runtime gate of the proxy they replace (W5 E4)', () => {
+  const TOKEN = 'sandbox-token'
+  const cfg = { sandboxToken: TOKEN } as Parameters<typeof createRuntimeRouter>[0]
+  const noQueries = {} as Parameters<typeof createRuntimeRouter>[1]
+  const post = (app: ReturnType<typeof createRuntimeRouter>, path: string) =>
+    app.request(path, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+    })
+
+  test('a runtime that is not ready answers 503 with its boot phase, and the verb never runs', async () => {
+    const { proxy, seen } = fakeProxy(() => ({ status: 204, body: null }))
+    const app = createRuntimeRouter(cfg, noQueries, {
+      turns: createOpenCodeTurnService(proxy, () => '/workspace'),
+      readiness: async () => ({ ready: false, phase: 'workspace_not_ready', details: { reason: 'installing dependencies' } }),
+    })
+    for (const path of ['/sessions/ses_1/prompt', '/sessions/ses_1/abort']) {
+      const res = await post(app, path)
+      expect(res.status).toBe(503)
+      expect(res.headers.get('X-Kortix-Boot-Phase')).toBe('workspace_not_ready')
+      expect(await res.json()).toEqual({ reason: 'installing dependencies', phase: 'workspace_not_ready' })
+    }
+    const read = await app.request('/messages/ses_1/msg_1', { headers: { Authorization: `Bearer ${TOKEN}` } })
+    expect(read.status).toBe(503)
+    expect(seen).toEqual([])
+  })
+
+  test('an upstream that cannot be reached answers 502, not 500', async () => {
+    const proxy = {
+      async forward(): Promise<never> {
+        throw new Error('connect ECONNREFUSED 127.0.0.1:4096')
+      },
+    }
+    const app = createRuntimeRouter(cfg, noQueries, {
+      turns: createOpenCodeTurnService(proxy, () => '/workspace'),
+      readiness: async () => ({ ready: true }),
+    })
+    const res = await post(app, '/sessions/ses_1/prompt')
+    expect(res.status).toBe(502)
+    expect(res.headers.get('X-Kortix-Turn-Verb')).toBe('1')
+    expect(await res.json()).toEqual({ error: 'upstream unreachable', details: 'connect ECONNREFUSED 127.0.0.1:4096' })
   })
 })

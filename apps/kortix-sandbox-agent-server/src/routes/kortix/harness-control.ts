@@ -50,7 +50,10 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   mount('/diag', createDiagRouter(context, harness.diagnostics))
   if (context.projectEnv) mount('/env', createEnvRouter(context.cfg, control))
   // The Runtime API, and its pre-W3 mount that an older API still calls.
-  const runtimeRouter = createRuntimeRouter(context.cfg, queries, { turns: harness.turns })
+  const runtimeRouter = createRuntimeRouter(context.cfg, queries, {
+    turns: harness.turns,
+    readiness: () => harness.proxy.readiness(context),
+  })
   mount('/runtime', runtimeRouter)
   mount(LEGACY_RUNTIME_MOUNT, runtimeRouter)
   return router

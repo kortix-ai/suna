@@ -776,9 +776,12 @@ export async function sendAndWaitForReply(
   extra?: { agent?: string },
   timeoutMs = 10 * 60_000,
 ): Promise<AssistantReply> {
+  // One assistant message per model step: the window must hold the prompt
+  // and a long turn's replies. ponytail: a turn over ~200 steps outgrows it;
+  // read by `after` the prompt if that happens.
   const tip = () =>
     withKortixScope(target.auth, async () =>
-      (await target.handle.messages({ conversationId: target.opencodeSessionId, limit: 20 })).messages,
+      (await target.handle.messages({ conversationId: target.opencodeSessionId, limit: 200 })).messages,
     );
   const before = new Set((await tip()).map((message) => message.info.id));
   await withKortixScope(target.auth, () => target.handle.send(text, extra));

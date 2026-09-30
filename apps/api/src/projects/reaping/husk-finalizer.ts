@@ -57,7 +57,7 @@ import {
   encodeKortixUserContext,
 } from '../../shared/kortix-user-context';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-import { runtimeServesTurnVerbs, runtimeVerbPaths } from '../session-lifecycle/runtime-fetch';
+import { runtimeServesTurnVerbs, runtimeVerbPaths, turnVerbMissing } from '../session-lifecycle/runtime-fetch';
 import { legacyRuntimePaths } from '../session-lifecycle/legacy-runtime-rest';
 
 export type HuskFinalizeOutcome = 'finalized' | 'not_husk' | 'unreadable' | 'unconfirmed';
@@ -326,14 +326,14 @@ export async function finalizeHuskTurn(
   }
 
   try {
-    const res = await fetch(
-      `${endpoint.url}${kortixRoutes ? runtimeVerbPaths.abort(opencodeSessionId) : legacyRuntimePaths.abort(opencodeSessionId)}`,
-      {
+    const abort = (path: string) =>
+      fetch(`${endpoint.url}${path}`, {
         method: 'POST',
         headers: endpoint.headers,
         signal: AbortSignal.timeout(ABORT_TIMEOUT_MS),
-      },
-    );
+      });
+    let res = await abort(kortixRoutes ? runtimeVerbPaths.abort(opencodeSessionId) : legacyRuntimePaths.abort(opencodeSessionId));
+    if (kortixRoutes && turnVerbMissing(externalId, res)) res = await abort(legacyRuntimePaths.abort(opencodeSessionId));
     if (!res.ok) {
       console.warn(`[husk-finalizer] abort declined for sandbox ${sandboxId}: ${res.status}`);
     }

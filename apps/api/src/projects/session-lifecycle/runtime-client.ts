@@ -26,6 +26,7 @@ import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import {
   WORKSPACE,
   runtimeServesTurnVerbs,
+  turnVerbMissing,
   runtimeVerbPaths,
   sessionRuntimeFetch,
   type ResolvedSessionRuntime,
@@ -267,10 +268,11 @@ export async function removeRuntimeMessage(
 
 /** `DELETE` one message: 2xx removed, 404 already gone, 409 the loop is running. */
 async function deleteRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<Response> {
-  const path = (await servesTurnVerbs(session))
-    ? runtimeVerbPaths.message(session.opencodeSessionId, messageId)
-    : legacyRuntimePaths.message(session.opencodeSessionId, messageId);
-  return sessionRuntimeFetch(session.endpoint, 'DELETE', path);
+  if (await servesTurnVerbs(session)) {
+    const res = await sessionRuntimeFetch(session.endpoint, 'DELETE', runtimeVerbPaths.message(session.opencodeSessionId, messageId));
+    if (!turnVerbMissing(session.externalId, res)) return res;
+  }
+  return sessionRuntimeFetch(session.endpoint, 'DELETE', legacyRuntimePaths.message(session.opencodeSessionId, messageId));
 }
 
 /**
@@ -441,11 +443,12 @@ async function sessionRuntimeAgentRoster(
   return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
     const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
     if (!resolved) return null;
-    const res = await sessionRuntimeFetch(
-      resolved.endpoint,
-      'GET',
-      (await servesTurnVerbs(resolved)) ? runtimeVerbPaths.agents(directory) : legacyRuntimePaths.agents(directory),
-    );
+    let res = (await servesTurnVerbs(resolved))
+      ? await sessionRuntimeFetch(resolved.endpoint, 'GET', runtimeVerbPaths.agents(directory))
+      : null;
+    if (!res || turnVerbMissing(resolved.externalId, res)) {
+      res = await sessionRuntimeFetch(resolved.endpoint, 'GET', legacyRuntimePaths.agents(directory));
+    }
     if (!res.ok) return null;
     return parseRuntimeAgentNames(await res.json().catch(() => null));
   });
@@ -637,33 +640,33 @@ export async function postPrompt(
   // A daemon that serves the Kortix turn routes gets the Kortix prompt; an
   // older one gets OpenCode's `prompt_async` (legacy-runtime-rest.ts).
   const kortixRoute = await runtimeServesTurnVerbs(externalId, () => sandboxOpencodeEndpoint(externalId, userId));
-  const target = kortixRoute
-    ? { path: runtimeVerbPaths.prompt(opencodeSessionId), query: '' }
-    : legacyRuntimePaths.prompt(opencodeSessionId, directory);
-  const body = new TextEncoder().encode(
-    JSON.stringify(
-      kortixRoute
-        ? {
-            ...(prompt?.wireMessageId ? { message_id: prompt.wireMessageId } : {}),
-            parts: deliverableParts,
-            ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
-            ...(overrides?.model ? { model: `${overrides.model.providerID}/${overrides.model.modelID}` } : {}),
-            ...(overrides?.variant ? { variant: overrides.variant } : {}),
-            directory,
-            ...(prompt?.noReply ? { no_reply: true } : {}),
-          }
-        : {
-            ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
-            parts: deliverableParts,
-            ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
-            ...(overrides?.model ? { model: overrides.model } : {}),
-            ...(overrides?.variant ? { variant: overrides.variant } : {}),
-            ...(prompt?.noReply ? { noReply: true } : {}),
-          },
-    ),
-  );
-  try {
-    const res = await forwardToSandbox(
+  const send = (kortix: boolean) => {
+    const target = kortix
+      ? { path: runtimeVerbPaths.prompt(opencodeSessionId), query: '' }
+      : legacyRuntimePaths.prompt(opencodeSessionId, directory);
+    const body = new TextEncoder().encode(
+      JSON.stringify(
+        kortix
+          ? {
+              ...(prompt?.wireMessageId ? { message_id: prompt.wireMessageId } : {}),
+              parts: deliverableParts,
+              ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
+              ...(overrides?.model ? { model: `${overrides.model.providerID}/${overrides.model.modelID}` } : {}),
+              ...(overrides?.variant ? { variant: overrides.variant } : {}),
+              directory,
+              ...(prompt?.noReply ? { no_reply: true } : {}),
+            }
+          : {
+              ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
+              parts: deliverableParts,
+              ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
+              ...(overrides?.model ? { model: overrides.model } : {}),
+              ...(overrides?.variant ? { variant: overrides.variant } : {}),
+              ...(prompt?.noReply ? { noReply: true } : {}),
+            },
+      ),
+    );
+    return forwardToSandbox(
       externalId,
       DAEMON_PORT,
       {
@@ -688,7 +691,10 @@ export async function postPrompt(
       target.query,
       new Headers({
         'Content-Type': 'application/json',
-        'Idempotency-Key': idempotencyKey,
+        // One key per route: the proxy's dedupe claim on a Kortix-route
+        // attempt a rolled-back daemon answered 404 (never delivered) must not
+        // swallow the legacy resend, or any later legacy retry, as a duplicate.
+        'Idempotency-Key': kortix ? `${idempotencyKey}:kortix` : idempotencyKey,
         // The inbox placed this wire id against the transcript itself (see
         // `remintWireMessageId`), so the proxy's own placement read
         // (`prompt-wire-id-repair.ts`) has nothing to add — one fewer sandbox
@@ -698,6 +704,10 @@ export async function postPrompt(
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );
+  };
+  try {
+    let res = await send(kortixRoute);
+    if (kortixRoute && turnVerbMissing(externalId, res)) res = await send(false);
     if (res.ok || res.status === 204) {
       if (res.status === 200) {
         const result = (await res.json().catch(() => null)) as {
@@ -709,7 +719,7 @@ export async function postPrompt(
     }
     await throwIfPromptRefused(res);
     if (res.status !== 404)
-      console.warn('[session-lifecycle] prompt non-ok', { status: res.status, route: target.path });
+      console.warn('[session-lifecycle] prompt non-ok', { status: res.status, route: kortixRoute ? 'kortix' : 'legacy' });
     // 502/503/504 is the PROXY saying it could not reach the box (a dead
     // ingress, a control plane refusing the forward, an attempt that timed
     // out) — not the daemon refusing the prompt. Say so, so a spent deadline
