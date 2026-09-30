@@ -1553,7 +1553,8 @@
         "restricted": "Pessoas específicas",
         "project": "Projeto inteiro"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Rótulos"
     },
     "loadingMore": "A carregar…",
     "loadMoreSessions": "Carregar mais sessões",
@@ -1565,7 +1566,21 @@
       "others": "Compartilhadas",
       "automated": "Automatizadas"
     },
-    "reminders": "Lembretes"
+    "reminders": "Lembretes",
+    "labels": {
+      "menu": "Editar rótulos",
+      "title": "Rótulos",
+      "description": "Os rótulos classificam esta sessão. Filtre a lista de sessões por eles. Agentes, a CLI e a API também podem defini-los.",
+      "placeholder": "Digite um rótulo e pressione Enter",
+      "empty": "Ainda não há rótulos.",
+      "remove": "Remover {label}",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "saved": "Rótulos salvos",
+      "failed": "Não foi possível salvar os rótulos",
+      "tooLong": "Um rótulo tem no máximo 64 caracteres.",
+      "tooMany": "Uma sessão tem no máximo 20 rótulos."
+    }
   },
   "dashboard": {
     "title": "Painel",

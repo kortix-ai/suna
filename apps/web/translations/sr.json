@@ -1553,7 +1553,8 @@
         "restricted": "Одређене особе",
         "project": "Цео пројекат"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Oznake"
     },
     "loadingMore": "Учитавање…",
     "loadMoreSessions": "Учитајте још сесија",
@@ -1565,7 +1566,21 @@
       "others": "Deljene",
       "automated": "Automatizovane"
     },
-    "reminders": "Подсетници"
+    "reminders": "Подсетници",
+    "labels": {
+      "menu": "Uredi oznake",
+      "title": "Oznake",
+      "description": "Oznake klasifikuju ovu sesiju. Filtrirajte listu sesija po njima. Agenti, CLI i API takođe mogu da ih postave.",
+      "placeholder": "Unesite oznaku i pritisnite Enter",
+      "empty": "Još nema oznaka.",
+      "remove": "Ukloni {label}",
+      "save": "Sačuvaj",
+      "cancel": "Otkaži",
+      "saved": "Oznake su sačuvane",
+      "failed": "Oznake nije moguće sačuvati",
+      "tooLong": "Oznaka ima najviše 64 znaka.",
+      "tooMany": "Sesija ima najviše 20 oznaka."
+    }
   },
   "dashboard": {
     "title": "Контролна табла",

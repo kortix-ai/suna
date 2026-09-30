@@ -1553,7 +1553,8 @@
         "restricted": "特定のユーザー",
         "project": "プロジェクト全体"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "ラベル"
     },
     "loadingMore": "読み込み中…",
     "loadMoreSessions": "セッションをさらに読み込む",
@@ -1565,7 +1566,21 @@
       "others": "共有",
       "automated": "自動"
     },
-    "reminders": "リマインダー"
+    "reminders": "リマインダー",
+    "labels": {
+      "menu": "ラベルを編集",
+      "title": "ラベル",
+      "description": "ラベルでこのセッションを分類します。セッション一覧をラベルで絞り込めます。エージェント、CLI、API からも設定できます。",
+      "placeholder": "ラベルを入力して Enter",
+      "empty": "ラベルはまだありません。",
+      "remove": "{label} を削除",
+      "save": "保存",
+      "cancel": "キャンセル",
+      "saved": "ラベルを保存しました",
+      "failed": "ラベルを保存できませんでした",
+      "tooLong": "ラベルは 64 文字以内です。",
+      "tooMany": "1 つのセッションのラベルは 20 個までです。"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",

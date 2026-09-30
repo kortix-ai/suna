@@ -1553,7 +1553,8 @@
         "restricted": "Persone specifiche",
         "project": "Tutto il progetto"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Etichette"
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni",
@@ -1565,7 +1566,21 @@
       "others": "Condivise",
       "automated": "Automatizzate"
     },
-    "reminders": "Promemoria"
+    "reminders": "Promemoria",
+    "labels": {
+      "menu": "Modifica etichette",
+      "title": "Etichette",
+      "description": "Le etichette classificano questa sessione. Filtra l’elenco delle sessioni in base a esse. Anche gli agenti, la CLI e l’API possono impostarle.",
+      "placeholder": "Scrivi un’etichetta e premi Invio",
+      "empty": "Ancora nessuna etichetta.",
+      "remove": "Rimuovi {label}",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "saved": "Etichette salvate",
+      "failed": "Impossibile salvare le etichette",
+      "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
+      "tooMany": "Una sessione ha al massimo 20 etichette."
+    }
   },
   "dashboard": {
     "title": "Dashboard",

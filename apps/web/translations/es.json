@@ -1553,7 +1553,8 @@
         "restricted": "Personas concretas",
         "project": "Todo el proyecto"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Etiquetas"
     },
     "loadingMore": "Cargando…",
     "loadMoreSessions": "Cargar más sesiones",
@@ -1565,7 +1566,21 @@
       "others": "Compartidas",
       "automated": "Automatizadas"
     },
-    "reminders": "Recordatorios"
+    "reminders": "Recordatorios",
+    "labels": {
+      "menu": "Editar etiquetas",
+      "title": "Etiquetas",
+      "description": "Las etiquetas clasifican esta sesión. Filtra la lista de sesiones por ellas. Los agentes, la CLI y la API también pueden asignarlas.",
+      "placeholder": "Escribe una etiqueta y pulsa Enter",
+      "empty": "Aún no hay etiquetas.",
+      "remove": "Quitar {label}",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "saved": "Etiquetas guardadas",
+      "failed": "No se pudieron guardar las etiquetas",
+      "tooLong": "Una etiqueta tiene como máximo 64 caracteres.",
+      "tooMany": "Una sesión tiene como máximo 20 etiquetas."
+    }
   },
   "dashboard": {
     "title": "Panel",

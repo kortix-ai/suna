@@ -1553,7 +1553,8 @@
         "restricted": "Bestimmte Personen",
         "project": "Ganzes Projekt"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Labels"
     },
     "loadingMore": "Wird geladen …",
     "loadMoreSessions": "Weitere Sitzungen laden",
@@ -1565,7 +1566,21 @@
       "others": "Geteilt",
       "automated": "Automatisiert"
     },
-    "reminders": "Erinnerungen"
+    "reminders": "Erinnerungen",
+    "labels": {
+      "menu": "Labels bearbeiten",
+      "title": "Labels",
+      "description": "Labels ordnen diese Sitzung ein. Filtere die Sitzungsliste danach. Agenten, die CLI und die API können sie ebenfalls setzen.",
+      "placeholder": "Label eingeben und Enter drücken",
+      "empty": "Noch keine Labels.",
+      "remove": "{label} entfernen",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "saved": "Labels gespeichert",
+      "failed": "Die Labels konnten nicht gespeichert werden",
+      "tooLong": "Ein Label hat höchstens 64 Zeichen.",
+      "tooMany": "Eine Sitzung hat höchstens 20 Labels."
+    }
   },
   "dashboard": {
     "title": "Dashboard",

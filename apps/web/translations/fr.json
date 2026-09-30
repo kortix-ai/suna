@@ -1553,7 +1553,8 @@
         "restricted": "Personnes choisies",
         "project": "Tout le projet"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Libellés"
     },
     "loadingMore": "Chargement…",
     "loadMoreSessions": "Charger plus de sessions",
@@ -1565,7 +1566,21 @@
       "others": "Partagées",
       "automated": "Automatisées"
     },
-    "reminders": "Rappels"
+    "reminders": "Rappels",
+    "labels": {
+      "menu": "Modifier les libellés",
+      "title": "Libellés",
+      "description": "Les libellés classent cette session. Filtrez la liste des sessions avec eux. Les agents, la CLI et l’API peuvent aussi les définir.",
+      "placeholder": "Saisissez un libellé puis Entrée",
+      "empty": "Aucun libellé pour l’instant.",
+      "remove": "Retirer {label}",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "saved": "Libellés enregistrés",
+      "failed": "Impossible d’enregistrer les libellés",
+      "tooLong": "Un libellé compte au plus 64 caractères.",
+      "tooMany": "Une session a au plus 20 libellés."
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",

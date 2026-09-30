@@ -1553,7 +1553,8 @@
         "restricted": "特定成员",
         "project": "整个项目"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "标签"
     },
     "loadingMore": "加载中…",
     "loadMoreSessions": "加载更多会话",
@@ -1565,7 +1566,21 @@
       "others": "共享",
       "automated": "自动"
     },
-    "reminders": "提醒"
+    "reminders": "提醒",
+    "labels": {
+      "menu": "编辑标签",
+      "title": "标签",
+      "description": "标签用于对此会话分类。可按标签筛选会话列表。代理、CLI 和 API 也可以设置标签。",
+      "placeholder": "输入标签后按 Enter",
+      "empty": "暂无标签。",
+      "remove": "移除 {label}",
+      "save": "保存",
+      "cancel": "取消",
+      "saved": "标签已保存",
+      "failed": "无法保存标签",
+      "tooLong": "标签最多 64 个字符。",
+      "tooMany": "每个会话最多 20 个标签。"
+    }
   },
   "dashboard": {
     "title": "仪表板",
