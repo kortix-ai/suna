@@ -6,6 +6,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- One tool taxonomy: `toolKind(name)` returns a `ToolKind` (`read`, `edit`,
+  `bash`, `web_search`, `task`, `question`, …) for any harness's tool name,
+  including pi's and the `oc-`/`oc_`/dashed spellings. Narration families,
+  `toolViewModel`, `getToolInfo`, `toolInfo` categories and the context-tool
+  group all derive from it. `inputPath(input)` reads a file tool's path
+  (`filePath`, `file_path` or pi's `path`).
+- `ToolView` gains optional `kind`, `files` (`ToolFile[]`: path, type,
+  before/after, unified patch, line counts), `diff`, `diagnostics`, `answers`
+  and `childSessionId`, filled from whichever fields the harness sent;
+  `toToolView(part)` builds one from a tool part. `toolViewModel` renders
+  pi's `edits[]` as a file-edit diff.
+- The conversation tree of a project session: `runtimeSessionsOf`,
+  `rootRuntimeSession`, `directSubsessions` and `projectSessionForRuntimeId`
+  read `runtime_sessions`/`runtime_session_id` first and fall back to the
+  pre-W4 names.
 - The Kortix transcript format, `kortix.transcript.v1`
   (`KORTIX_TRANSCRIPT_SCHEMA`): `KortixMessage` (`{ info, parts }`),
   `KortixMessageInfo`, the `KortixPart` union and its 12 part types, the

@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { MessageWithParts } from '../../transcript';
-import type { Message, Part } from '../runtime/client';
+import type { Message, Part, ToolPart } from '../runtime/client';
 import {
   type ClassifiedPart,
   classifyPart,
   classifyTurn,
   humanizeToolName,
+  toToolView,
   toolInfo,
 } from './index';
 
@@ -59,7 +60,7 @@ describe('classifyPart — exhaustive part model', () => {
     expect(result).toEqual({
       kind: 'tool',
       id: 'p3',
-      tool: { name: 'bash', title: 'Shell', status: 'pending', input: { command: 'ls' } },
+      tool: { name: 'bash', kind: 'bash', title: 'Shell', status: 'pending', input: { command: 'ls' } },
     });
   });
 
@@ -664,5 +665,116 @@ describe('humanizeToolName', () => {
   test('title-cases underscore/dash separated words', () => {
     expect(humanizeToolName('session_spawn')).toBe('Session Spawn');
     expect(humanizeToolName('oc-session-read')).toBe('Session Read');
+  });
+});
+
+describe('toToolView — harness-neutral tool fields', () => {
+  const toolPart = (tool: string, state: Record<string, unknown>) =>
+    ({ id: 'p', sessionID: 's1', messageID: 'm1', type: 'tool', callID: 'c', tool, state }) as ToolPart;
+  const done = (input: Record<string, unknown>, metadata: Record<string, unknown> = {}, output = '') => ({
+    status: 'completed',
+    input,
+    output,
+    title: '',
+    metadata,
+    time: { start: 0, end: 1 },
+  });
+
+  test('OpenCode edit: the file diff from metadata', () => {
+    const view = toToolView(
+      toolPart(
+        'edit',
+        done(
+          { filePath: '/w/a.ts', oldString: 'a', newString: 'b' },
+          {
+            filediff: { file: '/w/a.ts', before: 'x\na', after: 'x\nb', additions: 1, deletions: 1 },
+            diff: '--- a\n+++ b',
+            diagnostics: { '/w/a.ts': [{ message: 'oops' }] },
+          },
+        ),
+      ),
+    );
+    expect(view.kind).toBe('edit');
+    expect(view.files).toEqual([
+      { path: '/w/a.ts', before: 'x\na', after: 'x\nb', additions: 1, deletions: 1 },
+    ]);
+    expect(view.diff).toBe('--- a\n+++ b');
+    expect(view.diagnostics).toEqual({ '/w/a.ts': [{ message: 'oops' }] });
+  });
+
+  test('OpenCode edit whose metadata the daemon dropped: the diff from the input', () => {
+    const view = toToolView(toolPart('edit', done({ filePath: '/w/a.ts', oldString: 'a', newString: 'b' })));
+    expect(view.files).toEqual([{ path: '/w/a.ts', before: 'a', after: 'b' }]);
+    expect(view.diff).toBeUndefined();
+  });
+
+  test('pi edit: path from input.path, unified patch from details', () => {
+    const view = toToolView(
+      toolPart(
+        'edit',
+        done(
+          { path: 'src/a.ts', edits: [{ oldText: 'a', newText: 'b' }] },
+          { diff: ' 1 -a\n 1 +b', patch: '--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b', firstChangedLine: 1 },
+        ),
+      ),
+    );
+    expect(view.files).toEqual([
+      { path: 'src/a.ts', patch: '--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b' },
+    ]);
+    expect(view.diff).toBe('--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b');
+  });
+
+  test('read and write name their file on either harness', () => {
+    expect(toToolView(toolPart('read', done({ filePath: '/w/r.ts' }))).files).toEqual([{ path: '/w/r.ts' }]);
+    expect(toToolView(toolPart('read', done({ path: 'r.ts' }))).files).toEqual([{ path: 'r.ts' }]);
+    expect(toToolView(toolPart('write', done({ path: 'w.ts', content: 'hi' }))).files).toEqual([
+      { path: 'w.ts', after: 'hi' },
+    ]);
+  });
+
+  test('OpenCode apply_patch: one entry per patched file', () => {
+    const view = toToolView(
+      toolPart(
+        'apply_patch',
+        done(
+          { patchText: '*** Begin Patch' },
+          {
+            files: [
+              { filePath: '/w/a.ts', relativePath: 'a.ts', type: 'update', diff: '@@', additions: 2, deletions: 1 },
+              { filePath: '/w/b.ts', type: 'add', after: 'new' },
+            ],
+          },
+        ),
+      ),
+    );
+    expect(view.files).toEqual([
+      { path: 'a.ts', type: 'update', patch: '@@', additions: 2, deletions: 1 },
+      { path: '/w/b.ts', type: 'add', after: 'new' },
+    ]);
+  });
+
+  test('question answers, on either harness', () => {
+    const view = toToolView(
+      toolPart('question', done({ questions: [] }, { answers: [['Yes'], ['a', 'b']] })),
+    );
+    expect(view.kind).toBe('question');
+    expect(view.answers).toEqual([['Yes'], ['a', 'b']]);
+  });
+
+  test('task names its child session from the structured field', () => {
+    const view = toToolView(
+      toolPart('task', { status: 'running', input: { description: 'x' }, metadata: { sessionId: 'ses_child1' }, time: { start: 0 } }),
+    );
+    expect(view.kind).toBe('task');
+    expect(view.childSessionId).toBe('ses_child1');
+  });
+
+  test('a tool with none of these fields gets none', () => {
+    const view = toToolView(toolPart('bash', done({ command: 'ls' }, {}, 'ok')));
+    expect(view.kind).toBe('bash');
+    expect(view.files).toBeUndefined();
+    expect(view.diff).toBeUndefined();
+    expect(view.answers).toBeUndefined();
+    expect(view.childSessionId).toBeUndefined();
   });
 });
