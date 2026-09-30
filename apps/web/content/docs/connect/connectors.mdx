@@ -327,6 +327,10 @@ Complete the OAuth flow. Kortix stores the connected account as a connection.
 </Step>
 </Steps>
 
+## MCP configuration belongs to connectors
+
+Add MCP servers as project connectors (`kortix connectors add <slug> --provider mcp --url <url>`), then connect an account with `kortix connectors connect <slug>`. Entries in `harnesses/opencode/opencode.jsonc`, `opencode.json`, or a Pi harness config do not create Kortix connectors. Harness-local MCP authentication is not persisted across sessions. A sandbox warns when it sees a legacy OpenCode MCP declaration; migrate that entry to a connector for persistent access.
+
 ## Connect an MCP server that uses OAuth 2.1
 
 Kortix implements the MCP authorization specification. Open the connector,
