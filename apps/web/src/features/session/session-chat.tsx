@@ -305,7 +305,7 @@ function classifySessionError(err: unknown): KortixSendError {
  *  with the agent still running. One round-trip's worth, no more. */
 const STOP_HOLD_DEADLINE_MS = 1500;
 
-================================================
+// ============================================================================
 // Notification-only turn detection
 // ============================================================================
 
@@ -1878,8 +1878,6 @@ const TranscriptTurnRow = memo(function TranscriptTurnRow({
   );
 });
 TranscriptTurnRow.displayName = 'TranscriptTurnRow';
-=======
->>>>>>> origin/main
 
 // ============================================================================
 // Main SessionChat Component
