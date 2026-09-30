@@ -573,7 +573,7 @@ export interface PickerProviderListInput {
 
 /**
  * The provider list a project composer's model picker renders — the same
- * sources and rules `useOpenCodeProviders` applies. Feed the result to
+ * sources and rules `useRuntimeProviders` applies. Feed the result to
  * `flattenModels(list, { providerMode })`.
  *
  * - Gateway: the `/model-picker` catalog as the single `kortix` provider

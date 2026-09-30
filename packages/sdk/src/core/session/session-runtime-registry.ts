@@ -26,7 +26,9 @@
  */
 
 export interface SessionRuntimeEntry {
-  /** OpenCode's own session id for this Kortix session (resolved at /start). */
+  /** The runtime's own root session id for this Kortix session (resolved at /start). */
+  runtimeSessionId: string;
+  /** @deprecated Renamed to `runtimeSessionId`. Same value. Removed in the next major. */
   opencodeSessionId: string;
   /** This session's resolved runtime proxy URL (`${backendUrl}/p/{externalId}/8000`). */
   runtimeUrl: string;

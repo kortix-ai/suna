@@ -15,7 +15,7 @@
  */
 
 import { authenticatedFetch } from '../http/auth';
-import { getActiveOpenCodeUrl } from './server-store/active';
+import { getActiveRuntimeUrl } from './server-store/active';
 
 export type SessionHealthResponse = {
   status?: string;
@@ -168,7 +168,7 @@ export async function getSessionHealth(
   runtimeUrl?: string | null,
   init?: RequestInit,
 ): Promise<SessionHealthResult> {
-  const url = (runtimeUrl === undefined ? getActiveOpenCodeUrl() : runtimeUrl) || null;
+  const url = (runtimeUrl === undefined ? getActiveRuntimeUrl() : runtimeUrl) || null;
   if (!url)
     return { status: 0, ok: false, health: null, body: '', hop: null, upstreamStatus: null };
   const res = await authenticatedFetch(

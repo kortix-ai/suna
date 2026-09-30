@@ -866,6 +866,24 @@ function mockTwoSessionSandboxes() {
   }) as unknown as typeof fetch;
 }
 
+test('ensureReady names the runtime session from runtime_session_id first', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/sessions/SESS-NEUTRAL/start')) {
+      return jsonResponse({
+        ...sessionStartPayload('sb-neutral', ''),
+        runtime_session_id: 'rs-neutral',
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
+  expect(ready.runtimeSessionId).toBe('rs-neutral');
+  expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {
   globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -1491,6 +1509,7 @@ test('ensureReady() polls through provisioning/starting until the runtime report
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
   expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.runtimeSessionId).toBe('ocs-poll');
   expect(ready.sandboxId).toBe('sb-poll');
   expect(polls).toBeGreaterThanOrEqual(3);
 });

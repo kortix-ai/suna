@@ -106,6 +106,24 @@ afterEach(() => {
   queryClient.clear();
 });
 
+describe('useSession names the runtime root neutrally', () => {
+  test('runtimeSessionId carries the same root as the deprecated opencodeSessionId', () => {
+    seedTranscript();
+    let ids: { runtime: string | null; opencode: string | null } | null = null;
+    function Host() {
+      const session = useSession(PROJECT_ID, SESSION_ID, {
+        enabled: false,
+        replayStartStash: false,
+        initialOpenCodeSessionId: OC_ID,
+      });
+      ids = { runtime: session.runtimeSessionId, opencode: session.opencodeSessionId };
+      return null;
+    }
+    mount(createElement(Host));
+    expect(ids as unknown).toEqual({ runtime: OC_ID, opencode: OC_ID });
+  });
+});
+
 describe('useSession render cost while a turn streams', () => {
   test('default options: the hook re-renders its host on every streamed delta (the contract hosts rely on)', () => {
     const { streamingMessageId, streamingPartId } = seedTranscript();

@@ -69,10 +69,13 @@ export interface ProjectSession {
   sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
   sandbox_id: string;
   sandbox_url: string | null;
+  /** The session's root conversation in its runtime. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /**
    * Resolved display name. Precedence: the user-set `custom_name`, then the
-   * runtime's own root-conversation title (the `opencode_sessions` snapshot —
+   * runtime's own root-conversation title (the `runtime_sessions` snapshot —
    * the same string the session header shows), then the Kortix-generated
    * first-prompt title (`metadata.name`).
    */
@@ -87,7 +90,10 @@ export interface ProjectSession {
   status: ProjectSessionStatus;
   error: string | null;
   metadata: ProjectSessionMetadata;
-  opencode_sessions: ProjectOpenCodeSession[];
+  /** The runtime's conversation tree. Served by APIs since W4. */
+  runtime_sessions?: ProjectRuntimeSession[];
+  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
+  opencode_sessions: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   /** The session that spawned this one, or null for a top-level session. */
@@ -210,6 +216,9 @@ export interface CreateProjectSessionInput {
   initial_prompt?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
+  /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
+  model?: string;
+  /** @deprecated The pre-W4 name of `model`. Every API version accepts it. */
   opencode_model?: string;
   name?: string;
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
@@ -272,7 +281,8 @@ export interface ClaimWarmProjectSessionInput {
   pending_prompt?: PendingSessionPrompt;
 }
 
-export interface ProjectOpenCodeSession {
+/** One conversation in the session runtime's tree (the root and its subagent children). */
+export interface ProjectRuntimeSession {
   id: string;
   title: string | null;
   parent_id: string | null;
@@ -281,6 +291,9 @@ export interface ProjectOpenCodeSession {
   updated_at: number | null;
   archived_at: number | null;
 }
+
+/** @deprecated Renamed to `ProjectRuntimeSession`. Removed in the next major. */
+export type ProjectOpenCodeSession = ProjectRuntimeSession;
 
 /** Default page size the API applies when `limit` is omitted. Mirrors
  *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
@@ -739,6 +752,9 @@ export interface SessionTranscript {
   complete: boolean;
   /** When the mirror was last written; null for a live read. */
   captured_at: string | null;
+  /** The runtime session this belongs to. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
@@ -765,6 +781,9 @@ export interface SessionTranscriptSyncEnvelope {
   source: SessionTranscriptSource;
   complete: boolean;
   captured_at: string | null;
+  /** The runtime session this belongs to. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /** How many messages are in THIS window of the transcript. */
   message_count: number;
@@ -854,6 +873,9 @@ export interface SessionTurn {
   turn_token: string;
   state: SessionTurnState;
   message_id: string | null;
+  /** The runtime session this belongs to. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /** Null only for a legacy authority record written before the control plane
    *  recorded a start instant. The turn is running either way — a missing
@@ -1790,6 +1812,9 @@ export async function setProjectSessionScope(
 }
 
 export interface SessionModelChangeResult {
+  /** The stored model. Served by APIs since W4. */
+  model?: string;
+  /** @deprecated The pre-W4 name of `model`. Same value. */
   opencode_model: string;
   /** True only when a LIVE sandbox took the new model. */
   applied_live: boolean;
