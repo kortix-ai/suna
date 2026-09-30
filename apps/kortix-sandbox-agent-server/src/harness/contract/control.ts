@@ -43,9 +43,10 @@ export interface HarnessRefreshInput {
   skipRepo?: boolean
   /**
    * Bring the base branch's OpenCode config dir into the checkout
-   * (`syncConfigDirToBase`: refuses local edits and commits, never moves a
-   * ref). The runtime reloads when files changed, even with `skipRestart`,
-   * because it reads those files only when it loads its config.
+   * (`syncConfigDirToBase`: file by file over what base changed, keeps the
+   * session's own edits and commits, never moves a ref). The runtime reloads
+   * its config when files changed, even with `skipRestart`, because it reads
+   * those files only when it loads its config.
    */
   syncBaseConfig?: boolean
   baseSha?: string
@@ -62,8 +63,14 @@ export interface HarnessRefreshResult {
     turn_ended?: boolean | null
     reason?: string
   }
-  /** Present when `syncBaseConfig` was asked and the runtime supports it. */
-  config_dir?: ConfigDirSyncResult
+  /**
+   * Present when `syncBaseConfig` was asked and the runtime supports it.
+   * `reload` is the config reload the sync caused under `skipRestart`.
+   */
+  config_dir?: ConfigDirSyncResult & {
+    reload?: 'disposed' | 'restarted' | 'kept-old'
+    turn_ended?: boolean | null
+  }
   runtime: string
   runtime_pid: number | null
 }

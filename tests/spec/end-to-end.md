@@ -1152,6 +1152,25 @@ without the database round-trip; the 404 branch is pinned source-level in
 `apps/api/src/apps/edge.test.ts`. The route discloses only whether a hostname is
 servable — the same fact the hostname's own DNS record already states.
 
+`APP-6` App viewer token (`requires: appHost`) — the gate at the App's own
+hostname tells the App who is looking and, for `viewer_token_scope: 'api'`,
+hands it a token that acts as that person. An anonymous `GET /_kortix/viewer`
+→ **401** `app_auth_required`. A project member signed in through an access
+link (`POST …/:appId/access-session`, then the link → **303** with the App
+cookie) gets **200** from `/_kortix/viewer`: their `user_id`, scopes
+`profile email kortix`, a `kortix_oat_` token that expires in one hour. The
+token acts as the viewer: `GET /accounts/me` answers their `user_id` with
+`token_context.auth_type: oauth`, so what it creates is theirs, never the App
+author's. The viewer's own role is the ceiling: as a project `member` with no
+agent grant, the token's `POST /projects/:projectId/sessions` → **403**
+`no_agent_access`. An access-policy save revokes the token
+(**401** on `GET /projects/:projectId`); the next sign-in yields a different
+token that answers **200**. `identity` scope yields `profile email` only, and
+that token gets **403** on a project route. `off` → `/_kortix/viewer` **404**
+`viewer_disabled`. The cross-replica case (a replica whose cache still holds a
+token revoked elsewhere) is proven in
+`apps/api/src/apps/viewer-token.integration.test.ts`.
+
 ---
 
 ## 29. Additional executable product contracts
