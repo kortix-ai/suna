@@ -18,7 +18,6 @@ import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
   CodeIcon as Code,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   ArrowsOutSimpleIcon as Maximize2,
@@ -39,6 +38,7 @@ import { FileContentRenderer } from './file-content-renderer';
 import { FileSourceProvider, type FileRefreshResult, type FileSource } from './file-source';
 import { getLanguageFromExt } from './preview-policy';
 import { SaveAsPdfButton } from './save-as-pdf-button';
+import { Download } from '@/features/icon/icons/download';
 
 /** Tabbable elements used by the focus trap below. */
 const FOCUSABLE_SELECTOR = [

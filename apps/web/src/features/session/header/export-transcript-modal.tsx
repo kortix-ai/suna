@@ -36,9 +36,9 @@ import {
 import {
   CheckIcon as Check,
   CopyIcon as Copy,
-  DownloadIcon as Download,
 } from '@phosphor-icons/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 // ============================================================================
 // Export Modal

@@ -20205,6 +20205,7 @@
     "commandCopied": "コマンドをコピーしました",
     "copyFailed": "コピーに失敗しました",
     "copyCommand": "コマンドをコピー",
+    "copyCliCommand": "インストールコマンドをコピー",
     "authorizeCodeHint": "このコードがコンピューターに表示されているコードと一致することを確認してください。",
     "whoCanUse": "このコンピューターを使える人",
     "onlyYouDescription": "あなただけ。すべてのプロジェクトの、あなたのプライベートセッションで使えます。",

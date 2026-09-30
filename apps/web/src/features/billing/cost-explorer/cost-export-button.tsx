@@ -12,10 +12,10 @@ import {
 
 import { Button } from '@/components/ui/button';
 import type { CostRange } from '@/components/ui/date-range-picker';
-import { IconDownload } from '@/components/ui/kortix-icons';
 import Loading from '@/components/ui/loading';
 import { errorToast, warningToast } from '@/components/ui/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
+import { Download } from '@/features/icon/icons/download';
 
 /** Which list route the export runs against — the same discriminant
  *  `fetchCostExportCsv` overloads on. */
@@ -206,7 +206,7 @@ export function CostExportButtonView({ isExporting, onExport }: CostExportButton
       {isExporting ? (
         <Loading className="size-3.5 shrink-0" />
       ) : (
-        <IconDownload className="size-3.5 shrink-0" />
+        <Download className="size-3.5 shrink-0" />
       )}
       {tI18nComplete.raw('text91f71c14c8d6')}
     </Button>

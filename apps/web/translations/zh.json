@@ -20205,6 +20205,7 @@
     "commandCopied": "命令已复制",
     "copyFailed": "复制失败",
     "copyCommand": "复制命令",
+    "copyCliCommand": "复制安装命令",
     "authorizeCodeHint": "请确认此代码与你电脑上显示的代码一致。",
     "whoCanUse": "谁可以使用这台电脑",
     "onlyYouDescription": "只有你，在每个项目的私人会话中。",
