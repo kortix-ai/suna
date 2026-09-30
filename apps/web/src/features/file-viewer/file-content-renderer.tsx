@@ -20,7 +20,6 @@ import {
   CheckIcon as Check,
   WarningCircleIcon as CircleAlert,
   CodeIcon as Code,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   GitDiffIcon as FileDiff,
   FileXIcon as FileWarning,
@@ -35,6 +34,7 @@ import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
 import { FileHeader } from './file-header';
 import { useFileContentState } from './use-file-content-state';
+import { Download } from '@/features/icon/icons/download';
 
 // ---------------------------------------------------------------------------
 // Lazy-load heavy renderers to keep initial bundle small

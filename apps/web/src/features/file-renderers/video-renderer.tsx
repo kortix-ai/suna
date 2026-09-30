@@ -8,7 +8,6 @@ import { Slider } from '@/components/ui/slider';
 import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import {
-  DownloadIcon as Download,
   InfoIcon as Info,
   CornersOutIcon as Maximize,
   CornersInIcon as Minimize,
@@ -19,6 +18,7 @@ import {
   SpeakerSlashIcon as VolumeX,
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 interface VideoRendererProps {
   url: string;
