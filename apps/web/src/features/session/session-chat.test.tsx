@@ -10,7 +10,7 @@ import enMessages from '../../../translations/en.json';
 import { TurnErrorDisplay } from './session-error-banner';
 
 const realSdk = await import('@kortix/sdk/react');
-const fixtureMessages = [
+const baseFixtureMessages = [
   {
     info: { id: 'user-fixture', role: 'user', time: { created: 1 } },
     parts: [{ id: 'text-fixture', type: 'text', text: 'synthetic prompt' }],
@@ -26,6 +26,11 @@ const fixtureMessages = [
     parts: [{ id: 'answer-fixture', type: 'text', text: 'synthetic answer' }],
   },
 ];
+let fixtureMessages = baseFixtureMessages;
+const userFixture = (id: string, text: string) => ({
+  info: { id, role: 'user', time: { created: 1 } },
+  parts: [{ id: `${id}-text`, type: 'text', text }],
+});
 let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
 mock.module('@kortix/sdk/react', () => ({
@@ -181,6 +186,131 @@ describe('SessionChat transcript rows', () => {
       expect(markup).toContain('data-queued-prompt-id="restored"');
     } finally {
       inboxPrompts = [];
+    }
+  });
+});
+
+// Characterization of the moved turn-rendering sections (KRTX-355). Each case
+// pins one section the transcript move must preserve, through the whole
+// SessionChat render, so the same assertions hold before and after the move.
+describe('SessionChat moved turn sections', () => {
+  const renderChat = () =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
+          <SidebarProvider>
+            <SessionChat
+              sessionId="session-fixture"
+              projectId="project-fixture"
+              projectSessionId="project-session-fixture"
+            />
+          </SidebarProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test('a failed turn renders the transcript error row', () => {
+    fixtureMessages = [
+      userFixture('user-error', 'do the failing thing'),
+      {
+        info: {
+          id: 'assistant-error',
+          role: 'assistant',
+          parentID: 'user-error',
+          time: { created: 2 },
+          error: { name: 'Error', data: { message: 'synthetic runtime failure' } },
+        },
+        parts: [],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('synthetic runtime failure');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a running compaction turn renders the compaction marker, not a user bubble', () => {
+    fixtureMessages = [
+      {
+        info: { id: 'user-compaction', role: 'user', time: { created: 1 } },
+        parts: [{ id: 'compaction-request', type: 'compaction' }],
+      },
+      {
+        info: {
+          id: 'assistant-compaction',
+          role: 'assistant',
+          parentID: 'user-compaction',
+          summary: true,
+          time: { created: 2 },
+        },
+        parts: [],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('Compacting context…');
+      expect(markup).not.toContain('data-turn-pending');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a tool-call turn renders its burst in the steps section', () => {
+    fixtureMessages = [
+      userFixture('user-tool', 'run the synthetic command'),
+      {
+        info: {
+          id: 'assistant-tool',
+          role: 'assistant',
+          parentID: 'user-tool',
+          agent: 'build',
+          time: { created: 2 },
+        },
+        parts: [
+          {
+            id: 'tool-part-fixture',
+            type: 'tool',
+            callID: 'call-tool-fixture',
+            tool: 'bash',
+            state: {
+              status: 'completed',
+              input: { command: 'echo synthetic-tool-output' },
+              output: 'synthetic-tool-output',
+            },
+          },
+        ],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      // ActivityBurst renders only through the turn's segmented steps section.
+      expect(markup).toContain('group/burst');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
+    }
+  });
+
+  test('a system-notification-only turn renders the inline system indicator', () => {
+    fixtureMessages = [
+      {
+        info: { id: 'user-goal', role: 'user', time: { created: 1 } },
+        parts: [
+          {
+            id: 'goal-text',
+            type: 'text',
+            text: '<kortix_system type="goal-continue" source="runtime">[GOAL - ITERATION 2/5]</kortix_system>',
+          },
+        ],
+      },
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('iteration 2/5');
+      expect(markup).not.toContain('data-turn-pending');
+    } finally {
+      fixtureMessages = baseFixtureMessages;
     }
   });
 });
