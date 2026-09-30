@@ -144,9 +144,15 @@ describe('Slack writes against real ownership rows', () => {
         loadPolicies: async () => [],
         recordExecution: async () => null,
         gateChannelWrite: (input) => gateChannelWrite(input),
-        fetchImpl: async (url) => {
+        // Slack answers a post with the conversation it posted to.
+        fetchImpl: async (url, init) => {
           fetched.push(url);
-          return { status: 200, ok: true, text: async () => '{"ok":true,"ts":"1700000400.000400"}' };
+          const posted = JSON.parse(init.body ?? '{}') as { channel?: string };
+          return {
+            status: 200,
+            ok: true,
+            text: async () => JSON.stringify({ ok: true, channel: posted.channel, ts: '1700000400.000400' }),
+          };
         },
       };
       const res = await handleCall(deps, {

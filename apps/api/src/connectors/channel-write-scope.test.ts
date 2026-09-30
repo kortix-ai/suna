@@ -43,8 +43,8 @@ function fake(rows: Rows = ROWS) {
   return { ownership, lookups };
 }
 
-function write(actionPath: string, args: Record<string, unknown>, rows?: Rows) {
-  return gateChannelWrite({ projectId: MINE, platform: 'slack', actionPath, args }, fake(rows).ownership);
+async function write(actionPath: string, args: Record<string, unknown>, rows?: Rows) {
+  return (await gateChannelWrite({ projectId: MINE, platform: 'slack', actionPath, args }, fake(rows).ownership)).refusal;
 }
 
 async function refused(actionPath: string, args: Record<string, unknown>, rows?: Rows): Promise<string> {
@@ -71,10 +71,12 @@ describe('every Slack write is classified', () => {
   test('reads, other platforms and email are left to their own gates', async () => {
     expect(await write('get_history', { channel: 'C0OTHER001' })).toBeNull();
     expect(
-      await gateChannelWrite({ projectId: MINE, platform: 'email', actionPath: 'send_message', args: {} }, fake().ownership),
+      (await gateChannelWrite({ projectId: MINE, platform: 'email', actionPath: 'send_message', args: {} }, fake().ownership))
+        .refusal,
     ).toBeNull();
     expect(
-      await gateChannelWrite({ projectId: MINE, platform: 'teams', actionPath: 'list_messages', args: {} }, fake().ownership),
+      (await gateChannelWrite({ projectId: MINE, platform: 'teams', actionPath: 'list_messages', args: {} }, fake().ownership))
+        .refusal,
     ).toBeNull();
   });
 });
@@ -175,5 +177,38 @@ describe('ids and installs', () => {
     expect(await kinds({ channel: 'D0OTHERDM1', ts: '100.000100' })).toBe('thread');
     expect(await kinds({ channel: 'C0OTHER001' })).toBe('channel');
     expect(await kinds({ channel: 'C0MINE0001', ts: '200.000200' })).toBeNull();
+  });
+});
+
+describe('where a post landed', () => {
+  const gate = (actionPath: string, args: Record<string, unknown>) =>
+    gateChannelWrite({ projectId: MINE, platform: 'slack', actionPath, args }, fake().ownership);
+
+  test('a post that landed in the checked conversation, or a DM for a user id, stands', async () => {
+    expect((await gate('send_message', { channel: 'C0NOBODY01', text: 'hi' })).misfire({ ok: true, channel: 'C0NOBODY01', ts: '1.2' })).toBeNull();
+    expect((await gate('send_message', { channel: 'U0PERSON01', text: 'hi' })).misfire({ ok: true, channel: 'D0PERSON01', ts: '1.2' })).toBeNull();
+  });
+
+  test('a post Slack delivered elsewhere (a resolved name) is refused, with the call that takes it back', async () => {
+    const byName = await gate('send_message', { channel: 'GENERAL', text: 'hi' });
+    expect(byName.refusal).toBeNull();
+    expect(byName.misfire({ ok: true, channel: 'C0OTHER001', ts: '1700000900.000900' })).toEqual({
+      refusal: {
+        reason: CONVERSATION_NOT_IN_PROJECT,
+        message:
+          'Slack posted the message to C0OTHER001, not to GENERAL, the conversation that was checked. Address a conversation by its id.',
+      },
+      undo: { path: '/chat.delete', args: { channel: 'C0OTHER001', ts: '1700000900.000900' } },
+    });
+    // "User id" that Slack read as a channel name: it landed in a channel, not a DM.
+    expect((await gate('send_message', { channel: 'UIUX', text: 'hi' })).misfire({ ok: true, channel: 'C0UIUX0001', ts: '1.2' })?.undo)
+      .toEqual({ path: '/chat.delete', args: { channel: 'C0UIUX0001', ts: '1.2' } });
+    // An answer that names no conversation cannot be trusted or taken back.
+    expect((await gate('send_message', { channel: 'C0NOBODY01', text: 'hi' })).misfire({ ok: true })?.undo).toBeNull();
+  });
+
+  test('only a post is checked where it landed: every other write takes an id', async () => {
+    const reaction = await gate('add_reaction', { channel: 'C0MINE0001', timestamp: '1.2', name: 'eyes' });
+    expect(reaction.misfire({ ok: true, channel: 'C0ELSEWHERE' })).toBeNull();
   });
 });

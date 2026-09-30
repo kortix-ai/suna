@@ -26,6 +26,12 @@
  * another project's thread is not recognized in a DM or an unowned channel;
  * reads are confined, so such a `ts` cannot come from the connector.
  *
+ * chat.postMessage also accepts a public channel's NAME, and Slack does not
+ * document how it matches one. So a post is checked twice: its `channel`
+ * before the call, and where Slack says it landed after the call. A post that
+ * landed anywhere but the checked conversation (or, for a user id, that
+ * person's DM) is taken back and refused.
+ *
  * Teams writes do not go through the connector: every send resolves through
  * `resolveTeamsProjectConversation` (channels/teams/post.ts), which already
  * addresses only this project's own conversations.
@@ -55,12 +61,11 @@ export const SLACK_WRITE_TARGETS: Record<string, { channel: string; ts?: string;
 };
 
 /**
- * A conversation or user id exactly as Slack issues it. Slack resolves a
- * `channel` that is a NAME (`general`, `#general`) in chat.postMessage, and
- * channel names are lowercase, so only an uppercase id is certain to be the
- * conversation that was checked.
+ * A conversation or user id in Slack's own shape: a type letter, then
+ * uppercase letters and digits. A lowercase name or `#name` is refused before
+ * the call; an uppercase name slips through only to be caught where it lands.
  */
-const SLACK_WRITE_ID = /^[CDGUW][A-Z0-9]{6,20}$/;
+const SLACK_WRITE_ID = /^[CDGUW][A-Z0-9]{1,20}$/;
 
 /** A DM channel (`D…`) or a user id (`U…`, `W…`), which chat.postMessage turns into the DM. */
 function isDirectMessage(id: string): boolean {
@@ -125,32 +130,68 @@ export async function slackWriteRefusal(
   };
 }
 
-/** The connector's write check: null when the call may run. Reads are gated in channel-read-scope.ts. */
+/** A write that ran but landed somewhere it was not checked: the refusal, and the call that takes it back. */
+export interface ChannelWriteMisfire {
+  refusal: ChannelReadRefusal;
+  /** The Slack method and args that remove the message; null when the answer does not name it. */
+  undo: { path: string; args: Record<string, unknown> } | null;
+}
+
+/** The connector's write check: refused before the call, or checked on its answer. */
+export interface ChannelWriteGate {
+  refusal: ChannelReadRefusal | null;
+  /** On a successful answer: null when the write landed where it was checked. */
+  misfire(data: unknown): ChannelWriteMisfire | null;
+}
+
+const PASS: ChannelWriteGate = { refusal: null, misfire: () => null };
+
+function refuse(message: string): ChannelWriteGate {
+  return { refusal: { reason: CONVERSATION_NOT_IN_PROJECT, message }, misfire: () => null };
+}
+
+/** Reads are gated in channel-read-scope.ts; this gates the writes. */
 export async function gateChannelWrite(
   input: { projectId: string; platform: string | null; actionPath: string; args: Record<string, unknown> },
   ownership: ChannelOwnership = dbChannelOwnership,
-): Promise<ChannelReadRefusal | null> {
-  if (input.platform !== 'slack' && input.platform !== 'teams') return null;
+): Promise<ChannelWriteGate> {
+  if (input.platform !== 'slack' && input.platform !== 'teams') return PASS;
   const scopes = CHANNEL_READ_SCOPES[input.platform];
-  if (!Object.hasOwn(scopes, input.actionPath) || scopes[input.actionPath] !== 'write') return null;
+  if (!Object.hasOwn(scopes, input.actionPath) || scopes[input.actionPath] !== 'write') return PASS;
   const target = input.platform === 'slack' && Object.hasOwn(SLACK_WRITE_TARGETS, input.actionPath)
     ? SLACK_WRITE_TARGETS[input.actionPath]
     : null;
   if (!target) {
-    return {
-      reason: CONVERSATION_NOT_IN_PROJECT,
-      message: `The ${input.platform === 'slack' ? 'Slack' : 'Microsoft Teams'} connector does not run write action "${input.actionPath}": it has no rule that keeps it out of other projects' conversations.`,
-    };
+    return refuse(
+      `The ${input.platform === 'slack' ? 'Slack' : 'Microsoft Teams'} connector does not run write action "${input.actionPath}": it has no rule that keeps it out of other projects' conversations.`,
+    );
   }
+  const channel = input.args[target.channel];
   const refusal = await slackWriteRefusal(
     input.projectId,
-    {
-      channel: input.args[target.channel],
-      ts: target.ts ? input.args[target.ts] : undefined,
-      tsArg: target.ts,
-      tsRequired: target.tsRequired,
-    },
+    { channel, ts: target.ts ? input.args[target.ts] : undefined, tsArg: target.ts, tsRequired: target.tsRequired },
     ownership,
   );
-  return refusal ? { reason: CONVERSATION_NOT_IN_PROJECT, message: refusal.message } : null;
+  if (refusal) return refuse(refusal.message);
+  // Only chat.postMessage resolves a name; every other write takes an id.
+  if (input.actionPath !== 'send_message') return PASS;
+  return { refusal: null, misfire: (data) => postMisfire(channel as string, data) };
+}
+
+/**
+ * Where chat.postMessage says it posted (`channel`, `ts` of the answer) must
+ * be the conversation that was checked; for a user id, a DM.
+ */
+function postMisfire(checked: string, data: unknown): ChannelWriteMisfire | null {
+  const answer = data != null && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const landed = typeof answer.channel === 'string' ? answer.channel : null;
+  const toPerson = checked.startsWith('U') || checked.startsWith('W');
+  if (landed && (toPerson ? landed.startsWith('D') : landed === checked)) return null;
+  return {
+    refusal: {
+      reason: CONVERSATION_NOT_IN_PROJECT,
+      message: `Slack posted the message to ${landed ?? 'a conversation it did not name'}, not to ${checked}, the conversation that was checked. Address a conversation by its id.`,
+    },
+    undo: landed && typeof answer.ts === 'string' ? { path: '/chat.delete', args: { channel: landed, ts: answer.ts } } : null,
+  };
 }

@@ -203,6 +203,33 @@ describe('handleCall — Slack writes stay out of other projects', () => {
     expect(binds).toEqual(['C0MINE0001/300.3']);
   });
 
+  test('a post that Slack delivered to another conversation is deleted and refused', async () => {
+    for (const [deleteAnswer, outcome] of [
+      ['{"ok":true}', 'Kortix removed it.'],
+      ['{"ok":false,"error":"message_not_found"}', 'Kortix could not remove it: delete it in Slack.'],
+    ] as const) {
+      const requests: Array<{ url: string; body?: string }> = [];
+      const { deps: d, audits } = deps({ action: action('send_message', 'chat.postMessage', 'write'), body: '', writes: true });
+      d.fetchImpl = async (url, init) => {
+        requests.push({ url, body: init.body });
+        const body = url.endsWith('/chat.postMessage') ? '{"ok":true,"channel":"C0OTHER","ts":"300.3"}' : deleteAnswer;
+        return { status: 200, ok: true, text: async () => body };
+      };
+      const res = await handleCall(d, call('send_message', { channel: 'GENERAL', text: 'hi' }));
+      expect(res).toEqual({
+        status: 'denied',
+        reason: CONVERSATION_NOT_IN_PROJECT,
+        message: `Slack posted the message to C0OTHER, not to GENERAL, the conversation that was checked. Address a conversation by its id. ${outcome}`,
+      });
+      expect(requests.map((r) => r.url)).toEqual([
+        'https://slack.com/api/chat.postMessage',
+        'https://slack.com/api/chat.delete',
+      ]);
+      expect(JSON.parse(requests[1]!.body!)).toEqual({ channel: 'C0OTHER', ts: '300.3' });
+      expect(audits.map((a) => a.status)).toEqual(['denied']);
+    }
+  });
+
   test("a reaction on another project's thread root is denied, in any conversation", async () => {
     const { deps: d, fetched } = deps({
       action: action('add_reaction', 'reactions.add', 'write'),
