@@ -167,9 +167,17 @@ test("a long restore renews the caller's lease as it goes, and a failed renewal 
   ]);
 }, 15_000);
 
+test('a slow archived restore still starts when it reaches disk after nine minutes', async () => {
+  getAdvancesMs = 110_000;
+  starts = [restoring, ok('starting')];
+  gets = [...Array(5).fill(ok('unarchiving')), ok('stopped')];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 202', ...Array(5).fill('GET unarchiving'), 'GET stopped', 'POST 200']);
+}, 15_000);
+
 test('a restore that outlasts the budget fails the start outright', async () => {
-  // Each poll costs 200 fake seconds, so the 8 min budget runs out on the third.
-  getAdvancesMs = 200_000;
+  // Each poll costs 210 fake seconds, so the budget runs out on the third.
+  getAdvancesMs = 210_000;
   starts = [restoring];
   gets = [ok('unarchiving')];
   const error = await (await provider()).start('sbx_1').then(

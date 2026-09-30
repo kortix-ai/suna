@@ -83,6 +83,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { PROVIDER_NOTES, ProviderLogo } from '@/features/providers/provider-branding';
 import { ChatGptSubscriptionConnect } from '@/features/workspace/customize/sections/llm-provider/chatgpt-subscription-connect';
+import { CONSOLE_SIGN_IN_PROVIDER_IDS, ConsoleSignIn } from '@/features/workspace/customize/sections/llm-provider/console-sign-in';
 import { AccountSecretResourcesPanel } from '@/features/workspace/customize/sections/view/account-secret-resources-panel';
 import {
   ProviderAccessMenu,
@@ -1148,6 +1149,11 @@ export function ProviderConnect({
         onClick={() => { void project.refetch(); void pooledResources.refetch(); }}>{common('retry')}</Button>} />;
   }
 
+  // "Sign in with OpenCode" under the Go key field (write access only:
+  // a shared login is a project secret write, the same rule the API enforces).
+  const consoleSignInSlots = canWrite ? Object.fromEntries(CONSOLE_SIGN_IN_PROVIDER_IDS.map((id) => [id,
+    <ConsoleSignIn key={id} projectId={projectId} providerId={id} onConnected={setPendingRequest} />])) : {};
+
   return (
     <>
       <ProviderConnectView
@@ -1212,6 +1218,7 @@ export function ProviderConnect({
               </div>
               <ChatGptSubscriptionConnect projectId={projectId} onConnected={setPendingRequest} legacyOnly />
             </div>,
+            ...consoleSignInSlots,
           } : canWrite
             ? {
                 // The ONLY live provider subscription flow in the repo. Anthropic
@@ -1230,6 +1237,7 @@ export function ProviderConnect({
                     onConnected={setPendingRequest}
                   />
                 ),
+                ...consoleSignInSlots,
               }
             : undefined
         }

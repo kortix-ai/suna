@@ -132,7 +132,12 @@
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
     "selectedOneForSession": "{count} chave selecionada para esta sessão",
-    "selectedOne": "{count} chave selecionada"
+    "selectedOne": "{count} chave selecionada",
+    "opencodeSignIn": "Entrar com OpenCode",
+    "opencodeSignInDescription": "Use seu workspace do OpenCode em vez de uma chave de API.",
+    "opencodeDeviceDescription": "Copie este código. Depois abra a página do OpenCode e insira-o para conectar seu workspace.",
+    "opencodeStarting": "Conectando ao OpenCode…",
+    "opencodeConnected": "Conectado com OpenCode"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"

@@ -132,7 +132,12 @@
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
     "selectedOneForSession": "此会话已选择 {count} 个密钥",
-    "selectedOne": "已选择 {count} 个密钥"
+    "selectedOne": "已选择 {count} 个密钥",
+    "opencodeSignIn": "使用 OpenCode 登录",
+    "opencodeSignInDescription": "使用你的 OpenCode 工作区代替 API 密钥。",
+    "opencodeDeviceDescription": "复制此代码，然后打开 OpenCode 页面并输入它以连接你的工作区。",
+    "opencodeStarting": "正在连接 OpenCode…",
+    "opencodeConnected": "已使用 OpenCode 登录"
   },
   "useCases": {
     "headline": "驱动公司运转的循环"
