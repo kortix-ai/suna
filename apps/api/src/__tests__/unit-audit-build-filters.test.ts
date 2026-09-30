@@ -106,9 +106,12 @@ describe('audit buildFilters', () => {
     expect(conds).toHaveLength(8);
   });
 
-  test('credentialKind and source each add one condition', () => {
+  test('credentialKind adds its condition plus the floor of rows that can carry it; source adds one', () => {
     const base = { actor: null, actionPrefix: null, resourceType: null, sinceRaw: null, untilRaw: null, q: null };
-    expect(buildFilters(ACCOUNT, { ...base, credentialKind: 'oauth_app' })).toHaveLength(2);
+    // Rows written before credential_kind existed are all NULL: the floor skips
+    // that history instead of scanning it (an unindexed filter on a large
+    // account ran into the 25 s request deadline on dev).
+    expect(buildFilters(ACCOUNT, { ...base, credentialKind: 'oauth_app' })).toHaveLength(3);
     // One condition (authoritative_source), not the old OR across both columns.
     expect(buildFilters(ACCOUNT, { ...base, source: 'cli' })).toHaveLength(2);
   });
