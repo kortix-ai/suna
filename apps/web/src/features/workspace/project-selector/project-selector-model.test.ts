@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
 
 import {
-  accountNameStepAccount,
   buildAccountSections,
   countProjects,
   decideDoor,
@@ -185,58 +184,5 @@ describe('joinDestination', () => {
 
   test('a workspace invite has no direct destination', () => {
     expect(joinDestination({ ...base, projects: [] } as MyAccountInvite)).toBeNull();
-  });
-});
-
-describe('accountNameStepAccount — the onboarding name step (KRTX-638)', () => {
-  const USER = 'u1';
-  const fresh = () =>
-    buildAccountSections({ creatableAccountIds: new Set([USER]), accounts: [account(USER, 'owner', "Ada's workspace")], lists: [list(USER, [])] });
-
-  test('a brand-new user is asked to name their personal account', () => {
-    expect(
-      accountNameStepAccount({ sections: fresh(), inviteCount: 0, userId: USER, namedAt: null }),
-    ).toMatchObject({ accountId: USER, accountName: "Ada's workspace" });
-  });
-
-  test('never again once they have named it', () => {
-    expect(
-      accountNameStepAccount({
-        sections: fresh(),
-        inviteCount: 0,
-        userId: USER,
-        namedAt: '2026-09-29T00:00:00.000Z',
-      }),
-    ).toBeNull();
-  });
-
-  test('not a new user: any project in any account skips the step', () => {
-    const sections = buildAccountSections({
-      accounts: [account(USER, 'owner'), account('team', 'member')],
-      lists: [list(USER, []), list('team', [project('p1', 'team')])],
-    });
-    expect(accountNameStepAccount({ sections, inviteCount: 0, userId: USER, namedAt: null })).toBeNull();
-  });
-
-  test('someone joining through an invite is not setting up an account', () => {
-    expect(
-      accountNameStepAccount({ sections: fresh(), inviteCount: 1, userId: USER, namedAt: null }),
-    ).toBeNull();
-  });
-
-  test('a failed project list is not an empty one', () => {
-    const sections = buildAccountSections({
-      accounts: [account(USER, 'owner')],
-      lists: [list(USER, undefined, true)],
-    });
-    expect(accountNameStepAccount({ sections, inviteCount: 0, userId: USER, namedAt: null })).toBeNull();
-  });
-
-  test('only the user\'s OWN personal account is ever renamed here', () => {
-    const sections = buildAccountSections({
-      accounts: [account('someone-else', 'owner')],
-      lists: [list('someone-else', [])],
-    });
-    expect(accountNameStepAccount({ sections, inviteCount: 0, userId: USER, namedAt: null })).toBeNull();
   });
 });

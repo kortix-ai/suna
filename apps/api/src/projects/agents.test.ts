@@ -249,6 +249,8 @@ describe('workspace — v2 agent workspace declaration', () => {
         '    workspace: runtime',
         '  engineer:',
         '    workspace: branch',
+        '  assistant:',
+        '    connectors: none',
         '',
       ].join('\n'),
     };
@@ -259,6 +261,7 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents('support', loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
-    expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('assistant', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ import {
 } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
 import { projectsApp } from '../lib/app';
-import { getAccountMembership } from '../lib/git';
+import { getAccountMembership } from '../lib/user-identity';
 import { readJsonObject } from '../../shared/http-body';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {

@@ -188,11 +188,7 @@
       "label": "Account",
       "createIn": "Crea in {account}",
       "choose": "Scegli un account",
-      "loggedInAs": "Accesso effettuato come",
-      "nameLabel": "Nome dell'account",
-      "nameHint": "Il tuo team lo vede nella barra laterale e negli inviti. Puoi cambiarlo in seguito.",
-      "nameRequired": "Il nome dell'account è obbligatorio",
-      "renameFailed": "Impossibile salvare il nome dell'account. Riprova."
+      "loggedInAs": "Accesso effettuato come"
     },
     "name": {
       "label": "Nome dello progetto",
@@ -19970,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Benvenuto in Kortix",
-    "nameAccountTitle": "Dai un nome al tuo account",
-    "nameAccountBody": "Qui vivono i tuoi progetti, agenti e membri del team.",
-    "nameAccountContinue": "Continua",
     "welcomeBack": "Bentornato",
     "descriptionNew": "Crea il tuo primo progetto o unisciti a uno condiviso dal tuo team.",
     "descriptionReturning": "Apri un progetto o creane uno nuovo.",

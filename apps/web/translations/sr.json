@@ -188,11 +188,7 @@
       "label": "Налог",
       "createIn": "Направи у налогу {account}",
       "choose": "Изаберите налог",
-      "loggedInAs": "Пријављени сте као",
-      "nameLabel": "Назив налога",
-      "nameHint": "Ваш тим га види на бочној траци и у позивницама. Можете га касније променити.",
-      "nameRequired": "Назив налога је обавезан",
-      "renameFailed": "Назив налога није сачуван. Покушајте поново."
+      "loggedInAs": "Пријављени сте као"
     },
     "name": {
       "label": "Назив пројекта",
@@ -19970,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Dobro došli u Kortix",
-    "nameAccountTitle": "Дајте назив налогу",
-    "nameAccountBody": "Овде се налазе ваши пројекти, агенти и чланови тима.",
-    "nameAccountContinue": "Настави",
     "welcomeBack": "Dobro došli nazad",
     "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
     "descriptionReturning": "Otvorite projekat ili napravite novi.",
