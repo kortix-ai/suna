@@ -187,7 +187,7 @@ export const selectCollapsedSections = makeScopedSelector('collapsedSectionsByPr
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
     (set, get) => {
-      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
+      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'labelFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
         return (projectId: string, value: State[K][string][number], surface: SessionViewSurface = 'sidebar') => {
           const current = readScoped(get()[mapKey], projectId, surface, inherit) ?? [];
           set({ [mapKey]: { ...get()[mapKey], [scopeKey(projectId, surface)]: toggleValue(current, value) } });
