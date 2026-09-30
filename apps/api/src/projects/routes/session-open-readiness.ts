@@ -15,12 +15,13 @@ import type { StartCallLog } from '../session-lifecycle/start-envelope';
 import {
   RUNTIME_PROVEN_AT_KEY,
   RUNTIME_READINESS_CLOCK_KEYS,
-  STALE_OPENCODE_BOOT_HARD_MS,
+  STALE_RUNTIME_BOOT_HARD_MS,
   hasRuntimeReadinessClock,
-  opencodeReadyWaitPatch,
+  readinessValue,
+  runtimeReadyWaitPatch,
   runtimeProvenThisBoot,
   servesThroughProbeMiss,
-  staleOpencodeReadyReason,
+  staleRuntimeReadyReason,
 } from '../session-lifecycle/readiness-clocks';
 import type {
   OpenSessionArgs,
@@ -39,7 +40,7 @@ import {
 // minutes of repeated 8-second /start long-polls. Once the daemon answers, give
 // OpenCode itself a wider window to finish booting.
 const STALE_RUNTIME_UNREACHABLE_MS = 30_000;
-const STALE_OPENCODE_NOT_READY_MS = 90_000;
+const STALE_RUNTIME_NOT_READY_MS = 90_000;
 /** A reconcile that did not heal the row waits this long before it execs again. */
 const SERVICE_KEY_RECONCILE_RETRY_MS = 5 * 60_000;
 
@@ -74,7 +75,7 @@ export async function markRuntimeWakeStarted(
   }
 }
 
-export async function markOpencodeReadyWaitStarted(
+export async function markRuntimeReadyWaitStarted(
   row: typeof sessionSandboxes.$inferSelect,
   reason: 'not_ready' | 'unreachable',
   bootPhase: string | undefined,
@@ -82,8 +83,8 @@ export async function markOpencodeReadyWaitStarted(
   const metadata = sandboxMetadata(row);
   // The reason clock restarts on every daemon-reported phase change, so the
   // budget below is "no progress for N seconds", not "not ready N seconds
-  // after the first poll" (see opencodeReadyWaitPatch).
-  const patch = opencodeReadyWaitPatch(metadata, reason, bootPhase);
+  // after the first poll" (see runtimeReadyWaitPatch).
+  const patch = runtimeReadyWaitPatch(metadata, reason, bootPhase);
   if (!patch) return;
   try {
     // Merge only the clocks this poll changed. `patch` spreads the row read
@@ -121,7 +122,7 @@ async function markRuntimeAnswered(
       .update(sessionSandboxes)
       .set({
         // EVERY key. This used to strip the first eight by index, leaving
-        // `opencodeBootPhase` and `opencodeBootWaitFirstSeenAt` on a row whose
+        // `runtimeBootPhase` and `runtimeBootWaitFirstSeenAt` on a row whose
         // daemon had just reported READY — so the next boot wait on that row
         // inherited a spent hard cap.
         metadata: proven
@@ -166,7 +167,7 @@ export async function observeOpenCodeReadiness(
     accountId,
     externalId: runningExternalId,
     userId: loaded.userId,
-    currentPin: visible.row.opencodeSessionId ?? null,
+    currentPin: visible.row.runtimeSessionId ?? null,
   });
   const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   log.sawRuntime(
@@ -209,7 +210,7 @@ export async function stampUnreachableDiagnostics(
     // and one warn per poll was a prod log spike (2026-09-29: 1119 lines/hour
     // from 20 bad_signature sessions). The durable stamp below carries the
     // same cause/responder/detail for whoever reads the row later.
-    const previousCause = sandboxMetadata(row).opencodeUnreachableCause;
+    const previousCause = readinessValue(sandboxMetadata(row), 'runtimeUnreachableCause');
     const nextCause = ensured.cause ?? 'unspecified';
     if (previousCause !== nextCause) {
       console.warn('[start] opencode session list unreachable', {
@@ -286,13 +287,13 @@ export async function stampUnreachableDiagnostics(
         .update(sessionSandboxes)
         .set({
           metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
-            opencodeUnreachableCause: nextCause,
-            opencodeUnreachableCauseAt: new Date().toISOString(),
+            runtimeUnreachableCause: nextCause,
+            runtimeUnreachableCauseAt: new Date().toISOString(),
             // WHO answered, and what it said. Without these the cause names a
             // status code and nothing else, which is what left five competing
             // explanations alive for one 401.
-            ...(ensured.responder ? { opencodeUnreachableResponder: ensured.responder } : {}),
-            ...(ensured.detail ? { opencodeUnreachableDetail: ensured.detail } : {}),
+            ...(ensured.responder ? { runtimeUnreachableResponder: ensured.responder } : {}),
+            ...(ensured.detail ? { runtimeUnreachableDetail: ensured.detail } : {}),
           })}::jsonb`,
         })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
@@ -329,17 +330,17 @@ export async function judgeBootBudget(
     // one that never becomes ready within the hard cap — is parked.
     const metadataForBudget =
       ensured.reason === 'not_ready' || ensured.reason === 'unreachable'
-        ? (opencodeReadyWaitPatch(sandboxMetadata(row), ensured.reason, ensured.bootPhase) ??
+        ? (runtimeReadyWaitPatch(sandboxMetadata(row), ensured.reason, ensured.bootPhase) ??
           sandboxMetadata(row))
         : sandboxMetadata(row);
-    const staleBoot = staleOpencodeReadyReason(
+    const staleBoot = staleRuntimeReadyReason(
       metadataForBudget,
       ensured.reason,
       Date.now(),
       ensured.reason === 'unreachable'
         ? STALE_RUNTIME_UNREACHABLE_MS
-        : STALE_OPENCODE_NOT_READY_MS,
-      STALE_OPENCODE_BOOT_HARD_MS,
+        : STALE_RUNTIME_NOT_READY_MS,
+      STALE_RUNTIME_BOOT_HARD_MS,
     );
     if (staleBoot && ensured.reason === 'unreachable') {
       // Provider-running, daemon silent past the budget. On Platinum that is a
@@ -348,7 +349,7 @@ export async function judgeBootBudget(
       // anything, so a slow boot is never relaunched on this word alone.
       const { decideDeadDaemonOnOpen, DEAD_DAEMON_REPAIR_REQUESTED_KEY, LEGACY_CHECK_METADATA_KEY } =
         await import('../lib/legacy-runtime-bootstrap');
-      const since = Date.parse(String(metadataForBudget.opencodeUnreachableWaitStartedAt ?? ''));
+      const since = Date.parse(String(readinessValue(metadataForBudget, 'runtimeUnreachableWaitStartedAt') ?? ''));
       const action = decideDeadDaemonOnOpen({
         provider: row.provider,
         metadata: sandboxMetadata(row),
@@ -408,7 +409,7 @@ export async function judgeBootBudget(
         'runtime_boot_failed',
       );
     }
-    await markOpencodeReadyWaitStarted(
+    await markRuntimeReadyWaitStarted(
       row,
       ensured.reason === 'unreachable' ? 'unreachable' : 'not_ready',
       ensured.bootPhase,

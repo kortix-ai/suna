@@ -62,3 +62,17 @@ describe('serializeAuditEvent credential fields', () => {
     });
   });
 });
+
+describe('serializeAuditEvent runtime session', () => {
+  test('names the runtime session neutrally and under its pre-W4 name', () => {
+    const row = {
+      eventId: 'a7100000-0000-4000-a000-000000000002',
+      occurredAt: new Date('2026-08-07T12:00:00Z'),
+      runtimeSessionId: 'ses_root',
+    } as unknown as Parameters<typeof serializeAuditEvent>[0];
+    expect(serializeAuditEvent(row)).toMatchObject({
+      runtime_session_id: 'ses_root',
+      opencode_session_id: 'ses_root',
+    });
+  });
+});

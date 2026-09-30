@@ -23,7 +23,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     sandboxProvider: 'daytona',
     sandboxId: null,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'queued',
     error: null,

@@ -137,7 +137,7 @@ describe('parseOpenCodeAuditBatch', () => {
     );
 
     expect(parsed.values[0]).toMatchObject({
-      opencodeSessionId: 'ses_trusted',
+      runtimeSessionId: 'ses_trusted',
       agentId: 'a7400000-0000-4000-a000-000000000001',
       agentName: 'trusted-agent',
       initiatorActorType: 'human',
@@ -168,7 +168,7 @@ describe('parseOpenCodeAuditBatch', () => {
     );
 
     expect(parsed.values[0]).toMatchObject({
-      opencodeSessionId: null,
+      runtimeSessionId: null,
       agentId: null,
       agentName: null,
       initiatorActorType: null,

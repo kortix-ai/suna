@@ -109,9 +109,10 @@ function turnSelectionCtes(identity?: Partial<SandboxTurnIdentity> | null): SQL 
         FROM target
         CROSS JOIN LATERAL ${activeTurnEntries(sql`target.metadata`)}
        WHERE entry.value->>'state' IN ('delivering', 'active')
-         AND (entry.value->>'opencodeSessionId' IS NULL
-           OR (${identity?.opencodeSessionId ?? null}::text IS NOT NULL
-             AND entry.value->>'opencodeSessionId' = ${identity?.opencodeSessionId ?? null}))
+         AND (coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId') IS NULL
+           OR (${identity?.runtimeSessionId ?? null}::text IS NOT NULL
+             AND coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId')
+               = ${identity?.runtimeSessionId ?? null}))
     ), exact_matches AS (
       SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
@@ -167,7 +168,8 @@ export async function beginSandboxTurn(
                  jsonb_build_object(
                    'token', ${turn.token}::text,
                    'state', 'delivering',
-                   'opencodeSessionId', ${turn.opencodeSessionId}::text,
+                   'runtimeSessionId', ${turn.runtimeSessionId}::text,
+                   'opencodeSessionId', ${turn.runtimeSessionId}::text,
                    'messageId', ${turn.messageId}::text,
                    'startedAtMs', floor(extract(epoch from ${observedAt}) * 1000))),
                true),
@@ -200,7 +202,7 @@ export async function beginSandboxTurn(
              opencode_session_id, message_id, state, started_at, created_at, updated_at)
           SELECT ${turn.token}, owner.session_id, owner.sandbox_id,
                  owner.project_id, owner.account_id,
-                 ${turn.opencodeSessionId || null}, ${turn.messageId}, 'delivering',
+                 ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
                  ${observedAt}, now(), now()
             FROM (${openableTurnOwner(owner.sandboxId, turn.token)}) owner
           ON CONFLICT (turn_token) DO NOTHING`,
@@ -232,7 +234,7 @@ export async function beginSandboxTurn(
  */
 export async function adoptRuntimeSandboxTurn(
   sandboxId: string,
-  identity: { opencodeSessionId: string; messageId: string },
+  identity: { runtimeSessionId: string; messageId: string },
 ): Promise<RuntimeTurnAdoption> {
   const guard = await execute(sql`
     SELECT
@@ -270,7 +272,8 @@ export async function acceptSandboxTurn(
              ARRAY['activeTurns', ${token}]::text[],
              (s.metadata->'activeTurns'->${token}) || jsonb_strip_nulls(jsonb_build_object(
                'state', 'active',
-               'opencodeSessionId', ${identity?.opencodeSessionId ?? null}::text,
+               'runtimeSessionId', ${identity?.runtimeSessionId ?? null}::text,
+               'opencodeSessionId', ${identity?.runtimeSessionId ?? null}::text,
                'messageId', ${identity?.messageId ?? null}::text)),
              false),
            deadline_at = GREATEST(
@@ -300,7 +303,7 @@ export async function acceptSandboxTurn(
              opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
           SELECT ${token}, owner.session_id, owner.sandbox_id,
                  owner.project_id, owner.account_id,
-                 ${identity?.opencodeSessionId ?? null}, ${identity?.messageId ?? null},
+                 ${identity?.runtimeSessionId ?? null}, ${identity?.messageId ?? null},
                  'active', now(), now(), now(), now()
             FROM (${openableTurnOwner(owner.sandboxId, token)}) owner
           ON CONFLICT (turn_token) DO UPDATE SET
@@ -378,7 +381,7 @@ export async function abandonSandboxTurn(target: DeadlineTarget, token: string):
         owner,
         turns.length > 0
           ? turns
-          : [{ token, opencodeSessionId: null, messageId: null, startedAtMs: null }],
+          : [{ token, runtimeSessionId: null, messageId: null, startedAtMs: null }],
         'abandoned',
       ),
       `abandon ${token}`,
@@ -464,7 +467,7 @@ export async function clearSandboxTurn(
         owner,
         turns.length > 0
           ? turns
-          : [{ token, opencodeSessionId: null, messageId: null, startedAtMs: null }],
+          : [{ token, runtimeSessionId: null, messageId: null, startedAtMs: null }],
         reason,
         cause,
         cause !== null,

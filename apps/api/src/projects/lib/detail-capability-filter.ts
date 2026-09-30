@@ -43,7 +43,7 @@ export function applyDetailCapabilityFilter<C extends object, F>(
     // alphabetically and run it instead of the project default.
     ...(caps.canAgents
       ? {}
-      : { agents: [], agent_discovery: null, open_code_default_agent: null }),
+      : { agents: [], agent_discovery: null, default_agent: null, open_code_default_agent: null }),
     ...(caps.canSkills ? {} : { skills: [] }),
     ...(caps.canCommands ? {} : { commands: [] }),
     ...(caps.canCustomize

@@ -324,7 +324,11 @@ projectsApp.openapi(
       body: {
         content: {
           'application/json': {
-            schema: z.object({ opencode_model: z.string().min(1).max(128) }),
+            // `model` wins; `opencode_model` is its pre-W4 name.
+            schema: z.object({
+              model: z.string().min(1).max(128).optional(),
+              opencode_model: z.string().min(1).max(128).optional(),
+            }),
           },
         },
       },
@@ -332,6 +336,8 @@ projectsApp.openapi(
     responses: {
       200: json(
         z.object({
+          model: z.string(),
+          /** @deprecated The pre-W4 name of `model`. Same value. */
           opencode_model: z.string(),
           /** True when a live sandbox took it; false when it applies at next boot. */
           applied_live: z.boolean(),
@@ -375,7 +381,8 @@ projectsApp.openapi(
     }
 
     const body = await readJsonObject(c);
-    const requested = typeof body.opencode_model === 'string' ? body.opencode_model : '';
+    const named = body.model ?? body.opencode_model;
+    const requested = typeof named === 'string' ? named : '';
     const shapeError = validateModelChangeShape(requested);
     if (shapeError) {
       return c.json({ error: shapeError.message, code: shapeError.code }, 400);

@@ -349,7 +349,7 @@ export function SessionAuditPanel({
                         selectedEvent.source,
                     ],
                     [tI18nComplete.raw('text3045abafb173'), selectedEvent.event_id],
-                    [tI18nComplete.raw('text5a26f4425c82'), selectedEvent.opencode_session_id],
+                    [tI18nComplete.raw('text92fbc8484002'), selectedEvent.runtime_session_id ?? selectedEvent.opencode_session_id],
                     [tI18nComplete.raw('text11d5959da5d3'), selectedEvent.message_id],
                     [tI18nComplete.raw('textfce8323af972'), selectedEvent.tool_call_id],
                     [tI18nComplete.raw('texte8c80b20c2f7'), selectedEvent.execution_id],
