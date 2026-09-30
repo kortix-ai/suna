@@ -42,6 +42,18 @@ process.env.ALLOWED_SANDBOX_PROVIDERS = 'daytona,platinum,e2b';
 const { config } = await import('../config');
 
 let branchCreateCalls = 0;
+// Committed manifest text served by the git mock; null = a blank project.
+// A declared agent only gets the project checkout with `repository_access: true`
+// (KRTX-165), so a test that names a non-default agent declares it here.
+let manifestYaml: string | null = null;
+const REVIEWER_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '  reviewer: { connectors: all, secrets: all, kortix_permissions: all, skills: all, repository_access: true }',
+  '',
+].join('\n');
 let sandboxProvisionCalls = 0;
 let providerStartCalls = 0;
 let providerStopCalls = 0;
@@ -118,6 +130,7 @@ const projectRow: typeof projects.$inferSelect = {
 
 function resetState() {
   branchCreateCalls = 0;
+  manifestYaml = null;
   sandboxProvisionCalls = 0;
   providerStartCalls = 0;
   providerStopCalls = 0;
@@ -299,7 +312,17 @@ mock.module('../projects/git', () => ({
   // compile-agent-config.ts (the agent-first v2 compiler) reads the manifest
   // straight from git — no manifest ⇒ null ⇒ the v1-shaped projects this suite
   // exercises get no compiled agent config, matching their pre-compiler behavior.
-  readManifestFromRepo: async () => null,
+  readManifestFromRepo: async (_project: unknown, candidates: string[]) =>
+    manifestYaml === null
+      ? null
+      : {
+          path: candidates[0] ?? 'kortix.yaml',
+          content: manifestYaml,
+          rootContent: manifestYaml,
+          sha: 'manifest-sha',
+          candidatePaths: candidates,
+          commit: null,
+        },
   invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
@@ -2111,6 +2134,7 @@ describe('project session API contract', () => {
   });
 
   test('backend overrides for model, secrets, and agent apply at boot', async () => {
+    manifestYaml = REVIEWER_MANIFEST;
     const app = createApp();
 
     for (const [name, value] of [
@@ -4314,6 +4338,7 @@ describe('project session API contract', () => {
   });
 
   test('inherits the project environment branch and preserves the session/sandbox invariant', async () => {
+    manifestYaml = REVIEWER_MANIFEST;
     projectRow.defaultBranch = 'dev';
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {

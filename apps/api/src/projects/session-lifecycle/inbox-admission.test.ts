@@ -19,16 +19,13 @@ describe('sessionHoldsTurnAuthority', () => {
     ).toBe(true);
   });
 
-  test('a running box with the LEGACY single-turn record holds authority too', () => {
-    // Rolling deploys still write `activeTurn`; `GET .../turn` and
-    // `settleOrphanedSandboxTurns` both read this predicate, so it has to see
-    // both shapes.
+  test('the retired single-record activeTurn holds no authority (KRTX-255)', () => {
     expect(
       sessionHoldsTurnAuthority({
         status: 'provisioning',
         metadata: { activeTurn: { token: 't-legacy', state: 'delivering', opencodeSessionId: 'ses_1' } },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test('a STOPPED box holds no authority whatever its metadata still says', () => {
