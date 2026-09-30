@@ -105,7 +105,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync
 import { dirname, join } from 'node:path'
 import { OPENCODE_HOME } from './paths'
 import { describeOpencodeError, isConfigErrorName } from './proven-check'
-import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
+import { access, constants, open, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
@@ -267,6 +267,48 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
     if (typeof agent.model === 'string' && agent.model.trim()) {
       agent.model = toKortixOpencodeModelRef(agent.model)
     }
+  }
+}
+
+/**
+ * The `OPENCODE_CONFIG_CONTENT` patch that routes each config-dir agent `.md`'s
+ * own `model:` through `kortix`, or undefined when no `.md` needs one.
+ *
+ * {@link normalizeGatewayModelRefs} never sees these refs: OpenCode reads the
+ * `.md` files itself, AFTER the composed `OPENCODE_CONFIG` file, so a raw
+ * `model: codex/gpt-6-sol` beat it and named provider `codex`, which gateway
+ * mode does not have. Every prompt that named no model then failed "Model not
+ * found: codex/gpt-6-sol." (prod 2026-09-30: every Slack follow-up to one
+ * project's default agent). `OPENCODE_CONFIG_CONTENT` is the one layer OpenCode
+ * merges after the config dir, and it merges deeply, so only `model` changes.
+ */
+export async function gatewayAgentModelPatch(configDir: string): Promise<string | undefined> {
+  const agent: Record<string, { model: string }> = {}
+  for (const sub of ['agent', 'agents']) {
+    const root = join(configDir, sub)
+    const files = await readdir(root, { recursive: true }).catch(() => [] as string[])
+    for (const rel of files) {
+      if (!rel.endsWith('.md')) continue
+      const model = frontmatterModel(await readFile(join(root, rel), 'utf8').catch(() => ''))
+      if (model && !model.startsWith('kortix/')) {
+        agent[rel.slice(0, -'.md'.length)] = { model: toKortixOpencodeModelRef(model) }
+      }
+    }
+  }
+  return Object.keys(agent).length > 0 ? JSON.stringify({ agent }) : undefined
+}
+
+/** The `model:` in a Markdown file's YAML frontmatter, or null. */
+function frontmatterModel(text: string): string | null {
+  const lines = text.split(/\r?\n/)
+  if (lines[0]?.trim() !== '---') return null
+  const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
+  if (end < 0) return null
+  try {
+    const data = Bun.YAML.parse(lines.slice(1, end).join('\n')) as { model?: unknown } | null
+    return typeof data?.model === 'string' && data.model.trim() ? data.model.trim() : null
+  } catch {
+    return null
   }
 }
 
@@ -1806,6 +1848,13 @@ export function createOpencodeLifecycle(
   function livePort(): number {
     return (child ? childPorts.get(child) : undefined) ?? activePort
   }
+  // The agent-model patch each process was spawned with. It rides the process
+  // env, which a dispose cannot change, so a reload whose patch differs from
+  // the live one must respawn (tryDisposeReload).
+  const agentModelPatches = new WeakMap<ChildProcess, string | undefined>()
+  function agentModelPatchFor(baseEnv: NodeJS.ProcessEnv): Promise<string | undefined> {
+    return hasKortixLlmGateway(baseEnv) ? gatewayAgentModelPatch(bootLinkPath()) : Promise.resolve(undefined)
+  }
   let binaryPath: string | null = null
   let stopping = false
   let restartDelayMs = 500
@@ -1972,9 +2021,12 @@ export function createOpencodeLifecycle(
     }
 
     const configPath = await writeComposedConfig(baseEnv)
+    let agentModelPatch: string | undefined
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
+      agentModelPatch = await agentModelPatchFor(baseEnv)
+      if (agentModelPatch) env.OPENCODE_CONFIG_CONTENT = agentModelPatch
     }
     startupMark('runtime-config-ready')
 
@@ -2001,6 +2053,7 @@ export function createOpencodeLifecycle(
     })
     childPorts.set(proc, port)
     spawnedAt.set(proc, Date.now())
+    agentModelPatches.set(proc, agentModelPatch)
     watchListeningLine(proc)
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
@@ -2424,6 +2477,12 @@ export function createOpencodeLifecycle(
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
+    // An agent `.md` whose `model:` changed needs a new process: its patch
+    // rides the env (see agentModelPatches).
+    if (child && (await agentModelPatchFor(baseEnv)) !== agentModelPatches.get(child)) {
+      logger.info('[opencode] an agent model ref changed; restarting instead of disposing')
+      return false
+    }
     const written = await writeComposedConfig(baseEnv).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
