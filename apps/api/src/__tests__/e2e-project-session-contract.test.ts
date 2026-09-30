@@ -796,9 +796,7 @@ mock.module('../shared/db', () => ({
               lastValidatedAt: values.lastValidatedAt ?? now,
               lastErrorCode: values.lastErrorCode ?? null,
               lastErrorMessage: values.lastErrorMessage ?? null,
-              labels: values.labels ?? [],
-            labels: values.labels ?? [],
-            metadata: values.metadata ?? {},
+              metadata: values.metadata ?? {},
               createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitConnections.$inferSelect;
@@ -877,6 +875,7 @@ mock.module('../shared/db', () => ({
             requiredConnectors: null,
             connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
             connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
+            labels: values.labels ?? [],
             metadata: values.metadata ?? {},
             createdAt: new Date('2026-01-02T00:00:00Z'),
             updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
