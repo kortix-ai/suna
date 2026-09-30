@@ -1,5 +1,5 @@
 /**
- * OpenCode SDK client singleton.
+ * The session runtime client cache.
  *
  * Provides a `getClient()` function that returns a `RuntimeClient` instance
  * pointed at the currently active server URL. Automatically recreates the
@@ -10,10 +10,10 @@
  */
 
 import {
-	createOpencodeClient as createVendorClient,
-	type OpencodeClient as VendorClient,
-	type OpencodeClientConfig as VendorClientConfig,
-} from "@opencode-ai/sdk/v2/client";
+	createRuntimeRestClient,
+	type RuntimeClient,
+	type RuntimeClientConfig,
+} from "./runtime-rest-client";
 
 // The types a host reads runtime data with: the Kortix transcript
 // (`kortix.transcript.v1`) and the runtime surfaces the SDK still reaches
@@ -21,20 +21,21 @@ import {
 // imports them from `@kortix/sdk` and never from a harness's own SDK.
 export * from "./transcript-types";
 export type * from "./runtime-types";
-// The runtime REST client under neutral names (type only: a host never builds
-// its own client). The pre-W4 vendor names below are separate `@deprecated`
-// declarations, which take precedence over the `export type *` above.
+// The runtime REST client (type only: a host never builds its own client).
 export type {
-	VendorClient as RuntimeClient,
-	VendorClientConfig as RuntimeClientConfig,
-	createVendorClient as createRuntimeClient,
-};
+	RuntimeClient,
+	RuntimeClientConfig,
+	RuntimeEventStreamOptions,
+	RuntimeRequestOptions,
+	RuntimeResult,
+} from "./runtime-rest-client";
+export type { createRuntimeRestClient as createRuntimeClient };
 /** @deprecated Renamed to `RuntimeClient`. Removed in the next major. */
-export type OpencodeClient = VendorClient;
+export type OpencodeClient = RuntimeClient;
 /** @deprecated Renamed to `RuntimeClientConfig`. Removed in the next major. */
-export type OpencodeClientConfig = VendorClientConfig;
+export type OpencodeClientConfig = RuntimeClientConfig;
 /** @deprecated Renamed to `createRuntimeClient`. Removed in the next major. */
-export type createOpencodeClient = typeof createVendorClient;
+export type createOpencodeClient = typeof createRuntimeRestClient;
 
 import { authenticatedFetch } from "../http/auth";
 import { isConfigured } from "../http/config";
@@ -71,7 +72,7 @@ export * from "./kortix-master";
  * several session sandboxes in parallel — every open session stays connected to
  * its own runtime at the same time. Keyed by absolute base URL.
  */
-const clientsByUrl = new Map<string, VendorClient>();
+const clientsByUrl = new Map<string, RuntimeClient>();
 
 /**
  * Thrown when the active runtime's sandbox URL hasn't resolved yet (e.g. a
@@ -95,7 +96,7 @@ export class RuntimeNotReadyError extends Error {
  * Throws if the server URL isn't resolved yet (e.g. cloud sandbox still
  * loading). React Query hooks will catch this and retry automatically.
  */
-export function getClient(): VendorClient {
+export function getClient(): RuntimeClient {
 	const url = getActiveRuntimeUrl();
 	if (!url) {
 		throw new RuntimeNotReadyError();
@@ -120,7 +121,7 @@ export function getClient(): VendorClient {
  * silently 401/leak. If the host never called `configureKortix()`, fail loudly
  * instead of quietly sending an unauthenticated request.
  */
-export function getClientForUrl(url: string): VendorClient {
+export function getClientForUrl(url: string): RuntimeClient {
 	if (!url) {
 		throw new Error('[opencode-sdk] getClientForUrl called without a url');
 	}
@@ -133,7 +134,7 @@ export function getClientForUrl(url: string): VendorClient {
 		);
 	}
 
-	const client = createVendorClient({ baseUrl: url, fetch: authenticatedFetch as typeof fetch });
+	const client = createRuntimeRestClient({ baseUrl: url, fetch: authenticatedFetch as typeof fetch });
 	clientsByUrl.set(url, client);
 	return client;
 }
@@ -175,21 +176,21 @@ export function resetClient(): void {
  * Never point this at an authenticated proxy route — that would send a naked,
  * unauthenticated request somewhere that expects a bearer token.
  */
-const publicClientsByUrl = new Map<string, VendorClient>();
+const publicClientsByUrl = new Map<string, RuntimeClient>();
 
 /**
  * Get (or create) a PUBLIC, unauthenticated client bound to a specific base
  * URL. See the {@link publicClientsByUrl} comment for why this exists as a
  * deliberate, separate cache/factory rather than a flag on `getClientForUrl`.
  */
-export function getPublicClientForUrl(url: string): VendorClient {
+export function getPublicClientForUrl(url: string): RuntimeClient {
 	if (!url) {
 		throw new Error('[opencode-sdk] getPublicClientForUrl called without a url');
 	}
 	const existing = publicClientsByUrl.get(url);
 	if (existing) return existing;
 
-	const client = createVendorClient({ baseUrl: url, fetch });
+	const client = createRuntimeRestClient({ baseUrl: url, fetch });
 	publicClientsByUrl.set(url, client);
 	return client;
 }

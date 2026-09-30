@@ -641,23 +641,24 @@ removes the file, and its `attachment_id` can no longer be sent.
 this session's own sandbox. See the [SDK reference](/docs/sdk/reference) for
 the full method list.
 
-## The raw runtime
+## Session verbs
 
-`s.runtime` is the typed OpenCode REST client. Use it only for calls that `send`,
-`abort`, and `stream` do not cover. It requires a resolved OpenCode runtime —
-call `s.ensureReady()` first.
+The handle reads and answers the runtime for you. Each verb provisions the
+session first and targets this session's own sandbox, whichever harness runs it.
 
 ```ts
-const { runtimeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({
-  sessionID: runtimeSessionId,
-  parts: [{ type: 'text', text: 'Refactor the auth module' }],
-});
+// A page of the transcript, oldest first: { info, parts } messages (kortix.transcript.v1).
+const { messages, hasMore } = await s.messages({ limit: 50 });
+// What the agent waits on.
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, 'once'); // 'once' | 'always' | 'reject'
+await s.answerQuestion(questions[0].id, [['Yes']]); // null dismisses the question
+// Summarize the conversation. Needs the `session.compact` capability (see health()).
+await s.compact();
 ```
 
-The OpenCode `sessionID` here is not the session ID you pass to
-`kortix.session(projectId, sessionId)`. The SDK resolves it during
-`ensureReady()` and caches it on the handle.
+`s.runtime`, the raw REST compatibility client, is deprecated. Use the verbs
+above with `send`, `abort`, `rewind` and `stream`.
 
 ## Warm a project session
 
@@ -745,7 +746,7 @@ Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the requ
 
 Two errors mean the session's sandbox is not ready yet. Handle each one differently.
 
-`SessionNotReadyError` throws synchronously when you call a runtime accessor — `session.previewUrl()`, `session.proxyUrl()`, or `session.runtime` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox; it never falls back to another session's sandbox.
+`SessionNotReadyError` throws synchronously when you call a runtime accessor — `session.previewUrl()` or `session.proxyUrl()` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox; it never falls back to another session's sandbox.
 
 ```ts
 import { SessionNotReadyError } from '@kortix/sdk';

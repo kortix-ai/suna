@@ -149,6 +149,27 @@ export type Event =
 
 // ─── Frozen at @opencode-ai/sdk 1.18.23 ──────────────────────────────────────
 
+export type OAuth = {
+    type: "oauth";
+    refresh: string;
+    access: string;
+    expires: number;
+    accountId?: string;
+    enterpriseUrl?: string;
+};
+export type ApiAuth = {
+    type: "api";
+    key: string;
+    metadata?: {
+        [key: string]: string;
+    };
+};
+export type WellKnownAuth = {
+    type: "wellknown";
+    key: string;
+    token: string;
+};
+export type Auth = OAuth | ApiAuth | WellKnownAuth;
 export type PermissionAction = "allow" | "deny" | "ask";
 export type PermissionRule = {
     permission: string;
@@ -208,6 +229,18 @@ export type Session = {
         diff?: string;
     };
 };
+export type OutputFormatText = {
+    type: "text";
+};
+export type JsonSchema = {
+    [key: string]: unknown;
+};
+export type OutputFormatJsonSchema = {
+    type: "json_schema";
+    schema: JsonSchema;
+    retryCount?: number;
+};
+export type OutputFormat = OutputFormatText | OutputFormatJsonSchema;
 export type Pty = {
     id: string;
     title: string;
@@ -647,6 +680,13 @@ export type Provider = {
         [key: string]: Model;
     };
 };
+export type ToolListItem = {
+    id: string;
+    description: string;
+    parameters: unknown;
+};
+export type ToolList = Array<ToolListItem>;
+export type ToolIds = Array<string>;
 export type WorktreeCreateInput = {
     name?: string;
     /**
@@ -664,6 +704,13 @@ export type WorktreeRemoveInput = {
 };
 export type WorktreeResetInput = {
     directory: string;
+};
+export type FileNode = {
+    name: string;
+    path: string;
+    absolute: string;
+    type: "file" | "directory";
+    ignored: boolean;
 };
 export type FileContent = {
     type: "text" | "binary";
@@ -792,6 +839,50 @@ export type ProviderAuthAuthorization = {
     url: string;
     method: "auto" | "code";
     instructions: string;
+};
+export type TextPartInput = {
+    id?: string;
+    type: "text";
+    text: string;
+    synthetic?: boolean;
+    ignored?: boolean;
+    time?: {
+        start: number;
+        end?: number;
+    };
+    metadata?: {
+        [key: string]: unknown;
+    };
+};
+export type FilePartInput = {
+    id?: string;
+    type: "file";
+    mime: string;
+    filename?: string;
+    url: string;
+    source?: FilePartSource;
+};
+export type AgentPartInput = {
+    id?: string;
+    type: "agent";
+    name: string;
+    source?: {
+        value: string;
+        start: number;
+        end: number;
+    };
+};
+export type SubtaskPartInput = {
+    id?: string;
+    type: "subtask";
+    prompt: string;
+    description: string;
+    agent: string;
+    model?: {
+        providerID: string;
+        modelID: string;
+    };
+    command?: string;
 };
 export type FileDiff = {
     path: string;

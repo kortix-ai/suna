@@ -17,7 +17,6 @@ function runtimeFor(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
     handle: {
       sandboxPortUrl: (port: number) => `https://runtime.example.test/p/ext/${port}`,
     } as unknown as SessionRuntime['handle'],
-    runtime: {} as SessionRuntime['runtime'],
     runtimeUrl: 'https://runtime.example.test/p/ext/8000',
     opencodeSessionId: 'ses_opencode',
     ...overrides,

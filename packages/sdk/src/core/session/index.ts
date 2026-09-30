@@ -26,3 +26,4 @@ export * from './turn-end-cause';
 export * from './compaction';
 export * from './wake-escalation';
 export * from './status-vocabulary';
+export type { PendingInteractions, RuntimeVerbs, TranscriptPage } from './runtime-verbs';

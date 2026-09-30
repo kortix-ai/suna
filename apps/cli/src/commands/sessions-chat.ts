@@ -269,12 +269,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   // Replay any prior conversation so the REPL has context on screen.
   try {
     const history = await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.session.messages({
-          sessionID: ocSessionId,
-          limit: 20,
-        }),
-      ),
+      (await resolved.handle.messages({ conversationId: ocSessionId, limit: 20 })).messages,
     );
     for (const msg of history) printMessage(msg);
   } catch {
@@ -339,12 +334,7 @@ async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Pr
   for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
       const messages = await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(
-          await resolved.runtime.session.messages({
-            sessionID: resolved.opencodeSessionId,
-            limit: 10,
-          }),
-        ),
+        (await resolved.handle.messages({ conversationId: resolved.opencodeSessionId, limit: 10 })).messages,
       );
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
@@ -624,12 +614,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     try {
       const runtime = await resolveSessionRuntime({ auth, client, projectId, session });
       messages = await withKortixScope(auth, async () =>
-        unwrapRuntime(
-          await runtime.runtime.session.messages({
-            sessionID: runtime.opencodeSessionId,
-            limit,
-          }),
-        ),
+        (await runtime.handle.messages({ conversationId: runtime.opencodeSessionId, limit })).messages,
       );
     } catch (err) {
       // A box that is not answering — still waking, just parked, mid-restart —
@@ -960,17 +945,14 @@ async function fetchSessionActivity(
     // can start — or dispatch a subagent batch that leaves a user-role message
     // newest — after the user's prompt, and classifying off ONLY the last message
     // then mislabels a busy session as "queued".
-    const messageRequest = {
-      sessionID: ready.runtimeSessionId,
-      limit: 6,
-      // The generated OpenCode client accepts RequestInit fields. The narrowed
-      // SDK facade type currently lists only endpoint fields.
-      signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
-    } as Parameters<typeof handle.runtime.session.messages>[0] & { signal: AbortSignal };
     const msgs = await withKortixScope(auth, async () =>
-      unwrapRuntime(
-        await handle.runtime.session.messages(messageRequest),
-      ),
+      (
+        await handle.messages({
+          conversationId: ready.runtimeSessionId,
+          limit: 6,
+          signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
+        })
+      ).messages,
     );
     if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
     return deriveActivity(msgs, s.status);

@@ -19,6 +19,7 @@
 
 import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
+import { getClientForUrl } from '../runtime/client';
 import { logger } from '../http/logger';
 
 /**
@@ -34,7 +35,7 @@ export type RuntimeEvent =
       properties: { serverID: string; path: string };
     };
 
-/** The minimal slice of `OpencodeClient` this machine actually calls. */
+/** The minimal slice of `RuntimeClient` this machine actually calls. */
 export interface EventStreamClient {
   global: {
     event: (opts: {
@@ -65,9 +66,14 @@ const realTimers: EventStreamTimers = {
 };
 
 export interface OpenEventStreamOptions {
-  /** The opencode client to stream events from (same client the rest of the
-   *  SDK obtains via `getClient()`). */
-  client: EventStreamClient;
+  /** The session runtime to stream from: `${backendUrl}/p/{externalId}/{port}`
+   *  (a session handle's `runtimeUrl`). Streams to one URL share one connection. */
+  url?: string;
+  /**
+   * A runtime client to stream from, instead of `url`.
+   * @deprecated Pass `url`. Removed in the next major.
+   */
+  client?: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
@@ -682,7 +688,9 @@ function createLiveStream(
  * connection (unless it was the last one standing).
  */
 export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
-  const { client, onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
+  const { onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
+  const client: EventStreamClient | undefined = opts.client ?? (opts.url ? getClientForUrl(opts.url) : undefined);
+  if (!client) throw new Error('openEventStream needs the session runtime `url`');
   const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked };
 
   let liveStream = liveStreamsByClient.get(client);

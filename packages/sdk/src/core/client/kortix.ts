@@ -26,7 +26,15 @@ import * as P from '../rest/projects-client';
 import * as A from '../rest/platform-client/auth';
 import type { HeadlessAuthApi } from '../rest/platform-client/auth';
 import { createKortixSession } from '../auth/session';
+import { authenticatedFetch } from '../http/auth';
 import { getSessionHealth } from '../session/health';
+import {
+  createRuntimeVerbs,
+  type PendingInteractions,
+  type RuntimeVerbs,
+  type TranscriptPage,
+} from '../session/runtime-verbs';
+import type { RuntimePermissionReply, RuntimeQuestionAnswer } from '../runtime/transcript-types';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { loadPreviewUrlTemplate } from '../session/preview-config';
 import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../session/preview-options';
@@ -1141,6 +1149,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       return ready;
     }
 
+    /** The session verbs, bound to this handle's own runtime (provisions it first). */
+    async function sessionVerbs(): Promise<RuntimeVerbs> {
+      const { runtimeSessionId, runtimeUrl } = await ensureReady();
+      return createRuntimeVerbs({ runtimeUrl, rootId: runtimeSessionId, fetch: authenticatedFetch as typeof fetch });
+    }
+
     /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
     function forgetReady(): void {
       _ready = null;
@@ -1400,17 +1414,46 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       }): Promise<EventStreamHandle> => {
         const { runtimeUrl } = await ensureReady();
         return openEventStream({
-          client: getClientForUrl(runtimeUrl),
+          url: runtimeUrl,
           onEvent: opts.onEvent,
           onGapRehydrate: opts.onGapRehydrate,
           signal: opts.signal,
         });
       },
 
-      // ── runtime (opencode v2, THIS session's own sandbox) ────────────────
-      // The typed opencode client, reached ONLY through the SDK. The host never
-      // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
-      // with server-owned side-effects) layer on top of this as they land.
+      // ── session verbs (THIS session's own runtime) ───────────────────────
+      /**
+       * A page of this session's messages, oldest first (`{ info, parts }`,
+       * `kortix.transcript.v1`): the root conversation, or `conversationId`
+       * (a subagent child). `before` pages backwards.
+       */
+      messages: async (options?: {
+        conversationId?: string;
+        limit?: number;
+        before?: string;
+        signal?: AbortSignal;
+      }): Promise<TranscriptPage> => (await sessionVerbs()).messages(options),
+      /** Conversation statuses, and the permission requests and questions waiting for an answer. */
+      pending: async (): Promise<PendingInteractions> => (await sessionVerbs()).pending(),
+      /** Answer a permission request: `once`, `always` (the capability, for this session) or `reject`. */
+      answerPermission: async (requestId: string, reply: RuntimePermissionReply, message?: string) =>
+        (await sessionVerbs()).answerPermission(requestId, reply, message),
+      /** Answer a question (one answer per question), or dismiss it with `null`. */
+      answerQuestion: async (requestId: string, answers: RuntimeQuestionAnswer[] | null) =>
+        (await sessionVerbs()).answerQuestion(requestId, answers),
+      /**
+       * Summarize the conversation into a shorter context, with `model` or the
+       * runtime's default. Only a runtime with the `session.compact` capability
+       * supports it (see `health()`).
+       */
+      compact: async (model?: { providerID: string; modelID: string }) => (await sessionVerbs()).compact(model),
+
+      /**
+       * The raw runtime REST client of THIS session's own sandbox.
+       * @deprecated Use the session verbs (`messages`, `pending`,
+       * `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`,
+       * `rewind`). Removed in the next major.
+       */
       get runtime(): RuntimeClient {
         return getClientForUrl(requireReady('runtime').runtimeUrl);
       },

@@ -141,10 +141,10 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
         }
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/p/${EXTERNAL_ID}/8000/session/${OPENCODE_SESSION_ID}/message`
+          url.pathname === `/v1/p/${EXTERNAL_ID}/8000/kortix/runtime/messages/${OPENCODE_SESSION_ID}`
         ) {
           runtimeAuthorization = request.headers.get('authorization');
-          return Response.json([assistantReply()]);
+          return Response.json({ messages: [assistantReply()], has_more: false });
         }
         return Response.json(
           { error: `unexpected ${request.method} ${url.pathname}` },

@@ -18,6 +18,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   today is valid. `Message`, `Part`, `TextPart`, `ToolPart`, `SessionStatus`,
   `PermissionRequest`, `QuestionRequest` and the other transcript names this
   package published before are now aliases of these types.
+- Session verbs on a session handle: `messages({ conversationId, limit,
+  before, signal })` reads a page of the transcript from the daemon's Kortix
+  route (`/kortix/runtime/messages`), `pending()` returns the conversation
+  statuses with the waiting permission requests and questions,
+  `answerPermission(id, reply, message?)`, `answerQuestion(id, answers | null)`
+  and `compact(model?)` (resolves with the model used; an `ApiError` with code
+  `MODEL_REQUIRED` when no model is known). New types `TranscriptPage`,
+  `PendingInteractions`, `RuntimeVerbs`, `RuntimeResult`,
+  `RuntimeRequestOptions`, `RuntimeEventStreamOptions`.
+- `openEventStream({ url })`: stream a runtime by its URL.
 - Computers are connector accounts. `addComputerToProject(projectId,
   { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
   `project(id).connectors.connections.addComputer`, and
@@ -73,6 +83,8 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Deprecated
+- `SessionHandle.runtime` (the raw runtime client): use the session verbs.
+- `openEventStream({ client })`: pass `url`.
 - The `session_transcript_history` member of `FeatureFlagKey`. Saved session
   history graduated out of the flag system: every session saves its transcript
   and shows it while its computer is off. It is absent from
@@ -178,6 +190,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- The `@opencode-ai/sdk` dependency. The runtime REST client is this
+  package's own (`RuntimeClient`, same `{ data, error, request, response }`
+  results and the same requests, pinned by a recorded-request test). It
+  implements the 55 routes the SDK and its hosts call; `RuntimeClient` no
+  longer lists the others (`session.fork`, `pty.*`, `lsp.*`, ...), which is a
+  breaking type change for a consumer that called them through
+  `session.runtime`.
 - The OpenCode type re-export. `@kortix/sdk` and `@kortix/sdk/opencode-client`
   no longer re-export every type of `@opencode-ai/sdk` (1,369 names, among
   them the 88 `V2Event*` aliases and every `*Data`/`*Responses` request

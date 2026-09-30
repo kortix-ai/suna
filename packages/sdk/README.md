@@ -2,8 +2,9 @@
 
 The **single, opinionated data layer** for the Kortix agent platform. One typed
 client wraps both the **Kortix REST API** and the **agent runtime** so a
-host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
-`@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
+host app — web, mobile, reference — imports **only `@kortix/sdk`**. The SDK
+owns its types: the transcript is Kortix's own format (`kortix.transcript.v1`),
+and the package depends on no harness SDK. (The no-raw-`backendApi`/`authenticatedFetch` rule
 below is the target state, not yet fully true of apps/web — see Rules of the
 road.)
 
@@ -320,11 +321,12 @@ await s.reloadConfigStream(
   (event) => event.type === "phase" && console.log(event.phase),
 );
 
-// Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
-// `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { runtimeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: runtimeSessionId, parts });
+// The session verbs, bound to THIS session's own runtime (each provisions it first).
+const { messages, hasMore } = await s.messages({ limit: 50 }); // { info, parts }[], oldest first
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, "once"); // "once" | "always" | "reject"
+await s.answerQuestion(questions[0].id, [["Yes"]]); // null dismisses it
+await s.compact(); // only when health() lists `session.compact`
 ```
 
 React consumers use `useAccountSecretResources(accountId)` and
@@ -828,9 +830,10 @@ Native cannot consume the SDK's fetch-based SSE stream.
 
 ## Rules of the road
 
-- **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk`. The SDK is the sole owner of that dependency.
-  (Holds today — no host imports it.)
+- **No harness SDK in host code.** Import transcript and runtime types from
+  `@kortix/sdk`, and reach the runtime through the session verbs. `session.runtime`
+  (the raw REST compatibility client) is deprecated.
+  (Holds today — no host imports `@opencode-ai/sdk`, and neither does the SDK.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel

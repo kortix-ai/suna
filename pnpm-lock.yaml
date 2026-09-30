@@ -267,6 +267,9 @@ importers:
       '@aws-crypto/sha256-js':
         specifier: 5.2.0
         version: 5.2.0
+      '@opencode-ai/sdk':
+        specifier: 1.18.23
+        version: 1.18.23
       '@smithy/signature-v4':
         specifier: 5.6.2
         version: 5.6.2
@@ -1565,9 +1568,6 @@ importers:
       '@kortix/llm-catalog':
         specifier: workspace:*
         version: link:../llm-catalog
-      '@opencode-ai/sdk':
-        specifier: 1.18.23
-        version: 1.18.23
       zustand:
         specifier: ^5.0.3
         version: 5.0.15(@types/react@19.2.18)(react@19.3.0)(use-sync-external-store@1.7.0)
@@ -7241,7 +7241,7 @@ packages:
     resolution: {integrity: sha512-VouYbL8O2ynLq0atr5fjzCv8YLtFi/zKLQ/uYkCvTJ4CmUdA01XwPn8om+u3TvxnGEfQsBfmThGU141vt3sg5w==}
     dependencies:
       cross-spawn: 7.0.6
-    dev: false
+    dev: true
 
   /@opentelemetry/api-logs@0.217.0:
     resolution: {integrity: sha512-Cdq0jW2lknrNfrAm92MyEAvpe2cRsKjdnQLHUL6xRA4IVUnsWx6P65E7NcUO0Y+L4w1Aee5iV8FvjSwd+lrs9A==}

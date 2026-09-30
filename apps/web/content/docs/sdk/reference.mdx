@@ -1163,11 +1163,11 @@ and bounded message.
 
 The grouping and status functions accept minimal structural types —
 `PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike`,
-`SessionStatusLike` — instead of the concrete `@opencode-ai/sdk` wire types.
+`SessionStatusLike` — instead of the concrete transcript types.
 Your own message and part shapes flow through unchanged as long as they match
 the required fields. `classifyPart` and `classifyTurn` are the exception.
-They type against the real `@opencode-ai/sdk` `Part` union, so their
-exhaustiveness check catches a new wire part type at build time.
+They type against the Kortix `Part` union (`kortix.transcript.v1`), so their
+exhaustiveness check catches a new part type at build time.
 
 ## Distribution
 
