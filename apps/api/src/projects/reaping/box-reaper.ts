@@ -44,7 +44,7 @@ import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
-import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
+import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs, turnNoBeginRelayMaxMs } from '../sandbox-deadline-policy';
 import {
   PROMPT_NEVER_RAN_END_REASONS,
   requeueAbandonedPrompt,
@@ -340,6 +340,8 @@ export async function reapAndReconcileSandboxes(
           // that has waited behind a wedged turn for days must not be re-run by
           // a maintenance sweep; the session's own next prompt is the trigger.
           const expiredTurnCeilingMs = turnAbsoluteMaxMs();
+          // See `turnNoBeginRelayMaxMs`'s doc — the identity-less backstop.
+          const turnNoBeginRelayCeilingMs = turnNoBeginRelayMaxMs();
           // Records this pass PROBED and the daemon answered with nothing
           // readable. Counted, not inferred: the drip below needs `every record
           // answered unknown`, which is a statement about answers, not about
@@ -358,6 +360,60 @@ export async function reapAndReconcileSandboxes(
             for (const turn of turns) {
               const recordAgeMs =
                 turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
+              // A turn record with no `messageId` never received a turn_begin
+              // relay (boot.ts's `relayTurnBeginToApi`, seconds after OpenCode
+              // accepts a prompt). Past `turnNoBeginRelayMaxMs` that is not a
+              // race, it is a runtime that lost the turn before it ever
+              // relayed anything — most commonly a daemon-level restart
+              // severing it right after acceptance (2026-09-29 incident).
+              //
+              // APPLIED BEFORE OBSERVATION, deliberately: `observeSandboxTurn`
+              // asks the daemon a ROOT-scoped question when there is no
+              // `messageId` to scope it by, and the daemon's own oracle
+              // (`inspectOpencodeRoot`) reads an incomplete assistant message
+              // as "still in flight" even while `/session/status` is idle —
+              // correct for a genuine husk, but it means THIS shape reads
+              // `observation: 'active'` forever and never reaches the
+              // `terminal` branches below. This ceiling does not depend on
+              // that signal at all.
+              if (
+                turn.state === 'active' &&
+                turn.messageId === null &&
+                recordAgeMs !== null &&
+                recordAgeMs >= turnNoBeginRelayCeilingMs
+              ) {
+                console.error('[reaper] settling a turn record that never received a messageId', {
+                  sandboxId: row.sandboxId,
+                  externalId: row.externalId,
+                  provider: row.provider,
+                  sessionId: row.sessionId,
+                  turnToken: turn.token,
+                  startedAt: new Date(turn.startedAtMs as number).toISOString(),
+                  ageMinutes: Math.round(recordAgeMs / 60_000),
+                  ceilingMinutes: turnNoBeginRelayCeilingMs / 60_000,
+                });
+                // `runtime_gone`, not `unknown`: this ceiling exists BECAUSE we
+                // are confident the runtime lost this turn (see the doc on
+                // `turnNoBeginRelayMaxMs`), unlike the generic wedged-turn
+                // ceiling below, which cannot tell a wedge from a live turn.
+                const cleared = await dependencies.clearSandboxTurn(
+                  row.sandboxId,
+                  turn.token,
+                  undefined,
+                  'runtime_gone',
+                );
+                result.turnsSettled += 1;
+                if (cleared) {
+                  // A no-op when `turn.messageId` is null (it always is here) —
+                  // called anyway for the same reason the other terminal
+                  // branches call it: consistency of what "settled" does. The
+                  // queued NEXT prompt (e.g. a trigger's queued
+                  // continue_session) is what actually needed to drain.
+                  await redeliverAbandonedPrompt(dependencies, row, turn, 'runtime_gone');
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
+                }
+                continue;
+              }
               if (recordAgeMs !== null && recordAgeMs >= expiredTurnCeilingMs) {
                 console.error('[reaper] settling a turn record past the absolute ceiling', {
                   sandboxId: row.sandboxId,
