@@ -33,6 +33,7 @@ import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
 import { ConvergeBusyError, convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
+import { retryDeferredOpencodeEnvRestart, restoreOpencodeRuntimeEnvSnapshotIfUnset } from './control'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
 // sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
 // which is also the warm-fork adoption path, since `adopt()` ends in
@@ -106,6 +107,12 @@ export function resetClaimedInitialTurnForTests(): void {
 /** Run the existing OpenCode cold/session boot behind the harness boundary. */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
+  // FIRST THING, before anything spawns or binds: restore the config-affecting
+  // opencode runtime env this box last applied, so this fresh daemon process
+  // does not read its own restart as a config change. `process.env` is
+  // process-local — see `restoreOpencodeRuntimeEnvSnapshotIfUnset`'s doc for
+  // the 2026-09-29 incident this closes.
+  restoreOpencodeRuntimeEnvSnapshotIfUnset()
   const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
@@ -811,6 +818,10 @@ async function startSessionRuntime(
       // tripwires forbid. `applyStagedAssetsIfIdle` re-asks the turn oracle
       // anyway, so a CHILD session going idle under a live root turn is refused.
       convergeRuntimeAssetsAtTurnEnd(cfg)
+      // Same boundary, same reasoning, for a config-affecting `/kortix/env`
+      // restart `applyEnvironment` deferred while this turn (or an earlier
+      // one) was running. A no-op when nothing is pending.
+      await retryDeferredOpencodeEnvRestart(opencode, cfg.workspace)
     })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -1671,6 +1682,20 @@ export async function finalizeOrphanedTurn(
   // opencode took to the grave and interrupting one that was about to finish.
   if (!(await confirmTurnOrphaned(baseUrl, workspace, sessionId, inspection))) return false
   await abortOpencodeTurn(baseUrl, workspace, sessionId)
+  // The abort above is best-effort against whichever process now answers for
+  // this root — after a respawn/swap that is a process that never held this
+  // turn's generation, so it stamps neither `time.completed` nor an error on
+  // the message (2026-09-29 incident). relayTurnEndToApi / reconcileFinishedFirstTurn
+  // scan for the newest COMPLETED assistant message; after this abort that scan
+  // keeps finding the turn BEFORE this one, already relayed, and skips forever
+  // — the API ledger stays `active` with no message_id for hours. Relay THIS
+  // turn's own end, keyed by its own identity, so it never depends on opencode
+  // ever settling it.
+  if (inspection.lastTurnParentId) {
+    await relayOrphanedTurnEndToApi(sessionId, inspection.lastTurnParentId).catch((err) =>
+      logger.warn('[boot] orphaned-turn relay failed', { sessionId, err: (err as Error).message }),
+    )
+  }
   return true
 }
 
@@ -2028,6 +2053,22 @@ interface RootInspection {
    *  unfinished" from "a different turn has since started". */
   lastMessageId: string | null
   /**
+   * The incomplete last assistant message's OWN `parentID` — the user prompt
+   * it is answering. `null` when the last message is not an incomplete
+   * assistant, or carries no `parentID`.
+   *
+   * This is the turn's identity from apps/api's point of view
+   * (`session_turns` rows are keyed by the prompt, not by the reply —
+   * `relayTurnEndToApi`'s `turn_message_id` is the same field). A turn this
+   * abort orphans (2026-09-29 incident) never gets `time.completed` stamped
+   * on it by a process that never held its generation, so it can never
+   * become "the newest COMPLETED turn" the natural relay / reconcile-on-
+   * subscribe backstop scan for — they keep finding the turn BEFORE it,
+   * already relayed, and skip forever. `finalizeOrphanedTurn` relays THIS
+   * turn's end directly, keyed by this id.
+   */
+  lastTurnParentId: string | null
+  /**
    * False when the read failed — opencode unreachable, non-2xx, the 5s
    * timeout a cold post-resume opencode routinely hits, or an unparseable
    * response. Mirrors `RootInspection.known` in opencode-turn-state.ts (same
@@ -2146,18 +2187,39 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
     // Non-2xx (opencode answering but unhappy — e.g. mid-restart) is a read
     // failure, not "no messages": `known: false`.
     if (!res.ok) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+      return {
+        hasMessages: false,
+        lastTurnIncomplete: false,
+        lastTurnHasError: false,
+        lastMessageId: null,
+        lastTurnParentId: null,
+        known: false,
+      }
     }
     const msgs = (await res.json()) as Array<{
-      info?: { id?: string; role?: string; error?: unknown; time?: { completed?: number } }
+      info?: { id?: string; role?: string; error?: unknown; parentID?: string; time?: { completed?: number } }
     }>
     // An unparseable shape is also a read failure, not a genuinely empty root
     // — only an actual `[]` counts as a confirmed-empty root.
     if (!Array.isArray(msgs)) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+      return {
+        hasMessages: false,
+        lastTurnIncomplete: false,
+        lastTurnHasError: false,
+        lastMessageId: null,
+        lastTurnParentId: null,
+        known: false,
+      }
     }
     if (msgs.length === 0) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: true }
+      return {
+        hasMessages: false,
+        lastTurnIncomplete: false,
+        lastTurnHasError: false,
+        lastMessageId: null,
+        lastTurnParentId: null,
+        known: true,
+      }
     }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
@@ -2166,12 +2228,20 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       lastTurnIncomplete: Boolean(incomplete),
       lastTurnHasError: Boolean(last?.info?.error),
       lastMessageId: last?.info?.id ?? null,
+      lastTurnParentId: incomplete ? last?.info?.parentID ?? null : null,
       known: true,
     }
   } catch {
     // Unreachable, or the 5s AbortSignal.timeout above fired — the exact "cold
     // post-resume opencode" hazard this whole tri-state exists for.
-    return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    return {
+      hasMessages: false,
+      lastTurnIncomplete: false,
+      lastTurnHasError: false,
+      lastMessageId: null,
+      lastTurnParentId: null,
+      known: false,
+    }
   }
 }
 
@@ -2875,6 +2945,71 @@ export async function relayTurnEndToApi(
     if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
   }
   logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+}
+
+/**
+ * Relay ONE orphaned turn's end directly, keyed by ITS OWN identity — the
+ * prompt message id — never by "the newest COMPLETED assistant message"
+ * (`relayTurnEndToApi`'s/`reconcileFinishedFirstTurn`'s dedup).
+ *
+ * `finalizeOrphanedTurn` calls this after aborting a turn that a restart
+ * orphaned. The abort is best-effort against a process that never held that
+ * turn's generation, so OpenCode never stamps `time.completed` or an error on
+ * the message — it can never become "the newest completed turn" the other
+ * relay paths scan for. Without this, they keep finding the turn BEFORE it,
+ * already relayed, and skip forever: a stuck `active` turn with no
+ * `message_id`, for hours (2026-09-29 incident).
+ *
+ * Dedups on `relayedTurnSignatures` — the same per-process set
+ * `relayTurnEndToApi` records into — keyed by this turn's own prompt id
+ * rather than a completed timestamp, since this turn never gets one.
+ * `finalizeOrphanedTurn` can run more than once for the same stuck turn (the
+ * unplanned-respawn hook and the reused-root boot check both call it), so
+ * without this dedup a single incident would double-post.
+ */
+export async function relayOrphanedTurnEndToApi(opencodeSessionId: string, turnMessageId: string): Promise<void> {
+  const ctx = sandboxRelayContext()
+  if (!ctx) return
+  const dedupSig = `orphan:${opencodeSessionId}:${turnMessageId}`
+  if (relayedTurnSignatures.has(dedupSig)) {
+    logger.info('[boot] orphaned-turn end already relayed; skipping', { opencodeSessionId, turnMessageId })
+    return
+  }
+  // Same breaker `relayTurnEndToApi` honors: a credential the API has
+  // repeatedly refused cannot finalize a turn either way.
+  if (sessionTokenPresumedDead()) return
+  const { projectId, sessionId, token, apiRoot } = ctx
+  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          session_id: sessionId,
+          kind: 'end',
+          status: 'error',
+          opencode_session_id: opencodeSessionId,
+          turn_message_id: turnMessageId,
+          error_name: 'RuntimeAbortedTurn',
+          error_message: 'The agent runtime restarted mid-turn. Send your message again.',
+        }),
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (res.ok) {
+        relayedTurnSignatures.add(dedupSig)
+        logger.info('[boot] orphaned-turn end relayed', { opencodeSessionId, turnMessageId, attempt })
+        return
+      }
+      const bodyText = await res.text().catch(() => '')
+      noteControlPlaneResponse(res.status, bodyText)
+      logger.warn('[boot] orphaned-turn relay non-ok', { status: res.status, attempt, body: bodyText.slice(0, 200) })
+    } catch (err) {
+      logger.warn('[boot] orphaned-turn relay fetch failed', { err: (err as Error).message, attempt })
+    }
+    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
+  }
+  logger.error('[boot] orphaned-turn relay gave up after retries', { opencodeSessionId, turnMessageId })
 }
 
 interface RootTurnState {
