@@ -264,12 +264,13 @@ test('a prompt naming an agent the project does not declare is delivered as the 
   ]);
 });
 
-test('a declared agent switch is untouched by the guard', async () => {
+test('a running session refuses an agent switch before grant remint or forwarding', async () => {
   undeclaredAgents.add('foreign-agent');
 
   const response = await prompt('nda-turnaround');
 
-  expect(response.status).toBe(200);
-  expect(remintCalls).toEqual([{ requestedAgent: 'nda-turnaround' }]);
-  expect(upstreamBodies.at(-1)).toMatchObject({ agent: 'nda-turnaround' });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+  expect(remintCalls).toEqual([]);
+  expect(upstreamCalls).toBe(0);
 });
