@@ -1,5 +1,6 @@
 /** Session runtime: start (the unified open), restart, stop, and the current turn. */
 import { checkBillingAdmission } from '../../billing/services/billing-gate';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -74,6 +75,11 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    // Account-scoped keys have no member identity to sign for the daemon.
+    // Reject before provisioning rather than returning a misleading ready/start response.
+    if (c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'user') {
+      return c.json({ error: 'A user or service-account credential is required to start a session' }, 403);
+    }
     const projectMetadata = loaded.row.metadata as Record<string, unknown>;
     const sessionMetadata = visible.row.metadata as Record<string, unknown>;
     const repositoryMode = c.req.query('repository_mode');
@@ -182,10 +188,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     // Per-agent gate: restart re-provisions compute. A scoped agent token must
     // hold project.session.start (no-op for human/PAT tokens).
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -236,10 +241,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     // Per-agent gate: same capability as start/restart — stopping is part of
     // the agent's session-lifecycle surface.
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -279,6 +283,8 @@ const SessionTurnSchema = z.object({
   turn_token: z.string(),
   state: z.enum(['delivering', 'active']),
   message_id: z.string().nullable(),
+  runtime_session_id: z.string().nullable(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   started_at: z.string().nullable(),
   accepted_at: z.string().nullable(),

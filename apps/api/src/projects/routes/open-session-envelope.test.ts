@@ -165,7 +165,7 @@ const VISIBLE = {
     sandboxProvider: 'daytona',
     baseRef: null,
     agentName: 'default',
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     accountId: 'acct-1',
     metadata: null,
   },
@@ -174,7 +174,7 @@ const LOADED = { row: {} as never, userId: 'user-1' };
 
 const args = (agentName = 'default', opencodeSessionId: string | null = null) => ({
   loaded: LOADED,
-  visible: { ...VISIBLE, row: { ...VISIBLE.row, agentName, opencodeSessionId } },
+  visible: { ...VISIBLE, row: { ...VISIBLE.row, agentName, runtimeSessionId: opencodeSessionId } },
   projectId: 'proj-1',
   sessionId: 'sess-1',
 });

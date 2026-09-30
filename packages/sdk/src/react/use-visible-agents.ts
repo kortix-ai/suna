@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import type { Agent } from '@opencode-ai/sdk/v2/client';
-import { useOpenCodeAgents } from './use-opencode-sessions';
+import { useRuntimeAgents } from './use-opencode-sessions';
 import { isSelectableAgent } from '../core/rest/projects-client/project-agents';
 
 /**
@@ -17,7 +17,7 @@ export function useVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }): Agent[] {
-  const { data: agents = [] } = useOpenCodeAgents(options);
+  const { data: agents = [] } = useRuntimeAgents(options);
   return useMemo(
     () => agents.filter(isSelectableAgent),
     [agents]
@@ -32,7 +32,7 @@ export function useAllVisibleAgents(options?: {
   directory?: string;
   projectId?: string | null;
 }): Agent[] {
-  const { data: agents = [] } = useOpenCodeAgents(options);
+  const { data: agents = [] } = useRuntimeAgents(options);
   return useMemo(
     // The same rule with the subagent check lifted.
     () => agents.filter((a) => isSelectableAgent({ ...a, mode: null })),

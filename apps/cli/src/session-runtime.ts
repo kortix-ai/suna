@@ -181,7 +181,7 @@ export async function resolveSessionRuntime(
     handle,
     runtime: handle.runtime,
     runtimeUrl: ready.runtimeUrl,
-    opencodeSessionId: ready.opencodeSessionId,
+    opencodeSessionId: ready.runtimeSessionId,
   };
 }
 

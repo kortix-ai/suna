@@ -16,7 +16,7 @@ export async function settleCompletedInboxTurns(
   let settled = false;
   for (const turn of storedSandboxTurns(box.metadata)) {
     // Never infer completion from a reservation or a missing/unanswered prompt.
-    if (turn.state !== 'active' || !turn.messageId || !turn.opencodeSessionId) continue;
+    if (turn.state !== 'active' || !turn.messageId || !turn.runtimeSessionId) continue;
     const reading = await deps.observe(deps.provider(box.provider), box.externalId, box.sandboxId, turn);
     if (reading.observation === 'terminal' &&
         (reading.endReason === 'completed' || reading.endReason === 'failed')) {

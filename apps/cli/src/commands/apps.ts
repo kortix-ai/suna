@@ -80,6 +80,8 @@ Subcommands:
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
   rollback <id|slug> <deployment>   Move traffic to a ready deployment.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
+    --viewer off|identity|api       What the App is told about its viewer. api = a token
+                                    that acts as them on the Kortix API (their role caps it).
   access-link <id|slug>             Create a short-lived authenticated browser URL.
   delete <id|slug>                  Delete the App and its runtimes. --yes.
 
@@ -783,24 +785,32 @@ async function accessCommand(rest: string[], options: ContextOptions, json: bool
   const password = takeFlagValue(rest, ['--password']);
   const memberIds = csv(takeFlagValue(rest, ['--members']));
   const groupIds = csv(takeFlagValue(rest, ['--groups']));
+  const viewer = takeFlagValue(rest, ['--viewer']);
+  if (viewer !== undefined && !['off', 'identity', 'api'].includes(viewer)) {
+    throw new Error('--viewer must be off, identity, or api');
+  }
   const ctx = await context(options);
   if (!ctx) return 1;
   const result = await scoped(ctx, async () => {
     let app = await resolveApp(ctx.apps, target);
-    const access = mode
+    // `--viewer` alone keeps the current mode and principals: the route
+    // replaces the whole policy, so they are read back and sent again.
+    const current = viewer && !mode ? await ctx.apps.access.get(app.app_id) : null;
+    const access = mode || viewer
       ? await ctx.apps.access.update(app.app_id, {
-          mode,
+          mode: mode ?? current!.mode,
           ...(password ? { password } : {}),
-          ...(memberIds ? { member_ids: memberIds } : {}),
-          ...(groupIds ? { group_ids: groupIds } : {}),
+          ...(memberIds ? { member_ids: memberIds } : current ? { member_ids: current.member_ids } : {}),
+          ...(groupIds ? { group_ids: groupIds } : current ? { group_ids: current.group_ids } : {}),
+          ...(viewer ? { viewer_token_scope: viewer as 'off' | 'identity' | 'api' } : {}),
         })
       : await ctx.apps.access.get(app.app_id);
-    if (mode) app = await ctx.apps.get(app.app_id);
+    if (mode || viewer) app = await ctx.apps.get(app.app_id);
     return { app, access };
   });
   if (json) emitJson(result);
   else {
-    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n`);
+    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n  viewer  ${result.access.viewer_token_scope}\n`);
     if (result.access.member_ids.length) process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);
     if (result.access.group_ids.length) process.stdout.write(`  groups  ${result.access.group_ids.join(', ')}\n`);
     process.stdout.write('\n');

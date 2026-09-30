@@ -6,7 +6,8 @@
  * `turn/queued-prompt-bubbles.tsx`, and `session-chat.tsx`.
  */
 
-import { isAbortError } from '@kortix/sdk';
+import { isAbortError, isTextPart, splitUserParts } from '@kortix/sdk';
+import type { TextPart } from '@/lib/opencode/types';
 import {
   fileTagBlocks,
   referenceHeaders,
@@ -29,6 +30,15 @@ export const WEB_SPACING_PX = 0.23 * 16;
 /** Rendered pixels of `n` web spacing steps (`px-3.5` → `webSpace(3.5)`). */
 export function webSpace(steps: number): number {
   return steps * WEB_SPACING_PX;
+}
+
+export interface MessageAttachment {
+  key: string;
+  filename: string;
+  mime?: string;
+  src?: string;
+  /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
+  localUri?: string;
 }
 
 // ─── Text parsing ────────────────────────────────────────────────────────────
@@ -215,6 +225,34 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
   text = removeSpans(text, referenceHeaders(text, 'sessions', SESSION_REFERENCE_HINT)).trim();
 
   return { text, quotes, files, sessions };
+}
+
+export function parseUserMessageParts(parts: Parameters<typeof splitUserParts>[0]) {
+    const { attachments: fileParts, stickyParts } = splitUserParts(parts);
+    const rawText = stickyParts
+      .filter(
+        (p) =>
+          isTextPart(p) &&
+          !!(p as TextPart).text?.trim() &&
+          !(p as TextPart & { synthetic?: boolean }).synthetic &&
+          !(p as TextPart & { ignored?: boolean }).ignored,
+      )
+      .map((p) => (p as TextPart).text)
+      .join('\n');
+    const content = parseUserMessageText(rawText);
+    const attachments: MessageAttachment[] = [
+      ...content.files.map((f, i) => ({
+        key: `upload:${i}:${f.path}`,
+        filename: f.filename || f.path.split('/').pop() || 'File',
+        mime: f.mime,
+        src: f.path || undefined,
+      })),
+      ...fileParts.map((p) => {
+        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
+        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
+      }),
+    ];
+    return { rawText, content, attachments };
 }
 
 /**

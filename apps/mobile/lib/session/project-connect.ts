@@ -1,6 +1,5 @@
 import type React from 'react';
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { getAuthToken } from '@/api/config';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { appIsActive } from '@/hooks/useWarmProjectSession';
 import { warmSessionPool } from '@/lib/session/warm-session-pool';
@@ -9,7 +8,8 @@ import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import { useQueryClient } from '@tanstack/react-query';
 import { listCreatedSession, projectKeys, useCreateProjectSession } from '@/lib/projects/hooks';
-import { getProjectSession } from '@kortix/sdk';
+import { getProjectSession, getSessionHealth } from '@kortix/sdk';
+import { mapSandboxHealth, type SandboxHealth } from './project-health';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { useToast } from '@/components/kortix/toast-provider';
@@ -33,49 +33,6 @@ import * as Crypto from 'expo-crypto';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { useFocusEffect } from 'expo-router/react-navigation';
 import { leaveSandboxOnFocus, showsSessionContent as showsSessionContentFor } from '@/lib/session/session-sandbox';
-
-/**
- * Probe a session sandbox's runtime health THROUGH the backend proxy — the same
- * `${sandboxUrl}/kortix/health` the web's useSandboxConnection polls. Beyond
- * reporting readiness, hitting the proxy keeps the sandbox routed/warm; the
- * backend's ensure-opencode probe alone doesn't, so without this a freshly-woken
- * sandbox can stay unreachable. Returns 'ready' once OpenCode reports up.
- */
-type SandboxHealth = {
-  status: 'ready' | 'starting' | 'unreachable';
-  /**
-   * Fatal runtime boot failure (e.g. repo materialization / git clone failed),
-   * verbatim from /kortix/health `boot_error`. Null while healthy or still
-   * booting — the sandbox only populates it on an actual failure, so it's a
-   * safe "stop waiting" signal (see sandbox routes/health.ts).
-   */
-  bootError?: string | null;
-};
-
-async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
-  try {
-    const token = await getAuthToken();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15_000);
-    const res = await fetch(`${sandboxUrl.replace(/\/$/, '')}/kortix/health`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (res.status === 503) return { status: 'starting' }; // sandbox up, OpenCode still booting
-    if (!res.ok) return { status: 'unreachable' };
-    const data: any = await res.json().catch(() => null);
-    const bootError =
-      typeof data?.boot_error === 'string' && data.boot_error ? data.boot_error : null;
-    if (data?.runtimeReady === true) return { status: 'ready' };
-    if (data?.opencode === 'ok' || data?.opencode === true) return { status: 'ready' };
-    if (data?.status && !['starting', 'down', 'error'].includes(data.status))
-      return { status: 'ready' };
-    return { status: 'starting', bootError };
-  } catch {
-    return { status: 'unreachable' };
-  }
-}
 
 export function useProjectSessionConnect(projectId: string, projectSessions: ProjectSession[], activeSessionId: string | null, activePageId: string | null, releaseWarmSession: (id: string) => void, setHomeKey: React.Dispatch<React.SetStateAction<number>>) {
   const { switchSandbox, clearSandbox } = useSandboxContext();
@@ -323,18 +280,19 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
             if (!shouldAwaitHealthProbe(start) && start.opencode_session_id) {
               log.log(`💓 [connect] attempt ${attempt}: stage=ready pin=ok, opening without the health wait`);
               openSession(start.opencode_session_id);
-              void probeSandboxHealth(sandboxUrl);
+              void getSessionHealth(sandboxUrl, { signal: AbortSignal.timeout(15_000) }).catch(() => {});
               return;
             }
 
-            const health = await probeSandboxHealth(sandboxUrl);
+            const health = await getSessionHealth(sandboxUrl, { signal: AbortSignal.timeout(15_000) })
+              .then(mapSandboxHealth, (): SandboxHealth => ({ status: 'unreachable' }));
             if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
 
             // Fatal runtime boot failure — stop waiting and surface it with a
-            // Restart button (web parity with "OpenCode runtime is not ready").
+            // Restart button (web parity with "Session runtime is not ready").
             if (health.bootError) {
               failConnect(sessionId, {
-                title: 'OpenCode runtime is not ready',
+                title: 'Session runtime is not ready',
                 message: 'The sandbox booted, but the project runtime did not become usable.',
                 detail: health.bootError,
               });

@@ -122,7 +122,7 @@ async function runOpenSession(
   const existingWake = stoppedWakeResult(
     row,
     visible.row.agentName,
-    visible.row.opencodeSessionId,
+    visible.row.runtimeSessionId,
     log.observedAt,
   );
   if (existingWake) {
@@ -135,7 +135,7 @@ async function runOpenSession(
   const resumedWake = stoppedWakeResult(
     row,
     visible.row.agentName,
-    visible.row.opencodeSessionId,
+    visible.row.runtimeSessionId,
     log.observedAt,
   );
   if (resumedWake) {

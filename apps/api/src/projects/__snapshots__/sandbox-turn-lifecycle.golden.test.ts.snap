@@ -19,6 +19,7 @@ exports[`golden SQL: turn authority statements beginSandboxTurn grants and inser
                  jsonb_build_object(
                    'token',  turn-token ::text,
                    'state', 'delivering',
+                   'runtimeSessionId',  ses_root ::text,
                    'opencodeSessionId',  ses_root ::text,
                    'messageId',  msg_turn_1 ::text,
                    'startedAtMs', floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000))),
@@ -74,6 +75,7 @@ exports[`golden SQL: turn authority statements beginSandboxTurn with no matching
                  jsonb_build_object(
                    'token',  turn-token ::text,
                    'state', 'delivering',
+                   'runtimeSessionId',  ses_root ::text,
                    'opencodeSessionId',  ses_root ::text,
                    'messageId',  msg_turn_1 ::text,
                    'startedAtMs', floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000))),
@@ -104,6 +106,7 @@ exports[`golden SQL: turn authority statements acceptSandboxTurn promotes the to
              ARRAY['activeTurns',  turn-token ]::text[],
              (s.metadata->'activeTurns'-> turn-token ) || jsonb_strip_nulls(jsonb_build_object(
                'state', 'active',
+               'runtimeSessionId',  ses_root ::text,
                'opencodeSessionId',  ses_root ::text,
                'messageId',  msg_turn_1 ::text)),
              false),
@@ -153,6 +156,7 @@ exports[`golden SQL: turn authority statements acceptSandboxTurn with no matchin
              ARRAY['activeTurns',  turn-token ]::text[],
              (s.metadata->'activeTurns'-> turn-token ) || jsonb_strip_nulls(jsonb_build_object(
                'state', 'active',
+               'runtimeSessionId',   ::text,
                'opencodeSessionId',   ::text,
                'messageId',   ::text)),
              false),
@@ -457,9 +461,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
           ELSE '{}'::jsonb
         END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
-         AND (entry.value->>'opencodeSessionId' IS NULL
+         AND (coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId') IS NULL
            OR ( ses_root ::text IS NOT NULL
-             AND entry.value->>'opencodeSessionId' =  ses_root ))
+             AND coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId')
+               =  ses_root ))
     ), exact_matches AS (
       SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
@@ -506,7 +511,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
              (SELECT coalesce(
                        jsonb_agg(jsonb_build_object(
                          'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'runtimeSessionId', coalesce(selected.value->>'runtimeSessionId', selected.value->>'opencodeSessionId'),
                          'messageId', selected.value->>'messageId',
                          'startedAtMs', selected.value->>'startedAtMs'))
                          FILTER (WHERE selected.token IS NOT NULL),
@@ -609,9 +614,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
           ELSE '{}'::jsonb
         END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
-         AND (entry.value->>'opencodeSessionId' IS NULL
+         AND (coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId') IS NULL
            OR ( ses_root ::text IS NOT NULL
-             AND entry.value->>'opencodeSessionId' =  ses_root ))
+             AND coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId')
+               =  ses_root ))
     ), exact_matches AS (
       SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
@@ -658,7 +664,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
              (SELECT coalesce(
                        jsonb_agg(jsonb_build_object(
                          'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'runtimeSessionId', coalesce(selected.value->>'runtimeSessionId', selected.value->>'opencodeSessionId'),
                          'messageId', selected.value->>'messageId',
                          'startedAtMs', selected.value->>'startedAtMs'))
                          FILTER (WHERE selected.token IS NOT NULL),
@@ -761,9 +767,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
           ELSE '{}'::jsonb
         END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
-         AND (entry.value->>'opencodeSessionId' IS NULL
+         AND (coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId') IS NULL
            OR ( ses_root ::text IS NOT NULL
-             AND entry.value->>'opencodeSessionId' =  ses_root ))
+             AND coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId')
+               =  ses_root ))
     ), exact_matches AS (
       SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
@@ -810,7 +817,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
              (SELECT coalesce(
                        jsonb_agg(jsonb_build_object(
                          'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'runtimeSessionId', coalesce(selected.value->>'runtimeSessionId', selected.value->>'opencodeSessionId'),
                          'messageId', selected.value->>'messageId',
                          'startedAtMs', selected.value->>'startedAtMs'))
                          FILTER (WHERE selected.token IS NOT NULL),
@@ -923,9 +930,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
           ELSE '{}'::jsonb
         END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
-         AND (entry.value->>'opencodeSessionId' IS NULL
+         AND (coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId') IS NULL
            OR ( ses_root ::text IS NOT NULL
-             AND entry.value->>'opencodeSessionId' =  ses_root ))
+             AND coalesce(entry.value->>'runtimeSessionId', entry.value->>'opencodeSessionId')
+               =  ses_root ))
     ), exact_matches AS (
       SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
@@ -972,7 +980,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
              (SELECT coalesce(
                        jsonb_agg(jsonb_build_object(
                          'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'runtimeSessionId', coalesce(selected.value->>'runtimeSessionId', selected.value->>'opencodeSessionId'),
                          'messageId', selected.value->>'messageId',
                          'startedAtMs', selected.value->>'startedAtMs'))
                          FILTER (WHERE selected.token IS NOT NULL),
@@ -1082,7 +1090,7 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
              (SELECT coalesce(
                        jsonb_agg(jsonb_build_object(
                          'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'runtimeSessionId', coalesce(selected.value->>'runtimeSessionId', selected.value->>'opencodeSessionId'),
                          'messageId', selected.value->>'messageId',
                          'startedAtMs', selected.value->>'startedAtMs'))
                          FILTER (WHERE selected.token IS NOT NULL),
@@ -1187,6 +1195,7 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
                  jsonb_build_object(
                    'token',  adopt-token ::text,
                    'state', 'delivering',
+                   'runtimeSessionId',  ses_root ::text,
                    'opencodeSessionId',  ses_root ::text,
                    'messageId',  msg_adopt ::text,
                    'startedAtMs', floor(extract(epoch from  now() ) * 1000))),
@@ -1228,6 +1237,7 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
              ARRAY['activeTurns',  adopt-token ]::text[],
              (s.metadata->'activeTurns'-> adopt-token ) || jsonb_strip_nulls(jsonb_build_object(
                'state', 'active',
+               'runtimeSessionId',  ses_root ::text,
                'opencodeSessionId',  ses_root ::text,
                'messageId',  msg_adopt ::text)),
              false),

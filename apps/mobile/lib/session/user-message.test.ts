@@ -8,6 +8,7 @@ import {
   interruptedTurnIds,
   isUserMessageEdited,
   parseUserMessageText,
+  parseUserMessageParts,
   queuedPromptStatusLabel,
   quoteMarginBottom,
   rewindHiddenMessageIds,
@@ -462,4 +463,26 @@ describe('no user message can freeze the app', () => {
   within('30k project refs, each after a blank line', () => parseUserMessageText('\n\n<project_ref x/>'.repeat(30_000)));
   within('30k session refs, each after a blank line', () =>
     parseUserMessageText('\n\n<session_ref id="a" title="b" />'.repeat(30_000)));
+});
+
+
+describe('parseUserMessageParts', () => {
+  test('merges file tags before file parts and filters synthetic, ignored and empty text', () => {
+    const parts = [
+      { type: 'text', text: 'hello' },
+      { type: 'text', text: 'synthetic', synthetic: true },
+      { type: 'text', text: 'ignored', ignored: true },
+      { type: 'text', text: '  ' },
+      { type: 'text', text: '<file path="/w/a.png" mime="image/png" filename="a.png">x</file>' },
+      { type: 'file', id: 'file-1', filename: 'other.pdf', mime: 'application/pdf', url: 'https://example.test/file', localUri: 'file:///tmp/other.pdf' },
+    ];
+    expect(parseUserMessageParts(parts as Parameters<typeof parseUserMessageParts>[0])).toEqual({
+      rawText: 'hello\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>',
+      content: { text: 'hello', quotes: [], sessions: [], files: [{ path: '/w/a.png', mime: 'image/png', filename: 'a.png' }] },
+      attachments: [
+        { key: 'upload:0:/w/a.png', filename: 'a.png', mime: 'image/png', src: '/w/a.png' },
+        { key: 'file-1', filename: 'other.pdf', mime: 'application/pdf', src: 'https://example.test/file', localUri: 'file:///tmp/other.pdf' },
+      ],
+    });
+  });
 });

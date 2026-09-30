@@ -28,6 +28,10 @@ import {
 } from '@/features/session/provisioning-failure';
 import { isFirstPromptRow } from '@/features/session/queue-projection';
 import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+import {
+  deleteRuntimeSessionParam,
+  readRuntimeSessionParam,
+} from '@/features/session/tool/tools/session-spawn-urls';
 import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
@@ -1358,7 +1362,7 @@ function InlineSessionError({
 /**
  * Renders SessionLayout + SessionChat against this project session's sandbox.
  * `useSession` owns the canonical runtime session and the optional REST session
- * list used by legacy `?oc` deep links.
+ * list used by child-session deep links (`?rs`; pre-W4 links say `?oc`).
  */
 function ActiveSessionChat({
   projectId,
@@ -1421,9 +1425,9 @@ function ActiveSessionChat({
 
   const restart = useRestartProjectSession(projectId, sessionId);
 
-  const selectedOpenCodeSessionId = searchParams.get('oc');
-  const selectedSession = selectedOpenCodeSessionId
-    ? runtimeSessions.find((session) => session.id === selectedOpenCodeSessionId)
+  const selectedRuntimeSessionId = readRuntimeSessionParam(searchParams);
+  const selectedSession = selectedRuntimeSessionId
+    ? runtimeSessions.find((session) => session.id === selectedRuntimeSessionId)
     : null;
   // Pin the resolved root id so the chat keeps its identity if the live
   // value blips back to null mid-session — but FOLLOW a non-null change: the
@@ -1505,13 +1509,13 @@ function ActiveSessionChat({
   }, [errorSurfaceReady, onChatReady]);
 
   useEffect(() => {
-    if (!selectedOpenCodeSessionId) return;
+    if (!selectedRuntimeSessionId) return;
     if (selectedSession) return;
     if (sessionsLoading) return;
     const params = new URLSearchParams(searchParams.toString());
-    params.delete('oc');
+    deleteRuntimeSessionParam(params);
     const query = params.toString();
-    // `history.replaceState`, not `router.replace`: this only drops an `oc` key
+    // `history.replaceState`, not `router.replace`: this only drops an `rs` key
     // the page has already resolved to nothing, so there is no server data to
     // fetch. Dropping a param changes the router cache key, so `router.replace`
     // would run a cold RSC fetch mid-boot — the worst moment on the hottest
@@ -1527,7 +1531,7 @@ function ActiveSessionChat({
         : `/projects/${projectId}/sessions/${sessionId}`,
     );
   }, [
-    selectedOpenCodeSessionId,
+    selectedRuntimeSessionId,
     selectedSession,
     sessionsLoading,
     searchParams,

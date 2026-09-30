@@ -581,7 +581,7 @@ describe('provider-neutral turn observation', () => {
         },
         'ext-1',
         'sb-1',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       );
 
       expect(observation).toEqual({
@@ -677,7 +677,7 @@ describe('provider-neutral turn observation', () => {
           { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
           'sb-1',
-          { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+          { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
         ),
       ).toEqual({
         observation: 'terminal',
@@ -2558,6 +2558,26 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(stops).toEqual([]);
     expect(pausedCompute).toEqual([]);
     expect(logged.filter((line) => line.includes('[reaper] failed for sandbox'))).toEqual([]);
+  });
+
+  test('a Platinum org write throttle during renewal is transient, not a reaper error', async () => {
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    statusByExternal['ext-1'] = 'running';
+    lifecycleRenewErrorByExternal['ext-1'] = new Error(
+      'platinum POST /v1/sandboxes/sbx_synthetic/exec -> 429 {"code":"rate_limited","error":"too many write requests for this org"}',
+    );
+    const logged: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    try {
+      const result = await reapAndReconcileSandboxes(NOW);
+      expect(result.transient).toBe(1);
+      expect(result.errors).toBe(0);
+      expect(result.stopped).toBe(0);
+      expect(logged).toEqual([]);
+    } finally {
+      console.error = realError;
+    }
   });
 
   test('an unreachable Platinum guest during renewal retries without paging each pass', async () => {

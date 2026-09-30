@@ -3,17 +3,18 @@
 import { healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 
 // When a prompt's env sync changes model-affecting env, the daemon RESTARTS
-// opencode and returns 200 the instant the new process is spawned — while it
-// reports `opencode: 'starting'`, not yet able to serve `/session/.../prompt`.
+// the runtime and returns 200 the instant the new process is spawned — while
+// it reports state `starting`, not yet able to serve `/session/.../prompt`.
 // If we forwarded the prompt right then, the daemon's own proxy 503s
-// "opencode not ready" and the preview proxy bounces that straight to the
+// "runtime not ready" and the preview proxy bounces that straight to the
 // client (no retry) — so the FIRST prompt of every new session was silently
-// dropped and the user had to resend. Block the sync until opencode is serving
-// again, bounded well under the 50s proxy budget, so the forward always lands
-// on a ready runtime. A genuinely cold boot that misses the budget just falls
-// back to today's behaviour (forward → 503 → client retry), never worse.
-const OPENCODE_READY_WAIT_BUDGET_MS = 18_000;
-const OPENCODE_READY_POLL_INTERVAL_MS = 300;
+// dropped and the user had to resend. Block the sync until the runtime is
+// serving again, bounded well under the 50s proxy budget, so the forward
+// always lands on a ready runtime. A genuinely cold boot that misses the
+// budget just falls back to today's behaviour (forward → 503 → client retry),
+// never worse.
+const RUNTIME_READY_WAIT_BUDGET_MS = 18_000;
+const RUNTIME_READY_POLL_INTERVAL_MS = 300;
 const HEALTH_FETCH_TIMEOUT_MS = 2_000;
 
 export interface DaemonReadyDeps {
@@ -23,16 +24,20 @@ export interface DaemonReadyDeps {
 }
 
 /**
- * Read the daemon's `/kortix/health` once. Returns the opencode/runtime state,
- * or null when the probe itself failed (transient — the caller keeps polling).
- * Health is unauthenticated at the daemon and always answers 200, so a null
- * here means the preview link couldn't be reached, not "opencode down".
+ * Read the daemon's `/kortix/health` once. Returns the runtime process state
+ * (`harness.state`, or the pre-W3 `opencode` field), or null when the probe
+ * itself failed (transient — the caller keeps polling). Health is
+ * unauthenticated at the daemon and always answers 200, so a null here means
+ * the preview link couldn't be reached, not "runtime down".
+ *
+ * The process state, not `runtimeReady`: `runtimeReady` also waits for the
+ * repo and the initial session, and this wait only covers a runtime restart.
  */
-async function fetchDaemonOpencodeState(
+async function fetchDaemonRuntimeState(
   previewUrl: string,
   providerHeaders: Record<string, string>,
   fetchImpl: typeof fetch,
-): Promise<{ opencode: string | null; status: string | null } | null> {
+): Promise<{ runtime: string | null; status: string | null } | null> {
   try {
     const res = await fetchImpl(`${previewUrl.replace(/\/$/, '')}/kortix/health`, {
       method: 'GET',
@@ -43,7 +48,7 @@ async function fetchDaemonOpencodeState(
     const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return null;
     return {
-      opencode: healthRuntimeState(body),
+      runtime: healthRuntimeState(body),
       status: typeof body.status === 'string' ? body.status : null,
     };
   } catch {
@@ -52,11 +57,11 @@ async function fetchDaemonOpencodeState(
 }
 
 /**
- * Poll `/kortix/health` until opencode is serving again after a restart.
- * Returns true once `opencode === 'ok'`, false if a boot error is reported
+ * Poll `/kortix/health` until the runtime is serving again after a restart.
+ * Returns true once its state is `ok`, false if a boot error is reported
  * (waiting can't fix it) or the budget is exhausted.
  */
-export async function waitForDaemonOpencodeReady(args: {
+export async function waitForDaemonRuntimeReady(args: {
   previewUrl: string;
   providerHeaders?: Record<string, string>;
   budgetMs?: number;
@@ -65,14 +70,14 @@ export async function waitForDaemonOpencodeReady(args: {
   const fetchImpl = args.deps?.fetchImpl ?? fetch;
   const sleep = args.deps?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = args.deps?.now ?? Date.now;
-  const deadline = now() + (args.budgetMs ?? OPENCODE_READY_WAIT_BUDGET_MS);
+  const deadline = now() + (args.budgetMs ?? RUNTIME_READY_WAIT_BUDGET_MS);
   for (;;) {
-    const state = await fetchDaemonOpencodeState(args.previewUrl, args.providerHeaders ?? {}, fetchImpl);
-    if (state?.opencode === 'ok') return true;
+    const state = await fetchDaemonRuntimeState(args.previewUrl, args.providerHeaders ?? {}, fetchImpl);
+    if (state?.runtime === 'ok') return true;
     // A repo/initial-session boot error won't clear by waiting — bail and let the
     // forward surface the real failure instead of burning the whole budget.
     if (state?.status === 'error') return false;
     if (now() >= deadline) return false;
-    await sleep(OPENCODE_READY_POLL_INTERVAL_MS);
+    await sleep(RUNTIME_READY_POLL_INTERVAL_MS);
   }
 }
