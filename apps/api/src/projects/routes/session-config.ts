@@ -31,6 +31,7 @@ import {
   reloadDetail,
   reloadSessionConfig,
 } from '../lib/session-reload';
+import { timeConfigStage } from '../lib/config-stage-timing';
 import { computeDesiredRuntime } from '../../runtime-convergence/desired';
 import { diffRuntime } from '../../runtime-convergence/diff';
 import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
@@ -65,7 +66,7 @@ projectsApp.openapi(
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'session');
+    const loaded = await timeConfigStage('project_access', () => loadProjectForUser(c, projectId, 'session'));
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // `loadProjectForUser(..., 'session')` is the coarse access level, not a
     // read grant. Without this an agent-scoped or read-restricted token could
@@ -78,7 +79,9 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    const visible = await timeConfigStage('session_access', () =>
+      loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c)),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
@@ -96,13 +99,13 @@ projectsApp.openapi(
     // pre-release text when `release` is absent.
     const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
     const [running, latest] = await Promise.all([
-      readSandboxConfigState({ sessionId }),
-      latestAgentConfigEtag({
+      timeConfigStage('sandbox_state', () => readSandboxConfigState({ sessionId })),
+      timeConfigStage('latest_etag', () => latestAgentConfigEtag({
         projectId,
         accountId: loaded.row.accountId,
         sessionId,
         baseRef,
-      }),
+      })),
     ]);
     // The managed-model catalog's freshness, in the SAME place a config
     // fallback is already visible — not gated on `releasesEnabled`, for the
@@ -130,7 +133,7 @@ projectsApp.openapi(
         sessionId,
         ownerUserId: visible.row.createdBy ?? null,
       };
-      const desired = await resolveDesiredRelease({
+      const desired = await timeConfigStage('desired_release', () => resolveDesiredRelease({
         project,
         baseRef,
         sessionAgent: visible.row.agentName ?? null,
@@ -139,7 +142,7 @@ projectsApp.openapi(
         // The etag compile above already fetched this mirror in THIS request;
         // a second invalidate paid a second `git fetch` per read (KRTX-629).
         refreshProjectMirror: false,
-      }).catch(() => null);
+      })).catch(() => null);
       const release = toSessionConfigRelease(
         running.release,
         desired ? desired.descriptor.release_id : undefined,
@@ -159,7 +162,8 @@ projectsApp.openapi(
         // say why a session lost its agent, instead of showing a healthy box
         // that answers nothing.
         ...(desired?.descriptor.agent_repoint ? { agent_repoint: desired.descriptor.agent_repoint } : {}),
-        runtime: await runtimeBlockFor(desired?.descriptor.release_id ?? null, running),
+        runtime: await timeConfigStage('runtime_block', () =>
+          runtimeBlockFor(desired?.descriptor.release_id ?? null, running)),
       });
     }
 
@@ -172,12 +176,12 @@ projectsApp.openapi(
     // so offering "update available" for them would promise a reload that
     // cannot deliver. `stale` is then exactly the pre-release expression.
     const filesStale = releasesEnabled && running.reachable
-      ? await isSessionConfigDirStale({
+      ? await timeConfigStage('config_dir', () => isSessionConfigDirStale({
           project,
           baseRef,
           configDirSha: running.configDirSha,
           commitSha: running.commitSha,
-        })
+        }))
       : null;
     return c.json({
       base_ref: baseRef,
@@ -189,7 +193,7 @@ projectsApp.openapi(
       // the truth is "did not ask".
       stale: combineConfigStaleness(isConfigStale(running.etag, latest), filesStale),
       sandbox_reachable: running.reachable,
-      runtime: await runtimeBlockFor(null, running),
+      runtime: await timeConfigStage('runtime_block', () => runtimeBlockFor(null, running)),
       managed_catalog: managedCatalog,
     });
   },
