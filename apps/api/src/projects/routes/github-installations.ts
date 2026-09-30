@@ -84,21 +84,7 @@ projectsApp.openapi(
         200: json(z.any(), 'OK'),
     },
   }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
-
-  const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
-  const installUrl = canManageGit
-    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-    : null;
-  // Account connections only. "Kortix managed" is the INSTANCE backend and
-  // has its own namespace (GET /v1/projects/git/backend[/repositories]); it
-  // used to appear here as a synthetic installation, which made an
-  // instance-global credential look like this account's own connection.
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
+  getAccountInstallationsHandler,
 );
 
 /**
