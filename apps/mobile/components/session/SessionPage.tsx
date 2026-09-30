@@ -68,7 +68,11 @@ import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-syn
 import {
   compactionTurnInfo,
   createSessionPrompt,
+  deleteSessionPrompt,
   groupMessagesIntoTurns,
+  listSessionPrompts,
+  retrySessionPrompt,
+  type SessionPrompt,
   resolveWorkingTurn,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
@@ -130,7 +134,6 @@ import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { queueHeaderLabel } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
-import type { QueuedMessage } from '@/stores/message-queue-store';
 import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
@@ -460,29 +463,76 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, [sandboxUrl, sessionId]);
 
   // ── Message Queue ──────────────────────────────────────────────────────
-  const queueHydrated = useMessageQueueStore((s) => s.hydrated);
-  const allQueuedMessages = useMessageQueueStore((s) => s.messages);
-  const queuedMessages = useMemo(
-    () => allQueuedMessages.filter((m) => m.sessionId === sessionId),
-    [allQueuedMessages, sessionId],
-  );
-  const queueEnqueue = useMessageQueueStore((s) => s.enqueue);
-  const queueRemove = useMessageQueueStore((s) => s.remove);
-
-  // Hydrate queue store from AsyncStorage once
-  useEffect(() => {
-    if (!queueHydrated) {
-      useMessageQueueStore.getState().hydrate();
+  const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>([]);
+  const refreshQueue = useCallback(async () => {
+    if (!projectId || !projectSessionId) { setQueuedMessages([]); return; }
+    try {
+      const { prompts } = await listSessionPrompts(projectId, projectSessionId);
+      setQueuedMessages(prompts);
+    } catch (error) {
+      log.error('[SessionPage] Could not read prompt inbox:', error);
     }
-  }, [queueHydrated]);
+  }, [projectId, projectSessionId]);
 
-  // Enqueue handler — called by SessionChatInput when agent is busy
-  const handleEnqueue = useCallback(
-    (text: string) => {
-      queueEnqueue(sessionId, text);
-    },
-    [sessionId, queueEnqueue],
-  );
+  // Move pre-upgrade local rows into the durable inbox before removing them.
+  useEffect(() => {
+    if (!projectId || !projectSessionId) return;
+    let cancelled = false;
+    void (async () => {
+      await useMessageQueueStore.getState().hydrate();
+      for (const row of useMessageQueueStore.getState().getSessionMessages(sessionId)) {
+        if (cancelled) break;
+        try {
+          const result = await createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId: row.id, messageId: mintWireMessageId({ nowMs: row.timestamp, knownMessageIds: [] }),
+            parts: [{ type: 'text', text: row.text }], placement: 'composer',
+            clientSentAtMs: row.timestamp, remintOnDelivery: true,
+          });
+          if (result.state === 'failed') break;
+          useMessageQueueStore.getState().remove(row.id);
+          void refreshQueue();
+        } catch { break; } // Keep this and later rows for the next attempt, in order.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, projectSessionId, sessionId, refreshQueue]);
+
+  useEffect(() => {
+    void refreshQueue();
+    if (!projectId || !projectSessionId) return;
+    const timer = setInterval(() => void refreshQueue(), 3000);
+    return () => clearInterval(timer);
+  }, [projectId, projectSessionId, refreshQueue]);
+
+  const handleEnqueue = useCallback(async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
+    if (!projectId || !projectSessionId) {
+      toast.error('No project session to queue a prompt');
+      throw new Error('No project session to queue a prompt');
+    }
+    const nowMs = Date.now();
+    const clientMessageId = Crypto.randomUUID();
+    const messageId = mintWireMessageId({
+      nowMs,
+      knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
+    });
+    const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
+    const finalText = sessionMentions?.length
+      ? `${text}\n\n${buildSessionRefsBlock(sessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })))}`
+      : text;
+    try {
+      const result = await createSessionPrompt(projectId, projectSessionId, {
+        clientMessageId, messageId, parts: [{ type: 'text', text: finalText }],
+        placement: 'composer', clientSentAtMs: nowMs,
+        overrides: { agent: options.agent ?? null, model: options.model ?? null, variant: options.variant ?? null },
+      });
+      if (result.state === 'failed') throw new Error('Prompt delivery was refused');
+      void refreshQueue();
+    } catch (error) {
+      log.error('[SessionPage] Could not queue prompt:', error);
+      toast.error('Could not queue the message. Try again.');
+      throw error;
+    }
+  }, [projectId, projectSessionId, sessionId, refreshQueue, toast]);
 
   // Queue expanded/collapsed state
   const [queueExpanded, setQueueExpanded] = useState(false);
@@ -505,16 +555,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     }
   }, [hasQuestion]);
 
-  // ── Queue Draining ─────────────────────────────────────────────────────
-  // Automatically send the next queued message when the agent becomes idle.
-  // Mirrors the frontend's drainNextWhenSettled pattern.
-
-  const drainScheduledRef = useRef(false);
-  // Set by a user send; the next new turn scrolls into view animated. Turns
-  // that appear from hydration jump without an animation.
+  // The server inbox owns admission and drain, including after an app restart.
   const userSentRef = useRef(false);
-  const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
-
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
@@ -725,79 +767,16 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     }
   }, [sandboxUrl, sessionId, toast]);
 
-  // ── Queue drain logic ───────────────────────────────────────────────────
-
-  const drainNextWhenSettled = useCallback(() => {
-    if (drainScheduledRef.current) return;
-    if (queueInFlightRef.current) return;
-    if (isBusy) return;
-    if (hasQuestion) return;
-
-    const sessionQueue = useMessageQueueStore
-      .getState()
-      .messages.filter((m) => m.sessionId === sessionId);
-    if (sessionQueue.length === 0) return;
-
-    drainScheduledRef.current = true;
-    setTimeout(() => {
-      drainScheduledRef.current = false;
-
-      // Re-check guards after delay
-      const status = useSyncStore.getState().sessionStatus[sessionId];
-      const stillBusy = status?.type === 'busy' || status?.type === 'retry';
-      const stillHasQuestion = (useSyncStore.getState().questions[sessionId] ?? []).length > 0;
-      if (stillBusy || stillHasQuestion || queueInFlightRef.current) return;
-
-      const next = useMessageQueueStore.getState().dequeue(sessionId);
-      if (next) {
-        queueInFlightRef.current = { queueId: next.id, sentAt: Date.now() };
-        // Send with default options (agent/model/variant come from resolved config)
-        handleSend(next.text, {}).catch(() => {
-          queueInFlightRef.current = null;
-        });
-      }
-    }, 500);
-  }, [isBusy, hasQuestion, sessionId, handleSend]);
-
-  // Release in-flight lock when agent finishes and drain next
-  useEffect(() => {
-    const inFlight = queueInFlightRef.current;
-    if (!inFlight) return;
-    if (isBusy || hasQuestion) return;
-
-    // Agent finished — release lock and drain next
-    queueInFlightRef.current = null;
-    setTimeout(() => drainNextWhenSettled(), 100);
-  }, [safeMessages, isBusy, hasQuestion, drainNextWhenSettled]);
-
-  // Fallback drain: triggers when isBusy changes to false and queue has items
-  useEffect(() => {
-    if (isBusy || drainScheduledRef.current) return;
-    const sessionQueue = useMessageQueueStore
-      .getState()
-      .messages.filter((m) => m.sessionId === sessionId);
-    if (sessionQueue.length === 0) return;
-    drainNextWhenSettled();
-  }, [isBusy, queuedMessages.length, sessionId, drainNextWhenSettled]);
-
-  // "Send now" — abort current processing and immediately send a queued message
-  const handleQueueSendNow = useCallback(
-    (messageId: string) => {
-      const msg = useMessageQueueStore
-        .getState()
-        .messages.find((m) => m.id === messageId);
-      if (!msg) return;
-      queueInFlightRef.current = null;
-      queueRemove(messageId);
-      // Send now interrupts: say so, so the stopped reply is not a surprise.
-      if (isBusy) toast.info('Stopped the current reply to send this now');
-      handleStop();
-      setTimeout(() => {
-        handleSend(msg.text, {});
-      }, 200);
-    },
-    [queueRemove, handleStop, handleSend, isBusy, toast],
-  );
+  const handleQueueSendNow = useCallback(async (promptId: string) => {
+    if (!projectId || !projectSessionId) return;
+    try {
+      await retrySessionPrompt(projectId, projectSessionId, promptId);
+      await refreshQueue();
+    } catch (error) {
+      log.error('[SessionPage] Could not prioritize prompt:', error);
+      toast.error('Could not send this message now. Try again.');
+    }
+  }, [projectId, projectSessionId, refreshQueue, toast]);
 
   // Agent/model/variant config — web's inputs, `@kortix/sdk`'s rules.
   // Agents: the project's own, from the Kortix project config (`threadAgents`,
@@ -890,7 +869,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
-      queueEnqueue(sessionId, request.text);
+      void handleEnqueue(request.text, {}).catch(() => {});
       return;
     }
     const { agent, modelKey, variant } = resolvedRef.current;
@@ -899,7 +878,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
     void handleSend(request.text, options);
-  }, [promptRequest, sessionId, projectSessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
+  }, [promptRequest, sessionId, projectSessionId, isBusy, hasQuestion, handleEnqueue, handleSend]);
   const resolvedAgents = useShallowStableArray(resolved.agents);
   const resolvedVariants = useShallowStableArray(resolved.variants);
   const resolvedModel = resolved.model;
@@ -1749,27 +1728,29 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
 
   const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
-  // Remove acts at once; the toast's Undo puts the message back.
-  const offerQueueUndo = useCallback(
-    (message: string, snapshot: QueuedMessage[], removedIds: string[]) => {
-      if (removedIds.length === 0) return;
-      toast.info(message, {
+  const handleRemoveQueued = useCallback(async (promptId: string) => {
+    if (!projectId || !projectSessionId) return;
+    try {
+      const removed = await deleteSessionPrompt(projectId, projectSessionId, promptId);
+      await refreshQueue();
+      toast.info('Removed from queue', {
         action: {
           label: 'Undo',
-          onPress: () => useMessageQueueStore.getState().restore(snapshot, removedIds),
+          onPress: () => void createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId: removed.client_message_id,
+            messageId: removed.message_id,
+            parts: removed.parts,
+            ...(removed.placement ? { placement: removed.placement } : {}),
+            ...(removed.overrides ? { overrides: removed.overrides } : {}),
+            remintOnDelivery: true,
+          }).then(refreshQueue).catch(() => toast.error('Could not restore message. Try again.')),
         },
       });
-    },
-    [toast],
-  );
-  const handleRemoveQueued = useCallback(
-    (messageId: string) => {
-      const snapshot = useMessageQueueStore.getState().messages;
-      queueRemove(messageId);
-      offerQueueUndo('Removed from queue', snapshot, [messageId]);
-    },
-    [queueRemove, offerQueueUndo],
-  );
+    } catch (error) {
+      log.error('[SessionPage] Could not remove prompt:', error);
+      toast.error('Could not remove message. Try again.');
+    }
+  }, [projectId, projectSessionId, refreshQueue, toast]);
   // The oldest pending permission, pinned above the composer (COR-137 Task 7)
   // — above the queue panel in the same top slot, so it is never missed
   // off-screen while a tool call waits on it.
@@ -2216,7 +2197,7 @@ function QueuePanel({
   onSendNow,
   isDark,
 }: {
-  messages: QueuedMessage[];
+  messages: SessionPrompt[];
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2269,7 +2250,7 @@ function QueuePanel({
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
             {messages.map((qm) => (
               <View
-                key={qm.id}
+                key={qm.prompt_id}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -2288,7 +2269,7 @@ function QueuePanel({
                   variant="secondary"
                   size="sm"
                   className="rounded-full"
-                  onPress={() => onSendNow(qm.id)}
+                  onPress={() => onSendNow(qm.prompt_id)}
                   accessibilityLabel="Send now"
                   accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
                 >
@@ -2299,7 +2280,7 @@ function QueuePanel({
                   variant="ghost"
                   size="icon"
                   className="rounded-full"
-                  onPress={() => onRemove(qm.id)}
+                  onPress={() => onRemove(qm.prompt_id)}
                   accessibilityLabel="Remove from queue"
                 >
                   <XIcon size={16} color={mutedText} />

@@ -48,7 +48,7 @@ import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { filterCreatableAccounts } from '@/features/workspace/new/new-workspace-form';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import {
   filterWorkspaceGroups,
   groupWorkspacesByAccount,
@@ -122,9 +122,10 @@ export function WorkspaceMenuSection() {
   // rule `/new` enforces (`filterCreatableAccounts`) and the API gates on
   // (`ACCOUNT_ACTIONS.PROJECT_CREATE`, 403 "Owner or admin role required").
   // Offering the create row to a plain member would dead-end in that 403.
+  const creatableAccounts = useCreatableAccounts(accounts);
   const creatableAccountIds = useMemo(
-    () => new Set(filterCreatableAccounts(accounts).map((account) => account.account_id)),
-    [accounts],
+    () => new Set(creatableAccounts.map((account) => account.account_id)),
+    [creatableAccounts],
   );
 
   const groups = useMemo(
@@ -149,7 +150,7 @@ export function WorkspaceMenuSection() {
   const groupsWithEmptyAccounts = useMemo(() => {
     const present = new Set(groups.map((group) => group.accountId));
     const failed = new Set(failedAccounts.map(({ account }) => account.account_id));
-    const seeded = filterCreatableAccounts(accounts)
+    const seeded = creatableAccounts
       .filter((account) => !present.has(account.account_id) && !failed.has(account.account_id))
       .map((account) => ({
         accountId: account.account_id,
@@ -157,7 +158,7 @@ export function WorkspaceMenuSection() {
         workspaces: [],
       }));
     return seeded.length > 0 ? [...groups, ...seeded] : groups;
-  }, [groups, accounts, failedAccounts, t]);
+  }, [groups, creatableAccounts, failedAccounts, t]);
 
   const visibleGroups = useMemo(
     () => filterWorkspaceGroups(groupsWithEmptyAccounts, query),

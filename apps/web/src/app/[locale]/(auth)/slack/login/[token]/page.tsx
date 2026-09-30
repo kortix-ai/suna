@@ -3,7 +3,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
+import { CopyCommandBadge } from '@/features/auth/auth-consent';
 import { ChatIdentityConnect } from '@/features/auth/chat-identity-connect';
+import { Slack } from '@/features/icon/icons/slack';
 import { bindSlackIdentity, previewSlackIdentity } from '@kortix/sdk';
 
 /**
@@ -21,6 +23,7 @@ export default function SlackLoginPage() {
   return (
     <ChatIdentityConnect
       service="Slack"
+      icon={Slack}
       token={token}
       loginPath={`/slack/login/${token}`}
       bind={bindSlackIdentity}
@@ -29,7 +32,7 @@ export default function SlackLoginPage() {
       disconnectNote={
         <>
           {tI18nComplete.raw('text64cc97c96c03')}{' '}
-          <span className="text-foreground font-mono">{tI18nComplete.raw('text242443486b8c')}</span>{' '}
+          <CopyCommandBadge command={tI18nComplete.raw('text242443486b8c')} />{' '}
           {tI18nComplete.raw('text017245d54fdb')}
         </>
       }
