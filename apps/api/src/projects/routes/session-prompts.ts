@@ -6,11 +6,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
-import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { projectsApp } from '../lib/app';
+import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
+import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -18,13 +19,13 @@ import {
   deleteInboxPrompt,
   drainSessionLifecycleQueue,
   enqueueContinueSessionCommand,
+  enqueueReleasingHold,
   holdInboxPrompts,
   listInboxPrompts,
-  releaseInboxHold,
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
-import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -188,6 +189,26 @@ projectsApp.openapi(
     if (typeof metadata.deletedAt === 'string') {
       return c.json({ error: 'Session is deleted' }, 409);
     }
+    // Shared local DB (projects/instance-scope.ts). The drain never claims a
+    // command for a sandbox another API instance provisioned, so a prompt
+    // accepted here would stay `queued` for ever when that instance is down.
+    // Refuse it while the sender can still read why. The lookup runs only when
+    // `KORTIX_INSTANCE_ID` is set.
+    const thisInstance = currentInstanceId();
+    if (thisInstance) {
+      const box = (await loadSandboxMetadataForSessions([sessionId])).get(sessionId);
+      if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
+        const owner = sandboxInstanceId(box);
+        const message =
+          `This session's computer belongs to the local API instance "${owner}". ` +
+          `This instance ("${thisInstance}") cannot deliver prompts to it. ` +
+          'Send from that stack, or start a new session.';
+        return c.json(
+          { error: message, message, code: 'SESSION_OWNED_BY_OTHER_INSTANCE', owner_instance: owner },
+          409,
+        );
+      }
+    }
 
     const body = await readJsonObject(c);
     const clientMessageId = normalizeString(body.client_message_id);
@@ -235,19 +256,6 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
-    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
-    // the session's `on_behalf_of` clears it permanently. The agent keeps its
-    // own authority; it loses the creator's personal resources, so the person
-    // prompting never acts through another person's accounts. An agent-session
-    // credential is not a human prompter and clears nothing.
-    if (!isProjectSessionPrincipal(c)) {
-      await clearSessionOnBehalfOfForPrompt({
-        accountId: loaded.row.accountId,
-        sessionId,
-        prompterUserId: loaded.userId,
-      });
-    }
-
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
     // nothing connected. That gate could not be cleared from the product: a
@@ -281,12 +289,23 @@ projectsApp.openapi(
     // clientMessageId = same row" contract — enforced by the database, not by a
     // cache that a second pod would not share.
     const idempotencyKey = `prompt:${sessionId}:${clientMessageId}`;
-    const enqueued = await enqueueContinueSessionCommand({
+    // Sending anything NEW lifts a hold the stop button left on this session's
+    // queue — the same rule the browser-local queue always had, and the reason
+    // stop cannot wedge a session: everything typed afterwards would otherwise
+    // land behind rows that are, by construction, never due. The send joins
+    // the released batch; `enqueueReleasingHold` enqueues it held and releases
+    // them together, so no drain can claim it alone in between (KRTX-683).
+    const send: Parameters<typeof enqueueContinueSessionCommand>[0] = {
       source: 'ui',
       projectId,
       accountId: loaded.row.accountId,
       sessionId,
       actorUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3 (closes V6): the session token acts as the person
+      // who sent this prompt, from the moment its turn is delivered — not now,
+      // while it may still wait behind another member's turn. An agent-session
+      // credential is not a person and never changes the token's identity.
+      bindTurnIdentity: !isProjectSessionPrincipal(c),
       text,
       idempotencyKey,
       clientMessageId,
@@ -315,7 +334,10 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
-    });
+    };
+    const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
+      enqueueContinueSessionCommand({ ...send, ...hold }),
+    );
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
     const response = {
@@ -335,12 +357,6 @@ projectsApp.openapi(
       observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
-
-    // Sending anything NEW lifts a hold the stop button left on this session's
-    // queue — the same rule the browser-local queue always had, and the reason
-    // stop cannot wedge a session: everything typed afterwards would otherwise
-    // land behind rows that are, by construction, never due.
-    await releaseInboxHold(sessionId).catch(() => undefined);
 
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
@@ -541,9 +557,10 @@ projectsApp.openapi(
 
     // ONE primitive for "retry" and for "send now": both are the user pointing
     // at a row and asking for THAT message. `retryInboxPrompt` promotes it past
-    // the ordering gate, releases the session's hold, and keeps the wire
-    // `message_id` unchanged so the proxy still absorbs a retry of a delivery
-    // that actually landed.
+    // the ordering gate and releases the session's hold, and the drain re-mints
+    // its wire id. When the release frees OTHER held rows, "send now" is a
+    // Stop release: the row joins that batch, is NOT promoted, and the batch is
+    // answered in one turn in queue order (KRTX-683).
     const requeued = await retryInboxPrompt(sessionId, promptId);
     if (!requeued) return c.json({ error: 'Not found' }, 404);
 
@@ -621,7 +638,7 @@ projectsApp.openapi(
     // the proxy stamp. The write never throws.
     if (body.held) {
       await markTurnStopRequested(sessionId, 'UserStop', {
-        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+        opencodeSessionId: visible.row.runtimeSessionId ?? null,
       });
     }
     await holdInboxPrompts(sessionId, body.held);

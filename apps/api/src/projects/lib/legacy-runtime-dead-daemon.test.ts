@@ -80,6 +80,11 @@ function deadDaemonDeps(
     providerRunning: async () => true,
     expectedRunningAssets: async () => MANIFEST,
     exec: async (cmd) => {
+      // A dead daemon is dead on the box's own loopback too: curl is refused
+      // (exit 7). That probe is not the relaunch, so it is not counted in execs.
+      if (cmd.join(' ').includes('127.0.0.1:8000/kortix/health')) {
+        return { exitCode: 7, stdout: '', stderr: 'Failed to connect to 127.0.0.1 port 8000' };
+      }
       calls.execs.push(cmd);
       return {
         exitCode: 0,

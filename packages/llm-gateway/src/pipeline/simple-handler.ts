@@ -30,7 +30,7 @@ import {
   upstreamHeadersTimeoutMs,
   withUpstreamHeadersTimeout,
 } from './dispatch';
-import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
+import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import {
   publicPayload,
@@ -843,6 +843,14 @@ export async function handleChatCompletions(
       suggestion: classified.suggestion,
       retryAfterSeconds: clampRetryAfterSeconds(upstream.headers.get('retry-after')),
     });
+  }
+
+  if (!upstream.ok && upstream.status < 500 && upstream.status !== 429) {
+    const upstreamText = await upstream.text().catch(() => '');
+    await settle(null);
+    const headers = passthroughHeaders(upstream.headers);
+    headers.set('content-type', 'application/json');
+    return new Response(providerClientErrorBody(upstream.status, upstreamText), { status: upstream.status, headers });
   }
 
   if (streaming && upstream.body) {

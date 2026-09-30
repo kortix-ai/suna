@@ -40,6 +40,7 @@
  * and in the audit ledger, never silent. The script restores the legacy
  * entrypoint and relaunches the old chain if the new daemon does not answer.
  */
+import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
@@ -208,7 +209,7 @@ export function classifyDaemonHealth(
     return { klass: 'unreachable', ...empty };
   }
   const h = body as Record<string, unknown>;
-  const opencode = typeof h.opencode === 'string' ? h.opencode : null;
+  const opencode = healthRuntimeState(h);
   if (h.daemon !== 'ok') {
     return { klass: 'not-ok', ...empty, opencode };
   }
@@ -270,7 +271,7 @@ export function classifyDaemonHealth(
   // Config releases are an OpenCode-runtime capability. pi has none yet
   // (decoupling plan B6), and a pi box that answers is as current as its
   // daemon build: requiring it relaunched every idle pi box on session open.
-  const required = h.harness === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
+  const required = healthHarnessId(h) === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
   const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {
     staleReasons.push('missing_capability');
@@ -305,6 +306,9 @@ export function classifyDaemonHealth(
 
 /** Gap between the two health reads that must BOTH be silent before a relaunch. */
 export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+/** The daemon as the box itself sees it — no provider ingress in the path. */
+const LOOPBACK_HEALTH_URL = 'http://127.0.0.1:8000/kortix/health';
+const LOOPBACK_PROBE_TIMEOUT_MS = 15_000;
 
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
@@ -323,6 +327,39 @@ export function relaunchStrategyFor(provider: ProviderName | string): RelaunchSt
     default:
       return null;
   }
+}
+
+/** Metadata stamp: when a session open asked for a dead-daemon relaunch. */
+export const DEAD_DAEMON_REPAIR_REQUESTED_KEY = 'deadDaemonRepairRequestedAt';
+/** One open-time relaunch: download + relaunch + the script's own health wait, then the open parks. */
+export const DEAD_DAEMON_REPAIR_BUDGET_MS = 4 * 60_000;
+
+export type DeadDaemonOpenAction = 'request' | 'wait' | 'park';
+
+/**
+ * A provider-running box whose daemon stayed unreachable past the open budget.
+ * Where the provider's init never relaunches the runtime (Platinum), parking it
+ * only freezes the corpse: every later open resumes the same snapshot with
+ * nothing on :8000, forever (prod 2026-09-28: 18 h, every `/start` parked it
+ * again). So ask for the relaunch once per unreachable spell, and park only
+ * after it had its chance. Daytona/E2B rerun the entrypoint on their next
+ * start, so parking IS their repair.
+ */
+export function decideDeadDaemonOnOpen(input: {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  unreachableSinceMs: number | null;
+  nowMs: number;
+}): DeadDaemonOpenAction {
+  if (relaunchStrategyFor(input.provider) !== 'pt-app') return 'park';
+  const requestedMs = Date.parse(String(input.metadata?.[DEAD_DAEMON_REPAIR_REQUESTED_KEY] ?? ''));
+  if (!Number.isFinite(requestedMs)) return 'request';
+  if (input.unreachableSinceMs !== null && requestedMs < input.unreachableSinceMs) return 'request';
+  const record = readRecord(input.metadata);
+  if (record?.state === 'failed' && Date.parse(record.finishedAt ?? record.lastAttemptAt) >= requestedMs) {
+    return 'park';
+  }
+  return input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS ? 'wait' : 'park';
 }
 
 export interface RenderScriptOptions {
@@ -711,6 +748,20 @@ export async function bootstrapLegacyRuntime(
     await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
     const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
+      }
       deadDaemonOnRunningBox = true;
       deps.log('daemon gone on a running box; relaunching the runtime chain', {
         sandboxId: input.sandboxId,
@@ -939,6 +990,14 @@ export async function bootstrapLegacyRuntime(
       'failed',
       `script failed at ${report.stage}`,
     );
+  }
+  if (report.stage === 'deferred_busy') {
+    // A turn started between the idle gate above and the relaunch. Nothing
+    // ran, so this was not an attempt: put the prior record back and the next
+    // idle pass retries with no cooldown and no budget spent.
+    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
+    deps.log('legacy runtime bootstrap deferred: a turn started during the repair', { sandboxId: input.sandboxId });
+    return { outcome: 'skipped-busy', detail: 'a turn started during the repair; relaunch deferred', classification };
   }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {

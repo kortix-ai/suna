@@ -1,9 +1,9 @@
 import { type QueryClient } from '@tanstack/react-query';
 import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
-import { opencodeKeys, type Session } from '../use-opencode-sessions';
+import { runtimeKeys, type Session } from '../use-opencode-sessions';
 import { qk } from '../query-keys';
 import { updateCachedProjectSessions } from '../session-cache-write';
-import type { OpenCodeEvent } from './types';
+import type { RuntimeEvent } from './types';
 
 /**
  * How long a WIRE status frame owns its slot against the reconnect status
@@ -75,7 +75,7 @@ export interface ClientEvictionInput {
 
 /**
  * T8 defect 2 — which single cached opencode client (if any)
- * `useOpenCodeEventStream`'s runtime-tracking effect should drop, given this
+ * `useRuntimeEventStream`'s runtime-tracking effect should drop, given this
  * tick's outcome. Scoped to the ONE url actually being replaced — never the
  * whole `clientsByUrl` cache (`resetClient()`, `core/runtime/client.ts`),
  * which would force every OTHER concurrently-open session's client to be
@@ -101,7 +101,7 @@ export function resolveClientEvictionUrl(input: ClientEvictionInput): string | n
   return null;
 }
 
-export function readSessionInfo(event: OpenCodeEvent): Session | undefined {
+export function readSessionInfo(event: RuntimeEvent): Session | undefined {
   const props: unknown = event.properties;
   if (!props || typeof props !== 'object') return undefined;
   const rec = props as Record<string, unknown>;
@@ -134,8 +134,8 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
   const run = () => {
     projectMetadataRefetchTimer = null;
     projectMetadataRefetchLastAt = Date.now();
-    queryClient.refetchQueries({ queryKey: opencodeKeys.projects(), type: 'active' });
-    queryClient.refetchQueries({ queryKey: opencodeKeys.currentProject(), type: 'active' });
+    queryClient.refetchQueries({ queryKey: runtimeKeys.projects(), type: 'active' });
+    queryClient.refetchQueries({ queryKey: runtimeKeys.currentProject(), type: 'active' });
   };
 
   const now = Date.now();
@@ -159,7 +159,7 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
  * and sidebars pick up the server-side mirror without browser-side writes.
  *
  * `projectId` is the route-scoped project the connected SSE stream belongs to
- * (`useKortixRouteProjectId()` at the `useOpenCodeEventStream` call site) —
+ * (`useKortixRouteProjectId()` at the `useRuntimeEventStream` call site) —
  * required, not optional-and-ignored. Pre-migration this used a BARE,
  * id-less flat `project-sessions` array prefix, which TanStack's default
  * partial-key match treats as "any project's sessions list currently
@@ -200,6 +200,11 @@ export function refetchKortixSessionMirrors(
   // appeared there only on the next poll, up to 60 s later.
   void queryClient.refetchQueries({
     queryKey: [...qk.project.sessionsScope(projectId), 'list-paged'],
+    type: 'active',
+  });
+  // Expanded parents' children: a new child appears without waiting for a poll.
+  void queryClient.refetchQueries({
+    queryKey: [...qk.project.sessionsScope(projectId), 'list-children'],
     type: 'active',
   });
 }
@@ -243,7 +248,7 @@ export function patchKortixSessionTitleMirrors(
   updateCachedProjectSessions(queryClient, projectId, (rows) => {
     let changed = false;
     const next = rows.map((row) => {
-      if (row.opencode_session_id !== nativeSessionId) return row;
+      if ((row.runtime_session_id ?? row.opencode_session_id) !== nativeSessionId) return row;
       if (typeof row.custom_name === 'string' && row.custom_name.trim()) return row;
       if (row.name === title) return row;
       changed = true;

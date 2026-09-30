@@ -72,7 +72,4 @@ export function ProjectSelectTool({ part, defaultOpen, forceOpen }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('project_select', ProjectSelectTool);
 ToolRegistry.register('project-select', ProjectSelectTool);
-ToolRegistry.register('oc-project_select', ProjectSelectTool);
-ToolRegistry.register('oc-project-select', ProjectSelectTool);

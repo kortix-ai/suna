@@ -26,12 +26,7 @@ describe('harness ownership boundary', () => {
     const cfg = loadConfig({ KORTIX_PROJECT_AUTO_CLONE: '0' })
     const unexpected = (): never => { throw new Error('unused operation must not run') }
     const queries: HarnessQueryService = {
-      readState: unexpected, readMessages: unexpected, readVcsDiff: unexpected,
-      readCurrentProject: unexpected, readConfiguration: unexpected,
-      readSession: unexpected, readTodo: unexpected, pinnedSessionId: unexpected,
-      replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected,
-      stopSession: unexpected, revertSession: unexpected, unrevertSession: unexpected,
-      observeTurn: unexpected,
+      readState: unexpected, readMessages: unexpected,
       events: { epoch: 'test', headSeq: 0, firstSeq: 0, subscribe: unexpected },
       attachments: { read: unexpected },
     }
@@ -55,20 +50,40 @@ describe('harness ownership boundary', () => {
         }),
       },
       diagnostics: {
-        health: async () => ({ daemon: 'ok', status: 'ok', runtimeReady: true, uptime_s: 1, exclusiveFeature: 'preserved' }),
+        capabilities: ['session.subagents'],
+        health: async () => ({
+          harness: {
+            id: 'test-only-adapter', version: '1.0.0', state: 'ok', ready: true, error: null,
+            session: { id: 'ses_root', required: true }, turn: null, details: { exclusiveFeature: 'preserved' },
+          },
+        }),
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
       background: { start: unexpected },
       assets: {
-        componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
+        harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
         reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     }
     const app = buildDaemonApp(cfg, service, 0)
     const response = await app.request('/kortix/health')
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ daemon: 'ok', capabilities: ['file.import', 'file.append'], status: 'ok', runtimeReady: true, uptime_s: 1, exclusiveFeature: 'preserved' })
+    // The route composes the host facts, the closed harness block (adapter
+    // facts ride in `details`) and one readiness verdict (E19).
+    expect(await response.json()).toMatchObject({
+      daemon: 'ok',
+      capabilities: ['file.import', 'file.append', 'session.subagents'],
+      status: 'ok',
+      runtimeReady: true,
+      boot_error: null,
+      workload: 'session',
+      harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
+      // The pre-W3 flat names, composed from the block for an older API.
+      opencode: 'ok',
+      opencode_session_id: 'ses_root',
+      opencode_session_required: true,
+    })
     expect((await app.request('/session/native-command')).status).toBe(503)
 
     // The transport controller preserves features that are not common methods.

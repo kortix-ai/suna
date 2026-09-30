@@ -349,6 +349,3 @@ export const ToolCard = memo(function ToolCard({
 }) {
   return <ToolPartRenderer part={tool as unknown as SdkToolPart} turnLive={working} />;
 });
-
-// Registers every tool renderer (web: the same import at the end of tool-part-renderer.tsx).
-import './tools/register';

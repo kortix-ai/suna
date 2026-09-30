@@ -78,7 +78,7 @@ describe('makeRequest admin-bypass header', () => {
     }
   });
 
-  test('attaches the configured client surface to backend requests', async () => {
+  test('a configured client surface is inert: backend requests carry no X-Kortix-Client', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',
       getToken: async () => 'test-token',
@@ -87,7 +87,7 @@ describe('makeRequest admin-bypass header', () => {
     const stub = stubFetch();
     try {
       await backendApi.get('/projects/abc/detail');
-      expect(stub.getHeaders()?.['X-Kortix-Client']).toBe('cli');
+      expect(stub.getHeaders()?.['X-Kortix-Client']).toBeUndefined();
     } finally {
       stub.restore();
     }
@@ -351,6 +351,20 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       expect(response.error?.message).toBe('Failed to fetch');
       expect(attempts).toBe(3);
       expect(errors).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a project secret POST transport failure identifies the endpoint without leaking its value', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/secrets', { name: 'SAMPLE', value: 'synthetic-secret' });
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toContain('POST /projects/p1/secrets');
+      expect(response.error?.message).not.toContain('synthetic-secret');
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -1289,3 +1289,14 @@ describe('kortix_version 3 YAML-only agent behavior', () => {
     expect(summarize(yaml.replace('kortix_version: 3', 'kortix_version: 2')).errorPaths).toContain('agents.reader.prompt_file');
   });
 });
+
+describe('v2 harnesses.opencode.plugins', () => {
+  const base = 'kortix_version: 2\ndefault_agent: w\n';
+  test('accepts global defaults and agent opt-in/out by filename', () => {
+    expect(validateManifest(base + 'harnesses:\n  opencode:\n    plugins: [audit.ts]\nagents:\n  w:\n    harnesses:\n      opencode:\n        plugins: [search.js]\n        exclude: [audit.ts]\n', 'yaml').valid).toBe(true);
+  });
+  test('rejects traversal, package references and project-wide exclude', () => {
+    const issues = validateManifest(base + 'harnesses:\n  opencode:\n    plugins: [../bad.ts, npm:pkg@1.0.0]\n    exclude: [audit.ts]\nagents:\n  w: {}\n', 'yaml').issues.filter((issue) => issue.severity === 'error');
+    expect(issues.map((issue) => issue.path)).toEqual(['harnesses.opencode.exclude', 'harnesses.opencode.plugins[0]', 'harnesses.opencode.plugins[1]']);
+  });
+});

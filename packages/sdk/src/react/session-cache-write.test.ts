@@ -225,3 +225,98 @@ describe('an update that changes nothing keeps the cache by reference', () => {
     expect(applyToCachedSessionShape(paged, (rows) => rows)).toBe(paged);
   });
 });
+
+describe('filtered list caches (KRTX-639)', () => {
+  const withInitiator = (
+    id: string,
+    over: Partial<ProjectSession>,
+  ): ProjectSession => ({ ...row(id), parent_session_id: null, is_owner: true, ...over }) as ProjectSession;
+  const pagedOf = (items: ProjectSession[]) => ({
+    pages: [{ items, next_cursor: null }],
+    pageParams: [null],
+  });
+  const ids = (qc: QueryClient, key: readonly unknown[]) =>
+    (qc.getQueryData(key) as ReturnType<typeof pagedOf>).pages[0].items.map((s) => s.session_id);
+
+  test('a rename reaches filtered and children caches', () => {
+    const qc = new QueryClient();
+    const mine = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me' });
+    const kids = qk.project.sessionChildren('P1', 'S0');
+    qc.setQueryData(mine, pagedOf([row('S1')]));
+    qc.setQueryData(kids, pagedOf([row('S2')]));
+    updateCachedProjectSessions(qc, 'P1', rename('S2', 'renamed'));
+    expect((qc.getQueryData(kids) as ReturnType<typeof pagedOf>).pages[0].items[0].custom_name).toBe('renamed');
+    expect(ids(qc, mine)).toEqual(['S1']);
+  });
+
+  test('a new member-started root lands only in the "me" root cache', () => {
+    const qc = new QueryClient();
+    const me = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me' });
+    const others = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'others' });
+    const auto = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'automated' });
+    const kids = qk.project.sessionChildren('P1', 'S0');
+    for (const key of [me, others, auto, kids]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(
+      qc,
+      'P1',
+      withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }),
+    );
+    expect(ids(qc, me)).toEqual(['NEW']);
+    expect(ids(qc, others)).toEqual([]);
+    expect(ids(qc, auto)).toEqual([]);
+    expect(ids(qc, kids)).toEqual([]);
+  });
+
+  test('a trigger-started root lands only in the automated root cache', () => {
+    const qc = new QueryClient();
+    const me = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me' });
+    const auto = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'automated' });
+    for (const key of [me, auto]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(
+      qc,
+      'P1',
+      withInitiator('NEW', { initiator: { type: 'trigger', id: 'nightly', label: 'nightly' } }),
+    );
+    expect(ids(qc, me)).toEqual([]);
+    expect(ids(qc, auto)).toEqual(['NEW']);
+  });
+
+  test('a child lands only in its parent children cache, never a root cache', () => {
+    const qc = new QueryClient();
+    const root = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me' });
+    const mine = qk.project.sessionChildren('P1', 'S0');
+    const other = qk.project.sessionChildren('P1', 'S7');
+    for (const key of [root, mine, other]) qc.setQueryData(key, pagedOf([]));
+    upsertCachedProjectSession(
+      qc,
+      'P1',
+      withInitiator('KID', {
+        parent_session_id: 'S0',
+        initiator: { type: 'member', id: 'u1', label: 'Ann' },
+      }),
+    );
+    expect(ids(qc, root)).toEqual([]);
+    expect(ids(qc, mine)).toEqual(['KID']);
+    expect(ids(qc, other)).toEqual([]);
+  });
+
+  test('searched caches are never seeded by an upsert', () => {
+    const qc = new QueryClient();
+    const searched = qk.project.sessionsPaged('P1', 'visible', { parent: 'root', startedBy: 'me', q: 'x' });
+    qc.setQueryData(searched, pagedOf([]));
+    upsertCachedProjectSession(
+      qc,
+      'P1',
+      withInitiator('NEW', { initiator: { type: 'member', id: 'u1', label: 'Ann' } }),
+    );
+    expect(ids(qc, searched)).toEqual([]);
+  });
+
+  test('an unfiltered legacy cache still receives every session', () => {
+    const qc = new QueryClient();
+    const legacy = qk.project.sessionsPaged('P1');
+    qc.setQueryData(legacy, pagedOf([]));
+    upsertCachedProjectSession(qc, 'P1', withInitiator('NEW', { parent_session_id: 'S0' }));
+    expect(ids(qc, legacy)).toEqual(['NEW']);
+  });
+});

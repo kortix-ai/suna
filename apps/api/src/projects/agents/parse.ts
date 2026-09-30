@@ -334,7 +334,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
       repositoryAccessRaw !== (workspaceRaw === 'branch')) {
     return err(name, `agents.${name}.repository_access conflicts with workspace`);
   }
-  const repositoryAccess = repositoryAccessRaw ?? (workspaceRaw === undefined || workspaceRaw === 'branch');
+  const repositoryAccess = repositoryAccessRaw ?? workspaceRaw === 'branch';
   const legacyReadWorkspace = workspaceRaw === 'read' && repositoryAccessRaw === undefined;
 
   const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');

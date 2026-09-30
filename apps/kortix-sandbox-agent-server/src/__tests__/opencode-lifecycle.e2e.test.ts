@@ -45,7 +45,12 @@ let root: string
 let ctl: string
 let lifecycle: Opencode | null
 
-const ENV_KEYS = ['KORTIX_COMPILED_RUNTIME_FORMAT', 'KORTIX_CONTINUATION_DISABLED'] as const
+const ENV_KEYS = [
+  'KORTIX_COMPILED_RUNTIME_FORMAT',
+  'KORTIX_CONTINUATION_DISABLED',
+  'KORTIX_LLM_PROXY_URL',
+  'KORTIX_LLM_CATALOG_FILE',
+] as const
 const savedEnv = new Map<string, string | undefined>()
 
 beforeEach(() => {
@@ -163,6 +168,7 @@ writeFileSync(CTL + '/env-' + process.pid + '.json', JSON.stringify({
   port,
   KORTIX_CONTINUATION_DISABLED: process.env.KORTIX_CONTINUATION_DISABLED ?? null,
   OPENCODE_DISABLE_MODELS_FETCH: process.env.OPENCODE_DISABLE_MODELS_FETCH ?? null,
+  OPENCODE_CONFIG_CONTENT: process.env.OPENCODE_CONFIG_CONTENT ?? null,
 }))
 const mode = read('mode-' + port)
 if (mode === 'exit') process.exit(1)
@@ -753,6 +759,82 @@ describe('reloadConfig', () => {
     expect(r.lifecycle.getPid()).toBe(pid)
     expect(r.lifecycle.getState()).toBe('ok')
   }, 30_000)
+})
+
+// ── agent .md model refs in gateway mode ─────────────────────────────────────
+
+/**
+ * Prod 2026-09-30: an agent `.md` declared `model: codex/gpt-6-sol`. OpenCode
+ * reads the `.md` AFTER the composed `OPENCODE_CONFIG` file and splits a ref
+ * at its first slash, so the agent named provider `codex`, which gateway mode
+ * does not have. Every Slack follow-up (a prompt that names no model) failed
+ * "Model not found: codex/gpt-6-sol." `OPENCODE_CONFIG_CONTENT` is the only
+ * layer OpenCode merges after the config dir.
+ */
+describe('agent .md model refs', () => {
+  function writeAgent(configDir: string, rel: string, model: string | null): void {
+    const path = join(configDir, rel)
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, `---\nmode: primary\n${model ? `model: ${model}\n` : ''}---\n\nYou are ${rel}.\n`)
+  }
+
+  function useGateway(): void {
+    process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:9/v1'
+    process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+  }
+
+  test('gateway mode routes every .md model through kortix, after the config dir', async () => {
+    useGateway()
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6-sol')
+    writeAgent(configDir, 'agent/team/triage.md', '"glm-5.3-flash"')
+    writeAgent(configDir, 'agents/routed.md', 'kortix/deepseek-v4-flash')
+    writeAgent(configDir, 'agents/plain.md', null)
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    const pid = await startReady(r)
+
+    expect(JSON.parse(spawnEnv(pid).OPENCODE_CONFIG_CONTENT as string)).toEqual({
+      agent: {
+        kortix: { model: 'kortix/codex/gpt-6-sol' },
+        'team/triage': { model: 'kortix/glm-5.3-flash' },
+      },
+    })
+  }, 30_000)
+
+  test('native mode leaves .md model refs to OpenCode', async () => {
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'anthropic/claude-opus-4-8')
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    const pid = await startReady(r)
+
+    expect(spawnEnv(pid).OPENCODE_CONFIG_CONTENT).toBeNull()
+  }, 30_000)
+
+  // A dispose re-reads config files but not the process env the patch rides.
+  test('a changed .md model restarts instead of disposing; an unchanged one disposes', async () => {
+    useGateway()
+    setCtl('dispose', 'json-true')
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6-sol')
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    const pid = await startReady(r)
+
+    expect(await r.lifecycle.reloadConfig()).toEqual({ how: 'disposed', turnEnded: false })
+    expect(r.lifecycle.getPid()).toBe(pid)
+
+    writeAgent(configDir, 'agents/kortix.md', 'anthropic/claude-opus-4-8')
+    const result = await r.lifecycle.reloadConfig()
+
+    expect(result.how).toBe('restarted')
+    const next = r.lifecycle.getPid() as number
+    expect(next).not.toBe(pid)
+    expect(JSON.parse(spawnEnv(next).OPENCODE_CONFIG_CONTENT as string)).toEqual({
+      agent: { kortix: { model: 'kortix/anthropic/claude-opus-4-8' } },
+    })
+  }, 60_000)
 })
 
 // ── unplanned-respawn hook (orphaned-turn finalize) ──────────────────────────

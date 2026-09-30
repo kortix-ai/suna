@@ -1000,6 +1000,19 @@ export const projectSessionOriginEnum = kortixSchema.enum('project_session_origi
   'system',
 ]);
 
+// Who started a session's RUN (the whole spawn tree), for attribution and the
+// session list's "mine / shared / automated" split. Server-derived at create and
+// copied from the parent for a spawned session — see session-initiator.ts.
+// Distinct from `origin` (the security policy class) and `metadata.source` (the
+// surface the create came through).
+export const projectSessionInitiatorEnum = kortixSchema.enum('project_session_initiator', [
+  'member',
+  'trigger',
+  'channel',
+  'api',
+  'system',
+]);
+
 export const projectSessions = kortixSchema.table(
   'project_sessions',
   {
@@ -1015,10 +1028,11 @@ export const projectSessions = kortixSchema.table(
     sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
+    labels: jsonb('labels').$type<string[]>().default([]).notNull(),
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
@@ -1028,6 +1042,13 @@ export const projectSessions = kortixSchema.table(
     // everything else.
     origin: projectSessionOriginEnum('origin').default('user').notNull(),
     originRef: text('origin_ref'),
+    // The session whose credential created this one (a coordinator's worker).
+    // Also still written as `metadata.spawned_by_session` for older replicas.
+    parentSessionId: text('parent_session_id'),
+    // Who started the run: member user id, trigger slug, channel name, service
+    // account id, or system source. null only on rows no backfill classified.
+    initiatorType: projectSessionInitiatorEnum('initiator_type'),
+    initiatorId: text('initiator_id'),
     // Backend-only per-session secrets allowlist (KaaB): a list of project-secret
     // IDENTIFIERS this session may receive. Set ONLY by a backend-origin caller
     // at create; immutable afterward. Semantics are pure NARROWING — the injected
@@ -1075,6 +1096,10 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
+    // Children of one coordinator, for the session list's expand (parent=<id>).
+    index('idx_project_sessions_parent')
+      .on(table.parentSessionId, table.updatedAt.desc(), table.sessionId.desc())
+      .where(sql`${table.parentSessionId} is not null`),
     // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
     // origin_ref's live sessions, checked on every backend session create.
     // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in
@@ -1777,7 +1802,7 @@ export const chatChannelBindings = kortixSchema.table(
     // default. Sessions started from this channel inherit these so different
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
-    opencodeModel: varchar('opencode_model', { length: 128 }),
+    model: varchar('opencode_model', { length: 128 }),
     // How Slack users may participate in sessions started from this channel.
     // Default is project-wide sharing: linked project members can join the
     // Slack thread. Teams can opt into owner approval or owner-only.
@@ -1900,6 +1925,12 @@ export const chatUserIdentities = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // When the Kortix session that made this link had passed a second factor
+    // (Supabase `aal2`). An account that requires MFA accepts chat actions
+    // only through a link made that way: a chat message carries no factor of
+    // its own. Null for a link made without one, and for links older than
+    // this column.
+    mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('idx_chat_user_identities_platform_user').on(
@@ -2153,7 +2184,7 @@ export const sessionTurns = kortixSchema.table(
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
     // OpenCode root this turn runs in. Null until the daemon reports it.
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     // Client-minted OpenCode user message id. Null for command turns.
     messageId: text('message_id'),
     state: varchar('state', { length: 16 }).default('delivering').notNull(),
@@ -2228,7 +2259,7 @@ export const sessionTranscriptMirrors = kortixSchema.table(
     // The OpenCode root the captured messages belong to. A re-pin (a restarted
     // box adopting a different root) makes the previous rows unreachable, so
     // the writer clears them when this changes.
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     // TRUE only when a capture proved it had seen the session's FIRST message
     // (the box returned fewer messages than the capture window). This is the
     // single bit `complete` is derived from; it is never assumed. Retention
@@ -2283,7 +2314,7 @@ export const sessionTranscriptMessages = kortixSchema.table(
     // `info.parentID` — the turn linkage OpenCode itself records (which user
     // message a step was parented on). Null on messages that carry none.
     parentMessageId: text('parent_message_id'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     role: text('role').notNull(),
     // Denormalized out of `info` so ordering and retention are index reads.
     // Order is (message_created_at, message_id) — the order OpenCode's own
@@ -2349,8 +2380,8 @@ export const sessionRuntimeProjections = kortixSchema.table(
     /** The sandbox that produced it. Names the winner when a warm fork adopts. */
     externalId: text('external_id').notNull(),
     // ── identity (the freshness check reads these, never the jsonb) ──────────
-    opencodeSessionId: text('opencode_session_id'),
-    opencodeVersion: text('opencode_version'),
+    runtimeSessionId: text('opencode_session_id'),
+    harnessVersion: text('opencode_version'),
     agentConfigEtag: text('agent_config_etag'),
     daemonBuild: bigint('daemon_build', { mode: 'number' }),
     /** Daemon boot id. `seq` is meaningless outside it. */
@@ -2709,9 +2740,6 @@ export const legacySandboxMigrations = kortixSchema.table(
     mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
     plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
     rollback: jsonb('rollback').default({}).$type<Record<string, unknown>>().notNull(),
-    // base64 tar.gz of the legacy OpenCode store; source for on-open chat
-    // rehydrate (see migration 00000000000097). Large — select explicitly.
-    opencodeArchive: text('opencode_archive'),
     error: text('error'),
     // Durable runner state (see migration 00000000000096). `phase` is the current
     // step the resume worker continues from; `progress` accumulates per-step
@@ -3229,7 +3257,7 @@ export const auditEvents = kortixSchema.table(
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
     sessionId: text('session_id'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     turnId: text('turn_id'),
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
@@ -3249,7 +3277,13 @@ export const auditEvents = kortixSchema.table(
     delegationDepth: integer('delegation_depth').default(0).notNull(),
     source: text('source'),
     authoritativeSource: text('authoritative_source'),
+    /** Deprecated: never written since the credential-source audit. Phase 2 drops it. */
     clientReportedSource: text('client_reported_source'),
+    /** What the API authenticated: browser_session | personal_access_token | oauth_app |
+     *  session_token | api_key | service_account | scim_token. NULL = not known. */
+    credentialKind: text('credential_kind'),
+    /** Identifier of that credential (token id, OAuth client id, session id, key id). Never a secret. */
+    credentialId: text('credential_id'),
     outcome: text('outcome'),
     action: text('action').notNull(),
     phase: text('phase').default('completed').notNull(),
@@ -3811,7 +3845,7 @@ export const sessionPendingQuestions = kortixSchema.table(
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
     /** The opencode session that asked; survives an opencode restart changing it. */
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     /** The raw QuestionInfo[] as opencode reported it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -4328,6 +4362,8 @@ export interface TunnelMachineInfo {
   osVersion?: string;
   nodeVersion?: string;
   agentVersion?: string;
+  /** sha256 of the hardware id (IOPlatformUUID, /etc/machine-id, MachineGuid). */
+  machineId?: string;
   [key: string]: unknown;
 }
 
@@ -4512,6 +4548,10 @@ export const tunnelDeviceAuthRequests = kortixSchema.table(
     deviceSecretHash: varchar('device_secret_hash', { length: 128 }).notNull(),
     status: tunnelDeviceAuthStatusEnum('status').default('pending').notNull(),
     machineHostname: varchar('machine_hostname', { length: 255 }),
+    /** sha256 of the machine's hardware id, sent by the agent. Approval reuses
+     *  the approver's existing registration of the same machine
+     *  (`tunnel_connections.machine_info.machineId`) instead of pairing a new one. */
+    machineId: varchar('machine_id', { length: 64 }),
     accountId: uuid('account_id'),
     /** Project the machine asked to join (`connect --project-id`). Untrusted
      *  until a human approves; the approver's project access is checked then. */
@@ -6378,6 +6418,18 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
     name: 'session_user_provider_connections_owner_fk',
   }).onDelete('cascade'),
   index('session_user_provider_connections_connection').on(table.connectionId),
+]);
+
+/** One lease per signed-in user's visible browser tab and session. */
+export const sessionPresenceLeases = kortixSchema.table('session_presence_leases', {
+  userId: uuid('user_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  tabId: uuid('tab_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.sessionId, table.tabId] }),
+  // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_presence_session_fk' }).onDelete('cascade'),
 ]);
 
 /**

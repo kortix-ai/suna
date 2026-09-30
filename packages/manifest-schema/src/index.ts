@@ -347,6 +347,7 @@ function validateManifestBodyV2(
   if (parsed.kortix_version === 3 && parsed.opencode !== undefined) {
     issues.push({ path: 'opencode', message: 'v3 uses YAML-only agent configuration; remove the raw opencode config.', severity: 'error' });
   } else validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateOpenCode(parsed.pi, 'pi', issues);
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);

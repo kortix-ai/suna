@@ -12,6 +12,7 @@ const sampleConfig: Record<string, unknown> = {
   manifest: { name: 'x' },
   env: [{ name: 'FOO' }],
   open_code_raw: '{}',
+  default_agent: 'bot',
   open_code_default_agent: 'bot',
   agent_discovery: 'declared',
   agents: [{ name: 'a' }],
@@ -57,6 +58,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.agent_discovery).toBeNull();
     // The default names one of those agents, so it goes with them.
     expect(out.config.open_code_default_agent).toBeNull();
+    expect(out.config.default_agent).toBeNull();
   });
 
   // A project member holds agent.read but not customize.read. Blanking the
@@ -66,6 +68,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
     expect(out.config.agents).toEqual([{ name: 'a' }]);
     expect(out.config.open_code_default_agent).toBe('bot');
+    expect(out.config.default_agent).toBe('bot');
   });
 
   test('no command.read → commands emptied', () => {

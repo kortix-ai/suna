@@ -23,7 +23,10 @@ needs CLI specifics.
 kortix whoami                       # confirms what project + account this token has
 kortix projects info                # the project you're running inside
 kortix secrets ls                   # encrypted env vars + manifest [env] spec
-kortix sessions ls                  # every session on this project (incl. you)
+kortix sessions ls                  # every session, with who started each (STARTED BY)
+kortix sessions ls --automated      # top-level runs a trigger/channel/API key started (also --mine, --shared)
+kortix sessions ls --search deploy  # searches every session you can see, not only recent ones
+kortix sessions ls --children <id>  # the sub-sessions one session spawned
 kortix cr ls                        # open change requests
 kortix cr open --title "..."        # propose merging your branch into main
 ```
@@ -248,7 +251,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions ls` | All sessions on the project. `--json` for machine-readable output. |
+| `kortix sessions ls` | Every session on the project (parents and children) with STARTED BY. `--mine \| --shared \| --automated` list top-level sessions with their child count; `--search <q>` matches every session you can see; `--children <id>` lists one session's sub-sessions. `--json` for machine-readable output. |
 | `kortix sessions status [--all] [--json]` | **Mission control** — every session + what each agent is doing *right now* (live: current tool / thinking / idle + last activity). Built for when many run in parallel. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |

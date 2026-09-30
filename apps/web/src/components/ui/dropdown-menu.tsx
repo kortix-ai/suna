@@ -6,6 +6,10 @@ import { CheckIcon as Check, CaretRightIcon as ChevronRight } from '@phosphor-ic
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import * as React from 'react';
 import {
+  MENU_INDICATOR,
+  MENU_INDICATOR_ICON,
+  MENU_INSET,
+  MENU_INSET_END,
   MENU_LABEL,
   MENU_PANEL_STATIC,
   MENU_SEPARATOR,
@@ -60,7 +64,9 @@ const DropdownMenuGroup = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Group>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Group>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Group ref={ref} className={cn('p-1', className)} {...props} />
+  // No padding of its own: the panel's `p-1` is the only inset, so a grouped
+  // row is exactly as wide as an ungrouped one.
+  <DropdownMenuPrimitive.Group ref={ref} className={className} {...props} />
 ));
 DropdownMenuGroup.displayName = DropdownMenuPrimitive.Group.displayName;
 
@@ -87,7 +93,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
 >(({ className, inset, size = 'sm', children, ...props }, ref) => (
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
-    className={cn('group', menuRow(size, 'default'), inset && 'pl-8', className)}
+    className={cn('group', menuRow(size, 'default'), inset && MENU_INSET, className)}
     {...props}
   >
     {children}
@@ -152,7 +158,7 @@ const DropdownMenuItem = React.forwardRef<
 >(({ className, inset, variant = 'default', size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
-    className={cn(menuRow(size, variant), inset && 'pl-8', className)}
+    className={cn(menuRow(size, variant), inset && MENU_INSET, className)}
     {...props}
   />
 ));
@@ -167,21 +173,16 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, checked, reverse, size = 'sm', ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    // The check sits in the row's own padding rather than pushing the label
-    // across, so a checkbox row's text starts on the same line as a plain
-    // item's — `pl-8` on top of `px-2.5` would indent it past every neighbour.
-    className={cn(menuRow(size, 'default'), reverse ? 'pr-7' : 'pl-7', 'relative', className)}
+    // The check sits in the row's leading slot (absolute, so an unchecked row
+    // keeps the same label x as a checked one) and the label starts at
+    // `MENU_INSET` — the same x as an `inset` item or an icon row's label.
+    className={cn(menuRow(size, 'default'), reverse ? MENU_INSET_END : MENU_INSET, className)}
     checked={checked}
     {...props}
   >
-    <span
-      className={cn(
-        'absolute flex size-3.5 items-center justify-center',
-        reverse ? 'right-2.5' : 'left-2.5',
-      )}
-    >
+    <span className={cn(MENU_INDICATOR, 'absolute', reverse ? 'right-2' : 'left-2')}>
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="text-muted-foreground size-3.5" />
+        <Check className={MENU_INDICATOR_ICON} />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}
@@ -228,9 +229,9 @@ const DropdownMenuRadioItem = React.forwardRef<
    * hollow ring. No consumer had ever rendered a RadioItem, so nobody saw it.
    */
   const indicator = (
-    <span className="flex size-3.5 shrink-0 items-center justify-center">
+    <span className={MENU_INDICATOR}>
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="text-muted-foreground size-3.5" />
+        <Check className={MENU_INDICATOR_ICON} />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
   );
@@ -265,7 +266,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn(MENU_LABEL, inset && 'pl-8', className)}
+    className={cn(MENU_LABEL, inset && MENU_INSET, className)}
     {...props}
   />
 ));

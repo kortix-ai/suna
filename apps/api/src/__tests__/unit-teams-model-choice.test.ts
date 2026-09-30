@@ -40,8 +40,13 @@ let live: {
   conversationPolicy?: string | null;
   opencodeModel?: string | null;
 } | null = null;
+// The project a live-session lookup was confined to.
+const liveLookups: Array<string | undefined> = [];
 mock.module('../channels/teams/binding', () => ({
-  conversationSession: async () => live,
+  conversationSession: async (_tenant: string, _conversation: string, projectId?: string) => {
+    liveLookups.push(projectId);
+    return live;
+  },
   teamsChannelCtx: () => CTX,
 }));
 
@@ -142,6 +147,7 @@ beforeEach(() => {
   grantVerdict = null;
   grantAgents.length = 0;
   keyWrites.length = 0;
+  liveLookups.length = 0;
   liveReachesPersonal = true;
   catalog = [];
 });
@@ -185,6 +191,13 @@ describe('/model — a choice reaches the live session', () => {
     // The live session's agent decides which keys it may use.
     expect(grantAgents).toEqual(['reviewer']);
     expect(cardText(card)).toContain('Model set to Claude Opus 4.8. Rotates across Team, Ivan. Your next message uses it.');
+  });
+
+  test('only a session of the conversation`s own project is the live one', async () => {
+    // After a `/use` the conversation's session may still belong to the
+    // project it started in; this project's keys must never be attached to it.
+    await applyTeamsModelChoice(personal as never, 'tenant-1', 'a:synthetic-chat', 'anthropic/claude-opus-4-8');
+    expect(liveLookups).toEqual(['proj']);
   });
 
   test('an unlinked person cannot change the model of a live session', async () => {

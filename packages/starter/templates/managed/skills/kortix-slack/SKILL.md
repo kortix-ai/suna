@@ -405,6 +405,14 @@ slack history --channel "$SLACK_CHANNEL_ID" --thread "$SLACK_THREAD_TS"
 slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
 ```
 
+### Reads and writes stay inside this project
+
+Every Kortix project in a Slack workspace shares one bot, so reads reach only this project's conversations: the channels and DMs connected to it, and the threads its sessions started or joined. `slack history`, `slack thread`, `slack channel-info`, `slack file-info` and `slack search` refuse anything else with `conversation_not_in_project`, and `slack channels` lists public channels plus this project's private ones.
+
+Writes never act inside another project's channel or thread: `slack send` (text or `--file`), `slack edit`, `slack delete`, `slack react`, `slack unreact`, `slack join` and `slack bind-thread` refuse them with the same `conversation_not_in_project`. A channel no project is connected to and a DM with a person are fine. Pass `--channel` as the id (`C0123ABCD`, or a user id `U0123ABCD` for a DM), never a channel name.
+
+On that error, do not retry with another id. Tell the user what the error message says: the conversation belongs to another project, or they can connect it by running `/kortix switch` in it.
+
 ### React to a message
 
 ```sh
@@ -419,6 +427,8 @@ A "seen it" reaction (`eyes`, `hourglass`, `thinking_face`, …) is temporary. T
 ```sh
 slack send --channel "C0123ABCD" --text "Heads up: rolled api@a3f1 forward."
 ```
+
+A channel of another Kortix project refuses the post (see "Reads and writes stay inside this project").
 
 ### Edit / delete a message you posted earlier
 

@@ -83,9 +83,9 @@ describe('withKortixScope', () => {
     expect(token).toBe('kortix_pat_test');
   });
 
-  test('identifies scoped backend requests as CLI traffic', async () => {
+  test('reports no client label: the API audits the credential, not a self-reported surface', async () => {
     const source = await withKortixScope(auth(), async () => platformConfig().clientSource);
-    expect(source).toBe('cli');
+    expect(source).toBeUndefined();
   });
 
   test('isolates concurrent scopes so a multi-host scan never crosses tokens', async () => {

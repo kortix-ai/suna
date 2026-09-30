@@ -138,6 +138,30 @@ describe('manifest compare-and-swap routing', () => {
     expect(JSON.stringify(result)).not.toContain('github.com/example');
   });
 
+  test('returns a safe retryable response when the private repository is temporarily unavailable', async () => {
+    commitError = new mirror.GitOperationError({
+      kind: 'failed',
+      message: "fatal: repository 'https://github.com/example/private.git/' not found",
+      gitArgs: ['push', 'origin', 'abc:refs/heads/main'],
+      stderr: "fatal: repository 'https://github.com/example/private.git/' not found",
+    });
+
+    const result = await commitManifest(
+      project,
+      {
+        schemaVersion: 2,
+        format: 'yaml',
+        path: 'kortix.yaml',
+        revision: 'a'.repeat(40),
+        raw: { kortix_version: 2, connectors: [] },
+      },
+      'manifest write',
+    );
+
+    expect(result).toEqual({ error: 'git mirror is temporarily unavailable', status: 503 });
+    expect(JSON.stringify(result)).not.toContain('github.com/example');
+  });
+
   test('keeps the GitHub Contents API for unguarded writes', async () => {
     const result = await commitManifest(
       project,

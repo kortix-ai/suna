@@ -13,7 +13,7 @@ import {
 } from '@/features/workspace/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
-import { LEGACY_SETTINGS_TAB_MAP } from './command-palette';
+import { LEGACY_SETTINGS_TAB_MAP, sessionMatchesPaletteQuery } from './command-palette';
 import {
   PALETTE_ACCOUNT_SCOPED_TABS,
   PALETTE_NO_PROJECT_DEFAULT_TAB,
@@ -543,5 +543,43 @@ describe('command palette — model list chrome', () => {
 
   test('the raw model ID is gated on saying something the name does not', () => {
     expect(modelsPage).toContain('modelIdAddsInformation(model.modelName, model.modelID)');
+  });
+});
+
+describe('palette session search', () => {
+  const session = {
+    session_id: 'ses_abc123456',
+    name: 'Quarterly review',
+  } as Parameters<typeof sessionMatchesPaletteQuery>[0];
+
+  test('matches full session ID and its prefix, not arbitrary ID substrings', () => {
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc123456')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'abc123')).toBe(false);
+    expect(sessionMatchesPaletteQuery(session, 'quarterly')).toBe(true);
+  });
+});
+
+/**
+ * The SSH dialog store was write-only dead wiring: nothing read `isOpen`, so
+ * no dialog could ever render, and no registry row referenced the handler id,
+ * so the palette could not reach it either (KRTX-723). These pins keep it
+ * deleted: a registry row that starts answering the retired action id, or a
+ * return of the dynamic import, fails here. The needles are assembled from
+ * parts on purpose — the retirement sweep greps apps/web/src for the exact
+ * identifiers, and this test must not become its own hit.
+ */
+describe('the retired ssh dialog wiring', () => {
+  const retiredActionId = 'generate' + 'SSHKey';
+  const retiredStorePath = '@/stores/ssh-' + 'dialog-store';
+
+  test('no palette row reaches the retired action id', () => {
+    expect(paletteItems.some((item) => item.actionId === retiredActionId)).toBe(false);
+  });
+
+  test('the palette neither imports the store nor names the handler', () => {
+    const source = readFileSync(new URL('./command-palette.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain(retiredStorePath);
+    expect(source).not.toContain(retiredActionId);
   });
 });

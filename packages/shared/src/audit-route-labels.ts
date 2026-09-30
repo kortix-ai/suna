@@ -27,7 +27,9 @@ import type { AuditRouteLabel } from './audit-labels';
 // biome-ignore format: one route per line, so a diff names exactly the route that changed
 export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | string>> = {
   'GET /.well-known/oauth-authorization-server': { action: 'oauth.server_metadata.read', title: 'Read OAuth server metadata' },
-  'GET /.well-known/oauth-protected-resource/v1/mcp': { action: 'mcp.resource_metadata.read', title: 'Read MCP server metadata' },
+  'GET /.well-known/oauth-protected-resource': { action: 'mcp.resource_metadata.read', title: 'Read MCP resource metadata' },
+  'GET /.well-known/oauth-protected-resource/v1/mcp': { action: 'mcp.server_metadata.read', title: 'Read MCP server metadata' },
+  'GET /.well-known/openid-configuration': { action: 'oauth.openid_configuration.read', title: 'Read OpenID configuration' },
   'GET /health': { action: 'system.health.read', title: 'Checked API health' },
   'GET /health/live': { action: 'system.health.liveness.read', title: 'Checked API liveness' },
   'GET /health/ready': { action: 'system.health.readiness.read', title: 'Checked API readiness' },
@@ -596,6 +598,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/events': { action: 'session.event.stream', title: 'Streamed session events' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/model': { action: 'session.model.update', title: 'Changed session model' },
   'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle': 'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
+  'PUT /v1/projects/:projectId/sessions/:sessionId/presence': { action: 'session.presence.update', title: 'Updated session presence' },
   'GET /v1/projects/:projectId/sessions/:sessionId/previews': { action: 'session.preview.list', title: 'Listed session preview candidates' },
   'GET /v1/projects/:projectId/sessions/:sessionId/prompts': { action: 'session.prompt.list', title: 'Viewed queued session prompts' },
   'POST /v1/projects/:projectId/sessions/:sessionId/prompts': { action: 'session.prompt.send', title: 'Queued a session prompt' },

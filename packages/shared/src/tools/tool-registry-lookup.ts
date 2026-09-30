@@ -30,17 +30,21 @@ export function resolveRegisteredKey(candidates: Iterable<string>, registeredKey
     if (allRegistered.includes(key)) return key;
   }
 
+  // A prefixed name (`oc-trigger-list`, `mcp/foo_bar`) resolves to the
+  // LONGEST registered suffix, so `trigger-list` wins over `list`.
+  let match: string | undefined;
   for (const candidate of allCandidates) {
     for (const key of allRegistered) {
+      if (match && key.length <= match.length) continue;
       if (
         candidate.endsWith(`/${key}`) ||
         candidate.endsWith(`-${key}`) ||
         candidate.endsWith(`_${key}`)
       ) {
-        return key;
+        match = key;
       }
     }
   }
 
-  return undefined;
+  return match;
 }

@@ -132,3 +132,21 @@ describe('parseDaemonRuntimeReport', () => {
     expect(report?.running?.managed_model_ids).toBeNull();
   });
 });
+
+describe('the OpenCode release a W3 daemon reports (E17)', () => {
+  const running = (fields: Record<string, unknown>) =>
+    parseDaemonRuntimeReport({ ...FULL, running: { ...FULL.running, opencode_version: undefined, ...fields } })?.running
+      ?.opencode_version;
+
+  test('an OpenCode box names its harness, and the release is compared', () => {
+    expect(running({ harness: 'opencode', harness_version: '1.18.30' })).toBe('1.18.30');
+  });
+
+  test('a pi box has no OpenCode to converge, so nothing is compared', () => {
+    expect(running({ harness: 'pi', harness_version: 'pi-agent-core@0.85.1', opencode_version: null })).toBeNull();
+  });
+
+  test('a pre-W3 daemon names no harness; its opencode_version still counts', () => {
+    expect(running({ opencode_version: '1.18.23' })).toBe('1.18.23');
+  });
+});

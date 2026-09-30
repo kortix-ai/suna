@@ -23,6 +23,10 @@ of, in your private sessions. `--project-id` only offers "Also share with
 <project>" on the approval page; without it the computer is still yours
 everywhere.
 
+Connecting the same computer again reuses its entry. The agent sends a SHA-256
+hash of the hardware ID (IOPlatformUUID, `/etc/machine-id`, or `MachineGuid`);
+the raw ID never leaves the computer.
+
 After approval, the interactive flow asks whether it should install a persistent background service. The default answer is yes.
 
 ## Run in the background

@@ -961,7 +961,7 @@ async function fetchSessionActivity(
     // newest — after the user's prompt, and classifying off ONLY the last message
     // then mislabels a busy session as "queued".
     const messageRequest = {
-      sessionID: ready.opencodeSessionId,
+      sessionID: ready.runtimeSessionId,
       limit: 6,
       // The generated OpenCode client accepts RequestInit fields. The narrowed
       // SDK facade type currently lists only endpoint fields.

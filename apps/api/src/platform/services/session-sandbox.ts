@@ -78,7 +78,8 @@ import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret
 import {
   type PreparedInitialSandboxTurn,
   initialSandboxTurnMetadata,
-} from '../../projects/sandbox-turn-lifecycle';
+} from '../../projects/session-turn-ledger';
+import { resolveSessionSandboxRegion } from './sandbox-region';
 
 /**
  * Bound for the pre-active hook. Generous, because the hook is a data restore and
@@ -380,7 +381,10 @@ export async function provisionSessionSandbox(opts: {
    */
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
-  const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
+  const { sandboxId, accountId, projectId, userId, serverType } = opts;
+  // An explicit caller location wins; otherwise the project's `us_region`
+  // flag decides (sandbox-region.ts). Only Platinum reads it.
+  const location = opts.location ?? resolveSessionSandboxRegion(opts.projectMetadata);
   const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a

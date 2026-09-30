@@ -6,7 +6,7 @@
  *     send, so a retry after a 401 replay starts from the fresh token. There
  *     is no token option: the 401 replay asks `getToken()` again, so a
  *     caller-resolved token would be swapped for the host's identity;
- *   - the header policy: bearer, `X-Kortix-Client`, admin read bypass, act-as;
+ *   - the header policy: bearer, admin read bypass, act-as;
  *   - the default deadline, composed with the caller's signal;
  *   - the one 401 replay with a fresh token, from a copy of the request taken
  *     BEFORE the first send (a `Request` body is consumed by the first send).
@@ -28,7 +28,6 @@
 
 import {
   DEFAULT_FETCH_TIMEOUT_MS,
-  normalizeClientSource,
   withDefaultTimeout,
   withTokenRetry,
 } from '../../platform/auth-core';
@@ -100,14 +99,12 @@ function callerHeaders(input: RequestInfo | URL, init: RequestInit): Record<stri
 
 /**
  * The caller's headers plus the platform policy. A caller's own
- * `Authorization` or `X-Kortix-Client` wins. Admin bypass and act-as replace
+ * `Authorization` wins. Admin bypass and act-as replace
  * the caller's value, so a call site cannot drop them; the admin console is
  * never impersonated (see `shouldAttachImpersonation`).
  */
 function withPlatformHeaders(url: string, base: Record<string, string>, token: string): Record<string, string> {
   const headers = { ...base };
-  const clientSource = normalizeClientSource(platformConfig().clientSource);
-  if (clientSource && !hasHeader(headers, 'x-kortix-client')) setHeader(headers, 'X-Kortix-Client', clientSource);
   if (adminBypassEnabled) setHeader(headers, 'x-kortix-admin-bypass', '1');
   for (const [name, value] of Object.entries(impersonationHeaders(url))) setHeader(headers, name, value);
   if (!hasHeader(headers, 'authorization')) setHeader(headers, 'Authorization', `Bearer ${token}`);

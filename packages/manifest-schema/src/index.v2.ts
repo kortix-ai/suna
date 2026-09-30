@@ -357,6 +357,7 @@ export type PiPackageEntryV2 = string | { source: string; extensions?: string[];
 export interface HarnessesV2 {
   /** `exclude` exists only on an agent: global packages that agent does not load. */
   pi?: { packages?: PiPackageEntryV2[]; exclude?: string[] };
+  opencode?: { plugins?: string[]; exclude?: string[] };
 }
 
 function validatePiPackageSource(source: unknown, where: string, issues: ManifestIssue[]): void {
@@ -383,13 +384,33 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
   }
   for (const [harness, settings] of Object.entries(node)) {
     const where = `${path}.${harness}`;
-    if (harness !== 'pi') {
-      issues.push({ path: where, message: 'only the pi harness takes settings here.', severity: 'error' });
+    if (harness !== 'pi' && harness !== 'opencode') {
+      issues.push({ path: where, message: 'only pi and opencode take settings here.', severity: 'error' });
       continue;
     }
     if (settings === undefined || settings === null) continue;
     if (!isTable(settings)) {
       issues.push({ path: where, message: 'must be a map.', severity: 'error' });
+      continue;
+    }
+    if (harness === 'opencode') {
+      for (const key of Object.keys(settings)) {
+        if (key !== 'plugins' && !(scope === 'agent' && key === 'exclude')) {
+          issues.push({ path: `${where}.${key}`, message: 'unknown OpenCode setting; use plugins or agent-level exclude.', severity: 'error' });
+        }
+      }
+      for (const key of ['plugins', 'exclude'] as const) {
+        if (settings[key] === undefined) continue;
+        if (!Array.isArray(settings[key])) {
+          issues.push({ path: `${where}.${key}`, message: 'must be a list of plugin filenames.', severity: 'error' });
+          continue;
+        }
+        settings[key].forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]+\.[cm]?[jt]s$/.test(name)) {
+            issues.push({ path: `${where}.${key}[${index}]`, message: 'must name a plugins/ filename (for example, audit.ts).', severity: 'error' });
+          }
+        });
+      }
       continue;
     }
     const keys = scope === 'agent' ? ['packages', 'exclude'] : ['packages'];

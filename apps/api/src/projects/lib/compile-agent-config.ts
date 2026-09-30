@@ -93,6 +93,10 @@ export interface OpencodeConfig {
    *  is a no-op until one exists. Reserved so a future field has somewhere to
    *  land without another signature change. */
   small_model?: string;
+  /** The manifest's `default_agent`: the agent a session with no agent chosen
+   *  runs, on every runtime (OpenCode reads this key; so does pi). Omitted when
+   *  that agent is disabled or a subagent, which cannot run as the primary. */
+  default_agent?: string;
   agent: Record<string, OpencodeAgentConfig>;
 }
 
@@ -271,10 +275,13 @@ export function compileAgentConfig(
   }
 
   const defaultAgentName = typeof v2.default_agent === 'string' ? v2.default_agent : undefined;
-  const defaultModel = defaultAgentName ? agent[defaultAgentName]?.model : undefined;
+  const defaultAgent = defaultAgentName ? agent[defaultAgentName] : undefined;
+  const defaultModel = defaultAgent?.model;
+  const runnableDefault = defaultAgent && !defaultAgent.disable && defaultAgent.mode !== 'subagent';
 
   return {
     ...(defaultModel ? { model: defaultModel } : {}),
+    ...(runnableDefault ? { default_agent: defaultAgentName } : {}),
     agent,
   };
 }
@@ -523,11 +530,17 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
  * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
  * off). Everything else is OpenCode. `runtime: null` is "no readable v2
  * manifest", which counts as opencode.
+ *
+ * pi calls models only through the Kortix LLM gateway (kortixd
+ * `harness/pi/model.ts`). A project with the `llm_gateway` flag off gets no
+ * gateway URL, so it always boots OpenCode, which calls providers directly.
  */
 export function selectSessionHarness(input: {
   piHarnessFlag: boolean;
   runtime: RuntimeV2 | null;
+  llmGateway: boolean;
 }): 'opencode' | 'pi' {
+  if (!input.llmGateway) return 'opencode';
   if (input.piHarnessFlag) return 'pi';
   return input.runtime === 'pi' ? 'pi' : 'opencode';
 }

@@ -28,7 +28,7 @@ export async function startSession(command: StartSessionCommand) {
           sandboxProvider: projectSessions.sandboxProvider,
           baseRef: projectSessions.baseRef,
           agentName: projectSessions.agentName,
-          opencodeSessionId: projectSessions.opencodeSessionId,
+          runtimeSessionId: projectSessions.runtimeSessionId,
           accountId: projectSessions.accountId,
           metadata: projectSessions.metadata,
         })

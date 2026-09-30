@@ -300,6 +300,11 @@ const visibleSessions = await kortix.project(pid).sessions.list();
 const projectInventory = await kortix
   .project(pid)
   .sessions.list({ scope: "project" }); // manager only; inaccessible rows omitted
+// Top-level sessions the caller started; spawned sessions load under their parent.
+const mine = await kortix.project(pid).sessions.list({ parent: "root", startedBy: "me" });
+const found = await kortix.project(pid).sessions.list({ parent: "root", q: "nightly" }); // searches every visible session
+const spawned = await kortix.project(pid).sessions.list({ parent: mine[0].session_id });
+// React: useProjectSessions(pid, { parent: "root", startedBy: "me" }), useSessionChildren(pid, parentId)
 const warm = await kortix.project(pid).sessions.ensureWarm(); // ordinary session, pre-created
 
 // Sessions (id-bound handle)
@@ -318,8 +323,8 @@ await s.reloadConfigStream(
 // Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
 // `.runtime` throws until the runtime is resolved, and the runtime is keyed by
 // the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { opencodeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: opencodeSessionId, parts });
+const { runtimeSessionId } = await s.ensureReady();
+await s.runtime.session.prompt({ sessionID: runtimeSessionId, parts });
 ```
 
 React consumers use `useAccountSecretResources(accountId)` and
@@ -365,6 +370,16 @@ the prompt inbox. The API copies those bytes into the sandbox after startup. Upl
 sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
 reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
 
+### Session labels and metadata
+
+Every session carries `labels: string[]` and a free-form `metadata` object. Set both
+at `project.sessions.create({ labels, metadata })`. `session.update({ labels })`
+replaces the labels; `session.update({ metadata })` merges keys, and a `null` value
+removes a key. `project.sessions.listPage({ labels })` returns only sessions that carry
+every given label, and `useProjectSessions(projectId, { labels })` does the same in
+React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
+most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
@@ -395,7 +410,7 @@ A server-rendered host can seed a known OpenCode pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.opencode_session_id,
+  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -539,7 +554,7 @@ handle.close();
 
 `session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
 
-`@kortix/sdk/react`'s `useOpenCodeEventStream` uses the exact same primitive
+`@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
 
 ## Kortix as a Backend (server-side)
@@ -658,7 +673,7 @@ the root import — offers the same agents and models and sends the same pick.
 
 | Function | Input → output |
 |---|---|
-| `projectConfigAgentsToOpenCodeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
 | `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
@@ -742,8 +757,8 @@ That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
@@ -781,6 +796,7 @@ code imports the root.
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
+  /** @deprecated Inert: the SDK sends no client label. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
@@ -792,9 +808,10 @@ interface KortixPlatformConfig {
 }
 ```
 
-Set `clientSource` when a non-web host needs its requests separated in the
-centralized audit log. The SDK sends the validated value as request metadata.
-Actor identity and permissions still come from the bearer token.
+`clientSource` is deprecated and inert. The audit log records what the API
+authenticated (`credential_kind`: browser session, personal access token,
+connected app, agent session, API key, service account), never a label the
+client reports about itself.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

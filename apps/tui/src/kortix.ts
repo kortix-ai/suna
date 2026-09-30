@@ -15,21 +15,11 @@ import type { ResolvedHost } from './auth/hosts.ts';
 let client: Kortix | null = null;
 let host: ResolvedHost | null = null;
 
-/**
- * Build the client for `resolved` and make it this process's client.
- *
- * `clientSource` identifies the surface in the backend's audit events. The
- * SDK's `KortixPlatformConfig.clientSource` union carries `'tui'` as of
- * `packages/sdk/src/core/http/config.ts:33` (and the `normalizeClientSource`
- * allowlist in `packages/sdk/src/platform/auth-core.ts`), so a TUI turn is
- * distinguishable from a CLI turn in
- * `kortix.session_audit_events.client_reported_source`.
- */
+/** Build the client for `resolved` and make it this process's client. */
 export function initKortix(resolved: ResolvedHost): Kortix {
   client = createKortix({
     backendUrl: resolved.backendUrl,
     getToken: async () => resolved.token || null,
-    clientSource: 'tui',
   });
   host = resolved;
   return client;

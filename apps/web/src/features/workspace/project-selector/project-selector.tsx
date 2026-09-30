@@ -1,6 +1,10 @@
 'use client';
 
-import { acceptAccountInvite, type KortixProject, type MyAccountInvite } from '@kortix/sdk';
+import {
+  acceptAccountInvite,
+  type KortixProject,
+  type MyAccountInvite,
+} from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   ArrowRightIcon,
@@ -21,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
+import { AccountTopBar } from '@/features/workspace/account-top-bar';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
@@ -95,7 +100,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-lg flex-col px-6 py-20">
-      <TopBar email={email} signingOut={props.signingOut} onLogOut={props.onLogOut} />
+      <AccountTopBar email={email} signingOut={props.signingOut} onLogOut={props.onLogOut} />
 
       {/* `my-auto` centers the block in the viewport while it fits, and lets
           it start at the top and scroll once the project list is taller.
@@ -187,41 +192,6 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
         </div>
       )}
     </main>
-  );
-}
-
-function TopBar({
-  email,
-  signingOut,
-  onLogOut,
-}: {
-  email: string | null;
-  signingOut: boolean;
-  onLogOut: () => void;
-}) {
-  const t = useTranslations('projectSelector');
-  const tNew = useTranslations('newWorkspace');
-  // `kx-desktop-band-row` keeps the row under the desktop title-bar band,
-  // clear of the macOS traffic lights and the Win/Linux window controls.
-  return (
-    <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-end gap-3 px-4 sm:top-4 sm:px-6">
-      {email ? (
-        <span className="text-muted-foreground hidden min-w-0 truncate text-xs sm:inline">
-          {t('signedInAs', { email })}
-        </span>
-      ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="text-muted-foreground hover:text-foreground shrink-0"
-        disabled={signingOut}
-        onClick={onLogOut}
-      >
-        {signingOut ? <Loading className="size-4 shrink-0" /> : null}
-        {signingOut ? tNew('actions.signingOut') : tNew('actions.logOut')}
-      </Button>
-    </div>
   );
 }
 

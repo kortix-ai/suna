@@ -139,17 +139,38 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
+  /** Served by a W4 API; read it before `opencode_session_id`. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. */
   opencode_session_id: string | null;
-  /** Resolved display name: user-set custom_name, else the auto opencode title. */
+  /** The runtime's conversation tree (a W4 API); older APIs only have `metadata.opencode_sessions`. */
+  runtime_sessions?: unknown[];
+  /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
+  /** Free-form labels. Absent on a server older than labels. */
+  labels?: string[];
   agent_name: string;
   status: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
   error: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** The session that spawned this one; null for a top-level session. */
+  parent_session_id?: string | null;
+  /** Who started the run. null on rows the server could not classify. */
+  initiator?: ProjectSessionInitiator | null;
+  /** Visible children. Present only with `parent=root`. */
+  child_count?: number;
+  /** Present only with `q` + `parent=root`. */
+  search_match?: 'self' | 'child';
+}
+
+export interface ProjectSessionInitiator {
+  type: 'member' | 'trigger' | 'channel' | 'api' | 'system';
+  id: string | null;
+  label: string | null;
 }
 
 // ── Triggers ──────────────────────────────────────────────────────────────

@@ -11,20 +11,27 @@ import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();
 
-export function defaultAccountName(email: string | null | undefined): string {
-  const normalized = email?.trim();
-  return normalized ? `${normalized}'s Account` : 'Account';
+/**
+ * The name for an account nobody named — never the raw email (KRTX-638). See
+ * `suggestAccountName` for the order it tries.
+ */
+export function defaultAccountName(
+  email: string | null | undefined,
+  fullName?: string | null,
+): string {
+  return suggestAccountName({ email, fullName });
 }
 
 // A stored name counts as "proper" only when it isn't one of the placeholder
 // values migrations left behind ('Personal', 'User'). Placeholder accounts
-// fall back to an email-derived name.
+// fall back to `defaultAccountName` — a suggested name, never the email.
 export function properAccountName(name: string | null | undefined): string | null {
   const normalized = name?.trim();
   if (!normalized || normalized === 'Personal' || normalized === 'User') return null;

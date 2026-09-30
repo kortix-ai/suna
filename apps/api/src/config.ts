@@ -123,6 +123,17 @@ const optFallbackPolicies = z
  */
 export const MORPH_MANAGED_MODELS_DEFAULT = '';
 
+/**
+ * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention) is
+ * the FIRST candidate for these managed models; the OpenRouter pool is the
+ * fallback. At the prod request shape (~160k-token prompts, cached follow-up
+ * turns) Zen served 60 concurrent sessions (239/240, 404 req/min) while the
+ * OpenRouter GLM pool timed out or 429'd on 73/240 (2026-09-29). Zen serves
+ * the same model ids. Without OPENCODE_ZEN_API_KEY the list has no effect;
+ * an empty list is the kill switch.
+ */
+export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash';
+
 export function parseMorphManagedModels(value: string): string[] {
   return value.split(',').map((id) => id.trim()).filter(Boolean);
 }
@@ -434,6 +445,10 @@ const envSchema = z.object({
   // An empty value disables Morph for every managed model — the default since
   // 2026-09-27 (see MORPH_MANAGED_MODELS_DEFAULT).
   MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
+  OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
+  OPENCODE_ZEN_API_KEY: optStr,
+  // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
+  OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -1297,6 +1312,9 @@ export const config = {
   MORPH_API_URL: env.MORPH_API_URL,
   MORPH_API_KEY: env.MORPH_API_KEY,
   MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
+  OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
+  OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
+  OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env

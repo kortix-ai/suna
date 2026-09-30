@@ -33,6 +33,8 @@ import {
   renderJob,
   type JobState,
 } from './jobs';
+import { KORTIX_TOOL, parseArgs, runCli } from './cli';
+import { CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type Host } from './connectors';
 import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from './shape';
 
 type Dispatch = (request: Request) => Promise<Response>;
@@ -50,7 +52,7 @@ interface ToolContext {
   deadline: number;
 }
 
-type ToolResult = {
+export type ToolResult = {
   content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[];
   isError?: boolean;
 };
@@ -62,7 +64,7 @@ const text = (value: string, isError = false): ToolResult => ({
 
 // ─── The Kortix API, in-process, as the caller ──────────────────────────────
 
-type ApiReply = {
+export type ApiReply = {
   status: number;
   body: string;
   /** The reply's `Retry-After`, when it sent one. */
@@ -79,7 +81,7 @@ async function callApi(
   ctx: ToolContext,
   method: string,
   path: string,
-  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean } = {},
+  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean; raw?: { body: Uint8Array; headers: Record<string, string> } } = {},
 ): Promise<ApiReply> {
   const url = new URL(path, ctx.origin);
   // Guard the path the router will see (dot segments, %-escapes), not the caller's spelling.
@@ -100,12 +102,11 @@ async function callApi(
     headers.delete(name);
   }
   headers.set('authorization', ctx.authorization);
-  // The audit's client_reported_source, as `cli` and `web` set it for theirs.
-  headers.set('x-kortix-client', 'mcp');
   headers.set('accept', 'application/json');
   if (opts.body !== undefined) headers.set('content-type', 'application/json');
+  for (const [k, v] of Object.entries(opts.raw?.headers ?? {})) headers.set(k, v);
   const response = await ctx.dispatch(
-    new Request(url, { method, headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
+    new Request(url, { method, headers, body: opts.raw ? (opts.raw.body as BodyInit) : opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
   );
   const reply: ApiReply = {
     status: response.status,
@@ -427,6 +428,8 @@ const TOOLS = [
         prompt: { type: 'string', description: 'The task for the agent.' },
         name: { type: 'string', description: 'Optional session title.' },
         agent: { type: 'string', description: 'Optional agent name; the project default when omitted.' },
+        labels: { type: 'array', items: { type: 'string' }, description: 'Optional free-form labels to classify the session (each 1-64 chars, at most 20). Filter by them with list_sessions labels.' },
+        metadata: { type: 'object', description: 'Optional free-form JSON object stored on the session (at most 16,384 characters). Server-managed keys are refused.' },
       },
       required: ['project_id', 'prompt'],
       additionalProperties: false,
@@ -455,7 +458,7 @@ const TOOLS = [
       type: 'object',
       properties: {
         session_id: SESSION_ID,
-        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` says how many exist.' },
+        limit: { type: 'number', description: 'Latest messages to return (default 10, max 100). `message_count` is how many came back; `complete: true` means no older message exists.' },
         wait_seconds: { type: 'number', description: 'Wait up to this long (max 45) for the running turn to end before reading.' },
       },
       required: ['session_id'],
@@ -467,13 +470,17 @@ const TOOLS = [
     name: 'list_sessions',
     title: 'List sessions',
     description:
-      "List the sessions you can see in a project, in the project's list order (most recent activity first, or newest created first per its session_list_order setting): id, title, status, agent, owner, branch, created_at, updated_at. `next_cursor` is set when more exist: pass it back as `cursor`.",
+      "List the top-level sessions you can see in a project, in the project's list order: id, title, labels, status, agent, owner, started_by (who started the run), child_count, branch, created_at, updated_at. Filter with started_by, labels and query (searches every session you can see, not only recent ones). A row with child_count > 0 has sub-sessions: pass its session_id as parent_session_id to list them. `next_cursor` is set when more exist: pass it back as `cursor`.",
     inputSchema: {
       type: 'object',
       properties: {
         project_id: PROJECT_ID,
         limit: { type: 'number', description: 'Max sessions (default 20, max 200).' },
-        cursor: { type: 'string', description: 'The next_cursor of the previous page.' },
+        cursor: { type: 'string', description: 'The next_cursor of the previous page (same filters).' },
+        started_by: { type: 'string', enum: ['me', 'others', 'automated'], description: 'me = you started it; others = another member; automated = a trigger, channel or API key.' },
+        query: { type: 'string', description: 'Case-insensitive text matched against title, starter, agent, owner and session id prefix (1-200 chars).' },
+        parent_session_id: { type: 'string', description: 'List only the children of this session instead of top-level sessions.' },
+        labels: { type: 'array', items: { type: 'string' }, description: 'Only sessions that carry every one of these labels (exact match). A top-level session also matches through a child.' },
       },
       required: ['project_id'],
       additionalProperties: false,
@@ -560,12 +567,13 @@ const TOOLS = [
     name: 'read_skill',
     title: 'Read Kortix guides',
     description:
-      "Read the Kortix platform guides (skills): how projects, sessions, agents, kortix.yaml, triggers, connectors, secrets, Apps, change requests and the CLI work. No name lists them; a name returns the guide and its reference file paths; file reads one reference. The project's own skills are repository files under .kortix/ — read them with read_file.",
+      "Read the Kortix platform guides (skills): how projects, sessions, agents, kortix.yaml, triggers, connectors, secrets, Apps, change requests and the CLI work. No name lists them; a name returns the guide and its reference file paths; file reads one reference. With project_id, the project's own skills come with them: no name lists both; a name returns that project skill's SKILL.md and its reference file paths (a project skill wins over a guide of the same name); file reads one of its references.",
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Skill name, e.g. kortix-system.' },
         file: { type: 'string', description: 'A reference file the guide names, e.g. references/cli.md.' },
+        project_id: { ...PROJECT_ID, description: "Optional: include this project's own skills (from its skills/ directory)." },
       },
       additionalProperties: false,
     },
@@ -638,6 +646,88 @@ const bounded = (value: unknown, fallback: number, max: number) => Math.min(Math
 
 class ToolInputError extends Error {}
 
+const STARTED_BY = ['me', 'others', 'automated'];
+
+/** Query for the list route: top-level sessions (or one parent's children), optionally filtered. */
+export function listSessionsQuery(input: Record<string, unknown>): Record<string, string | number | string[]> {
+  const query: Record<string, string | number | string[]> = {
+    limit: limitArg(input, 'limit', 20, 200),
+    parent: optionalArg(input, 'parent_session_id') ?? 'root',
+  };
+  const cursor = optionalArg(input, 'cursor');
+  if (cursor !== undefined) query.cursor = cursor;
+  const startedBy = optionalArg(input, 'started_by');
+  if (startedBy !== undefined) {
+    if (!STARTED_BY.includes(startedBy)) throw new ToolInputError('started_by must be me, others or automated');
+    query.started_by = startedBy;
+  }
+  const q = optionalArg(input, 'query');
+  if (q !== undefined) {
+    if (q.length > 200) throw new ToolInputError('query is at most 200 characters');
+    query.q = q;
+  }
+  const labels = labelsArg(input);
+  if (labels?.length) query.label = labels;
+  return query;
+}
+
+function labelsArg(input: Record<string, unknown>): string[] | undefined {
+  const labels = input.labels;
+  if (labels === undefined) return undefined;
+  if (!Array.isArray(labels) || !labels.every((label) => typeof label === 'string')) {
+    throw new ToolInputError('labels must be a list of strings');
+  }
+  return labels;
+}
+
+/** The POST /sessions body for start_session. */
+export function startSessionBody(input: Record<string, unknown>): Record<string, unknown> {
+  const body: Record<string, unknown> = { initial_prompt: arg(input, 'prompt') };
+  if (optionalArg(input, 'name')) body.name = optionalArg(input, 'name');
+  if (optionalArg(input, 'agent')) body.agent_name = optionalArg(input, 'agent');
+  const labels = labelsArg(input);
+  if (labels) body.labels = labels;
+  const metadata = input.metadata;
+  if (metadata !== undefined) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new ToolInputError('metadata must be a JSON object');
+    }
+    body.metadata = metadata;
+  }
+  return body;
+}
+
+/** One bounded row of `list_sessions` output. */
+export function listSessionRow(s: any) {
+  return {
+    session_id: s.session_id,
+    name: s.name ?? null,
+    labels: s.labels ?? [],
+    status: s.status,
+    agent: s.agent_name,
+    owner: s.owner_name ?? s.owner_email ?? null,
+    started_by: s.initiator?.label ?? null,
+    parent_session_id: s.parent_session_id ?? null,
+    child_count: s.child_count ?? 0,
+    ...(s.search_match ? { search_match: s.search_match } : {}),
+    origin: s.origin,
+    branch: s.branch_name ?? null,
+    created_at: s.created_at,
+    updated_at: s.updated_at,
+  };
+}
+
+/** The project's own skills (`skills/<slug>/SKILL.md`, or the legacy dir) from the same /detail route the web app reads; it honors the caller's per-skill grants. */
+async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slug: string; name: string; description: string | null; path: string; files: string[] }[] | Error> {
+  const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/detail`);
+  if (r.status >= 400) return new ToolInputError(`HTTP ${r.status} reading project ${projectId}: ${r.body.slice(0, 200)}`);
+  const detail = JSON.parse(r.body) as { config?: { skills?: { name: string; path: string; description: string | null }[] }; files?: { path: string }[] };
+  return (detail.config?.skills ?? []).map((s) => {
+    const dir = s.path.slice(0, s.path.lastIndexOf('/') + 1);
+    return { ...s, slug: dir.split('/').at(-2) ?? s.name, files: (detail.files ?? []).map((f) => f.path).filter((p) => p.startsWith(dir)) };
+  });
+}
+
 async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
   switch (name) {
     case 'list_projects': {
@@ -664,15 +754,13 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       return text(projects.length ? JSON.stringify(projects, null, 2) : 'No projects. Create one in the web app or with `kortix init`.');
     }
     case 'start_session': {
-      const body: Record<string, unknown> = { initial_prompt: arg(input, 'prompt') };
-      if (optionalArg(input, 'name')) body.name = optionalArg(input, 'name');
-      if (optionalArg(input, 'agent')) body.agent_name = optionalArg(input, 'agent');
+      const body = startSessionBody(input);
       const r = await callApi(ctx, 'POST', `/v1/projects/${projectArg(input)}/sessions`, { body });
       if (r.status >= 400) return apiResult(r);
       const session = JSON.parse(r.body);
       return text(
         JSON.stringify(
-          { session_id: session.session_id, project_id: session.project_id, name: session.name ?? null, status: session.status, branch: session.branch_name ?? null },
+          { session_id: session.session_id, project_id: session.project_id, name: session.name ?? null, labels: session.labels ?? [], status: session.status, branch: session.branch_name ?? null },
           null,
           2,
         ),
@@ -733,21 +821,9 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       return text(shapeTranscript(activity.summary, JSON.parse((transcript as ApiReply).body)));
     }
     case 'list_sessions': {
-      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, {
-        query: { limit: limitArg(input, 'limit', 20, 200), cursor: optionalArg(input, 'cursor') },
-      });
+      const r = await callApi(ctx, 'GET', `/v1/projects/${projectArg(input)}/sessions`, { query: listSessionsQuery(input) });
       if (r.status >= 400) return apiResult(r);
-      const rows = (JSON.parse(r.body) as any[]).map((s) => ({
-        session_id: s.session_id,
-        name: s.name ?? null,
-        status: s.status,
-        agent: s.agent_name,
-        owner: s.owner_name ?? s.owner_email ?? null,
-        origin: s.origin,
-        branch: s.branch_name ?? null,
-        created_at: s.created_at,
-        updated_at: s.updated_at,
-      }));
+      const rows = (JSON.parse(r.body) as any[]).map(listSessionRow);
       return text(JSON.stringify({ sessions: rows, next_cursor: r.nextCursor ?? null }, null, 2));
     }
     case 'run_command': {
@@ -867,13 +943,33 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
     }
     case 'read_skill': {
       const name = optionalArg(input, 'name');
+      const file = optionalArg(input, 'file');
+      const projectId = optionalArg(input, 'project_id');
+      const own = projectId ? await projectSkills(ctx, projectArg(input)) : [];
+      if (own instanceof Error) throw own;
+      const mine = name ? own.find((s) => s.slug === name || s.name === name) : undefined;
+      if (mine) {
+        const dir = mine.path.slice(0, mine.path.lastIndexOf('/') + 1);
+        if (file) {
+          if (file.split('/').includes('..')) throw new ToolInputError('file must stay inside the skill directory');
+          const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: `${dir}${file.replace(/^\/+/, '')}` } });
+          return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
+        }
+        const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: mine.path } });
+        if (r.status >= 400) return apiResult(r);
+        const refs = mine.files.filter((f) => f !== mine.path).map((f) => `- ${f.slice(dir.length)}`);
+        const body = JSON.parse(r.body).content as string;
+        return text(refs.length ? `${body}\n\nReference files (read_skill with project_id, name and file):\n${refs.join('\n')}` : body);
+      }
       if (!name) {
         const r = await callApi(ctx, 'GET', '/v1/skills');
         if (r.status >= 400) return apiResult(r);
         const skills = JSON.parse(r.body).skills as { name: string; description: string }[];
-        return text(skills.map((s) => `${s.name} — ${s.description}`).join('\n\n'));
+        const guides = skills.map((s) => `${s.name} — ${s.description}`).join('\n\n');
+        if (!projectId) return text(guides);
+        const project = own.map((s) => `${s.slug} — ${s.description ?? '(no description)'}`).join('\n\n');
+        return text(`Project skills (read_skill with project_id and name):\n\n${project || '(none: the project has no skills/ directory)'}\n\nPlatform guides:\n\n${guides}`);
       }
-      const file = optionalArg(input, 'file');
       if (file) {
         const r = await callApi(ctx, 'GET', `/v1/skills/${encodeURIComponent(name)}/file`, { query: { path: file } });
         return r.status >= 400 ? apiResult(r) : text(JSON.parse(r.body).content);
@@ -885,6 +981,25 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       const skill = JSON.parse(r.body) as { body: string; references?: { path: string }[] };
       const refs = (skill.references ?? []).map((f) => `- ${f.path}`);
       return text(refs.length ? `${skill.body}\n\nReference files (read_skill with file):\n${refs.join('\n')}` : skill.body);
+    }
+    case 'kortix': {
+      const args = parseArgs(input.args);
+      if (typeof args === 'string') throw new ToolInputError(args);
+      const projectId = optionalArg(input, 'project_id');
+      const sessionId = optionalArg(input, 'session_id');
+      if ((projectId && !isUuid(projectId)) || (sessionId && !isUuid(sessionId))) throw new ToolInputError('project_id and session_id must be UUIDs (list_projects, list_sessions)');
+      const timeoutMs = Math.min(45_000, ctx.deadline - Date.now() - 4_000);
+      if (timeoutMs < 2_000) throw new ToolInputError('Not enough time left in this MCP request for a command. Call again.');
+      const run = await runCli({
+        args,
+        // The caller's own credential, as sent: the CLI then acts as exactly this user through this API.
+        token: ctx.authorization.replace(/^Bearer\s+/i, ''),
+        apiUrl: `http://127.0.0.1:${Number(process.env.PORT) || 8008}/v1`,
+        projectId,
+        sessionId,
+        timeoutMs,
+      });
+      return run.ok ? text(run.json, run.exitCode !== 0) : text(run.error, true);
     }
     case 'search_api': {
       const { ops } = await loadCatalog(ctx);
@@ -937,9 +1052,32 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       return apiResult(await callApi(ctx, method, path, { query, body, summarizeBinary: true }), `${method} ${path}`);
     }
     default:
+      if (isConnectorTool(name)) return runConnectorTool(name, input, connectorHost(ctx));
       throw Object.assign(new Error(`Unknown tool: ${name}`), { rpcCode: -32602 });
   }
 }
+
+/** What ./connectors.ts needs from this file: the in-process transport and the sandbox file read. */
+const connectorHost = (ctx: ToolContext): Host => ({
+  call: (method, path, opts) => callApi(ctx, method, path, opts),
+  text,
+  apiResult: (r) => apiResult(r),
+  input: (message) => new ToolInputError(message),
+  arg,
+  optionalArg,
+  projectId: projectArg,
+  async readSandboxFile(sessionId, path) {
+    const sandbox = await resolveSandbox(ctx, sessionId);
+    if (!('session' in sandbox)) return apiResult(sandbox);
+    const home = await expandHome(ctx, sandbox, path);
+    if ('error' in home) return home.error;
+    const r = await callSandbox(ctx, sandbox, 'GET', '/file/content', { query: { path: home.path } });
+    if (r.status >= 400) return apiResult(r);
+    const file = JSON.parse(r.body);
+    // The daemon answers text as a string and everything else as base64.
+    return { bytes: file.type === 'text' ? new TextEncoder().encode(file.content) : new Uint8Array(Buffer.from(file.content, 'base64')), mime: typeof file.mimeType === 'string' ? file.mimeType : undefined };
+  },
+});
 
 function instructions(): string {
   return [
@@ -948,6 +1086,8 @@ function instructions(): string {
     'Sessions: start_session delegates a task to a Kortix agent in its own cloud sandbox; read_session (with wait_seconds) follows it; send_message continues it; list_sessions finds existing ones.',
     "Sandboxes: run_command runs bash in a session's sandbox, and read_file / write_file / list_files reach its live /workspace. With a project_id instead of a session_id, read_file and list_files read the project's git repository.",
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
+    'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps and add_connector add one to the project.',
+    'The kortix CLI itself: the `kortix` tool runs any CLI command as you, e.g. args ["secrets","ls","--json"] (discover with ["--help"] and ["<group>","--help"]; project_id and session_id set the context). Login, hosts, ship, tui and other machine-local commands are refused with the alternative. read_skill with project_id also lists the project\'s own skills.',
     'Everything else the web app and the kortix CLI can do is the Kortix API: search_api finds a route, describe_api reads it, call_api runs it (project_id fills {projectId}).',
   ].join('\n');
 }
@@ -968,7 +1108,7 @@ async function handleRpc(ctx: ToolContext, method: string, params: Record<string
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: TOOLS };
+      return { tools: [...TOOLS, ...CONNECTOR_TOOLS, KORTIX_TOOL] };
     case 'tools/call': {
       if (typeof params.name !== 'string') throw Object.assign(new Error('Invalid params: name must be a tool name'), { rpcCode: -32602 });
       try {

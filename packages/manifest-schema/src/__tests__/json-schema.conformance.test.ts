@@ -810,6 +810,18 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
+    name: 'v2: OpenCode plugins per agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nharnesses:\n  opencode:\n    plugins: [audit.ts]\nagents:\n  w:\n    harnesses:\n      opencode:\n        exclude: [audit.ts]\n        plugins: [other.js]\n',
+  },
+  {
+    name: 'v2: OpenCode plugin path traversal rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      opencode:\n        plugins: [../bad.ts]\n',
+  },
+  {
     name: 'v2: harnesses.pi.packages with npm pins, a filtered entry and a repo path is accepted',
     format: 'yaml',
     valid: true,

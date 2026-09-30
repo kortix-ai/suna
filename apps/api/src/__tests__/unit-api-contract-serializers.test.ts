@@ -51,7 +51,7 @@ function sessionRow(
     sandboxProvider: 'daytona',
     sandboxId: null,
     sandboxUrl: null,
-    opencodeSessionId: 'ses_abc',
+    runtimeSessionId: 'ses_abc',
     agentName: 'default',
     status: 'running',
     error: null,
@@ -59,10 +59,14 @@ function sessionRow(
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,
@@ -231,7 +235,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('runtime root is matched by the pinned root id, not list order', () => {
     const out = serializeSession(
       sessionRow({
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         metadata: {
           name: 'Auto title',
           opencode_sessions: [
@@ -247,7 +251,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('a parentless entry stands in when no snapshot entry matches the pin', () => {
     const out = serializeSession(
       sessionRow({
-        opencodeSessionId: null,
+        runtimeSessionId: null,
         metadata: {
           name: 'Auto title',
           opencode_sessions: [

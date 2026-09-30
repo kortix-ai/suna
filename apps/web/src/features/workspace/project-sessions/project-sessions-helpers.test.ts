@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
-  buildSessionSearchIndex,
   filterProjectSessions,
   mapWithConcurrency,
   pruneSelection,
@@ -321,17 +320,10 @@ describe('mapWithConcurrency', () => {
 });
 
 describe('filterProjectSessions', () => {
-  test('searches visible session fields and sorts by latest activity', () => {
-    const older = makeSession({
-      session_id: 'older',
-      name: 'Slack triage',
-      metadata: { source: 'slack' },
-      updated_at: '2026-07-20T10:00:00.000Z',
-    });
+  test('sorts by latest activity, not bookkeeping time', () => {
+    const older = makeSession({ session_id: 'older', updated_at: '2026-07-20T10:00:00.000Z' });
     const newer = makeSession({
       session_id: 'newer',
-      name: 'Slack deploy',
-      metadata: { source: 'slack' },
       // Bookkeeping is older, but the conversation itself is newer.
       updated_at: '2026-07-19T10:00:00.000Z',
       opencode_sessions: [
@@ -346,80 +338,20 @@ describe('filterProjectSessions', () => {
         },
       ],
     });
-    const unrelated = makeSession({ session_id: 'third', name: 'Email report' });
 
     expect(
-      filterProjectSessions([older, unrelated, newer], [], [], 'slack', testUiTranslator).map(
-        (s) => s.session_id,
-      ),
+      filterProjectSessions([older, newer], [], [], testUiTranslator).map((s) => s.session_id),
     ).toEqual(['newer', 'older']);
   });
 
-  test('combines status filters with search', () => {
-    const failedDeploy = makeSession({ name: 'Deploy API', status: 'failed' });
-    const runningDeploy = makeSession({ name: 'Deploy web', status: 'running' });
+  test('applies status and source facets', () => {
+    const failedSlack = makeSession({ status: 'failed', metadata: { source: 'slack' } });
+    const runningSlack = makeSession({ session_id: 's2', status: 'running', metadata: { source: 'slack' } });
+    const failedEmail = makeSession({ session_id: 's3', status: 'failed', metadata: { source: 'email' } });
 
     expect(
-      filterProjectSessions(
-        [failedDeploy, runningDeploy],
-        ['failed'],
-        [],
-        'deploy',
-        testUiTranslator,
-      ),
-    ).toEqual([failedDeploy]);
-  });
-
-  // The view passes a memoised index so typing never rebuilds the haystacks.
-  // Both paths must agree, or search silently changes behaviour under load.
-  test('a prebuilt search index returns the same rows as computing inline', () => {
-    const sessions = [
-      makeSession({ session_id: 'a', name: 'Slack triage' }),
-      makeSession({ session_id: 'b', name: 'Deploy web' }),
-      makeSession({ session_id: 'c', name: 'Slack deploy' }),
-    ];
-    const index = buildSessionSearchIndex(sessions, testUiTranslator);
-
-    for (const query of ['slack', 'deploy', 'nothing', '']) {
-      expect(filterProjectSessions(sessions, [], [], query, testUiTranslator, index)).toEqual(
-        filterProjectSessions(sessions, [], [], query, testUiTranslator),
-      );
-    }
-  });
-
-  test('a session missing from the index is not silently dropped', () => {
-    const known = makeSession({ session_id: 'known', name: 'Slack triage' });
-    const late = makeSession({ session_id: 'late', name: 'Slack deploy' });
-
-    // An index built before `late` arrived: it must fall back to computing the
-    // haystack rather than treating the row as a non-match.
-    const staleIndex = buildSessionSearchIndex([known], testUiTranslator);
-
-    expect(
-      filterProjectSessions([known, late], [], [], 'slack', testUiTranslator, staleIndex).map(
-        (s) => s.session_id,
-      ),
-    ).toEqual(['known', 'late']);
-  });
-});
-
-describe('buildSessionSearchIndex', () => {
-  test('indexes one lowercased haystack per session id', () => {
-    const index = buildSessionSearchIndex(
-      [
-        makeSession({ session_id: 'a', name: 'Slack Triage' }),
-        makeSession({ session_id: 'b', name: 'Deploy Web' }),
-      ],
-      testUiTranslator,
-    );
-
-    expect(index.size).toBe(2);
-    expect(index.get('a')).toContain('slack triage');
-    expect(index.get('b')).toContain('deploy web');
-  });
-
-  test('an empty list indexes nothing', () => {
-    expect(buildSessionSearchIndex([], testUiTranslator).size).toBe(0);
+      filterProjectSessions([failedSlack, runningSlack, failedEmail], ['failed'], ['slack'], testUiTranslator),
+    ).toEqual([failedSlack]);
   });
 });
 
@@ -432,14 +364,14 @@ describe('filterProjectSessions — owner and access facets', () => {
 
   test('owner and access filters AND with each other and with the other facets', () => {
     const all = [alice, bob, bob2];
-    expect(ids(filterProjectSessions(all, [], [], '', testUiTranslator, undefined, { owners: ['u-bob'] }))).toEqual(['bob', 'bob-2']);
-    expect(ids(filterProjectSessions(all, [], [], '', testUiTranslator, undefined, { access: ['private'] }))).toEqual(['bob']);
+    expect(ids(filterProjectSessions(all, [], [], testUiTranslator, { owners: ['u-bob'] }))).toEqual(['bob', 'bob-2']);
+    expect(ids(filterProjectSessions(all, [], [], testUiTranslator, { access: ['private'] }))).toEqual(['bob']);
     expect(
-      ids(filterProjectSessions(all, [], [], '', testUiTranslator, undefined, { owners: ['u-bob'], access: ['project'] })),
+      ids(filterProjectSessions(all, [], [], testUiTranslator, { owners: ['u-bob'], access: ['project'] })),
     ).toEqual([]);
   });
 
   test('omitting the owner and access facets keeps the old behaviour', () => {
-    expect(ids(filterProjectSessions([alice, bob, bob2], [], [], '', testUiTranslator))).toEqual(['alice', 'bob', 'bob-2']);
+    expect(ids(filterProjectSessions([alice, bob, bob2], [], [], testUiTranslator))).toEqual(['alice', 'bob', 'bob-2']);
   });
 });
