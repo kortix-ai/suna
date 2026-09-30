@@ -1,6 +1,5 @@
 import type { SandboxProvider } from '../platform/providers';
-import type { SandboxTurnObservation } from './sandbox-turn-lifecycle';
-import type { SessionTurnEndReason } from './session-turn-ledger';
+import type { SandboxTurnObservation, SessionTurnEndReason } from './session-turn-ledger';
 
 /**
  * The reasons a SANDBOX is allowed to name. `runtime_gone` is deliberately not

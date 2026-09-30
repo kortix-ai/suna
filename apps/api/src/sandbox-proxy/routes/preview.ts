@@ -109,8 +109,8 @@ import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   beginSandboxTurn,
-  extractTurnIdentity,
 } from '../../projects/sandbox-turn-lifecycle';
+import { extractTurnIdentity } from '../../projects/session-turn-ledger';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's

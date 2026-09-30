@@ -1,3 +1,4 @@
+import { sessionSandboxes } from '@kortix/db';
 /**
  * A runtime that is started again after the provider had it STOPPED comes back
  * with nothing in memory: every pause Kortix issues or observes is a
@@ -21,10 +22,9 @@
  * itself; `MAX_PROMPT_REDELIVERIES` in redelivery.ts bounds any loop.
  */
 import { eq, sql } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { settleOpenSandboxTurns } from '../session-turn-ledger';
-import { storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { storedSandboxTurns } from '../session-turn-ledger';
 import { type PromptRedelivery, requeueAbandonedPrompt } from './redelivery';
 import { reArmRuntimeBlockedPrompts } from './store';
 

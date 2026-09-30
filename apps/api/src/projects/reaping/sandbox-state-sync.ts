@@ -17,7 +17,7 @@ import { db } from '../../shared/db';
 import { errorSqlstate } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { REAPER_TURN_CAUSES, settleOpenSandboxTurns } from '../session-turn-ledger';
-import { storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { storedSandboxTurns } from '../session-turn-ledger';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { enqueueContinueSessionCommand } from '../session-lifecycle/store';

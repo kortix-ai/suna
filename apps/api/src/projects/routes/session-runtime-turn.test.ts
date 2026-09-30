@@ -628,7 +628,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     ]);
   });
 
-  test('a requested stop is never reported as the last turn\'s error', async () => {
+  test("a requested stop is never reported as the last turn's error", async () => {
     turnTable = [
       ledgerRow({
         turn_token: 't-stopped',

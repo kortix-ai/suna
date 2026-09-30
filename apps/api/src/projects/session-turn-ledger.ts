@@ -1,16 +1,26 @@
 /**
- * The `session_turns` ledger: one row per turn the control plane granted
- * authority for, ended with the reason it ended.
+ * The durable record of a sandbox turn, and everything shared around it.
  *
- * This module owns every statement over `kortix.session_turns`, the stored
- * `SandboxTurnIdentity` both turn modules share, and the small SQL plumbing
- * (`execute`, `normalizeRows`, `secs`) — it is the lower layer, so the
- * dependency direction stays one-way: the authority writers over
- * `session_sandboxes.metadata.activeTurns` in ./sandbox-turn-lifecycle.ts call
- * into this module to record what they erased.
+ * A turn record lives in two places: the token-keyed `activeTurns` entry in
+ * `session_sandboxes.metadata` (the lifecycle authority) and one row per turn
+ * in `kortix.session_turns` (the history). This module owns the record itself —
+ * its stored shape (`storedSandboxTurns`, `parseStoredSandboxTurn`), the
+ * identity it carries (`SandboxTurnIdentity`, `extractTurnIdentity`), its
+ * lifecycle vocabulary, and every statement over `kortix.session_turns` plus
+ * the settle backstops that keep that table complete.
+ *
+ * Ledger writes are OBSERVATION, never authority; a failed ledger write must
+ * never fail a prompt, a turn acceptance, or a reaper pass. Log and continue.
+ *
+ * It is the lower layer — the authority writers over the metadata live in
+ * ./sandbox-turn-lifecycle.ts and call into this module to record what they
+ * erased — so the shared SQL plumbing (`execute`, `normalizeRows`, `secs`)
+ * lives here and the dependency direction stays one-way.
  */
 
+import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
+import { mintWireMessageId } from './wire-message-id';
 
 export interface SandboxTurnIdentity {
   opencodeSessionId: string;
@@ -33,6 +43,205 @@ export function normalizeRows(result: unknown): Array<Record<string, unknown>> |
   if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
   const rows = (result as { rows?: unknown } | null | undefined)?.rows;
   return Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : null;
+}
+
+export interface PreparedInitialSandboxTurn {
+  token: string;
+  messageId: string;
+  startedAtMs: number;
+}
+export type SandboxTurnStartObservation = 'granted' | 'no_box';
+export type ActiveTurnRenewal = 'renewed' | 'inactive';
+export type SandboxTurnObservation = 'active' | 'terminal' | 'unknown';
+export type SandboxTurnDeliveryReconciliation = 'active' | 'inactive' | 'deferred';
+export interface StoredSandboxTurn extends SandboxTurnIdentity {
+  token: string;
+  state: 'delivering' | 'active';
+  /**
+   * When the control plane minted this turn. Null for a record written before
+   * `startedAtMs` existed — those carry no start instant, and inventing one
+   * would make a reader trust a number nobody measured.
+   */
+  startedAtMs: number | null;
+}
+/**
+ * The next-state projection both multi-turn end writers share: erase every
+ * turn the `selected` CTE matched from `activeTurns`, keep every other entry,
+ * and return the turns it erased as `ended_turns` for the ledger settle.
+ * References the `target` and `selected` CTE names of the enclosing statement.
+ */
+export function removeAndReturnTurns(): SQL {
+  return sql`SELECT target.sandbox_id,
+             jsonb_set(
+               target.metadata,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target`;
+}
+/**
+ * Mint the identity that crosses the API -> provider -> daemon boundary for a
+ * prompt delivered directly by the daemon during boot. The sandbox receives
+ * the opaque token, but it cannot create or revive the matching database row.
+ */
+export function prepareInitialSandboxTurn(nowMs = Date.now()): PreparedInitialSandboxTurn {
+  return {
+    token: randomUUID(),
+    // OpenCode <= 1.18.14 compares message ids to decide whether the initial
+    // user message already has an answer. A UUID-like id sorts after every
+    // native assistant id and makes the runtime answer the same prompt forever.
+    messageId: mintWireMessageId({ nowMs }).id,
+    startedAtMs: nowMs,
+  };
+}
+
+export function initialSandboxTurnMetadata(
+  turn: PreparedInitialSandboxTurn,
+): Record<string, unknown> {
+  return {
+    token: turn.token,
+    state: 'delivering',
+    opencodeSessionId: null,
+    messageId: turn.messageId,
+    startedAtMs: turn.startedAtMs,
+  };
+}
+
+function parseStoredSandboxTurn(value: unknown, expectedToken?: string): StoredSandboxTurn | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const turn = value as Record<string, unknown>;
+  if (
+    (turn.state !== 'delivering' && turn.state !== 'active') ||
+    typeof turn.token !== 'string' ||
+    !turn.token.trim()
+  ) {
+    return null;
+  }
+  if (expectedToken !== undefined && turn.token !== expectedToken) return null;
+  return {
+    token: turn.token,
+    state: turn.state,
+    opencodeSessionId: typeof turn.opencodeSessionId === 'string' ? turn.opencodeSessionId : '',
+    messageId: typeof turn.messageId === 'string' ? turn.messageId : null,
+    startedAtMs:
+      typeof turn.startedAtMs === 'number' && Number.isFinite(turn.startedAtMs)
+        ? turn.startedAtMs
+        : null,
+  };
+}
+
+/**
+ * The sandbox states in which stored turn metadata still means anything.
+ *
+ * Metadata outlives the runtime: a stopped box can keep an `activeTurns` entry
+ * for a turn that died with it. Every reader of turn AUTHORITY — the
+ * `GET .../turn` endpoint and the inbox admission gate — must apply the same
+ * status filter, or the endpoint and the gate disagree about whether a session
+ * is busy. Shared here so they cannot drift.
+ */
+export const RUNNING_SANDBOX_STATUSES: ReadonlySet<string> = new Set(['active', 'provisioning']);
+/**
+ * Read every control-plane-minted turn the reaper may repair or renew, keyed
+ * by its own token in the `activeTurns` object so one failed or queued prompt
+ * cannot erase lifecycle authority for another turn.
+ */
+export function storedSandboxTurns(
+  metadata: Record<string, unknown> | null | undefined,
+): StoredSandboxTurn[] {
+  const turns: StoredSandboxTurn[] = [];
+  const values = metadata?.activeTurns;
+  if (values && typeof values === 'object' && !Array.isArray(values)) {
+    for (const [token, value] of Object.entries(values as Record<string, unknown>)) {
+      const turn = parseStoredSandboxTurn(value, token);
+      if (turn) turns.push(turn);
+    }
+  }
+  return turns;
+}
+/** Parse the root OpenCode session and client-minted message identity. */
+export function extractTurnIdentity(
+  path: string,
+  body: ArrayBuffer | undefined,
+): SandboxTurnIdentity | null {
+  const normalized = path.replace(/^\/proxy\/\d+(?=\/)/, '');
+  const match = /^\/session\/([^/?#]+)\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/.exec(
+    normalized,
+  );
+  if (!match) return null;
+
+  let messageId: string | null = null;
+  if (body?.byteLength) {
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(body)) as {
+        messageID?: unknown;
+        noReply?: unknown;
+      };
+      // `noReply` persists the message and starts no loop: there is no turn to
+      // track, and no idle relay will ever arrive to close one. Such a POST
+      // skips the ledger's live-turn serialization; the inbox admission gate
+      // is what keeps it out of a live turn.
+      if (parsed.noReply === true) return null;
+      if (typeof parsed.messageID === 'string' && parsed.messageID.trim()) {
+        messageId = parsed.messageID.trim();
+      }
+    } catch {
+      // The proxy will let OpenCode validate malformed input. Lifecycle identity
+      // remains session-scoped and the delivery token still provides CAS safety.
+    }
+  }
+  return { opencodeSessionId: decodeURIComponent(match[1]), messageId };
+}
+
+export interface SandboxTurnStart extends SandboxTurnIdentity {
+  token: string;
+}
+export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_message' | 'no_box';
+/**
+ * Apply terminal evidence. A retryable error is not terminal. When both sides
+ * know the OpenCode user message ID, a delayed event may clear only that turn.
+ * Older daemons and command turns have no message ID; they remain scoped to the
+ * root OpenCode session for rolling-deploy compatibility.
+ */
+export type SandboxTurnCompletionOutcome =
+  | 'closed'
+  | 'already_closed'
+  | 'identity_mismatch'
+  | 'no_active_turn'
+  | 'non_terminal';
+export interface SandboxTurnCompletionResult {
+  outcome: SandboxTurnCompletionOutcome;
+  activeTurnCount: number;
+  closedTurnCount: number;
+}
+export function turnCompletionAllowsQueuePromotion(
+  result: Pick<SandboxTurnCompletionResult, 'outcome'>,
+): boolean {
+  return (
+    result.outcome === 'closed' ||
+    result.outcome === 'already_closed' ||
+    result.outcome === 'no_active_turn'
+  );
 }
 
 /**
@@ -598,11 +807,6 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
     return 0;
   }
 }
-
-/**
- * Mint the identity that crosses the API -> provider -> daemon boundary for a
- * prompt delivered directly by the daemon during boot. The sandbox receives
- * the opaque token, but it cannot create or revive the matching database row.
 
 /**
  * A second end frame for a turn that is already closed may still be the only one

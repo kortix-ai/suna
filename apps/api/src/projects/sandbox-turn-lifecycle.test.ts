@@ -49,14 +49,17 @@ const {
   beginSandboxTurn,
   clearSandboxTurn,
   completeSandboxTurn,
+  reconcileSandboxTurnDelivery,
+  renewActiveSandboxTurn,
+} = await import('./sandbox-turn-lifecycle');
+
+const {
   extractTurnIdentity,
   initialSandboxTurnMetadata,
   prepareInitialSandboxTurn,
-  reconcileSandboxTurnDelivery,
-  renewActiveSandboxTurn,
   storedSandboxTurns,
   turnCompletionAllowsQueuePromotion,
-} = await import('./sandbox-turn-lifecycle');
+} = await import('./session-turn-ledger');
 
 beforeEach(() => {
   executed = [];
@@ -137,9 +140,9 @@ describe('daemon-delivered initial turn authority', () => {
       startedAtMs: null,
     });
     expect(
-      storedSandboxTurns({ activeTurns: { 'turn-token': { token: 'turn-token', state: 'active' } } }).find(
-        (turn) => turn.state === 'delivering',
-      ),
+      storedSandboxTurns({
+        activeTurns: { 'turn-token': { token: 'turn-token', state: 'active' } },
+      }).find((turn) => turn.state === 'delivering'),
     ).toBeUndefined();
     expect(storedSandboxTurns(null)).toEqual([]);
   });
