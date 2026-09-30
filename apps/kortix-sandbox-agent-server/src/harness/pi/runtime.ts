@@ -1243,7 +1243,7 @@ export class PiRuntime {
             title: this.title,
             parent_id: null,
             directory: this.workspace,
-            time: { created: this.createdAt, updated: this.updatedAt, compacting: null },
+            time: { created: this.createdAt, updated: this.updatedAt, compacting: null, archived: null },
             revert: null,
           },
           ...[...this.children.values()].map((child) => ({
@@ -1251,7 +1251,7 @@ export class PiRuntime {
             title: child.title,
             parent_id: this.rootId,
             directory: this.workspace,
-            time: { created: child.createdAt, updated: child.updatedAt, compacting: null },
+            time: { created: child.createdAt, updated: child.updatedAt, compacting: null, archived: null },
             revert: null,
           })),
         ],
