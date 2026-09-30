@@ -5157,7 +5157,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "Die Sandbox für diese Sitzung wurde gestoppt. Öffne eine neue Sitzung, um fortzufahren.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode-Runtime ist nicht bereit",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Sitzungs-Runtime ist nicht bereit",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "Die Sandbox wurde gestartet, aber die Projekt-Runtime wurde nicht nutzbar.",
       "line395JsxTextRestartSession": "Sitzung neu starten",
       "line424JsxTextRestartSession": "Sitzung neu starten"
@@ -12485,7 +12485,7 @@
       "text5a0cac0326d5": "Kortix herunterladen",
       "text5a219a418ec7": "Dieser Eintrag konnte nicht aus dem Archiv gelesen werden.",
       "text5a23444828db": "Verwalten",
-      "text5a26f4425c82": "OpenCode-Sitzung",
+      "text92fbc8484002": "Runtime-Sitzung",
       "text5a32374d30b4": "Tägliche Plattformaktivität und Kreditverbrennung. Jeder Bucket ist ein UTC-Tag.",
       "text5a37d20f1235": "Kanal-Agent aktualisiert",
       "text5a41803b2dd1": "Alle ablehnen",

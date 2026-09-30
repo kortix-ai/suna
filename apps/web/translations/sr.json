@@ -5157,7 +5157,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "Сандбок за ову сесију је заустављен. Отворите нову сесију да бисте наставили.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode време рада није спремно",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Време рада сесије није спремно",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "Сандбок се покренуо, али време извођења пројекта није постало употребљиво.",
       "line395JsxTextRestartSession": "Поново покрените сесију",
       "line424JsxTextRestartSession": "Поново покрените сесију"
@@ -12485,7 +12485,7 @@
       "text5a0cac0326d5": "Преузми Kortix",
       "text5a219a418ec7": "Ова ставка није могла да се прочита из архиве.",
       "text5a23444828db": "Управљај",
-      "text5a26f4425c82": "OpenCode сесија",
+      "text92fbc8484002": "Сесија времена рада",
       "text5a32374d30b4": "Дневна активност платформе и спаљивање кредита. Свака канта је УТЦ дан.",
       "text5a37d20f1235": "Агент канала је ажуриран",
       "text5a41803b2dd1": "Одбиј све",

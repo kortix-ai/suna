@@ -5170,7 +5170,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "The sandbox for this session was stopped. Open a new session to continue.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode runtime is not ready",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Session runtime is not ready",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "The sandbox booted, but the project runtime did not become usable.",
       "line395JsxTextRestartSession": "Restart session",
       "line424JsxTextRestartSession": "Restart session"
@@ -12498,7 +12498,7 @@
       "text5a0cac0326d5": "Download Kortix",
       "text5a219a418ec7": "This entry couldn't be read from the archive.",
       "text5a23444828db": "Manage",
-      "text5a26f4425c82": "OpenCode session",
+      "text92fbc8484002": "Runtime session",
       "text5a32374d30b4": "Daily platform activity and credit burn. Every bucket is a UTC day.",
       "text5a37d20f1235": "Channel agent updated",
       "text5a41803b2dd1": "Deny all",
