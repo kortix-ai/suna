@@ -148,7 +148,7 @@ export async function syncOpencodeSessionSnapshot(
 
   // The pin, else the root the box itself reports. Not `pickCanonicalRoot`:
   // it reads `parentID`, and a projection entry names its parent `parent_id`.
-  const resolvedRootId = row.runtimeSessionId ?? leg.identity.opencode_session_id;
+  const resolvedRootId = row.runtimeSessionId ?? leg.identity.runtime_session_id;
   if (!resolvedRootId) return row;
 
   const resolveRoot = rootResolver(snapshots);
