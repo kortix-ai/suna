@@ -71,6 +71,15 @@ describe('session status agreement', () => {
   });
 });
 
+describe('session starter avatar', () => {
+  test('keeps the shared-session member avatar at the smallest legible avatar size', () => {
+    const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
+    const indicator = between(listSource, 'data-session-source="true"', '<SessionSharedIcon');
+    expect(indicator).toContain('avatarClassName="size-5"');
+    expect(indicator).not.toContain('avatarClassName="size-4"');
+  });
+});
+
 describe('session brief hover card anchor', () => {
   const listSource = readFileSync(join(import.meta.dir, 'project-session-list.tsx'), 'utf8');
 

@@ -1500,6 +1500,24 @@ flow(
         if (sessionId !== own) throw new Error(`CHN-30: expected the thread bound to the token's session, got ${sessionId}`);
       });
 
+      await ctx.step("the same session binds a second thread; both replies resolve to its project and session", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000301", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(200).body().has("$.bound", true).has("$.session_id", own);
+        await withDb(ctx, async (db) => {
+          const rows = (await db.query(
+            "SELECT thread_id, session_id FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id IN ($2, $3) ORDER BY thread_id",
+            [team, "1700000000.000300", "1700000000.000301"],
+          )).rows;
+          if (rows.length !== 2 || rows.some((row) => row.session_id !== own)) {
+            throw new Error("CHN-30: both threads must retain the same session");
+          }
+        });
+      });
+
       await ctx.step("the session token binds the same thread again → 200, bound to the same session (idempotent)", async () => {
         const r = await agent.post(
           "/v1/projects/:projectId/channels/slack/bind-thread",

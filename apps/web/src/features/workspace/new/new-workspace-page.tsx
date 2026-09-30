@@ -313,6 +313,7 @@ export function NewWorkspacePage() {
           that neither awaited nor navigated, and left the user on the form. */}
       <AccountTopBar
         email={user?.email ?? null}
+        name={user?.user_metadata?.name}
         signingOut={signingOut}
         onLogOut={() => {
           setSigningOut(true);
