@@ -1148,9 +1148,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       http_status: result.status,
       reason: reason.slice(0, 500),
     });
-    logger.warn(
-      `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`,
-    );
+    const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
+    if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
+    else logger.warn(message);
     return { status: 'error', reason };
   } catch (e) {
     if (attachmentClaim?.claimToken) {
