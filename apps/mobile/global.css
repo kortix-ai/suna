@@ -10,23 +10,23 @@
   /* Light mode — aligned with apps/web/src/app/globals.css :root */
   :root {
     --background: 0 0% 100%; /* oklch(1 0 0) */
-    --foreground: 0 0% 0%; /* oklch(0 0 0) */
+    --foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
     --card: 0 0% 95.7%; /* oklch(0.9672 0 0) */
-    --card-foreground: 0 0% 0%; /* oklch(0 0 0) */
+    --card-foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
     --popover: 0 0% 100%; /* oklch(1 0 0) */
-    --popover-foreground: 0 0% 0%; /* oklch(0 0 0) */
-    --primary: 0 0% 0%; /* oklch(0 0 0) */
+    --popover-foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
+    --primary: 0 0% 12.2%; /* oklch(0.2393 0 0) */
     --primary-foreground: 0 0% 100%; /* oklch(1 0 0) */
-    --secondary: 0 0% 92.6%; /* oklch(0.9431 0 0) */
-    --secondary-foreground: 0 0% 0%; /* oklch(0 0 0) */
-    --muted: 0 0% 92.6%; /* oklch(0.9431 0 0) */
+    --secondary: 0 0% 92.9%; /* oklch(0.9461 0 0) */
+    --secondary-foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
+    --muted: 0 0% 92.9%; /* oklch(0.9461 0 0) */
     --muted-foreground: 0 0% 40%; /* oklch(0.5103 0 0) */
     --accent: 0 0% 95.7%; /* oklch(0.9672 0 0) */
-    --accent-foreground: 0 0% 0%; /* oklch(0 0 0) */
+    --accent-foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
     --destructive: 357.2 100% 45.3%; /* oklch(0.583 0.2387 28.4765) */
     --destructive-foreground: 60 0% 98%; /* oklch(0.9851 0 0) */
     --border: 0 0% 88.6%; /* oklch(0.9128 0 0) */
-    --input: 0 0% 92.6%; /* oklch(0.9431 0 0) */
+    --input: 0 0% 92.9%; /* oklch(0.9461 0 0) */
     --ring: 204 100% 50%; /* oklch(0.669 0.1837 248.8066) */
     --radius: 0.625rem;
 
@@ -37,11 +37,11 @@
     --chart-5: 23.8 100% 29.6%; /* oklch(0.4747 0.1358 44.9806) */
 
     --sidebar: 0 0% 95.7%; /* oklch(0.9672 0 0) */
-    --sidebar-foreground: 0 0% 0%; /* oklch(0 0 0) */
+    --sidebar-foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
     --sidebar-primary: 204 100% 50%; /* oklch(0.669 0.1837 248.8066) */
     --sidebar-primary-foreground: 0 0% 100%; /* oklch(1 0 0) */
-    --sidebar-accent: 0 0% 92.6%; /* oklch(0.9431 0 0) */
-    --sidebar-accent-foreground: 0 0% 0%; /* oklch(0 0 0) */
+    --sidebar-accent: 0 0% 92.9%; /* oklch(0.9461 0 0) */
+    --sidebar-accent-foreground: 0 0% 12.2%; /* oklch(0.2393 0 0) */
     --sidebar-border: 0 0% 88.6%; /* oklch(0.9128 0 0) */
     --sidebar-ring: 204 100% 50%; /* oklch(0.669 0.1837 248.8066) */
 
