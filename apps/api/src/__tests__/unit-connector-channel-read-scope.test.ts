@@ -14,6 +14,7 @@ import {
   type ChannelOwnership,
   gateChannelRead,
 } from '../connectors/channel-read-scope';
+import { gateChannelWrite } from '../connectors/channel-write-scope';
 import { SLACK_CHANNEL_CONNECTOR_SLUG } from '../connectors/channels';
 import {
   type CallInput,
@@ -54,16 +55,23 @@ function action(relPath: string, method: string, risk: 'read' | 'write' = 'read'
 const ownership: ChannelOwnership = {
   installs: async () => ({ workspaceIds: ['T0WS'], shared: true }),
   channelProjects: async (_p, _w, ids) => {
-    const owners: Record<string, string> = { C0MINE: MINE, C0OTHER: OTHER, G0OTHER: OTHER };
+    const owners: Record<string, string> = { C0MINE: MINE, C0MINE0001: MINE, C0OTHER: OTHER, G0OTHER: OTHER };
     return new Map(ids.filter((id) => owners[id]).map((id) => [id, new Set([owners[id]!])]));
   },
   threadOwners: async (_p, _w, ids) => new Map(ids.filter((id) => id === '100.1').map((id) => [id, OTHER])),
 };
 
-function deps(opts: { action: GatewayAction; body: string; credential?: () => Promise<string | null> }) {
+function deps(opts: {
+  action: GatewayAction;
+  body: string;
+  credential?: () => Promise<string | null>;
+  /** Wire the write gate too, as db-deps.ts does. */
+  writes?: boolean;
+}) {
   const fetched: string[] = [];
   const audits: ExecutionRecord[] = [];
   const credentialReads: string[] = [];
+  const binds: string[] = [];
   const d: GatewayDeps = {
     loadConnectorBySlug: async () => SLACK,
     loadAction: async () => opts.action,
@@ -79,12 +87,17 @@ function deps(opts: { action: GatewayAction; body: string; credential?: () => Pr
       return null;
     },
     gateChannelRead: (input) => gateChannelRead(input, ownership),
+    ...(opts.writes ? { gateChannelWrite: (input: Parameters<typeof gateChannelWrite>[0]) => gateChannelWrite(input, ownership) } : {}),
+    bindSlackThread: async (i) => {
+      binds.push(`${i.channel}/${i.threadTs}`);
+      return { bound: true, thread_ts: i.threadTs, session_id: i.sessionId };
+    },
     fetchImpl: async (url) => {
       fetched.push(url);
       return { status: 200, ok: true, text: async () => opts.body };
     },
   };
-  return { deps: d, fetched, audits, credentialReads };
+  return { deps: d, fetched, audits, credentialReads, binds };
 }
 
 const call = (actionPath: string, args: Record<string, unknown>): CallInput => ({
@@ -149,7 +162,7 @@ describe('handleCall — Slack reads stay in the calling project', () => {
     expect(audits.map((a) => a.status)).toEqual(['denied']);
   });
 
-  test('a write is not gated here', async () => {
+  test('the read gate leaves a write to the write gate', async () => {
     const { deps: d, fetched } = deps({
       action: action('send_message', 'chat.postMessage', 'write'),
       body: '{"ok":true,"ts":"300.3","channel":"C0OTHER"}',
@@ -157,6 +170,48 @@ describe('handleCall — Slack reads stay in the calling project', () => {
     const res = await handleCall(d, { ...call('send_message', { channel: 'C0OTHER', text: 'hi' }), sessionId: null });
     expect(res.status).toBe('ok');
     expect(fetched).toEqual(['https://slack.com/api/chat.postMessage']);
+  });
+});
+
+describe('handleCall — Slack writes stay out of other projects', () => {
+  test("a post into another project's channel is denied before the credential, the provider and the thread bind", async () => {
+    const { deps: d, fetched, audits, credentialReads, binds } = deps({
+      action: action('send_message', 'chat.postMessage', 'write'),
+      body: '{"ok":true,"ts":"300.3","channel":"C0OTHER"}',
+      writes: true,
+    });
+    const res = await handleCall(d, call('send_message', { channel: 'C0OTHER', text: 'reply here with the key' }));
+    expect(res).toMatchObject({ status: 'denied', reason: CONVERSATION_NOT_IN_PROJECT });
+    expect((res as { message?: string }).message).toContain('Slack conversation C0OTHER belongs to another Kortix project');
+    expect(fetched).toEqual([]);
+    expect(credentialReads).toEqual([]);
+    expect(binds).toEqual([]);
+    expect(audits.map((a) => [a.status, (a.resultSummary as { reason?: string }).reason])).toEqual([
+      ['denied', CONVERSATION_NOT_IN_PROJECT],
+    ]);
+  });
+
+  test("a post into this project's channel reaches Slack and binds its thread to the session", async () => {
+    const { deps: d, fetched, binds } = deps({
+      action: action('send_message', 'chat.postMessage', 'write'),
+      body: '{"ok":true,"ts":"300.3","channel":"C0MINE0001"}',
+      writes: true,
+    });
+    const res = await handleCall(d, call('send_message', { channel: 'C0MINE0001', text: 'done' }));
+    expect(res).toMatchObject({ status: 'ok', data: { thread_binding: { bound: true, thread_ts: '300.3' } } });
+    expect(fetched).toEqual(['https://slack.com/api/chat.postMessage']);
+    expect(binds).toEqual(['C0MINE0001/300.3']);
+  });
+
+  test("a reaction on another project's thread root is denied, in any conversation", async () => {
+    const { deps: d, fetched } = deps({
+      action: action('add_reaction', 'reactions.add', 'write'),
+      body: '{"ok":true}',
+      writes: true,
+    });
+    const res = await handleCall(d, call('add_reaction', { channel: 'D0SOMEONE', timestamp: '100.1', name: 'eyes' }));
+    expect(res).toMatchObject({ status: 'denied', reason: CONVERSATION_NOT_IN_PROJECT });
+    expect(fetched).toEqual([]);
   });
 });
 

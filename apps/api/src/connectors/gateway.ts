@@ -7,7 +7,7 @@ import {
   resolveAttachmentRefs,
 } from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
-import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
+import type { ChannelReadGate, ChannelReadInput, ChannelReadRefusal } from './channel-read-scope';
 import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
@@ -208,6 +208,12 @@ export interface GatewayDeps {
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
+  /**
+   * Keeps a Slack write (post, edit, delete, reaction, join) out of other
+   * projects' channels and threads (channel-write-scope.ts). Null = may run.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelWrite?(input: ChannelReadInput): Promise<ChannelReadRefusal | null>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -657,19 +663,21 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   // Before any credential, approval or provider call: a read of another
-  // project's conversation never leaves the API.
+  // project's conversation, or a write into it, never leaves the API.
+  const channelInput: ChannelReadInput = {
+    projectId: input.projectId,
+    platform: connector.platform ?? null,
+    actionPath: input.actionPath,
+    args: input.args ?? {},
+    risk: action.risk,
+  };
   const channelGate =
-    connector.provider === 'channel' && deps.gateChannelRead
-      ? await deps.gateChannelRead({
-          projectId: input.projectId,
-          platform: connector.platform ?? null,
-          actionPath: input.actionPath,
-          args: input.args ?? {},
-          risk: action.risk,
-        })
-      : null;
-  if (channelGate?.refusal) {
-    const { reason, message } = channelGate.refusal;
+    connector.provider === 'channel' && deps.gateChannelRead ? await deps.gateChannelRead(channelInput) : null;
+  const channelRefusal =
+    channelGate?.refusal ??
+    (connector.provider === 'channel' && deps.gateChannelWrite ? await deps.gateChannelWrite(channelInput) : null);
+  if (channelRefusal) {
+    const { reason, message } = channelRefusal;
     await audit(deps, input, connector, 'denied', action.risk, { reason, message });
     return { status: 'denied', reason, message };
   }
