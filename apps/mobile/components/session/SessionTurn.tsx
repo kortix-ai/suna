@@ -75,6 +75,7 @@ import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-displa
 import { TurnErrorDisplay } from './SessionErrorBanner';
 import { TurnLiveContext } from './tool/shared/infrastructure';
 import { ToolPartRenderer, type PermissionReply } from './tool/tool-part-renderer';
+import './tool/tools/register';
 import { ActivityBurst } from './turn/activity-burst';
 import { CommandOutputCard } from './turn/command-output';
 import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider';
