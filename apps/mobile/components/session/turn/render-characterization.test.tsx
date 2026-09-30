@@ -1,8 +1,8 @@
 /**
  * Characterization tests for the two turn components this directory keeps
  * hand-written render paths for: `CompactionMarker` (the landed summary pill
- * expands the summary INLINE — mobile has no side panel, so no caller passes
- * `onOpenSummary`) and `TurnActions` (its only call site passes
+ * expands the summary INLINE — mobile has no side panel, so no caller ever
+ * points it elsewhere) and `TurnActions` (its only call site passes
  * `turn`/`response`/`costInfo`, so Finished/Duration always derive from the
  * turn).
  *
@@ -143,22 +143,22 @@ describe('CompactionMarker (characterization: inline summary is the only path)',
     });
     // Collapsed: the pill is a button that shows, not opens elsewhere.
     expect(pressables).toHaveLength(1);
-    expect(pressables.at(-1)!.accessibilityLabel).toBe('Show compaction summary');
-    expect(pressables.at(-1)!.accessibilityState).toEqual({ expanded: false });
+    expect(pressables.at(-1).accessibilityLabel).toBe('Show compaction summary');
+    expect(pressables.at(-1).accessibilityState).toEqual({ expanded: false });
     expect(textParts).toEqual([]);
     expect(icons).toEqual(new Set(['StackIcon', 'CaretDownIcon']));
 
     // Open inline: the caret flips and the summary body renders under the pill.
-    await act(async () => pressables.at(-1)!.onPress());
-    expect(pressables.at(-1)!.accessibilityLabel).toBe('Hide compaction summary');
-    expect(pressables.at(-1)!.accessibilityState).toEqual({ expanded: true });
+    await act(async () => pressables.at(-1).onPress());
+    expect(pressables.at(-1).accessibilityLabel).toBe('Hide compaction summary');
+    expect(pressables.at(-1).accessibilityState).toEqual({ expanded: true });
     expect(textParts.map((part) => part.text)).toEqual([summary]);
 
     // Close again: back to the collapsed label and no body in the tree.
-    await act(async () => pressables.at(-1)!.onPress());
-    expect(pressables.at(-1)!.accessibilityLabel).toBe('Show compaction summary');
-    expect(pressables.at(-1)!.accessibilityState).toEqual({ expanded: false });
-    expect(JSON.stringify(tree!.toJSON())).not.toContain('rn-text-part');
+    await act(async () => pressables.at(-1).onPress());
+    expect(pressables.at(-1).accessibilityLabel).toBe('Show compaction summary');
+    expect(pressables.at(-1).accessibilityState).toEqual({ expanded: false });
+    expect(JSON.stringify(tree?.toJSON() ?? {})).not.toContain('rn-text-part');
   });
 
   test('running renders the loading pill and no pressable', async () => {
@@ -166,7 +166,7 @@ describe('CompactionMarker (characterization: inline summary is the only path)',
       tree = create(<CompactionMarker running summary="partial" />);
     });
     expect(pressables).toEqual([]);
-    const json = JSON.stringify(tree!.toJSON());
+    const json = JSON.stringify(tree?.toJSON() ?? {});
     expect(json).toContain('Compacting context…');
     // Running: no summary body, not even for a partial summary.
     expect(json).not.toContain('rn-text-part');
@@ -177,7 +177,7 @@ describe('CompactionMarker (characterization: inline summary is the only path)',
       tree = create(<CompactionMarker running={false} />);
     });
     expect(pressables).toEqual([]);
-    expect(JSON.stringify(tree!.toJSON())).toContain('Context automatically compacted');
+    expect(JSON.stringify(tree?.toJSON() ?? {})).toContain('Context automatically compacted');
   });
 });
 
@@ -192,7 +192,7 @@ describe('TurnActions (characterization: only the turn/response/costInfo mode)',
     await act(async () => {
       tree = create(<TurnActions turn={turn} response="hello" costInfo={costInfo} />);
     });
-    const json = tree!.toJSON();
+    const json = tree?.toJSON() ?? {};
     expect(JSON.stringify(json)).toContain('session-turn-actions');
     // The meta row receives exactly what the real turn helpers derive.
     const { turnEndedAt, turnDurationMs } = await import('@/lib/session/turn-meta');
@@ -204,7 +204,7 @@ describe('TurnActions (characterization: only the turn/response/costInfo mode)',
     await act(async () => copy.onPress());
     expect(clipboard).toEqual(['hello']);
     // The check swaps in while the copy stays until the 2s revert.
-    expect(buttons.at(-1)!.accessibilityLabel).toBe('Copied');
+    expect(buttons.at(-1).accessibilityLabel).toBe('Copied');
   });
 
   test('empty response renders no copy button', async () => {
