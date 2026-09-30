@@ -6,7 +6,6 @@ import {
   type CatalogReasoningOption,
   catalogModelForWireModel as catalogModelForWireModelCanonical,
 } from '@kortix/llm-catalog';
-import { codexModelIds } from './codex-models';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
 import { SERVED_MANAGED_MODELS } from './served-managed-models';
@@ -270,10 +269,11 @@ export function gatewayModelsAll(
 
 export function gatewayCodexModels(
   catalog: Catalog = runtimeModelCatalog.snapshot(),
+  codexIds: readonly string[] = runtimeModelCatalog.codexModelIds(),
 ): Record<string, GatewayModel> {
   const out: Record<string, GatewayModel> = {};
   const catalogModelById = modelsById(catalog);
-  for (const id of codexModelIds()) {
+  for (const id of codexIds) {
     const model = catalogModelById.get(`openai/${id}`);
     out[`codex/${id}`] = {
       name: `${model?.name ?? codexName(id)} (ChatGPT)`,

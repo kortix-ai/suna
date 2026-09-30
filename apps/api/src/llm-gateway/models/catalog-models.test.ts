@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
-import { codexModelIds } from './codex-models';
+import { CODEX_SEED_MODEL_IDS } from './codex-models';
 import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
@@ -148,7 +148,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 // served shape (PR #5010 review), and a `budget_tokens`-only reasoning entry
 // (mainline Claude) used to vanish.
 describe('served catalog field passthrough', () => {
-  const [codexId] = codexModelIds();
+  const [codexId] = CODEX_SEED_MODEL_IDS;
   const enriched = {
     released: '2026-01-02',
     family: 'synthetic',
