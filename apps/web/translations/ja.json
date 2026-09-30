@@ -20205,7 +20205,6 @@
     },
     "needsReconnectHint": "このコンピューターは Kortix から切断されました。使うにはもう一度接続してください。",
     "actionFailed": "問題が発生しました。もう一度お試しください。",
-    "sharedWithProject": "コンピューターをプロジェクトと共有しました",
     "alsoShareWith": "{project} とも共有する",
     "approvedEverywhere": "コンピューターを接続しました。すべてのプロジェクトの、あなたのプライベートセッションで使えます。このタブは閉じてかまいません。",
     "approvedShared": "コンピューターを接続し、{project} と共有しました。このタブは閉じてかまいません。",
@@ -20253,8 +20252,6 @@
     "runInBackground": "バックグラウンドで実行",
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
-    "disconnectEllipsis": "接続を解除…",
-    "yoursEveryProject": "あなたのもの · すべてのプロジェクト",
-    "sharedWithThisProject": "このプロジェクトと共有"
+    "disconnectEllipsis": "接続を解除…"
   }
 }

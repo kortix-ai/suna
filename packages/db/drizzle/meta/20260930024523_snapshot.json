@@ -1,6 +1,6 @@
 {
-  "id": "2940e9d9-9f26-4505-934f-13b6cd49fda9",
-  "prevId": "44e86c9d-6d39-4066-9896-ca35473f7718",
+  "id": "95f3db0c-ab90-4fe3-b540-08b500a097bd",
+  "prevId": "246eaf4d-15ab-4072-99ab-a4fcb8388e96",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -20277,6 +20277,12 @@
         "machine_hostname": {
           "name": "machine_hostname",
           "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "machine_id": {
+          "name": "machine_id",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },

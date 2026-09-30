@@ -1663,7 +1663,16 @@ export function nextLivenessState(input: LivenessDecisionInput): LivenessDecisio
 }
 
 export type Opencode = HarnessLifecycleService & {
-  reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
+  /**
+   * @param opts.mayPromote Forwarded to `reloadVerified` as the last-moment
+   * turn check before the candidate is promoted — see `VerifiedReloadOptions`.
+   * Every `mustRespawn: true` caller must supply one: without it, a config
+   * push (e.g. `/kortix/env`) can promote a candidate and SIGTERM the running
+   * process while it holds a turn the API just accepted (2026-09-29 incident:
+   * `KORTIX_SECRET_CAPABILITIES` pushed fleet-wide by a release, turn accepted
+   * 200ms before the kill, orphaned for hours).
+   */
+  reloadConfig(opts?: { mustRespawn?: boolean; mayPromote?: () => Promise<boolean> }): Promise<ReloadConfigResult>
   /**
    * The workspace (repo checkout, config-dir deps, injected skills) landed
    * AFTER this process spawned. Rewrite the composed config with the same
@@ -2697,15 +2706,21 @@ export function createOpencodeLifecycle(
       logger.warn('[opencode] an instance answered before the workspace was ready; restarting instead of disposing')
       return false
     },
-    async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
+    async reloadConfig(
+      opts: { mustRespawn?: boolean; mayPromote?: () => Promise<boolean> } = {},
+    ): Promise<ReloadConfigResult> {
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {
         return { how: 'disposed', turnEnded: false }
       }
       // Verified swap instead of the old kill-then-hope restart. A config that
       // cannot boot now leaves the running opencode in place and reports why,
-      // rather than taking the session down with it.
-      const result = await this.reloadVerified()
+      // rather than taking the session down with it. `mayPromote` is the LAST
+      // check, right before the live port moves — see its doc on
+      // `VerifiedReloadOptions`. Without forwarding it here, a respawn driven
+      // by `mustRespawn` (an env push) had no turn check at all, unlike the
+      // config-release path, which always supplies one (config-release.ts).
+      const result = await this.reloadVerified({ mayPromote: opts.mayPromote })
       if (result.outcome === 'kept-old') {
         logger.warn('[opencode] reload kept the previous instance', { reason: result.reason })
         // Nothing was replaced, so nothing was interrupted.

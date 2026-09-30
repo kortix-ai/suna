@@ -691,8 +691,15 @@
     {
       "idx": 98,
       "version": "7",
-      "when": 1790722238714,
-      "tag": "20260929225038_audit_events_credential_kind",
+      "when": 1790731056771,
+      "tag": "20260930011736_tunnel_device_auth_machine_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790736323064,
+      "tag": "20260930024523_audit_events_credential_kind",
       "breakpoints": true
     }
   ]
