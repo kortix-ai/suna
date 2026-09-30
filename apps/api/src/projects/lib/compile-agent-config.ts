@@ -338,6 +338,7 @@ function compileAgentBlock(
   // `enabled` is omitted (the default, true), whatever the `.md` itself set
   // for `disable` (if anything) passes through untouched above.
   if (block.enabled === false) out.disable = true;
+  if (block.tools !== undefined) out.tools = block.tools;
 
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);

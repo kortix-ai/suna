@@ -669,6 +669,7 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            KORTIX_DESKTOP_SENTRY_DSN?
 
       # Never hard-fail on missing certs — a release should always ship an
       # installer. Sign (+ notarize on macOS) when the platform's secrets are
@@ -719,7 +720,7 @@ jobs:
             --config.extraMetadata.kortixDesktopSentryDsn="$KORTIX_DESKTOP_SENTRY_DSN" \
             --config.extraMetadata.kortixUpdateChannel="stable"
         env:
-          KORTIX_DESKTOP_SENTRY_DSN: ${{ secrets.KORTIX_DESKTOP_SENTRY_DSN }}
+          KORTIX_DESKTOP_SENTRY_DSN: ${{ env.KORTIX_DESKTOP_SENTRY_DSN || secrets.KORTIX_DESKTOP_SENTRY_DSN }}
           CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE || secrets.APPLE_CERTIFICATE) || '' }}
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD) || '' }}
           APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && env.APPLE_API_KEY_ID || '' }}

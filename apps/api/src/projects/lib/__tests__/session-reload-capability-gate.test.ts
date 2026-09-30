@@ -455,15 +455,15 @@ describe('reloadSessionConfig with config_releases off', () => {
     const daemon = fakeDaemon({
       capable: true,
       releasesEnabled: false,
-      refreshBody: { config_dir: { synced: true }, reload: { outcome: 'swapped', port: 4097, pid: 2, turn_ended: false } },
-      push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
+      refreshBody: { config_dir: { synced: true, reload: 'disposed', turn_ended: false } },
+      push: { applied: false, reason: 'no compiled agent config' },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
     expect(result).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: 'restarted',
+      opencode_reload: 'disposed',
       turn_ended: false,
       config_path: 'legacy',
     });
@@ -471,11 +471,25 @@ describe('reloadSessionConfig with config_releases off', () => {
     expect(reloadDetail(result)).toContain('The next prompt runs the new config.');
   });
 
+  // `daemonHasConfigReleases` is true only while a release is SERVED, so on a
+  // project without releases the push runs too and its reload is reported.
+  test('with the push also applying, the push reload is what is reported', async () => {
+    const daemon = fakeDaemon({
+      capable: true,
+      releasesEnabled: false,
+      refreshBody: { config_dir: { synced: true, reload: 'disposed', turn_ended: false } },
+    });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(daemon.pushes.length).toBe(1);
+    expect(result).toMatchObject({ applied: true, agent_files: 'updated', opencode_reload: 'restarted' });
+  });
+
   test('the session\'s own agent edits are kept and reported', async () => {
     const daemon = fakeDaemon({
       capable: true,
       releasesEnabled: false,
-      refreshBody: { config_dir: { synced: false, skipped: 'local changes' } },
+      refreshBody: { config_dir: { synced: false, skipped: 'local changes', kept: ['.kortix/opencode/agents/kortix.md'] } },
       push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);

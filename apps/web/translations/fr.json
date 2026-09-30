@@ -20205,6 +20205,7 @@
     "commandCopied": "Commande copiée",
     "copyFailed": "Échec de la copie",
     "copyCommand": "Copier la commande",
+    "copyCliCommand": "Copier la commande d'installation",
     "authorizeCodeHint": "Vérifiez que ce code correspond à celui affiché sur votre ordinateur.",
     "whoCanUse": "Qui peut utiliser cet ordinateur",
     "onlyYouDescription": "Vous seul, dans chaque projet, dans vos sessions privées.",

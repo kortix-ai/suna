@@ -28,6 +28,8 @@ import { syncConfigDirToBase } from '@/lib/git/git'
 
 const CONFIG_DIR = '.kortix/opencode'
 const AGENT = `${CONFIG_DIR}/agents/kortix.md`
+/** Tracked, and rewritten at boot by OpenCode's plugin install. */
+const PKG = `${CONFIG_DIR}/package.json`
 
 let root: string
 let origin: string
@@ -61,6 +63,7 @@ beforeEach(() => {
   git(origin, 'config', 'user.email', 't@t.co')
   git(origin, 'config', 'user.name', 'T')
   write(origin, AGENT, 'ORIGINAL PROMPT\n')
+  write(origin, PKG, '{"dependencies":{}}\n')
   write(origin, 'app.ts', 'export const x = 1\n')
   git(origin, 'add', '-A')
   git(origin, 'commit', '-qm', 'base')
@@ -121,7 +124,7 @@ describe('syncConfigDirToBase', () => {
 
     const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
-    expect(result).toEqual({ synced: false, skipped: 'local changes' })
+    expect(result).toEqual({ synced: false, skipped: 'local changes', kept: [AGENT] })
     expect(agentText()).toBe('MY WORK IN PROGRESS\n')
   })
 
@@ -134,7 +137,7 @@ describe('syncConfigDirToBase', () => {
 
     const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
-    expect(result).toEqual({ synced: false, skipped: 'local commits' })
+    expect(result).toEqual({ synced: false, skipped: 'local commits', kept: [AGENT] })
     expect(agentText()).toBe('MY COMMITTED PROMPT\n')
   })
 
@@ -148,7 +151,7 @@ describe('syncConfigDirToBase', () => {
 
     const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
-    expect(result).toEqual({ synced: false, skipped: 'local commits' })
+    expect(result).toEqual({ synced: false, skipped: 'local commits', kept: [AGENT] })
     expect(git(work, 'rev-parse', 'HEAD')).toBe(head)
     expect(git(work, 'branch', '--show-current')).toBe('ses-1111-2222')
     expect(existsSync(join(work, '.git', 'MERGE_HEAD'))).toBe(false)
@@ -157,14 +160,57 @@ describe('syncConfigDirToBase', () => {
     expect(readFileSync(join(work, 'notes/untracked.txt'), 'utf8')).toBe('keep me\n')
   })
 
-  test('an untracked file under the config dir also blocks it', async () => {
-    // `git checkout <sha> -- <dir>` would leave this stranded next to files it
-    // did replace, producing a directory that is neither base nor the session.
+  // Dev 2026-09-30: every live box has a "dirty" config dir the session never
+  // touched — OpenCode's plugin install rewrites the tracked package.json and
+  // the managed-skill overlay rewrites skills. A whole-directory guard refused
+  // on all of them and reported the session's "own changes".
+  test('files base did not change never block it: platform rewrites and untracked files stay', async () => {
+    write(work, PKG, '{"dependencies":{"opencode-plugin":"1.0.0"}}\n')
     write(work, `${CONFIG_DIR}/agents/scratch.md`, 'draft\n')
 
     const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
 
-    expect(result).toEqual({ synced: false, skipped: 'local changes' })
+    expect(result).toEqual({ synced: true })
+    expect(agentText()).toBe('UPDATED PROMPT\n')
+    expect(readFileSync(join(work, PKG), 'utf8')).toBe('{"dependencies":{"opencode-plugin":"1.0.0"}}\n')
+    expect(readFileSync(join(work, CONFIG_DIR, 'agents/scratch.md'), 'utf8')).toBe('draft\n')
+  })
+
+  test('an untracked file where base ADDS one is kept, and the rest still syncs', async () => {
+    write(origin, `${CONFIG_DIR}/agents/new.md`, 'FROM BASE\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'add an agent')
+    write(work, `${CONFIG_DIR}/agents/new.md`, 'MINE\n')
+
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(result).toEqual({ synced: true, kept: [`${CONFIG_DIR}/agents/new.md`] })
+    expect(agentText()).toBe('UPDATED PROMPT\n')
+    expect(readFileSync(join(work, CONFIG_DIR, 'agents/new.md'), 'utf8')).toBe('MINE\n')
+  })
+
+  test('base changes two files and the session edited one: the other is brought in', async () => {
+    write(origin, PKG, '{"dependencies":{"from-base":"2.0.0"}}\n')
+    git(origin, 'add', '-A')
+    git(origin, 'commit', '-qm', 'base bumps a dependency')
+    write(work, PKG, '{"dependencies":{"mine":"1.0.0"}}\n')
+
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(result).toEqual({ synced: true, kept: [PKG] })
+    expect(agentText()).toBe('UPDATED PROMPT\n')
+    expect(readFileSync(join(work, PKG), 'utf8')).toBe('{"dependencies":{"mine":"1.0.0"}}\n')
+  })
+
+  test('a file base deleted is removed when the session never touched it', async () => {
+    git(origin, 'rm', '-q', PKG)
+    git(origin, 'commit', '-qm', 'drop package.json')
+
+    const result = await syncConfigDirToBase(cfg(), CONFIG_DIR)
+
+    expect(result).toEqual({ synced: true })
+    expect(existsSync(join(work, PKG))).toBe(false)
+    expect(git(work, 'diff', '--name-only', 'refs/remotes/origin/main', '--', CONFIG_DIR)).toBe('')
   })
 
   test('reports "already matches base" rather than implying it rewrote files', async () => {

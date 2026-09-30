@@ -33,6 +33,7 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Self-hosted', href: '/self-hosted' },
       { label: 'Enterprise', href: '/enterprise' },
       { label: 'Pricing', href: '/pricing' },
+      { label: 'Download', href: '/download' },
     ],
   },
   {

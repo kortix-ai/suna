@@ -331,6 +331,7 @@ The session payload reports both verdicts, and a client must not read one for th
 `SESS-37` Session list tree + starter filters (KRTX-639). `GET /projects/:id/sessions` accepts `parent=root|<session_id>`, `started_by=me|others|automated` and `q` (1..200 chars; unknown `started_by` or longer `q` → 400); none given = the flat legacy list. Every row carries `parent_session_id` and `initiator {type: member|trigger|channel|api|system, id, label}`; a spawned session carries its parent's initiator. `parent=root` serves top-level sessions only, each with `child_count` (non-deleted children); `parent=<id>` serves that session's children. `started_by=me` = member initiator equal to the viewer; `others` = another member; `automated` = trigger/channel/api/system. `q` matches title, starter (trigger slug or channel), agent, source, the owner's email or name, and a session-id prefix server-side across every session the viewer may see; with `parent=root` a root whose child matched is returned with `search_match:"child"`, its own match with `"self"`. Search never matches a session the viewer may not open.
 `SESS-38` Session labels and client metadata (KRTX-783). Every session carries `labels: string[]` (default `[]`). `POST /projects/:id/sessions {labels?}` and `PATCH /projects/:id/sessions/:sid {labels?}` store a free-form list: each label is trimmed, 1..64 characters, at most 20 per session, duplicates dropped in first-seen order; any other shape → 400 and nothing is written. PATCH `labels` replaces the list; `[]` clears it. PATCH `metadata` merges top-level keys; a `null` value removes that key; server-managed keys → 400 (`SCOPE-3`); a `metadata` object over 16 KB of JSON → 400 on create and update. Any member who may open the session may label it, the same gate as a rename. `GET /projects/:id/sessions?label=<l>` (repeatable, AND) lists only sessions that carry every given label; with `parent=root` a root whose child carries them is listed, like `q`; a flat list under a label filter never appends an unlabeled coordinator as tree context. `q` also matches a label. A label longer than 64 characters in the query → 400. The filter never reaches a session the viewer may not open.
 `SESS-39` Turn identity (requires a sandbox). The owner's session is ready and shared with the project (`PUT .../sharing {mode:"project"}` → 200). Three turns: the owner, then an account admin, then the owner again, each through `POST .../prompts` (202). In each turn the agent calls `GET /accounts/me` with the sandbox's own `KORTIX_TOKEN` and replies `<nonce> <email>`; the email is the email of the member who started that turn. The session keeps one credential: the token row's `user_id` and `on_behalf_of_user_id` follow the prompter at delivery, a non-person prompt (trigger, channel without a linked user) clears `on_behalf_of` and keeps `user_id`, and an agent-session prompt changes nothing. `integration-session-turn-identity.test.ts` pins the bind without a runtime.
+`SESS-40` Browser tab presence lease (KRTX-588). `PUT /projects/:id/sessions/:sid/presence {tab_id: uuid, active: boolean}` needs a human login that may read the session. `active=true` upserts one lease for (user, session, tab) that expires 90 s later and extends the sandbox deadline; repeating it keeps one row. `active=false` deletes the lease. Anonymous → 401; non-UUID `tab_id` → 400 and no row; unknown session → 404; API-key or session credential → 403.
 `SCOPE-1` Session environment routes resolve the session through the shared session guard. `GET /projects/:id/sessions/:sid/environment`, `POST …/environment/stop`, and `POST …/environment/ensure` answer 404 for a session of another project or account, and for a session the caller cannot see (another member's private session, even for a project manager); a refused stop leaves the environment row unchanged, and a refused ensure provisions nothing. The session owner reads and stops its environment (200). Ensure on a session that does not run on the pi worker → 400. ANON → 401.
 
 `SCOPE-2` Public-share management reads the caller's session binding from the credential, never the browser login session. A signed-in owner lists, mints, and revokes public shares on its own `origin='backend'` session (200/201/200). A session-bound credential does not carry its user's manage standing: it cannot mint a public link to, or list the links of, a sibling machine-owned (trigger) session (403, no share row written), and it mints one for its own session (201). The signed-in account owner still mints on the machine-owned session (201).
@@ -1151,6 +1152,27 @@ A local `*.apps.localhost` deployment never issues certificates and answers 200
 without the database round-trip; the 404 branch is pinned source-level in
 `apps/api/src/apps/edge.test.ts`. The route discloses only whether a hostname is
 servable — the same fact the hostname's own DNS record already states.
+
+`APP-6` App viewer token (`requires: appHost`) — the gate at the App's own
+hostname tells the App who is looking and, for `viewer_token_scope: 'api'`,
+hands it a token that acts as that person. An anonymous `GET /_kortix/viewer`
+→ **401** `app_auth_required`. A project member signed in through an access
+link (`POST …/:appId/access-session`, then the link → **303** with the App
+cookie) gets **200** from `/_kortix/viewer`: their `user_id`, scopes
+`profile email kortix`, a `kortix_oat_` token that expires in one hour. The
+token acts as the viewer: `GET /accounts/me` answers their `user_id` with
+`token_context.auth_type: oauth`, so what it creates is theirs, never the App
+author's. The viewer's own role is the ceiling: as a project `member` with no
+agent grant, the token's `POST /projects/:projectId/sessions` → **403**
+`no_agent_access`. An access-policy save revokes the token
+(**401** on `GET /projects/:projectId`); the next sign-in yields a different
+token that answers **200**. The real CLI process `kortix apps access <app>
+--viewer identity` switches the scope and keeps `restricted` and the members;
+`--viewer everything` exits non-zero. `identity` scope yields `profile email` only, and
+that token gets **403** on a project route. `off` → `/_kortix/viewer` **404**
+`viewer_disabled`. The cross-replica case (a replica whose cache still holds a
+token revoked elsewhere) is proven in
+`apps/api/src/apps/viewer-token.integration.test.ts`.
 
 ---
 

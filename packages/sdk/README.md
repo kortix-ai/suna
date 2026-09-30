@@ -890,8 +890,10 @@ const asViewer = await createAppViewerKortix(request, { backendUrl });          
 
 The Apps gate authenticated the visitor before your App was served and signs
 their identity into every request; `viewer_token_scope` on the App's access
-policy decides whether the App also gets a token to act with. Guide:
-`/docs/sdk/apps`.
+policy decides whether the App also gets a token to act with. On the server,
+read it per request; in the browser, `kortixAppViewerToken()` replaces a token
+the API refused (after an access-policy change) and replays the call once.
+Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)
 

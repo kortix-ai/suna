@@ -178,6 +178,8 @@ export interface CompiledAgent {
   color?: string;
   /** Maximum model steps per turn. */
   steps?: number;
+  /** Built-in tool toggles: `false` removes the tool; an omitted tool keeps the harness default. */
+  tools?: Record<string, boolean>;
   /** Tool policy: capability → action, or capability → pattern → action. */
   permission?: unknown;
 }
@@ -203,6 +205,7 @@ export const AGENT_SETTING_HARNESSES = {
   options: ['opencode'],
   color: ['opencode'],
   steps: ['opencode', 'pi'],
+  tools: ['opencode', 'pi'],
   hidden: ['opencode', 'pi'],
   permission: ['opencode', 'pi'],
   disable: ['opencode', 'pi'],
