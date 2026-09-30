@@ -500,7 +500,7 @@ async function upsertMirrorRows(
     messageId: String(row.info.id),
     parentMessageId:
       typeof row.info.parentID === 'string' && row.info.parentID ? row.info.parentID : null,
-    opencodeSessionId,
+    runtimeSessionId: opencodeSessionId,
     role: typeof row.info.role === 'string' && row.info.role ? row.info.role : 'unknown',
     messageCreatedAt: timeField(row.info, 'created'),
     messageCompletedAt: timeField(row.info, 'completed'),
