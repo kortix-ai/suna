@@ -1659,6 +1659,20 @@ describe('pi subagents extension', () => {
     expect(((await r.user('/tool/ids').then((res) => res.json())) as string[]).filter((id) => id === 'task')).toHaveLength(1)
   })
 
+  test("a live agent-config change turns the agent's built-in tools off and back on", async () => {
+    const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
+    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
+    const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
+    runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
+    await runtime.reconfigure()
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
+    await runtime.reconfigure()
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'question', 'task'])
+  })
+
   test('several task calls in one message run their subagents concurrently', async () => {
     const r = await boot({
       script: [

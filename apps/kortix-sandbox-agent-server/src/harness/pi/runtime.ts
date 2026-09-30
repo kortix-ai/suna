@@ -405,9 +405,10 @@ export class PiRuntime {
       this.workspaceTools = createWorkspaceTools(this.executionEnv)
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
       // so only a batch made entirely of parallel tools (task calls) runs concurrently.
-      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))]
-        .filter((tool) => this.compiledAgent()?.tools?.[tool.name] !== false)
-        .map((tool) => ({ ...tool, executionMode: 'sequential' as const }))
+      // Every built-in tool is registered; the agent's `tools` switches pick the active ones (rebuildSystemPrompt).
+      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
+        (tool) => ({ ...tool, executionMode: 'sequential' as const }),
+      )
       this.skills = await this.loadSkills(core.loadSkills)
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
@@ -445,6 +446,7 @@ export class PiRuntime {
         provider: this.models.models.getProvider(this.selected.providerID),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
+      this.rebuildSystemPrompt()
       // The session installed the extension tool hooks; the permission policy runs first.
       agent.beforeToolCall = this.toolGate((tool, args) => this.compiledAgent()?.tools?.[tool] === false ? 'deny' : this.permissions.rule(tool, args), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
@@ -755,10 +757,19 @@ export class PiRuntime {
     }
   }
 
-  /** Re-read the base system prompt (compiled agent, skills) into pi's session. */
+  /**
+   * Re-read the base system prompt (compiled agent, skills) into pi's session,
+   * with the built-in tools the agent's `tools` switches leave on. A switch
+   * back on re-activates the tool in place: every built-in stays registered.
+   */
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
-    if (session) session.setActiveToolsByName(session.getActiveToolNames())
+    if (!session) return
+    const switches = this.compiledAgent()?.tools
+    // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
+    const builtIn = this.baseTools.map((tool) => tool.name)
+    const others = session.getActiveToolNames().filter((name) => !builtIn.includes(name))
+    session.setActiveToolsByName([...builtIn.filter((name) => switches?.[name] !== false), ...others])
   }
 
   // ── child sessions ───────────────────────────────────────────────────────
