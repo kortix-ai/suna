@@ -370,6 +370,16 @@ the prompt inbox. The API copies those bytes into the sandbox after startup. Upl
 sandbox. Reads return a `Blob` and require access to the session. Retries of the same `File`
 reuse the successful upload; an explicit `attachmentId` supports caller-managed retries.
 
+### Session labels and metadata
+
+Every session carries `labels: string[]` and a free-form `metadata` object. Set both
+at `project.sessions.create({ labels, metadata })`. `session.update({ labels })`
+replaces the labels; `session.update({ metadata })` merges keys, and a `null` value
+removes a key. `project.sessions.listPage({ labels })` returns only sessions that carry
+every given label, and `useProjectSessions(projectId, { labels })` does the same in
+React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
+most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by

@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   EMPTY_LIST,
   selectAccessFilters,
+  selectLabelFilters,
   selectOwnerFilters,
   selectCollapsedSections,
   selectGroupMode,
@@ -35,6 +36,7 @@ beforeEach(() => {
     collapsedSectionsByProject: {},
     ownerFiltersByProject: {},
     accessFiltersByProject: {},
+    labelFiltersByProject: {},
   });
 });
 
@@ -170,6 +172,15 @@ describe('owner and access facets', () => {
     expect(read(selectAccessFilters(P, 'page'))).toEqual([]);
   });
 
+  test('the label facet toggles per surface and Reset clears it', () => {
+    const s = useSessionFilterStore.getState();
+    s.toggleLabelFilter(P, 'bug', 'page');
+    s.toggleLabelFilter(P, 'customer: eu', 'page');
+    expect(read(selectLabelFilters(P, 'page'))).toEqual(['bug', 'customer: eu']);
+    useSessionFilterStore.getState().resetFilters(P, 'page');
+    expect(read(selectLabelFilters(P, 'page'))).toEqual([]);
+  });
+
   test('the unset owner filter is the stable empty list', () => {
     expect(read(selectOwnerFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
     expect(read(selectAccessFilters('never-touched', 'page'))).toBe(EMPTY_LIST);
@@ -183,6 +194,7 @@ describe('scoped selector and toggle matrix', () => {
       [selectSourceFilters, 'toggleSourceFilter', 'slack'],
       [selectOwnerFilters, 'toggleOwnerFilter', 'owner-1'],
       [selectAccessFilters, 'toggleAccessFilter', 'private'],
+      [selectLabelFilters, 'toggleLabelFilter', 'bug'],
       [selectHiddenSections, 'toggleSectionHidden', 'older'],
     ] as const;
     for (const [selector, action, value] of facets) {

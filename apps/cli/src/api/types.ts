@@ -144,6 +144,8 @@ export interface ProjectSession {
   name: string | null;
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
+  /** Free-form labels. Absent on a server older than labels. */
+  labels?: string[];
   agent_name: string;
   status: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
   error: string | null;

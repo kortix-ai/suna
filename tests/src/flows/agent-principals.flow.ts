@@ -802,7 +802,7 @@ flow(
         }, { params: { projectId: project.id, sessionId: privateRun.sessionId } });
         r.status([200, 202]);
         // The session token changes hands when the admin's TURN starts
-        // (SESS-38), not when the prompt is queued behind the human's turn.
+        // (SESS-39), not when the prompt is queued behind the human's turn.
         const onBehalfOf = await world.readOnBehalfOf(privateRun.sessionId);
         if (onBehalfOf !== human.userId) throw new Error(`on_behalf_of = ${onBehalfOf} while the admin's prompt waits`);
         await expectReach(privateRun, true, 'private session while the admin prompt waits');

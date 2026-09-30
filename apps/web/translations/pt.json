@@ -188,11 +188,7 @@
       "label": "Conta",
       "createIn": "Criar em {account}",
       "choose": "Escolher uma conta",
-      "loggedInAs": "Conectado como",
-      "nameLabel": "Nome da conta",
-      "nameHint": "Sua equipe vê este nome na barra lateral e nos convites. Você pode alterá-lo depois.",
-      "nameRequired": "O nome da conta é obrigatório",
-      "renameFailed": "Não foi possível salvar o nome da conta. Tente novamente."
+      "loggedInAs": "Conectado como"
     },
     "name": {
       "label": "Nome do projeto",
@@ -1553,7 +1549,8 @@
         "restricted": "Pessoas específicas",
         "project": "Projeto inteiro"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Rótulos"
     },
     "loadingMore": "A carregar…",
     "loadMoreSessions": "Carregar mais sessões",
@@ -1565,7 +1562,21 @@
       "others": "Compartilhadas",
       "automated": "Automatizadas"
     },
-    "reminders": "Lembretes"
+    "reminders": "Lembretes",
+    "labels": {
+      "menu": "Editar rótulos",
+      "title": "Rótulos",
+      "description": "Os rótulos classificam esta sessão. Filtre a lista de sessões por eles. Agentes, a CLI e a API também podem defini-los.",
+      "placeholder": "Digite um rótulo e pressione Enter",
+      "empty": "Ainda não há rótulos.",
+      "remove": "Remover {label}",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "saved": "Rótulos salvos",
+      "failed": "Não foi possível salvar os rótulos",
+      "tooLong": "Um rótulo tem no máximo 64 caracteres.",
+      "tooMany": "Uma sessão tem no máximo 20 rótulos."
+    }
   },
   "dashboard": {
     "title": "Painel",
@@ -19955,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Boas-vindas ao Kortix",
-    "nameAccountTitle": "Dê um nome à sua conta",
-    "nameAccountBody": "Seus projetos, agentes e colegas de equipe ficam aqui.",
-    "nameAccountContinue": "Continuar",
     "welcomeBack": "Bem-vindo de volta",
     "descriptionNew": "Crie seu primeiro projeto ou entre em um que sua equipe compartilhou.",
     "descriptionReturning": "Abra um projeto ou crie um novo.",

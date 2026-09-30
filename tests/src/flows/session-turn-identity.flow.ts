@@ -1,5 +1,5 @@
 /**
- * SESS-38 — the session credential acts as the person who started the turn.
+ * SESS-39 — the session credential acts as the person who started the turn.
  *
  * One sandbox holds one Kortix credential (`KORTIX_TOKEN`) for its whole life.
  * When another member prompts a shared session, every call the agent makes in
@@ -21,7 +21,7 @@ const probe = (nonce: string) =>
   `— then reply with exactly one line: "${nonce} <email>", where <email> is the "email" field of its JSON output.`;
 
 flow(
-  'SESS-38',
+  'SESS-39',
   {
     domain: 'sessions',
     requires: ['daytona', 'funded'],
@@ -50,7 +50,7 @@ flow(
     const turn = (who: Principal, label: string, n: number) =>
       ctx.step(`${label} prompts; the agent's own credential answers GET /accounts/me as ${label}`, async () => {
         if (!who.email) throw new Error(`${label} has no email in the principal matrix`);
-        const nonce = `sess38-${run}-${n}`;
+        const nonce = `sess39-${run}-${n}`;
         const sent = await ctx.client.as(who).post(
           '/v1/projects/:projectId/sessions/:sessionId/prompts',
           {
