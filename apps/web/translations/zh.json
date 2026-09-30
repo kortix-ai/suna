@@ -19045,7 +19045,16 @@
       "text2bbd1ec2197d": "已连接应用",
       "textda3d3fb8f598": "代理会话",
       "text4dcb7e3b10a9": "SCIM 令牌",
-      "text36fe0f55b7f5": "任意凭据"
+      "text36fe0f55b7f5": "任意凭据",
+      "textbfda026e6c59": "已关联",
+      "text72ea4fa7caf9": "听写已停止：{value0}",
+      "text557b623f9a33": "无法开始听写。请检查麦克风权限。",
+      "textb43c4884c3be": "听写控制",
+      "textd31d065a762c": "取消听写",
+      "textbbb4106e8144": "正在聆听…",
+      "text7458028e0d1d": "完成听写",
+      "text9c84d6622566": "语音输入消息",
+      "textf164e4b031dc": "已更新会话在线状态"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

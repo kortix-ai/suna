@@ -19045,7 +19045,16 @@
       "text2bbd1ec2197d": "App conectado",
       "textda3d3fb8f598": "Sessão do agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Qualquer credencial"
+      "text36fe0f55b7f5": "Qualquer credencial",
+      "textbfda026e6c59": "Vinculado",
+      "text72ea4fa7caf9": "Ditado interrompido: {value0}",
+      "text557b623f9a33": "Não foi possível iniciar o ditado. Verifique o acesso ao microfone.",
+      "textb43c4884c3be": "Controles de ditado",
+      "textd31d065a762c": "Cancelar ditado",
+      "textbbb4106e8144": "Ouvindo…",
+      "text7458028e0d1d": "Concluir ditado",
+      "text9c84d6622566": "Ditar mensagem",
+      "textf164e4b031dc": "Presença na sessão atualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

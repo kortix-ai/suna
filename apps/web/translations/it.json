@@ -19045,7 +19045,16 @@
       "text2bbd1ec2197d": "App collegata",
       "textda3d3fb8f598": "Sessione agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Qualsiasi credenziale"
+      "text36fe0f55b7f5": "Qualsiasi credenziale",
+      "textbfda026e6c59": "Collegato",
+      "text72ea4fa7caf9": "Dettatura interrotta: {value0}",
+      "text557b623f9a33": "Impossibile avviare la dettatura. Controlla l'accesso al microfono.",
+      "textb43c4884c3be": "Controlli di dettatura",
+      "textd31d065a762c": "Annulla dettatura",
+      "textbbb4106e8144": "In ascolto…",
+      "text7458028e0d1d": "Termina dettatura",
+      "text9c84d6622566": "Detta un messaggio",
+      "textf164e4b031dc": "Presenza nella sessione aggiornata"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
