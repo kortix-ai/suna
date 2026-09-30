@@ -385,4 +385,77 @@ describe('hydrateLiveStatuses', () => {
     expect(controller.calls).toEqual([]);
     expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'idle' });
   });
+
+  test('a send in flight keeps the slot busy even when the re-read drops its optimistic message', async () => {
+    const controller = controllerLanding([user, reply(3)]);
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller });
+    useSyncStore.getState().hydrate('s1', [user, reply(3)] as never);
+    useSyncStore.getState().addOptimisticMessage('s1', {
+      info: { id: 'opt-1', role: 'user', sessionID: 's1', time: { created: 4 } },
+      parts: [],
+    } as never);
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a slot replaced after the given snapshot is left alone', async () => {
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller: controllerLanding([user, reply(3)]) });
+    useSyncStore.getState().hydrate('s1', [user, reply(3)] as never);
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    const before = useSyncStore.getState().sessionStatus;
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false, { reread: false, before });
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a read that turns stale during the re-read writes nothing', async () => {
+    let stale = false;
+    registerLiveSession({
+      sessionId: 's1',
+      sandboxUrl: url,
+      controller: {
+        async reconcile() {
+          useSyncStore.getState().hydrate('s1', [user, reply(3)] as never);
+          stale = true;
+        },
+      },
+    });
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => stale);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a failed status read changes nothing and re-reads nothing', async () => {
+    const controller = controllerLanding([user, reply(3)]);
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller });
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    globalThis.fetch = (async () => new Response('', { status: 503 })) as unknown as typeof fetch;
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(controller.calls).toEqual([]);
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a stale caller issues no request', async () => {
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      requests += 1;
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await hydrateLiveStatuses(url, () => true);
+
+    expect(requests).toBe(0);
+  });
 });

@@ -450,6 +450,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * - after an interrupted connection reopens past the gap threshold, or after a
  *   recycle, the live sessions re-read one tail page each and `/question` is
  *   read once;
+ * - every open reads `/session/status` once and settles a working session the
+ *   runtime no longer lists;
  * - past `STREAM_RECYCLE_BYTES` the connection is recycled, because the XHR
  *   transport keeps the whole body in memory;
  * - backoff has jitter; after `MAX_HARD_FAILURES` consecutive failures the

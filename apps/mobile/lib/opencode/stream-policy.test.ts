@@ -330,8 +330,8 @@ describe('transcriptEndsFinished', () => {
     expect(transcriptEndsFinished([user, open])).toBe(false);
   });
 
-  // A prompt the runtime has not answered yet: a seeded first prompt, a
-  // follow-up sent while the box was not listing the turn.
+  // A prompt whose user message is the newest in the store. A send in flight
+  // is excluded separately, in `hydrateLiveStatuses`.
   test('a trailing user message does not', () => {
     expect(transcriptEndsFinished([user, completed, user])).toBe(false);
   });
