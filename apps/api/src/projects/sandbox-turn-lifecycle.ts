@@ -74,6 +74,79 @@ function jsonbObject(value: SQL): SQL {
 }
 
 /**
+ * The FOR UPDATE read of one session's live sandbox row, as the `target` CTE
+ * body both multi-turn end writers start from.
+ */
+function sandboxTurnTargetCte(sessionId: string): SQL {
+  return sql`SELECT s.sandbox_id,
+             ${jsonbObject(sql`s.metadata`)} AS metadata
+        FROM kortix.session_sandboxes s
+       WHERE s.session_id = ${sessionId}
+         AND s.status IN ('active', 'provisioning')
+       FOR UPDATE OF s`;
+}
+
+/**
+ * The `all_active_turns ... selected` CTE chain of completeSandboxTurn: every
+ * live turn of the session, narrowed to the end frame's OpenCode identity, an
+ * exact-message match taking precedence over the newest fallback. It follows
+ * the `target` CTE, so the fragment opens with a comma.
+ */
+function turnSelectionCtes(identity?: Partial<SandboxTurnIdentity> | null): SQL {
+  return sql`, all_active_turns AS (
+      SELECT target.sandbox_id,
+             coalesce(entry.value->>'token', entry.key) AS token
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+    ), turn_candidates AS (
+      SELECT target.sandbox_id,
+             entry.key,
+             entry.value->>'token' AS token,
+             entry.value
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+         AND (entry.value->>'opencodeSessionId' IS NULL
+           OR (${identity?.opencodeSessionId ?? null}::text IS NOT NULL
+             AND entry.value->>'opencodeSessionId' = ${identity?.opencodeSessionId ?? null}))
+    ), exact_matches AS (
+      SELECT candidate.sandbox_id, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE ${identity?.messageId ?? null}::text IS NOT NULL
+         AND candidate.value->>'messageId' = ${identity?.messageId ?? null}
+    ), fallback_match AS (
+      SELECT candidate.sandbox_id, candidate.key, candidate.token,
+             candidate.value
+        FROM turn_candidates candidate
+       WHERE candidate.value->>'messageId' IS NULL
+         AND NOT EXISTS (
+           SELECT 1
+             FROM exact_matches exact
+            WHERE exact.sandbox_id = candidate.sandbox_id)
+       ORDER BY CASE
+         WHEN candidate.value->>'startedAtMs' ~ '^[0-9]+$'
+           THEN (candidate.value->>'startedAtMs')::bigint
+         ELSE 9223372036854775807
+       END, candidate.key
+       LIMIT 1
+    ), selected AS (
+      SELECT * FROM exact_matches
+      UNION ALL
+      SELECT * FROM fallback_match
+    )`;
+}
+
+/**
  * Record a control-plane-observed delivery attempt before the upstream call.
  * The short grace covers delivery only. A confirmed response promotes the same
  * token to `active`; a fast terminal event can delete it first and win the CAS.
@@ -408,6 +481,52 @@ export async function clearSandboxTurn(
   return true;
 }
 
+/**
+ * The `turns.length === 0` branch of completeSandboxTurn: the authority write
+ * erased nothing. Either the ledger already closed this exact message — refine
+ * a missing cause, revive a false abandon, and report `already_closed` — or
+ * the frame does not match any live turn.
+ */
+async function settleAlreadyClosedTurn(
+  sessionId: string,
+  status: 'idle' | 'error',
+  identity: Partial<SandboxTurnIdentity> | null | undefined,
+  endError: SessionTurnEndErrorRecord | null,
+  activeTurnCount: number,
+): Promise<SandboxTurnCompletionResult> {
+  if (!(await wasSandboxTurnAlreadyClosed(sessionId, identity))) {
+    return {
+      outcome: activeTurnCount > 0 ? 'identity_mismatch' : 'no_active_turn',
+      activeTurnCount,
+      closedTurnCount: 0,
+    };
+  }
+  if (identity && endError && isProtectedEndError(endError.name)) {
+    await recordTurnLedger(
+      refineEndedTurnError(sessionId, identity, endError),
+      `refine end error ${identity.messageId} (${endError.name})`,
+    );
+  }
+  // Same abort guard as the refine above: an abort names the EFFECT
+  // (something asked this turn to stop), never the cause, so it must not
+  // overwrite a reason the ledger already recorded — including a false
+  // `abandoned` one. Only a genuine idle/error verdict revives the row.
+  if (identity && (!endError?.name || !ABORT_END_ERROR_NAMES.includes(endError.name))) {
+    // `wasSandboxTurnAlreadyClosed` only returns true with a messageId, so
+    // `identity.messageId` is guaranteed here.
+    const revivedReason: 'completed' | 'failed' = status === 'error' ? 'failed' : 'completed';
+    await recordTurnLedger(
+      reviveAbandonedTurnOnCompletion(sessionId, identity, revivedReason, endError),
+      `revive abandoned ${identity.messageId} (${revivedReason})`,
+    );
+  }
+  return {
+    outcome: 'already_closed',
+    activeTurnCount,
+    closedTurnCount: 0,
+  };
+}
+
 export async function completeSandboxTurn(
   sessionId: string,
   status: 'idle' | 'error',
@@ -418,66 +537,9 @@ export async function completeSandboxTurn(
   if (!isTerminalTurnEnd(status, error)) {
     return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
   }
-  const metadata = jsonbObject(sql`s.metadata`);
   const result = await execute(sql`
-    WITH target AS (
-      SELECT s.sandbox_id,
-             ${metadata} AS metadata
-        FROM kortix.session_sandboxes s
-       WHERE s.session_id = ${sessionId}
-         AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), all_active_turns AS (
-      SELECT target.sandbox_id,
-             coalesce(entry.value->>'token', entry.key) AS token
-        FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
-          ELSE '{}'::jsonb
-        END) entry
-       WHERE entry.value->>'state' IN ('delivering', 'active')
-    ), turn_candidates AS (
-      SELECT target.sandbox_id,
-             entry.key,
-             entry.value->>'token' AS token,
-             entry.value
-        FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
-          ELSE '{}'::jsonb
-        END) entry
-       WHERE entry.value->>'state' IN ('delivering', 'active')
-         AND (entry.value->>'opencodeSessionId' IS NULL
-           OR (${identity?.opencodeSessionId ?? null}::text IS NOT NULL
-             AND entry.value->>'opencodeSessionId' = ${identity?.opencodeSessionId ?? null}))
-    ), exact_matches AS (
-      SELECT candidate.sandbox_id, candidate.key, candidate.token,
-             candidate.value
-        FROM turn_candidates candidate
-       WHERE ${identity?.messageId ?? null}::text IS NOT NULL
-         AND candidate.value->>'messageId' = ${identity?.messageId ?? null}
-    ), fallback_match AS (
-      SELECT candidate.sandbox_id, candidate.key, candidate.token,
-             candidate.value
-        FROM turn_candidates candidate
-       WHERE candidate.value->>'messageId' IS NULL
-         AND NOT EXISTS (
-           SELECT 1
-             FROM exact_matches exact
-            WHERE exact.sandbox_id = candidate.sandbox_id)
-       ORDER BY CASE
-         WHEN candidate.value->>'startedAtMs' ~ '^[0-9]+$'
-           THEN (candidate.value->>'startedAtMs')::bigint
-         ELSE 9223372036854775807
-       END, candidate.key
-       LIMIT 1
-    ), selected AS (
-      SELECT * FROM exact_matches
-      UNION ALL
-      SELECT * FROM fallback_match
-    ), next_state AS (${removeAndReturnTurns()})
+    WITH target AS (${sandboxTurnTargetCte(sessionId)})${turnSelectionCtes(identity)}
+    , next_state AS (${removeAndReturnTurns()})
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
            deadline_at = ${contractIdleDeadline(sql`next_state.metadata`, graceMs)},
@@ -502,37 +564,7 @@ export async function completeSandboxTurn(
   const activeTurnCount = Number(rows[0]?.active_turn_count ?? 0);
   const endError = endErrorRecord(status, error);
   if (turns.length === 0) {
-    if (await wasSandboxTurnAlreadyClosed(sessionId, identity)) {
-      if (identity && endError && isProtectedEndError(endError.name)) {
-        await recordTurnLedger(
-          refineEndedTurnError(sessionId, identity, endError),
-          `refine end error ${identity.messageId} (${endError.name})`,
-        );
-      }
-      // Same abort guard as the refine above: an abort names the EFFECT
-      // (something asked this turn to stop), never the cause, so it must not
-      // overwrite a reason the ledger already recorded — including a false
-      // `abandoned` one. Only a genuine idle/error verdict revives the row.
-      if (identity && (!endError?.name || !ABORT_END_ERROR_NAMES.includes(endError.name))) {
-        // `wasSandboxTurnAlreadyClosed` only returns true with a messageId, so
-        // `identity.messageId` is guaranteed here.
-        const revivedReason: 'completed' | 'failed' = status === 'error' ? 'failed' : 'completed';
-        await recordTurnLedger(
-          reviveAbandonedTurnOnCompletion(sessionId, identity, revivedReason, endError),
-          `revive abandoned ${identity.messageId} (${revivedReason})`,
-        );
-      }
-      return {
-        outcome: 'already_closed',
-        activeTurnCount,
-        closedTurnCount: 0,
-      };
-    }
-    return {
-      outcome: activeTurnCount > 0 ? 'identity_mismatch' : 'no_active_turn',
-      activeTurnCount,
-      closedTurnCount: 0,
-    };
+    return settleAlreadyClosedTurn(sessionId, status, identity, endError, activeTurnCount);
   }
   if (owner && turns.length > 0) {
     const endReason: SessionTurnEndReason = status === 'error' ? 'failed' : 'completed';
@@ -578,16 +610,9 @@ export async function closeSandboxTurnByMessageId(
   reason: SessionTurnEndReason,
   graceMs = idleGraceMs(),
 ): Promise<boolean> {
-  const metadata = jsonbObject(sql`s.metadata`);
   const result = await execute(sql`
-    WITH target AS (
-      SELECT s.sandbox_id,
-             ${metadata} AS metadata
-        FROM kortix.session_sandboxes s
-       WHERE s.session_id = ${sessionId}
-         AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), selected AS (
+    WITH target AS (${sandboxTurnTargetCte(sessionId)})
+    , selected AS (
       SELECT target.sandbox_id,
              entry.key,
              entry.value->>'token' AS token,

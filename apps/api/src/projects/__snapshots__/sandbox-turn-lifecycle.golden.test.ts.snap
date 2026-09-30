@@ -427,8 +427,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
 [
   
 "
-    WITH target AS (
-      SELECT s.sandbox_id,
+    WITH target AS ( SELECT s.sandbox_id,
               CASE
     WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
     ELSE '{}'::jsonb
@@ -436,8 +435,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
         FROM kortix.session_sandboxes s
        WHERE s.session_id =  sess-1 
          AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), all_active_turns AS (
+       FOR UPDATE OF s ) , all_active_turns AS (
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
@@ -487,7 +485,8 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS ( SELECT target.sandbox_id,
+    ) 
+    , next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -580,8 +579,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
 [
   
 "
-    WITH target AS (
-      SELECT s.sandbox_id,
+    WITH target AS ( SELECT s.sandbox_id,
               CASE
     WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
     ELSE '{}'::jsonb
@@ -589,8 +587,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
         FROM kortix.session_sandboxes s
        WHERE s.session_id =  sess-1 
          AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), all_active_turns AS (
+       FOR UPDATE OF s ) , all_active_turns AS (
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
@@ -640,7 +637,8 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS ( SELECT target.sandbox_id,
+    ) 
+    , next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -733,8 +731,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
 [
   
 "
-    WITH target AS (
-      SELECT s.sandbox_id,
+    WITH target AS ( SELECT s.sandbox_id,
               CASE
     WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
     ELSE '{}'::jsonb
@@ -742,8 +739,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
         FROM kortix.session_sandboxes s
        WHERE s.session_id =  sess-1 
          AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), all_active_turns AS (
+       FOR UPDATE OF s ) , all_active_turns AS (
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
@@ -793,7 +789,8 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS ( SELECT target.sandbox_id,
+    ) 
+    , next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -896,8 +893,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
 [
   
 "
-    WITH target AS (
-      SELECT s.sandbox_id,
+    WITH target AS ( SELECT s.sandbox_id,
               CASE
     WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
     ELSE '{}'::jsonb
@@ -905,8 +901,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
         FROM kortix.session_sandboxes s
        WHERE s.session_id =  sess-1 
          AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), all_active_turns AS (
+       FOR UPDATE OF s ) , all_active_turns AS (
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
@@ -956,7 +951,8 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS ( SELECT target.sandbox_id,
+    ) 
+    , next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -1044,8 +1040,7 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
 [
   
 "
-    WITH target AS (
-      SELECT s.sandbox_id,
+    WITH target AS ( SELECT s.sandbox_id,
               CASE
     WHEN jsonb_typeof( s.metadata ) = 'object' THEN  s.metadata 
     ELSE '{}'::jsonb
@@ -1053,8 +1048,8 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
         FROM kortix.session_sandboxes s
        WHERE s.session_id =  sess-1 
          AND s.status IN ('active', 'provisioning')
-       FOR UPDATE OF s
-    ), selected AS (
+       FOR UPDATE OF s )
+    , selected AS (
       SELECT target.sandbox_id,
              entry.key,
              entry.value->>'token' AS token,
