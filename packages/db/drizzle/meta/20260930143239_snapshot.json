@@ -1,6 +1,6 @@
 {
-  "id": "956f9892-0358-483f-b1ab-6bd5398fbbc4",
-  "prevId": "de6c344c-f672-4f4b-a911-55de5d7157a5",
+  "id": "ce16b458-316e-4a4f-9ce7-2cc51dafd2f2",
+  "prevId": "95f3db0c-ab90-4fe3-b540-08b500a097bd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3895,6 +3895,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "credential_kind": {
+          "name": "credential_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credential_id": {
+          "name": "credential_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "outcome": {
           "name": "outcome",
           "type": "text",
@@ -5976,6 +5988,12 @@
         },
         "revoked_at": {
           "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mfa_verified_at": {
+          "name": "mfa_verified_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -10442,12 +10460,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "opencode_archive": {
-          "name": "opencode_archive",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "error": {
           "name": "error",
           "type": "text",
@@ -13892,6 +13904,25 @@
           "primaryKey": false,
           "notNull": false
         },
+        "parent_session_id": {
+          "name": "parent_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "initiator_type": {
+          "name": "initiator_type",
+          "type": "project_session_initiator",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "initiator_id": {
+          "name": "initiator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "secrets_allowlist": {
           "name": "secrets_allowlist",
           "type": "jsonb",
@@ -13997,6 +14028,34 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_sessions_parent": {
+          "name": "idx_project_sessions_parent",
+          "columns": [
+            {
+              "expression": "parent_session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"project_sessions\".\"parent_session_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -18517,8 +18576,8 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "session_presence_leases_session_id_project_sessions_session_id_fk": {
-          "name": "session_presence_leases_session_id_project_sessions_session_id_fk",
+        "session_presence_session_fk": {
+          "name": "session_presence_session_fk",
           "tableFrom": "session_presence_leases",
           "tableTo": "project_sessions",
           "schemaTo": "kortix",
@@ -20282,6 +20341,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "machine_id": {
+          "name": "machine_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "account_id": {
           "name": "account_id",
           "type": "uuid",
@@ -21871,6 +21936,17 @@
       "values": [
         "request",
         "default"
+      ]
+    },
+    "kortix.project_session_initiator": {
+      "name": "project_session_initiator",
+      "schema": "kortix",
+      "values": [
+        "member",
+        "trigger",
+        "channel",
+        "api",
+        "system"
       ]
     },
     "kortix.project_session_origin": {
