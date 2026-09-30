@@ -38,13 +38,14 @@ let other: SeededProject;
 let bare: SeededProject;
 let mineSession: string;
 let ownerToken: string;
-let ownerTokenId: string;
+let bareToken: string;
+const tokenIds: string[] = [];
 const OWNER = crypto.randomUUID();
 
 beforeAll(async () => {
   mine = await seedProject('channel-write-mine');
   other = await seedProject('channel-write-other');
-  bare = await seedProject('channel-write-bare');
+  bare = await seedProject('channel-write-bare', { accountId: mine.account_id });
   mineSession = await seedSession(mine, crypto.randomUUID());
   const otherSession = await seedSession(other, crypto.randomUUID());
   // Both installs through the install path, so the workspace is proven in
@@ -77,12 +78,19 @@ beforeAll(async () => {
     projectId: mine.project_id,
     name: 'channel-write-scope-test',
   });
+  const bareOwner = await createAccountToken({
+    accountId: mine.account_id,
+    userId: OWNER,
+    projectId: bare.project_id,
+    name: 'channel-write-scope-test-bare',
+  });
   ownerToken = token.secretKey;
-  ownerTokenId = token.tokenId;
+  bareToken = bareOwner.secretKey;
+  tokenIds.push(token.tokenId, bareOwner.tokenId);
 });
 
 afterAll(async () => {
-  await db.execute(sql`delete from kortix.account_tokens where token_id = ${ownerTokenId}`);
+  for (const tokenId of tokenIds) await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
   await db.delete(chatThreads).where(inArray(chatThreads.workspaceId, [WS, FOREIGN_WS]));
   await db.delete(chatChannelBindings).where(eq(chatChannelBindings.workspaceId, WS));
   for (const project of [mine, other]) await deleteSlackInstall(project.project_id);
@@ -211,15 +219,15 @@ describe('thread binds land only in a proven workspace', () => {
 });
 
 describe('the file upload and bind-thread routes', () => {
-  const post = (path: string, body: unknown) =>
-    app.request(`/v1/projects/${mine.project_id}/channels/slack/${path}`, {
+  const post = (path: string, body: unknown, project = mine, token = ownerToken) =>
+    app.request(`/v1/projects/${project.project_id}/channels/slack/${path}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${ownerToken}`, 'content-type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
   const file = { filename: 'report.txt', content_base64: Buffer.from('synthetic').toString('base64') };
 
-  test("a file into another project's channel or thread is refused before Slack; a malformed channel is a 400", async () => {
+  test("a file into another project's channel or thread is refused before Slack; a malformed channel is a 400, no install a 404", async () => {
     const intoChannel = await post('file/upload', { ...file, channel: C_OTHER });
     expect(intoChannel.status).toBe(403);
     expect(await intoChannel.json()).toMatchObject({ reason: CONVERSATION_NOT_IN_PROJECT });
@@ -227,6 +235,10 @@ describe('the file upload and bind-thread routes', () => {
     expect(intoThread.status).toBe(403);
     expect(String((await intoThread.json()).error)).toContain(`Slack thread ${T_OTHER}`);
     expect((await post('file/upload', { ...file, channel: 'general' })).status).toBe(400);
+    // No Slack install: the route's answer before this rule, not connected.
+    const unconnected = await post('file/upload', { ...file, channel: C_NOBODY }, bare, bareToken);
+    expect(unconnected.status).toBe(404);
+    expect(String((await unconnected.json()).error)).toContain('no Slack install on record');
   });
 
   test('bind-thread: a foreign workspace is a 400, a thread in another project\'s channel a 403', async () => {

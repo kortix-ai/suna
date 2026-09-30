@@ -350,11 +350,10 @@ projectsApp.openapi(
     // A file post is a write, under the same rule as the connector's
     // send_message: never into another project's channel or thread.
     const refusal = await slackWriteRefusal(projectId, { channel: body.channel, ts: threadTs, tsArg: 'thread_ts' });
-    if (refusal) {
-      return refusal.kind === 'invalid'
-        ? c.json({ error: refusal.message }, 400)
-        : c.json({ error: refusal.message, reason: CONVERSATION_NOT_IN_PROJECT }, 403);
-    }
+    if (refusal?.kind === 'invalid') return c.json({ error: refusal.message }, 400);
+    // No install on record: Slack is not connected, the 404 this route always gave.
+    if (refusal?.kind === 'install') return c.json({ error: refusal.message }, 404);
+    if (refusal) return c.json({ error: refusal.message, reason: CONVERSATION_NOT_IN_PROJECT }, 403);
     const result = await uploadSlackFile(projectId, {
       channel: String(body.channel ?? ''),
       filename: String(body.filename ?? ''),
