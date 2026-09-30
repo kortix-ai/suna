@@ -11,6 +11,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { parse as parseYaml } from 'yaml';
 
+import { ACCOUNT_ACTIONS } from '../iam/actions';
 import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -106,6 +107,7 @@ for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
 
 function resetState() {
   setTestAuth();
+  assertedIamActions = [];
   for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
   repoCreateCalls = [];
   personalRepoCreateRefused = false;
@@ -136,7 +138,12 @@ function resetState() {
   ];
 }
 
-mockIamEngineAllowAll();
+// Capture every gate the routes ask (push-only: never changes a verdict), so
+// a test can pin WHICH action a route enforces.
+let assertedIamActions: string[] = [];
+mockIamEngineAllowAll((action) => {
+  assertedIamActions.push(action);
+});
 
 // The hermetic db shim models the legacy tables; the read models project from
 // those rows rather than from `role_assignments`. See mockIamReadModels.
@@ -1083,6 +1090,37 @@ describe('create-repo starter scaffold contract', () => {
     expect(await linked.json()).toEqual({
       error: 'Managed GitHub repository import is only available to a self-host operator',
     });
+  });
+
+  // Characterization (KRTX-863): the two GitHub-installation GET routes are one
+  // contract — equivalent account-scoped metadata, the same permission — so the
+  // two registrations may point at one handler.
+  test('both GitHub-installation GET routes serve the same account-scoped contract', async () => {
+    const app = createApp();
+    const single = await app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+    );
+    const list = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
+    expect(single.status).toBe(200);
+    expect(list.status).toBe(200);
+
+    const singleBody = await single.json();
+    const listBody = await list.json();
+    expect(singleBody).toMatchObject({
+      account_id: ACCOUNT_ID,
+      installed: true,
+      installation_id: '42',
+      owner_login: 'kortix-org',
+    });
+    expect(listBody).toEqual(singleBody);
+
+    // Exactly one PROJECT_CREATE assert per GET request, from each route.
+    expect(assertedIamActions).toEqual([
+      ACCOUNT_ACTIONS.PROJECT_CREATE,
+      ACCOUNT_ACTIONS.PROJECT_CREATE,
+    ]);
   });
 
   test('commits the default starter scaffold with the account GitHub App token before registering the project', async () => {

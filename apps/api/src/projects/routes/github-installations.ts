@@ -36,18 +36,13 @@ import { readJsonObject } from '../../shared/http-body';
 // Account-scoped GitHub App install state. The client only receives metadata;
 // installation tokens are minted server-side at repo creation time.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/github/installation',
-    tags: ['github'],
-    summary: 'Get the GitHub App installation of the account',
-    ...auth,
-    responses: {
-        200: json(z.any(), 'OK'),
-    },
-  }),
-  async (c: any) => {
+// GET /v1/projects/github/installations?account_id=...
+// Vercel-style account Git connections surface. A Kortix account can connect
+// multiple GitHub users/orgs and pick the exact installation during import.
+
+// One handler serves both spellings: one account-scoped contract, one
+// permission gate — e2e-create-repo-starter.test.ts pins the equivalence.
+const getAccountGitHubInstallations = async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -61,12 +56,21 @@ projectsApp.openapi(
   // used to appear here as a synthetic installation, which made an
   // instance-global credential look like this account's own connection.
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
-);
+};
 
-// GET /v1/projects/github/installations?account_id=...
-// Vercel-style account Git connections surface. A Kortix account can connect
-// multiple GitHub users/orgs and pick the exact installation during import.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'Get the GitHub App installation of the account',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  getAccountGitHubInstallations,
+);
 
 projectsApp.openapi(
   createRoute({
@@ -79,21 +83,7 @@ projectsApp.openapi(
         200: json(z.any(), 'OK'),
     },
   }),
-  async (c: any) => {
-  const scope = await resolveProjectAccount(c);
-  await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
-
-  const rows = await listAccountGitHubInstallations(scope.accountId);
-  const canManageGit = (await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
-  const installUrl = canManageGit
-    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
-    : null;
-  // Account connections only. "Kortix managed" is the INSTANCE backend and
-  // has its own namespace (GET /v1/projects/git/backend[/repositories]); it
-  // used to appear here as a synthetic installation, which made an
-  // instance-global credential look like this account's own connection.
-  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-},
+  getAccountGitHubInstallations,
 );
 
 /**
