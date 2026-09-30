@@ -40,6 +40,25 @@ them. Run `/kortix login` in Slack and follow the link to sign in. Teams uses
 the same requirement. An unlinked sender gets a prompt to link instead of a
 session run.
 
+A sign-in link works once and expires after 10 minutes. A Slack account that is
+connected to one Kortix account cannot be connected to another: run
+`/kortix logout` first. If your organization requires two-factor
+authentication, Kortix asks for your second factor before it connects you, and
+the chat runs on the factor you connected with.
+
+Every action runs as the linked account of the person who took it, with that
+account's project role. Account owners and admins count as project managers.
+
+| Action | Who may do it |
+|---|---|
+| Mention the bot, reply in its thread | A linked account with access to the project, within the channel's policy |
+| Stop a run | The person who sent the message being answered, or anyone approved into that session, who can still use the project |
+| Change the channel's project, agent, model or policy | A project manager; in a DM with the bot, any project member |
+| Act on a review | A project manager |
+| Approve or deny a connector call | A project manager, or the person who started the session |
+| Approve someone into an `owner_approval` thread | The session owner |
+| `link-bot` | A project manager |
+
 ## Where credentials live
 
 A connected channel's bot token is a connector-scoped
@@ -156,8 +175,8 @@ stored with the decision and passed to the agent with it, so it does not have to
 ask you a second time. It is optional — send it empty and the agent is told to
 ask. Approve and Deny stay one click.
 
-Acting on a review needs a linked Kortix account with write access to the
-project.
+Acting on a review needs a linked Kortix account that manages the project.
+The decision resumes the agent whatever the thread's policy is.
 
 ## Stopping a run
 
@@ -166,8 +185,8 @@ run at the runtime, not just on the message — a run left open swallows the nex
 message in the thread instead of answering it.
 
 The person who sent the message being answered can stop it, as can anyone
-already working in that session. A bystander in the channel cannot; they get a
-private note saying so.
+approved into that session, while they can still use the project. A bystander
+in the channel cannot; they get a private note saying so.
 
 ## What does not work
 

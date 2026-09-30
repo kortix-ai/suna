@@ -8,4 +8,10 @@ describe('useSession runtime ownership gate', () => {
     expect(source).toContain('useOpenCodeEventStream({ enabled: switched })');
     expect(source).toContain('networkEnabled: switched');
   });
+
+  test('a live session stays live through a failed or transport-only /start poll', () => {
+    // hold-live-start.test.ts pins the rule; this pins that the ONE query every
+    // consumer reads (stream, sync, send, page banner) is folded through it.
+    expect(source).toMatch(/queryFn: async \(\) =>\s+holdLiveStart\(/);
+  });
 });

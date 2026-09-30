@@ -3,7 +3,7 @@ import { chatChannelBindings } from '@kortix/db';
 import { db } from '../../shared/db';
 import { loadTeamsServiceUrlForProject } from '../install-store';
 import { deleteActivity, sendActivity, sendCard, updateCard } from '../teams-api';
-import { buildNoticeCard } from './cards';
+import { buildNoticeCard, withoutPostbackActions } from './cards';
 import type { TeamsConversationRef } from './types';
 
 /**
@@ -120,7 +120,7 @@ export async function postToTeamsConversation(
   const { ref } = conversation;
 
   if (args.card) {
-    const posted = await sendCard(ref, args.card);
+    const posted = await sendCard(ref, withoutPostbackActions(args.card));
     if (!posted) return { ok: false, error: 'Teams refused the card', status: 502 };
     return { ok: true, conversationId, delivered: 'card', messageId: posted };
   }
@@ -151,7 +151,7 @@ export async function editTeamsMessage(
   if (!text && !args.card) return { ok: false, error: 'text or card is required', status: 400 };
   const conversation = await resolveTeamsProjectConversation(projectId, conversationId);
   if (!conversation.ok) return conversation;
-  const updated = await updateCard(conversation.ref, messageId, args.card ?? buildNoticeCard(text!));
+  const updated = await updateCard(conversation.ref, messageId, args.card ? withoutPostbackActions(args.card) : buildNoticeCard(text!));
   if (!updated) return { ok: false, error: 'Teams refused the edit. Only a message this bot posted can be edited.', status: 502 };
   return { ok: true, conversationId, messageId };
 }

@@ -1,12 +1,12 @@
 import { and, eq } from 'drizzle-orm';
-import { chatThreadParticipants, projectSessionGrants, projectSessions } from '@kortix/db';
+import { chatThreadParticipants, chatThreads, projectSessionGrants, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { sessionWebUrl } from '../slack/util';
 import { sendCard } from '../teams-api';
 import { buildJoinRequestCard, buildNoticeCard } from './cards';
-import { chatUser, lookupChatIdentity } from '../core/identity';
+import { chatUser, lookupChatIdentity, resolveProjectChatActor } from '../core/identity';
 import type { TeamsConversationRef } from './types';
 
 /**
@@ -67,7 +67,12 @@ async function grantSessionMember(sessionId: string, userId: string): Promise<vo
 
 async function loadParticipant(input: { tenantId: string; conversationId: string; teamsUserId: string }) {
   const [row] = await db
-    .select({ status: chatThreadParticipants.status, userId: chatThreadParticipants.userId })
+    .select({
+      participantId: chatThreadParticipants.participantId,
+      status: chatThreadParticipants.status,
+      userId: chatThreadParticipants.userId,
+      sessionId: chatThreadParticipants.sessionId,
+    })
     .from(chatThreadParticipants)
     .where(
       and(
@@ -120,12 +125,16 @@ export async function ensureTeamsThreadParticipant(input: {
     };
   }
 
-  const existing = await loadParticipant(input);
+  // A row is per conversation, but a decision is about one session: after
+  // `/new`, or once the old session is gone, an old approval or denial must
+  // not carry over to the next session's owner.
+  const loaded = await loadParticipant(input);
+  const existing = loaded && loaded.sessionId === input.sessionId ? loaded : null;
   if (existing?.status === 'approved' && existing.userId === input.actorUserId) {
     await grantSessionMember(input.sessionId, input.actorUserId);
     return { allowed: true };
   }
-  if (existing?.status === 'denied') {
+  if (existing?.status === 'denied' && existing.userId === input.actorUserId) {
     return {
       allowed: false,
       notice: "You don't have access to this Kortix session — the owner declined your request. Start a new conversation to work with Kortix separately.",
@@ -133,7 +142,7 @@ export async function ensureTeamsThreadParticipant(input: {
   }
 
   let inserted = false;
-  if (existing && existing.userId !== input.actorUserId) {
+  if (loaded && (loaded.userId !== input.actorUserId || loaded.sessionId !== input.sessionId)) {
     await db
       .update(chatThreadParticipants)
       .set({
@@ -153,7 +162,7 @@ export async function ensureTeamsThreadParticipant(input: {
         ),
       );
     inserted = true;
-  } else if (!existing) {
+  } else if (!loaded) {
     const rows = await db
       .insert(chatThreadParticipants)
       .values({
@@ -240,70 +249,86 @@ export async function rememberTeamsThreadOwner(input: {
     });
 }
 
+/**
+ * The session owner decides a join request from the Approve / Deny card.
+ *
+ * The card's data names the session and the requester, and cards are not
+ * proof: an agent can post any Adaptive Card into its conversation. So the
+ * decision applies only to a request this conversation actually raised for
+ * its current session (`ensureTeamsThreadParticipant` wrote it, pending), and
+ * the requester's Kortix account is the one that request recorded, never the
+ * card's. The owner must still be able to work in the project.
+ */
 export async function decideTeamsThreadJoin(input: {
   tenantId: string;
   conversationId: string;
   deciderTeamsUserId: string;
-  projectId: string;
-  sessionId: string;
-  requesterUserId: string;
   requesterTeamsUserId: string;
   decision: 'approved' | 'denied';
   ref: TeamsConversationRef;
 }): Promise<{ ok: boolean; text: string }> {
-  const decider = await lookupChatIdentity(chatUser('teams', input.tenantId, input.deciderTeamsUserId));
+  const closed = { ok: false, text: 'This request is no longer open.' };
+  const deciderUser = chatUser('teams', input.tenantId, input.deciderTeamsUserId);
+  const decider = await lookupChatIdentity(deciderUser);
   if (!decider) return { ok: false, text: 'Connect your Kortix account (`/login`) before approving session access.' };
 
+  const [thread] = await db
+    .select({ sessionId: chatThreads.sessionId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.platform, PLATFORM),
+        eq(chatThreads.workspaceId, input.tenantId),
+        eq(chatThreads.threadId, input.conversationId),
+      ),
+    )
+    .limit(1);
+  const request = await loadParticipant({
+    tenantId: input.tenantId,
+    conversationId: input.conversationId,
+    teamsUserId: input.requesterTeamsUserId,
+  });
+  if (!thread?.sessionId || !request || request.status !== 'pending' || request.sessionId !== thread.sessionId || !request.userId) {
+    return closed;
+  }
+  const sessionId = thread.sessionId;
+  const requesterUserId = request.userId;
+
   const [session] = await db
-    .select({ createdBy: projectSessions.createdBy })
+    .select({ createdBy: projectSessions.createdBy, projectId: projectSessions.projectId })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
+    .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!session) return { ok: false, text: 'This Kortix session no longer exists.' };
   if (!session.createdBy || session.createdBy !== decider.userId) {
     return { ok: false, text: 'Only the session owner can approve people for this conversation.' };
   }
+  if (!('userId' in (await resolveProjectChatActor(deciderUser, session.projectId)))) {
+    return { ok: false, text: 'Your Kortix account no longer has access to this project, so you cannot approve people for it.' };
+  }
 
   const now = new Date();
-  await db
-    .insert(chatThreadParticipants)
-    .values({
-      platform: PLATFORM,
-      workspaceId: input.tenantId,
-      threadId: input.conversationId,
-      sessionId: input.sessionId,
-      platformUserId: input.requesterTeamsUserId,
-      userId: input.requesterUserId,
-      status: input.decision,
-      decidedAt: now,
-      decidedByUserId: decider.userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [
-        chatThreadParticipants.platform,
-        chatThreadParticipants.workspaceId,
-        chatThreadParticipants.threadId,
-        chatThreadParticipants.platformUserId,
-      ],
-      set: {
-        sessionId: input.sessionId,
-        userId: input.requesterUserId,
-        status: input.decision,
-        decidedAt: now,
-        decidedByUserId: decider.userId,
-        updatedAt: now,
-      },
-    });
+  const decided = await db
+    .update(chatThreadParticipants)
+    .set({ status: input.decision, decidedAt: now, decidedByUserId: decider.userId, updatedAt: now })
+    .where(
+      and(
+        eq(chatThreadParticipants.participantId, request.participantId),
+        // One decision per request, even when two clicks race.
+        eq(chatThreadParticipants.status, 'pending'),
+      ),
+    )
+    .returning({ participantId: chatThreadParticipants.participantId });
+  if (decided.length === 0) return closed;
 
-  if (input.decision === 'approved') await grantSessionMember(input.sessionId, input.requesterUserId);
+  if (input.decision === 'approved') await grantSessionMember(sessionId, requesterUserId);
 
-  const label = await requesterLabel(input.requesterUserId, 'They');
-  const sessionUrl = sessionWebUrl(config.FRONTEND_URL, input.projectId, input.sessionId);
+  const label = await requesterLabel(requesterUserId, 'They');
+  const sessionUrl = sessionWebUrl(config.FRONTEND_URL, session.projectId, sessionId);
   // Tell the requester in the conversation (no ephemeral in Teams): they know
   // to send again, and everyone else sees the thread is open now.
   await sendCard(
-    input.ref,
+    { ...input.ref, projectId: session.projectId },
     buildNoticeCard(
       input.decision === 'approved'
         ? `${label} — you're approved for this Kortix session. Send your message again and I'll continue. You can also [open the session in Kortix](${sessionUrl}).`

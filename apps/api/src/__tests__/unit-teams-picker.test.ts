@@ -3,10 +3,11 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 /**
  * Multi-project tenant, nothing bound: Slack posts a project picker rather
  * than routing to the first install. These pin the Teams twin — the picker is
- * posted, a command still runs, and the pick replays the parked message.
+ * posted, a command that needs no project still runs, a command about the
+ * project asks for one first, and only a mention in a channel is answered.
  */
 
-const TENANT = '36009a52-46d2-44bc-ba56-57a87e485e0a';
+const TENANT = 'tenant-picker';
 const CONV = '19:chan@thread.tacv2;messageid=1';
 
 let resolution: unknown = { kind: 'ambiguous', projects: [{ projectId: 'p1', name: 'Alpha' }, { projectId: 'p2', name: 'Beta' }] };
@@ -56,7 +57,7 @@ mock.module('../channels/teams/session', () => ({
 const { handleTeamsActivity } = await import('../channels/teams/dispatch');
 
 let n = 0;
-const activity = (text: string) => {
+const activity = (text: string, where: 'personal' | 'channel' | 'mention' = 'personal') => {
   n += 1;
   return {
     type: 'message',
@@ -64,8 +65,9 @@ const activity = (text: string) => {
     text,
     serviceUrl: 'https://smba.trafficmanager.net/emea/',
     recipient: { id: '28:bot' },
-    from: { id: '29:ivan', name: 'Ivan' },
-    conversation: { id: CONV, conversationType: 'personal', tenantId: TENANT },
+    from: { id: '29:someone', name: 'Someone' },
+    conversation: { id: CONV, conversationType: where === 'personal' ? 'personal' : 'channel', tenantId: TENANT },
+    ...(where === 'mention' ? { entities: [{ type: 'mention', mentioned: { id: '28:bot' } }] } : {}),
   };
 };
 
@@ -90,10 +92,32 @@ describe('ambiguous tenant → project picker', () => {
     expect(sessionsStarted).toHaveLength(0);
   });
 
-  test('a command still runs (against the first install) so /projects and /use work', async () => {
-    await handleTeamsActivity(activity('/projects') as never);
-    expect(commandsRun).toEqual(['projects']);
+  test('a command that needs no project runs now (against the first install)', async () => {
+    await handleTeamsActivity(activity('/use') as never);
+    await handleTeamsActivity(activity('/login') as never);
+    expect(commandsRun).toEqual(['use', 'login']);
     expect(cards).toHaveLength(0);
+  });
+
+  test('a command about the project gets the picker, parks nothing, and binds nothing', async () => {
+    await handleTeamsActivity(activity('/models') as never);
+    await handleTeamsActivity(activity('/projects') as never);
+    expect(commandsRun).toEqual([]);
+    expect(cards).toHaveLength(2);
+    expect(JSON.stringify(cards[0])).toContain('teams_pick_project');
+    expect(JSON.stringify(cards[0])).not.toContain('pending-1');
+  });
+
+  test('an un-mentioned channel line is not answered with a picker', async () => {
+    await handleTeamsActivity(activity('lunch at noon?', 'channel') as never);
+    expect(cards).toHaveLength(0);
+    expect(sessionsStarted).toHaveLength(0);
+  });
+
+  test('a mention in a channel gets the picker', async () => {
+    await handleTeamsActivity(activity('<at>Kortix</at> summarize the repo', 'mention') as never);
+    expect(cards).toHaveLength(1);
+    expect(JSON.stringify(cards[0])).toContain('pending-1');
   });
 
   test('a single install is not ambiguous — nothing is asked', async () => {

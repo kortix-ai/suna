@@ -44,6 +44,7 @@ type Step =
   | { cut: string }
   | { cutMidLine: string }
   | { status: number }
+  | { stall: true }
 
 /**
  * An OpenAI-compatible `/chat/completions` that answers each request with the
@@ -67,6 +68,9 @@ function startFakeGateway() {
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
       if ('status' in step) return new Response(JSON.stringify({ error: { message: 'scripted failure' } }), { status: step.status })
+      if ('stall' in step) return new Promise<Response>((resolve) => {
+        req.signal.addEventListener('abort', () => resolve(new Response('aborted', { status: 499 })), { once: true })
+      })
       let body = chunk({ role: 'assistant', content: '' })
       if ('cut' in step) {
         if (step.cut) body += chunk({ content: step.cut })
@@ -253,6 +257,18 @@ const prompt = (r: Rig, root: string, body: Record<string, unknown>) =>
   r.user(`/session/${root}/prompt_async`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
 describe('pi harness', () => {
+  test('a silent model stall ends with a visible error and a failed turn', async () => {
+    const r = await boot({ script: [{ stall: true }], env: { KORTIX_PI_NO_PROGRESS_MS: '100' } })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0f0ABCDEFGHIJKLMN'
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'answer me' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy(), 3_000)
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('failed')
+    const text = await readSse(events, (value) => value.includes('event: session.error') && value.includes('event: session.idle'))
+    expect(text).toContain('The session made no progress')
+  })
   test('health reports the pi runtime before and after start', async () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
     const before = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>

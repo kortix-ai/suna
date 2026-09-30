@@ -367,6 +367,37 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(ephemerals[0]?.user).toBe('Urequester');
     expect(ephemerals[0]?.text).toContain('approve access to this private thread');
   });
+
+  test('an authorized decision (approval, review) resumes a private session without the join gate', async () => {
+    // A manager who is not a participant approved from the card. The decision
+    // was authorized, so the thread's policy must not strand the agent.
+    config.SLACK_REQUIRE_USER_IDENTITY = true;
+    deliverOutcome = 'delivered';
+    dbResults = [
+      [project], // project account lookup
+      [{ userId: 'manager-user' }], // Slack identity exists
+      [{ userId: 'manager-user' }], // account membership hit
+      [{ sessionId: 'sess-private', createdBy: null, metadata: { slack: { conversation_policy: 'owner_approval' } } }],
+    ];
+
+    await spawnAgentTurn(
+      'proj-1',
+      envelope,
+      {
+        type: 'message',
+        channel: 'C1',
+        ts: '141.1',
+        thread_ts: '90.0',
+        user: 'Umanager',
+        text: 'The review "Ship it" was approved.',
+      } as any,
+      { authorizedResume: true },
+    );
+
+    expect(deliverCalls).toBe(1);
+    expect(createSessionCalls).toBe(0);
+    expect(ephemerals).toEqual([]);
+  });
 });
 
 describe('spawnAgentTurn — unauthenticated Slack prompt placement', () => {

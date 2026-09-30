@@ -322,6 +322,38 @@ describe('managed OpenRouter pool', () => {
   });
 });
 
+describe('managed OpenCode Zen route', () => {
+  const glm = MANAGED_MODELS.find((model) => model.id === 'glm-5.3-flash')!;
+  beforeEach(() => {
+    config.OPENCODE_ZEN_MANAGED_MODELS = ['glm-5.3-flash'];
+    config.OPENCODE_ZEN_API_KEY = 'zen-test-key';
+    config.OPENCODE_ZEN_API_URL = 'https://opencode.ai/zen/v1';
+  });
+  afterEach(() => {
+    config.OPENCODE_ZEN_MANAGED_MODELS = undefined;
+    config.OPENCODE_ZEN_API_KEY = undefined;
+    config.OPENCODE_ZEN_API_URL = undefined;
+  });
+
+  test('a listed model tries Zen first, billed at the managed price, then the OpenRouter pool', () => {
+    const candidates = managedCandidates(glm);
+    expect(candidates.map((candidate) => candidate.provider)).toEqual(['opencode', 'openrouter']);
+    expect(candidates[0]).toMatchObject({
+      kind: 'openai-compat', baseUrl: 'https://opencode.ai/zen/v1', apiKey: 'zen-test-key',
+      resolvedModel: 'glm-5.3-flash', billingMode: 'credits', markup: 2, pricing: glm.pricing,
+      failover: true, publicProvider: 'kortix',
+    });
+    expect(candidates[1].failover).toBe(true);
+  });
+
+  test('an unlisted model or a missing key adds no Zen candidate', () => {
+    const deepseek = MANAGED_MODELS.find((model) => model.id === 'deepseek-v4.1-flash')!;
+    expect(managedCandidates(deepseek).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+    config.OPENCODE_ZEN_API_KEY = undefined;
+    expect(managedCandidates(glm).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+  });
+});
+
 describe('bedrockByokBaseUrl', () => {
   test.each(['us-east-1', 'eu-central-2', 'ap-southeast-4', 'us-gov-west-1', 'il-central-1', 'ca-west-1'])(
     'accepts the region %s',
