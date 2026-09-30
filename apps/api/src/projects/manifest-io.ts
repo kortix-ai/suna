@@ -42,8 +42,9 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by `extractAgents` in `./agents.ts`, the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and remains refused.
+ * v3 retains the agents map and adds YAML-only behavior.
  */
-export const MAX_SCHEMA_VERSION = 2;
+export const MAX_SCHEMA_VERSION = 3;
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
 

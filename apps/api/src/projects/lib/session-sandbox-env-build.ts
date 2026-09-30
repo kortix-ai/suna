@@ -190,7 +190,7 @@ export async function buildSessionSandboxEnvVars(input: {
               gitProject,
               input.baseRef,
               { onManifest },
-            ).catch(() => null);
+            );
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent

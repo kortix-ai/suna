@@ -127,6 +127,14 @@ export interface AgentBlockV2 {
    *  Writers always set it; readers fall back to the conventional paths when
    *  it is omitted. */
   file?: string;
+  /** v3 only: inline system prompt or a repo-relative Markdown prompt file. */
+  prompt?: string;
+  prompt_file?: string;
+  /** v3: agent-specific model and native permission rules. */
+  model?: string;
+  description?: string;
+  mode?: 'primary' | 'subagent' | 'all';
+  permission?: PermissionConfigV2;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
@@ -634,7 +642,7 @@ export function validateAgentMdFrontmatter(
  *  redirect). Behavior lives in the agent's own `.md` frontmatter and is
  *  never validated here (this validator has no repo access) — see
  *  `validateAgentMdFrontmatter`. */
-function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[]): void {
+function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[], v3 = false): void {
   if (!isTable(entry)) {
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
@@ -666,17 +674,28 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // Pre-redirect / pre-refactor shapes: behavioral fields authored on the
   // manifest agent block at all (flat, or nested under the now-removed
   // `opencode:`) — these live ONLY in the agent's `.md` frontmatter now.
-  for (const key of MOVED_TO_AGENT_MD_KEYS) {
+  for (const key of v3 ? ['opencode', 'disable', 'file'] : MOVED_TO_AGENT_MD_KEYS) {
     if ((entry as Record<string, unknown>)[key] !== undefined) {
       issues.push({
         path: `${where}.${key}`,
-        message: `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
+        message: v3
+          ? `"${key}" is not supported in v3; declare behavior in kortix.yaml (prompt or prompt_file).`
+          : `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
         severity: 'error',
       });
     }
   }
 
-  if (entry.file !== undefined && !safeAgentFile(entry.file)) {
+  if (!v3 && entry.prompt_file !== undefined) {
+    issues.push({ path: `${where}.prompt_file`, message: 'v2 agent behavior lives in its .md file.', severity: 'error' });
+  }
+  if (v3) {
+    if (entry.prompt !== undefined && typeof entry.prompt !== 'string') issues.push({ path: `${where}.prompt`, message: 'must be a string.', severity: 'error' });
+    if (entry.prompt_file !== undefined && (!safeAgentFile(entry.prompt_file) || entry.prompt !== undefined)) issues.push({ path: `${where}.prompt_file`, message: 'must be a repo-relative .md path and cannot be combined with prompt.', severity: 'error' });
+    validateAgentMdFrontmatter(entry, where, issues);
+  }
+
+  if (!v3 && entry.file !== undefined && !safeAgentFile(entry.file)) {
     issues.push({
       path: `${where}.file`,
       message:
@@ -751,7 +770,7 @@ export interface AgentsV2Scan {
  * callers can cross-validate `default_agent` and `triggers[].agent` against
  * them. Dispatch: called from `index.ts`'s `validateManifestBodyV2`.
  */
-export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[]): AgentsV2Scan {
+export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[], v3 = false): AgentsV2Scan {
   const names: string[] = [];
   const disabledNames: string[] = [];
   if (node == null || (isTable(node) && Object.keys(node).length === 0)) {
@@ -785,7 +804,7 @@ export function validateAgentsV2(node: unknown, path: string, issues: ManifestIs
         disabledNames.push(name);
       }
     }
-    validateAgentBlockV2(entry, where, issues);
+    validateAgentBlockV2(entry, where, issues, v3);
   }
   return { names, disabledNames };
 }
