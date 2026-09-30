@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { renderSql as render } from './reaping/test-support/render-sql';
 import { WIRE_MESSAGE_ID } from './wire-message-id';
 
 let executed: string[] = [];
@@ -10,16 +11,7 @@ let executeError: Error | null = null;
 // expressible per statement, not with the global `executeError`.
 let executeErrorByIndex: Record<number, Error> = {};
 
-function render(query: unknown): string {
-  if (query === null || query === undefined) return '';
-  if (typeof query !== 'object') return String(query);
-  const node = query as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
-  if (Array.isArray(node.queryChunks)) return node.queryChunks.map(render).join(' ');
-  if (Array.isArray(node.value)) return node.value.join('');
-  if (node.value !== undefined) return String(node.value);
-  if (node.name !== undefined) return String(node.name);
-  return '';
-}
+
 
 mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
@@ -49,16 +41,17 @@ const {
   beginSandboxTurn,
   clearSandboxTurn,
   completeSandboxTurn,
-  deliveringSandboxTurn,
+  reconcileSandboxTurnDelivery,
+  renewActiveSandboxTurn,
+} = await import('./sandbox-turn-lifecycle');
+
+const {
   extractTurnIdentity,
   initialSandboxTurnMetadata,
   prepareInitialSandboxTurn,
-  reconcileSandboxTurnDelivery,
-  renewActiveSandboxTurn,
-  storedSandboxTurn,
   storedSandboxTurns,
   turnCompletionAllowsQueuePromotion,
-} = await import('./sandbox-turn-lifecycle');
+} = await import('./session-turn-ledger');
 
 beforeEach(() => {
   executed = [];
@@ -118,41 +111,35 @@ describe('daemon-delivered initial turn authority', () => {
 
   test('parses only a token-bound delivering record', () => {
     expect(
-      deliveringSandboxTurn({
-        activeTurn: {
-          token: 'turn-token',
-          state: 'delivering',
-          opencodeSessionId: 'ses_root',
-          messageId: 'msg_turn_1',
+      storedSandboxTurns({
+        activeTurns: {
+          'turn-token': {
+            token: 'turn-token',
+            state: 'delivering',
+            opencodeSessionId: 'ses_root',
+            messageId: 'msg_turn_1',
+          },
         },
-      }),
+      }).find((turn) => turn.state === 'delivering'),
     ).toEqual({
       token: 'turn-token',
       state: 'delivering',
       opencodeSessionId: 'ses_root',
       messageId: 'msg_turn_1',
-      // A legacy `activeTurn` record predates `startedAtMs`. Null, never a
-      // synthesized "now": GET .../turn publishes this instant, and inventing
-      // one would report a start nobody measured.
+      // A record written before `startedAtMs` existed carries no start instant.
+      // Null, never a synthesized "now": GET .../turn publishes this instant,
+      // and inventing one would report a start nobody measured.
       startedAtMs: null,
     });
     expect(
-      deliveringSandboxTurn({ activeTurn: { token: 'turn-token', state: 'active' } }),
-    ).toBeNull();
-    expect(
-      storedSandboxTurn({
-        activeTurn: {
-          token: 'turn-token',
-          state: 'active',
-          opencodeSessionId: 'ses_root',
-          messageId: 'msg_turn_1',
-        },
-      })?.state,
-    ).toBe('active');
-    expect(deliveringSandboxTurn(null)).toBeNull();
+      storedSandboxTurns({
+        activeTurns: { 'turn-token': { token: 'turn-token', state: 'active' } },
+      }).find((turn) => turn.state === 'delivering'),
+    ).toBeUndefined();
+    expect(storedSandboxTurns(null)).toEqual([]);
   });
 
-  test('keeps concurrent token-keyed turns independent and reads legacy state', () => {
+  test('keeps concurrent token-keyed turns independent', () => {
     expect(
       storedSandboxTurns({
         activeTurns: {
@@ -172,12 +159,6 @@ describe('daemon-delivered initial turn authority', () => {
             startedAtMs: 'soon',
           },
         },
-        activeTurn: {
-          token: 'legacy-token',
-          state: 'active',
-          opencodeSessionId: 'ses_legacy',
-          messageId: null,
-        },
       }),
     ).toEqual([
       {
@@ -194,13 +175,6 @@ describe('daemon-delivered initial turn authority', () => {
         messageId: 'msg_b',
         startedAtMs: null,
       },
-      {
-        token: 'legacy-token',
-        state: 'active',
-        opencodeSessionId: 'ses_legacy',
-        messageId: null,
-        startedAtMs: null,
-      },
     ]);
   });
 
@@ -215,7 +189,8 @@ describe('daemon-delivered initial turn authority', () => {
           },
           missingToken: { state: 'active', opencodeSessionId: 'ses_root' },
         },
-        activeTurn: { state: 'active', opencodeSessionId: 'ses_root' },
+        // The retired single-record arm is inert: only `activeTurns` is read.
+        activeTurn: { token: 'legacy-token', state: 'active', opencodeSessionId: 'ses_root' },
       }),
     ).toEqual([]);
   });
@@ -292,7 +267,6 @@ describe('control-plane active-turn state', () => {
 
     expect(executed[0]).toContain("->>'token'");
     expect(executed[0]).toContain('turn-token');
-    expect(executed[0]).toContain("- 'activeTurn'");
     expect(executed[0]).toContain('-  turn-token');
     // The record has to be read before it is erased: RETURNING sees the new row
     // version, so the entry the ledger settle needs is gone by then.
@@ -505,8 +479,6 @@ describe('terminal turn handling', () => {
     });
 
     expect(executed).toHaveLength(1);
-    expect(executed[0]).toContain("- 'activeTurn'");
-    expect(executed[0]).toContain('jsonb_object_agg');
     expect(executed[0]).toContain('msg_turn_1');
     expect(executed[0]).toContain('LEAST');
     expect(executed[0]).toContain("IN ('active', 'provisioning')");
@@ -713,9 +685,8 @@ describe('session_turns ledger dual-write', () => {
 
     expect(executed[1]).toContain("s.status IN ('active', 'provisioning')");
     expect(executed[1]).toContain('FOR UPDATE');
-    // The legacy single-record arm counts as authority too, or a whole rolling
-    // deploy would record no history at all.
-    expect(executed[1]).toContain("s.metadata->'activeTurn'->>'token'");
+    expect(executed[1]).toContain("s.metadata->'activeTurns'->");
+    expect(executed[1]).not.toMatch(/'activeTurn'->/);
   });
 
   const ENDED_TURN = {
@@ -782,13 +753,13 @@ describe('session_turns ledger dual-write', () => {
       messageId: 'msg_turn_1',
     });
 
-    // The legacy single-record arm's KEY is the literal 'activeTurn'; the
-    // aggregate must carry the record's TOKEN instead, or the settle ends a row
-    // that never existed. Asserting the ledger statement's text cannot prove
-    // this — that statement is built from whatever this mock returned. The real
-    // guard drives the legacy shape through real Postgres:
-    // __tests__/integration-sandbox-turn-lifecycle.test.ts, "the legacy
-    // activeTurn record settles its ledger row under its own token".
+    // The map's KEY is its entry key, not the record's token; the aggregate
+    // must carry the record's TOKEN instead, or the settle ends a row that
+    // never existed. Asserting the ledger statement's text cannot prove this —
+    // that statement is built from whatever this mock returned. The real guard
+    // drives a mismatched key through real Postgres:
+    // __tests__/integration-sandbox-turn-lifecycle.test.ts, "a map key that
+    // does not match the token settles the ledger row under the token".
     expect(executed[0]).toContain("entry.value->>'token'");
     expect(executed[0]).toContain("'token', selected.token");
     expect(executed[0]).toContain('ended_turns');

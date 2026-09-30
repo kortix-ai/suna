@@ -19,14 +19,16 @@ import {
   adoptRuntimeSandboxTurn,
   beginSandboxTurn,
   clearSandboxTurn,
-  clearTurnStopRequest,
   completeSandboxTurn,
+  reconcileSandboxTurnDelivery,
+} from '../projects/sandbox-turn-lifecycle';
+import {
+  clearTurnStopRequest,
   isProtectedEndError,
   markTurnStopRequested,
   recordUnidentifiedTurnCause,
-  reconcileSandboxTurnDelivery,
   settleOpenSandboxTurnsQuery,
-} from '../projects/sandbox-turn-lifecycle';
+} from '../projects/session-turn-ledger';
 import { db } from '../shared/db';
 
 const SANDBOX_ID = crypto.randomUUID();
@@ -950,10 +952,11 @@ describe('session_turns ledger', () => {
     });
   });
 
-  test('the legacy activeTurn record settles its ledger row under its own token', async () => {
-    // The legacy arm's metadata KEY is the literal string 'activeTurn'; only
-    // its `token` field names the row. Carrying the key into the ledger would
-    // end a row that never existed and leave this one open for ever.
+  test('a retired single-record activeTurn record is no longer turn authority', async () => {
+    // The legacy arm was removed 2026-09-30: only the token-keyed `activeTurns`
+    // map is authority. A record still shaped like the pre-map single object is
+    // inert — no turn ends, no ledger row is created, and the metadata is left
+    // exactly as it was for a later migration or expiry to clean up.
     await setLifecycleState({
       activeTurn: {
         token: t('ledger-legacy'),
@@ -972,15 +975,10 @@ describe('session_turns ledger', () => {
         undefined,
         60_000,
       ),
-    ).toEqual({ outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 });
+    ).toEqual({ outcome: 'no_active_turn', activeTurnCount: 0, closedTurnCount: 0 });
 
-    expect((await readRow()).metadata.activeTurn).toBeUndefined();
-    expect(await readTurn(t('ledger-legacy'))).toMatchObject({
-      state: 'ended',
-      end_reason: 'completed',
-      message_id: 'msg_ledger_legacy',
-    });
-    expect(await readTurn('activeTurn')).toBeUndefined();
+    expect((await readRow()).metadata.activeTurn).toBeDefined();
+    expect(await readTurn(t('ledger-legacy'))).toBeUndefined();
   });
 
   test('a fast terminal end keeps the row ended when the delivering insert lands later', async () => {

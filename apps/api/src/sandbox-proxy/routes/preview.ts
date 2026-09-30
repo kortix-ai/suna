@@ -1,6 +1,6 @@
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
-import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -95,8 +95,8 @@ import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   beginSandboxTurn,
-  extractTurnIdentity,
 } from '../../projects/sandbox-turn-lifecycle';
+import { extractTurnIdentity } from '../../projects/session-turn-ledger';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's

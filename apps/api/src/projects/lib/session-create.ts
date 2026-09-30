@@ -76,7 +76,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { canOverride, inheritParentOrigin, resolveSessionOrigin } from './session-origin';
 import { resolveRootSessionInitiator, type SessionInitiator } from './session-initiator';
 import { sessionCreatedAuditAttribution } from './session-audit';

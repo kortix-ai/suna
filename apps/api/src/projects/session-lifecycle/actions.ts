@@ -41,7 +41,7 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { claimInPlaceRestart } from './runtime-restart-claim';
 import { transitionSandbox, transitionSession } from './status-transitions';
 import {
