@@ -99,6 +99,7 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
     },
     diagnostics: { capabilities: [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
     queries: { bind: () => queries },
+    turns: { prompt: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
     background: { start: () => ({ stop: () => {} }) as unknown as ReturnType<HarnessService['background']['start']> },
     assets: {
       harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
