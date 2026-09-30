@@ -331,7 +331,7 @@ export function registerMemberRoutes(): void {
       tags: ['accounts'],
       summary: 'Remove a member',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), userId: z.string() }) },
+      request: { params: z.object({ accountId: z.string(), userId: z.string().uuid() }) },
       responses: {
         200: json(OkSchema, 'Removal result'),
         ...errors(401, 403, 404, 409),
@@ -433,7 +433,7 @@ export function registerMemberRoutes(): void {
       summary: "Change a member's role",
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), userId: z.string() }),
+        params: z.object({ accountId: z.string(), userId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({ role: z.string() }) } } },
       },
       responses: {
