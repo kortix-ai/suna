@@ -191,7 +191,7 @@ export function burstView(
     running,
     steps,
     summary,
-    title: burstSummaryLabel(summary, running),
+    title: steps.length === 1 && steps[0]?.kind === 'thought' ? 'Thinking' : burstSummaryLabel(summary, running),
     hidden: steps.length === 0,
   };
 }

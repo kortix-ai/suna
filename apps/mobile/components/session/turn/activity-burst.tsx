@@ -19,7 +19,11 @@
  */
 
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { Pressable } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { useColorScheme } from 'nativewind';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
+import { DisclosureCaret, DisclosureContent } from '@/components/session/chain-of-thought';
+import { disclosureKey, useDisclosureChoice, useDisclosureStore } from '@/lib/session/disclosure-store';
 import type { Part } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
@@ -55,6 +59,9 @@ function ActivityBurstImpl({
   onPermissionReply,
 }: ActivityBurstProps) {
   const palette = useTurnPalette();
+  const { colorScheme } = useColorScheme();
+  const thoughtKey = disclosureKey('thought', segment.parts[0]?.id ?? '');
+  const choice = useDisclosureChoice(thoughtKey);
   const { parts } = segment;
   const view = useMemo(() => burstView(parts, turnLive, isTrailing), [parts, turnLive, isTrailing]);
   const ownsSheet = useActivitySheetStore((state) => state.sheet !== null && ownsBurst(state.sheet.partIds, parts));
@@ -71,6 +78,30 @@ function ActivityBurstImpl({
   const openSheet = useCallback(() => useActivitySheetStore.getState().show(parts, view, context), [parts, view, context]);
 
   if (view.hidden) return null;
+
+  const thought = view.steps.length === 1 && view.steps[0]?.kind === 'thought' ? view.steps[0] : undefined;
+  if (thought) {
+    const open = choice ?? (turnLive && thought.running);
+    return (
+      <View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Thinking"
+          accessibilityState={{ expanded: open }}
+          onPress={() => useDisclosureStore.getState().setChoice(thoughtKey, !open)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}
+        >
+          <Text variant="muted" style={[TURN_TYPE.sm, { color: palette.muted70 }]}>Thinking</Text>
+          <DisclosureCaret open={open} color={palette.muted40} />
+        </Pressable>
+        <DisclosureContent open={open}>
+          <SelectableMarkdownText isDark={colorScheme === 'dark'} isStreaming={turnLive && thought.running}>
+            {thought.texts.join('\n\n')}
+          </SelectableMarkdownText>
+        </DisclosureContent>
+      </View>
+    );
+  }
 
   return (
     <Pressable
