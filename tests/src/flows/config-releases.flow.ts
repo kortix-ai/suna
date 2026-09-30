@@ -116,6 +116,9 @@ const MANIFEST = [
   'default_agent: kortix',
   'agents:',
   '  kortix:',
+  // A declared agent boots without a checkout unless it opts in (#8454). The
+  // box flows run a repository-backed session, whose release carries an archive.
+  '    repository_access: true',
   '    skills: all',
   '  reviewer:',
   '    skills: none',
