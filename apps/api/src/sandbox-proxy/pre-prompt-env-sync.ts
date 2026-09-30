@@ -428,7 +428,13 @@ export async function runPrePromptEnvSync(
         requestedAgent,
       }),
       input.bindTurnIdentity && userId
-        ? deps.bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
+        ? deps
+            .bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
+            .catch((err) => {
+              // The cause stays in the log; the client gets no SQL text.
+              console.warn(`[PREVIEW] Turn identity bind failed for ${sandboxId}: ${errorMessage(err, 'bind failed')}`);
+              throw new Error('could not bind the session to the person starting this turn');
+            })
         : null,
     ]);
     // The env sync above applied the running agent's secret grant, or refused it

@@ -167,6 +167,7 @@ describe('runPrePromptEnvSync — a person starting a turn binds the session tok
       recordingDeps(log, { bindThrows: new Error('db down') }),
     );
     expect(result?.status).toBe(502);
+    expect(await result?.json()).toEqual({ error: 'could not bind the session to the person starting this turn' });
     expect(log).not.toContain('remintGrant:called');
   });
 });
