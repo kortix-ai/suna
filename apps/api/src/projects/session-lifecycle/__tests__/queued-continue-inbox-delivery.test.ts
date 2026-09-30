@@ -613,6 +613,19 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('Slack follow-up keeps its authenticated actor and source context beside its wire message', async () => {
+    const { buildContinueSessionCommandValues } = await import('../enqueue-commands');
+    const context = { teamId: 'T1', channelId: 'C1', userId: 'U1', messageTs: '100.123456' };
+    const values = buildContinueSessionCommandValues({
+      source: 'slack', projectId: PROJECT_ID, accountId: ACCOUNT_ID, sessionId: SESSION_ID,
+      actorUserId: 'user-1', text: 'follow up', wireMessageId: SUBMITTED_WIRE_ID,
+      slackContext: context,
+    });
+    expect(values.actorUserId).toBe('user-1');
+    expect(values.payload).toMatchObject({ wireMessageId: SUBMITTED_WIRE_ID, slackContext: context });
+    expect(values.source).toBe('slack');
+    expect(values.payload).not.toHaveProperty('clientMessageId');
+  });
   test('delivery outcomes write the matching terminal command status and return it', async () => {
     const cases = [
       { delivery: 'delivered', setup: () => {}, result: 'succeeded', write: 'succeeded', reason: null, retryable: null },

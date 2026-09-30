@@ -15,8 +15,8 @@ export async function sessionMessageAuthors(sessionId: string, accountId: string
   )).where(and(
     eq(sessionLifecycleCommands.sessionId, sessionId),
     eq(sessionLifecycleCommands.commandType, 'continue_session'),
-    eq(sessionLifecycleCommands.source, 'ui'),
-    sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
+    sql`${sessionLifecycleCommands.source} IN ('ui', 'slack')`,
+    sql`${sessionLifecycleCommands.payload}->>'wireMessageId' IS NOT NULL`,
   ));
   const identities = await resolveUserIdentities(rows.map((row) => row.userId).filter((id): id is string => !!id));
   const authors: Record<string, string> = {};

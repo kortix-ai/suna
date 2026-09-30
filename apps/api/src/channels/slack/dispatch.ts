@@ -864,6 +864,7 @@ export async function spawnAgentTurn(
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
         userId: actorUserId,
+        slack: { teamId, channelId: event.channel ?? '', userId: event.user ?? '', messageTs: event.ts ?? '' },
         // An image on a text-only model, a pin the session can no longer run.
         model: await slackFollowUpModel({
           project: { projectId, accountId: project.accountId, metadata: project.metadata },

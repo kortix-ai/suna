@@ -45,6 +45,7 @@ export interface EnqueueContinueSessionCommandInput {
   // ── Prompt-inbox fields; see QueuedContinueSessionPayload. ──
   clientMessageId?: string;
   wireMessageId?: string;
+  slackContext?: { teamId: string; channelId: string; userId: string; messageTs: string };
   /** The producer already knows its wire id is stale — see
    *  `QueuedContinueSessionPayload.remintOnDelivery`. */
   remintOnDelivery?: boolean;
@@ -70,6 +71,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     // "came from the inbox with no id", which is a different thing.
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     ...(input.wireMessageId ? { wireMessageId: input.wireMessageId } : {}),
+    ...(input.slackContext ? { slackContext: input.slackContext } : {}),
     ...(input.remintOnDelivery ? { remintOnDelivery: true } : {}),
     ...(typeof input.clientSentAtMs === 'number' ? { clientSentAtMs: input.clientSentAtMs } : {}),
     ...(input.parts ? { parts: input.parts } : {}),

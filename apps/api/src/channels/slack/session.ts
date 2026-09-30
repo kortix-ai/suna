@@ -10,6 +10,9 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { normalizeString } from '../../projects/lib/serializers';
+import { enqueueContinueSessionCommand } from '../../projects/session-lifecycle/enqueue-commands';
+import { drainSessionLifecycleQueue } from '../../projects/session-lifecycle/drain';
+import { mintWireMessageId } from '@kortix/sdk/wire-message-id';
 import { chooseEffectiveAgent } from '../../llm-gateway/resolution/effective';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { buildAgentUnavailablePickerBlocks, loadScopedChannelAgents } from './agent-picker';
@@ -56,9 +59,27 @@ export async function deliverSlackFollowUpToSession(input: {
   sessionId: string;
   text: string;
   userId?: string | null;
+  slack?: { teamId: string; channelId: string; userId: string; messageTs: string };
   /** This turn only — see channels/vision-model.ts. */
   model?: string | null;
 }) {
+  if (input.userId && input.slack?.messageTs) {
+    const [session] = await db.select({ projectId: projectSessions.projectId, accountId: projectSessions.accountId })
+      .from(projectSessions).where(eq(projectSessions.sessionId, input.sessionId)).limit(1);
+    if (!session) return 'no-session';
+    const key = `slack:prompt:${input.slack.teamId}:${input.slack.channelId}:${input.slack.messageTs}`;
+    await enqueueContinueSessionCommand({
+      source: 'slack', projectId: session.projectId, accountId: session.accountId,
+      sessionId: input.sessionId, actorUserId: input.userId, text: input.text,
+      idempotencyKey: key,
+      wireMessageId: mintWireMessageId(),
+      // Keep the source coordinates next to the authenticated actor, not in the agent prompt alone.
+      slackContext: input.slack,
+      ...(input.model ? { overrides: { model: promptModelOverride(input.model) } } : {}),
+    });
+    void drainSessionLifecycleQueue({ idempotencyKey: key }).catch((err) => console.error('[slack] prompt drain failed', err));
+    return 'delivered';
+  }
   return slackSessionLifecycle.continueSession({
     source: 'slack',
     sessionId: input.sessionId,
@@ -185,6 +206,7 @@ export async function createOrJoinThreadSession(input: {
         sessionId,
         text: renderFollowUpPrompt(envelope, event),
         userId: actorUserId,
+        slack: { teamId, channelId: event.channel ?? '', userId: event.user ?? '', messageTs: event.ts ?? '' },
         model: await slackFollowUpModel({ project, userId: actorUserId, sessionId, event }),
       });
     } else {
@@ -219,6 +241,7 @@ export async function createOrJoinThreadSession(input: {
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
         userId: actorUserId,
+        slack: { teamId, channelId: event.channel ?? '', userId: event.user ?? '', messageTs: event.ts ?? '' },
         model: await slackFollowUpModel({ project, userId: actorUserId, sessionId: existing.sessionId, event }),
       });
       return;
