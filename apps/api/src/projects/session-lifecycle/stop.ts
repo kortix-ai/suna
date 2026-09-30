@@ -9,6 +9,38 @@ import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
+ * How long the request may hold the user's Stop button before it answers
+ * `stopping`. The API kills a request at 25 s (`middleware/request-deadline.ts`)
+ * with a 503 that says nothing about the box. The work before the provider call
+ * (daemon abort 4 s, transcript tail 3 s) and the provider stop (Platinum: GET,
+ * PATCH, POST, 10 s confirm poll, one retry after 1 s) add up past that, so
+ * the whole of it races this budget. Read per call so tests can shrink it.
+ */
+function stopSyncBudgetMs(): number {
+  return Number(process.env.STOP_SYNC_BUDGET_MS) || 17_000;
+}
+/** The transcript tail is best-effort; it never holds a stop for more than this. */
+const TRANSCRIPT_TAIL_MAX_MS = 3_000;
+
+/** Resolve `timedOut` when `work` outlasts `ms`. `work` keeps running either way. */
+async function within<T>(
+  work: Promise<T>,
+  ms: number,
+): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work.then((value) => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), Math.max(0, ms));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Manual, user-triggered stop: pause the running sandbox in place (disk kept,
  * same contract as the stop-half of restart / the idle reaper's stop-idle
  * path) without provisioning anything new. Session stays resumable via
@@ -21,6 +53,7 @@ export async function stopSession(input: {
   userId: string;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
   const { projectId, sessionId, accountId, userId } = input;
+  const budgetEndsAt = Date.now() + stopSyncBudgetMs();
 
   const [sandbox] = await db
     .select()
@@ -56,6 +89,7 @@ export async function stopSession(input: {
     };
   }
 
+  const externalId = sandbox.externalId;
   const provider = getProvider(sandbox.provider as SandboxProviderName);
   const now = new Date();
   if (cancellingWake) {
@@ -96,62 +130,81 @@ export async function stopSession(input: {
     // definitionally up; the only gap a stop can close is the turn that just
     // ended, and one bounded page covers it.
     const { captureSessionTranscriptMirror } = await import('../lib/session-transcript-capture');
-    await captureSessionTranscriptMirror(sessionId, undefined, {
-      scope: 'tail',
-      actorUserId: userId,
-    });
+    await within(
+      captureSessionTranscriptMirror(sessionId, undefined, {
+        scope: 'tail',
+        actorUserId: userId,
+      }),
+      Math.min(TRANSCRIPT_TAIL_MAX_MS, budgetEndsAt - Date.now()),
+    );
   }
 
-  // A transient provider failure gets ONE bounded retry (KRTX-520). The user
-  // is holding a Stop button. A degraded platform edge intermittently answers
-  // the stop request with a 502/503/504 (an HTML error page), and a backlog
-  // can leave the box unprocessed past the 10s confirm window ("last state:
-  // running") — the 2026-09-28/29 capacity incidents turned both into a 6.7%
-  // 5xx burst on this route (prod, 17 of 255 requests in one hour against a
-  // 0/h baseline). Stop is idempotent and the classifiers below still guard
-  // every attempt, so one attempt a second later lands the stop instead of
-  // returning a 502 for a stop the reaper's next pass settles anyway.
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await provider.stop(sandbox.externalId);
-      break;
-    } catch (err) {
-      if (isAlreadyNotRunning(err) || isLifecycleTransitionInProgress(err)) break;
-      // The provider failure used to vanish here: the 502 body reached only
-      // the client, and no log carried the cause (this is what made the
-      // incident burst above diagnosable only from response durations). Name
-      // every failed attempt.
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
-      if (attempt > 1) {
-        return {
-          status: 502,
-          body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
-        };
+  const settle = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    // A transient provider failure gets ONE bounded retry (KRTX-520). The user
+    // is holding a Stop button. A degraded platform edge intermittently answers
+    // the stop request with a 502/503/504 (an HTML error page), and a backlog
+    // can leave the box unprocessed past the 10s confirm window ("last state:
+    // running") — the 2026-09-28/29 capacity incidents turned both into a 6.7%
+    // 5xx burst on this route (prod, 17 of 255 requests in one hour against a
+    // 0/h baseline). Stop is idempotent and the classifiers below still guard
+    // every attempt, so one attempt a second later lands the stop instead of
+    // returning a 502 for a stop the reaper's next pass settles anyway.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await provider.stop(externalId);
+        break;
+      } catch (err) {
+        if (isAlreadyNotRunning(err) || isLifecycleTransitionInProgress(err)) break;
+        // The provider failure used to vanish here: the 502 body reached only
+        // the client, and no log carried the cause (this is what made the
+        // incident burst above diagnosable only from response durations). Name
+        // every failed attempt.
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
+        if (attempt > 1) {
+          return {
+            status: 502,
+            body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
+          };
+        }
+        await Bun.sleep(1_000);
       }
-      await Bun.sleep(1_000);
     }
-  }
 
-  // One stop writer for the whole platform (see applyStoppedState): it settles
-  // the meter against the still-active row before flipping either status, and
-  // it flips both in one transaction. This path used to inline that procedure
-  // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
-  // whole-object write built from the SELECT above, so anything a concurrent
-  // writer put in that column in between was silently dropped. Two live writers
-  // do exactly that (projects/routes/shared.ts clears and sets the
-  // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
-  // lives one table over for the same reason. Merged, never assigned.
-  if (!cancellingWake) {
-    await applyStoppedState({
-      sandboxId: sandbox.sandboxId,
-      sessionId,
-      externalId: sandbox.externalId,
-      stopReason: 'manual',
-      metadata: { stoppedBy: userId },
-      now,
-    });
-  }
+    // One stop writer for the whole platform (see applyStoppedState): it settles
+    // the meter against the still-active row before flipping either status, and
+    // it flips both in one transaction. This path used to inline that procedure
+    // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
+    // whole-object write built from the SELECT above, so anything a concurrent
+    // writer put in that column in between was silently dropped. Two live writers
+    // do exactly that (projects/routes/shared.ts clears and sets the
+    // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
+    // lives one table over for the same reason. Merged, never assigned.
+    if (!cancellingWake) {
+      await applyStoppedState({
+        sandboxId: sandbox.sandboxId,
+        sessionId,
+        externalId,
+        stopReason: 'manual',
+        metadata: { stoppedBy: userId },
+        now,
+      });
+    }
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+  };
 
-  return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+  // Answer inside the request deadline. When the provider has not confirmed in
+  // time, the stop is requested, not done: the DB row stays `active` (its token
+  // stays valid while the box may still run), `settle` keeps going and commits
+  // the stop when the provider confirms, and the reaper's next pass stops the
+  // box if this process dies first. Stop is idempotent on every path.
+  const pending = settle();
+  const outcome = await within(pending, budgetEndsAt - Date.now());
+  if (!outcome.timedOut) return outcome.value;
+  pending
+    .then((r) => {
+      if (r.status >= 400) console.warn(`[stop] late stop failed for sandbox ${sandbox.sandboxId}: ${r.status}`);
+    })
+    .catch((err) => console.warn(`[stop] late stop failed for sandbox ${sandbox.sandboxId}:`, err));
+  return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopping' } };
 }
