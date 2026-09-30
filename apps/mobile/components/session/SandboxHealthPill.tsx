@@ -3,7 +3,7 @@
  * composer card, that appears while the session's computer is not ready. Its
  * words are the SDK's (`sessionConnectionLabel`): a yellow dot and "Waking
  * computer · 53s" for a parked or booting computer; an orange dot, "Can't
- * reach computer · 53s", and the Health and Switch actions only when a dial
+ * reach computer · 53s", and the Health action only when a dial
  * failed.
  *
  * The pill self-hides as soon as the sandbox is reachable again, so it's
@@ -12,7 +12,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing } from 'react-native';
-import { ArrowsLeftRightIcon as ArrowLeftRight, WarningCircleIcon as CircleAlert } from '@/lib/icons';
+import { WarningCircleIcon as CircleAlert } from '@/lib/icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { THEME } from '@/lib/utils/theme';
 import { sessionConnectionLabel } from '@kortix/sdk';
@@ -23,8 +23,6 @@ import {
 import { ComposerStatusAction, ComposerStatusPill } from './ComposerStatusPill';
 
 interface SandboxHealthPillProps {
-  /** Opens the instances picker (= web's "Switch" target). */
-  onSwitch?: () => void;
   /** Optional — opens a detailed health sheet. Hidden when omitted. */
   onHealth?: () => void;
   /** Rendered in this slot while the sandbox is reachable: the thread's
@@ -32,7 +30,7 @@ interface SandboxHealthPillProps {
   whenReachable?: React.ReactNode;
 }
 
-export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: SandboxHealthPillProps) {
+export function SandboxHealthPill({ onHealth, whenReachable }: SandboxHealthPillProps) {
   const { sandboxUrl } = useSandboxContext();
   const { reachable, downSince, checked, connection } = useSandboxReachability(sandboxUrl);
   const elapsed = useElapsedSince(downSince);
@@ -73,14 +71,10 @@ export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: Sandbox
       elapsed={elapsed}
       actions={
         <>
-          {/* Health and Switch help only when the computer is truly unreachable:
+          {/* Health helps only when the computer is truly unreachable:
               a waking one needs neither. */}
           {faulted && onHealth ? (
             <ComposerStatusAction icon={CircleAlert} label="Health" onPress={onHealth} />
-          ) : null}
-
-          {faulted && onSwitch ? (
-            <ComposerStatusAction icon={ArrowLeftRight} label="Switch" onPress={onSwitch} />
           ) : null}
         </>
       }
