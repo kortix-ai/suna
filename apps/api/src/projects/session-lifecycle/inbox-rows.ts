@@ -1,6 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
@@ -674,4 +674,28 @@ export async function claimDueSessionInboxSiblings(input: {
     if (locked) claimed.push(locked as SessionLifecycleCommandRow);
   }
   return claimed;
+}
+
+/**
+ * Who sent each prompt a person typed into this session: the actor and every
+ * wire id the prompt travelled under (the four columns `wireMessageIdMatches`
+ * names). Delivered rows are kept, so this covers the whole transcript.
+ *
+ * Selects the ids only. `payload` also holds the prompt's parts, up to 12 MB.
+ */
+export async function listInboxPromptSenders(sessionId: string) {
+  return db
+    .select({
+      actorUserId: sessionLifecycleCommands.actorUserId,
+      submitted: sql<string | null>`${sessionLifecycleCommands.payload}->>'wireMessageId'`,
+      redelivered: sql<string | null>`${sessionLifecycleCommands.payload}->>'redeliveredMessageId'`,
+      redeliveredAll: sql<unknown>`${sessionLifecycleCommands.payload}->'redeliveredMessageIds'`,
+      forwarded: sql<string | null>`${sessionLifecycleCommands.result}->>'forwarded_message_id'`,
+    })
+    .from(sessionLifecycleCommands)
+    // Served by idx_session_lifecycle_commands_session.
+    .where(and(inboxScope(sessionId), isNotNull(sessionLifecycleCommands.actorUserId)))
+    .orderBy(desc(sessionLifecycleCommands.createdAt))
+    // ponytail: newest 5000 prompts; older messages render unattributed. Page by created_at if a session outgrows it.
+    .limit(5000);
 }

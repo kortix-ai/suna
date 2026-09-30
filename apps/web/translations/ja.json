@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
     "disconnectEllipsis": "接続を解除…"
+  },
+  "sessionParticipants": {
+    "title": "参加者",
+    "you": "自分",
+    "sentBy": "送信者: {name}",
+    "people": "このセッションの参加者: {names}",
+    "peopleMore": "このセッションの参加者: {names} ほか{count}人"
   }
 }

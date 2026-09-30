@@ -2,7 +2,7 @@
 
 import { ReminderTurnCard } from './reminder-turn-card';
 import { toast } from 'sonner';
-import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import { fetchSessionAttachment, isSessionAttachmentRef, type SessionParticipant } from '@kortix/sdk';
 
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
  *  user-message card. Full-width card, no reference chips. */
@@ -54,6 +54,7 @@ import {
   isPreviewableImage,
 } from '../attachment-tile';
 import { MentionChip } from '../mention-chip';
+import { MessageSenderBeside } from '../participants/session-participants';
 import {
   releaseSentAttachmentPreview,
   sentAttachmentPreview,
@@ -1085,6 +1086,7 @@ export function UserMessage({
   onEditCancel,
   onEditSend,
   leadingStatus,
+  sender,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1120,6 +1122,11 @@ export function UserMessage({
   onEditSend?: (messageId: string, text: string) => void;
   /** See `UserMessageActions.leadingStatus`. */
   leadingStatus?: React.ReactNode;
+  /**
+   * Another person who sent this message, in a shared session. Drawn as their
+   * avatar beside the bubble. Null for the viewer's own messages.
+   */
+  sender?: SessionParticipant | null;
   /**
    * The files this message's Send carried, in send order. The runtime streams
    * a message's parts text-first and the file parts seconds later; these keep
@@ -1608,25 +1615,27 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <UserMessageBubble
-          canExpand={canExpand}
-          expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
-          textId={`${message.info.id}-text`}
-          textRef={textRef}
-          quoted={Boolean(quotedPieces)}
-        >
-          {quotedPieces ? (
-            <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
-          ) : (
-            (bodyText || effectiveCommandInfo) && (
-              <>
-                {commandLead}
-                {renderSegments(segments)}
-              </>
-            )
-          )}
-        </UserMessageBubble>
+        <MessageSenderBeside sender={sender}>
+          <UserMessageBubble
+            canExpand={canExpand}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            textId={`${message.info.id}-text`}
+            textRef={textRef}
+            quoted={Boolean(quotedPieces)}
+          >
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              (bodyText || effectiveCommandInfo) && (
+                <>
+                  {commandLead}
+                  {renderSegments(segments)}
+                </>
+              )
+            )}
+          </UserMessageBubble>
+        </MessageSenderBeside>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate

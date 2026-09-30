@@ -13,6 +13,7 @@ import { errorMessageOf, isDeliveredButDisconnected } from '@/lib/delivered-but-
 import { useQueuedDraftStore, useQueuedDrafts } from '@/stores/queued-draft-store';
 import {
   type SandboxLifecycle,
+  type SessionParticipant,
   type SessionPrompt,
   type SessionPromptPart,
   groupShowSegments,
@@ -20,7 +21,8 @@ import {
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { useProjectSession } from '@kortix/sdk/react';
+import { useProjectSession, useSessionParticipants } from '@kortix/sdk/react';
+import { otherSender } from '@/features/session/participants/session-participants';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -763,6 +765,8 @@ interface SessionTurnProps {
   onEditCancel?: () => void;
   /** Commit the edit: rewind the session at `messageId` and send `text`. */
   onEditSend?: (messageId: string, text: string) => void;
+  /** Who sent this turn's prompt. Set only in a session with two or more people. */
+  sender?: SessionParticipant | null;
 }
 
 /**
@@ -887,6 +891,7 @@ function SessionTurnImpl({
   editPending,
   onEditCancel,
   onEditSend,
+  sender,
 }: SessionTurnProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -1709,6 +1714,7 @@ function SessionTurnImpl({
             editPending={editPending}
             onEditCancel={onEditCancel}
             onEditSend={onEditSend}
+            sender={sender}
             leadingStatus={
               queuedStatus === 'failed' ? (
                 <QueuedPromptFailure
@@ -2691,6 +2697,11 @@ export function SessionChat({
   // leaves the strip in the same beat its bubble appears, instead of on the
   // next poll: the two were visible together for up to a poll interval.
   const newestUserBubbleId = lastUserMessage?.info.id;
+  // Who can open this session and who sent each prompt. A new user bubble
+  // with no recorded sender is another person's prompt: the hook asks again.
+  const sessionParticipants = useSessionParticipants(projectId, projectSessionId, {
+    newestUserMessageId: newestUserBubbleId,
+  }).data;
   useEffect(() => {
     if (!newestUserBubbleId) return;
     void promptInbox.refetch();
@@ -6006,6 +6017,7 @@ export function SessionChat({
                               // hover state survives, nothing jumps).
                               key={turnRenderKeys.get(turn.userMessage.info.id)}
                               turnId={turn.userMessage.info.id}
+                              sender={otherSender(sessionParticipants, turn.userMessage.info.id)}
                               suppressed={suppressedFailedCompaction}
                               showBusyRow={
                                 showFallbackBusyRow &&

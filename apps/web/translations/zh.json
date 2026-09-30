@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
     "manageInProject": "在项目中管理",
     "disconnectEllipsis": "断开连接…"
+  },
+  "sessionParticipants": {
+    "title": "成员",
+    "you": "你",
+    "sentBy": "发送者：{name}",
+    "people": "此会话中的成员：{names}",
+    "peopleMore": "此会话中的成员：{names}，另有 {count} 人"
   }
 }

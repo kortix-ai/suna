@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
     "manageInProject": "Управљај у пројекту",
     "disconnectEllipsis": "Прекини везу…"
+  },
+  "sessionParticipants": {
+    "title": "Особе",
+    "you": "Ви",
+    "sentBy": "Послао: {name}",
+    "people": "Особе у овој сесији: {names}",
+    "peopleMore": "Особе у овој сесији: {names} и још {count}"
   }
 }

@@ -131,6 +131,8 @@ test('project(id).secrets.broker binds the project and encoded identifier', asyn
 test('session(projectId, sessionId) binds both ids', async () => {
   await kortix.session('PID123', 'SID456').previews();
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
+  await kortix.session('PID123', 'SID456').participants();
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/participants');
 });
 
 test('session presence writes a tab-scoped lease through the authenticated backend', async () => {

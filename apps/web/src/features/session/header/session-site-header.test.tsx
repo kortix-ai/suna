@@ -458,6 +458,19 @@ describe('SessionSiteHeader Share', () => {
     expect(button).toContain('aria-label={shareLabel}');
   });
 
+  test('the participant stack sits directly before Share and opens nothing', () => {
+    const stack = source.indexOf('<SessionParticipantStack');
+    const share = source.indexOf('setShareOpen(true)');
+    expect(stack).toBeGreaterThan(-1);
+    expect(stack).toBeLessThan(share);
+    // Nothing else renders between the stack and the Share button's guard.
+    const between = source.slice(source.indexOf('/>', stack), source.lastIndexOf('<Hint', share));
+    expect(between.replace(/\s/g, '')).toBe('/>)}{isProjectSession&&projectSession&&(');
+    const element = source.slice(stack, source.indexOf('/>', stack));
+    expect(element).toContain('participants={sessionParticipants}');
+    expect(element).not.toContain('Open');
+  });
+
   test('the button needs a loaded project session, like the dialog it opens', () => {
     const at = source.indexOf('setShareOpen(true)');
     const guard = source.lastIndexOf('{isProjectSession && projectSession && (', at);

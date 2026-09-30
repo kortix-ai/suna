@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
     "manageInProject": "Im Projekt verwalten",
     "disconnectEllipsis": "Trennen…"
+  },
+  "sessionParticipants": {
+    "title": "Personen",
+    "you": "Sie",
+    "sentBy": "Gesendet von {name}",
+    "people": "Personen in dieser Sitzung: {names}",
+    "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere"
   }
 }

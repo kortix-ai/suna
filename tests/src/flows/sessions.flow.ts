@@ -2231,3 +2231,147 @@ flow(
     });
   },
 );
+
+/**
+ * SESS-39 — session participants. One read answers who can open a session
+ * and who sent each prompt in it, so a client can label a shared transcript.
+ * `multi_user` is the gate: a session with one person renders as before.
+ */
+flow(
+  'SESS-39',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/participants',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+    ],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    const params = { projectId: project.id, sessionId };
+    const path = '/v1/projects/:projectId/sessions/:sessionId/participants';
+    type Person = { user_id: string; name: string | null; email: string | null; avatar_url: string | null; is_viewer: boolean };
+    type View = {
+      participants: Person[];
+      total: number;
+      multi_user: boolean;
+      senders: Record<string, string>;
+      sender_profiles: Person[];
+    };
+    const read = async (as: typeof owner) => {
+      const r = await as.get(path, { params });
+      r.status(200);
+      return r.json<View>();
+    };
+    const share = (body: unknown) =>
+      owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', body, { params });
+    const OWNER_MESSAGE = 'msg_0123456789abSess39OwnerPmt';
+
+    await db.connect();
+    try {
+      await ctx.step('a private session has one participant, the OWNER, and is not multi-user', async () => {
+        const view = await read(owner);
+        if (view.total !== 1 || view.multi_user) throw new Error(`private: ${JSON.stringify(view)}`);
+        const [only] = view.participants;
+        if (only?.user_id !== ctx.P.OWNER.userId || !only.is_viewer) throw new Error(`owner row: ${JSON.stringify(only)}`);
+      });
+
+      await ctx.step('the MEMBER cannot read the participants of a session it cannot open → 404', async () => {
+        (await asMember.get(path, { params })).status(404);
+      });
+
+      await ctx.step('sharing with the MEMBER lists two people, OWNER first, each flagged for its own viewer', async () => {
+        (await share({ mode: 'members', memberIds: [member.userId] })).status(200);
+        const mine = await read(owner);
+        if (mine.total !== 2 || !mine.multi_user) throw new Error(`shared: ${JSON.stringify(mine)}`);
+        const ids = mine.participants.map((person) => person.user_id);
+        if (JSON.stringify(ids) !== JSON.stringify([ctx.P.OWNER.userId, member.userId])) throw new Error(`order ${ids}`);
+        if (!mine.participants[0].is_viewer || mine.participants[1].is_viewer) throw new Error('owner viewer flag');
+        const theirs = await read(asMember);
+        if (theirs.participants[0].is_viewer || !theirs.participants[1].is_viewer) throw new Error('member viewer flag');
+      });
+
+      await ctx.step('each participant carries the name, email and profile picture from the auth profile', async () => {
+        await db.query(
+          `UPDATE auth.users SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)
+             || '{"full_name":"Sess39 Member","avatar_url":"https://img.example.test/sess39.png"}'::jsonb
+           WHERE id = $1`,
+          [member.userId],
+        );
+        const person = (await read(owner)).participants.find((p) => p.user_id === member.userId);
+        if (person?.name !== 'Sess39 Member' || person.avatar_url !== 'https://img.example.test/sess39.png')
+          throw new Error(`profile: ${JSON.stringify(person)}`);
+        if (!person.email) throw new Error('email missing');
+      });
+
+      await ctx.step('a prompt maps every wire id it travelled under to the person who sent it', async () => {
+        // The MEMBER's prompt, claimed and re-minted once. Its lease also holds
+        // the OWNER's prompt below away from a runtime this flow never provisions.
+        await db.query(
+          `INSERT INTO kortix.session_lifecycle_commands
+             (command_id, command_type, source, status, project_id, session_id, account_id,
+              actor_user_id, payload, locked_by, locked_until)
+           VALUES (gen_random_uuid(), 'continue_session', 'ui', 'running', $1, $2, $3, $4,
+             '{"text":"from the member","clientMessageId":"sess39-member","wireMessageId":"msg_member_first",
+               "redeliveredMessageId":"msg_member_second","redeliveredMessageIds":["msg_member_second"]}'::jsonb,
+             'SESS-39', now() + interval '1 hour')`,
+          [project.id, sessionId, team.id, member.userId],
+        );
+        await db.query(
+          `INSERT INTO kortix.credit_accounts
+             (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+           VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
+           ON CONFLICT (account_id) DO UPDATE SET balance = 1000, balance_precise = 1000,
+             non_expiring_credits = 1000, non_expiring_credits_precise = 1000, tier = 'tier_2_20'`,
+          [team.id],
+        );
+        const accepted = await owner.post(
+          '/v1/projects/:projectId/sessions/:sessionId/prompts',
+          { client_message_id: 'sess39-owner', message_id: OWNER_MESSAGE, parts: [{ type: 'text', text: 'from the owner' }] },
+          { params },
+        );
+        accepted.status([200, 202]);
+        const { senders, sender_profiles } = await read(owner);
+        if (senders.msg_member_first !== member.userId || senders.msg_member_second !== member.userId)
+          throw new Error(`member ids: ${JSON.stringify(senders)}`);
+        if (senders[OWNER_MESSAGE] !== ctx.P.OWNER.userId) throw new Error(`owner id: ${JSON.stringify(senders)}`);
+        if (sender_profiles.length !== 2) throw new Error(`profiles: ${JSON.stringify(sender_profiles)}`);
+      });
+
+      await ctx.step('after unsharing, the MEMBER gets 404 and the OWNER still reads the MEMBER as a sender', async () => {
+        (await share({ mode: 'private' })).status(200);
+        (await asMember.get(path, { params })).status(404);
+        const view = await read(owner);
+        if (view.total !== 1 || !view.multi_user) throw new Error(`unshared: ${JSON.stringify(view)}`);
+        if (!view.sender_profiles.some((person) => person.user_id === member.userId)) throw new Error('sender profile lost');
+      });
+
+      await ctx.step('unknown session → 404; NONMEMBER → 403; ANON → 401', async () => {
+        (await owner.get(path, { params: { projectId: project.id, sessionId: crypto.randomUUID() } })).status(404);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params })).status(403);
+        (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.session_lifecycle_commands WHERE session_id = $1', [sessionId]).catch(() => {});
+      await db.end();
+    }
+  },
+);

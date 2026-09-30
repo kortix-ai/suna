@@ -33,24 +33,28 @@ export function SessionStarterMark({
   session,
   starter,
   iconClassName,
-  avatarClassName,
+  compact = false,
 }: {
   session: ProjectSession;
   starter: SessionStarter;
   iconClassName?: string;
-  avatarClassName?: string;
+  /** The sidebar row's 18px slot: the `xs` avatar with one initial. */
+  compact?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
   if (starter.type === 'member') {
     // The viewer's own row draws the viewer's avatar, never the "You" label's initial.
     const metadataName = user?.user_metadata?.full_name ?? user?.user_metadata?.name;
+    const metadataAvatar = user?.user_metadata?.avatar_url;
     return (
       <UserAvatar
-        size="sm"
-        className={avatarClassName}
+        size={compact ? 'xs' : 'sm'}
+        shape="circle"
+        initials={compact ? 1 : 2}
         name={starter.isViewer ? (typeof metadataName === 'string' ? metadataName : undefined) : starter.label}
         email={starter.isViewer ? (user?.email ?? '') : (session.owner_email ?? '')}
+        avatarUrl={starter.isViewer && typeof metadataAvatar === 'string' ? metadataAvatar : null}
       />
     );
   }

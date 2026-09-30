@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { Avatar } from '@/components/kortix/avatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   CaretDownIcon,
@@ -34,12 +35,19 @@ import {
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn, TextPart } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
-import { isTextPart, messageCreatedAt, splitUserParts, type MessageWithParts } from '@kortix/sdk';
+import {
+  isTextPart,
+  messageCreatedAt,
+  splitUserParts,
+  type MessageWithParts,
+  type SessionParticipant,
+} from '@kortix/sdk';
 import { parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
+import { participantAvatarText, participantName } from '@/lib/session/participants';
 import {
   isPreviewableImage,
   localOrResolvedSource,
@@ -97,6 +105,39 @@ function paletteFor(isDark: boolean) {
   return THEME[isDark ? 'dark' : 'light'];
 }
 
+/** Web `size-6`: the round avatar beside another person's bubble. */
+const SENDER_AVATAR_SIZE = Math.round(webSpace(6));
+
+/**
+ * Another person's message, in a shared session: their round avatar beside
+ * the bubble, level with its last line (web `MessageSenderBeside`). The
+ * viewer's own messages pass no sender and render unchanged.
+ */
+function MessageSenderBeside({
+  sender,
+  children,
+}: {
+  sender: SessionParticipant | null | undefined;
+  children: React.ReactNode;
+}) {
+  if (!sender) return <>{children}</>;
+  return (
+    <View
+      className="flex-row items-end"
+      style={{ gap: webSpace(2) }}
+      accessibilityLabel={`Sent by ${participantName(sender)}`}>
+      <View className="shrink">{children}</View>
+      <Avatar
+        chalk
+        size={SENDER_AVATAR_SIZE}
+        fallbackText={participantAvatarText(sender)}
+        imageUrl={sender.avatar_url}
+        style={{ borderRadius: SENDER_AVATAR_SIZE / 2 }}
+      />
+    </View>
+  );
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** A failed send's bubble: the queued dim's `opacity-50`. */
@@ -137,6 +178,7 @@ export function UserMessage({
   rewindDisabled,
   queueState,
   uploadStatus,
+  sender,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -158,6 +200,11 @@ export function UserMessage({
   /** Dims the column; `interrupted` also shows a status line. */
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /**
+   * Another person who sent this message, in a shared session. Drawn as their
+   * avatar beside the bubble. Null for the viewer's own messages.
+   */
+  sender?: SessionParticipant | null;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -244,11 +291,7 @@ export function UserMessage({
     onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
   };
 
-  const actions = selecting ? (
-    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
-      <Text>Done</Text>
-    </Button>
-  ) : statusLabel ? (
+  const status = statusLabel ? (
     <Text
       variant="muted"
       numberOfLines={1}
@@ -256,6 +299,13 @@ export function UserMessage({
       {statusLabel}
     </Text>
   ) : null;
+  const actions = selecting ? (
+    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
+      <Text>Done</Text>
+    </Button>
+  ) : (
+    status
+  );
 
   // Editing replaces the whole column with the full-width editor.
   if (editingText != null && onEditSend && onEditCancel) {
@@ -359,29 +409,31 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          // A failed send greys its bubble; "Try again" above stays full strength.
-          <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
-            <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
-              <UserMessageBubble
-                isDark={isDark}
-                quotes={content.quotes}
-                // While selecting, a long press belongs to the text selection.
-                onLongPress={selecting ? undefined : openMenu}>
-                {selecting ? (
-                  <SelectableMessageText text={promptText} isDark={isDark} />
-                ) : bodyText || commandInfo ? (
-                  <MessageBody
-                    text={bodyText}
-                    command={commandInfo?.name}
-                    sessions={content.sessions}
-                    agentNames={agentNames}
-                    onFileMention={onFileMention}
-                    onSessionMention={onSessionMention}
-                  />
-                ) : null}
-              </UserMessageBubble>
-            </View>
-          </MessageMenu>
+          <MessageSenderBeside sender={sender}>
+            {/* A failed send greys its bubble; "Try again" above stays full strength. */}
+            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+              <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+                <UserMessageBubble
+                  isDark={isDark}
+                  quotes={content.quotes}
+                  // While selecting, a long press belongs to the text selection.
+                  onLongPress={selecting ? undefined : openMenu}>
+                  {selecting ? (
+                    <SelectableMessageText text={promptText} isDark={isDark} />
+                  ) : bodyText || commandInfo ? (
+                    <MessageBody
+                      text={bodyText}
+                      command={commandInfo?.name}
+                      sessions={content.sessions}
+                      agentNames={agentNames}
+                      onFileMention={onFileMention}
+                      onSessionMention={onSessionMention}
+                    />
+                  ) : null}
+                </UserMessageBubble>
+              </View>
+            </MessageMenu>
+          </MessageSenderBeside>
         ) : null}
 
         {actions}

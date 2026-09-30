@@ -1153,3 +1153,46 @@ describe('editablePromptText for a /command', () => {
     expect(editablePromptText('TEMPLATE BODY', { name: 'webapp' })).toBe('/webapp');
   });
 });
+
+describe('UserMessage sender', () => {
+  const MEMBER = {
+    user_id: 'member',
+    name: 'Marko',
+    email: 'member@example.test',
+    avatar_url: null,
+    is_viewer: false,
+  };
+  const renderWith = (sender: typeof MEMBER | null | undefined, msg: MessageWithParts = message) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
+          <TooltipProvider>
+            <UserMessage
+              message={msg}
+              sessionId="session-1"
+              ownsPlan={false}
+              onRewind={() => {}}
+              sender={sender}
+            />
+          </TooltipProvider>
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+
+  test("another person's message carries their round avatar beside the bubble, not a name", () => {
+    const markup = renderWith(MEMBER);
+    const text = markup.indexOf('ship the thing');
+    const avatar = markup.indexOf('data-slot="avatar"');
+    expect(avatar).toBeGreaterThan(text);
+    // Beside the bubble, before the actions row that holds Copy.
+    expect(avatar).toBeLessThan(markup.indexOf('aria-label="Copy code"'));
+    expect(markup).not.toContain('>Marko<');
+    expect(markup).toContain('Sent by Marko');
+  });
+
+  test('no sender: the message is unchanged', () => {
+    expect(renderWith(null)).not.toContain('Sent by');
+    expect(renderWith(null)).not.toContain('data-slot="avatar"');
+    expect(renderWith(undefined)).toBe(renderWith(null));
+  });
+});

@@ -412,6 +412,75 @@ export async function setProjectSessionSharing(
   );
 }
 
+/** One person on a session: someone who can open it, or who sent a prompt in it. */
+export interface SessionParticipant {
+  user_id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  /** True for the person making the request. */
+  is_viewer: boolean;
+}
+
+export interface SessionParticipants {
+  /** Who can open the session now, owner first. At most 20; see `total`. */
+  participants: SessionParticipant[];
+  /** How many people can open the session now. */
+  total: number;
+  /**
+   * Two or more distinct people can open the session or have sent a prompt in
+   * it. The gate for showing who sent what: false renders a session unlabelled.
+   */
+  multi_user: boolean;
+  /** Transcript message id -> the `user_id` that sent it. */
+  senders: Record<string, string>;
+  /** One profile per sender, including people who can no longer open the session. */
+  sender_profiles: SessionParticipant[];
+}
+
+/** Who can open a session, and who sent each prompt in it. */
+export async function getSessionParticipants(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<SessionParticipants>(
+      `/projects/${projectId}/sessions/${sessionId}/participants`,
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * The person who sent a transcript message, or null. Null when the session is
+ * not `multi_user`, and for a message with no recorded sender (a slash command,
+ * a trigger, a channel message): a label is never guessed.
+ */
+export function sessionMessageSender(
+  participants: SessionParticipants | null | undefined,
+  messageId: string,
+): SessionParticipant | null {
+  if (!participants?.multi_user) return null;
+  const userId = participants.senders[messageId];
+  return participants.sender_profiles.find((profile) => profile.user_id === userId) ?? null;
+}
+
+/**
+ * Record a message the viewer just sent, so its label does not wait for the
+ * next read. Returns the input unchanged when the viewer is not among
+ * `participants`.
+ */
+export function withViewerMessageSender<T extends SessionParticipants | undefined>(
+  participants: T,
+  messageId: string,
+): T {
+  const viewer = participants?.participants.find((person) => person.is_viewer);
+  if (!participants || !viewer) return participants;
+  const known = participants.sender_profiles.some((profile) => profile.user_id === viewer.user_id);
+  return {
+    ...participants,
+    senders: { ...participants.senders, [messageId]: viewer.user_id },
+    sender_profiles: known ? participants.sender_profiles : [...participants.sender_profiles, viewer],
+  };
+}
+
 export interface SessionPreviewCandidate {
   id: string;
   label: string;

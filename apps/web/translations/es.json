@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
     "manageInProject": "Gestionar en el proyecto",
     "disconnectEllipsis": "Desconectar…"
+  },
+  "sessionParticipants": {
+    "title": "Personas",
+    "you": "Tú",
+    "sentBy": "Enviado por {name}",
+    "people": "Personas en esta sesión: {names}",
+    "peopleMore": "Personas en esta sesión: {names} y {count} más"
   }
 }

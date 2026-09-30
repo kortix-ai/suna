@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
     "manageInProject": "Gérer dans le projet",
     "disconnectEllipsis": "Déconnecter…"
+  },
+  "sessionParticipants": {
+    "title": "Personnes",
+    "you": "Vous",
+    "sentBy": "Envoyé par {name}",
+    "people": "Personnes dans cette session : {names}",
+    "peopleMore": "Personnes dans cette session : {names} et {count} de plus"
   }
 }

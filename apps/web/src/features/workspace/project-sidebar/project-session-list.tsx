@@ -1229,7 +1229,7 @@ function ProjectSessionRow({
       {hasIndicators && (
         <div
           className={cn(
-            'flex shrink-0 items-center gap-0 transition-none',
+            'flex shrink-0 items-center gap-1 transition-none',
             'max-md:hidden [@media(hover:none)]:hidden [@media(pointer:coarse)]:hidden',
             'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
             'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
@@ -1238,17 +1238,17 @@ function ProjectSessionRow({
         >
           {showStarter && (
             <span
-              className="flex size-4 shrink-0 items-center justify-center"
+              className="flex size-5 shrink-0 items-center justify-center"
               data-session-source="true"
               data-session-starter={starter.type}
             >
               <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
-                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                <span className="text-muted-foreground flex size-5 items-center justify-center">
                   <SessionStarterMark
                     session={session}
                     starter={starter}
-                    iconClassName="size-3"
-                    avatarClassName="size-4"
+                    iconClassName="size-3.5"
+                    compact
                   />
                 </span>
               </Hint>

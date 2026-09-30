@@ -27,6 +27,7 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import type { SessionParticipant } from '@kortix/sdk';
 import {
   collectTurnParts,
   compactionTurnInfo,
@@ -130,6 +131,8 @@ interface SessionTurnProps {
   rewindDisabled?: boolean;
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /** Who sent this turn's prompt. Set only in a session with two or more people. */
+  sender?: SessionParticipant | null;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -157,6 +160,7 @@ function SessionTurnImpl({
   rewindDisabled,
   queueState,
   uploadStatus,
+  sender,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -267,6 +271,7 @@ function SessionTurnImpl({
       rewindDisabled={rewindDisabled}
       queueState={queueState}
       uploadStatus={uploadStatus}
+      sender={sender}
     />
   );
 

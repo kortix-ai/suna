@@ -69,6 +69,7 @@ let composerProps: any = null; // SessionChatInput's latest props
 let wakingComposerProps: any = null; // the SavedThread Composer's latest props
 let markdownActionsValue: any = null; // MarkdownActionsProvider's value
 let turnProps: any[] = []; // every mounted SessionTurn's props
+let sessionParticipants: any; // what `useSessionParticipants` reads
 const scrollToEndCalls: any[][] = [];
 const previewCalls: { path: string; line?: number }[] = [];
 let previewHostMounts = 0;
@@ -416,6 +417,7 @@ const mergedOverrides: Record<string, Record<string, any>> = {
       isLoading: false,
       refetchModelCount: spy('refetchModels'),
     }),
+    useSessionParticipants: () => ({ data: sessionParticipants }),
   },
   '@/lib/opencode/hooks/use-opencode-data': {
     useOpenCodeConfig: () => ({ data: null }),
@@ -443,6 +445,7 @@ const mergedOverrides: Record<string, Record<string, any>> = {
 const KEEP_REAL = new Set([
   'react',
   '@kortix/sdk',
+  '@/lib/session/participants',
   '@/lib/opencode/types',
   '@/lib/opencode/sync-store',
   '@/lib/opencode/runtime-capabilities',
@@ -650,6 +653,7 @@ beforeAll(async () => {
 beforeEach(() => {
   calls.length = 0;
   turnProps = [];
+  sessionParticipants = undefined;
   scrollToEndCalls.length = 0;
   previewCalls.length = 0;
   previewHostMounts = 0;
@@ -1154,6 +1158,54 @@ describe('SessionPage file mentions', () => {
     expect(previewCalls).toEqual([{ path: 'src/app.ts', line: undefined }]);
     markdownActionsValue.onOpenFile?.('src/lib/x.ts');
     expect(previewCalls.at(-1)).toEqual({ path: 'src/lib/x.ts', line: undefined });
+  });
+});
+
+// ── Shared session: who sent each prompt ─────────────────────────────────────
+
+describe('SessionPage shared-session sender', () => {
+  const MEMBER = { user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null, is_viewer: false };
+  const userMessageId = () =>
+    (useSyncStore.getState().messages[SID] ?? []).find((m) => m.info.role === 'user')!.info.id;
+
+  test('a single-user session passes no sender to a turn', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+  });
+
+  test("the viewer's own prompt passes no sender, even in a multi-user session", async () => {
+    seedTurns(['one']);
+    const ME = { ...MEMBER, user_id: 'me', is_viewer: true };
+    sessionParticipants = {
+      participants: [ME, MEMBER],
+      total: 2,
+      multi_user: true,
+      senders: { [userMessageId()]: 'me' },
+      sender_profiles: [ME],
+    };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+  });
+
+  test('a multi-user session passes a turn the other person who sent its prompt', async () => {
+    seedTurns(['one']);
+    sessionParticipants = {
+      participants: [MEMBER],
+      total: 2,
+      multi_user: true,
+      senders: { [userMessageId()]: 'member' },
+      sender_profiles: [MEMBER],
+    };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toEqual(MEMBER);
+  });
+
+  test('a prompt with no recorded sender stays unlabelled in a multi-user session', async () => {
+    seedTurns(['one']);
+    sessionParticipants = { participants: [MEMBER], total: 2, multi_user: true, senders: {}, sender_profiles: [MEMBER] };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
   });
 });
 

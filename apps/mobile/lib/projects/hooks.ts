@@ -3,7 +3,7 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
@@ -65,6 +65,7 @@ import {
   listConnectors,
   listPipedreamApps,
   listProjectAccess,
+  getSessionParticipants,
   listProjectBranches,
   listProjectFiles,
   listProjectPolicies,
@@ -141,6 +142,9 @@ export const projectKeys = {
   sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
     ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
+  /** Under `projectSessions`, so a sharing save (which invalidates that key) refetches it. */
+  sessionParticipants: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'participants', sessionId] as const,
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
@@ -390,6 +394,36 @@ export function useProjectAccess(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 30_000,
   });
+}
+
+/**
+ * Who can open a session and who sent each prompt in it. No polling: when the
+ * newest user message has no recorded sender (another person's prompt just
+ * arrived), it asks again, once per message id. Mirrors the SDK's
+ * `useSessionParticipants` (`@kortix/sdk/react`, which mobile does not import).
+ */
+export function useSessionParticipants(
+  projectId: string | null | undefined,
+  sessionId: string | null | undefined,
+  newestUserMessageId?: string,
+) {
+  const queryClient = useQueryClient();
+  const queryKey = projectKeys.sessionParticipants(projectId, sessionId);
+  const query = useQuery({
+    queryKey,
+    queryFn: () => getSessionParticipants(projectId!, sessionId!),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 30_000,
+  });
+  const data = query.data;
+  useEffect(() => {
+    if (!newestUserMessageId || !data?.multi_user || data.senders[newestUserMessageId]) return;
+    void queryClient.invalidateQueries({ queryKey });
+    // Keyed on the message id, not on `senders`: a message that never gets a
+    // sender (a slash command) is asked about once, not after every refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newestUserMessageId, data?.multi_user]);
+  return query;
 }
 
 // ── Members (web parity: customize/sections/members-view) ─────────────────────

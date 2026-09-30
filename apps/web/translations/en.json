@@ -20278,5 +20278,12 @@
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
     "manageInProject": "Manage in project",
     "disconnectEllipsis": "Disconnect…"
+  },
+  "sessionParticipants": {
+    "title": "People",
+    "you": "You",
+    "sentBy": "Sent by {name}",
+    "people": "People in this session: {names}",
+    "peopleMore": "People in this session: {names} and {count} more"
   }
 }

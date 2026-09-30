@@ -48,9 +48,11 @@ import {
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
+import { SessionParticipantStack } from '@/components/session/SessionParticipantStack';
+import { otherSender } from '@/lib/session/participants';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
+import { useComposerModels, useProjectDetail, useSessionParticipants } from '@/lib/projects/hooks';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
@@ -978,6 +980,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
+  // Who can open this session and who sent each prompt. A new user message
+  // with no recorded sender is another person's prompt: the hook asks again.
+  const participants = useSessionParticipants(
+    projectId,
+    projectSessionId,
+    turns[turns.length - 1]?.userMessage.info.id,
+  ).data;
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
@@ -1717,12 +1726,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
+            sender={otherSender(participants, id)}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, participants],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1895,6 +1905,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             relation chip (or nothing) holds the edge there. */}
         {onOpenRightDrawer ? (
           <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+            <SessionParticipantStack participants={participants} />
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
         ) : (
