@@ -278,3 +278,9 @@ variable "ses_send_region" {
     error_message = "ses_send_region is required when ses_send_identity_names is not empty."
   }
 }
+
+variable "enable_http_redirect" {
+  description = "Redirect HTTP requests to HTTPS at the ALB. Enable only for an origin that receives HTTP traffic."
+  type        = bool
+  default     = false
+}

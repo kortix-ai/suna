@@ -32,6 +32,11 @@ describe('partStreamingInput / partInput', () => {
     expect(partStreamingInput(p)).toBe(input);
   });
 
+  test('legacy top-level input remains available when state input is empty', () => {
+    const p = { ...part({ status: 'completed', input: {} }), input: { name: 'legacy' } };
+    expect(partInput(p)).toBe(p.input);
+  });
+
   test('a streaming call parses the half-arrived raw JSON', () => {
     const p = part({ status: 'pending', input: {}, raw: '{"command": "ls -la", "descr' });
     expect(partStreamingInput(p)).toEqual({ command: 'ls -la' });

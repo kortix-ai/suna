@@ -236,6 +236,8 @@ flow(
       });
 
       await ctx.step('real CLI `kortix validate --json`: alias exits 0 with the warning; conflicting keys exit 1', async () => {
+        // `kortix validate` lints that each agent's file exists (KRTX-174).
+        for (const agent of ['kortix', 'legacy', 'both']) sandbox.writeFile(`agents/${agent}.md`, `# ${agent}\n`);
         sandbox.writeFile('kortix.yaml', alias);
         const ok = await sandbox.run(['validate', '--json', '--no-dockerfile-lint']);
         if (ok.exitCode !== 0) throw new Error(`alias: exit ${ok.exitCode}: ${ok.all.slice(0, 600)}`);
