@@ -133,11 +133,17 @@
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
     "selectedOneForSession": "{count} chave selecionada para esta sessão",
     "selectedOne": "{count} chave selecionada",
-    "opencodeSignIn": "Entrar com OpenCode",
-    "opencodeSignInDescription": "Use seu workspace do OpenCode em vez de uma chave de API.",
     "opencodeDeviceDescription": "Copie este código. Depois abra a página do OpenCode e insira-o para conectar seu workspace.",
     "opencodeStarting": "Conectando ao OpenCode…",
-    "opencodeConnected": "Conectado com OpenCode"
+    "opencodeConnected": "Conectado com OpenCode",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Entre com sua conta do OpenCode. Salvamos o login como um segredo de projeto criptografado para que sessões futuras o reutilizem.",
+    "opencodeGoConnectedBanner": "OpenCode Go conectado.",
+    "opencodeGoDisconnected": "OpenCode Go desconectado",
+    "opencodeGoConnect": "Conectar OpenCode Go",
+    "opencodeGoReconnect": "Reconectar OpenCode Go",
+    "opencodeGoDisconnect": "Desconectar OpenCode Go",
+    "opencodeGoFailed": "Não foi possível conectar o OpenCode Go"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
