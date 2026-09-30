@@ -263,12 +263,12 @@ exports[`golden SQL: turn authority statements clearSandboxTurn with a reaper ca
     )
     UPDATE kortix.session_sandboxes s
        SET metadata = target.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                     THEN target.metadata->'activeTurns'
+                   WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+                     THEN  target.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -276,7 +276,7 @@ exports[`golden SQL: turn authority statements clearSandboxTurn with a reaper ca
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  90 ))
-           END,
+           END ,
            updated_at = now()
       FROM target
      WHERE s.sandbox_id = target.sandbox_id
@@ -350,12 +350,12 @@ exports[`golden SQL: turn authority statements clearSandboxTurn without a cause 
     )
     UPDATE kortix.session_sandboxes s
        SET metadata = target.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                     THEN target.metadata->'activeTurns'
+                   WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+                     THEN  target.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -363,7 +363,7 @@ exports[`golden SQL: turn authority statements clearSandboxTurn without a cause 
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  900 ))
-           END,
+           END ,
            updated_at = now()
       FROM target
      WHERE s.sandbox_id = target.sandbox_id
@@ -487,8 +487,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS (
-      SELECT target.sandbox_id,
+    ), next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -515,16 +514,15 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
                        '[]'::jsonb)
                 FROM selected
                WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
-    )
+        FROM target )
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
+                   WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+                     THEN  next_state.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -532,7 +530,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  900 ))
-           END,
+           END ,
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
@@ -642,8 +640,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS (
-      SELECT target.sandbox_id,
+    ), next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -670,16 +667,15 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
                        '[]'::jsonb)
                 FROM selected
                WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
-    )
+        FROM target )
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
+                   WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+                     THEN  next_state.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -687,7 +683,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  900 ))
-           END,
+           END ,
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
@@ -797,8 +793,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS (
-      SELECT target.sandbox_id,
+    ), next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -825,16 +820,15 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
                        '[]'::jsonb)
                 FROM selected
                WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
-    )
+        FROM target )
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
+                   WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+                     THEN  next_state.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -842,7 +836,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  900 ))
-           END,
+           END ,
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
@@ -962,8 +956,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS (
-      SELECT target.sandbox_id,
+    ), next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -990,16 +983,15 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
                        '[]'::jsonb)
                 FROM selected
                WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
-    )
+        FROM target )
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
+                   WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+                     THEN  next_state.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -1007,7 +999,7 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  900 ))
-           END,
+           END ,
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
@@ -1075,8 +1067,7 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
         END) entry
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND entry.value->>'messageId' =  msg_turn_1 
-    ), next_state AS (
-      SELECT target.sandbox_id,
+    ), next_state AS ( SELECT target.sandbox_id,
              jsonb_set(
                target.metadata,
                '{activeTurns}',
@@ -1103,17 +1094,17 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
                        '[]'::jsonb)
                 FROM selected
                WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
+        FROM target 
        WHERE EXISTS (SELECT 1 FROM selected WHERE selected.sandbox_id = target.sandbox_id)
     )
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
+           deadline_at =  CASE
              WHEN EXISTS (
                SELECT 1
                  FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
+                   WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+                     THEN  next_state.metadata ->'activeTurns'
                    ELSE '{}'::jsonb
                  END) remaining
                 WHERE remaining.value->>'state' IN ('delivering', 'active'))
@@ -1121,7 +1112,7 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
              ELSE LEAST(
                s.deadline_at,
                now() + make_interval(secs =>  900 ))
-           END,
+           END ,
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id

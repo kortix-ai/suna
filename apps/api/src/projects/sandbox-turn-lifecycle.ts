@@ -90,6 +90,65 @@ function jsonbObject(value: SQL): SQL {
   END`;
 }
 
+/**
+ * Contract the deadline to the idle grace unless some turn is still live.
+ * `remaining` is the POST-write metadata: this end shortens the deadline only
+ * when it was the session's last live turn.
+ */
+function contractIdleDeadline(remaining: SQL, graceMs: number): SQL {
+  return sql`CASE
+             WHEN EXISTS (
+               SELECT 1
+                 FROM jsonb_each(CASE
+                   WHEN jsonb_typeof(${remaining}->'activeTurns') = 'object'
+                     THEN ${remaining}->'activeTurns'
+                   ELSE '{}'::jsonb
+                 END) remaining
+                WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs => ${secs(graceMs)}))
+           END`;
+}
+
+/**
+ * The next-state projection both multi-turn end writers share: erase every
+ * turn the `selected` CTE matched from `activeTurns`, keep every other entry,
+ * and return the turns it erased as `ended_turns` for the ledger settle.
+ * References the `target` and `selected` CTE names of the enclosing statement.
+ */
+function removeAndReturnTurns(): SQL {
+  return sql`SELECT target.sandbox_id,
+             jsonb_set(
+               target.metadata,
+               '{activeTurns}',
+               coalesce((
+                 SELECT jsonb_object_agg(entry.key, entry.value)
+                   FROM jsonb_each(CASE
+                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                       THEN target.metadata->'activeTurns'
+                     ELSE '{}'::jsonb
+                   END) entry
+                  WHERE NOT EXISTS (
+                    SELECT 1 FROM selected
+                     WHERE selected.sandbox_id = target.sandbox_id
+                       AND selected.key = entry.key)),
+                 '{}'::jsonb),
+               true) AS metadata,
+             (SELECT coalesce(
+                       jsonb_agg(jsonb_build_object(
+                         'token', selected.token,
+                         'opencodeSessionId', selected.value->>'opencodeSessionId',
+                         'messageId', selected.value->>'messageId',
+                         'startedAtMs', selected.value->>'startedAtMs'))
+                         FILTER (WHERE selected.token IS NOT NULL),
+                       '[]'::jsonb)
+                FROM selected
+               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
+        FROM target`;
+}
+
 export function prepareInitialSandboxTurn(nowMs = Date.now()): PreparedInitialSandboxTurn {
   return {
     token: randomUUID(),
@@ -508,20 +567,7 @@ export async function clearSandboxTurn(
     )
     UPDATE kortix.session_sandboxes s
        SET metadata = target.metadata,
-           deadline_at = CASE
-             WHEN EXISTS (
-               SELECT 1
-                 FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                     THEN target.metadata->'activeTurns'
-                   ELSE '{}'::jsonb
-                 END) remaining
-                WHERE remaining.value->>'state' IN ('delivering', 'active'))
-             THEN s.deadline_at
-             ELSE LEAST(
-               s.deadline_at,
-               now() + make_interval(secs => ${secs(graceMs)}))
-           END,
+           deadline_at = ${contractIdleDeadline(sql`target.metadata`, graceMs)},
            updated_at = now()
       FROM target
      WHERE s.sandbox_id = target.sandbox_id
@@ -648,52 +694,10 @@ export async function completeSandboxTurn(
       SELECT * FROM exact_matches
       UNION ALL
       SELECT * FROM fallback_match
-    ), next_state AS (
-      SELECT target.sandbox_id,
-             jsonb_set(
-               target.metadata,
-               '{activeTurns}',
-               coalesce((
-                 SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
-                  WHERE NOT EXISTS (
-                    SELECT 1 FROM selected
-                     WHERE selected.sandbox_id = target.sandbox_id
-                       AND selected.key = entry.key)),
-                 '{}'::jsonb),
-               true) AS metadata,
-             (SELECT coalesce(
-                       jsonb_agg(jsonb_build_object(
-                         'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
-                         'messageId', selected.value->>'messageId',
-                         'startedAtMs', selected.value->>'startedAtMs'))
-                         FILTER (WHERE selected.token IS NOT NULL),
-                       '[]'::jsonb)
-                FROM selected
-               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
-    )
+    ), next_state AS (${removeAndReturnTurns()})
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
-             WHEN EXISTS (
-               SELECT 1
-                 FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
-                   ELSE '{}'::jsonb
-                 END) remaining
-                WHERE remaining.value->>'state' IN ('delivering', 'active'))
-             THEN s.deadline_at
-             ELSE LEAST(
-               s.deadline_at,
-               now() + make_interval(secs => ${secs(graceMs)}))
-           END,
+           deadline_at = ${contractIdleDeadline(sql`next_state.metadata`, graceMs)},
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
@@ -813,53 +817,12 @@ export async function closeSandboxTurnByMessageId(
         END) entry
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND entry.value->>'messageId' = ${messageId}
-    ), next_state AS (
-      SELECT target.sandbox_id,
-             jsonb_set(
-               target.metadata,
-               '{activeTurns}',
-               coalesce((
-                 SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
-                  WHERE NOT EXISTS (
-                    SELECT 1 FROM selected
-                     WHERE selected.sandbox_id = target.sandbox_id
-                       AND selected.key = entry.key)),
-                 '{}'::jsonb),
-               true) AS metadata,
-             (SELECT coalesce(
-                       jsonb_agg(jsonb_build_object(
-                         'token', selected.token,
-                         'opencodeSessionId', selected.value->>'opencodeSessionId',
-                         'messageId', selected.value->>'messageId',
-                         'startedAtMs', selected.value->>'startedAtMs'))
-                         FILTER (WHERE selected.token IS NOT NULL),
-                       '[]'::jsonb)
-                FROM selected
-               WHERE selected.sandbox_id = target.sandbox_id) AS ended_turns
-        FROM target
+    ), next_state AS (${removeAndReturnTurns()}
        WHERE EXISTS (SELECT 1 FROM selected WHERE selected.sandbox_id = target.sandbox_id)
     )
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
-           deadline_at = CASE
-             WHEN EXISTS (
-               SELECT 1
-                 FROM jsonb_each(CASE
-                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                     THEN next_state.metadata->'activeTurns'
-                   ELSE '{}'::jsonb
-                 END) remaining
-                WHERE remaining.value->>'state' IN ('delivering', 'active'))
-             THEN s.deadline_at
-             ELSE LEAST(
-               s.deadline_at,
-               now() + make_interval(secs => ${secs(graceMs)}))
-           END,
+           deadline_at = ${contractIdleDeadline(sql`next_state.metadata`, graceMs)},
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
