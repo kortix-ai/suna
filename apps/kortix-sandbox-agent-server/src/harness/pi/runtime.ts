@@ -24,11 +24,12 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
+import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { PiConfig } from './config'
-import { resolvePiSkillDirectories } from './config'
+import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, type PermissionPolicy, type PermissionRule, type QuestionRequestWire } from './interactions'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
 import { WireTranscript, type WireFrame, type WireMessage } from './transcript'
@@ -36,7 +37,7 @@ import { PiWireAdapter, assistantMessageError, type WireEmission } from './wire'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
 
-export const PI_HARNESS_VERSION = 'pi-agent-core@0.85.1'
+import { PI_HARNESS_VERSION } from './version'
 
 /** OpenCode `AgentConfig`, as apps/api compiles it (compile-agent-config.ts). */
 export interface CompiledAgent {
@@ -57,6 +58,8 @@ export interface CompiledAgent {
 
 export interface CompiledAgentConfig {
   model?: string
+  /** The manifest's `default_agent`, when it is declared, enabled and primary. */
+  default_agent?: string
   agent?: Record<string, CompiledAgent>
 }
 
@@ -157,6 +160,10 @@ export interface PiRuntimeHooks {
   onTurnBegin?: (turn: { rootId: string; messageId: string }) => void
   onTurnEnd?: (turn: TurnEnd & { rootId: string }) => void
   onQuestionAsked?: (request: QuestionRequestWire, answer: (answers: string[][]) => void) => void
+  /** A tool call waits for the user's approval (root or subagent). Report only: the reply comes over the permission routes. */
+  onPermissionAsked?: (request: PermissionRequestWire) => void
+  /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
+  onFrame?: (frame: WireFrame) => void
 }
 
 export interface PiRuntimeOptions {
@@ -264,6 +271,7 @@ export class PiRuntime {
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
   /** The retry state of the root turn in flight (transient-retry.ts). */
   private turnRetry: TransientRetry | null = null
+  private resetProgressWatchdog: (() => void) | null = null
   private workspaceReady = true
 
   constructor(opts: PiRuntimeOptions) {
@@ -275,7 +283,7 @@ export class PiRuntime {
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
     this.title = 'New session'
-    this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame))
+    this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
     })
@@ -369,10 +377,12 @@ export class PiRuntime {
       this.agentName = this.resolveAgentName()
       this.models = await createPiModels({
         env: this.env,
-        defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+        defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
       })
-      this.selected = this.models.select(nativeModelId(this.env.KORTIX_OPENCODE_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
-      this.executionEnv = new node.NodeExecutionEnv({ cwd: this.workspace, shellEnv: this.env })
+      this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
+      // pi spreads the live process.env into every shell itself; BASH_ENV adds
+      // the egress shim's proxy + CA, which only the agent env file carries.
+      this.executionEnv = new node.NodeExecutionEnv({ cwd: this.workspace, shellEnv: { ...AGENT_SHELL_ENV } })
       this.adapter = new PiWireAdapter({
         sessionID: this.rootId,
         mintMessageId: () => this.clock.mint(this.now()),
@@ -412,6 +422,7 @@ export class PiRuntime {
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
       this.pi = await host.createPiSession({
+        projectConfigDir: await resolvePiProjectConfigDir(this.cfg),
         agent,
         ref: this.runner,
         cwd: this.workspace,
@@ -422,6 +433,7 @@ export class PiRuntime {
         baseTools: this.baseTools,
         extensions: [this.turnExtension(), subagents(this.kortixHost()), ...project.extensions],
         systemPrompt: () => this.systemPrompt(core.formatSkillsForSystemPrompt),
+        skillAllowed: (name) => skillGranted(this.policy, name),
         provider: this.models.models.getProvider(this.selected.providerID),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
@@ -478,9 +490,9 @@ export class PiRuntime {
     this.agentName = this.resolveAgentName()
     this.models = await createPiModels({
       env: this.env,
-      defaultModelRef: this.env.KORTIX_OPENCODE_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+      defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
     })
-    this.selected = this.models.select(nativeModelId(this.env.KORTIX_OPENCODE_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
+    this.selected = this.models.select(nativeModelId(this.env.KORTIX_MODEL) ?? nativeModelId(this.compiledAgent()?.model ?? this.compiled?.model))
     this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
     this.permissions.setPolicy(this.policy)
     const core = await import('@earendil-works/pi-agent-core')
@@ -554,8 +566,8 @@ export class PiRuntime {
    * Quick Queue: end the named turn once no tool is running. A tool in flight
    * is never killed; the model's own streaming may be cut.
    */
-  armAbortAfterTool(input: { promptId: string; opencodeSessionId: string; messageId: string }): void {
-    if (input.opencodeSessionId !== this.rootId) return
+  armAbortAfterTool(input: { promptId: string; runtimeSessionId: string; messageId: string }): void {
+    if (input.runtimeSessionId !== this.rootId) return
     this.abortAfterTool = { promptId: input.promptId, messageId: input.messageId }
     this.checkAbortAfterTool()
   }
@@ -593,6 +605,18 @@ export class PiRuntime {
       now: this.now,
     })
     this.turnRetry = retry
+    let timedOut = false
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    const armWatchdog = () => {
+      clearTimeout(watchdog)
+      if (this.runningTools || !this.active || timedOut) return
+      watchdog = setTimeout(() => {
+        timedOut = true
+        retry.abort()
+        agent.abort()
+      }, this.cfg.piNoProgressMs)
+    }
+    this.resetProgressWatchdog = armWatchdog
     try {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
@@ -600,28 +624,38 @@ export class PiRuntime {
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
       const images = this.images(turn.input)
       // A transient model error continues the turn instead of ending it (transient-retry.ts).
+      armWatchdog()
       await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }))
       for (const frame of this.adapter!.settleRetry()) this.publish(frame)
+      if (timedOut) {
+        outcome = 'error'
+        error = { name: 'TimeoutError', message: 'The session made no progress. Please try again.' }
+        this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message: error.message } } } })
+        this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
+        this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
+      }
       // Only this turn's messages: an extension command answers without a model call.
       const last = agent.state.messages.slice(before).reverse().find((m) => m.role === 'assistant') as
         | { stopReason?: string; errorMessage?: string }
         | undefined
-      if (last?.stopReason === 'aborted' || retry.wasAborted) outcome = 'aborted'
-      else if (last && (last.stopReason === 'error' || last.stopReason === 'length')) {
+      if (!timedOut && (last?.stopReason === 'aborted' || retry.wasAborted)) outcome = 'aborted'
+      else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
         error = wire ? { name: wire.name, message: (wire.data as { message?: string }).message } : undefined
       }
     } catch (err) {
       outcome = 'error'
-      const message = err instanceof Error ? err.message : String(err)
-      error = { name: 'UnknownError', message }
+      const message = timedOut ? 'The session made no progress. Please try again.' : err instanceof Error ? err.message : String(err)
+      error = { name: timedOut ? 'TimeoutError' : 'UnknownError', message }
       this.adapter?.settleRetry()
       logger.error('[pi] turn failed', { messageId: turn.messageId, err: message })
-      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
+      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message } } } })
       this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
+      clearTimeout(watchdog)
+      this.resetProgressWatchdog = null
       this.turnRetry = null
       this.turnSystem = null
       this.permissions.rejectAll()
@@ -640,6 +674,7 @@ export class PiRuntime {
   private onAgentEvent(event: AgentEvent): void {
     if (event.type === 'tool_execution_start') this.runningTools += 1
     if (event.type === 'tool_execution_end') this.runningTools = Math.max(0, this.runningTools - 1)
+    if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end' || event.type === 'message_update') this.resetProgressWatchdog?.()
     this.translateAndPublish(event)
     // After the frames: the finished tool part is on the transcript before the turn is cut.
     if (event.type === 'tool_execution_end') this.checkAbortAfterTool()
@@ -766,7 +801,7 @@ export class PiRuntime {
       streamFn: (m, context, options) => this.models!.models.streamSimple(m, context, options),
       toolExecution: 'sequential',
       initialState: {
-        systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt, { base: input.systemPrompt, tools, interactive: false }),
+        systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt, { base: input.systemPrompt, tools, policy, interactive: false }),
         model: selected.model,
         thinkingLevel: this.thinkingLevel(input.variant, selected),
         tools,
@@ -877,6 +912,7 @@ export class PiRuntime {
     }
     if (opts.transcriptOnly) return
     kortixEventBus().publish(frame.type, p, session)
+    this.hooks.onFrame?.(frame)
   }
 
   private publishUserMessage(
@@ -949,10 +985,13 @@ export class PiRuntime {
 
   // ── configuration ────────────────────────────────────────────────────────
 
+  /** The session's agent; `default` (no agent chosen) is the manifest's `default_agent`, as on OpenCode. */
   private resolveAgentName(): string {
     const requested = (this.env.KORTIX_AGENT_NAME ?? '').trim()
     const agents = Object.keys(this.compiled?.agent ?? {})
     if (requested && requested !== 'default' && (agents.length === 0 || agents.includes(requested))) return requested
+    const declared = this.compiled?.default_agent
+    if (declared && agents.includes(declared)) return declared
     return agents[0] ?? 'build'
   }
 
@@ -967,7 +1006,7 @@ export class PiRuntime {
 
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
     if (!this.executionEnv) return []
-    const dirs = resolvePiSkillDirectories(this.cfg).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.cfg, await resolvePiProjectConfigDir(this.cfg)).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')
@@ -983,15 +1022,20 @@ export class PiRuntime {
     }
   }
 
-  /** The root's system prompt; a child passes its own base prompt and tools, and cannot ask questions. */
+  /**
+   * The root's system prompt; a child passes its own base prompt, tools and
+   * permission policy, and cannot ask questions. Each agent lists only the
+   * skills its own grant allows.
+   */
   private systemPrompt(
     formatSkills: (skills: Skill[]) => string,
-    child?: { base: string; tools: AgentTool<any, any>[]; interactive: false },
+    child?: { base: string; tools: AgentTool<any, any>[]; policy: PermissionPolicy; interactive: false },
   ): string {
     const parts = [child?.base || this.compiledAgent()?.prompt?.trim() || DEFAULT_SYSTEM_PROMPT]
     // pi appends the working directory (and package skills) to the root's prompt.
     if (child) parts.push(`Working directory: ${this.workspace}`)
-    if (this.skills.length > 0) parts.push(formatSkills(this.skills))
+    const skills = this.skills.filter((skill) => skillGranted(child?.policy ?? this.policy, skill.name))
+    if (skills.length > 0) parts.push(formatSkills(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
     parts.push(
@@ -1024,10 +1068,11 @@ export class PiRuntime {
     return this.agentName
   }
 
-  /** Kortix skills first, then skills pi loaded from packages; a name appears once. */
+  /** The agent's granted skills: Kortix skills first, then skills pi loaded from packages; a name appears once. */
   skillList(): Array<Pick<Skill, 'name' | 'description' | 'filePath'>> {
-    const seen = new Set(this.skills.map((skill) => skill.name))
-    return [...this.skills, ...(this.pi?.skills() ?? []).filter((skill) => !seen.has(skill.name) && (seen.add(skill.name), true))]
+    const own = this.skills.filter((skill) => skillGranted(this.policy, skill.name))
+    const seen = new Set(own.map((skill) => skill.name))
+    return [...own, ...(this.pi?.skills() ?? []).filter((skill) => !seen.has(skill.name) && (seen.add(skill.name), true))]
   }
 
   toolList(): Array<{ id: string; description: string; parameters: unknown }> {
@@ -1165,6 +1210,9 @@ export class PiRuntime {
       seq: bus.headSeq,
       built_at: new Date(this.now()).toISOString(),
       identity: {
+        runtime_session_id: this.rootId,
+        harness_version: PI_HARNESS_VERSION,
+        // Pre-W3 names of the two fields above, for an API that predates them.
         opencode_session_id: this.rootId,
         opencode_version: PI_HARNESS_VERSION,
         daemon_build: null,
@@ -1221,7 +1269,7 @@ export class PiRuntime {
   }
 
   /**
-   * The turn probe behind `/kortix/health?turn=1` and `/kortix/opencode/turn/:id`.
+   * The turn probe behind `/kortix/health?turn=1`.
    * The reaper renews a box's deadline on `inFlight`, records `end` when a
    * turn is over, and redelivers a prompt reported `abandoned`.
    */

@@ -119,6 +119,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`
     and `fetchAdminSandboxProxyToken`; and `useAdminAccountSandboxes`.
     Retired queries never retry or poll.
+- The kortix-master client and its React hooks: every function exported from
+  `core/runtime/kortix-master.ts` (`listTasks`, `createTicket`, `listServices`,
+  …) and `react/use-kortix-master.ts` (`useKortixTasks`, …). The sandbox daemon
+  serves none of their `/kortix/tasks|tickets|projects|services` routes: every
+  call answers `404`. Behavior is unchanged. Removed in the next major.
+- 22 runtime exports that wrap an OpenCode-only route: the MCP hooks
+  (`useOpenCodeMcpStatus`, `useAddMcpServer`, `useConnectMcpServer`,
+  `useDisconnectMcpServer`, `useMcpAuthStart`, `useMcpAuthCallback`,
+  `useMcpAuthRemove`), `useShareSession`, `useUnshareSession`,
+  `useUpdatePart`, `useDeletePart`, `useOpenCodeSkills`, `useOpenCodeToolIds`,
+  `useOpenCodeProjects`, `useDeleteOpenCodeSession`,
+  `getRuntimeProviderAuthMethods`, `authorizeRuntimeProvider`,
+  `completeRuntimeProviderOAuth`, `setRuntimeProviderApiKey`,
+  `getRuntimeConfig`, `updateRuntimeConfig` and `refreshRuntimeConfiguration`.
+  Behavior is unchanged. Removed in the next major.
 
 ### Fixed
 - `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`

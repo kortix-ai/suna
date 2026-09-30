@@ -77,12 +77,7 @@ const unexpected = (): never => { throw new Error('unused operation must not run
 /** The minimal `HarnessService` `startProxy` needs, with a controllable convergence flag. */
 function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
   const queries: HarnessQueryService = {
-    readState: unexpected, readMessages: unexpected, readVcsDiff: unexpected,
-    readCurrentProject: unexpected, readConfiguration: unexpected,
-    readSession: unexpected, readTodo: unexpected, pinnedSessionId: unexpected,
-    replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected,
-    stopSession: unexpected, revertSession: unexpected, unrevertSession: unexpected,
-    observeTurn: unexpected,
+    readState: unexpected, readMessages: unexpected,
     events: { epoch: 'test', headSeq: 0, firstSeq: 0, subscribe: unexpected },
     attachments: { read: unexpected },
   }
@@ -102,11 +97,11 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
         armAbortAfterTool: unexpected, disarmAbortAfterTool: unexpected,
       }),
     },
-    diagnostics: { health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
+    diagnostics: { capabilities: [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
     queries: { bind: () => queries },
     background: { start: () => ({ stop: () => {} }) as unknown as ReturnType<HarnessService['background']['start']> },
     assets: {
-      componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
+      harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
       reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
     },
   }

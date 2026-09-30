@@ -168,7 +168,7 @@ export async function stopWithReceipt(
   // abort's effect", and a timeout is precisely the case where nobody said that.
   // Settling on it wrote 5s of clock into an evidence field: `abortFloor` in
   // `projectWorking` dropped from Infinity to a real instant, the next `/turn`
-  // read — issued while the cancel was still in flight, `abortOpenCodeSession`
+  // read — issued while the cancel was still in flight, `abortRuntimeSession`
   // retries twice — cleared it, and the Stop button came back mid-cancel. The
   // receipt is left unsettled instead and `OPTIMISTIC_ABORT_MAX_MS` bounds it,
   // which is the bound that exists for exactly this case.

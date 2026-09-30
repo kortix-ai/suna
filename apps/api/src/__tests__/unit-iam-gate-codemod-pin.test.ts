@@ -209,11 +209,12 @@ describe('the gate codemod is complete', () => {
   });
 
   test('every project gate goes through the alias table, not a hand-rolled action string', () => {
-    // `loadProjectForUser` is the only caller of `iamActionForProjectAccess`;
+    // `loadProjectForUser` is the only caller of `iamActionForProjectAccess`
+    // and both live in project-access.ts (the access.ts split, KRTX-301);
     // a route that wants a leaf calls `assertProjectCapability` with the leaf.
     const offenders = PRODUCTION.filter(
       (f) =>
-        rel(f) !== 'projects/lib/access.ts' &&
+        rel(f) !== 'projects/lib/project-access.ts' &&
         /\biamActionForProjectAccess\s*\(/.test(code(f)),
     ).map(rel);
     expect(offenders).toEqual([]);

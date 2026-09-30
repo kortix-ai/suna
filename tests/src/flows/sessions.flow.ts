@@ -5,7 +5,9 @@
  * a full boot. Gated on the `daytona` capability, except SESS-36, which runs on
  * the local profile against a database session with a saved transcript.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { seedSessionTranscript } from '../fixtures/session-transcript';
 
@@ -910,11 +912,25 @@ flow(
     });
 
     await ctx.step(
-      'anon: the transcript share reads the conversation → 200 digest from the live sandbox or the saved transcript',
+      'anon: the transcript share reads the conversation → 503 until the sandbox is active, then a 200 digest from the live sandbox or the saved transcript',
       async () => {
-        const r = await anon.get('/v1/public/session-shares/:shareId/messages', {
-          params: { shareId: transcriptShareId },
-        });
+        // The fixture session was created moments ago; while its sandbox starts
+        // and nothing is saved, the contract answers 503. Once the sandbox is
+        // active but its runtime has no root conversation yet, it answers 200
+        // `source:"none"` (the spec's retry signal) — a box that turns active
+        // in ~5 s (a warm Platinum claim) sits in that window for seconds.
+        const r = await waitFor(
+          () => anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: transcriptShareId } }),
+          {
+            until: (res) =>
+              res.statusCode !== 503 &&
+              !(res.statusCode === 200 && res.json<{ source?: string }>().source === 'none'),
+            timeoutMs: 180_000,
+            intervalMs: 2_000,
+            description: 'the shared session to become readable',
+            retryOnError: isKe2eRetryableError,
+          },
+        );
         r.status(200).body().exists('$.messages');
         const source = r.json<{ source?: string }>().source;
         if (source !== 'live' && source !== 'mirror') {
@@ -1981,5 +1997,246 @@ flow(
       if (tokenId) await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});
       await db.end();
     }
+  },
+);
+
+/**
+ * SESS-37 — the session list's tree and starter filters (KRTX-639). A trigger
+ * coordinator's workers must never drown a member's own chats, and search must
+ * reach every session the viewer may see, not only the loaded page.
+ */
+flow(
+  'SESS-37',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['GET /v1/projects/:projectId/sessions'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>) => {
+      const id = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, ...input });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    const factory = { type: 'trigger' as const, id: 'software-factory' };
+    const coordinator = await seed({
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'project',
+      initiator: factory,
+      metadata: { source: 'trigger:manual', name: 'Factory intake' },
+    });
+    await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Fix login bug' } });
+    await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, initiator: factory, metadata: { source: 'agent', name: 'Ledger probe' } });
+    const myChat = await seed({ userId: ctx.P.OWNER.userId!, metadata: { source: 'ui', custom_name: 'Apartment rent research' } });
+    await seed({ userId: ctx.P.OWNER.userId!, parentSessionId: myChat, metadata: { source: 'agent', name: 'Helper' } });
+    const memberChat = await seed({ userId: member.userId!, visibility: 'project', metadata: { source: 'ui', name: 'Teammate plan' } });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const route = '/v1/projects/:projectId/sessions';
+    const params = { projectId: project.id };
+    type Row = {
+      session_id: string;
+      parent_session_id: string | null;
+      initiator: { type: string; id: string | null; label: string | null } | null;
+      child_count?: number;
+      search_match?: 'self' | 'child';
+    };
+    const rows = async (as: typeof owner, query: Record<string, string>) => {
+      const r = await as.get(route, { params, query });
+      r.status(200);
+      return r.json<Row[]>();
+    };
+    const expectIds = (got: Row[], want: string[], what: string) => {
+      const ids = got.map((row) => row.session_id);
+      if (JSON.stringify(ids) !== JSON.stringify(want)) throw new Error(`${what}: got ${JSON.stringify(ids)}, want ${JSON.stringify(want)}`);
+    };
+
+    await ctx.step('started_by=me with parent=root lists only the OWNER’s own chat, with its child count', async () => {
+      const got = await rows(owner, { parent: 'root', started_by: 'me' });
+      expectIds(got, [myChat], 'mine');
+      if (got[0]!.child_count !== 1) throw new Error(`child_count ${got[0]!.child_count}`);
+      if (got[0]!.initiator?.type !== 'member' || got[0]!.initiator.id !== ctx.P.OWNER.userId) throw new Error('mine initiator');
+    });
+
+    await ctx.step('started_by=automated lists the trigger coordinator, labelled by its slug, and none of its workers', async () => {
+      const got = await rows(owner, { parent: 'root', started_by: 'automated' });
+      expectIds(got, [coordinator], 'automated');
+      if (got[0]!.child_count !== 2) throw new Error(`child_count ${got[0]!.child_count}`);
+      if (got[0]!.initiator?.label !== 'software-factory') throw new Error(`label ${got[0]!.initiator?.label}`);
+    });
+
+    await ctx.step('parent=<coordinator> lists its two workers, each attributed to the trigger', async () => {
+      const got = await rows(owner, { parent: coordinator });
+      if (got.length !== 2) throw new Error(`workers ${got.length}`);
+      for (const row of got) {
+        if (row.parent_session_id !== coordinator) throw new Error('worker parent');
+        if (row.initiator?.type !== 'trigger') throw new Error('worker initiator');
+      }
+    });
+
+    await ctx.step('started_by=others lists the MEMBER’s shared chat', async () => {
+      expectIds(await rows(owner, { parent: 'root', started_by: 'others' }), [memberChat], 'others');
+    });
+
+    await ctx.step('q searches server-side: a title match is `self`, a worker match returns its coordinator as `child`', async () => {
+      const own = await rows(owner, { parent: 'root', q: 'APARTMENT rent' });
+      expectIds(own, [myChat], 'q self');
+      if (own[0]!.search_match !== 'self') throw new Error('search_match self');
+      const viaWorker = await rows(owner, { parent: 'root', q: 'ledger' });
+      expectIds(viaWorker, [coordinator], 'q child');
+      if (viaWorker[0]!.search_match !== 'child') throw new Error('search_match child');
+      if ((await rows(owner, { parent: coordinator, q: 'ledger' })).length !== 1) throw new Error('q children');
+    });
+
+    await ctx.step('the MEMBER’s search never reaches the OWNER’s private chat', async () => {
+      const asMember = ctx.client.as(member);
+      expectIds(await rows(asMember, { parent: 'root', q: 'apartment' }), [], 'member q');
+      expectIds(await rows(asMember, { parent: 'root', started_by: 'me' }), [memberChat], 'member mine');
+    });
+
+    await ctx.step('an unknown started_by, or a q over 200 characters → 400', async () => {
+      (await owner.get(route, { params, query: { started_by: 'robots' } })).status(400);
+      (await owner.get(route, { params, query: { q: 'x'.repeat(201) } })).status(400);
+    });
+
+    await ctx.step('without the new params the list stays the flat legacy list (old clients)', async () => {
+      const flat = await rows(owner, {});
+      if (flat.length !== 6) throw new Error(`flat ${flat.length}`);
+    });
+  },
+);
+
+/**
+ * SESS-38 — Session labels and client metadata. Labels are a free-form list a
+ * member, an agent or an SDK caller sets at create or with PATCH, and the list
+ * filters on server-side. Client metadata is a free-form object PATCH merges
+ * per key; a `null` value removes the key.
+ */
+flow(
+  'SESS-38',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>) => {
+      const id = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, ...input });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    const coordinator = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Coordinator' } });
+    const worker = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, metadata: { source: 'agent', name: 'Worker' } });
+    const shared = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Shared' } });
+    const secret = await seed({ userId: ctx.P.OWNER.userId! });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const list = '/v1/projects/:projectId/sessions';
+    const one = '/v1/projects/:projectId/sessions/:sessionId';
+    const params = { projectId: project.id };
+    type Row = { session_id: string; labels: string[]; metadata: Record<string, unknown>; search_match?: string };
+    const patch = (as: typeof owner, sessionId: string, body: unknown) => as.patch(one, body, { params: { ...params, sessionId } });
+    const ids = async (as: typeof owner, query: string) => {
+      const r = await as.get(`${list}?${query}`, { params });
+      r.status(200);
+      return r.json<Row[]>().map((row) => row.session_id).sort();
+    };
+    const expectIds = (got: string[], want: string[], what: string) => {
+      if (JSON.stringify(got) !== JSON.stringify([...want].sort())) throw new Error(`${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    };
+
+    await ctx.step('PATCH labels trims each label, drops duplicates, keeps order, and answers the saved list', async () => {
+      const r = await patch(owner, coordinator, { labels: [' bug ', 'urgent', 'bug', 'customer: acme/eu'] });
+      r.status(200);
+      const labels = r.json<Row>().labels;
+      if (JSON.stringify(labels) !== JSON.stringify(['bug', 'urgent', 'customer: acme/eu'])) throw new Error(`labels ${JSON.stringify(labels)}`);
+    });
+
+    await ctx.step('PATCH metadata merges free-form keys and leaves labels and system keys alone', async () => {
+      const r = await patch(owner, coordinator, { metadata: { ticket: 'T-1', priority: 2, ui: { color: 'red' } } });
+      r.status(200);
+      const row = r.json<Row>();
+      if (row.metadata.ticket !== 'T-1' || row.metadata.priority !== 2) throw new Error(`metadata ${JSON.stringify(row.metadata)}`);
+      if ((row.metadata.ui as { color?: string })?.color !== 'red') throw new Error('nested metadata');
+      if (row.metadata.name !== 'Coordinator') throw new Error('system key lost');
+      if (row.labels.length !== 3) throw new Error('labels changed by a metadata PATCH');
+    });
+
+    await ctx.step('a null metadata value removes that key; GET reads back labels and metadata', async () => {
+      (await patch(owner, coordinator, { metadata: { priority: null } })).status(200);
+      const r = await owner.get(one, { params: { ...params, sessionId: coordinator } });
+      r.status(200);
+      const row = r.json<Row>();
+      if ('priority' in row.metadata) throw new Error(`priority kept: ${JSON.stringify(row.metadata)}`);
+      if (row.metadata.ticket !== 'T-1') throw new Error('ticket lost');
+      if (!row.labels.includes('urgent')) throw new Error('labels not read back');
+    });
+
+    await ctx.step('?label= filters server-side; repeated labels AND together; an unknown label lists nothing', async () => {
+      (await patch(owner, shared, { labels: ['bug'] })).status(200);
+      (await patch(owner, secret, { labels: ['bug'] })).status(200);
+      (await patch(owner, worker, { labels: ['worker'] })).status(200);
+      expectIds(await ids(owner, 'label=bug'), [coordinator, shared, secret], 'bug');
+      expectIds(await ids(owner, 'label=bug&label=urgent'), [coordinator], 'bug+urgent');
+      expectIds(await ids(owner, `label=${encodeURIComponent('customer: acme/eu')}`), [coordinator], 'free-form label');
+      expectIds(await ids(owner, 'label=nope'), [], 'unknown');
+    });
+
+    await ctx.step('a flat list filtered by label never adds an unlabeled coordinator as tree context', async () => {
+      expectIds(await ids(owner, 'label=worker'), [worker], 'flat worker');
+    });
+
+    await ctx.step('with parent=root a label on a worker lists its coordinator, like q', async () => {
+      expectIds(await ids(owner, 'parent=root&label=worker'), [coordinator], 'root via child');
+      expectIds(await ids(owner, `parent=${coordinator}&label=worker`), [worker], 'children');
+    });
+
+    await ctx.step('q matches a label', async () => {
+      expectIds(await ids(owner, 'parent=root&q=URGENT'), [coordinator], 'q label');
+    });
+
+    await ctx.step('the MEMBER filters by label but never sees the OWNER’s private session', async () => {
+      expectIds(await ids(ctx.client.as(member), 'label=bug'), [coordinator, shared], 'member');
+    });
+
+    await ctx.step('the MEMBER may label a session it can see, like a rename', async () => {
+      const r = await patch(ctx.client.as(member), shared, { labels: ['bug', 'triaged'] });
+      r.status(200);
+      if (!r.json<Row>().labels.includes('triaged')) throw new Error('member label');
+    });
+
+    await ctx.step('invalid labels and oversized metadata → 400, nothing saved', async () => {
+      const tooMany = Array.from({ length: 21 }, (_, i) => `l${i}`);
+      (await patch(owner, shared, { labels: tooMany })).status(400);
+      (await patch(owner, shared, { labels: ['x'.repeat(65)] })).status(400);
+      (await patch(owner, shared, { labels: ['  '] })).status(400);
+      (await patch(owner, shared, { labels: 'bug' })).status(400);
+      (await patch(owner, shared, { labels: [1] })).status(400);
+      (await patch(owner, shared, { metadata: { blob: 'x'.repeat(16_385) } })).status(400);
+      (await owner.get(`${list}?label=${'x'.repeat(65)}`, { params })).status(400);
+      (await owner.post(list, { labels: tooMany }, { params })).status(400);
+      const r = await owner.get(one, { params: { ...params, sessionId: shared } });
+      if (JSON.stringify(r.json<Row>().labels) !== JSON.stringify(['bug', 'triaged'])) throw new Error('invalid PATCH wrote');
+      if ('blob' in r.json<Row>().metadata) throw new Error('oversized metadata wrote');
+    });
+
+    await ctx.step('PATCH labels [] clears them', async () => {
+      const r = await patch(owner, shared, { labels: [] });
+      r.status(200);
+      if (r.json<Row>().labels.length !== 0) throw new Error('labels not cleared');
+    });
   },
 );

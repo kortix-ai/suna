@@ -6,7 +6,7 @@
  * - Page tabs (Review, Browser, a project's page, …: `PAGE_TABS`)
  */
 
-import { create } from 'zustand';
+import { create, type StoreApi } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -104,6 +104,64 @@ interface TabState {
   /** Sign-out: drop every scope, tab, history entry, and tab state. */
   reset: () => void;
 }
+
+/**
+ * Activate the history entry at `newIndex`: restore its dashboard, page, or
+ * session, reopening the tab if it was closed. goBack and goForward own only
+ * the boundary guard and the index arithmetic; this owns the entry branches.
+ */
+const activateHistoryEntry = (
+  set: StoreApi<TabState>['setState'],
+  get: StoreApi<TabState>['getState'],
+  newIndex: number,
+) => {
+  const entry = get().sessionHistory[newIndex];
+
+  if (entry === '__dashboard__') {
+    set({
+      historyIndex: newIndex,
+      activeSessionId: null,
+      activePageId: null,
+    });
+    return;
+  }
+
+  if (entry?.startsWith('page:')) {
+    const { openPageIds, openTabOrder } = get();
+    const nextOpenPageIds = openPageIds.includes(entry)
+      ? openPageIds
+      : [...openPageIds, entry];
+    const nextOpenTabOrder = openTabOrder.includes(entry)
+      ? openTabOrder
+      : [...openTabOrder, entry];
+    set({
+      historyIndex: newIndex,
+      activeSessionId: null,
+      activePageId: entry,
+      openPageIds: nextOpenPageIds,
+      openTabOrder: nextOpenTabOrder,
+    });
+    return;
+  }
+
+  if (!entry) return;
+
+  const { openTabIds, openTabOrder } = get();
+  const nextOpenTabIds = openTabIds.includes(entry)
+    ? openTabIds
+    : [...openTabIds, entry];
+  const nextOpenTabOrder = openTabOrder.includes(entry)
+    ? openTabOrder
+    : [...openTabOrder, entry];
+
+  set({
+    historyIndex: newIndex,
+    activeSessionId: entry,
+    activePageId: null,
+    openTabIds: nextOpenTabIds,
+    openTabOrder: nextOpenTabOrder,
+  });
+};
 
 export const useTabStore = create<TabState>()(
   persist(
@@ -269,107 +327,15 @@ export const useTabStore = create<TabState>()(
       },
 
       goBack: () => {
-        const { historyIndex, sessionHistory } = get();
+        const { historyIndex } = get();
         if (historyIndex <= 0) return;
-        const newIndex = historyIndex - 1;
-        const entry = sessionHistory[newIndex];
-
-        if (entry === '__dashboard__') {
-          set({
-            historyIndex: newIndex,
-            activeSessionId: null,
-            activePageId: null,
-          });
-          return;
-        }
-
-        if (entry?.startsWith('page:')) {
-          const { openPageIds, openTabOrder } = get();
-          const nextOpenPageIds = openPageIds.includes(entry)
-            ? openPageIds
-            : [...openPageIds, entry];
-          const nextOpenTabOrder = openTabOrder.includes(entry)
-            ? openTabOrder
-            : [...openTabOrder, entry];
-          set({
-            historyIndex: newIndex,
-            activeSessionId: null,
-            activePageId: entry,
-            openPageIds: nextOpenPageIds,
-            openTabOrder: nextOpenTabOrder,
-          });
-          return;
-        }
-
-        if (!entry) return;
-
-        const { openTabIds, openTabOrder } = get();
-        const nextOpenTabIds = openTabIds.includes(entry)
-          ? openTabIds
-          : [...openTabIds, entry];
-        const nextOpenTabOrder = openTabOrder.includes(entry)
-          ? openTabOrder
-          : [...openTabOrder, entry];
-
-        set({
-          historyIndex: newIndex,
-          activeSessionId: entry,
-          activePageId: null,
-          openTabIds: nextOpenTabIds,
-          openTabOrder: nextOpenTabOrder,
-        });
+        activateHistoryEntry(set, get, historyIndex - 1);
       },
 
       goForward: () => {
         const { historyIndex, sessionHistory } = get();
         if (historyIndex >= sessionHistory.length - 1) return;
-        const newIndex = historyIndex + 1;
-        const entry = sessionHistory[newIndex];
-
-        if (entry === '__dashboard__') {
-          set({
-            historyIndex: newIndex,
-            activeSessionId: null,
-            activePageId: null,
-          });
-          return;
-        }
-
-        if (entry?.startsWith('page:')) {
-          const { openPageIds, openTabOrder } = get();
-          const nextOpenPageIds = openPageIds.includes(entry)
-            ? openPageIds
-            : [...openPageIds, entry];
-          const nextOpenTabOrder = openTabOrder.includes(entry)
-            ? openTabOrder
-            : [...openTabOrder, entry];
-          set({
-            historyIndex: newIndex,
-            activeSessionId: null,
-            activePageId: entry,
-            openPageIds: nextOpenPageIds,
-            openTabOrder: nextOpenTabOrder,
-          });
-          return;
-        }
-
-        if (!entry) return;
-
-        const { openTabIds, openTabOrder } = get();
-        const nextOpenTabIds = openTabIds.includes(entry)
-          ? openTabIds
-          : [...openTabIds, entry];
-        const nextOpenTabOrder = openTabOrder.includes(entry)
-          ? openTabOrder
-          : [...openTabOrder, entry];
-
-        set({
-          historyIndex: newIndex,
-          activeSessionId: entry,
-          activePageId: null,
-          openTabIds: nextOpenTabIds,
-          openTabOrder: nextOpenTabOrder,
-        });
+        activateHistoryEntry(set, get, historyIndex + 1);
       },
 
       setTabState: (tabId, patch) => {

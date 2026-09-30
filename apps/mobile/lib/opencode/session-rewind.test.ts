@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { FeatureNotSupportedError } from './runtime-capabilities';
 import { revertSession } from './session-rewind';
 
 function fakeFetch(status: number, body = '') {
@@ -39,5 +40,15 @@ describe('revertSession', () => {
     await expect(
       revertSession({ sandboxUrl: 'https://sb', sessionId: 's', messageId: 'm', token: null, fetchImpl: fn }),
     ).rejects.toThrow('Revert failed (409): Session is busy');
+  });
+
+  test("a runtime without rewind (pi) throws its own words, typed", async () => {
+    const { fn } = fakeFetch(
+      501,
+      JSON.stringify({ code: 'feature_not_supported', error: 'session rewind is not supported by the pi harness' }),
+    );
+    const failure = revertSession({ sandboxUrl: 'https://sb', sessionId: 's', messageId: 'm', token: null, fetchImpl: fn });
+    await expect(failure).rejects.toBeInstanceOf(FeatureNotSupportedError);
+    await expect(failure).rejects.toThrow('session rewind is not supported by the pi harness');
   });
 });

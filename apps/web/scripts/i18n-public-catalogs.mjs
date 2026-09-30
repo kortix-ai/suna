@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { locales } from '../src/i18n/catalog.mjs';
@@ -53,4 +53,36 @@ export function writePublicCatalogs() {
     if (!keep.has(file)) rmSync(path.join(PUBLIC_CATALOG_DIR, file));
   }
   return versions;
+}
+
+/**
+ * `next dev` only: unhashed `public/i18n/<locale>.json`, rewritten on every save
+ * of `translations/<locale>.json`.
+ *
+ * The hashed files above are fixed for the life of the process — the hashes
+ * are inlined into the client bundle once, when next.config.ts loads. A key
+ * added while `next dev` ran therefore rendered as its raw path
+ * (`projectSelector.createTitle`) until the server restarted, and every
+ * i18n change paid for a restart. Returning no versions makes `catalogHref`
+ * request the unhashed URL; a browser reload then fetches the current file.
+ * Dev serves `public/` with `max-age=0` — the immutable header is prod-only.
+ *
+ * @returns {Record<string, string>} always empty: dev URLs carry no hash
+ */
+export function writeDevCatalogs() {
+  mkdirSync(PUBLIC_CATALOG_DIR, { recursive: true });
+  /** @param {string} locale */
+  const write = (locale) => {
+    try {
+      writeFileSync(path.join(PUBLIC_CATALOG_DIR, `${locale}.json`), minified(locale));
+    } catch {
+      // A save caught mid-write is not valid JSON yet; the next event rewrites it.
+    }
+  };
+  for (const locale of locales) write(locale);
+  watch(translationsDir, (_event, file) => {
+    const locale = typeof file === 'string' ? file.replace(/\.json$/, '') : '';
+    if (locales.includes(locale)) write(locale);
+  });
+  return {};
 }

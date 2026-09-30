@@ -172,6 +172,20 @@ Each row names the caller that the request proved:
 | `system` | An account API key, a SCIM directory token, an integration webhook with a verified signature, or a Kortix background job (`source: worker`). |
 | `anonymous` | A request with no credential, or with an invalid or forged one. |
 
+Each row also records the credential the API authenticated, in `credential_kind` and `credential_id`. The id names the credential, never the secret. The web app shows it as **Via**, with the token or app name where one exists.
+
+| `credential_kind` | Credential | `credential_id` |
+| --- | --- | --- |
+| `browser_session` | A Supabase sign-in (the web app, or any client holding a sign-in JWT). | The sign-in session id. |
+| `personal_access_token` | A personal access token, such as the CLI's. | The token id. |
+| `oauth_app` | A connected app's `kortix_oat_` token, such as an MCP client. | The OAuth client id. |
+| `session_token` | An agent session's own token. | The session id. |
+| `api_key` | An account API key. | The key id. |
+| `service_account` | A service account token. | The service account id. |
+| `scim_token` | A SCIM directory token. | The token id. |
+
+The API never reads `X-Kortix-Client`. The CLI, the MCP server, and the web app all call the same API, and any client can send any header value, so the log records what the API can prove. Rows written before 2026-09-30 may carry a self-reported `client_reported_source`. New rows leave it empty. Filter by credential with `?credential_kind=oauth_app` on `GET /v1/accounts/:accountId/audit`, or `kortix audit ls --credential-kind oauth_app`.
+
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
 
 ### Actions

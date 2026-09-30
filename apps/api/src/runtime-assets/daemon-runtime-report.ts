@@ -99,6 +99,18 @@ function modelIds(value: unknown): string[] | null {
   return ids;
 }
 
+/**
+ * The OpenCode release on the box, which the manifest's `opencode` component
+ * is compared against. A W3 daemon names the harness the release belongs to
+ * (`harness`, `harness_version`); a pi box has no OpenCode to converge. An
+ * older daemon reports `opencode_version` only.
+ */
+function runningOpencodeVersion(running: Record<string, unknown>): string | null {
+  const harness = str(running.harness);
+  if (harness) return harness === 'opencode' ? str(running.harness_version) : null;
+  return str(running.opencode_version);
+}
+
 /** Parse the health `runtime` block. Null when absent or not an object. */
 export function parseDaemonRuntimeReport(value: unknown): DaemonRuntimeReport | null {
   if (!isRecord(value)) return null;
@@ -108,7 +120,7 @@ export function parseDaemonRuntimeReport(value: unknown): DaemonRuntimeReport | 
         managed_skills_hash: str(value.running.managed_skills_hash),
         agent_sha256: str(value.running.agent_sha256),
         staged_agent_sha256: str(value.running.staged_agent_sha256),
-        opencode_version: str(value.running.opencode_version),
+        opencode_version: runningOpencodeVersion(value.running),
         managed_model_ids: modelIds(value.running.managed_model_ids),
         managed_catalog_fallback_reason: str(value.running.managed_catalog_fallback_reason),
       }

@@ -16,10 +16,11 @@
  * `./integration-session-activity.test.ts`. Runs under `scripts/test.sh
  * integration`, not the default hermetic gate.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accounts, projectSessions, projects } from '@kortix/db';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { accounts, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
+import { config } from '../config';
 import { findWarmProjectSession } from '../projects/routes/warm-sessions';
 import { db } from '../shared/db';
 
@@ -35,6 +36,8 @@ async function seedWarmSession(
     status?: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
     warm?: boolean;
     createdAt?: Date;
+    /** Stamp the session's sandbox row with this API instance id. */
+    boxInstanceId?: string;
   } = {},
 ): Promise<string> {
   n += 1;
@@ -49,6 +52,16 @@ async function seedWarmSession(
     metadata: overrides.warm === false ? {} : { warm: true },
     ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
   });
+  if (overrides.boxInstanceId) {
+    await db.insert(sessionSandboxes).values({
+      sandboxId: crypto.randomUUID(),
+      sessionId,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      status: 'active',
+      metadata: { instanceId: overrides.boxInstanceId },
+    });
+  }
   return sessionId;
 }
 
@@ -71,6 +84,7 @@ afterAll(async () => {
 // unlike a lookup keyed by a specific session id, it is NOT test-isolated by
 // construction, so a session left behind by one test would poison the next.
 beforeEach(async () => {
+  await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, ACCOUNT));
   await db.delete(projectSessions).where(eq(projectSessions.accountId, ACCOUNT));
 });
 
@@ -146,5 +160,42 @@ describe('findWarmProjectSession — exclusion', () => {
     });
 
     expect(found?.sessionId).toBe(sessionId);
+  });
+});
+
+// Several local API instances share one database. The lifecycle drain refuses a
+// command whose sandbox another instance provisioned (`claimDueLifecycleCommands`),
+// so a warm session handed out across that line accepts a first prompt that no
+// worker can ever deliver.
+describe('findWarmProjectSession — instance scope', () => {
+  const original = config.KORTIX_INSTANCE_ID;
+  const lookup = () => findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });
+  afterEach(() => {
+    config.KORTIX_INSTANCE_ID = original;
+  });
+
+  test("another instance's warm session is never returned", async () => {
+    config.KORTIX_INSTANCE_ID = 'warm-owner-test';
+    await seedWarmSession({ boxInstanceId: 'warm-peer-test' });
+
+    expect(await lookup()).toBeNull();
+  });
+
+  test('an older warm session this instance owns is returned instead', async () => {
+    config.KORTIX_INSTANCE_ID = 'warm-owner-test';
+    const mine = await seedWarmSession({
+      boxInstanceId: 'warm-owner-test',
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await seedWarmSession({ boxInstanceId: 'warm-peer-test' });
+
+    expect((await lookup())?.sessionId).toBe(mine);
+  });
+
+  test('with no instance id configured every warm session is eligible', async () => {
+    config.KORTIX_INSTANCE_ID = undefined;
+    const sessionId = await seedWarmSession({ boxInstanceId: 'warm-peer-test' });
+
+    expect((await lookup())?.sessionId).toBe(sessionId);
   });
 });

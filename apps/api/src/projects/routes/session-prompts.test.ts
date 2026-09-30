@@ -170,7 +170,14 @@ function jsonbPatch(
  *  the route bound into them and re-applies them as a predicate. */
 function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const rendered = render(predicate);
-  const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)].map((m) => m[1]);
+  // `ne(command_id, id)`: an id bound after `<>` EXCLUDES that row (the "send
+  // now" check for OTHER held rows) rather than scoping to it.
+  const excludedIds = new Set(
+    [...rendered.matchAll(/<>\s*\$"([0-9a-f-]{36})"/g)].map((m) => m[1]),
+  );
+  const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)]
+    .map((m) => m[1])
+    .filter((id) => !excludedIds.has(id));
   const statuses = [...rendered.matchAll(/"(queued|running|succeeded|failed|dead_lettered)"/g)].map(
     (m) => m[1],
   );
@@ -181,6 +188,7 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const wantsStopPaused = rendered.includes("->>'stop_paused', '') = 'true'");
   const wantsHeld = rendered.includes("->>'held', '') = 'true'");
   return (r) => {
+    if (excludedIds.has(r.commandId)) return false;
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;
@@ -324,11 +332,15 @@ mock.module('../lib/agent-access', () => ({
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
-mock.module('../sandbox-turn-lifecycle', () => ({
-  ...realTurnLifecycle,
+const realTurnLedger = await import('../session-turn-ledger');
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
     stopLog.push(['stamp', sessionId, name, scope]);
   },
+}));
+mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
 }));
 mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   ...realHoldSettle,
@@ -942,7 +954,7 @@ describe('POST .../prompts/hold', () => {
     // prod 2026-09-25: the settle's abort reached OpenCode ~450 ms before the
     // client's proxied abort, the turn closed on a bare "Aborted" frame, and
     // the user's own Stop read as "stopped before it finished".
-    visibleSession = { row: { sessionId: SESSION_ID, opencodeSessionId: 'ses_root', metadata: {} } };
+    visibleSession = { row: { sessionId: SESSION_ID, runtimeSessionId: 'ses_root', metadata: {} } };
     commandTable = [
       row({ status: 'succeeded', result: { status: 'delivered', forwarded_message_id: WIRE_ID } }),
     ];

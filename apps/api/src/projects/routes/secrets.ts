@@ -41,6 +41,7 @@ import { withProjectGitAuth } from '../lib/git';
 import {
   CODEX_AUTH_JSON_SECRET_NAME,
   isSystemProjectSecretName,
+  isTeamsInstallSecretName,
   loadSecretViewsForUser,
   type SecretAgentGrantConfig,
 } from '../lib/serializers';
@@ -440,6 +441,9 @@ projectsApp.openapi(
   // DB read needed before the delete.
   if (isSystemProjectSecretName(identifier)) {
     return c.json({ error: `${identifier} is managed by Kortix and cannot be removed` }, 403);
+  }
+  if (isTeamsInstallSecretName(identifier)) {
+    return c.json({ error: `${identifier} is managed by the Microsoft Teams connection. Disconnect Teams instead.` }, 403);
   }
   if (identifier.toUpperCase() === CODEX_AUTH_JSON_SECRET_NAME) {
     return c.json(

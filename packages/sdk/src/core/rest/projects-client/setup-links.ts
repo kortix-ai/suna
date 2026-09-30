@@ -100,6 +100,10 @@ export interface ApprovalLinkDetails {
   /** Fully-qualified tool path, e.g. `gmail.send_email`. */
   action: string;
   connector: string | null;
+  /** The connector's display name ("Google Drive"). Absent on older servers. */
+  connector_name?: string | null;
+  /** The connector's logo. `null` when it has none; absent on older servers. */
+  connector_icon_url?: string | null;
   /** read | write | destructive | null */
   risk: string | null;
   status: string;

@@ -13,6 +13,9 @@ export interface AuditEvent {
   account_id?: string | null;
   project_id: string | null;
   session_id: string | null;
+  /** The runtime session the event came from. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id?: string | null;
   turn_id?: string | null;
   message_id?: string | null;
@@ -35,7 +38,15 @@ export interface AuditEvent {
   delegation_depth?: number;
   source: string | null;
   authoritative_source?: string | null;
+  /** @deprecated Self-reported, no longer written; null for new events. Use `credential_kind`. */
   client_reported_source?: string | null;
+  /** What the API authenticated: `browser_session`, `personal_access_token`,
+   *  `oauth_app`, `session_token`, `api_key`, `service_account`, `scim_token`. */
+  credential_kind?: string | null;
+  /** Identifier of that credential (never the secret). */
+  credential_id?: string | null;
+  /** Display name for a `personal_access_token` or `oauth_app` credential, when it still exists. */
+  credential_name?: string | null;
   outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
   action: string;
   phase?: string;
@@ -78,7 +89,10 @@ export interface ListAccountAuditOptions {
   actorType?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
   projectId?: string;
   sessionId?: string;
+  /** Trusted execution source (`authoritative_source`): `human`, `agent`, `api_key`, … */
   source?: string;
+  /** Credential class the API authenticated, e.g. `oauth_app`. */
+  credentialKind?: string;
   /** Exact lifecycle phase, such as pending, completed, failed, or denied. */
   phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';
@@ -105,6 +119,7 @@ export async function listAccountAudit(accountId: string, options?: ListAccountA
   if (options?.projectId) search.set('project_id', options.projectId);
   if (options?.sessionId) search.set('session_id', options.sessionId);
   if (options?.source) search.set('source', options.source);
+  if (options?.credentialKind) search.set('credential_kind', options.credentialKind);
   if (options?.phase) search.set('phase', options.phase);
   if (options?.outcome) search.set('outcome', options.outcome);
   if (options?.resourceType) search.set('resource_type', options.resourceType);
@@ -129,6 +144,7 @@ export async function listProjectAudit(projectId: string, options?: ListAccountA
   if (options?.actorType) search.set('actor_type', options.actorType);
   if (options?.sessionId) search.set('session_id', options.sessionId);
   if (options?.source) search.set('source', options.source);
+  if (options?.credentialKind) search.set('credential_kind', options.credentialKind);
   if (options?.phase) search.set('phase', options.phase);
   if (options?.outcome) search.set('outcome', options.outcome);
   if (options?.resourceType) search.set('resource_type', options.resourceType);
@@ -152,7 +168,10 @@ export interface ExportAccountAuditOptions {
   actorType?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
   projectId?: string;
   sessionId?: string;
+  /** Trusted execution source (`authoritative_source`): `human`, `agent`, `api_key`, … */
   source?: string;
+  /** Credential class the API authenticated, e.g. `oauth_app`. */
+  credentialKind?: string;
   phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';
   resourceType?: string;
@@ -187,6 +206,7 @@ export async function exportAccountAudit(
   if (options?.projectId) search.set('project_id', options.projectId);
   if (options?.sessionId) search.set('session_id', options.sessionId);
   if (options?.source) search.set('source', options.source);
+  if (options?.credentialKind) search.set('credential_kind', options.credentialKind);
   if (options?.phase) search.set('phase', options.phase);
   if (options?.outcome) search.set('outcome', options.outcome);
   if (options?.resourceType) search.set('resource_type', options.resourceType);

@@ -3,10 +3,10 @@ import { gunzipSync } from 'node:zlib'
 
 import {
   __resetRuntimeProjectionRelayForTests,
-  __setRuntimeProjectionStateReaderForTests,
+  registerRuntimeStateReader,
   scheduleRuntimeProjectionPush,
   shedProjectionToFit,
-} from '@/harness/open-code/runtime-projection-relay'
+} from '@/harness/shared/projection-relay'
 import { resetRuntimeStateForTests } from '@/harness/open-code/runtime-state-projection'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
@@ -101,7 +101,7 @@ describe('scheduleRuntimeProjectionPush', () => {
     ['KORTIX_PROJECT_ID', 1],
   ] as const)('with %s unset it makes %i POST(s)', async (key, expected) => {
     setEnv({ ...BASE_ENV, [key]: undefined })
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     const urls: string[] = []
     globalThis.fetch = (async (url: string) => {
       urls.push(String(url))
@@ -115,7 +115,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('is a silent no-op when no runtime state store is configured (default reader, cold boot)', async () => {
-    // No __setRuntimeProjectionStateReaderForTests: the default reader consults
+    // No registerRuntimeStateReader: the default reader consults
     // runtimeStateStore(). Reset the process singleton explicitly — another
     // test FILE in the same bun process may have configured it.
     resetRuntimeStateForTests()
@@ -132,7 +132,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('debounces: a burst of triggers produces exactly one POST', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
     globalThis.fetch = (async () => {
       posts++
@@ -149,7 +149,7 @@ describe('scheduleRuntimeProjectionPush', () => {
 
   test('suppresses a push whose etag already landed; pushes again when the etag changes', async () => {
     let etag = 'etag-1'
-    __setRuntimeProjectionStateReaderForTests(async () => ({ doc: makeDoc() as never, etag }))
+    registerRuntimeStateReader(async () => ({ doc: makeDoc() as never, etag }))
     let posts = 0
     globalThis.fetch = (async () => {
       posts++
@@ -175,7 +175,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   // -> 401`. Once the shared breaker reports the credential dead (here the
   // revoked-token refusal), the relay must issue nothing.
   test('does not push while the control plane has affirmed the session credential is dead', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
       noteControlPlaneResponse(401, 'PAT not found or revoked')
     }
@@ -192,7 +192,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('never throws and never blocks the caller, even when fetch rejects', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     globalThis.fetch = (async () => {
       throw new Error('network unreachable')
     }) as unknown as typeof fetch
@@ -204,7 +204,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('a failed push does not poison etag suppression — the next trigger retries', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
     let fail = true
     globalThis.fetch = (async () => {
@@ -224,7 +224,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('on 413 it sheds tool_ids → skills → commands and retries exactly once', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     const bodies: Record<string, unknown>[] = []
     let first = true
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
@@ -256,7 +256,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('a still-413 retry gives up: exactly two attempts, no loop', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
     globalThis.fetch = (async () => {
       posts++
@@ -270,7 +270,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('on 503 it retries on a backoff ladder and succeeds', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
     globalThis.fetch = (async () => {
       posts++
@@ -286,7 +286,7 @@ describe('scheduleRuntimeProjectionPush', () => {
 
   test("a 503 with Retry-After waits the server's delay, not the ladder step", async () => {
     // The ladder base here is 10 ms; Retry-After: 1 asks for 1 s.
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     const at: number[] = []
     globalThis.fetch = (async () => {
       at.push(performance.now())
@@ -305,7 +305,7 @@ describe('scheduleRuntimeProjectionPush', () => {
   })
 
   test('503 retries are bounded — a permanently unavailable API is abandoned', async () => {
-    __setRuntimeProjectionStateReaderForTests(readerFor(makeDoc(), 'etag-1'))
+    registerRuntimeStateReader(readerFor(makeDoc(), 'etag-1'))
     let posts = 0
     globalThis.fetch = (async () => {
       posts++
@@ -388,7 +388,7 @@ describe('against a real socket', () => {
     try {
       setEnv({ ...BASE_ENV, KORTIX_API_URL: `http://127.0.0.1:${server.port}` })
       const doc = makeDoc()
-      __setRuntimeProjectionStateReaderForTests(readerFor(doc, 'etag-real'))
+      registerRuntimeStateReader(readerFor(doc, 'etag-real'))
 
       scheduleRuntimeProjectionPush('boot')
       await settle(100)

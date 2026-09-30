@@ -627,6 +627,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   moonshotai: 'Moonshot',
   'moonshotai-cn': 'Moonshot',
   opencode: 'OpenCode Zen',
+  'opencode-go': 'OpenCode Go',
   kortix: 'Kortix',
   firmware: 'Firmware',
   // models.dev's canonical provider id is `amazon-bedrock` (see

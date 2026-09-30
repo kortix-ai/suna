@@ -273,6 +273,9 @@ describe('kortix billing', () => {
     expect(p.code).toBe(0);
     expect(call('GET', '/v1/usage/cost-by-project')?.search).toContain('sort=name_asc');
     expect(p.stdout).toContain('Atlas');
+    const scoped = await runCli(['billing', 'costs', '--by', 'project', '--project', 'project-self'], config);
+    expect(scoped.code).toBe(0);
+    expect(calls.find((c) => c.path === '/v1/usage/cost-by-project' && c.search.includes('project_id=project-self'))).toBeTruthy();
   });
 
   test('costs --csv writes the CSV export and reports the row cap', async () => {

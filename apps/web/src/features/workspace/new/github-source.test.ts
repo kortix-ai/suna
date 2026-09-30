@@ -5,7 +5,6 @@ import {
   buildLinkRepositoryPayload,
   githubSourceReady,
   isGitHubSource,
-  plannedRepoPath,
   repoSlugFromName,
   withRepositorySource,
 } from './github-source';
@@ -36,16 +35,6 @@ describe('repoSlugFromName', () => {
   test('falls back rather than emitting an empty name the route would 400', () => {
     expect(repoSlugFromName('   ')).toBe('workspace');
     expect(repoSlugFromName('!!!')).toBe('workspace');
-  });
-});
-
-describe('plannedRepoPath', () => {
-  test('shows the derived repo before the create, so the slug is not a surprise', () => {
-    expect(plannedRepoPath('acme', "Ana's agents")).toBe('github.com/acme/Ana-s-agents');
-  });
-
-  test('is null until an owner is known', () => {
-    expect(plannedRepoPath(null, 'anything')).toBeNull();
   });
 });
 

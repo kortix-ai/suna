@@ -16,7 +16,6 @@ import type { Config } from '@/lib/config/config'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type {
   HarnessAssetOutcome,
-  HarnessAssetsCompatibilityResult,
   HarnessAssetsService,
 } from './port'
 import { logger } from '@/lib/log/logger'
@@ -147,7 +146,7 @@ export type ReconcileOutcome = HarnessAssetOutcome
 /** The components a v2 manifest can describe. */
 export type RuntimeComponent = 'cli' | 'skills' | 'agent' | (string & {})
 
-export interface RuntimeAssetsResult extends HarnessAssetsCompatibilityResult {
+export interface RuntimeAssetsResult {
   cli: ReconcileOutcome
   skills: ReconcileOutcome
   /**
@@ -157,6 +156,8 @@ export interface RuntimeAssetsResult extends HarnessAssetsCompatibilityResult {
    * be" are different facts. It also keeps every existing caller's shape.
    */
   agent?: ReconcileOutcome
+  /** The selected harness's own components (`HarnessAssetsService.componentNames`). */
+  harness?: Partial<Record<string, ReconcileOutcome>>
   /** The manifest epoch this pass converged to; absent for a v1 manifest. */
   build?: number
   /** Why, when a half is `skipped` or `failed`. Logged, never thrown. */
@@ -301,13 +302,10 @@ interface RuntimeAssetsState {
   agent_mtime_ms?: number
   /** Digest of the artifact currently staged at `agent.next`, if any. */
   staged_agent_sha256?: string
-  /**
-   * Written by the harness half through `Object.assign(nextState,
-   * harnessResult.state)` — declared here because `runningRuntimeAssets` reads
-   * it back, and an undeclared key that something reads is a key that gets
-   * renamed by accident.
-   */
-  opencode_version?: string
+  /** The harness the last pass or the image bake reported for (`HarnessAssetsService.harness`). */
+  harness?: string
+  /** That harness's release on disk (`HarnessAssetsResult.version`, `bakedVersion`). */
+  harness_version?: string
 }
 
 /**
@@ -402,28 +400,11 @@ export interface BakeRuntimeAssetsStateOptions {
   managedSkillsDir?: string
   statePath?: string
   /**
-   * The OpenCode release this image installs. Omitted reads it from the
-   * symlink every image definition creates
-   * ({@link DEFAULT_OPENCODE_CURRENT_LINK}); unreadable leaves the field
-   * unset rather than guessed, and the first pass fills it in.
+   * The harness release this image installs. Omitted asks the registered
+   * harness assets (`bakedVersion`); unreadable leaves the field unset rather
+   * than guessed, and the first pass fills it in.
    */
-  opencodeVersion?: string
-}
-
-/** The launcher symlink all three image definitions point at their OpenCode. */
-const DEFAULT_OPENCODE_CURRENT_LINK = '/opt/kortix/opencode.current'
-
-/** `opencode --version` prints a bare version, so the binary can be asked. */
-async function bakedOpencodeVersion(path: string): Promise<string | undefined> {
-  try {
-    const proc = Bun.spawn([path, '--version'], { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
-    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
-    if (code !== 0) return undefined
-    const version = out.trim()
-    return /^\d+\.\d+\.\d+/.test(version) ? version : undefined
-  } catch {
-    return undefined
-  }
+  harnessVersion?: string
 }
 
 /**
@@ -478,9 +459,10 @@ export async function bakeRuntimeAssetsState(
     agent_mtime_ms: agent.mtimeMs,
     managed_skills_hash: overlayHash(overlay),
   }
-  const opencode =
-    options.opencodeVersion ?? (await bakedOpencodeVersion(DEFAULT_OPENCODE_CURRENT_LINK))
-  if (opencode) state.opencode_version = opencode
+  const assets = harnessAssets()
+  state.harness = assets.harness
+  const version = options.harnessVersion ?? (await assets.bakedVersion?.())
+  if (version) state.harness_version = version
   // `build` is deliberately absent. It records the highest manifest epoch this
   // box has READ, and an image build reads no manifest. Claiming one would arm
   // the epoch guard against an API that is legitimately older than the image.
@@ -1389,6 +1371,8 @@ export async function reconcileRuntimeAssets(
   const harnessResult = await assets.reconcile({ manifest, setActivity: setRuntimeAssetsActivity })
   Object.assign(nextState, harnessResult.state)
   Object.assign(reasons, harnessResult.reasons)
+  nextState.harness = assets.harness
+  if (harnessResult.version) nextState.harness_version = harnessResult.version
 
   // The epoch advances only after a pass that actually looked at this manifest.
   // It is recorded even when a half failed: `build` answers "which manifest did
@@ -1402,7 +1386,7 @@ export async function reconcileRuntimeAssets(
   await writeState(statePath, nextState)
   const result: RuntimeAssetsResult = { cli, skills }
   if (agent !== undefined) result.agent = agent
-  Object.assign(result, harnessResult.components)
+  if (Object.keys(harnessResult.components).length > 0) result.harness = harnessResult.components
   if (build !== undefined) result.build = build
   if (agentSwapPending) result.agentSwapPending = true
   if (Object.keys(reasons).length > 0) result.reasons = reasons
@@ -1863,7 +1847,10 @@ export interface RunningRuntimeAssets {
   agent_path: string | null
   /** Verified and waiting for the supervisor; the box is NOT running it yet. */
   staged_agent_sha256: string | null
-  opencode_version: string | null
+  /** The harness `harness_version` describes. Null before a pass or bake recorded one. */
+  harness: string | null
+  /** That harness's release on disk. `routes/kortix/health.ts` adds the pre-W3 alias. */
+  harness_version: string | null
   /** Highest manifest epoch this box has converged to, from DISK. */
   build: number | null
   /**
@@ -1892,7 +1879,8 @@ const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
   agent_sha256: null,
   agent_path: null,
   staged_agent_sha256: null,
-  opencode_version: null,
+  harness: null,
+  harness_version: null,
   build: null,
   managed_model_ids: null,
   managed_catalog_fallback_reason: null,
@@ -1918,7 +1906,8 @@ export async function runningRuntimeAssets(
     agent_sha256: str(state.agent_sha256),
     agent_path: str(state.agent_path),
     staged_agent_sha256: str(state.staged_agent_sha256),
-    opencode_version: str(state.opencode_version),
+    harness: str(state.harness),
+    harness_version: str(state.harness_version),
     build: typeof state.build === 'number' && Number.isFinite(state.build) ? state.build : null,
     // Never on disk — overlaid live by `runtimeConvergenceReport`'s
     // `catalogSnapshot` hook. A direct caller of this function alone (there is
@@ -1945,9 +1934,7 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
     skills: result.skills,
   }
   if (result.agent) components.agent = result.agent
-  const assets = swapConfig?.assets ?? harnessAssets()
-  for (const name of assets.componentNames) {
-    const outcome = (result as unknown as Record<string, ReconcileOutcome | undefined>)[name]
+  for (const [name, outcome] of Object.entries(result.harness ?? {})) {
     if (outcome) components[name] = outcome
   }
   lastConvergence = {

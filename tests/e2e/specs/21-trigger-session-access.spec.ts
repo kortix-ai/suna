@@ -113,6 +113,8 @@ test.describe('21 — Session access UI', () => {
         accountId,
         userId: crypto.randomUUID(),
         visibility: 'private',
+        // A trigger run: the sidebar lists it under Automated, not the viewer's own sessions.
+        initiator: { type: 'trigger', id: 'access-policy-ui' },
         metadata: {
           custom_name: 'Shared scheduled session',
           source: 'trigger:scheduler',
@@ -155,6 +157,8 @@ test.describe('21 — Session access UI', () => {
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
+      // Automated runs sit in their own section, closed until opened (KRTX-639).
+      await page.getByRole('button', { name: 'Automated', exact: true }).click();
       const ownSidebarLink = page.locator(`a[href$="/sessions/${ownSessionId}"]`);
       const sharedSidebarLink = page.locator(`a[href$="/sessions/${sharedTriggerSessionId}"]`);
       const ownSidebarRow = ownSidebarLink.locator('..');
@@ -180,7 +184,10 @@ test.describe('21 — Session access UI', () => {
       await expect(ownInventoryRow).toBeVisible();
       await expect(ownInventoryRow.locator('[data-session-shared="true"]')).toHaveCount(0);
       await expect(sharedInventoryRow).toBeVisible();
-      await expect(sharedInventoryRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      // The chip names the run's starter (the trigger's schedule icon) and its access icon.
+      const sharedChip = sharedInventoryRow.locator('[data-session-shared="true"][data-session-starter="trigger"]');
+      await expect(sharedChip).toHaveCount(1);
+      await expect(sharedChip.locator('svg')).toHaveCount(2);
       await expect(sharedInventoryRow.getByText('Shared', { exact: true })).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Search', exact: true }).click();

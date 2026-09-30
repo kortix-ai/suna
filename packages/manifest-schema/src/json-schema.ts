@@ -653,6 +653,14 @@ function harnessesSchema(scope: 'project' | 'agent'): JsonSchemaFragment {
   return {
     type: 'object',
     properties: {
+      opencode: {
+        type: 'object',
+        properties: {
+          plugins: { type: 'array', items: { type: 'string', pattern: '^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$' } },
+          ...(scope === 'agent' ? { exclude: { type: 'array', items: { type: 'string', pattern: '^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$' } } } : {}),
+        },
+        additionalProperties: false,
+      },
       pi: {
         type: 'object',
         properties: {
@@ -830,6 +838,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         additionalProperties: agentBlockV2Schema(),
       },
       ...sharedSectionProperties(2),
+      pi: { ...opencodeSchema(), description: 'Pi native config directory (defaults to harnesses/pi, then .kortix/pi).' },
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
     },

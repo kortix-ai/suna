@@ -286,8 +286,8 @@ adminApp.openapi(
         name: r.name,
         // The name the PRODUCT shows for this account. `name` above is the raw
         // stored column, which for old rows is a migration placeholder
-        // ('Personal' / 'User') that every customer-facing surface maps to
-        // "<owner email>'s Account" — the console must render the same thing,
+        // ('Personal' / 'User') that every customer-facing surface maps to a
+        // suggested name (`defaultAccountName`) — the console must render the same thing,
         // or an operator searching for what the customer sees finds "Personal".
         displayName: accountDisplayName(r.name, r.ownerEmail ?? null),
         ownerEmail: r.ownerEmail ?? null,

@@ -204,11 +204,8 @@ export async function seedInstallerIdentity(input: {
   slackUserId: string;
   userId: string;
 }): Promise<'linked' | 'kept'> {
-  const installer = chatUser('slack', input.teamId, input.slackUserId);
-  const existing = await lookupChatIdentity(installer);
-  if (existing && existing.userId !== input.userId) return 'kept';
-  await linkChatIdentity(installer, input.userId);
-  return 'linked';
+  const linked = await linkChatIdentity(chatUser('slack', input.teamId, input.slackUserId), input.userId);
+  return linked.ok ? 'linked' : 'kept';
 }
 
 /**

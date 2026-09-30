@@ -50,6 +50,19 @@ async function resolveSessionCostAccountId(
   projectId?: string,
 ): Promise<string> {
   const tokenAccountId = c.get('accountId');
+  const tokenProjectId = c.get('tokenProjectId');
+  if (tokenProjectId) {
+    if (!tokenAccountId) throw new HTTPException(403, { message: 'Project token has no account binding' });
+    if (!projectId || projectId !== tokenProjectId || c.req.query('account_id')) {
+      throw new HTTPException(403, {
+        message: 'Project-scoped token requires its own project_id and no account_id; grant project.usage.read in kortix_permissions',
+      });
+    }
+    await assertProjectCapability(
+      c, c.get('userId'), tokenAccountId, projectId, PROJECT_ACTIONS.PROJECT_USAGE_READ,
+    );
+    return tokenAccountId;
+  }
   if (tokenAccountId) return tokenAccountId;
 
   if (c.req.query('account_id') || !projectId) {
@@ -589,6 +602,7 @@ usageApp.openapi(
       query: z
         .object({
           account_id: z.string().optional(),
+          project_id: z.string().optional(),
           from: z.string().optional(),
           to: z.string().optional(),
           sort: z.enum(PROJECT_COST_SORTS).optional(),
@@ -613,6 +627,7 @@ usageApp.openapi(
   }),
   async (c) => {
     let accountId: string;
+    let projectId: string | undefined;
     let window: CostWindow;
     let sort: CostSort;
     let limit: number;
@@ -626,7 +641,10 @@ usageApp.openapi(
       // surface as 400 instead of 403 — telling an unauthorized caller which
       // of their parameters was malformed. Authorization must be decided
       // before input validation, not after.
-      accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+      projectId = c.get('tokenProjectId') || undefined;
+      accountId = projectId
+        ? await resolveSessionCostAccountId(c, c.req.query('project_id'))
+        : c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
       window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
       sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
       ({ limit, offset } = parseCostPagination({
@@ -646,6 +664,7 @@ usageApp.openapi(
       // CSV_ROW_CAP rows in one shot, not one paginated page of it.
       const page = await listCostByProject({
         accountId,
+        projectId,
         window,
         sort,
         limit: CSV_ROW_CAP,
@@ -678,7 +697,7 @@ usageApp.openapi(
       });
     }
 
-    return c.json(await listCostByProject({ accountId, window, sort, limit, offset }));
+    return c.json(await listCostByProject({ accountId, projectId, window, sort, limit, offset }));
   },
 );
 
@@ -715,6 +734,11 @@ usageApp.openapi(
     try {
       const projectId = c.req.query('project_id') || undefined;
       const accountId = await resolveSessionCostAccountId(c, projectId);
+      if (c.get('tokenProjectId') && c.req.query('session_id')) {
+        throw new HTTPException(403, {
+          message: 'Project-scoped token cannot query an arbitrary session',
+        });
+      }
       return c.json(
         await getCostSummary({
           accountId,

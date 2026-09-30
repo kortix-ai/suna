@@ -48,6 +48,7 @@ describe('every first-prompt producer writes a durable row, not a prompt stash',
 
   test('both first-message producers use the shared staging contract', () => {
     expect(shell).not.toContain('attachedFilesToDataUrlParts');
+    expect(shellSend).not.toContain('attachedFilesToDataUrlParts');
     expect(projectHome).not.toContain('attachedFilesToDataUrlParts');
   });
 

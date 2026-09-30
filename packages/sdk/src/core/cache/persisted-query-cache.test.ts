@@ -417,3 +417,15 @@ describe('flush', () => {
     expect(storage.writes).toBe(2);
   });
 });
+
+describe('isPersistableQueryKey — the session tree (KRTX-639)', () => {
+  const P = ['kx', 'project', 'p1', 'sessions'] as const;
+  test('keeps a filtered top-level list and a parent’s children, so the sidebar paints on reload', () => {
+    expect(isPersistableQueryKey([...P, 'list-paged', 'visible', { parent: 'root', startedBy: 'me', q: null }])).toBe(true);
+    expect(isPersistableQueryKey([...P, 'list-children', 'parent-1', ''])).toBe(true);
+  });
+  test('never keeps a search: its text is the user’s, and its answer is momentary', () => {
+    expect(isPersistableQueryKey([...P, 'list-paged', 'visible', { parent: 'root', startedBy: null, q: 'rent' }])).toBe(false);
+    expect(isPersistableQueryKey([...P, 'list-children', 'parent-1', 'rent'])).toBe(false);
+  });
+});

@@ -92,6 +92,8 @@ describe('phaseGlyph and focusHints', () => {
   });
 });
 
+const PI_CAPABILITIES = ['file.import', 'session.subagents'];
+
 async function mount(focus: SessionFocus | null, overrides: Record<string, unknown> = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const session = fakeSession({
@@ -106,6 +108,8 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
     ...overrides,
   });
   const useSessionImpl = mock(() => session);
+  const readHealth = mock(async () => ({ health: { capabilities: PI_CAPABILITIES } }));
+  const onCapabilities = mock((_capabilities: readonly string[] | null) => {});
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, gcTime: 0 } },
   });
@@ -126,6 +130,8 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
         onCommand={() => {}}
         onToast={() => {}}
         useSessionImpl={useSessionImpl as never}
+        readHealth={readHealth as never}
+        onCapabilities={onCapabilities}
       />
     </QueryClientProvider>,
     { width: 120, height: 25 },
@@ -138,7 +144,7 @@ async function mount(focus: SessionFocus | null, overrides: Record<string, unkno
     await new Promise((resolve) => setTimeout(resolve, 600));
   });
   await setup.flush();
-  return { ...setup, useSessionImpl };
+  return { ...setup, useSessionImpl, readHealth, onCapabilities };
 }
 
 describe('SessionView', () => {
@@ -149,6 +155,20 @@ describe('SessionView', () => {
     const calls = useSessionImpl.mock.calls as unknown as [string, string][];
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((call) => call[0] === 'p1' && call[1] === 's1')).toBe(true);
+    renderer.destroy();
+  });
+
+  test('reads the runtime capabilities once it is up and hoists them', async () => {
+    const { readHealth, onCapabilities, renderer } = await mount('composer');
+    expect(readHealth.mock.calls as unknown[]).toEqual([['p1', 's1']]);
+    expect(onCapabilities.mock.calls.at(-1)).toEqual([PI_CAPABILITIES]);
+    renderer.destroy();
+  });
+
+  test('a runtime that is not up yet is not asked for its capabilities', async () => {
+    const { readHealth, onCapabilities, renderer } = await mount('composer', { switched: false });
+    expect(readHealth).not.toHaveBeenCalled();
+    expect(onCapabilities.mock.calls.at(-1)).toEqual([null]);
     renderer.destroy();
   });
 

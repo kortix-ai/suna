@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
 import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
@@ -15,7 +17,7 @@ const TURN_RETRY_DEFAULT_BASE_MS = 2_000
  * state lives.
  *
  * Model, agent, prompts and the gateway are read from the SAME variables the
- * OpenCode path receives (`KORTIX_OPENCODE_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
+ * OpenCode path receives (`KORTIX_MODEL`, `KORTIX_COMPILED_AGENT_CONFIG`,
  * `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`, `KORTIX_TOKEN`): the control plane
  * does not know which harness reads them, and it must not have to.
  */
@@ -36,6 +38,7 @@ const EnvironmentSchema = z.object({
   KORTIX_PI_PACKAGES_DIR: z.string().optional(),
   // First backoff of a transient model-error retry (transient-retry.ts). Tests shorten it.
   KORTIX_PI_TURN_RETRY_BASE_MS: z.coerce.number().int().positive().optional(),
+  KORTIX_PI_NO_PROGRESS_MS: z.coerce.number().int().positive().optional(),
 })
 
 export interface PiEnvironment {
@@ -47,6 +50,7 @@ export interface PiEnvironment {
   piPackagesBundleDigest?: string
   piPackagesDir: string
   piTurnRetryBaseMs: number
+  piNoProgressMs: number
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -61,6 +65,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_PACKAGES_BUNDLE_DIGEST: env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST,
     KORTIX_PI_PACKAGES_DIR: env.KORTIX_PI_PACKAGES_DIR,
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
+    KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -71,6 +76,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piPackagesBundleDigest: parsed.KORTIX_PI_PACKAGES_BUNDLE_DIGEST?.trim() || undefined,
     piPackagesDir: parsed.KORTIX_PI_PACKAGES_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi-packages'),
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
+    piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
   }
 }
 
@@ -91,9 +97,24 @@ export function requirePiConfig(cfg: HostConfig): PiConfig {
  * tree. Then the project's `skills/`, then the legacy `.kortix/opencode/skills`
  * a project authored for OpenCode, so switching `runtime:` never loses them.
  */
-export function resolvePiSkillDirectories(cfg: HostConfig): string[] {
+export async function resolvePiProjectConfigDir(cfg: HostConfig): Promise<string | null> {
+  const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
+  const manifest = await readProjectManifest(await import('node:fs/promises'), workspace)
+  const raw = manifest && extractNestedString(manifest.body, manifest.format, 'pi', 'config_dir')
+  // Repo-relative only. A manifest must never make the harness load host files.
+  if (raw && !raw.startsWith('/') && !raw.startsWith('-') && raw.split('/').every((segment) => segment && segment !== '.' && segment !== '..' && /^[\w .-]+$/.test(segment))) {
+    const path = join(workspace, raw)
+    return existsSync(path) ? path : null
+  }
+  for (const path of ['harnesses/pi', '.kortix/pi']) {
+    if (existsSync(join(workspace, path))) return join(workspace, path)
+  }
+  return null
+}
+
+export function resolvePiSkillDirectories(cfg: HostConfig, piDir?: string | null): string[] {
   const workspace = cfg.projectTarget || cfg.workspace || '/workspace'
   // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
   // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).
-  return [managedSkillsDir(), join(workspace, 'skills'), join(workspace, '.kortix', 'opencode', 'skills')]
+  return [managedSkillsDir(), join(workspace, 'skills'), ...(piDir ? [join(piDir, 'skills')] : []), join(workspace, '.kortix', 'opencode', 'skills')]
 }

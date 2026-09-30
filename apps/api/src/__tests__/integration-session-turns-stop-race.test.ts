@@ -58,10 +58,12 @@ mock.module('../shared/db', () => ({ ...realDbModule, db }));
 const {
   acceptSandboxTurn,
   beginSandboxTurn,
+} = await import('../projects/sandbox-turn-lifecycle');
+const {
   settleOpenSandboxTurns,
   settleOrphanedSandboxTurns,
   settleOrphanedSandboxTurnsQuery,
-} = await import('../projects/sandbox-turn-lifecycle');
+} = await import('../projects/session-turn-ledger');
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
 
 const rows = (result: unknown) =>
@@ -129,7 +131,7 @@ describe("a stop committed between a turn writer's two round trips", () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('race-begin'), opencodeSessionId: 'ses_root', messageId: 'msg_race_begin' },
+        { token: t('race-begin'), runtimeSessionId: 'ses_root', messageId: 'msg_race_begin' },
         60_000,
       ),
     ).toBe('granted');
@@ -161,7 +163,7 @@ describe("a stop committed between a turn writer's two round trips", () => {
 
     expect(
       await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('race-boot'), {
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_race_boot',
       }),
     ).toBe(true);
@@ -176,7 +178,7 @@ describe("a stop committed between a turn writer's two round trips", () => {
     expect(
       await beginSandboxTurn(
         { sandboxId: SANDBOX_ID },
-        { token: t('race-settled'), opencodeSessionId: 'ses_root', messageId: 'msg_race_settled' },
+        { token: t('race-settled'), runtimeSessionId: 'ses_root', messageId: 'msg_race_settled' },
         60_000,
       ),
     ).toBe('granted');

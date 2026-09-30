@@ -145,7 +145,7 @@ async function createThreadSession(
   const [selection] = await db
     .select({
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
     })
     .from(chatChannelBindings)
     .where(
@@ -329,32 +329,29 @@ async function waitForThreadSession(inboxId: string, threadId: string): Promise<
   }
 }
 
+/**
+ * How the agent works the inbox: the `kortix connectors` CLI, which every
+ * harness's shell has. The MCP face exists only in OpenCode's config, so a
+ * prompt that named MCP tools left a pi session unable to read or answer.
+ */
 function emailTurnInstructions(event: AgentMailMessageReceivedEvent): string {
-  const readThreadCall = JSON.stringify({
-    connector: 'email',
-    action: 'get_thread',
-    args: {
-      inbox_id: event.message.inbox_id,
-      thread_id: event.message.thread_id,
-    },
+  const readThreadArgs = JSON.stringify({
+    inbox_id: event.message.inbox_id,
+    thread_id: event.message.thread_id,
   });
-  const replyCall = JSON.stringify({
-    connector: 'email',
-    action: 'reply_message',
-    args: {
-      inbox_id: event.message.inbox_id,
-      message_id: event.message.message_id,
-      text: '<reply>',
-    },
+  const replyArgs = JSON.stringify({
+    inbox_id: event.message.inbox_id,
+    message_id: event.message.message_id,
+    text: '<reply>',
   });
   return [
     'How to work:',
     '- You are operating an AgentMail inbox assigned to this Kortix project.',
-    '- Use the Connector MCP meta-tools `connectors`, `discover`, `describe`, and `call`. Connector actions are not direct tools.',
-    '- Start with `connectors`. Use `discover` to find an action and `describe` to confirm its input schema before the first call.',
-    `- Read the current thread with \`call\`: \`${readThreadCall}\`.`,
-    `- Reply in the same conversation with \`call\`: \`${replyCall}\`. Use \`html\` instead of \`text\` only when needed.`,
-    '- Start a new outbound email with `call`, connector `email`, action `send_message`, and args containing `inbox_id`, `to`, `subject`, and `text` or `html`.',
+    '- Use the `kortix connectors` CLI in the shell. Connector actions are not direct tools.',
+    `- Read the current thread: \`kortix connectors call email.get_thread '${readThreadArgs}'\`.`,
+    `- Reply in the same conversation: \`kortix connectors call email.reply_message '${replyArgs}'\`. Use \`html\` instead of \`text\` only when needed.`,
+    '- Start a new outbound email with `kortix connectors call email.send_message` and args containing `inbox_id`, `to`, `subject`, and `text` or `html`.',
+    '- Run `kortix connectors show email.<action>` to confirm an input schema before the first call. Pass long or quoted args as a file: `@args.json`.',
     '- The AgentMail API key is resolved server-side. Do not look for it in the sandbox.',
     '- If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
   ].join('\n');

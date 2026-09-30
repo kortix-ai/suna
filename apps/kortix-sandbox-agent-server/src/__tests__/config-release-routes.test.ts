@@ -61,7 +61,7 @@ function fakeControl(over: Partial<HarnessControlOperations> = {}) {
     },
     refresh: async () => {
       calls.refresh++
-      return { ok: true, repo: {} as never, opencode: 'ok', opencode_pid: 1 }
+      return { ok: true, repo: {} as never, runtime: 'ok', runtime_pid: 1 }
     },
     abort: async () => {
       throw new Error('unexpected abort')

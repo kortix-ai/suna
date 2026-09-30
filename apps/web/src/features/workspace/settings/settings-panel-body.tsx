@@ -485,7 +485,7 @@ export function SettingsPanelShell({
               fadeColor="from-background"
               className="kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2"
             >
-              <TabsList orientation="horizontal" className="kx-settings-mobile-tabs w-fit gap-1 px-2">
+              <TabsList orientation="horizontal" className="kx-settings-mobile-tabs w-fit">
                 {allItems.map((item) => (
                   <TabsTrigger
                     key={item.tab}

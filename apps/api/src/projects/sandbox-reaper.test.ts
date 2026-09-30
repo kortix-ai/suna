@@ -117,7 +117,7 @@ function applyOrder(rows: any[], now: Date = NOW): any[] {
 }
 
 function hasTurnAuthority(row: any): boolean {
-  const states = [row.metadata?.activeTurn?.state];
+  const states: unknown[] = [];
   const activeTurns = row.metadata?.activeTurns;
   if (activeTurns && typeof activeTurns === 'object' && !Array.isArray(activeTurns)) {
     states.push(...Object.values(activeTurns).map((turn: any) => turn?.state));
@@ -249,7 +249,7 @@ mock.module('../shared/db', () => ({
             const predicateText = describeSql(predicate);
             const boundValues = new Set(sqlValues(predicate));
             const selectsWithoutTurnAuthority =
-              predicateText.includes('activeTurn') && /\band\s+not\s*\(/i.test(predicateText);
+              predicateText.includes('activeTurn') && /and\s+not\s+exists\s*\(/i.test(predicateText);
             const selectedSandboxRows = candidates
               .filter((row) =>
                 !predicateText.includes('activeTurn')
@@ -581,7 +581,7 @@ describe('provider-neutral turn observation', () => {
         },
         'ext-1',
         'sb-1',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       );
 
       expect(observation).toEqual({
@@ -677,7 +677,7 @@ describe('provider-neutral turn observation', () => {
           { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
           'sb-1',
-          { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+          { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
         ),
       ).toEqual({
         observation: 'terminal',
@@ -1064,6 +1064,110 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.turnsSettled).toBe(1);
     // The prompt behind a turn wedged for weeks is NOT re-run by a sweep.
     expect(promptRedeliveries).toEqual([]);
+  });
+
+  // 2026-09-29 incident: an env-driven OpenCode respawn SIGTERMed the process
+  // 200ms after the API accepted a turn — before `relayTurnBeginToApi` ever
+  // ran, so the record's `messageId` stayed null forever. `GET .../turn`
+  // showed `state: "active"` for HOURS; only `kortix sessions stop` cleared
+  // it. `observeSandboxTurn` cannot see this as terminal: with no `messageId`
+  // to scope the daemon's probe, the daemon's own oracle reads the orphaned
+  // (but still OPEN) assistant message as "in flight" even though
+  // `/session/status` is idle — so `turnObservationByToken` reporting
+  // 'active' here is the REALISTIC daemon answer, not a test artifact.
+  test('a turn with NO messageId past its ceiling is settled by age+identity alone, even while the daemon insists it is active', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'orphaned-token': {
+              token: 'orphaned-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 31 * 60_000, // 31 min — past the 30 min default
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    // The daemon insists the (husk-shaped) root is still in flight — see the
+    // comment above. That must no longer matter: this ceiling settles on age
+    // and missing identity alone.
+    turnObservationByToken['orphaned-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'orphaned-token' }]);
+    expect(clearedTurnReasons).toEqual(['runtime_gone']);
+    // Settled BEFORE the probe, same as the absolute ceiling above.
+    expect(turnObservationCalls).toEqual([]);
+    expect(activeTurnRenewalCalls).toEqual([]);
+    expect(r.turnsSettled).toBe(1);
+    // No `messageId` to redeliver by — `redeliverAbandonedPrompt` no-ops.
+    expect(promptRedeliveries).toEqual([]);
+    // The queued NEXT prompt (a trigger's queued continue_session) drains.
+    expect(promotedQueueSessions).toEqual(['sess-1']);
+  });
+
+  test('a turn with no messageId INSIDE its ceiling is left alone for observation to settle normally', async () => {
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'young-orphan-token': {
+              token: 'young-orphan-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 5_000, // 5s — a turn_begin relay is still due
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['young-orphan-token'] = 'active';
+    activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(clearedTurnCalls).toEqual([]);
+    expect(r.turnsSettled).toBe(0);
+    expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'young-orphan-token' }]);
+  });
+
+  test('a `delivering` turn with no messageId past the no-begin-relay ceiling is NOT settled by this path', async () => {
+    // Scoped to `state === 'active'` only — a `delivering` record already has
+    // its own, much shorter delivery-grace handling (turnDeliveryGraceMs).
+    candidates = [
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 60_000),
+        metadata: {
+          activeTurns: {
+            'delivering-token': {
+              token: 'delivering-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: null,
+              startedAtMs: NOW.getTime() - 31 * 60_000,
+            },
+          },
+        },
+      }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['delivering-token'] = 'terminal';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    // Not settled by the new ceiling; the existing delivering-state path (its
+    // own grace already long expired at 31 min) reconciles it instead.
+    expect(clearedTurnReasons).not.toEqual(['runtime_gone']);
   });
 
   test('a turn inside the ceiling keeps its box, and a record with no start instant is exempt', async () => {

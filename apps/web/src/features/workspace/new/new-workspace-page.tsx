@@ -6,36 +6,35 @@ import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { ArrowLeftIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
+import { AccountTopBar } from '@/features/workspace/account-top-bar';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
-  filterCreatableAccounts,
   isForeignAccountList,
   isSubmittable,
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
 import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
+  suggestWorkspaceName,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
@@ -74,9 +73,16 @@ const EASE_IN_OUT: [number, number, number, number] = [0.77, 0, 0.175, 1];
 const ICON_REVEAL = { duration: 0.22, ease: EASE_IN_OUT };
 const ICON_HIDE = { duration: 0.17, ease: EASE_IN_OUT };
 
-/** `size-10`, as a width Motion can interpolate. Keep in step with the
- *  trigger's own `triggerClassName` below — they are the same box. */
-const ICON_WIDTH = '2.5rem';
+/**
+ * The icon column's open width: the `size-10` tile PLUS the gap after it.
+ * Border-box clamps content, not padding, so the animated `paddingRight`
+ * (`ICON_GAP`) is carved out of this width — at the old `2.5rem` a wider gap
+ * only clipped the tile. `size-10` is `10 × --spacing` (0.23rem) = 2.3rem.
+ * Keep in step with the trigger's own `triggerClassName` below.
+ */
+const ICON_GAP = '0.5rem';
+/** Tile + gap: 2.3rem + `ICON_GAP`. Change the two together. */
+const ICON_WIDTH = '2.8rem';
 
 /**
  * Create a workspace.
@@ -160,6 +166,13 @@ export function NewWorkspacePage() {
     ...(initialAccountId ? { accountId: initialAccountId } : {}),
   }));
   const [touched, setTouched] = useState(false);
+  // Seed a friendly default name once, after mount — not in the `useState`
+  // initializer, because a random value there differs between the server
+  // render and the client's first render (a hydration mismatch). A name the
+  // user already has (typed, or restored) is never replaced.
+  useEffect(() => {
+    setState((current) => (current.name ? current : { ...current, name: suggestWorkspaceName() }));
+  }, []);
   // Never cleared: the document is replaced, not re-rendered.
   const [signingOut, setSigningOut] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -215,7 +228,7 @@ export function NewWorkspacePage() {
   // here; the result feeds both `AccountPicker` and `isSubmittable` below —
   // never the raw list to one and this to the other, which would let "what
   // the user can pick" and "what gates submit" disagree.
-  const creatableAccounts = filterCreatableAccounts(accounts);
+  const creatableAccounts = useCreatableAccounts(accounts);
 
   // `user?.id` is `string | undefined`; the identity helpers below require an
   // explicit `string | null` — an omitted/undefined argument used to compile
@@ -289,65 +302,28 @@ export function NewWorkspacePage() {
     // naming the condition here directly means a future edit to either
     // function cannot silently reopen the disclosure by accident.
     !foreignAccountList;
-  const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut');
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
       {/* No `relative` on <main> on purpose: with no positioned ancestor in
-          this tree, `absolute` resolves against the initial containing block —
-          the true viewport edges — rather than the right edge of the centered
-          max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
-          the row spans the viewport without overflowing left. Sits ahead of
-          the <form> so it stays reachable regardless of form state.
-          `kx-desktop-band-row` moves the row below the title-bar band on
-          desktop, clear of the macOS traffic lights and the Win/Linux window
-          controls. */}
-      <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
-        {/* The web needs an in-page exit; Electron supplies Back in its band. */}
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="kx-web-only-back text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
-        >
-          <Link href="/projects">
-            <ArrowLeftIcon className="size-4" />
-            {t('actions.back')}
-          </Link>
-        </Button>
-        {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
-            default) so this reads as one quiet secondary row at rest, same
-            treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
-            otherwise it sits at full-contrast `text-foreground` beside the
-            identity's dim muted text and reads louder than the page's actual
-            primary action.
-
-            `performSignOut`, not the old bare `void signOut()`: that neither
-            awaited the sign-out nor navigated, so pressing Log out here signed
-            the user out and left them sitting on the create form. */}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground shrink-0"
-            disabled={signingOut}
-            onClick={() => {
-              setSigningOut(true);
-              void performSignOut();
-            }}
-          >
-            {signingOut ? <Loading className="size-4 shrink-0" /> : null}
-            {signOutLabel}
-          </Button>
-          {/* Desktop only. The shell has no browser toolbar, so without this
-              Log out was the only way off this page there. `replace`, not
-              `push`: `/new` is where the user left, not somewhere to return
-              to. The landing door resolves the latest project, or offers
-              create and sign-out to an account with none. */}
-          <DesktopCloseButton onClose={() => router.replace('/projects')} />
-        </div>
-      </div>
+          this tree, the bar's `absolute` resolves against the initial
+          containing block — the true viewport edges — rather than the centered
+          max-w-md column. Sits ahead of the <form> so it stays reachable
+          regardless of form state. `performSignOut`, not a bare `signOut()`:
+          that neither awaited nor navigated, and left the user on the form. */}
+      <AccountTopBar
+        email={user?.email ?? null}
+        signingOut={signingOut}
+        onLogOut={() => {
+          setSigningOut(true);
+          void performSignOut();
+        }}
+        back={{ href: '/projects', label: t('actions.back') }}
+        // Desktop only. The shell has no browser toolbar, so without this the
+        // account menu was the only way off this page there. `replace`, not
+        // `push`: `/new` is where the user left, not somewhere to return to.
+        trailing={<DesktopCloseButton onClose={() => router.replace('/projects')} />}
+      />
 
       {/* TWO states, one swap — see the `SWAP_IN`/`SWAP_OUT` doc comment above.
           `initial={false}` so neither side fades in on first paint.
@@ -383,13 +359,13 @@ export function NewWorkspacePage() {
         ) : (
           <m.div
             key="form"
-            className="flex flex-col gap-6"
+            className="flex flex-col gap-10"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: SWAP_IN }}
             exit={{ opacity: 0, transition: SWAP_OUT }}
           >
             <header className="flex flex-col gap-2 text-center">
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+              <h1 className="text-foreground text-2xl font-medium tracking-tight">
                 {t('title')}
               </h1>
               <p className="text-muted-foreground text-sm text-balance">{t('description')}</p>
@@ -435,7 +411,7 @@ export function NewWorkspacePage() {
                       as an animated `paddingRight`. Once an icon is PICKED the
                       column is open for good and the tile is tinted, so the
                       extra `gap-1.5` is safe and keeps the fill off the input. */}
-                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-2')}>
+                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-0')}>
                   <m.div
                     // ONE element, always mounted, retargeting its width —
                     // NOT an AnimatePresence enter/exit. Mount/unmount
@@ -454,7 +430,7 @@ export function NewWorkspacePage() {
                             // CONTENT, not padding, so a fixed padding-right
                             // survives `width: 0` as a 12px stub holding the
                             // column open. This closes it completely.
-                            paddingRight: showIcon ? '0.75rem' : 0,
+                            paddingRight: showIcon ? ICON_GAP : 0,
                             opacity: showIcon ? 1 : 0,
                             filter: showIcon ? 'blur(0px)' : 'blur(2px)',
                           }

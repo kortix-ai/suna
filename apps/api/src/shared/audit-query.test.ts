@@ -4,6 +4,7 @@ import {
   parseAuditInstant,
   parseAuditLimit,
   parseAuditSessionCursor,
+  serializeAuditEvent,
 } from './audit-query';
 
 describe('strict audit query validation', () => {
@@ -38,5 +39,40 @@ describe('strict audit query validation', () => {
     const id = 'a7100000-0000-0000-0000-000000000001';
     expect(parseAuditCursor(`2026-08-07T12:00:00Z|${id}`)?.eventId).toBe(id);
     expect(parseAuditSessionCursor(`42|${id}`)?.eventId).toBe(id);
+  });
+});
+
+describe('serializeAuditEvent credential fields', () => {
+  const row = {
+    eventId: 'a7100000-0000-4000-a000-000000000001',
+    occurredAt: new Date('2026-08-07T12:00:00Z'),
+    credentialKind: 'oauth_app',
+    credentialId: 'client-1',
+    clientReportedSource: null,
+  } as unknown as Parameters<typeof serializeAuditEvent>[0];
+
+  test('exposes kind and id, and the display name only when looked up', () => {
+    expect(serializeAuditEvent(row)).toMatchObject({
+      credential_kind: 'oauth_app',
+      credential_id: 'client-1',
+      credential_name: null,
+    });
+    expect(serializeAuditEvent(row, new Map([['oauth_app:client-1', 'Claude Code']]))).toMatchObject({
+      credential_name: 'Claude Code',
+    });
+  });
+});
+
+describe('serializeAuditEvent runtime session', () => {
+  test('names the runtime session neutrally and under its pre-W4 name', () => {
+    const row = {
+      eventId: 'a7100000-0000-4000-a000-000000000002',
+      occurredAt: new Date('2026-08-07T12:00:00Z'),
+      runtimeSessionId: 'ses_root',
+    } as unknown as Parameters<typeof serializeAuditEvent>[0];
+    expect(serializeAuditEvent(row)).toMatchObject({
+      runtime_session_id: 'ses_root',
+      opencode_session_id: 'ses_root',
+    });
   });
 });

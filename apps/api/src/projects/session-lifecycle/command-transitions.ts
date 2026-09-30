@@ -270,6 +270,12 @@ export async function markCommandSucceeded(
  * deliver it a SECOND time. Stop cannot unsend a POST — it can only stop what
  * the POST started, and that is the abort's job, not this row's.
  *
+ * A `noReply` delivery (the non-final row of a released Stop batch) closes
+ * `delivered` here, at once: OpenCode persisted the message and started no turn,
+ * so no ledger turn will ever confirm it, and leaving it `forwarded` would sit
+ * in `delivering` until the sweep force-closed it. The stop mark above still
+ * wins over it.
+ *
  * Both markers are CONSUMED here. Leaving one behind re-lands it on every later
  * delivery of the same row — a freshly re-sent prompt coming back held, with no
  * hold in force.
@@ -278,6 +284,7 @@ export async function markCommandForwarded(
   lease: CommandLease,
   sessionId: string,
   wireMessageId: string,
+  opts?: { noReply?: boolean },
 ): Promise<boolean> {
   const forwarded = {
     status: 'forwarded',
@@ -297,7 +304,7 @@ export async function markCommandForwarded(
         THEN '{"status": "delivered"}'::jsonb
         WHEN COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
         THEN '{"stop_paused": true, "held": true}'::jsonb
-        ELSE '{}'::jsonb
+        ELSE ${opts?.noReply ? '{"status": "delivered", "no_reply": true}' : '{}'}::jsonb
       END`,
       payload: sql`${sessionLifecycleCommands.payload} - 'consumedOnDelivery' - 'stopPausedOnDelivery'`,
       lockedBy: null,

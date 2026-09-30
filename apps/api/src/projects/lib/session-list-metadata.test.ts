@@ -119,3 +119,7 @@ describe('list metadata trimming', () => {
     expect(out.metadata).toBe(metadata);
   });
 });
+test('session labels survive list metadata trimming', () => {
+  const output = serializeSession(row({ labels: ['urgent'], metadata: { initial_prompt: 'private' } }), { trimListMetadata: true });
+  expect(output.labels).toEqual(['urgent']);
+});

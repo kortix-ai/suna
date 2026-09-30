@@ -117,6 +117,18 @@ describe('SessionSiteHeader session title', () => {
     expect(source).toContain('setCompactOpen(true)');
     expect(source).toContain('setDeleteOpen(true)');
   });
+
+  // KRTX-801: the desktop shell has no address bar, so the menu copies the
+  // session ID and link. The ID is the project session from the URL, not the
+  // runtime `sessionId` prop; the link is read at click time.
+  test('copies the project session ID and the current link through the shared clipboard helper', () => {
+    expect(source).toContain("copyValue(tPalette('copySessionId'), projectSessionId!)");
+    expect(source).toContain("copyValue(tPalette('copySessionLink'), window.location.href)");
+    expect(source).toContain('copyToClipboard(value)');
+    expect(source.indexOf("tPalette('copySessionId')")).toBeLessThan(
+      source.indexOf('setExportOpen(true)'),
+    );
+  });
 });
 
 /**
@@ -194,9 +206,9 @@ describe('SessionSiteHeader subagent hover card', () => {
     expect(source.lastIndexOf('<Hint', hintAt)).toBeGreaterThan(cardEnd);
   });
 
-  test('the card uses the HoverCard primitive and links each row to its ?oc= route', () => {
+  test('the card uses the HoverCard primitive and links each row to its child-session route', () => {
     expect(cardSource).toContain("from '@/components/ui/hover-card'");
-    expect(cardSource).toContain('?oc=${encodeURIComponent(child.id)}');
+    expect(cardSource).toContain('href={childSessionHref(href, child.id)}');
     expect(cardSource).toContain('<HoverPrefetchLink');
     expect(cardSource).toContain("menuRow('sm', 'default'");
     // A row click closes the card before the route changes under it.

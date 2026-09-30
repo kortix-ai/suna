@@ -34,6 +34,7 @@ describe('platform meta agent', () => {
       }),
       env: { required: [], optional: [] },
       open_code_raw: null,
+      default_agent: null,
       open_code_default_agent: null,
       agent_discovery: 'opencode',
     });
@@ -49,6 +50,7 @@ describe('platform meta agent', () => {
       },
     });
     expect(config.open_code_default_agent).toBe('meta');
+    expect(config.default_agent).toBe('meta');
   });
 
   test('defines an OpenCode agent that follows the platform guide', () => {

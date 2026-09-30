@@ -175,6 +175,7 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] 
       'project.gateway.keys.manage',
     ],
   },
+  { group: 'Usage', actions: ['project.usage.read'] },
   {
     group: 'Configuration',
     actions: [

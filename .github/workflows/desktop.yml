@@ -181,12 +181,14 @@ jobs:
             --publish never \
             --config.extraMetadata.version="${{ steps.ver.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
+            --config.extraMetadata.kortixDesktopSentryDsn="$KORTIX_DESKTOP_SENTRY_DSN" \
             --config.extraMetadata.kortixUpdateChannel="dev" \
             --config.productName="Kortix Dev" \
             --config.extraMetadata.productName="Kortix Dev" \
             --config.appId="$DESKTOP_APP_ID"
         env:
           # macOS signing + notarization (electron-builder conventions).
+          KORTIX_DESKTOP_SENTRY_DSN: ${{ secrets.KORTIX_DESKTOP_SENTRY_DSN }}
           CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE || secrets.APPLE_CERTIFICATE) || '' }}
           CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD) || '' }}
           APPLE_API_KEY_ID: ${{ steps.sign.outputs.enabled == 'true' && env.APPLE_API_KEY_ID || '' }}
