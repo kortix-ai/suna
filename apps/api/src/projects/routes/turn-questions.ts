@@ -26,9 +26,9 @@ import { readJsonObject } from '../../shared/http-body';
 import { notifySessionEvent } from '../../notifications/session-push';
 
 // POST /v1/projects/:projectId/turn-question
-// Sandbox-to-apps/api relay for opencode's `question.asked` event. The
-// sandbox subscribes to opencode's SSE stream; when the agent calls the
-// built-in `question` tool, the sandbox relays the QuestionInfo[] here.
+// Sandbox-to-apps/api relay for the runtime's `question.asked` event. When the
+// agent calls the `question` tool, the sandbox relays its RuntimeQuestion[]
+// (`@kortix/api-contract/transcript`) here.
 // We post a Block Kit form, block on Submit, return `answers: string[][]`,
 // and the sandbox POSTs the same payload to opencode's
 // /question/{requestID}/reply so the tool resumes.
@@ -132,7 +132,7 @@ projectsApp.openapi(
       return c.json({ error: 'at least one question is required' }, 400);
     }
 
-    // Validate + coerce to QuestionInfo[]. Tolerate the v2 SDK schema variants.
+    // Validate + coerce to RuntimeQuestion[]. A daemon built before W5 may send an option with only `value`.
     const questions: QuestionInfo[] = [];
     for (const q of body.questions) {
       if (!q || typeof q !== 'object') continue;
@@ -142,20 +142,17 @@ projectsApp.openapi(
       const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
       const options = optionsRaw
         .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
-        // opencode's QuestionInfo carries `value` (required) + optional `label`. The
-        // harness `question` tool uses `label`. Accept EITHER so an option that only
-        // has `value` still renders a button instead of silently vanishing.
         .filter(
           (o): o is Record<string, unknown> =>
             !!o && (typeof o.label === 'string' || typeof o.value === 'string'),
         )
         .map((o) => ({
           label: String(o.label ?? o.value),
-          description: typeof o.description === 'string' ? String(o.description) : undefined,
+          description: typeof o.description === 'string' ? o.description : '',
         }));
       questions.push({
         question,
-        header: obj.header ? String(obj.header) : undefined,
+        header: obj.header ? String(obj.header) : '',
         options,
         multiple: !!obj.multiple,
         custom: obj.custom === false ? false : true,

@@ -3844,9 +3844,9 @@ export const sessionPendingQuestions = kortixSchema.table(
     sessionId: text('session_id').notNull(),
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
-    /** The opencode session that asked; survives an opencode restart changing it. */
+    /** The runtime session that asked; survives a runtime restart changing it. */
     runtimeSessionId: text('opencode_session_id'),
-    /** The raw QuestionInfo[] as opencode reported it. */
+    /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */

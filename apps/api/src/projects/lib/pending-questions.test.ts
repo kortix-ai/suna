@@ -73,7 +73,7 @@ const base = {
   projectId: 'proj-1',
   sessionId: 'sess-1',
   requestId: 'req-1',
-  questions: [{ text: 'Deploy to prod?' }],
+  questions: [{ question: 'Deploy to prod?', header: 'Deploy', options: [{ label: 'Yes', description: '' }] }],
 };
 
 describe('recordPendingQuestion', () => {
