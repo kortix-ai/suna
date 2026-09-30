@@ -19,7 +19,7 @@ import type { PiRuntime } from './runtime'
 const RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
   'KORTIX_LLM_PROXY_URL',
-  'KORTIX_OPENCODE_MODEL',
+  'KORTIX_MODEL',
   'KORTIX_CONNECTORS_MCP_ENABLED',
   'KORTIX_COMPILED_AGENT_CONFIG',
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
@@ -115,12 +115,12 @@ export function createPiControlService(runtime: () => PiRuntime | null, onStateC
             agent_env_written: agentEnvWritten,
             egress_shim: egressShim.outcome,
             egress_shim_hosts: egressShim.hosts,
-            opencode_env_changed: runtimeEnvChanged,
-            opencode_env_names: runtimeEnvNames,
-            opencode: rt?.getState() ?? 'down',
-            opencode_pid: null,
-            opencode_reload: reload,
-            opencode_turn_ended: reload ? false : null,
+            runtime_env_changed: runtimeEnvChanged,
+            runtime_env_names: runtimeEnvNames,
+            runtime: rt?.getState() ?? 'down',
+            runtime_pid: null,
+            runtime_reload: reload,
+            runtime_turn_ended: reload ? false : null,
           }
         },
         async refresh({ syncBase, baseSha }: HarnessRefreshInput) {
@@ -133,15 +133,15 @@ export function createPiControlService(runtime: () => PiRuntime | null, onStateC
           return {
             ok: true,
             repo: { before: repo.before, after: repo.after },
-            opencode: rt?.getState() ?? 'down',
-            opencode_pid: null,
+            runtime: rt?.getState() ?? 'down',
+            runtime_pid: null,
           }
         },
         async abort() {
           const rt = runtime()
           if (!rt) return { outcome: 'not-pinned', body: { ok: false, error: 'pi runtime is not started' } }
           await rt.abort()
-          return { outcome: 'aborted', body: { ok: true, opencode_session_id: rt.rootId } }
+          return { outcome: 'aborted', body: { ok: true, runtime_session_id: rt.rootId } }
         },
         // Quick Queue. The runtime holds the turn and tool state in-process, so
         // there is nothing to poll: it aborts on its own `tool_execution_end`.

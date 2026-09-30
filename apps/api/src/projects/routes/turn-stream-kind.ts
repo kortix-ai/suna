@@ -1,5 +1,5 @@
 // turn-stream multiplexes several operations (progress step, final answer,
-// turn end, initial-turn acceptance, opencode session pin, plus the retired execution-lease kinds that
+// turn end, initial-turn acceptance, runtime session pin, plus the retired execution-lease kinds that
 // pre-2026-07-29 sandbox images still send) behind one path — normalize the caller-supplied `kind` into the value
 // attached to the request context so it lands on the `Request completed:`
 // log and `stats count() by kind` in CloudWatch Insights can finally read
@@ -18,7 +18,7 @@ export function turnStreamKindField(kind: unknown): string {
 // to no connector: `end`/`turn_end` only shorten this session's idle deadline
 // (LEAST-only — can never extend the box's life), `turn_accepted` promotes only
 // a token-bound record that the control plane created before provisioning, and
-// `opencode_session` only persists the root-session pin. Everything NOT in this set reaches the
+// `runtime_session` only persists the root-session pin. Everything NOT in this set reaches the
 // content-bearing send path in turn-stream (relayTurnStep/relayTurnAnswer, which
 // post to the project's Slack/Teams), including any unknown kind.
 export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
@@ -28,6 +28,8 @@ export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
   'turn_accepted',
   'turn_abandoned',
   'initial_turn_claim',
+  'runtime_session',
+  // A pre-W3 daemon's name for `runtime_session`; the route normalizes it first.
   'opencode_session',
 ])
 

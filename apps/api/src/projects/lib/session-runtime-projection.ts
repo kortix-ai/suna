@@ -139,8 +139,9 @@ export function projectionIdentity(doc: unknown): RuntimeProjectionIdentity {
       : undefined;
   const headSeq = identity?.head_seq;
   return {
-    opencode_session_id: asString(identity?.opencode_session_id),
-    opencode_version: asString(identity?.opencode_version),
+    // The W3 names first; a daemon built before W3 sends only the OpenCode ones.
+    opencode_session_id: asString(identity?.runtime_session_id) ?? asString(identity?.opencode_session_id),
+    opencode_version: asString(identity?.harness_version) ?? asString(identity?.opencode_version),
     daemon_build: asNumber(identity?.daemon_build),
     agent_config_etag: asString(identity?.agent_config_etag),
     head_seq:

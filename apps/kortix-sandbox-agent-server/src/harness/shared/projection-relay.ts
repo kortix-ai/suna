@@ -4,10 +4,17 @@ import {
   noteControlPlaneResponse,
   sessionTokenPresumedDead,
 } from '@/lib/kortix-api/session-token-health'
-import { runtimeStateStore, type RuntimeStateDoc } from './runtime-state-projection'
+import type { RuntimeProjectionRelayBody } from '@kortix/api-contract/runtime-relay'
+
+/** The `/kortix/runtime/state` document. Its shape is the adapter's; the relay reads only these fields. */
+export interface RuntimeStateDoc {
+  built_at?: unknown
+  epoch?: unknown
+  seq?: unknown
+}
 
 /**
- * Pushes the daemon's own `/kortix/opencode/state` projection to the control
+ * Pushes the daemon's own `/kortix/runtime/state` projection to the control
  * plane: `POST /v1/platform/runtime-projection` (sandbox token, gzip body).
  *
  * WHY. The API can PULL the same document, but a pulled projection exists only
@@ -50,16 +57,17 @@ function retryBaseMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_RETRY_MS
 }
 
-type StateReader = () => Promise<{ doc: RuntimeStateDoc; etag: string } | null>
+export type RuntimeStateReader = () => Promise<{ doc: RuntimeStateDoc; etag: string } | null>
 
-const defaultStateReader: StateReader = async () => {
-  const store = runtimeStateStore()
-  if (!store) return null
-  const { doc, etag } = await store.read()
-  return { doc, etag }
+/** No adapter has registered its reader yet: nothing to push. */
+const noStateReader: RuntimeStateReader = async () => null
+
+let stateReader: RuntimeStateReader = noStateReader
+
+/** The selected adapter's state document. Registered once at boot. */
+export function registerRuntimeStateReader(reader: RuntimeStateReader): void {
+  stateReader = reader
 }
-
-let stateReader: StateReader = defaultStateReader
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let retryTimer: ReturnType<typeof setTimeout> | null = null
 let inFlight = false
@@ -136,7 +144,7 @@ async function doPush(reason: string, unavailableRetries = 0): Promise<void> {
   const { sessionId, token, apiRoot } = readControlPlaneEnv()
   if (!sessionId || !token || !apiRoot) return
 
-  let state: Awaited<ReturnType<StateReader>>
+  let state: Awaited<ReturnType<RuntimeStateReader>>
   try {
     state = await stateReader()
   } catch (err) {
@@ -166,26 +174,24 @@ async function doPush(reason: string, unavailableRetries = 0): Promise<void> {
     })
   }
 
-  const post = (projection: unknown) =>
-    fetch(url, {
+  const post = (projection: RuntimeStateDoc) => {
+    const body: RuntimeProjectionRelayBody = {
+      session_id: sessionId,
+      captured_at: typeof doc.built_at === 'string' ? doc.built_at : undefined,
+      projection_etag: etag,
+      projection: projection as Record<string, unknown>,
+    }
+    return fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Content-Encoding': 'gzip',
         Authorization: `Bearer ${token}`,
       },
-      body: Bun.gzipSync(
-        Buffer.from(
-          JSON.stringify({
-            session_id: sessionId,
-            captured_at: doc.built_at,
-            projection_etag: etag,
-            projection,
-          }),
-        ),
-      ),
+      body: Bun.gzipSync(Buffer.from(JSON.stringify(body))),
       signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
     })
+  }
 
   let res: Response
   try {
@@ -311,9 +317,6 @@ function deleteKeyDeep(value: unknown, key: string): void {
 // Test hooks
 // ---------------------------------------------------------------------------
 
-export function __setRuntimeProjectionStateReaderForTests(reader: StateReader): void {
-  stateReader = reader
-}
 
 export function __resetRuntimeProjectionRelayForTests(): void {
   if (debounceTimer) clearTimeout(debounceTimer)
@@ -324,5 +327,5 @@ export function __resetRuntimeProjectionRelayForTests(): void {
   rerunReason = null
   lastPushedEtag = null
   pendingReason = 'unknown'
-  stateReader = defaultStateReader
+  stateReader = noStateReader
 }

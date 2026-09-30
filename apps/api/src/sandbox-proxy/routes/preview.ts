@@ -158,11 +158,11 @@ export const STRIP_FORWARD_HEADERS = new Set([
  * produces garbage. Forcing identity is what makes that safe without every
  * future rewrite having to remember to decompress.
  *
- * The daemon's `/kortix/opencode/*` namespace is the exception, and it earns it:
+ * The daemon's Runtime API (`/kortix/runtime/*`, `/kortix/opencode/*` before W3) is the exception, and it earns it:
  *   • nothing on this proxy rewrites those bodies — the projection is already
  *     the trimmed shape, so there is nothing left to strip;
  *   • the whole point of the namespace is byte reduction across THIS hop.
- *     `/kortix/opencode/state` is 8.7 KB raw and 0.9 KB gzipped (WS-Z1 §5);
+ *     `/kortix/runtime/state` is 8.7 KB raw and 0.9 KB gzipped (WS-Z1 §5);
  *     forcing identity here would throw away 90% of the saving before the
  *     response ever reaches the API's own compressor.
  *
@@ -171,8 +171,9 @@ export const STRIP_FORWARD_HEADERS = new Set([
  */
 export function forwardsClientEncoding(port: number, remainingPath: string): boolean {
   if (port !== 8000) return false;
-  if (!/^\/kortix\/opencode(?:$|\/)/.test(remainingPath)) return false;
-  return !/^\/kortix\/opencode\/events(?:$|[/?#])/.test(remainingPath);
+  // `/kortix/runtime` since W3; `/kortix/opencode` on a daemon built before it.
+  if (!/^\/kortix\/(?:runtime|opencode)(?:$|\/)/.test(remainingPath)) return false;
+  return !/^\/kortix\/(?:runtime|opencode)\/events(?:$|[/?#])/.test(remainingPath);
 }
 
 // The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit

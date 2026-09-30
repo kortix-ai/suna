@@ -5,6 +5,7 @@ import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context
 import { logger } from '@/lib/log/logger'
 import { runConvergence } from './config'
 import { authorizeControl } from './control-auth'
+import { legacyRefreshFields } from './legacy-names'
 
 export function createRefreshRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
@@ -80,13 +81,14 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
 
     refreshInFlight = (async () => {
       try {
-        return c.json(await control.refresh({
+        const result = await control.refresh({
           syncBase,
           skipRestart,
           skipRepo,
           baseSha,
           forceFail: c.req.query('verify_fail') === '1',
-        }))
+        })
+        return c.json({ ...result, ...legacyRefreshFields(result) })
       } catch (err) {
         const message = (err as Error).message || 'refresh failed'
         logger.error('[refresh] failed', err)

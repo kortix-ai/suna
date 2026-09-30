@@ -65,20 +65,26 @@ describe('daemon proxy auth gate', () => {
       auth: string
       compiled_boot_mode: string
       compiled_checkout: boolean
-      compiled_runtime: boolean
+      harness: { details: { compiled_runtime: boolean } }
     }
     expect(body.daemon).toBe('ok')
     expect(body.auth).toBe('configured')
     expect(body.compiled_boot_mode).toBe('off')
     expect(body.compiled_checkout).toBe(false)
-    expect(body.compiled_runtime).toBe(false)
+    expect(body.harness.details.compiled_runtime).toBe(false)
   })
 
   it('reports the same host facts as every harness, naming itself', async () => {
     const cfg = baseConfig()
     const app = buildOpenCodeTestApp(cfg, fakeOpencode(), Date.now())
-    const body = (await (await app.request('/kortix/health')).json()) as Record<string, unknown>
-    expect(body.harness).toBe('opencode')
+    const body = (await (await app.request('/kortix/health')).json()) as Record<string, any>
+    expect(body.harness).toMatchObject({ id: 'opencode', session: { id: null, required: false }, turn: null })
+    expect(body.harness.details).toMatchObject({ pid: null, port: 4096 })
+    // E1: OpenCode serves every session feature.
+    expect(body.capabilities).toEqual(expect.arrayContaining(['session.rewind', 'session.compact', 'session.commands', 'session.attach']))
+    // The pre-W3 flat fields an older API reads, composed from the block.
+    expect(body.opencode_pid).toBe(body.harness.details.pid)
+    expect(body.opencode_port).toBe(body.harness.details.port)
     expect(body.runtime_truth).toBeDefined()
     const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
     expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))

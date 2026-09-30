@@ -11,15 +11,29 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
-import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health';
+import type { RuntimeAuditBatch } from '@kortix/api-contract/runtime-relay';
+import { logger } from '@/lib/log/logger';
+import { sandboxRelayContext } from '@/lib/kortix-api/relay-context';
+import {
+  noteControlPlaneResponse,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health';
 
-export interface OpenCodeAuditEvent {
+/*
+ * The session's tool audit trail, for every harness (E12). Each runtime event
+ * is sanitized to a digest-and-identity record, batched, spooled to disk until
+ * apps/api accepts it, and posted to `POST …/sessions/:id/audit/events`. The
+ * events are the runtime wire: OpenCode's event contract, which pi emits too
+ * until E2 gives Kortix its own.
+ */
+
+export interface RuntimeAuditEvent {
   event_id: string;
   /** Stable identity for one observed emission. Retries preserve it. */
   source_revision: string;
   type: string;
   occurred_at: string;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   turn_id: string | null;
   message_id: string | null;
   tool_call_id: string | null;
@@ -124,7 +138,7 @@ const EVENT_FIELDS = new Set([
   'source_revision',
   'type',
   'occurred_at',
-  'opencode_session_id',
+  'runtime_session_id',
   'turn_id',
   'message_id',
   'tool_call_id',
@@ -163,12 +177,12 @@ function isSafePersistedSummary(value: unknown, depth = 0): boolean {
   return true;
 }
 
-function isPersistedOpenCodeAuditEvent(value: unknown): value is OpenCodeAuditEvent {
+function isPersistedRuntimeAuditEvent(value: unknown): value is RuntimeAuditEvent {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const event = value as Record<string, unknown>;
   if (Object.keys(event).some((key) => !EVENT_FIELDS.has(key))) return false;
   const nullableIdentifiers = [
-    'opencode_session_id',
+    'runtime_session_id',
     'turn_id',
     'message_id',
     'tool_call_id',
@@ -283,10 +297,10 @@ function nestedObject(object: Record<string, unknown>, key: string): Record<stri
     : {};
 }
 
-export function sanitizeOpenCodeEvent(
+export function sanitizeRuntimeEvent(
   raw: { type?: string; properties?: unknown },
   observedAt = new Date(),
-): OpenCodeAuditEvent | null {
+): RuntimeAuditEvent | null {
   const type =
     typeof raw.type === 'string' && /^[a-z0-9_.:-]{1,128}$/i.test(raw.type) ? raw.type : null;
   if (!type) return null;
@@ -304,7 +318,7 @@ export function sanitizeOpenCodeEvent(
   const messageError = nestedObject(message, 'error');
   const error = Object.keys(propertyError).length > 0 ? propertyError : messageError;
   const errorData = nestedObject(error, 'data');
-  const opencodeSessionId =
+  const runtimeSessionId =
     firstString(properties, ['sessionID', 'sessionId', 'session_id']) ??
     firstString(session, ['id', 'sessionID']) ??
     firstString(message, ['sessionID', 'sessionId']);
@@ -366,7 +380,7 @@ export function sanitizeOpenCodeEvent(
     source_revision: randomUUID(),
     type,
     occurred_at: observedAt.toISOString(),
-    opencode_session_id: opencodeSessionId,
+    runtime_session_id: runtimeSessionId,
     turn_id: turnId,
     message_id: messageId,
     tool_call_id: toolCallId,
@@ -432,14 +446,14 @@ export interface AuditRelay {
  * 1. DROP a class that carries no audited fact (`dropTypes`). Two qualify, and
  *    together they are 91.7% of that session's traffic:
  *      - `message.part.delta` (107,394 rows / 91.4%) is one row per streamed
- *        TOKEN. The token itself is stripped by `sanitizeOpenCodeEvent`, so the
+ *        TOKEN. The token itself is stripped by `sanitizeRuntimeEvent`, so the
  *        persisted row is identity + hashes and nothing a reconstruction can
  *        use. The API already names this the one droppable class
  *        (`shared/opencode-audit-rate-guard.ts:62`) — it just dropped it AFTER
  *        paying for the network hop, the two scope queries and the insert.
  *      - `server.heartbeat` (384 rows) is a daemon liveness ping: no actor, no
  *        resource, no state change.
- *    Dropping happens BEFORE `sanitizeOpenCodeEvent` and before `persist()`, so
+ *    Dropping happens BEFORE `sanitizeRuntimeEvent` and before `persist()`, so
  *    it also removes 91.7% of the spool's fsyncs from the sandbox's hot path.
  *
  * 2. COALESCE repeats, never transitions (`coalesceTypes`). A streaming text
@@ -520,7 +534,7 @@ export const DEFAULT_COALESCED_EVENT_TYPES: readonly string[] = [
  * in the same lifecycle phase, with the same outcome. Any transition changes
  * `phase` or `outcome` and therefore survives.
  */
-export function coalesceKey(event: OpenCodeAuditEvent): string {
+export function coalesceKey(event: RuntimeAuditEvent): string {
   const part = event.input_summary.part;
   const partObject =
     part && typeof part === 'object' && !Array.isArray(part)
@@ -528,7 +542,7 @@ export function coalesceKey(event: OpenCodeAuditEvent): string {
       : {};
   return [
     event.type,
-    event.opencode_session_id ?? '',
+    event.runtime_session_id ?? '',
     event.message_id ?? '',
     typeof partObject.id === 'string' ? partObject.id : '',
     typeof partObject.type === 'string' ? partObject.type : '',
@@ -602,7 +616,7 @@ interface SessionLineage {
 
 interface AuditSpoolV2 {
   version: 2;
-  queue: OpenCodeAuditEvent[];
+  queue: RuntimeAuditEvent[];
   lineage: SessionLineage[];
 }
 
@@ -660,10 +674,10 @@ function lineageUpdate(
 }
 
 function applyLineage(
-  event: OpenCodeAuditEvent,
+  event: RuntimeAuditEvent,
   sessions: ReadonlyMap<string, SessionLineage>,
-): OpenCodeAuditEvent {
-  const sessionId = event.opencode_session_id;
+): RuntimeAuditEvent {
+  const sessionId = event.runtime_session_id;
   if (!sessionId) return event;
   const current = sessions.get(sessionId);
   const immediateParent = current?.parent_id ?? null;
@@ -733,7 +747,7 @@ export function retryAfterMs(error: unknown): number | null {
 }
 
 export function createAuditRelay(
-  send: (events: OpenCodeAuditEvent[]) => Promise<void>,
+  send: (events: RuntimeAuditEvent[]) => Promise<void>,
   options: {
     batchSize?: number;
     flushMs?: number;
@@ -773,7 +787,7 @@ export function createAuditRelay(
     const serialized = JSON.stringify(spool);
     const bytes = Buffer.byteLength(serialized, 'utf8');
     if (bytes > maxSpoolBytes) {
-      throw new Error(`OpenCode audit spool capacity exceeded: ${bytes} > ${maxSpoolBytes} bytes`);
+      throw new Error(`audit spool capacity exceeded: ${bytes} > ${maxSpoolBytes} bytes`);
     }
     const spoolDirectory = dirname(spoolPath);
     mkdirSync(spoolDirectory, { recursive: true, mode: 0o700 });
@@ -803,7 +817,7 @@ export function createAuditRelay(
     const serialized = readFileSync(spoolPath, 'utf8');
     const bytes = Buffer.byteLength(serialized, 'utf8');
     if (bytes > maxSpoolBytes) {
-      throw new Error(`OpenCode audit spool capacity exceeded: ${bytes} > ${maxSpoolBytes} bytes`);
+      throw new Error(`audit spool capacity exceeded: ${bytes} > ${maxSpoolBytes} bytes`);
     }
     const parsed: unknown = JSON.parse(serialized);
     // V1 spools were arrays. Accept them so an in-place relay upgrade never
@@ -814,30 +828,30 @@ export function createAuditRelay(
           ? { correlation_id: null, causation_id: null, ...event }
           : event,
       );
-      if (queue.some((event) => !isPersistedOpenCodeAuditEvent(event))) {
-        throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
+      if (queue.some((event) => !isPersistedRuntimeAuditEvent(event))) {
+        throw new Error(`invalid audit spool: ${spoolPath}`);
       }
-      return { version: 2, queue: queue as OpenCodeAuditEvent[], lineage: [] };
+      return { version: 2, queue: queue as RuntimeAuditEvent[], lineage: [] };
     }
     if (!parsed || typeof parsed !== 'object') {
-      throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
+      throw new Error(`invalid audit spool: ${spoolPath}`);
     }
     const spool = parsed as Record<string, unknown>;
     if (
       spool.version !== 2 ||
       Object.keys(spool).some((key) => !['version', 'queue', 'lineage'].includes(key)) ||
       !Array.isArray(spool.queue) ||
-      spool.queue.some((event) => !isPersistedOpenCodeAuditEvent(event)) ||
+      spool.queue.some((event) => !isPersistedRuntimeAuditEvent(event)) ||
       !Array.isArray(spool.lineage) ||
       spool.lineage.length > 100_000 ||
       spool.lineage.some((entry) => !isSessionLineage(entry))
     ) {
-      throw new Error(`invalid OpenCode audit spool: ${spoolPath}`);
+      throw new Error(`invalid audit spool: ${spoolPath}`);
     }
     return spool as unknown as AuditSpoolV2;
   };
   const recovered = load();
-  const queue: OpenCodeAuditEvent[] = recovered.queue;
+  const queue: RuntimeAuditEvent[] = recovered.queue;
   // Coalesce keys held in lockstep with `queue`. Never persisted: it is
   // recomputed from the recovered events, so an in-place relay upgrade keeps
   // the same contract without a spool version bump.
@@ -924,10 +938,10 @@ export function createAuditRelay(
         stats.dropped += 1;
         return;
       }
-      const sanitized = sanitizeOpenCodeEvent(raw);
+      const sanitized = sanitizeRuntimeEvent(raw);
       if (!sanitized) return;
-      const update = lineageUpdate(raw, sanitized.opencode_session_id);
-      const sessionId = sanitized.opencode_session_id;
+      const update = lineageUpdate(raw, sanitized.runtime_session_id);
+      const sessionId = sanitized.runtime_session_id;
       const previous = sessionId ? sessions.get(sessionId) : undefined;
       if (update && sessionId) {
         sessions.set(sessionId, {
@@ -992,4 +1006,51 @@ export function createAuditRelay(
   };
   schedule();
   return relay;
+}
+
+/**
+ * The relay both adapters run. Batches go to `POST /projects/:id/sessions/:id/audit/events`
+ * with the session credential, tagged `source: 'runtime'` and the harness id.
+ * Batch size, cadence and the dropped and coalesced classes come from the
+ * environment (`auditRelayConfigFromEnv`), so an incident can retune the
+ * emission contract without a daemon release.
+ */
+export function createRuntimeAuditRelay(harness: string, spoolPath: string): AuditRelay {
+  const config = auditRelayConfigFromEnv(process.env);
+  logger.info('[audit-relay] emission contract', {
+    harness,
+    batchSize: config.batchSize,
+    flushMs: config.flushMs,
+    dropTypes: config.dropTypes,
+    coalesceTypes: config.coalesceTypes.length,
+  });
+  return createAuditRelay(
+    async (events) => {
+      const ctx = sandboxRelayContext();
+      if (!ctx) throw new Error('audit relay context is unavailable');
+      const batch: RuntimeAuditBatch = { source: 'runtime', harness, events };
+      const response = await fetch(
+        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
+          body: JSON.stringify(batch),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        noteControlPlaneResponse(response.status, body);
+        const error = new Error(
+          `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
+        ) as Error & { retryAfterMs?: number };
+        // 503 + Retry-After is the API telling us this session's audit sequence
+        // lock is contended. Honour it instead of hammering the convoy.
+        const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '', 10);
+        if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1_000;
+        throw error;
+      }
+    },
+    { spoolPath, ...config },
+  );
 }

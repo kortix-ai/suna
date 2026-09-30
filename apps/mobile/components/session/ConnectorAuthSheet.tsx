@@ -7,10 +7,10 @@
  * per attempt), so forcing one component to own both async shapes would have
  * meant branching its `run` callback on a "kind" flag instead of the two
  * sheets just being two thin wrappers around the same shared primitive. What
- * IS shared, and reused rather than duplicated: the visual shell (two 56pt
- * tiles joined by a dashed connector, title, one muted line, Continue ↗ / Not
- * now) and the close-then-open dismiss dance (`useHandoffDismiss`,
- * `handoff-sheet.ts`).
+ * IS shared, and reused rather than duplicated: the visual shell
+ * (`HandoffSheetBody`: Kortix · · · App, a title, one muted line, then
+ * "Continue to {app}" ↗ over Not now) and the close-then-open dismiss dance
+ * (`useHandoffDismiss`, `handoff-sheet.ts`).
  *
  * Continue tries the project's own Pipedream connect flow first — the
  * `pipedreamConnect`/`pipedreamFinalize` round trip
@@ -27,18 +27,15 @@
  * `ConnectProviderSheet` is shared by every "Connect provider" entry point.
  */
 import * as React from 'react';
-import { Image, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { useColorScheme } from 'nativewind';
 import { useQueryClient } from '@tanstack/react-query';
+import { finalizeConnectorSetupLink } from '@kortix/sdk';
 
-import { KortixLogo } from '@/components/kortix/KortixLogo';
-import { Sheet, SheetBody, type SheetRef } from '@/components/kortix/sheet';
+import { API_URL } from '@/api/config';
+
+import { Sheet, type SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
-import { Text } from '@/components/ui/text';
-import { ArrowUpRightIcon, PlugIcon } from '@/lib/icons';
+import { parseSetupLinkHref } from '@/lib/markdown/setup-links';
 import { projectKeys } from '@/lib/projects/hooks';
 import { listConnectors, pipedreamConnect, pipedreamFinalize } from '@/lib/projects/projects-client';
 import { openBrowserUntilClosed } from '@/lib/utils/open-browser';
@@ -47,10 +44,9 @@ import {
   connectorHandoffToast,
   isConnectorConnected,
 } from '@/lib/session/connector-handoff';
+import { HandoffSheetBody } from './connector-handshake';
 import { useHandoffDismiss } from './handoff-sheet';
 import type { ConnectorHandoffRequest } from './tool/shared/connector-handoff-context';
-
-const TILE_SIZE = 56;
 
 // App deep links so the connect browser auto-dismisses back to the app
 // (`openAuthSessionAsync` returns when it sees this scheme) instead of
@@ -68,22 +64,16 @@ export interface ConnectorAuthSheetProps {
 
 export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetProps>(
   ({ request }, ref) => {
-    const { colorScheme } = useColorScheme();
-    const isDark = colorScheme === 'dark';
     const toast = useToast();
     const queryClient = useQueryClient();
     const sheetRef = React.useRef<SheetRef>(null);
-    const [logoFailed, setLogoFailed] = React.useState(false);
-
-    // A fresh request can arrive while a stale logo is still cached in state.
-    React.useEffect(() => {
-      setLogoFailed(false);
-    }, [request?.logoUri]);
 
     const { requestContinue, handleDismiss } = useHandoffDismiss(async () => {
       if (!request) return;
-      const { projectId, slug, label, fallbackConnectUrl } = request;
+      const { projectId, slug, label, fallbackConnectUrl, onSettled } = request;
       let connected = false;
+      // The project's own connect returned through the `kortix://` redirect.
+      let authorized = false;
 
       try {
         const started = await pipedreamConnect(projectId, slug, {
@@ -97,10 +87,7 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
             started.connectUrl,
             CONNECT_RETURN_URL,
           );
-          if (result.type === 'success' && !/[?&]error=|\/error(?:$|[/?])/.test(result.url)) {
-            const finalized = await pipedreamFinalize(projectId, slug).catch(() => null);
-            connected = finalized?.connected ?? false;
-          }
+          authorized = result.type === 'success' && !/[?&]error=|\/error(?:$|[/?])/.test(result.url);
         } else {
           await openBrowserUntilClosed(fallbackConnectUrl);
         }
@@ -117,6 +104,25 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
         }
       }
 
+      // The agent's link is a setup link, and its finalize goes FIRST: it is
+      // the one call that both persists the account and tells the session that
+      // asked, so the agent continues on its own. It tells the session only
+      // when it is the call that persists; after the project finalize below it
+      // would find the credential saved and stay silent. Public and
+      // idempotent. It also answers when the browser closed without the
+      // `kortix://` redirect (Expo Go, a tab closed by hand).
+      const setupLink = parseSetupLinkHref(fallbackConnectUrl);
+      if (setupLink?.kind === 'connector') {
+        const finalized = await finalizeConnectorSetupLink(setupLink.token, { backendUrl: API_URL }).catch(
+          () => null,
+        );
+        connected = finalized?.connected ?? false;
+      }
+      if (!connected && authorized) {
+        const finalized = await pipedreamFinalize(projectId, slug).catch(() => null);
+        connected = finalized?.connected ?? false;
+      }
+
       if (!connected) {
         try {
           const rows = await listConnectors(projectId);
@@ -127,6 +133,7 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
       }
 
       queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      onSettled?.(connected);
       toast[connected ? 'success' : 'error'](connectorHandoffToast(label, connected));
     });
 
@@ -139,59 +146,20 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
       requestContinue(sheetRef);
     }, [requestContinue]);
 
-    const copy = request ? connectorHandoffCopy(request.label) : null;
-    const showLogo = !!request?.logoUri && !logoFailed;
+    // Between requests the sheet is closed; the words only keep its height.
+    const copy = connectorHandoffCopy(request?.label ?? 'app', request?.projectName);
 
     return (
       <Sheet ref={sheetRef} enablePanDownToClose onDismiss={handleDismiss}>
-        <SheetBody className="items-center pt-2">
-          <View className="flex-row items-center">
-            <View
-              className="items-center justify-center overflow-hidden rounded-2xl bg-secondary"
-              style={{ width: TILE_SIZE, height: TILE_SIZE }}>
-              {showLogo ? (
-                <Image
-                  source={{ uri: request!.logoUri! }}
-                  resizeMode="contain"
-                  onError={() => setLogoFailed(true)}
-                  style={{ width: TILE_SIZE, height: TILE_SIZE }}
-                />
-              ) : (
-                <Icon as={PlugIcon} size={24} className="text-foreground" />
-              )}
-            </View>
-            <View className="mx-3 w-6 border-t border-dashed border-border" />
-            <View
-              className="items-center justify-center rounded-2xl bg-foreground"
-              style={{ width: TILE_SIZE, height: TILE_SIZE }}>
-              {/* Same inverted-fill rule as `ConnectProviderSheet`'s tile. */}
-              <KortixLogo size={24} color={isDark ? 'light' : 'dark'} />
-            </View>
-          </View>
-          <Text variant="large" className="mt-5 text-center">
-            {copy?.title ?? 'Connect'}
-          </Text>
-          <Text variant="muted" className="mt-2 text-center">
-            {copy?.body ?? "Sign in on kortix.com. You come back to this chat when it's done."}
-          </Text>
-          <View className="mt-6 w-full" style={{ gap: 10 }}>
-            <Button size="lg" className="rounded-full" onPress={handleContinue}>
-              {/* Label left, arrow right: the spread lives on a wrapper, never
-                  as a class on the Button (Button takes rounded-full only). */}
-              <View className="flex-1 flex-row items-center justify-between">
-                <Text>Continue</Text>
-                <Icon as={ArrowUpRightIcon} size={18} />
-              </View>
-            </Button>
-            <Button
-              variant="ghost"
-              size="lg"
-              className="rounded-full"
-              onPress={() => sheetRef.current?.close()}>
-              <Text>Not now</Text>
-            </Button>
-          </View>
-        </SheetBody>
+        <HandoffSheetBody
+          name={request?.label ?? ''}
+          iconUrl={request?.logoUri ?? null}
+          title={copy.title}
+          body={copy.body}
+          action={copy.action}
+          onContinue={handleContinue}
+          onClose={() => sheetRef.current?.close()}
+        />
       </Sheet>
     );
   },

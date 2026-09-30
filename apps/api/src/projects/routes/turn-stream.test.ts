@@ -310,7 +310,7 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     sessionRow = session({});
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, initial_turn: null, opencode_session_id: null });
+    expect(await response.json()).toEqual({ ok: true, initial_turn: null, runtime_session_id: null, opencode_session_id: null });
   });
 
   // A daemon whose local pin file is gone (converged legacy box, rebuilt home)
@@ -323,6 +323,8 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: null,
+      // Both names: a W3 daemon reads runtime_session_id, an older one opencode_session_id.
+      runtime_session_id: 'ses_durable',
       opencode_session_id: 'ses_durable',
     });
   });
@@ -343,6 +345,7 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: { prompt: 'build it', turn_token: 'turn-token-1', message_id: 'msg_1' },
+      runtime_session_id: null,
       opencode_session_id: null,
     });
   });
@@ -356,7 +359,7 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     };
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, initial_turn: null, opencode_session_id: null });
+    expect(await response.json()).toEqual({ ok: true, initial_turn: null, runtime_session_id: null, opencode_session_id: null });
   });
 });
 
@@ -382,7 +385,7 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: 'turn_token, opencode_session_id, and turn_message_id are required',
+      error: 'turn_token, runtime_session_id, and turn_message_id are required',
     });
   });
 
@@ -401,15 +404,27 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
     expect(await response.json()).toEqual({ ok: true });
   });
 
-  test('turn_begin requires the opencode session and message ids', async () => {
+  test('turn_begin requires the runtime session and message ids', async () => {
     const response = await post(
-      { session_id: SESSION_ID, kind: 'turn_begin', opencode_session_id: 'oc1' },
+      { session_id: SESSION_ID, kind: 'turn_begin', runtime_session_id: 'oc1' },
       sandboxCtx,
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: 'opencode_session_id and turn_message_id are required',
+      error: 'runtime_session_id and turn_message_id are required',
     });
+  });
+
+  test('turn_begin accepts the W3 name and the pre-W3 name of the runtime session', async () => {
+    adoptResult = 'open_turn_exists';
+    for (const id of [{ runtime_session_id: 'oc1' }, { opencode_session_id: 'oc1' }]) {
+      const response = await post(
+        { session_id: SESSION_ID, kind: 'turn_begin', ...id, turn_message_id: 'msg1' },
+        sandboxCtx,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true, outcome: 'open_turn_exists' });
+    }
   });
 
   test('turn_begin reports the adoption outcome', async () => {
@@ -427,16 +442,27 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
     expect(await response.json()).toEqual({ ok: true, outcome: 'open_turn_exists' });
   });
 
-  test('opencode_session requires the id, then reports whether a row was updated', async () => {
-    const missing = await post({ session_id: SESSION_ID, kind: 'opencode_session' });
+  test('runtime_session requires the id, then reports whether a row was updated', async () => {
+    const missing = await post({ session_id: SESSION_ID, kind: 'runtime_session' });
     expect(missing.status).toBe(400);
-    expect(await missing.json()).toEqual({ error: 'opencode_session_id is required' });
+    expect(await missing.json()).toEqual({ error: 'runtime_session_id is required' });
 
     updateRows = [];
     const response = await post({
       session_id: SESSION_ID,
+      kind: 'runtime_session',
+      runtime_session_id: ' oc_root ',
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: false });
+  });
+
+  test('a pre-W3 daemon pins with kind opencode_session and opencode_session_id', async () => {
+    updateRows = [];
+    const response = await post({
+      session_id: SESSION_ID,
       kind: 'opencode_session',
-      opencode_session_id: ' oc_root ',
+      opencode_session_id: 'oc_root',
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: false });

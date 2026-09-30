@@ -39,8 +39,11 @@ describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
       compiledAgentConfig: JSON.stringify({ agent: { build: { prompt: 'x' } } }),
     });
     expect(env.KORTIX_HARNESS).toBe('pi');
+    // D3: the harness-neutral name, plus the pre-W3 name for an older daemon.
+    expect(env.KORTIX_MODEL).toBe('kortix/claude-sonnet-5');
     expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/claude-sonnet-5');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toContain('"build"');
+    expect(env.KORTIX_BOOTSTRAP_RUNTIME_SESSION).toBe('1');
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
   });
 });
@@ -245,7 +248,7 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
   });
 
-  test('marks a remote delta and ships the OpenCode config-dir hint for fresh sessions only', () => {
+  test('marks a remote delta for fresh sessions only; no config-dir hint (nothing reads it)', () => {
     const fresh = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,
@@ -253,37 +256,16 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       gitDeltaBundleRemote: true,
       gitDeltaParentSha: 'b'.repeat(40),
       gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
-      opencodeConfigDir: '.kortix/opencode',
     });
     expect(fresh.KORTIX_GIT_DELTA_BUNDLE_REMOTE).toBe('1');
     expect(fresh).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
-    expect(fresh.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('.kortix/opencode');
-
-    // '' = "this tip ships no project OpenCode config" — still a usable hint.
-    const bare = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-      opencodeConfigDir: null,
-    });
-    expect(bare.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('');
+    expect(fresh).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
 
     for (const env of [
       buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, baseSha: 'a'.repeat(40) }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        freshSession: false,
-        opencodeConfigDir: '.kortix/opencode',
-        gitDeltaBundleRemote: true,
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        repositoryAccess: false,
-        freshSession: true,
-        opencodeConfigDir: '.kortix/opencode',
-      }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: false, gitDeltaBundleRemote: true }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: false, freshSession: true }),
     ]) {
-      expect(env).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_REMOTE');
     }
   });

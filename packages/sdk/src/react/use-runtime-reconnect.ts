@@ -15,6 +15,7 @@ import {
   resetForServerSwitch,
   resetSandboxFail,
   setOpenCodeHealth,
+  setRuntimeCapabilities,
   setSandboxStatus,
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
@@ -434,6 +435,8 @@ export function useRuntimeReconnect() {
               setOpenCodeHealth(false, outcome.health?.version, null, { parked: true });
             } else {
               setSandboxStatus('connected');
+              // The daemon answered: what its runtime serves is known (E1).
+              setRuntimeCapabilities(outcome.health?.capabilities ?? null);
               // Only a real `boot_error` is an error; the routine boot `reason`
               // ("schema not ready") is progress and must not paint a terminal
               // card (RC-1). See `runtimeErrorFromHealth`.
@@ -467,6 +470,7 @@ export function useRuntimeReconnect() {
               }
             }
             setSandboxStatus('connected');
+            setRuntimeCapabilities(outcome.health?.capabilities ?? null);
             // Same rule as the booting branch: a `200` that is not yet ready
             // still carries only routine progress in `reason`/`message`; only a
             // real `boot_error` is an error (RC-1).

@@ -226,14 +226,15 @@ async function run(): Promise<void> {
       await sleep(250);
     }
     if (!health) throw new Error('runtimeReady never true');
-    out.harness = health.harness ?? 'opencode';
-    out.health_opencode = health.opencode;
-    out.health_model = health.model ?? null;
-    out.opencode_session_id = health.opencode_session_id;
+    out.harness = health.harness?.id ?? health.harness ?? 'opencode';
+    out.health_state = health.harness?.state ?? health.opencode;
+    out.health_model = health.harness?.details?.model ?? health.model ?? null;
+    out.runtime_session_id = health.harness?.session?.id ?? health.opencode_session_id;
+    out.capabilities = health.capabilities ?? null;
     out.boot_timeline = health.boot_timeline;
     out.image = psql(`select coalesce(metadata->'runtimeArtifact'->>'providerArtifactRef','') from kortix.session_sandboxes where sandbox_id='${sessionId}'`);
-    out.daemon_has_pi = (await api(base, token, `${daemon}/kortix/opencode/state`)).body?.identity?.harness ?? null;
-    out.extensions = health.extensions ?? null;
+    out.daemon_has_pi = (await api(base, token, `${daemon}/kortix/runtime/state`)).body?.identity?.harness ?? null;
+    out.extensions = health.harness?.details?.extensions ?? health.extensions ?? null;
     out.tool_ids = (await api(base, token, `${daemon}/tool/ids`)).body ?? null;
     // The daemon's own pi lines: runtime ready (ms, extensionsMs), package bundle download.
     const diag = await api(base, token, `${daemon}/kortix/diag?tail=400`);
@@ -255,7 +256,7 @@ async function run(): Promise<void> {
     let ledgerEnded = false;
     let firstAssistantMs: number | null = null;
     while (performance.now() < deadline) {
-      const page = await api(base, token, `${daemon}/kortix/opencode/messages/${encodeURIComponent(root)}?limit=50`);
+      const page = await api(base, token, `${daemon}/kortix/runtime/messages/${encodeURIComponent(root)}?limit=50`);
       const messages: any[] = page.body?.messages ?? [];
       const user = messages.find((m) => m.info?.id === messageId);
       const assistants = messages.filter((m) => m.info?.role === 'assistant' && m.info?.parentID === messageId);
@@ -325,8 +326,8 @@ async function probe(): Promise<void> {
     console.log(`\n=== ${path} -> ${r.status}\n${text.slice(0, max)}`);
   };
   await show(`/p/${eid}/8000/kortix/health`, 900);
-  await show(`/p/${eid}/8000/kortix/opencode/state`, 1800);
-  if (root) await show(`/p/${eid}/8000/kortix/opencode/messages/${encodeURIComponent(root)}?limit=50`, 4000);
+  await show(`/p/${eid}/8000/kortix/runtime/state`, 1800);
+  if (root) await show(`/p/${eid}/8000/kortix/runtime/messages/${encodeURIComponent(root)}?limit=50`, 4000);
   await show(`/p/${eid}/8000/session`, 600);
   await show(`/p/${eid}/8000/kortix/logs?tail=${arg('tail', '120')}`, 9000);
 }

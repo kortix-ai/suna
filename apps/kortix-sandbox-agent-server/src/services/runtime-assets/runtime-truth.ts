@@ -202,7 +202,7 @@ export interface RuntimeTruthCatalogState {
 
 export function deriveCatalogSignal(input: RuntimeTruthCatalogState): RuntimeTruthSignal {
   if (input.configuredIds === null) {
-    return { outcome: 'unknown', cause: 'opencode has not built a provider config yet' }
+    return { outcome: 'unknown', cause: 'the runtime has not built a provider config yet' }
   }
   if (!input.liveKnown) {
     // Failure #1, exactly: a box whose one fetch failed would otherwise read

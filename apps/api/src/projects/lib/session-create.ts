@@ -1335,7 +1335,6 @@ export async function createProjectSession(input: {
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             repositoryAccess,

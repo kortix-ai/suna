@@ -19,6 +19,7 @@ import {
   relayContent,
   settleTurnEnd,
 } from './turn-stream-handlers';
+import { normalizeRuntimeRelayBody } from '@kortix/api-contract/runtime-relay';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './turn-stream-kind';
 
 // POST /v1/projects/:projectId/turn-stream
@@ -51,7 +52,8 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     let body: TurnStreamBody;
     try {
-      body = (await c.req.json()) as TurnStreamBody;
+      // A daemon built before W3 sends `opencode_session_id` and kind `opencode_session`.
+      body = normalizeRuntimeRelayBody((await c.req.json()) as TurnStreamBody);
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
@@ -101,7 +103,7 @@ projectsApp.openapi(
       // signals carry no content and fan out to no connector: `end`/`turn_end`
       // only shorten this session's idle deadline (LEAST-only — see the comment
       // at the `end` branch below, it can never EXTEND the box's life), and
-      // `opencode_session` only persists the root-session pin. Those are exactly
+      // `runtime_session` only persists the root-session pin. Those are exactly
       // what the in-sandbox agent CLI reports over its session/CLI token, which a
       // SCOPED agent grant has no reason to hold connector.write for — gating them
       // 403'd every turn-end report on SampleCo, stranding sandboxes alive for the
@@ -193,7 +195,7 @@ projectsApp.openapi(
             createdBy: turnStreamSession.createdBy,
           },
         });
-      case 'opencode_session':
+      case 'runtime_session':
         return pinOpencodeSession(c, body, projectId, sessionId);
       default:
         return relayContent(c, body, sessionId);

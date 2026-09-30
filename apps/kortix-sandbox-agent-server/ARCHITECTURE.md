@@ -30,7 +30,7 @@ shared layer.
 | --- | --- | --- |
 | `src/main.ts` | app | Entry point. Builds the config, the harness boot context and the HTTP `serve` function. |
 | `src/app/` | app | `server.ts` (Hono app, auth gate, route mounting), `shutdown.ts`, `monitor-mode.ts`, `cli.ts` (management CLI). |
-| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/opencode/*`), pty, env-rpc, git. Each route checks its own credential. |
+| `src/routes/kortix/` | app | `/kortix/*`: health, refresh, config, catalog, abort, env, part, logs, diag, the Runtime API (`/kortix/runtime/*`, also mounted at its pre-W3 path `/kortix/opencode/*`), pty, env-rpc, git. Each route checks its own credential. `legacy-names.ts` holds every pre-W3 wire name the routes still answer and accept. |
 | `src/routes/workspace/` | app | `/file`, `/find`, `/presentation`: daemon-owned access to `/workspace`, behind the user-context gate. |
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
 | `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (steps both adapters run), `open-code/`, `pi/`. See its [README](src/harness/README.md). |
@@ -61,9 +61,9 @@ shared layer.
 | `src/lib/**` | the shared layer | none |
 | `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
-| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox` |
-| `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | none |
-| `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono` |
+| `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox` |
+| `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |
+| `src/routes/**` | `src/routes/**`, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `hono`, `@kortix/api-contract` |
 | `src/app/**`, `src/main.ts` | everything above except adapter internals | `hono` |
 | anything else under `src/` | nothing: a file outside every layer fails the lint | — |
 
@@ -120,6 +120,12 @@ checked.
 today, per file. The list only shrinks: an entry whose word no longer occurs in
 its file fails the lint, so the PR that removes a name deletes its entry. Do not
 add an entry; name the new code neutrally or move it into the adapter.
+
+Since W3 the list holds one file, `src/routes/kortix/legacy-names.ts`: the
+pre-W3 wire names (`opencode_pid`, `opencodeEnv`, `/kortix/opencode`, …) that an
+API deploy built before W3 still reads and sends. Every other module uses the
+Kortix names (`runtime_*`, `runtime_session_id`, `harness_version`). Delete the
+file, its callers' spreads and its entry when no such API deploy can run.
 
 ## Where a type goes
 

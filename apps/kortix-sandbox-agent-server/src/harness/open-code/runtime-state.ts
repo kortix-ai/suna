@@ -94,6 +94,37 @@ export function writeOpenCodeSeedBakedPin(sessionId: string): void {
   writePrivatePin(openCodeSeedBakedPinPath(), sessionId)
 }
 
+/**
+ * A daemon built before W3 spooled audit events with `opencode_session_id`.
+ * The shared relay (`harness/shared/audit-relay.ts`) reads `runtime_session_id`
+ * and refuses a spool with any other field, which would mark the runtime
+ * unhealthy after a daemon update. Rename the field in place, before the relay
+ * loads the spool. Remove once every box has run a W3 daemon.
+ */
+export function migratePreW3AuditSpool(path: string): void {
+  let text: string
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch {
+    return
+  }
+  if (!text.includes('"opencode_session_id"')) return
+  const rename = (event: unknown): unknown => {
+    if (!event || typeof event !== 'object' || Array.isArray(event) || !('opencode_session_id' in event)) return event
+    const { opencode_session_id: id, ...rest } = event as Record<string, unknown>
+    return { ...rest, runtime_session_id: id }
+  }
+  const parsed: unknown = JSON.parse(text)
+  const next = Array.isArray(parsed)
+    ? parsed.map(rename)
+    : parsed && typeof parsed === 'object' && Array.isArray((parsed as { queue?: unknown }).queue)
+      ? { ...(parsed as object), queue: (parsed as { queue: unknown[] }).queue.map(rename) }
+      : parsed
+  const temporary = `${path}.${process.pid}.w3.tmp`
+  writeFileSync(temporary, JSON.stringify(next), { encoding: 'utf8', mode: 0o600 })
+  renameSync(temporary, path)
+}
+
 function opencodeRuntimeEnvSnapshotPath(): string {
   return join(resolveKortixRuntimeStateDirectory(), 'opencode-runtime-env-snapshot.json')
 }
