@@ -90,6 +90,7 @@ module "web" {
   secrets_blob_arn       = data.aws_secretsmanager_secret.web_env.arn
   alb_ingress_cidrs      = local.cloudflare_ip_ranges
   enable_postgres_egress = false
+  enable_http_redirect   = true
 
   task_cpu         = 512
   task_memory      = 1024
