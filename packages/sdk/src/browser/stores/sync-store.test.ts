@@ -230,13 +230,8 @@ describe("hydrate stamps runtime activity for a moved, still-open transcript", (
 });
 
 /**
- * The push half of the same rule. `projectWorking` lets activity outrank a
- * wire idle frame it postdates, and the runtime keeps writing CLOSING frames
- * after that idle frame — measured on the local stack, 2026-09-30: the user
- * message's `summary` update 1–16ms later on every turn, and on Stop the
- * aborted tool part plus the assistant message's `completed` + `error` stamp
- * 0–41ms later. A closing frame that passed the 1s quantizer put "Gathering
- * thoughts…" and Stop back on a finished turn for up to 45s.
+ * The push half of the same rule: only OPEN frames stamp activity. A closing
+ * frame lands after the idle frame; see `isOpenMessage` / `isOpenPart`.
  */
 describe("applyEvent stamps runtime activity only for open frames", () => {
 	const sid = "ses_act_push";
@@ -305,6 +300,7 @@ describe("applyEvent stamps runtime activity only for open frames", () => {
 		["finished text", { id: "prt_1", type: "text", text: "done", time: { start: 1, end: 2 } }],
 		["finished reasoning", { id: "prt_1", type: "reasoning", text: "ok", time: { start: 1, end: 2 } }],
 		["a step finish", { id: "prt_1", type: "step-finish" }],
+		["a patch", { id: "prt_1", type: "patch", hash: "h", files: [] }],
 	])("%s does not stamp", (_name, part) => {
 		partUpdated(part);
 		expect(activity()).toBe(STALE);
@@ -330,6 +326,7 @@ describe("applyEvent stamps runtime activity only for open frames", () => {
 			});
 
 			const state = useSyncStore.getState();
+			expect(state.sessionStatusAt[sid]).toBe(1_000_000);
 			const projection = projectWorking({
 				optimistic: null,
 				server: null,

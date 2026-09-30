@@ -132,7 +132,7 @@ function isOpenMessage(info: Message | undefined): boolean {
 }
 
 function isOpenPart(part: Part): boolean {
-	if (part.type === "step-finish") return false;
+	if (part.type === "step-finish" || part.type === "patch") return false;
 	if (part.type === "tool") {
 		const status = (part as { state?: { status?: string } }).state?.status;
 		return status !== "completed" && status !== "error";
