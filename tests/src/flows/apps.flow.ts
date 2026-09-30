@@ -1,6 +1,7 @@
 /**
  * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
- * deployment lifecycle boundaries. Maps to spec section 28 (APP-1..2).
+ * deployment lifecycle boundaries, and the App viewer token. Maps to spec
+ * section 28 (APP-1..6).
  */
 import { flow } from "../core/flow";
 
@@ -706,5 +707,158 @@ flow(
       });
       response.status(200).body().has("$.ok", true);
     });
+  },
+);
+
+flow(
+  "APP-6",
+  {
+    domain: "apps",
+    requires: ["appHost"],
+    timeoutMs: 180_000,
+    routes: [
+      "PATCH /v1/projects/:projectId/features",
+      "POST /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId/access",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
+      "POST /v1/projects/:projectId/sessions",
+      "GET /v1/accounts/me",
+      "GET /v1/projects/:projectId",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const projectParams = { projectId: project.id };
+    const viewerPrincipal = await team.addMember("member");
+    await team.grantProjectRole(project.id, viewerPrincipal.userId!, "member");
+    const viewer = ctx.client.as(viewerPrincipal);
+    const slug = ctx.fixtures.name("viewer").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, "");
+    let appId = "";
+    let appHost = "";
+
+    // The gate, at the App's own hostname. Local Apps answer under
+    // `<route-key>.apps.localhost`; the API honours `x-kortix-app-host` there.
+    const gate = async (pathAndQuery: string, headers: Record<string, string> = {}) => {
+      const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
+        headers: { accept: "application/json", "x-kortix-app-host": appHost, ...headers },
+        redirect: "manual",
+      });
+      const text = await response.text();
+      let body: any = null;
+      try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+      return { status: response.status, headers: response.headers, body, text };
+    };
+    // What a browser does with an access link: redeem it, keep the cookie.
+    const signIn = async (): Promise<string> => {
+      const session = await viewer.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200);
+      const link = new URL(session.json<any>().url);
+      const redeemed = await gate(`${link.pathname}${link.search}`);
+      const cookie = redeemed.headers.get("set-cookie")?.split(";")[0] ?? "";
+      if (redeemed.status !== 303 || !cookie) {
+        throw new Error(`access link did not sign in: ${redeemed.status} ${redeemed.text.slice(0, 200)}`);
+      }
+      return cookie;
+    };
+    const viewerToken = async (cookie: string) => {
+      const r = await gate("/_kortix/viewer", { cookie });
+      if (r.status !== 200) throw new Error(`/_kortix/viewer: ${r.status} ${r.text.slice(0, 200)}`);
+      return r.body as { user_id: string; scopes: string[]; access_token: string | null; expires_at: string | null };
+    };
+    const asToken = (token: string) => ctx.client.withBearer(token, "app-viewer-token");
+
+    try {
+      await ctx.step("enable Apps; create an App restricted to the viewer that acts as them (api scope)", async () => {
+        (await owner.patch("/v1/projects/:projectId/features", { feature: "apps", enabled: true },
+          { params: projectParams })).status(200);
+        const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e viewer token" },
+          { params: projectParams });
+        created.status(201);
+        appId = created.json<any>().app_id;
+        appHost = new URL(created.json<any>().url).hostname;
+        const access = await owner.patch("/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", member_ids: [viewerPrincipal.userId], viewer_token_scope: "api" },
+          { params: { ...projectParams, appId } });
+        access.status(200).body().has("$.viewer_token_scope", "api");
+      });
+
+      await ctx.step("an anonymous visitor gets no viewer: 401 app_auth_required", async () => {
+        const r = await gate("/_kortix/viewer");
+        if (r.status !== 401 || r.body?.code !== "app_auth_required") {
+          throw new Error(`expected 401 app_auth_required, got ${r.status} ${r.text.slice(0, 200)}`);
+        }
+      });
+
+      let firstToken = "";
+      await ctx.step("a viewer signed in by an access link receives a one-hour kortix-scoped token", async () => {
+        const session = await viewerToken(await signIn());
+        if (session.user_id !== viewerPrincipal.userId) throw new Error(`viewer is ${session.user_id}`);
+        if (JSON.stringify(session.scopes) !== JSON.stringify(["profile", "email", "kortix"])) {
+          throw new Error(`scopes ${JSON.stringify(session.scopes)}`);
+        }
+        if (!session.access_token?.startsWith("kortix_oat_")) throw new Error("no kortix_oat_ token");
+        const ttlMs = Date.parse(session.expires_at ?? "") - Date.now();
+        if (!(ttlMs > 55 * 60_000 && ttlMs <= 60 * 60_000)) throw new Error(`token lifetime ${ttlMs} ms`);
+        firstToken = session.access_token;
+      });
+
+      await ctx.step("the viewer's own role is the ceiling: as a project member with no agent grant, 403 no_agent_access", async () => {
+        const refused = await asToken(firstToken).post("/v1/projects/:projectId/sessions",
+          { agent_name: "kortix", metadata: { repository_access: false, workspace_mode: "runtime" } }, { params: projectParams });
+        refused.status(403).body().has("$.code", "no_agent_access");
+      });
+
+      await ctx.step("the token acts as the viewer: /v1/accounts/me answers as them, not as the App's author", async () => {
+        const me = await asToken(firstToken).get("/v1/accounts/me");
+        me.status(200).body()
+          .has("$.user_id", viewerPrincipal.userId)
+          .has("$.token_context.auth_type", "oauth");
+      });
+
+      await ctx.step("an access-policy save revokes the token; the next sign-in hands out a new one that works", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", member_ids: [viewerPrincipal.userId], viewer_token_scope: "api" },
+          { params: { ...projectParams, appId } })).status(200);
+        (await asToken(firstToken).get("/v1/projects/:projectId", { params: projectParams })).status(401);
+        const next = await viewerToken(await signIn());
+        if (!next.access_token || next.access_token === firstToken) {
+          throw new Error("the gate handed out the revoked token again");
+        }
+        (await asToken(next.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(200);
+      });
+
+      await ctx.step("an identity-scoped App's token names the viewer but opens no project route (403)", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", member_ids: [viewerPrincipal.userId], viewer_token_scope: "identity" },
+          { params: { ...projectParams, appId } })).status(200);
+        const session = await viewerToken(await signIn());
+        if (JSON.stringify(session.scopes) !== JSON.stringify(["profile", "email"]) || !session.access_token) {
+          throw new Error(`identity scope returned ${JSON.stringify(session.scopes)}`);
+        }
+        (await asToken(session.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(403);
+      });
+
+      await ctx.step("an App that shares nothing answers /_kortix/viewer with 404 viewer_disabled", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/access",
+          { mode: "restricted", member_ids: [viewerPrincipal.userId], viewer_token_scope: "off" },
+          { params: { ...projectParams, appId } })).status(200);
+        const r = await gate("/_kortix/viewer", { cookie: await signIn() });
+        if (r.status !== 404 || r.body?.error !== "viewer_disabled") {
+          throw new Error(`expected 404 viewer_disabled, got ${r.status} ${r.text.slice(0, 200)}`);
+        }
+      });
+    } finally {
+      if (appId) {
+        await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
+      }
+    }
   },
 );

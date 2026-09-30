@@ -219,9 +219,11 @@ access policy changes.
   through the gate carries a new one. In the browser, `kortixAppViewerToken()`
   recovers by itself: when the API refuses its token, the SDK re-reads
   `/_kortix/viewer` and replays the call once.
-- **The viewer's role is the ceiling.** Opening an App does not grant access to
-  its project. A viewer who can open the App but has no role on the project
-  gets `403` from project routes such as `POST /projects/:id/sessions`.
+- **The viewer's role is the ceiling.** The token can do exactly what the
+  viewer can do in Kortix, never more. On a project with agent permissions, a
+  `member` needs a grant on the agent your App starts: without one,
+  `POST /projects/:id/sessions` answers `403 no_agent_access`. Grant your
+  viewers the agent, not a broader role.
 - **Who has a viewer.** A person who opens the App with their Kortix login — or
   with an access link, which signs them in as that person — has one. A
   `password` App has none: the password proves a shared secret, not a person. A
