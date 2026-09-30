@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
+import { detectLocalhostUrls } from '@kortix/sdk';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
-import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
+import { SandboxPreviewCard } from '@/components/session/SandboxPreviewCard';
 
 /**
  * Assistant prose: markdown plus a preview card per localhost URL.
@@ -34,7 +35,8 @@ export const TextPartBlock = React.memo(function TextPartBlock({
       {detectedUrls.map((detected) => (
         // 12pt (`pt-3`) off the message above it: the old bordered card carried
         // its own `my-2`, and the row has no margin of its own (Jay, 2026-09-22).
-        <View key={`preview-${detected.port}`} className="pt-3">
+        // Keyed by URL: two cards can share a port under the SDK's URL-level dedupe.
+        <View key={`preview-${detected.originalUrl}`} className="pt-3">
           <SandboxPreviewCard port={detected.port} path={detected.path} />
         </View>
       ))}
