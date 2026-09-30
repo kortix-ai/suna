@@ -1242,17 +1242,17 @@ function ProjectSessionRow({
         >
           {showStarter && (
             <span
-              className="flex size-4 shrink-0 items-center justify-center"
+              className="flex size-5 shrink-0 items-center justify-center"
               data-session-source="true"
               data-session-starter={starter.type}
             >
               <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
-                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                <span className="text-muted-foreground/70 flex size-5 items-center justify-center">
                   <SessionStarterMark
                     session={session}
                     starter={starter}
                     iconClassName="size-3"
-                    avatarClassName="size-4"
+                    avatarClassName="size-5"
                   />
                 </span>
               </Hint>
