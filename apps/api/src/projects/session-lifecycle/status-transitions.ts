@@ -139,6 +139,8 @@ export const STOPPED_SANDBOX_CLEARED_KEYS = [
   'activeTurns',
   'pendingStopObservedAtMs',
   'lifecycleStopClaim',
+  // readiness-clocks.ts RUNTIME_PROVEN_AT_KEY: a proof never outlives its box.
+  'runtimeProvenAt',
 ] as const;
 
 export type SessionTransition = keyof typeof SESSION_TRANSITIONS;

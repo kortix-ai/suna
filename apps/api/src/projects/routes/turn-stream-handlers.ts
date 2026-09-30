@@ -87,11 +87,16 @@ export function requireSandboxCredential(
 
 // The daemon claims its first prompt through the session-bound credential.
 // No prompt or turn-ledger identifier belongs in the VM environment.
+// The answer also carries the durable OpenCode root pin. A daemon without a
+// local pin file (a converged legacy box, a rebuilt home) must resume THAT
+// root. Otherwise it adopts or creates another root and relays it over the
+// pin, and the session opens on an empty conversation (prod 2026-09-23).
 export function claimInitialTurn(
   c: RelayResponder,
   authenticatedSandboxId: string | null,
   authenticatedSandboxMetadata: unknown,
   turnStreamMetadata: Record<string, unknown>,
+  opencodeSessionId: string | null,
 ): Response {
   const denial = requireSandboxCredential(c, authenticatedSandboxId, 'initial_turn_claim');
   if (denial) return denial;
@@ -110,11 +115,11 @@ export function claimInitialTurn(
     typeof turnStreamMetadata.initial_prompt === 'string'
       ? turnStreamMetadata.initial_prompt.trim()
       : '';
-  if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null });
+  if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null, opencode_session_id: opencodeSessionId });
   const [turnToken, rawTurn] = delivering;
   const messageId = (rawTurn as Record<string, unknown>).messageId;
   if (typeof messageId !== 'string' || !messageId.trim()) {
-    return c.json({ ok: true, initial_turn: null });
+    return c.json({ ok: true, initial_turn: null, opencode_session_id: opencodeSessionId });
   }
   return c.json({
     ok: true,
@@ -123,6 +128,7 @@ export function claimInitialTurn(
       turn_token: turnToken,
       message_id: messageId,
     },
+    opencode_session_id: opencodeSessionId,
   });
 }
 
