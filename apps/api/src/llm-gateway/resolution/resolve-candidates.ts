@@ -335,7 +335,10 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
     const tier = await getCachedAccountTier(principal.accountId);
     throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }
-  return managedCandidates(managed);
+  return managedCandidates(managed).map((candidate) => {
+    const headers = opencodeHeaders(candidate.baseUrl, principal);
+    return headers ? { ...candidate, headers } : candidate;
+  });
 }
 
 function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {

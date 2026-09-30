@@ -1,6 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import { chatThreadParticipants } from '@kortix/db';
+import { config } from '../../config';
 import { db } from '../../shared/db';
+import { PROJECT_ACTIONS } from '../../iam/actions';
+import { chatUser, resolveProjectChatActor } from '../core/identity';
 import { claimFinalize, deleteTurn, finalizeTurn, loadTurn } from './turn';
 import type { LiveTurn } from './types';
 export { SLACK_STOP_ACTION } from './stop-action';
@@ -16,34 +19,49 @@ const PLATFORM = 'slack';
  *  - whoever sent the message this turn is answering, which is the only
  *    correct answer in an open thread where the session owner and the person
  *    actually waiting are routinely different people;
- *  - anyone already approved on this thread, which is how the owner and every
- *    accepted joiner are recorded.
+ *  - anyone approved on this thread's session, which is how the owner and
+ *    every accepted joiner are recorded.
  *
- * Anyone else is refused, and an unresolvable lookup refuses too. Failing
- * closed is the safe direction: the worst case is a bystander waiting for a
- * run to end, not a bystander ending someone else's work.
+ * Either one must also still be allowed to stop runs in the project: a linked
+ * Kortix account with `project.session.stop`. Someone removed from the
+ * project, or never linked, is refused. Anyone else is refused, and an
+ * unresolvable lookup refuses too. Failing closed is the safe direction: the
+ * worst case is a bystander waiting for a run to end, not a bystander ending
+ * someone else's work.
  */
 async function mayStopSlackTurn(handle: LiveTurn, slackUserId: string): Promise<boolean> {
   if (!slackUserId) return false;
-  if (handle.originatingEvent?.user === slackUserId) return true;
+  const sentIt = handle.originatingEvent?.user === slackUserId;
   const threadId = handle.originatingEvent?.thread_ts ?? handle.originatingEvent?.ts ?? handle.triggerTs;
-  if (!threadId) return false;
+  if (!sentIt && !threadId) return false;
   try {
-    const [row] = await db
-      .select({ status: chatThreadParticipants.status })
-      .from(chatThreadParticipants)
-      .where(
-        and(
-          eq(chatThreadParticipants.platform, PLATFORM),
-          eq(chatThreadParticipants.workspaceId, handle.teamId),
-          eq(chatThreadParticipants.threadId, threadId),
-          eq(chatThreadParticipants.platformUserId, slackUserId),
-        ),
-      )
-      .limit(1);
-    return row?.status === 'approved';
+    if (!sentIt) {
+      const [row] = await db
+        .select({ status: chatThreadParticipants.status })
+        .from(chatThreadParticipants)
+        .where(
+          and(
+            eq(chatThreadParticipants.platform, PLATFORM),
+            eq(chatThreadParticipants.workspaceId, handle.teamId),
+            eq(chatThreadParticipants.threadId, threadId),
+            eq(chatThreadParticipants.sessionId, handle.sessionId),
+            eq(chatThreadParticipants.platformUserId, slackUserId),
+          ),
+        )
+        .limit(1);
+      if (row?.status !== 'approved') return false;
+    }
+    // Without linked identities the thread runs as the installer, and there
+    // is nobody linked to check.
+    if (!config.SLACK_REQUIRE_USER_IDENTITY) return true;
+    const actor = await resolveProjectChatActor(
+      chatUser('slack', handle.teamId, slackUserId),
+      handle.projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_STOP,
+    );
+    return 'userId' in actor;
   } catch (err) {
-    console.warn('[slack-webhook] stop participant lookup failed (refusing)', err);
+    console.warn('[slack-webhook] stop authorization failed (refusing)', err);
     return false;
   }
 }

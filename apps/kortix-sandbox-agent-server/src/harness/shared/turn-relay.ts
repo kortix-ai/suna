@@ -40,6 +40,7 @@ async function postTurnStream(frame: TurnStreamFrame, timeoutMs = 15_000): Promi
 // ── The first turn ────────────────────────────────────────────────────────
 
 let claimedInitialTurn: InitialTurnClaim | null = null
+let claimedRootPin: string | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
 
 /** The first turn this process claimed, once `claimInitialTurn` resolved one. */
@@ -47,9 +48,19 @@ export function initialTurnClaim(): InitialTurnClaim | null {
   return claimedInitialTurn
 }
 
+/**
+ * The runtime root the control plane has pinned for this session, as the
+ * initial-turn claim reported it. Null before the claim, when no root is
+ * pinned, or from an API that predates the field.
+ */
+export function claimedRuntimeSessionPin(): string | null {
+  return claimedRootPin
+}
+
 /** Test seam: a daemon process claims at most one initial turn. */
 export function resetInitialTurnClaimForTests(): void {
   claimedInitialTurn = null
+  claimedRootPin = null
   claimInFlight = null
 }
 
@@ -82,7 +93,10 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
     }
     const body = (await response.json()) as {
       initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+      runtime_session_id?: unknown
     }
+    const pin = typeof body.runtime_session_id === 'string' ? body.runtime_session_id.trim() : ''
+    claimedRootPin = pin || null
     const turn = body.initial_turn
     if (!turn || typeof turn.prompt !== 'string' || typeof turn.turn_token !== 'string' || typeof turn.message_id !== 'string') {
       return null

@@ -265,6 +265,26 @@ Settings → Personal access keys → Connected apps. A connected app cannot min
 personal access tokens, gateway keys, SCIM tokens, OAuth clients or service
 accounts. Client-by-client steps: `https://kortix.com/docs/connect/mcp`.
 `https://kortix.com/mcp` is a different server: public documentation only.
+
+The server also exposes a project's connectors, the `kortix connectors` CLI as
+MCP tools: `list_connectors` → `search_connector_actions` →
+`describe_connector_action` → `call_connector` (pass `reason` on a write whose
+args are only ids; a `pending_approval` result carries a link the person
+opens, then call again with the same args). `connect_connector` returns the
+link that connects an account. `upload_connector_attachment` stages a file.
+`search_connector_apps`, `add_connector` and `remove_connector` change which
+connectors the project has.
+
+The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
+`kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the
+context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `stderr`. Discover with
+`["--help"]` and `["<group>", "--help"]`. Prefer the first-class tools for
+sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
+`login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
+`connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
+(a local directory: use `run_command` in a session sandbox) and
+`connectors mcp`, with the reason and the alternative. `read_skill` with
+`project_id` lists the project's own skills.
 </mcp-client>
 
 <apps>

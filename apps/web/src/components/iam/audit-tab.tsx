@@ -58,6 +58,7 @@ import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-transla
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
+import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from './audit-credential-label';
 import { cn } from '@/lib/utils';
 import {
   downloadAccountAudit,
@@ -82,7 +83,7 @@ interface AuditFilterState {
   actorType: ActorType | '';
   projectId: string;
   sessionId: string;
-  source: string;
+  credentialKind: string;
   phase: string;
   outcome: Outcome | '';
   resourceType: string;
@@ -97,7 +98,7 @@ const EMPTY_FILTER: AuditFilterState = {
   actorType: '',
   projectId: '',
   sessionId: '',
-  source: '',
+  credentialKind: '',
   phase: '',
   outcome: '',
   resourceType: '',
@@ -133,24 +134,6 @@ const RESOURCE_TYPES = [
   { label: 'Account', value: 'account' },
   { label: 'Service account', value: 'service_account' },
   { label: 'Trigger', value: 'trigger' },
-];
-
-const SOURCES = [
-  { label: 'Any source', value: '' },
-  { label: 'Human', value: 'human' },
-  { label: 'API key', value: 'api_key' },
-  { label: 'Agent', value: 'agent' },
-  { label: 'Agent runtime', value: 'runtime' },
-  { label: 'OpenCode', value: 'opencode' },
-  { label: 'LLM gateway', value: 'llm_gateway' },
-  { label: 'Provider', value: 'provider' },
-  { label: 'Automation', value: 'automation' },
-  { label: 'Connector', value: 'connector' },
-  { label: 'Tunnel', value: 'tunnel' },
-  { label: 'API', value: 'api' },
-  { label: 'CLI client', value: 'cli' },
-  { label: 'Web client', value: 'web' },
-  { label: 'Mobile client', value: 'mobile' },
 ];
 
 const PHASES = ['pending', 'queued', 'running', 'completed', 'succeeded', 'failed', 'denied'];
@@ -249,7 +232,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.actorType,
     filter.projectId,
     filter.sessionId,
-    filter.source,
+    filter.credentialKind,
     filter.phase,
     filter.outcome,
     filter.resourceType,
@@ -272,7 +255,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
         actor_type: filter.actorType || undefined,
         project_id: filter.projectId || undefined,
         session_id: filter.sessionId || undefined,
-        source: filter.source || undefined,
+        credential_kind: filter.credentialKind || undefined,
         phase: filter.phase || undefined,
         outcome: filter.outcome || undefined,
         resource_type: filter.resourceType || undefined,
@@ -314,7 +297,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
             actor_type: filter.actorType || undefined,
             project_id: filter.projectId || undefined,
             session_id: filter.sessionId || undefined,
-            source: filter.source || undefined,
+            credential_kind: filter.credentialKind || undefined,
             phase: filter.phase || undefined,
             outcome: filter.outcome || undefined,
             resource_type: filter.resourceType || undefined,
@@ -672,13 +655,13 @@ function AdvancedFilters({
             </Select>
           </FilterField>
 
-          <FilterField label={tI18nComplete.raw('text0e570ca6fabe')}>
+          <FilterField label={tI18nComplete.raw('text2ed8b8066255')}>
             <Select
-              value={filter.source || 'all'}
+              value={filter.credentialKind || 'all'}
               onValueChange={(value) =>
                 onChange((current) => ({
                   ...current,
-                  source: value === 'all' ? '' : value,
+                  credentialKind: value === 'all' ? '' : value,
                 }))
               }
             >
@@ -686,13 +669,12 @@ function AdvancedFilters({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {localizeUiCatalog(SOURCES, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS).map(
-                  (source) => (
-                    <SelectItem key={source.value || 'all'} value={source.value || 'all'}>
-                      {source.label}
-                    </SelectItem>
-                  ),
-                )}
+                <SelectItem value="all">{tI18nComplete.raw('text36fe0f55b7f5')}</SelectItem>
+                {CREDENTIAL_KINDS.map((kind) => (
+                  <SelectItem key={kind} value={kind}>
+                    {tI18nComplete.raw(CREDENTIAL_LABEL_KEYS[kind])}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </FilterField>
@@ -862,6 +844,7 @@ function AuditRow({
       : event.actor_type === 'anonymous'
         ? tI18nComplete.raw('texte7a8aa2df7e5')
         : 'Unknown');
+  const via = credentialVia(event, (key) => tI18nComplete.raw(key) as string);
   const scopeLabel =
     projectName ?? (event.project_id ? `Project ${event.project_id.slice(0, 8)}` : 'Account');
 
@@ -936,10 +919,9 @@ function AuditRow({
                 {(event.authoritative_source ?? event.source ?? '').replace('_', ' ')}
               </Badge>
             ) : null}
-            {event.client_reported_source ? (
-              <Badge variant="muted" size="xs" className="capitalize">
-                {tI18nComplete.raw('texta273a74aed9f')}{' '}
-                {event.client_reported_source.replace('_', ' ')}
+            {via ? (
+              <Badge variant="muted" size="xs">
+                {tI18nComplete.raw('text2ed8b8066255')} {via}
               </Badge>
             ) : null}
           </div>

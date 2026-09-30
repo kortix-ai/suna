@@ -1023,7 +1023,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 requestedAccount,
                 availableAccounts,
               })
-            : { ok: false, status: 'denied', reason: result.reason },
+            : {
+                ok: false,
+                status: 'denied',
+                reason: result.reason,
+                ...(result.message ? { message: result.message } : {}),
+              },
           result.reason === 'connector_not_found' || result.reason === 'action_not_found'
             ? 404
             : 403,

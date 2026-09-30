@@ -145,7 +145,7 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 
 ## Tools
 
-`tools/list` returns 13 tools. Parameters marked * are required.
+`tools/list` returns 23 tools. Parameters marked * are required.
 
 | Tool | Parameters | What it does |
 | --- | --- | --- |
@@ -158,7 +158,17 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 | `read_file` | `path`*, `session_id`, `project_id`, `ref`, `offset`, `limit` | Reads a file from a session's sandbox, or from a project's git repository at `ref`. Images return as images. |
 | `write_file` | `session_id`*, `path`*, `content`*, `encoding` | Writes a file in a session's sandbox and creates its parent directories. `encoding` is `utf8` (default) or `base64`. |
 | `list_files` | `path`, `session_id`, `project_id`, `ref`, `offset` | Lists one directory of a session's sandbox, or every file of a project's repository under a path. |
-| `read_skill` | `name`, `file` | Lists the Kortix platform guides, or returns one guide (`name`) or one of its reference files (`file`). |
+| `read_skill` | `name`, `file`, `project_id` | Lists the Kortix platform guides, or returns one guide (`name`) or one of its reference files (`file`). With `project_id`, the project's own skills are listed first, and a project skill `name` returns its `SKILL.md` and its reference file paths. |
+| `list_connectors` | `project_id`*, `connector` | Lists a project's connectors: slug, provider, whether each is `connected` (usable by you now), action count and accounts. With `connector`, lists that connector's accounts in full. |
+| `search_connector_actions` | `project_id`*, `query`, `connector`, `limit` | Finds connector actions by intent. Returns `tool` (`<connector>.<action>`), `risk` and a one-line description. Never returns schemas. |
+| `describe_connector_action` | `project_id`*, `tool`* | Returns one action's input JSON Schema, risk and description. |
+| `call_connector` | `project_id`*, `tool`*, `args`, `account`, `reason` | Runs an action as you. Returns the data and the `account` that ran it, a `pending_approval` result with the approval link, or a denial with its reason. |
+| `upload_connector_attachment` | `project_id`*, `connector`*, `filename`*, `content_base64` or `session_id` + `path` | Stages a file and returns the `{"$kortix_attachment": "<id>"}` ref to put in `args`. |
+| `connect_connector` | `project_id`*, `connector`*, `owner`, `label` | Returns the link a person opens to connect the connector's account. |
+| `search_connector_apps` | `project_id`*, `query`*, `limit`, `cursor` | Searches the catalogue of managed apps a connector can be added from. |
+| `add_connector` | `project_id`*, `app` or `provider` + `slug`, `name`, `url`, `transport`, `endpoint`, `spec`, `base_url` | Adds a connector to the project now (committed to `kortix.yaml` on `main`, then synced). |
+| `remove_connector` | `project_id`*, `connector`* | Removes a connector from the project. |
+| `kortix` | `args`*, `project_id`, `session_id` | Runs the real `kortix` CLI as you and returns `exit_code`, `stdout` (or `json` for `--json` output) and `stderr`. See [Run any CLI command](#run-any-cli-command). |
 | `search_api` | `query`*, `limit` | Searches the Kortix API routes by keyword. |
 | `describe_api` | `method`*, `path`* | Returns one route's parameters, request body and response schema. |
 | `call_api` | `method`*, `path`*, `project_id`, `query`, `body` | Calls any `/v1/` route as you. `project_id` fills `{projectId}` in the path. |
@@ -168,7 +178,102 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 refuses `/v1/oauth/*` and any path that reaches an MCP endpoint. Fill every
 other `{placeholder}` in the path yourself. Each call passes the same
 authorization and audit as a request from the web app. The audit records each
-call with `client_reported_source: "mcp"`.
+call with `credential_kind: "oauth_app"` and the connected app's name, because
+the API records the credential it authenticated, not a label the client sends.
+
+### Run any CLI command
+
+The `kortix` tool runs the real [`kortix` CLI](/docs/cli) as you. Every CLI
+command works through it, so the MCP server has the same reach as a terminal:
+secrets, triggers, `cr`, `review`, reminders, agents, models, gateway,
+providers, channels, sandboxes, apps, marketplace, files, access, roles,
+permissions, audit, grants, members, groups, tokens, billing, projects,
+sessions and `system-skills`. One tool replaces about 200 subcommand tools,
+which would exceed the tool limit of clients such as Cursor.
+
+`args` is the argv after `kortix`, one array element per argument. It is never
+a shell line.
+
+```json
+{ "name": "kortix", "arguments": { "args": ["--help"] } }
+{ "name": "kortix", "arguments": { "args": ["secrets", "ls", "--json"], "project_id": "<project_id>" } }
+{ "name": "kortix", "arguments": { "args": ["triggers", "ls", "--json"], "project_id": "<project_id>" } }
+{ "name": "kortix", "arguments": { "args": ["system-skills"] } }
+```
+
+- Discover with `["--help"]` and `["<group>", "--help"]`. Add `--json` to
+  output you parse.
+- `project_id` sets the project of a project-scoped command. `session_id` sets
+  the session of a command that acts on one.
+- The result is JSON: `exit_code`, `stdout`, `stderr`. With `--json`, the command's output arrives as a JSON value in `json` instead of `stdout`. Output that does not fit is cut and marked `truncated`; cut JSON is not valid JSON, so narrow the command. A non-zero `exit_code`
+  is an MCP error. Each stream is cut at 24,000 (stdout) and 8,000 (stderr)
+  characters, and the result says so in `truncated`.
+- A command that runs longer than about 45 seconds is killed. The result has
+  `timed_out`.
+- The server runs at most 4 CLI commands at once. A fifth call returns
+  `Busy`: retry.
+- Sessions, sandbox files and connectors have first-class tools
+  (`start_session`, `run_command`, `read_file`, `call_connector`). Prefer them.
+
+The CLI runs on the server with your own token, against this API. It gets no
+server credentials: its environment holds only your token, the API URL, the
+project and session ids, and an empty temporary home and working directory.
+The server removes both after the command. Authorization and audit are the
+API's: an outsider's token gets the same `403` as from a terminal.
+
+These commands are refused before anything runs. The error names the reason and
+the alternative.
+
+| Command | Why | Use instead |
+| --- | --- | --- |
+| any `--host` or `--host=` flag, `hosts` | Points the CLI at another server and would send your token there. | This server already acts as you. |
+| `login`, `logout` | Browser sign-in and stored tokens. | You are signed in through the MCP connection. |
+| `init`, `ship`, `deploy` | Read or write a local directory. | `run_command` in a session sandbox, where the source lives. |
+| `apps deploy` | Deploys a local directory, and the server has none. | `run_command` in a session sandbox: run `kortix apps deploy <path>` there. |
+| `env pull`, `env push` | Write or read a local file. | `secrets ls`, `secrets set KEY=value`. |
+| `token`, `whoami --token-only` | Print the raw access token. | `whoami --json`. |
+| `update`, `uninstall`, `self-host` | Change the machine that runs the CLI. | None. |
+| `tui`, `t`, `connect`, `attach`, `sessions connect|shell|forward` | Need an interactive terminal. | `start_session`, `send_message`, `read_session`, `run_command`. |
+| `chat` and `sessions chat` without `--prompt` | Open an interactive chat. | `start_session`, `send_message`, or add `--prompt "<text>"`. |
+| `connectors mcp` | Starts a stdio MCP server. | `list_connectors`, `call_connector`. |
+
+The audit records a CLI command with the same credential as every other call
+on the connection (`credential_kind: "oauth_app"`). It cannot tell the `kortix`
+tool from `call_api`: both reach the API with your token.
+
+### Project skills
+
+`read_skill` with a `project_id` lists the project's own skills (the
+`skills/<slug>/SKILL.md` files of the repository, or the legacy
+`.kortix/opencode/skills/`) before the platform guides. Pass the skill `name`
+to read its `SKILL.md` and the paths of its reference files, and `file` to read
+one reference. You see the skills your role and grants allow.
+
+### Use your connectors
+
+The connector tools are the [`kortix connectors`](/docs/connect/connectors) CLI as MCP
+tools. They call the same API routes as the CLI and the SDK, so a connector
+policy, an approval and the audit behave the same on every surface.
+
+1. `list_connectors` shows what is connected. A connector with
+   `connected: false` cannot run actions: call `connect_connector`, open the
+   returned link, then list again.
+2. `search_connector_actions` finds an action by intent, for example
+   `send an email`. `describe_connector_action` returns its arguments.
+3. `call_connector` runs it. The result names the `account` that ran the call.
+   A connector with several accounts and no default needs `account`.
+4. Pass `reason` on a write whose arguments are only ids (`send_draft`,
+   delete by id). The approver sees it next to the real arguments.
+
+A policy can hold a call for approval. `call_connector` then returns
+`status: "pending_approval"` with an `approval_url`. A person opens it and
+approves. Call again with the same tool, arguments and account within 15
+minutes: the approved call runs once. A `policy_block` denial is final.
+
+A result over about 40,000 characters comes back as a marked preview
+(`data_truncated`). Narrow the arguments and call again. To attach a file,
+stage it with `upload_connector_attachment` and put the returned ref in
+`args`. Composio connectors do not accept attachment refs.
 
 ### Result size and paging
 

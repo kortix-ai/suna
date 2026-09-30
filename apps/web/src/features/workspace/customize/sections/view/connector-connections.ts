@@ -1,9 +1,7 @@
 import { connectionSharedWithEveryone, type Connection } from '@kortix/sdk';
 
 export type AccountVisibility =
-  | { kind: 'you' }
-  | { kind: 'everyone' }
-  | { kind: 'named'; names: string[]; more: number };
+  { kind: 'you' } | { kind: 'everyone' } | { kind: 'named'; names: string[]; more: number };
 
 /**
  * Who may use an account, as its card states it: only the viewer, everyone in
@@ -68,7 +66,9 @@ export function newAccountReady(
   if (draft.audience === 'private') return true;
   if (!access.canManageConnections) return false;
   if (draft.audience === 'project') return true;
-  return Boolean(access.accountId) && draft.picked.memberIds.length + draft.picked.groupIds.length > 0;
+  return (
+    Boolean(access.accountId) && draft.picked.memberIds.length + draft.picked.groupIds.length > 0
+  );
 }
 
 /** The grants that narrow a new shared account to the picked people and groups. */
@@ -96,17 +96,19 @@ export function newAccountAudienceFor(
  * connection plus only the caller's OWN member connections, never another
  * member's. This narrows that to a single connector and drops agent-owned
  * connections, which are an internal binding artifact rather than something a
- * person connected.
+ * person connected, and disconnected (revoked) ones: a disconnected account is
+ * gone for the person who disconnected it.
  *
  * Shared by the Connections list and the tab's count badge so the number on
  * the tab can never disagree with the rows underneath it.
  */
-export function connectorConnectionRows<T extends { connector_alias: string; owner_type: string }>(
-  connections: readonly T[] | undefined,
-  connectorSlug: string,
-): T[] {
+export function connectorConnectionRows<
+  T extends { connector_alias: string; owner_type: string; status?: string },
+>(connections: readonly T[] | undefined, connectorSlug: string): T[] {
   return (connections ?? []).filter(
     (connection) =>
-      connection.connector_alias === connectorSlug && connection.owner_type !== 'agent',
+      connection.connector_alias === connectorSlug &&
+      connection.owner_type !== 'agent' &&
+      connection.status !== 'revoked',
   );
 }

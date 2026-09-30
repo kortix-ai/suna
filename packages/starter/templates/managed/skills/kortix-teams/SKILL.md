@@ -314,6 +314,11 @@ thread, and team come from the env — pass `--team`, `--channel`, or
 - **A `403` from Microsoft Graph** means the Kortix app is not installed in
   that team, or the tenant has not granted it permission to read messages.
   Say so in `teams send`; do not retry.
+- **`conversation_not_in_project`**: every Kortix project in a tenant shares
+  one app, so reads reach only this project's conversations. The channel or
+  thread belongs to another project, or this project has no conversation in
+  that channel while the tenant has several projects. Do not retry with
+  another id. Say so in `teams send`, using the error's message.
 - **`teams history` prints the help instead of JSON**: this sandbox was built
   before the command existed. Say you cannot read the channel from here.
 </reading-the-conversation>

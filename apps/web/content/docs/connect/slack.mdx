@@ -40,12 +40,31 @@ them. Run `/kortix login` in Slack and follow the link to sign in. Teams uses
 the same requirement. An unlinked sender gets a prompt to link instead of a
 session run.
 
+A sign-in link works once and expires after 10 minutes. A Slack account that is
+connected to one Kortix account cannot be connected to another: run
+`/kortix logout` first. If your organization requires two-factor
+authentication, Kortix asks for your second factor before it connects you, and
+the chat runs on the factor you connected with.
+
+Every action runs as the linked account of the person who took it, with that
+account's project role. Account owners and admins count as project managers.
+
+| Action | Who may do it |
+|---|---|
+| Mention the bot, reply in its thread | A linked account with access to the project, within the channel's policy |
+| Stop a run | The person who sent the message being answered, or anyone approved into that session, who can still use the project |
+| Change the channel's project, agent, model or policy | A project manager; in a DM with the bot, any project member |
+| Act on a review | A project manager |
+| Approve or deny a connector call | A project manager, or the person who started the session |
+| Approve someone into an `owner_approval` thread | The session owner |
+| `link-bot` | A project manager |
+
 ## Where credentials live
 
 A connected channel's bot token is a connector-scoped
 [secret](/docs/project/secrets). It does not appear on the project's Secrets
 page. Kortix never injects it into a sandbox. Kortix resolves the token
-server-side when the agent sends a chat message.
+server-side when the agent sends or reads a chat message.
 
 ## Connect Slack
 
@@ -98,6 +117,40 @@ to `kortix.yaml` for you. You never write this entry by hand.
 Mention the bot with a task, in any channel it has joined, or open a direct
 message. The thread keeps its session as described above. A bare mention with
 no task gets a reminder to add one instead of starting a session.
+
+## What the agent can read
+
+The agent reads Slack through the project's Slack
+[connector](/docs/connect/connectors) (`kortix_slack`, or the `slack` command
+in the sandbox). Every project connected to the same Slack workspace uses the
+same bot, so Kortix keeps each read inside the project's own conversations:
+
+| Conversation | Read |
+|---|---|
+| A channel or DM connected to this project | Allowed |
+| A thread that a session of this project started or joined, in any channel | Allowed |
+| A channel, DM or thread of another project | Refused |
+| A conversation no project is connected to | Allowed only while no other project is connected to the workspace |
+
+A refused read answers `403` with the reason `conversation_not_in_project` and
+a message that names the conversation. To read a conversation that no project
+is connected to, connect it first: run `/kortix switch` in it and pick this
+project.
+
+- Channel history leaves out the messages of another project's thread.
+- `list_channels` lists every public channel, and the private channels and DMs
+  the agent may read.
+- `channel_info` answers for any public channel. A private channel or DM
+  follows the table above.
+- `file_info` answers when the file is shared in a conversation the agent may
+  read.
+- `search_messages` runs only while no other project is connected to the
+  workspace, because a search cannot be limited to one project's
+  conversations.
+- `list_users`, `user_info` and `auth_test` read the workspace directory and are
+  not limited.
+
+These rules apply to reads. Sending a message is not limited by them.
 
 ## Control a session with slash commands
 
@@ -156,8 +209,8 @@ stored with the decision and passed to the agent with it, so it does not have to
 ask you a second time. It is optional — send it empty and the agent is told to
 ask. Approve and Deny stay one click.
 
-Acting on a review needs a linked Kortix account with write access to the
-project.
+Acting on a review needs a linked Kortix account that manages the project.
+The decision resumes the agent whatever the thread's policy is.
 
 ## Stopping a run
 
@@ -166,8 +219,8 @@ run at the runtime, not just on the message — a run left open swallows the nex
 message in the thread instead of answering it.
 
 The person who sent the message being answered can stop it, as can anyone
-already working in that session. A bystander in the channel cannot; they get a
-private note saying so.
+approved into that session, while they can still use the project. A bystander
+in the channel cannot; they get a private note saying so.
 
 ## What does not work
 

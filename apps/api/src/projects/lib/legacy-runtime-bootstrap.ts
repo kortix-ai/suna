@@ -306,6 +306,9 @@ export function classifyDaemonHealth(
 
 /** Gap between the two health reads that must BOTH be silent before a relaunch. */
 export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+/** The daemon as the box itself sees it — no provider ingress in the path. */
+const LOOPBACK_HEALTH_URL = 'http://127.0.0.1:8000/kortix/health';
+const LOOPBACK_PROBE_TIMEOUT_MS = 15_000;
 
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
@@ -745,6 +748,20 @@ export async function bootstrapLegacyRuntime(
     await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
     const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
+      }
       deadDaemonOnRunningBox = true;
       deps.log('daemon gone on a running box; relaunching the runtime chain', {
         sandboxId: input.sandboxId,

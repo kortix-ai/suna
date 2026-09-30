@@ -35,7 +35,6 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
-    clientSource: 'cli',
   };
 }
 

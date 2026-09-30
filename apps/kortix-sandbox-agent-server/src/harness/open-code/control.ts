@@ -13,7 +13,11 @@ import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
 import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { opencodeTurnInFlight } from './opencode-turn-state'
-import { readOpenCodeSessionPin } from './runtime-state'
+import {
+  readOpenCodeSessionPin,
+  readOpencodeRuntimeEnvSnapshot,
+  writeOpencodeRuntimeEnvSnapshot,
+} from './runtime-state'
 import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
@@ -54,6 +58,134 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
  * the next spawn composes.
  */
 const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX_COMPILED_AGENT_CONFIG_ETAG'])
+
+/**
+ * The subset of `OPENCODE_RUNTIME_ENV_NAMES` whose amnesia across a daemon
+ * restart this module protects against — every one EXCEPT the two release
+ * governs. A release re-establishes its own two on every boot through
+ * `convergeConfigRelease` (config-release.ts), which is a more authoritative,
+ * independently-scheduled source; seeding a stale snapshot value ahead of it
+ * would only risk racing that path for no benefit. The rest
+ * (`KORTIX_SECRET_CAPABILITIES` foremost) have no such re-derivation and are
+ * delivered ONLY by a live `/kortix/env` push — see `writeOpencodeRuntimeEnvSnapshot`.
+ */
+const PERSISTED_OPENCODE_ENV_NAMES = [...OPENCODE_RUNTIME_ENV_NAMES].filter(
+  (name) => !RELEASE_OWNED_ENV_NAMES.has(name),
+)
+
+/**
+ * Persist the CURRENT full picture of the protected names, so a later daemon
+ * restart restores it. Called only when something in this push actually
+ * changed `process.env` — an unchanged push has nothing new to persist.
+ */
+function persistOpencodeRuntimeEnvSnapshot(): void {
+  const snapshot: Record<string, string> = {}
+  for (const name of PERSISTED_OPENCODE_ENV_NAMES) {
+    const value = process.env[name]
+    if (typeof value === 'string') snapshot[name] = value
+  }
+  writeOpencodeRuntimeEnvSnapshot(snapshot)
+}
+
+/**
+ * Restore the persisted runtime-env snapshot into THIS process's env, for
+ * every protected name it does not already hold. Called once, at boot,
+ * before OpenCode's first spawn — see boot.ts's `runOpenCode`.
+ *
+ * Never overrides a name the box's OWN boot path already set: only fills the
+ * gap for a name whose sole source of truth is a live push, so the next
+ * `/kortix/env` push of an UNCHANGED value reads as unchanged, not as a
+ * config-affecting delta that forces an avoidable respawn.
+ */
+export function restoreOpencodeRuntimeEnvSnapshotIfUnset(): void {
+  const snapshot = readOpencodeRuntimeEnvSnapshot()
+  const restored: string[] = []
+  for (const name of PERSISTED_OPENCODE_ENV_NAMES) {
+    const value = snapshot[name]
+    if (typeof value !== 'string') continue
+    if (process.env[name] !== undefined) continue
+    process.env[name] = value
+    restored.push(name)
+  }
+  if (restored.length > 0) {
+    logger.info('[env] restored the last-applied opencode runtime env across a daemon restart', {
+      names: restored.sort(),
+    })
+  }
+}
+
+/**
+ * Is a config-affecting opencode respawn ALLOWED to promote right now?
+ *
+ * The one predicate every `mustRespawn: true` caller in this file must supply
+ * as `mayPromote` — see `Opencode.reloadConfig`'s doc. "Cannot tell" counts as
+ * busy, the same rule `opencodeTurnInFlight` documents and `runtime-assets.ts`
+ * applies to the agent-swap path: an update is never worth guessing about,
+ * because the alternative to promoting now is promoting at the next trigger.
+ */
+function opencodeEnvRestartMayPromote(
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  workspace: string,
+): Promise<boolean> {
+  return opencodeTurnInFlight(opencode.getInternalUrl(), workspace).then((turnInFlight) => turnInFlight === false)
+}
+
+/**
+ * A config-affecting `/kortix/env` respawn that `mayPromote` declined because
+ * a turn was running (or its state was unreadable) when the candidate was
+ * ready to promote.
+ *
+ * Set by `applyEnvironment`, cleared and retried by
+ * `retryDeferredOpencodeEnvRestart` — called from the daemon's own
+ * `session.idle` frame (boot.ts's `onSessionIdle`), the one moment this
+ * daemon knows for certain that nothing is running. Per-process, like
+ * `runtime-assets.ts`'s own pending-swap state: there is exactly one running
+ * opencode per sandbox, so one flag is the whole state machine.
+ */
+let opencodeEnvRestartPending = false
+
+/** Test seam: clear the pending flag between rows. */
+export function resetOpencodeEnvRestartPendingForTests(): void {
+  opencodeEnvRestartPending = false
+}
+
+/** Test seam: is a deferred restart currently pending? */
+export function opencodeEnvRestartIsPendingForTests(): boolean {
+  return opencodeEnvRestartPending
+}
+
+/**
+ * Retry a config-affecting opencode respawn that a live turn deferred.
+ *
+ * A no-op when nothing is pending. Never throws: a failed retry leaves the
+ * flag set so the NEXT idle boundary tries again, and the box otherwise runs
+ * on unchanged.
+ */
+export async function retryDeferredOpencodeEnvRestart(
+  opencode: Pick<Opencode, 'reloadConfig' | 'getInternalUrl'>,
+  workspace: string,
+): Promise<void> {
+  if (!opencodeEnvRestartPending) return
+  opencodeEnvRestartPending = false
+  logger.info('[env] retrying a config-affecting opencode restart deferred by a live turn')
+  try {
+    const applied = await opencode.reloadConfig({
+      mustRespawn: true,
+      mayPromote: () => opencodeEnvRestartMayPromote(opencode, workspace),
+    })
+    if (applied.how === 'kept-old') {
+      // Still busy, or the config still cannot boot — try again at the next
+      // idle boundary rather than dropping the pending restart.
+      opencodeEnvRestartPending = true
+      logger.info('[env] deferred opencode restart still could not promote', { how: applied.how })
+    }
+  } catch (err) {
+    opencodeEnvRestartPending = true
+    logger.warn('[env] deferred opencode restart retry threw', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
 
 function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: string[] } {
   if (input === undefined) return { changed: false, names: [] }
@@ -180,6 +312,11 @@ export function createOpenCodeControlService(
           let reloadTurnEnded: boolean | null = null
           const opencodeEnvChanged = opencodeEnv.changed || llmGatewayEnv.changed
           const opencodeEnvNames = [...new Set([...opencodeEnv.names, ...llmGatewayEnv.names])].sort()
+          // Persist the new baseline BEFORE anything below might respawn or
+          // crash: a daemon that dies mid-reload must not lose the record of
+          // what it just applied, or the amnesia this closes reopens on the
+          // very push that triggered it.
+          if (opencodeEnvChanged) persistOpencodeRuntimeEnvSnapshot()
 
           if (result.changed) {
             logger.info('[env] project env changed; refreshing live agent env file', {
@@ -244,7 +381,20 @@ export function createOpenCodeControlService(
             // store, so a respawn clears a dropped secret via `mergeProjectEnv`.
             const projectSecretsMoved = result.changedNames.length > 0
             const mustRespawn = projectSecretsMoved || requiresRespawn(opencodeEnvNames)
-            const applied = await opencode.reloadConfig({ mustRespawn })
+            // The LAST check before the candidate is promoted — asked again
+            // right there by reloadVerified, seconds after this one, closing
+            // the TOCTOU a single check here cannot. Only meaningful when
+            // mustRespawn is true: the dispose path never retires a process,
+            // so it cannot sever a turn. Never omit this on a respawn: without
+            // it a config push can promote a candidate and SIGTERM the
+            // process a turn was just accepted on (2026-09-29 incident —
+            // KORTIX_SECRET_CAPABILITIES pushed fleet-wide by a release; the
+            // agent swap path (`runtime-assets.ts`) has deferred on
+            // turn-in-flight for this same reason since it shipped).
+            const applied = await opencode.reloadConfig({
+              mustRespawn,
+              mayPromote: mustRespawn ? () => opencodeEnvRestartMayPromote(opencode, cfg.workspace) : undefined,
+            })
             const how = applied.how
             reloadTurnEnded = applied.turnEnded
             // 'kept-old' means the verified swap declined: the new opencode never
@@ -252,12 +402,22 @@ export function createOpenCodeControlService(
             // take, and the caller has to be told — logging it here and returning
             // ok:true would report a reload that silently did nothing.
             reloadOutcome = how
+            // A respawn that was declined because a turn was running (or its
+            // state could not be told) is not abandoned — the box's own
+            // `session.idle` frame retries it (see `retryDeferredOpencodeEnvRestart`,
+            // wired from boot.ts's onSessionIdle). Never retried on a timer: a
+            // timer near a promotion decision is what the config-releases AST
+            // tripwires forbid, and this is the same class of decision.
+            if (mustRespawn && how === 'kept-old') {
+              opencodeEnvRestartPending = true
+            }
             logger.info('[env] config-affecting env changed; applied to opencode', {
               projectRevision: result.revision,
               projectEnvChanged: result.changed,
               opencodeEnvNames,
               how,
               mustRespawn,
+              deferred: mustRespawn && how === 'kept-old',
             })
           }
 

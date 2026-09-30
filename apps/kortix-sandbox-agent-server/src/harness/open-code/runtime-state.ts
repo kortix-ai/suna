@@ -124,3 +124,62 @@ export function migratePreW3AuditSpool(path: string): void {
   writeFileSync(temporary, JSON.stringify(next), { encoding: 'utf8', mode: 0o600 })
   renameSync(temporary, path)
 }
+
+function opencodeRuntimeEnvSnapshotPath(): string {
+  return join(resolveKortixRuntimeStateDirectory(), 'opencode-runtime-env-snapshot.json')
+}
+
+/**
+ * Persist the config-affecting OpenCode runtime env this daemon PROCESS has
+ * applied via `/kortix/env`, so a fresh daemon process (a respawn, an agent
+ * swap, a redeploy) can restore the same baseline before it evaluates the
+ * next push.
+ *
+ * WHY THIS EXISTS: `process.env` is process-local. A name this daemon set
+ * in-memory (control.ts's `applyOpencodeRuntimeEnv`) is gone the instant the
+ * process exits — a fresh process inherits only what its own supervisor/OS
+ * environment carries, not what a PRIOR daemon process wrote into its own
+ * memory. Several of these names (`KORTIX_SECRET_CAPABILITIES` among them)
+ * are delivered ONLY by a live push, never baked into the box's boot env, so
+ * after ANY daemon restart the very next push of an UNCHANGED value reads as
+ * "changed" — because the fresh process's baseline is `undefined`, not the
+ * value the API already believes it delivered. That forced an avoidable
+ * OpenCode respawn on every long-lived box within ~30 minutes of ANY release
+ * that restarts the daemon (2026-09-29 incident): the release's own agent
+ * swap armed the trap, and the next routine `/kortix/env` push tripped it.
+ *
+ * Best-effort: a failed write leaves the box exactly as it was — the next
+ * push still applies correctly, just without amnesia protection this once.
+ */
+export function writeOpencodeRuntimeEnvSnapshot(values: Readonly<Record<string, string>>): void {
+  try {
+    const path = opencodeRuntimeEnvSnapshotPath()
+    ensurePrivateRuntimeStateDirectory(path)
+    const tmp = `${path}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(values), { encoding: 'utf8', mode: 0o600 })
+    renameSync(tmp, path)
+  } catch (err) {
+    logger.warn('[runtime-state] failed to persist opencode runtime env snapshot', err)
+  }
+}
+
+/**
+ * Best-effort read of the snapshot `writeOpencodeRuntimeEnvSnapshot` wrote.
+ * `{}` on any failure, unparseable content, or absence — never invents a
+ * value nobody actually applied.
+ */
+export function readOpencodeRuntimeEnvSnapshot(): Record<string, string> {
+  try {
+    const path = opencodeRuntimeEnvSnapshotPath()
+    if (!existsSync(path)) return {}
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const out: Record<string, string> = {}
+    for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'string') out[name] = value
+    }
+    return out
+  } catch {
+    return {}
+  }
+}

@@ -489,8 +489,8 @@ export async function uploadFile(
  *
  * Goes through `authenticatedFetch` like every other write. It used to call a
  * bare `fetch()` with a hand-rolled `Authorization` header, which silently
- * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, the
- * `X-Kortix-Client` header, and `platformConfig().fetch` — so every host that
+ * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, and
+ * `platformConfig().fetch` — so every host that
  * injects its own fetch (mobile, whitelabel) was bypassed on this one path.
  */
 function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promise<UploadResult[]> {

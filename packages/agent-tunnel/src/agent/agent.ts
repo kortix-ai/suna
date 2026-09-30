@@ -12,7 +12,7 @@ import {
   writeAccessRequest,
 } from './access';
 import { agentTunnelHome } from './service-paths';
-import { machineDisplayName } from './device-auth';
+import { machineDisplayName, machineId } from './device-auth';
 import { capabilityForMethod } from '../shared/permissions';
 import { TunnelErrorCode } from '../shared/types';
 import { agentTunnelVersion } from './version';
@@ -174,6 +174,8 @@ export class TunnelAgent {
   private uptime = 0;
   /** Read once: on macOS it runs `scutil`, and the pong repeats every 30 s. */
   private displayName?: string;
+  /** Hashed hardware id, read once (null when unreadable). */
+  private readonly hardwareId = machineId();
   private uptimeInterval: ReturnType<typeof setInterval> | null = null;
 
   // HMAC signature verification
@@ -576,6 +578,9 @@ export class TunnelAgent {
         machineInfo: {
           hostname: hostname(),
           displayName: (this.displayName ??= machineDisplayName()),
+          // Registers this machine's identity on its row, so re-pairing it
+          // later reuses the registration instead of adding a second one.
+          ...(this.hardwareId ? { machineId: this.hardwareId } : {}),
           platform: platform(),
           arch: arch(),
           osVersion: release(),

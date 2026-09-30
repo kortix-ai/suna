@@ -352,7 +352,8 @@ export function uniqueComputerLabel(name: string, taken: ReadonlySet<string>): s
  * Make one paired machine an account on a project's computer connector.
  *
  * Idempotent on (connector, owner, machine): the existing account is returned
- * (and reactivated when it was revoked). A revoked account of the same owner
+ * (and reactivated when it was revoked). A private attach of a machine that is
+ * already shared in this project returns the shared account. A revoked account of the same owner
  * that lost its machine and carries the machine's name is reused, so re-pairing
  * a computer keeps its label and every session binding to it. Otherwise a new
  * account is created with a unique label; it becomes the owner's default when
@@ -403,6 +404,23 @@ export async function attachComputerConnection(
     return { connection: updated!, created: false };
   };
 
+  // A machine its owner shared here is already their account in this project
+  // (they keep a grant). A second, private account for it would duplicate it.
+  if (input.ownerType === 'member') {
+    const [shared] = await tx
+      .select()
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, input.connectorId),
+          eq(connectorConnections.tunnelId, input.tunnelId),
+          eq(connectorConnections.ownerType, 'project'),
+          eq(connectorConnections.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (shared) return { connection: shared, created: false };
+  }
   const same = rows.find((row) => row.tunnelId === input.tunnelId);
   if (same) return same.status === 'active' ? { connection: same, created: false } : reactivate(same);
   const orphan = rows.find(

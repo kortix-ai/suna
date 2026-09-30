@@ -19028,7 +19028,13 @@
       "textd71a0c697cce": "Segmentiert",
       "text9ae34cca7f2d": "Von Kortix verwaltet",
       "textafecbae4466e": "Kortix erstellt und verwaltet ein privates Repository für dieses Projekt.",
-      "text6cb9b40da8a0": "Kortix erstellt ein privates Repository in deinem GitHub-Konto."
+      "text6cb9b40da8a0": "Kortix erstellt ein privates Repository in deinem GitHub-Konto.",
+      "text2ed8b8066255": "Über",
+      "texta6d0f740e426": "Persönliches Zugriffstoken",
+      "text2bbd1ec2197d": "Verbundene App",
+      "textda3d3fb8f598": "Agent-Sitzung",
+      "text4dcb7e3b10a9": "SCIM-Token",
+      "text36fe0f55b7f5": "Beliebige Zugangsdaten"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20199,7 +20205,6 @@
     },
     "needsReconnectHint": "Dieser Computer wurde von Kortix getrennt. Verbinde ihn erneut, um ihn zu nutzen.",
     "actionFailed": "Etwas ist schiefgelaufen. Versuche es erneut.",
-    "sharedWithProject": "Computer mit dem Projekt geteilt",
     "alsoShareWith": "Auch mit {project} teilen",
     "approvedEverywhere": "Dein Computer ist verbunden. Du kannst ihn in jedem Projekt in deinen privaten Sitzungen nutzen. Du kannst diesen Tab schließen.",
     "approvedShared": "Dein Computer ist verbunden und mit {project} geteilt. Du kannst diesen Tab schließen.",
@@ -20247,8 +20252,6 @@
     "runInBackground": "Im Hintergrund ausführen",
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
     "manageInProject": "Im Projekt verwalten",
-    "disconnectEllipsis": "Trennen…",
-    "yoursEveryProject": "Deiner · jedes Projekt",
-    "sharedWithThisProject": "Mit diesem Projekt geteilt"
+    "disconnectEllipsis": "Trennen…"
   }
 }

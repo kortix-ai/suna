@@ -562,3 +562,59 @@ describe('bootstrapLegacyRuntime', () => {
     expect(calls.execs).toHaveLength(0);
   });
 });
+
+describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {
+  const LOOPBACK = 'http://127.0.0.1:8000/kortix/health';
+
+  test('a daemon alive on the box loopback ends the pass before any record, token or script', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    let minted = 0;
+    const r = await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null],
+          providerRunning: async () => true,
+          rotateKortixToken: async () => {
+            minted++;
+            return 'kortix_pat_x';
+          },
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return { exitCode: 0, stdout: '', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(r.outcome).toBe('not-legacy');
+    expect(calls.execs).toHaveLength(1);
+    expect(calls.execs[0]!.join(' ')).toContain(LOOPBACK);
+    expect(calls.patches).toHaveLength(0);
+    expect(calls.audits).toHaveLength(0);
+    expect(minted).toBe(0);
+  });
+
+  test('a daemon silent on the loopback too is relaunched', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null, CURRENT_HEALTH],
+          providerRunning: async () => true,
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return cmd.join(' ').includes(LOOPBACK)
+              ? { exitCode: 7, stdout: '', stderr: 'connection refused' }
+              : { exitCode: 0, stdout: '{"ok":true,"stage":"relaunched","agent_sha256":"a","entrypoint_sha256":"e"}\n', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(calls.execs).toHaveLength(2);
+    expect(calls.execs[1]![0]).toBe('bash');
+    expect(calls.execs[1]!.join(' ')).not.toContain(LOOPBACK);
+  });
+});

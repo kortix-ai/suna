@@ -7,11 +7,13 @@ import {
   resolveAttachmentRefs,
 } from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
+import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
 import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelCatalog,
+  withChannelDefaults,
 } from './channels';
 import {
   type ExecResult,
@@ -199,6 +201,13 @@ export interface GatewayDeps {
     channel: string;
     threadTs: string;
   }): Promise<Record<string, unknown>>;
+  /**
+   * Keeps a Slack or Teams channel read inside the calling project's own
+   * conversations (channel-read-scope.ts). Every project in a workspace or
+   * tenant resolves the same platform token, so the token alone does not.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -363,7 +372,8 @@ export interface CallResultAccount {
 
 export type CallResult =
   | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
-  | { status: 'denied'; reason: string }
+  /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
+  | { status: 'denied'; reason: string; message?: string }
   | {
       status: 'pending_approval';
       reason: string;
@@ -644,6 +654,24 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       reason: 'action_not_found',
     });
     return { status: 'denied', reason: 'action_not_found' };
+  }
+
+  // Before any credential, approval or provider call: a read of another
+  // project's conversation never leaves the API.
+  const channelGate =
+    connector.provider === 'channel' && deps.gateChannelRead
+      ? await deps.gateChannelRead({
+          projectId: input.projectId,
+          platform: connector.platform ?? null,
+          actionPath: input.actionPath,
+          args: input.args ?? {},
+          risk: action.risk,
+        })
+      : null;
+  if (channelGate?.refusal) {
+    const { reason, message } = channelGate.refusal;
+    await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+    return { status: 'denied', reason, message };
   }
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
@@ -980,7 +1008,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         connectedAccountId,
       });
     } else {
-      let providerArgs = executionArgs;
+      let providerArgs =
+        connector.provider === 'channel'
+          ? withChannelDefaults(connector.platform ?? '', input.actionPath, executionArgs)
+          : executionArgs;
       const scope = {
         accountId: input.accountId,
         projectId: input.projectId,
@@ -1036,6 +1067,20 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
+      // A list can hold other projects' conversations, and a thread read can
+      // answer with a different thread: the gate sees the answer first.
+      const scoped = result.ok && channelGate ? await channelGate.answer(result.data) : null;
+      if (scoped && 'refusal' in scoped) {
+        if (attachmentClaim?.claimToken) {
+          await deps.attachmentStore
+            ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+            .catch(() => {});
+        }
+        const { reason, message } = scoped.refusal;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+        return { status: 'denied', reason, message };
+      }
+      if (scoped) result = { ...result, data: scoped.data };
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {

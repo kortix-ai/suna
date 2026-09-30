@@ -5,7 +5,7 @@ import {
   reconcileInitialTurnAcceptanceToApi,
   relayTurnBeginAfterInitialAcceptance,
 } from '@/harness/open-code/boot';
-import { claimInitialTurn, relayTurnAccepted, resetInitialTurnClaimForTests } from '@/harness/shared/turn-relay';
+import { claimInitialTurn, claimedRuntimeSessionPin, relayTurnAccepted, resetInitialTurnClaimForTests } from '@/harness/shared/turn-relay';
 import type { OpenCodeBootState as SandboxBootState } from '@/harness/open-code/boot-state';
 
 const KEYS = [
@@ -73,6 +73,52 @@ describe('daemon-delivered initial turn lifecycle', () => {
         authorization: 'Bearer session-token',
         body: { session_id: 'session-1', kind: 'initial_turn_claim' },
       });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // A box without a local pin file must resume the root the control plane
+  // pinned, not adopt or create another (prod 2026-09-23: a converged legacy
+  // box created an empty root and the session opened blank).
+  test('records the durable root pin even when no prompt is pending', async () => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch() {
+        return Response.json({ ok: true, initial_turn: null, runtime_session_id: 'ses_durable', opencode_session_id: 'ses_durable' });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'session-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      expect(claimedRuntimeSessionPin()).toBeNull();
+      expect(await claimInitialTurn()).toBeNull();
+      expect(claimedRuntimeSessionPin()).toBe('ses_durable');
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test('an API that predates the pin field leaves no durable pin', async () => {
+    const server = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch() {
+        return Response.json({ ok: true, initial_turn: null });
+      },
+    });
+    try {
+      process.env.KORTIX_PROJECT_ID = 'project-1';
+      process.env.KORTIX_SESSION_ID = 'session-1';
+      process.env.KORTIX_TOKEN = 'session-token';
+      process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}/v1`;
+
+      expect(await claimInitialTurn()).toBeNull();
+      expect(claimedRuntimeSessionPin()).toBeNull();
     } finally {
       server.stop(true);
     }

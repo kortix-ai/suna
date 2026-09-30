@@ -1924,6 +1924,12 @@ export const chatUserIdentities = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // When the Kortix session that made this link had passed a second factor
+    // (Supabase `aal2`). An account that requires MFA accepts chat actions
+    // only through a link made that way: a chat message carries no factor of
+    // its own. Null for a link made without one, and for links older than
+    // this column.
+    mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('idx_chat_user_identities_platform_user').on(
@@ -3270,7 +3276,13 @@ export const auditEvents = kortixSchema.table(
     delegationDepth: integer('delegation_depth').default(0).notNull(),
     source: text('source'),
     authoritativeSource: text('authoritative_source'),
+    /** Deprecated: never written since the credential-source audit. Phase 2 drops it. */
     clientReportedSource: text('client_reported_source'),
+    /** What the API authenticated: browser_session | personal_access_token | oauth_app |
+     *  session_token | api_key | service_account | scim_token. NULL = not known. */
+    credentialKind: text('credential_kind'),
+    /** Identifier of that credential (token id, OAuth client id, session id, key id). Never a secret. */
+    credentialId: text('credential_id'),
     outcome: text('outcome'),
     action: text('action').notNull(),
     phase: text('phase').default('completed').notNull(),
@@ -4349,6 +4361,8 @@ export interface TunnelMachineInfo {
   osVersion?: string;
   nodeVersion?: string;
   agentVersion?: string;
+  /** sha256 of the hardware id (IOPlatformUUID, /etc/machine-id, MachineGuid). */
+  machineId?: string;
   [key: string]: unknown;
 }
 
@@ -4533,6 +4547,10 @@ export const tunnelDeviceAuthRequests = kortixSchema.table(
     deviceSecretHash: varchar('device_secret_hash', { length: 128 }).notNull(),
     status: tunnelDeviceAuthStatusEnum('status').default('pending').notNull(),
     machineHostname: varchar('machine_hostname', { length: 255 }),
+    /** sha256 of the machine's hardware id, sent by the agent. Approval reuses
+     *  the approver's existing registration of the same machine
+     *  (`tunnel_connections.machine_info.machineId`) instead of pairing a new one. */
+    machineId: varchar('machine_id', { length: 64 }),
     accountId: uuid('account_id'),
     /** Project the machine asked to join (`connect --project-id`). Untrusted
      *  until a human approves; the approver's project access is checked then. */

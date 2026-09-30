@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { SLACK_STOP_ACTION } from '../channels/slack/stop-action';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Slack had no Stop at all. A turn that wedges holds its OpenCode assistant
 // message open, and while it does every later prompt in the thread is accepted
@@ -29,6 +30,19 @@ mock.module('../shared/db', () => ({
     }),
   },
 }));
+
+// Whether the presser may still stop runs in the project (a linked account
+// with project.session.stop), and what was asked.
+let stopActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+    resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
+      actorChecks.push({ user: user.platformUserId, projectId, action });
+      return stopActor;
+    },
+  }),
+);
 
 let turn: Record<string, unknown> | null = null;
 let claim = true;
@@ -66,6 +80,7 @@ const liveTurn = (user: string) => ({
   channel: 'C1',
   ts: '11.11',
   triggerTs: THREAD,
+  projectId: 'proj-1',
   sessionId: SESSION_ID,
   finalized: false,
   originatingEvent: { user, ts: THREAD, channel: 'C1' },
@@ -76,6 +91,8 @@ const load = async () => await import('../channels/slack/stop');
 beforeEach(() => {
   participantRow = undefined;
   participantThrows = false;
+  stopActor = { userId: 'user-1' };
+  actorChecks.length = 0;
   turn = liveTurn('U_OWNER');
   claim = true;
   abortResult = true;
@@ -108,6 +125,20 @@ describe('stopSlackTurn', () => {
     const { stopSlackTurn } = await load();
 
     expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OTHER' })).stopped).toBe(true);
+  });
+
+  test('the sender must still be allowed to stop runs in the project', async () => {
+    for (const reason of ['not_member', 'unlinked'] as const) {
+      stopActor = { reason };
+      const { stopSlackTurn } = await load();
+      expect((await stopSlackTurn({ sessionId: SESSION_ID, slackUserId: 'U_OWNER' })).stopped).toBe(false);
+    }
+    expect(actorChecks).toEqual([
+      { user: 'U_OWNER', projectId: 'proj-1', action: 'project.session.stop' },
+      { user: 'U_OWNER', projectId: 'proj-1', action: 'project.session.stop' },
+    ]);
+    expect(aborted).toEqual([]);
+    expect(finalized).toEqual([]);
   });
 
   test('a bystander is refused, and nothing is claimed, aborted or closed', async () => {

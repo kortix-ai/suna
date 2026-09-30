@@ -310,7 +310,23 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     sessionRow = session({});
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, initial_turn: null });
+    expect(await response.json()).toEqual({ ok: true, initial_turn: null, runtime_session_id: null, opencode_session_id: null });
+  });
+
+  // A daemon whose local pin file is gone (converged legacy box, rebuilt home)
+  // must learn the durable pin here, or it adopts or creates a different root
+  // and relays that over the pin (prod 2026-09-23: a session opened empty).
+  test('returns the durable OpenCode root pin with or without a pending prompt', async () => {
+    sessionRow = { ...session({}), opencodeSessionId: 'ses_durable' };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      initial_turn: null,
+      // Both names: a W3 daemon reads runtime_session_id, an older one opencode_session_id.
+      runtime_session_id: 'ses_durable',
+      opencode_session_id: 'ses_durable',
+    });
   });
 
   test('returns the prompt and the delivering turn token', async () => {
@@ -329,6 +345,8 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: { prompt: 'build it', turn_token: 'turn-token-1', message_id: 'msg_1' },
+      runtime_session_id: null,
+      opencode_session_id: null,
     });
   });
 
@@ -341,7 +359,7 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     };
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, initial_turn: null });
+    expect(await response.json()).toEqual({ ok: true, initial_turn: null, runtime_session_id: null, opencode_session_id: null });
   });
 });
 

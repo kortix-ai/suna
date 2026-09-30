@@ -66,7 +66,8 @@ describe('buildAuditQuery', () => {
         actorType: 'agent',
         project: 'proj-1',
         session: 'sess-1',
-        source: 'cli',
+        source: 'agent',
+        credentialKind: 'oauth_app',
         phase: 'completed',
         outcome: 'denied',
         resourceType: 'secret',
@@ -84,7 +85,8 @@ describe('buildAuditQuery', () => {
       actor_type: 'agent',
       project_id: 'proj-1',
       session_id: 'sess-1',
-      source: 'cli',
+      source: 'agent',
+      credential_kind: 'oauth_app',
       phase: 'completed',
       outcome: 'denied',
       resource_type: 'secret',
@@ -273,7 +275,9 @@ describe('audit CLI process', () => {
         '--session',
         sessionId,
         '--source',
-        'cli',
+        'agent',
+        '--credential-kind',
+        'oauth_app',
         '--phase',
         'completed',
         '--outcome',
@@ -334,7 +338,8 @@ describe('audit CLI process', () => {
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
       expect(accountRequests[0]!.searchParams.get('project_id')).toBe('project-1');
       expect(accountRequests[0]!.searchParams.get('session_id')).toBe(sessionId);
-      expect(accountRequests[0]!.searchParams.get('source')).toBe('cli');
+      expect(accountRequests[0]!.searchParams.get('source')).toBe('agent');
+      expect(accountRequests[0]!.searchParams.get('credential_kind')).toBe('oauth_app');
       expect(accountRequests[0]!.searchParams.get('phase')).toBe('completed');
       expect(accountRequests[0]!.searchParams.get('outcome')).toBe('success');
       expect(accountRequests[0]!.searchParams.get('since')).toMatch(/^2026-/);

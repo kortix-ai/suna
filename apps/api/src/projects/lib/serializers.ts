@@ -16,7 +16,6 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
@@ -54,7 +53,6 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
-  clientReportedSource?: string | null;
 };
 
 // Session-status constants live in a dependency-free module so lean callers (the
@@ -382,7 +380,6 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
-    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
@@ -624,6 +621,15 @@ export async function loadSecretViewsForUser(input: {
 
 export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
+}
+
+/**
+ * Written only by the Microsoft Teams connection (channels/install-store.ts):
+ * the tenant, bot credentials and service URL. Connecting or disconnecting
+ * Teams changes them; the generic secrets API does not.
+ */
+export function isTeamsInstallSecretName(name: string): boolean {
+  return name.toUpperCase().startsWith('MS_TEAMS_');
 }
 
 export function serializeSessionSandboxConfig(

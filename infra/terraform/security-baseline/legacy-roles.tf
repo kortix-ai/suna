@@ -11,7 +11,11 @@ resource "aws_iam_role" "whatsapp_gateway_github_deploy" {
   name_prefix           = null
   path                  = "/"
   permissions_boundary  = null
-  tags                  = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 # __generated__ by Terraform from "bedrock-logs"
@@ -24,7 +28,11 @@ resource "aws_iam_role" "bedrock_logs" {
   name_prefix           = null
   path                  = "/service-role/"
   permissions_boundary  = null
-  tags                  = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }
 
 # __generated__ by Terraform from "whatsapp-gateway-instance"
@@ -37,5 +45,9 @@ resource "aws_iam_role" "whatsapp_gateway_instance" {
   name_prefix           = null
   path                  = "/"
   permissions_boundary  = null
-  tags                  = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+  }
 }

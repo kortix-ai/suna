@@ -55,13 +55,15 @@ beforeEach(() => {
 });
 
 test('stop() confirms the VM reached stopped before returning', async () => {
-  statesAfterAck = ['stopping', 'stopping', 'stopped'];
+  // The first read is the pre-stop auto-resume check; the rest are the poll.
+  statesAfterAck = ['running', 'stopping', 'stopping', 'stopped'];
   const { PlatinumProvider } = await import('./platinum');
   const provider = new PlatinumProvider();
 
   await provider.stop('sbx_1');
 
-  const pollCalls = calls.filter((call) => call.method === 'GET' && call.url.endsWith('/sbx_1'));
+  const ack = calls.findIndex((call) => call.url.endsWith('/stop'));
+  const pollCalls = calls.slice(ack).filter((call) => call.method === 'GET' && call.url.endsWith('/sbx_1'));
   // Confirmed only after polling past every non-terminal state.
   expect(pollCalls.length).toBe(3);
 });
@@ -117,10 +119,14 @@ test('getStatus() does not report a VM stuck in stopping as stopped', async () =
 // build reads a PATCH naming no field it knows as "clear the name".
 function stopWithSandbox(sandbox: Record<string, unknown>) {
   const patches: Array<Record<string, unknown>> = [];
+  const current: Record<string, unknown> = { id: 'sbx_1', state: 'stopped', ...sandbox };
   globalThis.fetch = (async (input, init) => {
     const method = String(init?.method ?? 'GET');
-    if (method === 'PATCH') patches.push(JSON.parse(String(init?.body)));
-    const body = String(input).endsWith('/stop') || method === 'PATCH' ? { ok: true } : { id: 'sbx_1', state: 'stopped', ...sandbox };
+    if (method === 'PATCH') {
+      patches.push(JSON.parse(String(init?.body)));
+      current.autoResume = false;
+    }
+    const body = String(input).endsWith('/stop') || method === 'PATCH' ? { ok: true } : current;
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   return patches;
@@ -144,4 +150,29 @@ test('stop() leaves auto-resume alone on an app, an already-off box, and a Plati
     await new PlatinumProvider().stop('sbx_1');
     expect(patches).toEqual([]);
   }
+});
+
+// Measured on a self-host 2026-09-30: Platinum resumed a box on a stray edge
+// request 1.3 s after `stop.done`, before a post-stop PATCH could land. The box
+// came back with its row stopped and its token dead. So the switch goes off
+// BEFORE the stop, and nothing can wake the box in between.
+test('stop() turns auto-resume off before it asks Platinum to stop', async () => {
+  const order: string[] = [];
+  globalThis.fetch = (async (_input, init) => {
+    const method = String(init?.method ?? 'GET');
+    if (method !== 'GET') order.push(method === 'PATCH' ? 'patch' : 'stop');
+    const body =
+      method === 'GET'
+        ? {
+            id: 'sbx_1',
+            state: order.includes('stop') ? 'stopped' : 'running',
+            autoResume: !order.includes('patch'),
+            metadata: { 'kortix.workload': 'session' },
+          }
+        : { ok: true };
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  const { PlatinumProvider } = await import('./platinum');
+  await new PlatinumProvider().stop('sbx_1');
+  expect(order).toEqual(['patch', 'stop']);
 });
