@@ -5168,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "El sandbox de esta sesión se detuvo. Abre una nueva sesión para continuar.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "El runtime de OpenCode no está listo",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "El runtime de la sesión no está listo",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "El sandbox arrancó, pero el runtime del proyecto no llegó a estar disponible.",
       "line395JsxTextRestartSession": "Reiniciar sesión",
       "line424JsxTextRestartSession": "Reiniciar sesión"
@@ -12496,7 +12496,7 @@
       "text5a0cac0326d5": "Descargar Kortix",
       "text5a219a418ec7": "No se pudo leer esta entrada del archivo.",
       "text5a23444828db": "Gestionar",
-      "text5a26f4425c82": "Sesión de OpenCode",
+      "text92fbc8484002": "Sesión del runtime",
       "text5a32374d30b4": "Actividad diaria de la plataforma y consumo de crédito. Cada segmento es un día UTC.",
       "text5a37d20f1235": "Agente del canal actualizado",
       "text5a41803b2dd1": "Rechazar todo",
@@ -20205,6 +20205,7 @@
     "commandCopied": "Comando copiado",
     "copyFailed": "No se pudo copiar",
     "copyCommand": "Copiar comando",
+    "copyCliCommand": "Copiar comando de instalación",
     "authorizeCodeHint": "Comprueba que este código coincide con el que aparece en tu ordenador.",
     "whoCanUse": "Quién puede usar este ordenador",
     "onlyYouDescription": "Solo tú, en todos los proyectos, en tus sesiones privadas.",

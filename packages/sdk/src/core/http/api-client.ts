@@ -613,10 +613,14 @@ async function makeRequest<T = any>(
       // Return the typed error to the caller, but never invoke the host's global
       // error handler. Explicit callers can still render local recovery UI.
     } else if (error instanceof Error) {
-      apiError = new ApiError(error.message, {
-        name: error.name || 'ApiError',
-        stack: error.stack,
-      });
+      // A browser TypeError has no HTTP response (CORS, DNS, or edge failure).
+      // Include only the route, never the request body or credential.
+      apiError = new ApiError(
+        fetchOptions.method === 'POST' && error instanceof TypeError && error.message === 'Failed to fetch'
+          ? `Failed to fetch: POST ${url.replace(getApiUrl(), '') || url}`
+          : error.message,
+        { name: error.name || 'ApiError', stack: error.stack },
+      );
 
       if (showErrors) {
         platformConfig().onError?.(apiError, errorContext);

@@ -65,7 +65,10 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       connectors: 'all',
       permissions: 'all',
       env: 'all',
+      // KRTX-165: no human declared it, so it keeps the project checkout.
+      repositoryAccess: true,
     });
+    expect(repositoryAccessFromLoadedAgents('kortix', loaded)).toBe(true);
   });
 
   // GAP 1 (dev-live repro): sessions.ts resolves the launching agent through

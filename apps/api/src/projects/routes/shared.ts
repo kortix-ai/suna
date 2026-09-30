@@ -38,7 +38,7 @@ export {
 } from './session-open-provision';
 
 export {
-  markOpencodeReadyWaitStarted,
+  markRuntimeReadyWaitStarted,
   markRuntimeWakeStarted,
 } from './session-open-readiness';
 

@@ -6,6 +6,7 @@ import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { useTranslations } from '@/i18n/use-translations';
@@ -5184,7 +5185,7 @@ export function SessionChat({
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
 
   // The parent crumb's destination, resolved the moment the
-  // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
+  // parent session loads. It is a route-cache miss on the `?rs=` branch, so it
   // is warmed below instead of being fetched cold on the click.
   const backToParentHref = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return null;
@@ -5192,7 +5193,7 @@ export function SessionChat({
     if (!projectRoute) return null;
     const [, projectId, projectSessionId] = projectRoute;
     return parentSessionData.parentID
-      ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+      ? childSessionHref(`/projects/${projectId}/sessions/${projectSessionId}`, parentSessionData.id)
       : `/projects/${projectId}/sessions/${projectSessionId}`;
   }, [session?.parentID, parentSessionData, pathname]);
 

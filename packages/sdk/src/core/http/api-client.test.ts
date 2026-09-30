@@ -356,6 +356,20 @@ describe('makeRequest retries transient transport failures on idempotent reads',
     }
   });
 
+  test('a project secret POST transport failure identifies the endpoint without leaking its value', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/secrets', { name: 'SAMPLE', value: 'synthetic-secret' });
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toContain('POST /projects/p1/secrets');
+      expect(response.error?.message).not.toContain('synthetic-secret');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('a POST transport failure is not retried', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',

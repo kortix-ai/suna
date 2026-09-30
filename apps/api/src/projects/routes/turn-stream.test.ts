@@ -114,7 +114,11 @@ mock.module('../../channels/teams/cards', () => ({
   buildFormCard: () => formCardResult,
 }));
 
+const realTurnLedger = await import('../session-turn-ledger');
+const realTurnLifecycle = await import('../sandbox-turn-lifecycle');
+
 mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
   adoptRuntimeSandboxTurn: async () => adoptResult,
@@ -122,6 +126,10 @@ mock.module('../sandbox-turn-lifecycle', () => ({
     order.push('complete');
     return completionResult;
   },
+}));
+
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
   recordUnidentifiedTurnCause: async () => causeResult,
   turnCompletionAllowsQueuePromotion: (result: { outcome: string }) =>
     result.outcome === 'closed' ||
@@ -310,7 +318,12 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     sessionRow = session({});
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, initial_turn: null, runtime_session_id: null, opencode_session_id: null });
+    expect(await response.json()).toEqual({
+      ok: true,
+      initial_turn: null,
+      runtime_session_id: null,
+      opencode_session_id: null,
+    });
   });
 
   // A daemon whose local pin file is gone (converged legacy box, rebuilt home)
@@ -359,7 +372,12 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     };
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, initial_turn: null, runtime_session_id: null, opencode_session_id: null });
+    expect(await response.json()).toEqual({
+      ok: true,
+      initial_turn: null,
+      runtime_session_id: null,
+      opencode_session_id: null,
+    });
   });
 });
 

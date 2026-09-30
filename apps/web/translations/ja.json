@@ -5168,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "このセッションのサンドボックスは停止しました。続行するには新しいセッションを開いてください。",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode ランタイムの準備ができていません",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "セッションランタイムの準備ができていません",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "サンドボックスは起動しましたが、プロジェクトのランタイムは使用可能になりませんでした。",
       "line395JsxTextRestartSession": "セッションを再起動",
       "line424JsxTextRestartSession": "セッションを再起動"
@@ -12496,7 +12496,7 @@
       "text5a0cac0326d5": "Kortixをダウンロード",
       "text5a219a418ec7": "このエントリはアーカイブから読み込めませんでした。",
       "text5a23444828db": "管理",
-      "text5a26f4425c82": "OpenCodeセッション",
+      "text92fbc8484002": "ランタイムセッション",
       "text5a32374d30b4": "日々のプラットフォームアクティビティとクレジットバーン。すべてのバケットは UTC 日です。",
       "text5a37d20f1235": "チャンネルのエージェントを更新しました",
       "text5a41803b2dd1": "すべて拒否",
@@ -20205,6 +20205,7 @@
     "commandCopied": "コマンドをコピーしました",
     "copyFailed": "コピーに失敗しました",
     "copyCommand": "コマンドをコピー",
+    "copyCliCommand": "インストールコマンドをコピー",
     "authorizeCodeHint": "このコードがコンピューターに表示されているコードと一致することを確認してください。",
     "whoCanUse": "このコンピューターを使える人",
     "onlyYouDescription": "あなただけ。すべてのプロジェクトの、あなたのプライベートセッションで使えます。",

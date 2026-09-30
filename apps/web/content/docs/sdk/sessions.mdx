@@ -185,7 +185,7 @@ Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
 needed, waits for the runtime to boot, and returns the resolved runtime.
 
 ```ts
-const { opencodeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
+const { runtimeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
 ```
 
 On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
@@ -201,7 +201,7 @@ the same Kortix session:
 
 ```tsx
 const session = useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.opencode_session_id,
+  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -401,11 +401,11 @@ Stream a session:
 
 ```ts
 const session = kortix.session(projectId, sessionId);
-const { opencodeSessionId } = await session.ensureReady();
+const { runtimeSessionId } = await session.ensureReady();
 
 const stream = await session.stream({
   onEvent: (event) => {
-    if (event.type === 'session.idle' && event.properties.sessionID === opencodeSessionId) {
+    if (event.type === 'session.idle' && event.properties.sessionID === runtimeSessionId) {
       onTurnDone();
       stream.close();
     }
@@ -659,9 +659,9 @@ the full method list.
 call `s.ensureReady()` first.
 
 ```ts
-const { opencodeSessionId } = await s.ensureReady();
+const { runtimeSessionId } = await s.ensureReady();
 await s.runtime.session.prompt({
-  sessionID: opencodeSessionId,
+  sessionID: runtimeSessionId,
   parts: [{ type: 'text', text: 'Refactor the auth module' }],
 });
 ```

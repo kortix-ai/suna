@@ -105,6 +105,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import {
+  childSessionHref,
+  readRuntimeSessionParam,
+} from '@/features/session/tool/tools/session-spawn-urls';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -215,7 +219,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const firstChatPending = useFirstChatPending(projectId);
-  const activeOpenCodeSessionId = searchParams.get('oc');
+  const activeRuntimeSessionId = readRuntimeSessionParam(searchParams);
   const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
   const switchingToSessionId = useSessionSwitchStore((state) => state.targetSessionId);
   const beginSessionSwitch = useSessionSwitchStore((state) => state.beginSwitch);
@@ -397,7 +401,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         <ProjectSessionRow
           session={session}
           href={href}
-          isActive={!!isActive && !activeOpenCodeSessionId}
+          isActive={!!isActive && !activeRuntimeSessionId}
           isSwitching={isSwitchTarget}
           onNavigate={(event) => {
             if (switchingToSessionId && session.session_id === activeSessionId) {
@@ -457,8 +461,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               />
             )}
             {children.map((child) => {
-              const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
-              const activeChild = !!isActive && activeOpenCodeSessionId === child.id;
+              const childHref = childSessionHref(href, child.id);
+              const activeChild = !!isActive && activeRuntimeSessionId === child.id;
               return (
                 <div key={child.id} className="relative h-8">
                   <SubAgentConnector />

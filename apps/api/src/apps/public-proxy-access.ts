@@ -314,7 +314,8 @@ export interface AppViewerHeaders {
  * App shares nothing (`off`) or nobody is signed in.
  *
  * The token mint is cached in-process per (App, viewer), so this costs one
- * `Map` lookup on the hot path after the first request of each hour.
+ * `Map` lookup and one token-row read on the hot path after the first request
+ * of each hour. The read is what keeps a token revoked elsewhere off the wire.
  */
 export async function appViewerContextHeader(
   request: Request,

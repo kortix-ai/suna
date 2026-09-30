@@ -320,7 +320,7 @@ test('a ready-session upload crosses the sandbox edge in bounded chunks and repo
 
 // ── the runtime must be resolved before any byte leaves the client ───────────
 //
-// `getActiveOpenCodeUrl()` returns '' on a billing-enabled deployment until a
+// `getActiveRuntimeUrl()` returns '' on a billing-enabled deployment until a
 // session runtime is bound (see `session/server-store/active.ts`). Every op in
 // this module used to interpolate that '' straight into `fetch()`, which makes
 // the URL RELATIVE: the browser then POSTed the user's file AND their bearer

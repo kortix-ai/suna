@@ -78,7 +78,7 @@ import { resolveSessionNetworkBoundary } from '../../projects/lib/network-secret
 import {
   type PreparedInitialSandboxTurn,
   initialSandboxTurnMetadata,
-} from '../../projects/sandbox-turn-lifecycle';
+} from '../../projects/session-turn-ledger';
 import { resolveSessionSandboxRegion } from './sandbox-region';
 
 /**

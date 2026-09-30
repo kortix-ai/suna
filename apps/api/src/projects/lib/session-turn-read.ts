@@ -16,22 +16,20 @@
  * the route does before it reaches this function.
  */
 
-import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-recovery';
-import { db } from '../../shared/db';
 import { sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import {
-  ABORT_END_ERROR_NAMES,
-  RUNNING_SANDBOX_STATUSES,
-  isRequestedStopName,
-  storedSandboxTurns,
-} from '../sandbox-turn-lifecycle';
+import { db } from '../../shared/db';
+import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-recovery';
+import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
+import { ABORT_END_ERROR_NAMES, isRequestedStopName } from '../session-turn-ledger';
 
 /** One turn the control plane is holding open, in wire shape. */
 export interface SessionTurnView {
   turn_token: string;
   state: string;
   message_id: string | null;
+  runtime_session_id: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   started_at: string | null;
   accepted_at: string | null;
@@ -176,7 +174,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
       .select({
         turnToken: sessionTurns.turnToken,
         messageId: sessionTurns.messageId,
-        opencodeSessionId: sessionTurns.opencodeSessionId,
+        opencodeSessionId: sessionTurns.runtimeSessionId,
         startedAt: sessionTurns.startedAt,
         acceptedAt: sessionTurns.acceptedAt,
       })
@@ -191,7 +189,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
         ),
       );
     for (const row of rows) ledger.set(row.turnToken, row);
-}
+  }
 
   const live = authority
     .map((turn) => {
@@ -201,6 +199,7 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
       // record, which carries none.
       const startedAt =
         turn.startedAtMs !== null ? new Date(turn.startedAtMs) : (row?.startedAt ?? null);
+      const runtimeSessionId = turn.runtimeSessionId || row?.opencodeSessionId || null;
       return {
         startedAtMs: startedAt ? startedAt.getTime() : null,
         turn: {
@@ -211,7 +210,8 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
           // `delivering` for a turn OpenCode has accepted.
           state: turn.state,
           message_id: turn.messageId ?? row?.messageId ?? null,
-          opencode_session_id: turn.opencodeSessionId || row?.opencodeSessionId || null,
+          runtime_session_id: runtimeSessionId,
+          opencode_session_id: runtimeSessionId,
           started_at: startedAt ? startedAt.toISOString() : null,
           accepted_at: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
         },

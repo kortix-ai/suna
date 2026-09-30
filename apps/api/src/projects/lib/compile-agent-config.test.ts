@@ -871,3 +871,9 @@ describe('resolveSelectedAgentConfigForSession', () => {
     ).rejects.toThrow('not declared');
   });
 });
+
+ test('manifest tool toggles compile per agent without changing other agents', () => {
+  const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
+  expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
+  expect(config?.agent.other.tools).toBeUndefined();
+});

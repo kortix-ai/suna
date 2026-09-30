@@ -38,7 +38,7 @@ async function main() {
   //    cold boot just takes longer rather than throwing. The
   //    retryUntilReady wrapper below is optional — keep it only if you want
   //    a longer total budget than the default.
-  const { opencodeSessionId } = await retryUntilReady(() => session.ensureReady());
+  const { runtimeSessionId } = await retryUntilReady(() => session.ensureReady());
 
   // 5. Connect the event stream before you send, so no early events are
   //    missed. narrowChatEvent() collapses the wire events into a small
@@ -52,7 +52,7 @@ async function main() {
       if (!e) return;
       if (e.type === 'message.part.updated') process.stdout.write('.');
       if (e.type === 'session.error') console.error('\nerror:', e.error);
-      if (e.type === 'session.idle' && e.sessionID === opencodeSessionId) {
+      if (e.type === 'session.idle' && e.sessionID === runtimeSessionId) {
         resolveIdle(); // the turn is finished
       }
     },
@@ -73,7 +73,7 @@ async function main() {
   //    into one union, so a renderer can switch on part.kind and
   //    TypeScript proves no case is missed.
   const result = await session.runtime.session.messages({
-    sessionID: opencodeSessionId,
+    sessionID: runtimeSessionId,
   });
   for (const message of (result.data ?? []) as MessageWithParts[]) {
     for (const part of classifyTurn(message).parts) {

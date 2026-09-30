@@ -204,6 +204,15 @@ mock.module('../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 
+// The turn-identity bind is one conditional UPDATE through `db.execute`, which
+// this file's `db` stub does not build. Its SQL is pinned by
+// integration-session-turn-identity.test.ts; here it only has to succeed.
+const realOnBehalfOf = await import('../projects/lib/on-behalf-of');
+mock.module('../projects/lib/on-behalf-of', () => ({
+  ...realOnBehalfOf,
+  bindSessionTurnIdentity: async () => true,
+}));
+
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
 // `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so

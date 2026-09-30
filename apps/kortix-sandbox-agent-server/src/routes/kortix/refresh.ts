@@ -74,6 +74,10 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
     // trigger from a UI click. An older daemon ignores the flag and runs its
     // `--ff-only` pull, which cannot discard anything.
     const skipRepo = c.req.query('repo') === '0'
+    // `?base_config=1` — bring the base branch's OpenCode config dir into the
+    // checkout for a project without config releases (`syncConfigDirToBase`).
+    // An older daemon ignores the flag and answers without `config_dir`.
+    const syncBaseConfig = c.req.query('base_config') === '1'
     const baseSha = c.req.query('base_sha')
     if (baseSha !== undefined && !/^[0-9a-f]{40}$/i.test(baseSha)) {
       return c.json({ error: 'invalid base_sha' }, 400)
@@ -85,6 +89,7 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
           syncBase,
           skipRestart,
           skipRepo,
+          syncBaseConfig,
           baseSha,
           forceFail: c.req.query('verify_fail') === '1',
         })

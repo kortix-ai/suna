@@ -33,15 +33,9 @@ import {
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import type { Turn, TextPart } from '@/lib/opencode/types';
+import type { Turn } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
-import {
-  isTextPart,
-  messageCreatedAt,
-  splitUserParts,
-  type MessageWithParts,
-  type SessionParticipant,
-} from '@kortix/sdk';
+import { messageCreatedAt, type MessageWithParts, type SessionParticipant } from '@kortix/sdk';
 import { parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
@@ -56,7 +50,8 @@ import {
 import {
   commandMessageText,
   isUserMessageEdited,
-  parseUserMessageText,
+  parseUserMessageParts,
+  type MessageAttachment,
   queuedPromptStatusLabel,
   quoteMarginBottom,
   userMessageSentLabel,
@@ -152,13 +147,29 @@ export interface UserMessageUploadStatus {
   onRetry?: () => void;
 }
 
-interface MessageAttachment {
-  key: string;
-  filename: string;
-  mime?: string;
-  src?: string;
-  /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
-  localUri?: string;
+function SystemMessageCard({ dimStyle, menuProps, openMenu, actions, children }: {
+  dimStyle: ReturnType<typeof useAnimatedStyle>;
+  menuProps: Omit<React.ComponentProps<typeof MessageMenu>, 'children'>;
+  openMenu: () => void;
+  actions: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Reanimated.View className="px-4" style={dimStyle}>
+      <View className="items-end" style={{ gap: webSpace(1) }}>
+        <MessageMenu {...menuProps}>
+          <Pressable
+            onLongPress={openMenu}
+            delayLongPress={350}
+            className="border-border/60 bg-muted/40 rounded-lg border"
+            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}>
+            {children}
+          </Pressable>
+        </MessageMenu>
+        {actions}
+      </View>
+    </Reanimated.View>
+  );
 }
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
@@ -209,33 +220,7 @@ export function UserMessage({
   const message = turn.userMessage;
   const messageId = message.info.id;
 
-  const parsed = useMemo(() => {
-    const { attachments: fileParts, stickyParts } = splitUserParts(message.parts);
-    const rawText = stickyParts
-      .filter(
-        (p) =>
-          isTextPart(p) &&
-          !!(p as TextPart).text?.trim() &&
-          !(p as TextPart & { synthetic?: boolean }).synthetic &&
-          !(p as TextPart & { ignored?: boolean }).ignored,
-      )
-      .map((p) => (p as TextPart).text)
-      .join('\n');
-    const content = parseUserMessageText(rawText);
-    const attachments: MessageAttachment[] = [
-      ...content.files.map((f, i) => ({
-        key: `upload:${i}:${f.path}`,
-        filename: f.filename || f.path.split('/').pop() || 'File',
-        mime: f.mime,
-        src: f.path || undefined,
-      })),
-      ...fileParts.map((p) => {
-        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
-        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
-      }),
-    ];
-    return { rawText, content, attachments };
-  }, [message.parts]);
+  const parsed = useMemo(() => parseUserMessageParts(message.parts), [message.parts]);
 
   const { rawText, content, attachments } = parsed;
 
@@ -325,76 +310,52 @@ export function UserMessage({
   if (channelMessageInfo) {
     const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
     return (
-      <Reanimated.View className="px-4" style={dimStyle}>
-        <View className="items-end" style={{ gap: webSpace(1) }}>
-          <MessageMenu {...menuProps}>
-          <Pressable
-            onLongPress={openMenu}
-            delayLongPress={350}
-            className="border-border/60 bg-muted/40 rounded-lg border"
-            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}
-          >
-            <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-              <Icon
-                as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
-                size={webSpace(3.5)}
-                color={brand}
-              />
-              <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
-                {channelMessageInfo.platform}
-              </Text>
-              <Text variant="muted" style={META_TEXT_STYLE}>
-                ·
-              </Text>
-              <Text variant="small" className="leading-5">
-                {channelMessageInfo.userName}
-              </Text>
-            </View>
-            {channelMessageInfo.messageText ? (
-              <Text className="text-sm">{channelMessageInfo.messageText}</Text>
-            ) : null}
-          </Pressable>
-          </MessageMenu>
-          {actions}
+      <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
+        <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
+          <Icon
+            as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
+            size={webSpace(3.5)}
+            color={brand}
+          />
+          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
+            {channelMessageInfo.platform}
+          </Text>
+          <Text variant="muted" style={META_TEXT_STYLE}>
+            ·
+          </Text>
+          <Text variant="small" className="leading-5">
+            {channelMessageInfo.userName}
+          </Text>
         </View>
-      </Reanimated.View>
+        {channelMessageInfo.messageText ? (
+          <Text className="text-sm">{channelMessageInfo.messageText}</Text>
+        ) : null}
+      </SystemMessageCard>
     );
   }
 
   if (triggerEventInfo) {
     return (
-      <Reanimated.View className="px-4" style={dimStyle}>
-        <View className="items-end" style={{ gap: webSpace(1) }}>
-          <MessageMenu {...menuProps}>
-          <Pressable
-            onLongPress={openMenu}
-            delayLongPress={350}
-            className="border-border/60 bg-muted/40 rounded-lg border"
-            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}
-          >
-            <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-              <Icon as={TimerIcon} size={webSpace(3.5)} className="text-muted-foreground" />
-              <Text className="text-sm" style={{ fontFamily: 'Roobert-Medium' }}>
-                {triggerEventInfo.data?.trigger || 'Scheduled Task'}
+      <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
+        <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
+          <Icon as={TimerIcon} size={webSpace(3.5)} className="text-muted-foreground" />
+          <Text className="text-sm" style={{ fontFamily: 'Roobert-Medium' }}>
+            {triggerEventInfo.data?.trigger || 'Scheduled Task'}
+          </Text>
+          {triggerEventInfo.data?.data?.manual ? (
+            <View className="bg-muted rounded-sm px-1.5">
+              <Text variant="muted" style={META_TEXT_STYLE}>
+                Manual
               </Text>
-              {triggerEventInfo.data?.data?.manual ? (
-                <View className="bg-muted rounded-sm px-1.5">
-                  <Text variant="muted" style={META_TEXT_STYLE}>
-                    Manual
-                  </Text>
-                </View>
-              ) : null}
             </View>
-            {triggerEventInfo.prompt ? (
-              <Text variant="muted" numberOfLines={3} style={[META_TEXT_STYLE, { paddingLeft: webSpace(5.5) }]}>
-                {triggerEventInfo.prompt}
-              </Text>
-            ) : null}
-          </Pressable>
-          </MessageMenu>
-          {actions}
+          ) : null}
         </View>
-      </Reanimated.View>
+        {triggerEventInfo.prompt ? (
+          <Text variant="muted" numberOfLines={3} style={[META_TEXT_STYLE, { paddingLeft: webSpace(5.5) }]}>
+            {triggerEventInfo.prompt}
+          </Text>
+        ) : null}
+      </SystemMessageCard>
     );
   }
 

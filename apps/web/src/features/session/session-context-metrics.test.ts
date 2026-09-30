@@ -241,6 +241,15 @@ describe('getSessionContextMetrics', () => {
     expect(metrics.context?.modelLabel).toBe('claude-x');
   });
 
+  test('missing provider entry keeps raw model id and leaves limits undefined', () => {
+    const msg = assistant({ providerID: 'missing-provider', tokens: positiveTokens() });
+    const context = getSessionContextMetrics([row(msg)], providersOf('kortix', {}), freeLookup).context;
+    expect(context?.providerLabel).toBe('missing-provider');
+    expect(context?.modelLabel).toBe('claude-x');
+    expect(context?.limit).toBeUndefined();
+    expect(context?.usage).toBeNull();
+  });
+
   test('gateway provider resolves the upstream label from model.provider', () => {
     const msg = assistant({ providerID: 'kortix', tokens: positiveTokens() });
     const metrics = getSessionContextMetrics(
