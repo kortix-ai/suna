@@ -16,6 +16,7 @@
 // file). It writes and deletes rows with fixed ids.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import pg from 'pg';
+import { interleave } from './helpers/interleave';
 
 const SANDBOX_ID = '00000000-0000-4000-a000-00000000e9a1';
 const ACCOUNT_ID = '00000000-0000-4000-a000-00000000e9a2';
@@ -79,42 +80,6 @@ async function readMetadata(): Promise<Record<string, unknown>> {
   return (result.rows[0]?.metadata ?? {}) as Record<string, unknown>;
 }
 
-/**
- * Run `write` on a second connection inside an open transaction, start
- * `contender`, wait until the contender blocks on the row lock (or finishes
- * without touching the row), then commit `write` and await the contender.
- */
-async function interleave(
-  write: (tx: pg.Client) => Promise<unknown>,
-  contender: () => Promise<unknown>,
-): Promise<void> {
-  const tx = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
-  await tx.connect();
-  try {
-    await tx.query('BEGIN');
-    await write(tx);
-    let settled = false;
-    const running = contender().finally(() => {
-      settled = true;
-    });
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      if (settled) break;
-      const waiting = await admin.query(
-        `SELECT count(*)::int AS n FROM pg_stat_activity
-         WHERE wait_event_type = 'Lock' AND query ILIKE '%session_sandboxes%'`,
-      );
-      if (waiting.rows[0].n > 0) break;
-      if (Date.now() > deadline) throw new Error('contender never blocked on the row lock');
-      await Bun.sleep(20);
-    }
-    await tx.query('COMMIT');
-    await running;
-  } finally {
-    await tx.end();
-  }
-}
-
 describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)', () => {
   beforeAll(async () => {
     // The modules under test read `config.DATABASE_URL` at import time.
@@ -152,6 +117,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
             [SANDBOX_ID, JSON.stringify(RESTART_CLAIM)],
           ),
         () => pinSandboxEgressIp(SANDBOX_ID, '203.0.113.7'),
+        'session_sandboxes',
       );
       const metadata = await readMetadata();
       expect(metadata.runtimeRestartId).toBe(RESTART_CLAIM.runtimeRestartId);
@@ -223,6 +189,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
             claim: restart,
           });
         },
+        'session_sandboxes',
       );
       expect(owned).toBe(true);
       const metadata = await readMetadata();
