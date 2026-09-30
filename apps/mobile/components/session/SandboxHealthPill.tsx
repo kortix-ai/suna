@@ -11,11 +11,8 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, View } from 'react-native';
+import { Animated, Easing } from 'react-native';
 import { ArrowsLeftRightIcon as ArrowLeftRight, WarningCircleIcon as CircleAlert } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { THEME } from '@/lib/utils/theme';
 import { sessionConnectionLabel } from '@kortix/sdk';
@@ -23,6 +20,7 @@ import {
   useElapsedSince,
   useSandboxReachability,
 } from '@/hooks/useSandboxReachability';
+import { ComposerStatusAction, ComposerStatusPill } from './ComposerStatusPill';
 
 interface SandboxHealthPillProps {
   /** Opens the instances picker (= web's "Switch" target). */
@@ -67,51 +65,27 @@ export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: Sandbox
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });
 
-  // The composer card, exactly (components/kortix/composer.tsx): `px-4`
-  // edge, `rounded-3xl border border-border bg-background p-2`, and the
-  // composer's `secondary` `sm` pills for the actions (Jay, 2026-09-23).
+  // The composer card, exactly (components/kortix/composer.tsx) — drawn by
+  // `ComposerStatusPill` (Jay, 2026-09-23).
   return (
-    <View className="px-4 pb-2">
-      <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
-        {/* Orange dot with ping halo. `px-2` in the row puts it on the
-            composer's text inset (8pt card + 8pt input padding). */}
-        <View className="flex-1 flex-row items-center gap-2 px-2">
-          <View style={{ width: 8, height: 8, alignItems: 'center', justifyContent: 'center' }}>
-            <Animated.View
-              style={{
-                position: 'absolute',
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: dotColor,
-                opacity: pingOpacity,
-                transform: [{ scale: pingScale }],
-              }}
-            />
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} />
-          </View>
-          <Text variant="muted" className="shrink" numberOfLines={1}>
-            {wording?.label}
-            {elapsed ? <Text variant="muted" className="opacity-60">{` · ${elapsed}`}</Text> : null}
-          </Text>
-        </View>
+    <ComposerStatusPill
+      dotColor={dotColor}
+      ping={{ scale: pingScale, opacity: pingOpacity }}
+      label={wording?.label}
+      elapsed={elapsed}
+      actions={
+        <>
+          {/* Health and Switch help only when the computer is truly unreachable:
+              a waking one needs neither. */}
+          {faulted && onHealth ? (
+            <ComposerStatusAction icon={CircleAlert} label="Health" onPress={onHealth} />
+          ) : null}
 
-        {/* Health and Switch help only when the computer is truly unreachable:
-            a waking one needs neither. */}
-        {faulted && onHealth ? (
-          <Button variant="secondary" size="sm" className="rounded-full" onPress={onHealth}>
-            <Icon as={CircleAlert} size={14} />
-            <Text>Health</Text>
-          </Button>
-        ) : null}
-
-        {faulted && onSwitch ? (
-          <Button variant="secondary" size="sm" className="rounded-full" onPress={onSwitch}>
-            <Icon as={ArrowLeftRight} size={14} />
-            <Text>Switch</Text>
-          </Button>
-        ) : null}
-      </View>
-    </View>
+          {faulted && onSwitch ? (
+            <ComposerStatusAction icon={ArrowLeftRight} label="Switch" onPress={onSwitch} />
+          ) : null}
+        </>
+      }
+    />
   );
 }
