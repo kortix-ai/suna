@@ -16,7 +16,6 @@ import {
   invalidateProjectMirror,
   previewMerge,
   resolveBranchAheadState,
-  resolveBranchTip,
 } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
@@ -36,6 +35,7 @@ import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { continueSession } from '../session-lifecycle';
+import { refreshCrTips } from './shared';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -52,41 +52,6 @@ import { continueSession } from '../session-lifecycle';
  * read endpoints so the UI never shows stale "X commits behind" state. No-op
  * when the SHAs already match or the CR is no longer open.
  */
-export async function refreshCrTips(input: {
-  cr: typeof changeRequests.$inferSelect;
-  project: {
-    projectId: string;
-    repoUrl: string;
-    defaultBranch: string;
-    manifestPath: string;
-    gitAuthToken?: string | null;
-  };
-}) {
-  const { cr, project } = input;
-  if (cr.status !== 'open') return;
-  try {
-    const [baseSha, headSha] = await Promise.all([
-      resolveBranchTip(project, cr.baseRef),
-      resolveBranchTip(project, cr.headRef),
-    ]);
-    if (cr.headCommitSha === headSha && cr.baseCommitSha === baseSha) return;
-    await db
-      .update(changeRequests)
-      .set({
-        headCommitSha: headSha,
-        baseCommitSha: baseSha,
-        updatedAt: new Date(),
-      })
-      .where(eq(changeRequests.crId, cr.crId));
-  } catch (error) {
-    // Repo unreachable or branch missing — leave the CR alone so the UI can
-    // still render the metadata it has.
-    console.warn('[change-requests] tip refresh failed', {
-      crId: cr.crId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
 
 projectsApp.openapi(
   createRoute({

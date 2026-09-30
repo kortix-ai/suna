@@ -15,13 +15,7 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-secret-propagation.ts',
   'projects/lib/sandbox-session-push.ts',
   'projects/opencode-mapping.ts',
-  'projects/routes/session-open.ts',
-  'projects/routes/session-open-provision.ts',
-  'projects/routes/session-open-readiness.ts',
-  'projects/routes/session-open-recovery.ts',
-  'projects/routes/session-open-guarantee.ts',
-  'projects/routes/resume-stopped-sandbox.ts',
-  'projects/routes/stopped-wake-result.ts',
+  'projects/routes/shared.ts',
   // Egress-enforced delivery. There is ONE mechanism for every provider
   // and no verdict to
   // read: the guest holds a handle and the broker route substitutes the value.
