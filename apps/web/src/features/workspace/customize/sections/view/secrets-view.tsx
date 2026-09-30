@@ -1294,6 +1294,8 @@ function SecretDialog({
     nextConsumer,
     enforcedPolicyValid: enforcedPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
+    audienceChanged:
+      row !== null && nextSharedWith !== null && !sameSharedWith(row.sharedWith, nextSharedWith),
   });
 
   return (

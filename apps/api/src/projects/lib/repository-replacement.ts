@@ -1,5 +1,5 @@
 import { changeRequests, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
-import { loadObjectGrants } from '../../iam/authorize';
+import * as iamAuthorize from '../../iam/authorize';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -148,7 +148,7 @@ export async function persistProjectRepositoryReplacement(input: {
       if (existing.length) throw new RepositorySecretCopyError(`Target already has ${existing[0]!.identifier}`);
       // A value narrowed to an audience stays in its project: a copy would be
       // open to everyone in the target (secret-audience.ts).
-      const narrowed = await loadObjectGrants(sourceProjectId, 'secret');
+      const narrowed = await iamAuthorize.loadObjectGrants(sourceProjectId, 'secret');
       for (const identifier of unique) {
         const row = sourceByIdentifier.get(identifier);
         if (!row || !row.active) throw new RepositorySecretCopyError(`Source has no active shared ${identifier}`);
