@@ -57,7 +57,7 @@
  * web `tool/shared/patch-helpers`      → `../shared/patch-helpers`  PatchFileLite, PATCH_TYPE_STYLE, RawPatchDiffView
  * web `tool/shared/todo-helpers`       → `../shared/todo-helpers`   parseTodos, TodoItem, TodoStatusIcon (`size`/`color` props)
  * web `tool/shared/session-helpers`    → `../shared/session-helpers`
- * web `tool/shared/show-helpers`       → `../shared/show-helpers`   (icons return `AppIcon`; no ShowCarousel/ShowContentRenderer)
+ * web `tool/shared/show-helpers`       → `../shared/show-helpers`   (`useShowOpenInTab`, rows, actions; the type/file glyphs → `../shared/tool-icons`; no ShowCarousel/ShowContentRenderer)
  * web `tool/shared/sub-agent`          → not a primitive: it renders `ToolPartRenderer`; port with the agents family
  * web `tool/shared/{file-verb,search-query,web-helpers,…}` → `@kortix/sdk`
  *
