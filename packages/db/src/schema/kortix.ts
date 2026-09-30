@@ -6422,10 +6422,14 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
 /** One lease per signed-in user's visible browser tab and session. */
 export const sessionPresenceLeases = kortixSchema.table('session_presence_leases', {
   userId: uuid('user_id').notNull(),
-  sessionId: text('session_id').notNull().references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull(),
   tabId: uuid('tab_id').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-}, (table) => [primaryKey({ columns: [table.userId, table.sessionId, table.tabId] })]);
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.sessionId, table.tabId] }),
+  // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_presence_session_fk' }).onDelete('cascade'),
+]);
 
 /**
  * A user's Expo push device token plus that device's per-event notification

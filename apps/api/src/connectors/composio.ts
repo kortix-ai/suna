@@ -708,7 +708,12 @@ export async function executeComposio(
     result: response.data,
     ...(response.error ? { error: response.error } : {}),
   };
-  return response.error ? { ok: false, status: 502, data } : { ok: true, status: 200, data };
+  // Linear rejects malformed GraphQL from the caller, not from an unavailable provider.
+  const callerError = input.toolkit === 'linear' && input.toolSlug === 'LINEAR_RUN_QUERY_OR_MUTATION' &&
+    typeof response.error === 'string' && /\bCode: (?:GRAPHQL_VALIDATION_FAILED|INPUT_ERROR)\b/.test(response.error);
+  return response.error
+    ? { ok: false, status: callerError ? 400 : 502, data }
+    : { ok: true, status: 200, data };
 }
 
 /** Composio's `ConnectedAccount_BadRequest` for a reused alias. */

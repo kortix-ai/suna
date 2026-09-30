@@ -29,6 +29,7 @@ import { ImageRenderer } from '@/features/file-renderers/image-renderer';
 import { MermaidDiagram } from '@/features/file-renderers/mermaid/mermaid-diagram';
 import { isMermaidFile } from '@/features/file-renderers/mermaid/mermaid-utils';
 import { HtmlPreview, SaveAsPdfButton } from '@/features/file-viewer';
+import { getFileCategory, getLanguageFromExt } from '@/features/file-viewer/preview-policy';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
@@ -45,53 +46,23 @@ import {
 
 type View = 'preview' | 'source';
 
-/** Extension → the language Shiki should highlight the source with. */
-const LANGUAGE_BY_EXT: Record<string, string> = {
-  md: 'markdown',
-  mdx: 'markdown',
-  ts: 'typescript',
-  tsx: 'tsx',
-  js: 'javascript',
-  jsx: 'jsx',
-  json: 'json',
-  py: 'python',
-  rb: 'ruby',
-  go: 'go',
-  rs: 'rust',
-  sh: 'bash',
-  bash: 'bash',
-  yml: 'yaml',
-  yaml: 'yaml',
-  toml: 'toml',
-  css: 'css',
-  html: 'html',
-  htm: 'html',
-  // An SVG is an XML document. Shiki has no `svg` grammar of its own, and `xml`
-  // is what it would alias to anyway.
-  svg: 'xml',
-  sql: 'sql',
-  mmd: 'mermaid',
-  mermaid: 'mermaid',
-};
-
 function extensionOf(fileName: string): string {
   const dot = fileName.lastIndexOf('.');
   return dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : '';
 }
 
 export function languageFor(fileName: string): string {
-  return LANGUAGE_BY_EXT[extensionOf(fileName)] ?? 'text';
+  const language = getLanguageFromExt(fileName);
+  return extensionOf(fileName) === 'svg' ? 'xml' : extensionOf(fileName) === 'htm' ? 'html' : language === 'plaintext' ? 'text' : language;
 }
 
 export function isMarkdown(fileName: string): boolean {
-  const ext = extensionOf(fileName);
-  return ext === 'md' || ext === 'mdx';
+  return getLanguageFromExt(fileName) === 'markdown';
 }
 
 /** HTML has a rendered form and a source, and both are worth seeing. */
 export function isHtml(fileName: string): boolean {
-  const ext = extensionOf(fileName);
-  return ext === 'html' || ext === 'htm';
+  return getFileCategory(fileName) === 'html';
 }
 
 /**
