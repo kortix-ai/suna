@@ -173,7 +173,7 @@ export async function gateChannelWrite(
     ownership,
   );
   if (refusal) return refuse(refusal.message);
-  // Only chat.postMessage resolves a name; every other write takes an id.
+  // Slack documents names only for chat.postMessage; every other write takes an id.
   if (input.actionPath !== 'send_message') return PASS;
   return { refusal: null, misfire: (data) => postMisfire(channel as string, data) };
 }

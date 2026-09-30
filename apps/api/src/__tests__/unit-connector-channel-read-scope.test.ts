@@ -209,7 +209,7 @@ describe('handleCall — Slack writes stay out of other projects', () => {
       ['{"ok":false,"error":"message_not_found"}', 'Kortix could not remove it: delete it in Slack.'],
     ] as const) {
       const requests: Array<{ url: string; body?: string }> = [];
-      const { deps: d, audits } = deps({ action: action('send_message', 'chat.postMessage', 'write'), body: '', writes: true });
+      const { deps: d, audits, binds } = deps({ action: action('send_message', 'chat.postMessage', 'write'), body: '', writes: true });
       d.fetchImpl = async (url, init) => {
         requests.push({ url, body: init.body });
         const body = url.endsWith('/chat.postMessage') ? '{"ok":true,"channel":"C0OTHER","ts":"300.3"}' : deleteAnswer;
@@ -227,6 +227,8 @@ describe('handleCall — Slack writes stay out of other projects', () => {
       ]);
       expect(JSON.parse(requests[1]!.body!)).toEqual({ channel: 'C0OTHER', ts: '300.3' });
       expect(audits.map((a) => a.status)).toEqual(['denied']);
+      // The session never adopts a thread in the conversation it did not check.
+      expect(binds).toEqual([]);
     }
   });
 
