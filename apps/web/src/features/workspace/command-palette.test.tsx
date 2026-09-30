@@ -545,3 +545,27 @@ describe('command palette — model list chrome', () => {
     expect(modelsPage).toContain('modelIdAddsInformation(model.modelName, model.modelID)');
   });
 });
+
+/**
+ * The SSH dialog store was write-only dead wiring: nothing read `isOpen`, so
+ * no dialog could ever render, and no registry row referenced the handler id,
+ * so the palette could not reach it either (KRTX-723). These pins keep it
+ * deleted: a registry row that starts answering the retired action id, or a
+ * return of the dynamic import, fails here. The needles are assembled from
+ * parts on purpose — the retirement sweep greps apps/web/src for the exact
+ * identifiers, and this test must not become its own hit.
+ */
+describe('the retired ssh dialog wiring', () => {
+  const retiredActionId = 'generate' + 'SSHKey';
+  const retiredStorePath = '@/stores/ssh-' + 'dialog-store';
+
+  test('no palette row reaches the retired action id', () => {
+    expect(paletteItems.some((item) => item.actionId === retiredActionId)).toBe(false);
+  });
+
+  test('the palette neither imports the store nor names the handler', () => {
+    const source = readFileSync(new URL('./command-palette.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain(retiredStorePath);
+    expect(source).not.toContain(retiredActionId);
+  });
+});
