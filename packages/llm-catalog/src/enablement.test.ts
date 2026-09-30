@@ -179,4 +179,26 @@ describe('autoSeedDefaultModel — never auto-seeds a bare Bedrock id', () => {
       'anthropic.claude-opus-5',
     ]);
   });
+
+  // models.dev ships a same-day `deprecated` experiment beside the real release
+  // (deepseek-v4-flash-vision-exp, 2026-09-10). Newest must mean newest STABLE.
+  test('never auto-seeds a deprecated or beta model while a stable one exists', () => {
+    const picked = autoSeedDefaultModel([
+      { id: 'deepseek-flash', released: '2026-09-10' },
+      { id: 'deepseek-v4-flash-vision-exp', released: '2026-09-10', status: 'deprecated' },
+      { id: 'deepseek-v5-preview', released: '2026-09-20', status: 'beta' },
+    ]);
+    expect(picked?.id).toBe('deepseek-flash');
+    expect(autoSeedDefaultModel([{ id: 'only-beta', status: 'beta' }])?.id).toBe('only-beta');
+  });
+
+  // An agent's default must call tools; OpenRouter once seeded a model that
+  // answered "No endpoints found that support tool use".
+  test('never auto-seeds a model that declares tool_call: false while one with tools exists', () => {
+    const picked = autoSeedDefaultModel([
+      { id: 'gpt-6.1-sol', released: '2026-09-29', tool_call: true },
+      { id: 'gpt-realtime-3', released: '2026-09-30', tool_call: false },
+    ]);
+    expect(picked?.id).toBe('gpt-6.1-sol');
+  });
 });
