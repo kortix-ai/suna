@@ -1,13 +1,14 @@
 /**
- * Where OpenCode reads its config from, as this box reports it.
+ * Where the session runtime reads its config from, as this box reports it.
  *
  * Under config releases the chain is: the desired release, then the last
  * release this box proved, then the platform's image default. `/workspace` is
- * NOT a step in it — OpenCode never boots from the session's checkout while
- * the feature is on.
+ * NOT a step in it — no runtime boots from the session's checkout while the
+ * feature is on.
  *
  * `workspace` is reachable only when config releases are OFF for the project,
- * which is the pre-release behaviour: OpenCode reads `<workspace>/<config dir>`.
+ * which is the pre-release behaviour: OpenCode reads `<workspace>/<config dir>`,
+ * pi reads the working tree's skills and the provisioned governance.
  * The API emits no
  * release block for such a session, so `workspace` never reaches a client.
  */

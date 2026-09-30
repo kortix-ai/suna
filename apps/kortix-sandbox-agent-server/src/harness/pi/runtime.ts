@@ -27,6 +27,7 @@ import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/sec
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { PiConfig } from './config'
 import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
+import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
@@ -172,6 +173,8 @@ export interface PiRuntimeOptions {
   sessionId: string
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
+  /** The config release the runtime reads skills and the session notice from (config-release.ts). */
+  releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'>
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -236,6 +239,7 @@ export class PiRuntime {
   private readonly env: NodeJS.ProcessEnv
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
+  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'> | null
   private readonly clock = new WireIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
@@ -269,6 +273,8 @@ export class PiRuntime {
   private runningTools = 0
   private abortAfterTool: { promptId: string; messageId: string } | null = null
   private status: 'idle' | 'busy' = 'idle'
+  /** Turns admitted and not yet finished, the running one included. */
+  private pendingTurns = 0
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
   /** The retry state of the root turn in flight (transient-retry.ts). */
   private turnRetry: TransientRetry | null = null
@@ -280,6 +286,7 @@ export class PiRuntime {
     this.env = opts.env ?? process.env
     this.now = () => Date.now()
     this.hooks = opts.hooks ?? {}
+    this.releases = opts.releases ?? null
     this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
@@ -398,9 +405,10 @@ export class PiRuntime {
       this.workspaceTools = createWorkspaceTools(this.executionEnv)
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
       // so only a batch made entirely of parallel tools (task calls) runs concurrently.
-      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))]
-        .filter((tool) => this.compiledAgent()?.tools?.[tool.name] !== false)
-        .map((tool) => ({ ...tool, executionMode: 'sequential' as const }))
+      // Every built-in tool is registered; the agent's `tools` switches pick the active ones (rebuildSystemPrompt).
+      this.baseTools = [...this.workspaceTools, createQuestionTool(this.questions, (toolCallId) => this.adapter?.toolRef(toolCallId))].map(
+        (tool) => ({ ...tool, executionMode: 'sequential' as const }),
+      )
       this.skills = await this.loadSkills(core.loadSkills)
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
@@ -423,7 +431,7 @@ export class PiRuntime {
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
       this.pi = await host.createPiSession({
-        projectConfigDir: await resolvePiProjectConfigDir(this.cfg),
+        projectConfigDir: await this.projectConfigDir(),
         agent,
         ref: this.runner,
         cwd: this.workspace,
@@ -438,6 +446,7 @@ export class PiRuntime {
         provider: this.models.models.getProvider(this.selected.providerID),
       })
       const extensionsMs = performance.now() - extensionsStartedAt
+      this.rebuildSystemPrompt()
       // The session installed the extension tool hooks; the permission policy runs first.
       agent.beforeToolCall = this.toolGate((tool, args) => this.compiledAgent()?.tools?.[tool] === false ? 'deny' : this.permissions.rule(tool, args), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
@@ -523,6 +532,11 @@ export class PiRuntime {
     return this.status === 'busy'
   }
 
+  /** No turn running and none admitted behind it: a config applied now reaches the next turn whole. */
+  idle(): boolean {
+    return this.status === 'idle' && this.pendingTurns === 0
+  }
+
   activeTurnMessageId(): string | null {
     return this.active?.messageId ?? null
   }
@@ -548,7 +562,13 @@ export class PiRuntime {
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, resolve, outcome }
-    this.queue = this.queue.then(() => this.runTurn(turn)).catch(() => {})
+    this.pendingTurns += 1
+    this.queue = this.queue
+      .then(() => this.runTurn(turn))
+      .catch(() => {})
+      .finally(() => {
+        this.pendingTurns -= 1
+      })
     return { messageId, done: outcome }
   }
 
@@ -737,10 +757,19 @@ export class PiRuntime {
     }
   }
 
-  /** Re-read the base system prompt (compiled agent, skills) into pi's session. */
+  /**
+   * Re-read the base system prompt (compiled agent, skills) into pi's session,
+   * with the built-in tools the agent's `tools` switches leave on. A switch
+   * back on re-activates the tool in place: every built-in stays registered.
+   */
   private rebuildSystemPrompt(): void {
     const session = this.pi?.session
-    if (session) session.setActiveToolsByName(session.getActiveToolNames())
+    if (!session) return
+    const switches = this.compiledAgent()?.tools
+    // ponytail: a pi package that deactivates a built-in gets it back on the next rebuild; remember package choices if one ever does.
+    const builtIn = this.baseTools.map((tool) => tool.name)
+    const others = session.getActiveToolNames().filter((name) => !builtIn.includes(name))
+    session.setActiveToolsByName([...builtIn.filter((name) => switches?.[name] !== false), ...others])
   }
 
   // ── child sessions ───────────────────────────────────────────────────────
@@ -1006,9 +1035,15 @@ export class PiRuntime {
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
   }
 
+  /** The pi-native config dir: the release's `pi/` while a release runs, else the working tree's. */
+  private async projectConfigDir(): Promise<string | null> {
+    const released = this.releases?.piConfigDir()
+    return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
+  }
+
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
     if (!this.executionEnv) return []
-    const dirs = resolvePiSkillDirectories(this.cfg, await resolvePiProjectConfigDir(this.cfg)).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')
@@ -1040,6 +1075,8 @@ export class PiRuntime {
     if (skills.length > 0) parts.push(formatSkills(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
+    const releaseNotice = this.releases?.notice()
+    if (releaseNotice) parts.push(releaseNotice)
     parts.push(
       [
         '## Runtime capabilities',
