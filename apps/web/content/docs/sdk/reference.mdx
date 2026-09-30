@@ -907,7 +907,8 @@ code must use the root entry — see [Distribution](#distribution).
 
 ### Classify a part
 
-`classifyPart(part)` normalizes one of OpenCode's 12 wire part types into a
+`classifyPart(part)` normalizes one of the 12 part types of the Kortix
+transcript format (`kortix.transcript.v1`, `KORTIX_TRANSCRIPT_SCHEMA`) into a
 `ClassifiedPart` — a union keyed by `kind`. Each variant already resolves the
 fields a renderer needs: tool status, parsed JSON output, image detection.
 
@@ -957,8 +958,19 @@ interface ToolView {
   error?: string;
   outputParsed?: unknown; // JSON.parse(output) when it parses, capped at 256KB
   outputText?: string;    // the raw output text, always present
+  kind?: ToolKind;        // toolKind(name): the action, whatever the harness calls the tool
+  files?: ToolFile[];     // the files a file tool read, wrote or changed: path, patch, additions/deletions
+  diff?: string;          // a unified diff of the change
+  diagnostics?: Record<string, unknown[]>; // language-server diagnostics, keyed by file path
+  answers?: string[][];   // the answers to a `question`, one list per question
+  childSessionId?: string; // the child session a delegating call (`task`) runs
 }
 ```
+
+`toToolView(part)` builds one straight from a tool part. Read these fields
+instead of a harness's own `state.metadata`: the same card then renders an
+OpenCode `edit` (`filePath`, `filediff`) and a pi `edit` (`path`, `edits`,
+a unified `patch`).
 
 Some tools (`web_search`, `image_search`, connector calls) report
 `state.status: 'completed'` even when their JSON body carries
@@ -974,7 +986,20 @@ returns a `ClassifiedTurn` with three fields:
 
 ### Tool metadata
 
-Two lookups both describe a tool. Do not confuse them.
+`toolKind(name)` is the one tool taxonomy: it maps any harness's tool name
+(pi's `write`, OpenCode's `oc-apply_patch`, a plugin's `pty_spawn`) to a
+`ToolKind` — `read`, `edit`, `write`, `bash`, `web_search`, `task`,
+`question`, … or `other`. Narration families, view models, `toolInfo`
+categories and the context-tool group all derive from it. `inputPath(input)`
+reads a file tool's path from `filePath`, `file_path` or `path`.
+
+```ts
+toolKind('oc-apply_patch'); // 'apply_patch'
+toolKind('pty_spawn');      // 'pty'
+inputPath({ path: 'app.py' }); // 'app.py'
+```
+
+Two more lookups both describe a tool. Do not confuse them.
 
 - `toolInfo(name)` — icon-free, returns `{ label, category }`. `classifyPart`
   uses this internally. `ToolCategory` is `'shell' | 'files' | 'search' |
@@ -1109,6 +1134,18 @@ Mixed sessions retain charges for paid API messages. OpenAI API models remain
 billable, including API models whose names contain `codex`.
 
 ### Child sessions and pending requests
+
+A project session's conversation tree (the root and the subagent
+conversations it spawned) comes from its `runtime_sessions` list. These
+helpers read it, preferring the current names over the pre-W4 ones:
+
+```ts
+import { directSubsessions, projectSessionForRuntimeId, rootRuntimeSession, runtimeSessionsOf } from '@kortix/sdk';
+
+const root = rootRuntimeSession(projectSession);            // the root conversation id
+const children = directSubsessions(projectSession);         // its subagent conversations
+const owner = projectSessionForRuntimeId(projectSessions, childId); // the session a conversation belongs to
+```
 
 A `task` tool call delegates to a child session. These helpers connect a
 parent turn to that child's own messages.

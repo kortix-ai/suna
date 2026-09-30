@@ -615,7 +615,8 @@ mode — see its README.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
-normalize all twelve opencode part types (text, reasoning, tool, file,
+normalize all twelve part types of the Kortix transcript format
+(`kortix.transcript.v1`; both harnesses emit it) (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -760,7 +761,7 @@ That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
