@@ -510,12 +510,12 @@
  * inverse-canvas (#ffffff) and inverse-ink (#000000).
  *
  *   role           dark        light
- *   canvas         #090909     #ffffff
+ *   canvas         #0b0b0b     #ffffff
  *   base           #0c0c0c     #ffffff
  *   surface        #141414     #fcfcfc
  *   surface-1      #141414     #f4f4f4
- *   surface-2      #1c1c1c     #ececec
- *   ink            #ffffff     #000000
+ *   surface-2      #1c1c1c     #ededed
+ *   ink            #ffffff     #1f1f1f
  *   ink-muted      #999999     #666666
  *   hairline       #262626     #e2e2e2
  *   hairline-soft  #1a1a1a     #eeeeee
@@ -525,25 +525,25 @@
   --background: oklch(1 0 0); /* canvas */
   --pane: oklch(1 0 0); /* #ffffff */
   --surface: oklch(0.9911 0 0); /* surface #fcfcfc — full-bleed shell pane */
-  --foreground: oklch(0 0 0); /* ink */
+  --foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
   --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
   --card: oklch(0.9672 0 0); /* surface-1 */
-  --card-foreground: oklch(0 0 0);
+  --card-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --popover: oklch(1 0 0); /* canvas — top surface, separated by hairline + shadow */
-  --popover-foreground: oklch(0 0 0);
-  --primary: oklch(0 0 0); /* ink — black pill CTA */
+  --popover-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --primary: oklch(0.2393 0 0); /* ink #1f1f1f — black pill CTA */
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.9431 0 0); /* surface-2 */
-  --secondary-foreground: oklch(0 0 0);
-  --muted: oklch(0.9431 0 0); /* surface-2 */
+  --secondary: oklch(0.9461 0 0); /* surface-2 #ededed */
+  --secondary-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  --muted: oklch(0.9461 0 0); /* surface-2 #ededed */
   --muted-foreground: oklch(0.5103 0 0); /* ink-muted */
   --accent: oklch(0.9672 0 0); /* surface-1 */
-  --accent-foreground: oklch(0 0 0);
+  --accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --destructive: oklch(0.583 0.2387 28.4765);
   --destructive-foreground: oklch(0.9851 0 0);
   --border: oklch(0.9128 0 0); /* hairline */
-  --input: oklch(0.9431 0 0); /* surface-2 */
+  --input: oklch(0.9461 0 0); /* surface-2 #ededed */
   --ring: oklch(0.669 0.1837 248.8066); /* accent-blue — focus only */
   --hover: oklch(0 0 0 / 0.045); /* ink @ 4.5% — transient hover tint */
   --active: oklch(0 0 0 / 0.075); /* ink @ 7.5% — persistent selected fill */
@@ -554,11 +554,11 @@
   --chart-4: oklch(0.557 0.1583 45.3594);
   --chart-5: oklch(0.4747 0.1358 44.9806);
   --sidebar: oklch(0.9672 0 0); /* surface-1 */
-  --sidebar-foreground: oklch(0 0 0);
+  --sidebar-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --sidebar-primary: oklch(0.669 0.1837 248.8066); /* accent-blue — selection */
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.9431 0 0); /* surface-2 */
-  --sidebar-accent-foreground: oklch(0 0 0);
+  --sidebar-accent: oklch(0.9461 0 0); /* surface-2 #ededed */
+  --sidebar-accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
   --sidebar-border: oklch(0.9128 0 0); /* hairline */
   --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
@@ -611,7 +611,7 @@
 }
 
 .dark {
-  --background: oklch(15% 0 0); /* canvas #090909 */
+  --background: oklch(15% 0 0); /* canvas #0b0b0b */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
   --surface: oklch(0.1913 0 0); /* surface #141414 — full-bleed shell pane */
   --foreground: oklch(1 0 0); /* ink #ffffff */
