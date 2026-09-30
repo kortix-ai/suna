@@ -17,6 +17,10 @@ let boxRow: Record<string, unknown> | null = null;
 let actor: string | null = 'automation-user-1';
 let titleCalls: Array<Record<string, unknown>> = [];
 let forwardedAccess: Array<Record<string, unknown>> = [];
+let opens = 0;
+let openedStage: 'ready' | 'stopped' | null = null;
+let syncs = 0;
+let transitions: string[] = [];
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://kortix.test' },
@@ -72,9 +76,19 @@ mock.module('../../lib/sessions', () => ({
 
 mock.module('../../routes/shared', () => ({
   openSession: async () => {
+    opens++;
+    if (openedStage) return { stage: openedStage, sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' }, opencode_session_id: OC_SESSION_ID };
     throw new Error('openSession: reached');
   },
 }));
+
+mock.module('../status-transitions', () => ({
+  sessionTransitionLeaves: (_action: string, status: string) => status === 'stopped',
+  transitionSession: async (action: string) => { transitions.push(action); return true; },
+}));
+mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => 'key' }));
+mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), resolveServiceKey: async () => 'key' }));
+mock.module('../../lib/sandbox-env-sync', () => ({ syncSandboxEnvForPrompt: async () => { syncs++; } }));
 
 mock.module('../actor', () => ({
   resolveProjectAutomationActor: async () => actor,
@@ -120,6 +134,36 @@ beforeEach(() => {
   actor = 'automation-user-1';
   titleCalls = [];
   forwardedAccess = [];
+  opens = 0;
+  openedStage = null;
+  syncs = 0;
+  transitions = [];
+});
+
+describe('wake delivery characterization', () => {
+  test('awake box delivers without opening or waking', async () => {
+    sessionRow = { ...sessionRow, opencodeSessionId: OC_SESSION_ID };
+    boxRow = { status: 'active', externalId: EXTERNAL_ID };
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('delivered');
+    expect(opens).toBe(0);
+    expect(transitions).toEqual([]);
+  });
+  test('stopped runtime returns unreachable and undoes wake', async () => {
+    sessionRow = { ...sessionRow, status: 'stopped' };
+    openedStage = 'stopped';
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('unreachable');
+    expect(opens).toBe(1);
+    expect(transitions).toEqual(['wake', 'unwake']);
+    expect(forwardedAccess).toHaveLength(0);
+  });
+  test('woken runtime syncs before delivery', async () => {
+    sessionRow = { ...sessionRow, status: 'stopped' };
+    openedStage = 'ready';
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('delivered');
+    expect(syncs).toBe(1);
+    expect(transitions).toEqual(['wake']);
+    expect(forwardedAccess).toHaveLength(1);
+  });
 });
 
 // The title fires before the runtime opens; these cases stop at the open.
