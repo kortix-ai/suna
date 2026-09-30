@@ -249,6 +249,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
   'react-native': rnModule,
   'react-native-keyboard-controller': {
     KeyboardAvoidingView: (props: any) => props.children ?? null,
+    KeyboardGestureArea: (props: any) => props.children ?? null,
+    KeyboardController: { isVisible: () => false },
     useReanimatedKeyboardAnimation: () => ({ progress: { value: 0 } }),
   },
   'react-native-reanimated': {

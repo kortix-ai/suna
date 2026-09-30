@@ -86,6 +86,8 @@ interface ComposerProps {
   busy?: boolean;
   onStop?: () => void;
   autoFocus?: boolean;
+  /** `nativeID` of the text field. The thread's `KeyboardGestureArea` names it. */
+  inputNativeID?: string;
   maxLength?: number;
   inputRef?: React.Ref<TextInput>;
   onSelectionChange?: (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => void;
@@ -125,6 +127,7 @@ export function Composer({
   busy,
   onStop,
   autoFocus,
+  inputNativeID,
   maxLength,
   inputRef,
   onSelectionChange,
@@ -171,6 +174,7 @@ export function Composer({
 
       <TextInput
         ref={inputRef}
+        nativeID={inputNativeID}
         value={value}
         onChangeText={onChangeText}
         onSelectionChange={onSelectionChange}

@@ -11,6 +11,7 @@ import {
 } from '@/lib/icons';
 import * as React from 'react';
 import {
+  Keyboard,
   Platform,
   type StyleProp,
   StyleSheet,
@@ -20,7 +21,18 @@ import {
 import { FadeIn, ReduceMotion } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
-const ContextMenu = ContextMenuPrimitive.Root;
+/** Opening the menu closes the keyboard: the menu is drawn under it otherwise. */
+function ContextMenu({ onOpenChange, ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
+  return (
+    <ContextMenuPrimitive.Root
+      onOpenChange={(open) => {
+        if (open) Keyboard.dismiss();
+        onOpenChange?.(open);
+      }}
+      {...props}
+    />
+  );
+}
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 const ContextMenuGroup = ContextMenuPrimitive.Group;
 const ContextMenuSub = ContextMenuPrimitive.Sub;

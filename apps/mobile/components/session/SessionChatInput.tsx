@@ -15,7 +15,6 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  Keyboard,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
@@ -86,6 +85,10 @@ interface SessionChatInputProps {
   onStop?: () => void;
   isBusy?: boolean;
   disabled?: boolean;
+  /** Focus the field at mount: it replaces a field that had the keyboard up. */
+  autoFocus?: boolean;
+  /** `nativeID` of the text field, for the thread's drag-to-dismiss area. */
+  inputNativeID?: string;
   placeholder?: string;
   /** The agent a send runs on, and all agents for @mentions and the model sheet's Agent tab. */
   agent?: Agent | null;
@@ -156,6 +159,8 @@ function SessionChatInputImpl({
   onStop,
   isBusy = false,
   disabled = false,
+  autoFocus,
+  inputNativeID,
   placeholder = 'Ask anything',
   agent,
   agents = EMPTY_AGENTS,
@@ -355,7 +360,6 @@ function SessionChatInputImpl({
     // No model: connect one first. Nothing is sent or queued; the draft,
     // the staged command, and the files stay.
     if (plan === 'connect-model') {
-      Keyboard.dismiss();
       onConnectModel?.();
       return;
     }
@@ -377,9 +381,8 @@ function SessionChatInputImpl({
       return;
     }
 
-    // Dismiss the keyboard on send so the user sees the new message land
-    // (matches WhatsApp / iMessage behavior on phones).
-    Keyboard.dismiss();
+    // A send keeps the keyboard up: the next message, or a queued follow-up,
+    // is typed without reopening it. The list follows the sent message.
 
     // A picked "#skill" token resolves like the staged "/" command above —
     // a structured dispatch that runs immediately, mirroring apps/web's
@@ -598,6 +601,8 @@ function SessionChatInputImpl({
         <View className="px-4 pb-3 pt-1">
           <Composer
             inputRef={inputRef}
+            autoFocus={autoFocus}
+            inputNativeID={inputNativeID}
             value={text}
             onChangeText={handleTextChange}
             onSelectionChange={handleSelectionChange}

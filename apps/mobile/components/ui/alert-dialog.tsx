@@ -4,7 +4,7 @@ import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/lib/utils/index';
 import * as AlertDialogPrimitive from '@rn-primitives/alert-dialog';
 import * as React from 'react';
-import { Platform, View, type ViewProps } from 'react-native';
+import { Keyboard, Platform, View, type ViewProps } from 'react-native';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
@@ -23,6 +23,11 @@ function AlertDialogOverlay({
 }: Omit<React.ComponentProps<typeof AlertDialogPrimitive.Overlay>, 'asChild'> & {
     children?: React.ReactNode;
   }) {
+  // Mounts only while the dialog is open (the portal renders nothing when
+  // closed). An alert has no text field, and the keyboard would cover it.
+  React.useEffect(() => {
+    Keyboard.dismiss();
+  }, []);
   return (
     <FullWindowOverlay>
       <AlertDialogPrimitive.Overlay

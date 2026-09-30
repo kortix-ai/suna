@@ -23,7 +23,12 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  KeyboardGestureArea,
+  useReanimatedKeyboardAnimation,
+} from 'react-native-keyboard-controller';
 import Reanimated, {
   Easing as ReanimatedEasing,
   useAnimatedStyle,
@@ -271,6 +276,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
   }));
+  // Height of the composer (or the question card), without the inset above.
+  // It is the offset of the list's drag-to-dismiss: the keyboard starts to
+  // follow the finger at the top of the composer, as in Messages, not at the
+  // top of the keyboard.
+  const [bottomAreaHeight, setBottomAreaHeight] = useState(0);
+  // Per session: two threads can be mounted in the stack at once, and the
+  // offset is registered under this id.
+  const composerInputNativeID = `composer-input-${sessionId}`;
+  const handleBottomAreaLayout = useCallback((e: LayoutChangeEvent) => {
+    setBottomAreaHeight(Math.round(e.nativeEvent.layout.height));
+  }, []);
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
@@ -542,6 +558,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // The first pending question for this session (if any)
   const activeQuestion: QuestionRequest | undefined = pendingQuestions[0];
   const hasQuestion = !!activeQuestion;
+
+  // The bottom area swaps the composer for the question card and back. The
+  // swap keeps the keyboard as it was: the new field takes the focus only when
+  // the keyboard was up at the swap. So a question never raises the keyboard
+  // on its own, and never drops it under a user who is typing. Read during
+  // render, before the old field unmounts. False at the first mount.
+  const bottomFieldId = activeQuestion?.id ?? null;
+  const [bottomSwap, setBottomSwap] = useState({ id: bottomFieldId, keepKeyboard: false });
+  if (bottomSwap.id !== bottomFieldId) {
+    setBottomSwap({ id: bottomFieldId, keepKeyboard: KeyboardController.isVisible() });
+  }
 
   // Save input text when question appears, clear after it's restored
   useEffect(() => {
@@ -1906,6 +1933,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
       <View style={{ flex: 1 }} className="bg-background">
+        {/* iOS: the list's drag-to-dismiss starts at the top of the composer.
+            Only the list sits inside: below Android 11 this renders its
+            children alone, so the absolute siblings keep the View above. */}
+        <KeyboardGestureArea
+          style={{ flex: 1 }}
+          offset={bottomAreaHeight}
+          textInputNativeID={composerInputNativeID}
+          // Android keeps `keyboardDismissMode="on-drag"` below.
+          enableSwipeToDismiss={false}>
         <ConnectorHandoffContext.Provider value={connectorHandoffApi}>
         <MarkdownActionsProvider value={markdownActions}>
         <FlatList
@@ -1979,6 +2015,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         />
         </MarkdownActionsProvider>
         </ConnectorHandoffContext.Provider>
+        </KeyboardGestureArea>
 
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
@@ -2011,15 +2048,19 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
       {/* Bottom area — question prompt OR chat input, above the safe area. */}
       <Reanimated.View style={bottomAreaStyle}>
+        <View onLayout={handleBottomAreaLayout}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
             request={activeQuestion}
             onReply={handleQuestionReply}
             onReject={handleQuestionReject}
+            autoFocus={bottomSwap.keepKeyboard}
           />
         ) : (
           <SessionChatInput
+            autoFocus={bottomSwap.keepKeyboard}
+            inputNativeID={composerInputNativeID}
             onSend={handleSend}
             onStop={handleStop}
             isBusy={isBusy}
@@ -2052,6 +2093,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             inputSlot={inputSlot}
           />
         )}
+        </View>
       </Reanimated.View>
 
       <ConnectProviderSheet
