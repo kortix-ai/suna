@@ -10,8 +10,6 @@
  *
  * Web hides `todowrite` parts from the transcript because its Plan card shows
  * the plan. Mobile has no Plan card, so the row renders in the transcript.
- *
- * `tool-part-renderer.tsx` still imports it.
  */
 
 import { useMemo } from 'react';

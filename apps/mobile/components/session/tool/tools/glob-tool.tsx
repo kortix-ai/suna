@@ -7,8 +7,6 @@
  * - body: the paths → `InlineFileList` in a `ToolResultCard` (tap opens the
  *   file); a settled search with no paths → "No matching files found"; any
  *   other output → `ToolOutputFallback`.
- *
- * imported by `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useCallback, useMemo } from 'react';

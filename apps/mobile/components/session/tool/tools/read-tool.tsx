@@ -10,8 +10,6 @@
  * - under the row (inline surface): the instruction files the read loaded,
  *   `mt-1 space-y-0.5 pl-2`, a success-toned `+` and the display path in mono
  *   `text-xs text-muted-foreground`; tap opens the file.
- *
- * by `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useContext, useMemo } from 'react';

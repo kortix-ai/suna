@@ -9,8 +9,6 @@
  *   `ToolResultCard`; a Morph `code_edit` → its instructions (`text-xs italic
  *   text-muted-foreground`, `mb-1.5`, indented) over a `ToolCodeCard`; a
  *   stale pending part → "No content received"; then LSP diagnostics.
- *
- * imported by `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useContext, useMemo } from 'react';
