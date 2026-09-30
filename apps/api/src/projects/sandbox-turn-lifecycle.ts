@@ -70,9 +70,9 @@ export interface StoredSandboxTurn extends SandboxTurnIdentity {
   token: string;
   state: 'delivering' | 'active';
   /**
-   * When the control plane minted this turn. Null for a legacy `activeTurn`
-   * record written before `activeTurns` existed — those carry no start instant,
-   * and inventing one would make a reader trust a number nobody measured.
+   * When the control plane minted this turn. Null for a record written before
+   * `startedAtMs` existed — those carry no start instant, and inventing one
+   * would make a reader trust a number nobody measured.
    */
   startedAtMs: number | null;
 }
@@ -148,11 +148,9 @@ function parseStoredSandboxTurn(value: unknown, expectedToken?: string): StoredS
 export const RUNNING_SANDBOX_STATUSES: ReadonlySet<string> = new Set(['active', 'provisioning']);
 
 /**
- * Read every control-plane-minted turn the reaper may repair or renew.
- *
- * `activeTurn` remains readable during rolling deployments. New writers use
- * the token-keyed `activeTurns` object so one failed or queued prompt cannot
- * erase lifecycle authority for another turn.
+ * Read every control-plane-minted turn the reaper may repair or renew, keyed
+ * by its own token in the `activeTurns` object so one failed or queued prompt
+ * cannot erase lifecycle authority for another turn.
  */
 export function storedSandboxTurns(
   metadata: Record<string, unknown> | null | undefined,
@@ -165,22 +163,7 @@ export function storedSandboxTurns(
       if (turn) turns.push(turn);
     }
   }
-  const legacy = parseStoredSandboxTurn(metadata?.activeTurn);
-  if (legacy && !turns.some((turn) => turn.token === legacy.token)) turns.push(legacy);
   return turns;
-}
-
-/** Rolling-deploy compatibility for callers that still expect one record. */
-export function storedSandboxTurn(
-  metadata: Record<string, unknown> | null | undefined,
-): StoredSandboxTurn | null {
-  return storedSandboxTurns(metadata)[0] ?? null;
-}
-
-export function deliveringSandboxTurn(
-  metadata: Record<string, unknown> | null | undefined,
-): StoredSandboxTurn | null {
-  return storedSandboxTurns(metadata).find((turn) => turn.state === 'delivering') ?? null;
 }
 
 /** Parse the root OpenCode session and client-minted message identity. */
@@ -344,39 +327,24 @@ export async function acceptSandboxTurn(
 ): Promise<boolean> {
   const result = await execute(sql`
     UPDATE kortix.session_sandboxes s
-       SET metadata = CASE
-             WHEN s.metadata->'activeTurns'->${token} IS NOT NULL THEN
-               jsonb_set(
-                 s.metadata,
-                 ARRAY['activeTurns', ${token}]::text[],
-                 (s.metadata->'activeTurns'->${token}) || jsonb_strip_nulls(jsonb_build_object(
-                   'state', 'active',
-                   'opencodeSessionId', ${identity?.opencodeSessionId ?? null}::text,
-                   'messageId', ${identity?.messageId ?? null}::text)),
-                 false)
-             ELSE jsonb_set(
-               s.metadata,
-               '{activeTurn}',
-               (s.metadata->'activeTurn') || jsonb_strip_nulls(jsonb_build_object(
-                 'state', 'active',
-                 'opencodeSessionId', ${identity?.opencodeSessionId ?? null}::text,
-                 'messageId', ${identity?.messageId ?? null}::text)),
-               false)
-           END,
+       SET metadata = jsonb_set(
+             s.metadata,
+             ARRAY['activeTurns', ${token}]::text[],
+             (s.metadata->'activeTurns'->${token}) || jsonb_strip_nulls(jsonb_build_object(
+               'state', 'active',
+               'opencodeSessionId', ${identity?.opencodeSessionId ?? null}::text,
+               'messageId', ${identity?.messageId ?? null}::text)),
+             false),
            deadline_at = GREATEST(
              s.deadline_at,
              now() + make_interval(secs => ${secs(grantMs)})),
            updated_at = now()
      WHERE ${targetPredicate(target)}
        AND s.status IN ('active', 'provisioning')
-       AND (
-         (s.metadata->'activeTurns'->${token}->>'token' = ${token}
-           AND s.metadata->'activeTurns'->${token}->>'state' IN ('delivering', 'active'))
-         OR (s.metadata->'activeTurn'->>'token' = ${token}
-           AND s.metadata->'activeTurn'->>'state' IN ('delivering', 'active')))
+       AND s.metadata->'activeTurns'->${token}->>'token' = ${token}
+       AND s.metadata->'activeTurns'->${token}->>'state' IN ('delivering', 'active')
     RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
-              coalesce(s.metadata->'activeTurns'->${token}->>'messageId',
-                       s.metadata->'activeTurn'->>'messageId') AS turn_message_id`);
+              s.metadata->'activeTurns'->${token}->>'messageId' AS turn_message_id`);
   const rows = normalizeRows(result);
   const accepted = (rows?.length ?? 0) > 0;
   if (!accepted) return false;
@@ -438,23 +406,16 @@ export async function abandonSandboxTurn(target: DeadlineTarget, token: string):
   const result = await execute(sql`
     WITH target AS (
       SELECT s.sandbox_id, s.session_id, s.project_id, s.account_id,
-             coalesce(s.metadata->'activeTurns'->${token}, s.metadata->'activeTurn') AS turn,
-             CASE
-               WHEN s.metadata->'activeTurns'->${token} IS NOT NULL THEN
-                 jsonb_set(
-                   coalesce(s.metadata, '{}'::jsonb),
-                   '{activeTurns}',
-                   coalesce(s.metadata->'activeTurns', '{}'::jsonb) - ${token},
-                   true)
-               ELSE coalesce(s.metadata, '{}'::jsonb) - 'activeTurn'
-             END AS metadata
+             s.metadata->'activeTurns'->${token} AS turn,
+             jsonb_set(
+               coalesce(s.metadata, '{}'::jsonb),
+               '{activeTurns}',
+               coalesce(s.metadata->'activeTurns', '{}'::jsonb) - ${token},
+               true) AS metadata
         FROM kortix.session_sandboxes s
        WHERE ${targetPredicate(target)}
-         AND (
-           (s.metadata->'activeTurns'->${token}->>'token' = ${token}
-             AND s.metadata->'activeTurns'->${token}->>'state' = 'delivering')
-           OR (s.metadata->'activeTurn'->>'token' = ${token}
-             AND s.metadata->'activeTurn'->>'state' = 'delivering'))
+         AND s.metadata->'activeTurns'->${token}->>'token' = ${token}
+         AND s.metadata->'activeTurns'->${token}->>'state' = 'delivering'
        FOR UPDATE OF s
     )
     UPDATE kortix.session_sandboxes s
@@ -533,36 +494,29 @@ export async function clearSandboxTurn(
   const result = await execute(sql`
     WITH target AS (
       SELECT s.sandbox_id, s.session_id, s.project_id, s.account_id,
-             coalesce(${metadata}->'activeTurns'->${token}, ${metadata}->'activeTurn') AS turn,
-             CASE
-               WHEN ${metadata}->'activeTurns'->${token} IS NOT NULL THEN
-                 jsonb_set(
-                   ${metadata},
-                   '{activeTurns}',
-                   coalesce(${metadata}->'activeTurns', '{}'::jsonb) - ${token},
-                   true)
-               ELSE ${metadata} - 'activeTurn'
-             END AS metadata
+             ${metadata}->'activeTurns'->${token} AS turn,
+             jsonb_set(
+               ${metadata},
+               '{activeTurns}',
+               coalesce(${metadata}->'activeTurns', '{}'::jsonb) - ${token},
+               true) AS metadata
         FROM kortix.session_sandboxes s
        WHERE s.sandbox_id = ${sandboxId}::uuid
          AND s.status = 'active'
-         AND (
-           ${metadata}->'activeTurns'->${token}->>'token' = ${token}
-           OR ${metadata}->'activeTurn'->>'token' = ${token})
+         AND ${metadata}->'activeTurns'->${token}->>'token' = ${token}
        FOR UPDATE OF s
     )
     UPDATE kortix.session_sandboxes s
        SET metadata = target.metadata,
            deadline_at = CASE
-             WHEN target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
-               OR EXISTS (
-                 SELECT 1
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) remaining
-                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             WHEN EXISTS (
+               SELECT 1
+                 FROM jsonb_each(CASE
+                   WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+                     THEN target.metadata->'activeTurns'
+                   ELSE '{}'::jsonb
+                 END) remaining
+                WHERE remaining.value->>'state' IN ('delivering', 'active'))
              THEN s.deadline_at
              ELSE LEAST(
                s.deadline_at,
@@ -654,14 +608,8 @@ export async function completeSandboxTurn(
           ELSE '{}'::jsonb
         END) entry
        WHERE entry.value->>'state' IN ('delivering', 'active')
-      UNION
-      SELECT target.sandbox_id,
-             target.metadata->'activeTurn'->>'token' AS token
-        FROM target
-       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
-             'activeTurns'::text AS source,
              entry.key,
              entry.value->>'token' AS token,
              entry.value
@@ -675,25 +623,14 @@ export async function completeSandboxTurn(
          AND (entry.value->>'opencodeSessionId' IS NULL
            OR (${identity?.opencodeSessionId ?? null}::text IS NOT NULL
              AND entry.value->>'opencodeSessionId' = ${identity?.opencodeSessionId ?? null}))
-      UNION ALL
-      SELECT target.sandbox_id,
-             'activeTurn'::text AS source,
-             'activeTurn'::text AS key,
-             target.metadata->'activeTurn'->>'token' AS token,
-             target.metadata->'activeTurn' AS value
-        FROM target
-       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
-         AND (target.metadata->'activeTurn'->>'opencodeSessionId' IS NULL
-           OR (${identity?.opencodeSessionId ?? null}::text IS NOT NULL
-             AND target.metadata->'activeTurn'->>'opencodeSessionId' = ${identity?.opencodeSessionId ?? null}))
     ), exact_matches AS (
-      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+      SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
         FROM turn_candidates candidate
        WHERE ${identity?.messageId ?? null}::text IS NOT NULL
          AND candidate.value->>'messageId' = ${identity?.messageId ?? null}
     ), fallback_match AS (
-      SELECT candidate.sandbox_id, candidate.source, candidate.key, candidate.token,
+      SELECT candidate.sandbox_id, candidate.key, candidate.token,
              candidate.value
         FROM turn_candidates candidate
        WHERE candidate.value->>'messageId' IS NULL
@@ -714,14 +651,7 @@ export async function completeSandboxTurn(
     ), next_state AS (
       SELECT target.sandbox_id,
              jsonb_set(
-               CASE
-                 WHEN EXISTS (
-                   SELECT 1 FROM selected
-                    WHERE selected.sandbox_id = target.sandbox_id
-                      AND selected.source = 'activeTurn')
-                 THEN target.metadata - 'activeTurn'
-                 ELSE target.metadata
-               END,
+               target.metadata,
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
@@ -733,7 +663,6 @@ export async function completeSandboxTurn(
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
-                       AND selected.source = 'activeTurns'
                        AND selected.key = entry.key)),
                  '{}'::jsonb),
                true) AS metadata,
@@ -752,15 +681,14 @@ export async function completeSandboxTurn(
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
            deadline_at = CASE
-             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
-               OR EXISTS (
-                 SELECT 1
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                       THEN next_state.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) remaining
-                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             WHEN EXISTS (
+               SELECT 1
+                 FROM jsonb_each(CASE
+                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                     THEN next_state.metadata->'activeTurns'
+                   ELSE '{}'::jsonb
+                 END) remaining
+                WHERE remaining.value->>'state' IN ('delivering', 'active'))
              THEN s.deadline_at
              ELSE LEAST(
                s.deadline_at,
@@ -874,7 +802,6 @@ export async function closeSandboxTurnByMessageId(
        FOR UPDATE OF s
     ), selected AS (
       SELECT target.sandbox_id,
-             'activeTurns'::text AS source,
              entry.key,
              entry.value->>'token' AS token,
              entry.value
@@ -886,26 +813,10 @@ export async function closeSandboxTurnByMessageId(
         END) entry
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND entry.value->>'messageId' = ${messageId}
-      UNION ALL
-      SELECT target.sandbox_id,
-             'activeTurn'::text AS source,
-             'activeTurn'::text AS key,
-             target.metadata->'activeTurn'->>'token' AS token,
-             target.metadata->'activeTurn' AS value
-        FROM target
-       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
-         AND target.metadata->'activeTurn'->>'messageId' = ${messageId}
     ), next_state AS (
       SELECT target.sandbox_id,
              jsonb_set(
-               CASE
-                 WHEN EXISTS (
-                   SELECT 1 FROM selected
-                    WHERE selected.sandbox_id = target.sandbox_id
-                      AND selected.source = 'activeTurn')
-                 THEN target.metadata - 'activeTurn'
-                 ELSE target.metadata
-               END,
+               target.metadata,
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
@@ -917,7 +828,6 @@ export async function closeSandboxTurnByMessageId(
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
-                       AND selected.source = 'activeTurns'
                        AND selected.key = entry.key)),
                  '{}'::jsonb),
                true) AS metadata,
@@ -937,15 +847,14 @@ export async function closeSandboxTurnByMessageId(
     UPDATE kortix.session_sandboxes s
        SET metadata = next_state.metadata,
            deadline_at = CASE
-             WHEN next_state.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
-               OR EXISTS (
-                 SELECT 1
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
-                       THEN next_state.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) remaining
-                  WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             WHEN EXISTS (
+               SELECT 1
+                 FROM jsonb_each(CASE
+                   WHEN jsonb_typeof(next_state.metadata->'activeTurns') = 'object'
+                     THEN next_state.metadata->'activeTurns'
+                   ELSE '{}'::jsonb
+                 END) remaining
+                WHERE remaining.value->>'state' IN ('delivering', 'active'))
              THEN s.deadline_at
              ELSE LEAST(
                s.deadline_at,
@@ -1003,11 +912,8 @@ export async function renewActiveSandboxTurn(
            updated_at = now()
      WHERE s.sandbox_id = ${sandboxId}::uuid
        AND s.status = 'active'
-       AND (
-         (s.metadata->'activeTurn'->>'token' = ${token}
-           AND s.metadata->'activeTurn'->>'state' = 'active')
-         OR (s.metadata->'activeTurns'->${token}->>'token' = ${token}
-           AND s.metadata->'activeTurns'->${token}->>'state' = 'active'))
+       AND s.metadata->'activeTurns'->${token}->>'token' = ${token}
+       AND s.metadata->'activeTurns'->${token}->>'state' = 'active'
     RETURNING true AS renewed`);
   const rows = normalizeRows(result);
   if (!rows?.length) return 'inactive';

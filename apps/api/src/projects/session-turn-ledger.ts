@@ -469,12 +469,7 @@ export function openableTurnOwner(sandboxId: string, token: string): SQL {
                FROM kortix.session_sandboxes s
               WHERE s.sandbox_id = ${sandboxId}::uuid
                 AND s.status IN ('active', 'provisioning')
-                AND (
-                  s.metadata->'activeTurns'->${token} IS NOT NULL
-                  -- The legacy single-record arm every writer still accepts
-                  -- during a rolling deploy. The stop erases it in the same
-                  -- statement, so it gates this INSERT identically.
-                  OR s.metadata->'activeTurn'->>'token' = ${token})
+                AND s.metadata->'activeTurns'->${token} IS NOT NULL
               FOR UPDATE`;
 }
 

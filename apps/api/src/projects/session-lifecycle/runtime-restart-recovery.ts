@@ -76,7 +76,6 @@ export async function settleTurnsLostToRuntimeRestart(sandboxId: string): Promis
       .update(sessionSandboxes)
       .set({
         metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-          - 'activeTurn'
           - 'activeTurns'
           - 'pendingStopObservedAtMs')`,
         updatedAt: new Date(),
