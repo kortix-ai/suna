@@ -507,9 +507,13 @@ export function createOpenCodeControlService(
           // outcome the mechanism produces on a genuine failure. The session
           // keeps the opencode it already had, nothing is destroyed, and the
           // response says plainly that the config did not take.
-          const reload = skipRestart && configDir?.synced !== true
+          const reload = skipRestart
             ? null
             : await opencode.reloadVerified({ forceFail })
+          // Agent files are read only when OpenCode loads its config. Under
+          // `restart=0` a dispose re-reads them in place (a verified swap only
+          // when the dispose does not confirm), so a sync costs milliseconds.
+          const configReload = configDir?.synced && skipRestart ? await opencode.reloadConfig() : null
           // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
           // API. This route is what the platform already calls on warm reuse and
           // reload, and (since this change) after a restart and a resume — the
@@ -566,7 +570,14 @@ export function createOpenCodeControlService(
                   },
                 }
               : {}),
-            ...(configDir ? { config_dir: configDir } : {}),
+            ...(configDir
+              ? {
+                  config_dir: {
+                    ...configDir,
+                    ...(configReload ? { reload: configReload.how, turn_ended: configReload.turnEnded } : {}),
+                  },
+                }
+              : {}),
             runtime: opencode.getState(),
             runtime_pid: opencode.getPid(),
           }

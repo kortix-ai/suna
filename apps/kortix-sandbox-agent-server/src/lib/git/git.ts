@@ -1624,6 +1624,8 @@ export interface ConfigDirSyncResult {
     | 'not in base'
     | 'fetch failed'
     | 'checkout failed'
+  /** Files base changed that this session changed too. Left as they are. */
+  kept?: string[]
 }
 
 /**
@@ -1641,10 +1643,14 @@ export interface ConfigDirSyncResult {
  * session has made. This touches a single pathspec and never moves a ref, so
  * commits, other files, and the branch itself are untouched.
  *
- * It refuses rather than overwrites. If the session has edited its own agent
- * config — uncommitted, or committed on top of base — that is work, and a button
- * labelled "reload config" has no business discarding it. The caller reports the
- * skip so the user is told the agent did NOT change.
+ * It works file by file over what BASE changed since the session's branch left
+ * it (`merge-base`), and refuses rather than overwrites: a file the session
+ * edited — uncommitted, or committed on top of the fork — is its work, and a
+ * button labelled "reload config" has no business discarding it. Such files are
+ * reported in `kept`; every other base change is brought in. Files base did not
+ * change are never looked at, which is what lets the platform's own writes into
+ * the directory (OpenCode's plugin install, the managed-skill overlay) coexist
+ * with the sync.
  *
  * Leaves the update UNSTAGED: `git checkout <sha> -- <path>` writes the index
  * too, so the index is reset afterwards. The result is a plain working-tree
@@ -1670,45 +1676,81 @@ export async function syncConfigDirToBase(
   }
   const ref = baseSha ?? `refs/remotes/origin/${base}`
 
-  // "Already base" is checked FIRST, and the order is load-bearing rather than
-  // cosmetic. A successful sync leaves the working tree matching base while HEAD
-  // still carries the old content, so the directory is legitimately dirty
-  // afterwards. Checking dirtiness first made every reload after the first one
-  // refuse with 'local changes' — the guard could not tell the user's edit from
-  // our own previous one. Comparing against base instead answers the question
-  // that actually matters, and it cannot mask a real edit: content that differs
-  // from base falls through to the guards below.
-  const diff = await execGit(['-C', target, 'diff', '--quiet', ref, '--', relConfigDir], LITERAL)
-  if (diff.code === 0) return { synced: false, skipped: 'already matches base' }
-
-  // Uncommitted edits under the config dir — including untracked files, which
-  // `git checkout` would silently leave behind in a half-updated directory.
-  const dirty = await execGit(['-C', target, 'status', '--porcelain', '--', relConfigDir], LITERAL)
-  if (dirty.code === 0 && dirty.stdout.trim().length > 0) {
-    return { synced: false, skipped: 'local changes' }
-  }
-
-  // Commits this session made on top of base that touch the config dir. Without
-  // this a session that edited and COMMITTED its agent would have that silently
-  // reverted by a reload.
-  const ahead = await execGit(
-    ['-C', target, 'log', '--oneline', `${ref}..HEAD`, '--', relConfigDir],
+  // Only the files BASE changed since this session's branch left it are this
+  // sync's business. Everything else in the directory stays as it is — and the
+  // platform itself writes there: OpenCode's plugin install rewrites the tracked
+  // `package.json` and the managed-skill overlay rewrites `skills/kortix-*`, so a
+  // whole-directory "anything dirty?" guard refused on every live box (dev
+  // 2026-09-30: a fresh session with no edits of its own reported 'local
+  // changes').
+  const fork = await execGit(['-C', target, 'merge-base', 'HEAD', ref])
+  if (fork.code !== 0) return { synced: false, skipped: 'checkout failed' }
+  const changed = await execGit(
+    ['-C', target, 'diff', '--name-status', '--no-renames', fork.stdout.trim(), ref, '--', relConfigDir],
     LITERAL,
   )
-  if (ahead.code === 0 && ahead.stdout.trim().length > 0) {
-    return { synced: false, skipped: 'local commits' }
+  if (changed.code !== 0) return { synced: false, skipped: 'checkout failed' }
+  const baseChanges = changed.stdout
+    .split('\n')
+    .map((line) => line.split('\t'))
+    .filter((parts): parts is [string, string] => parts.length === 2 && parts[1]!.length > 0)
+    .map(([status, file]) => ({ file, deleted: status === 'D' }))
+  if (baseChanges.length === 0) {
+    const inBase = await execGit(['-C', target, 'cat-file', '-e', `${ref}:${relConfigDir}`], LITERAL)
+    return { synced: false, skipped: inBase.code === 0 ? 'already matches base' : 'not in base' }
   }
 
-  const checkout = await execGit(['-C', target, 'checkout', ref, '--', relConfigDir], LITERAL)
-  if (checkout.code !== 0) {
-    // The most likely cause is that base has no such directory at all.
-    const missing = /did not match any file|pathspec/i.test(checkout.stderr)
-    logger.warn('[git] config-dir sync: checkout failed', { stderr: checkout.stderr })
-    return { synced: false, skipped: missing ? 'not in base' : 'checkout failed' }
-  }
-  // Un-stage: leave a plain working-tree change, not a staged one.
-  await execGit(['-C', target, 'reset', '-q', '--', relConfigDir], LITERAL)
+  // Files this session committed on top of the fork: its own work, kept.
+  const committed = await execGit(
+    ['-C', target, 'diff', '--name-only', '--no-renames', fork.stdout.trim(), 'HEAD', '--', relConfigDir],
+    LITERAL,
+  )
+  const ownCommits = new Set(committed.stdout.split('\n').filter(Boolean))
 
-  logger.info('[git] synced the runtime config dir to base', { dir: relConfigDir, ref })
-  return { synced: true }
+  const toCheckout: string[] = []
+  const toDelete: string[] = []
+  const kept: string[] = []
+  let keptByCommit = true
+  for (const { file, deleted } of baseChanges) {
+    // Already what base has: a previous reload brought it, or the session made
+    // the same change. Nothing to do and nothing to protect.
+    if ((await execGit(['-C', target, 'diff', '--quiet', ref, '--', file], LITERAL)).code === 0) continue
+    if (ownCommits.has(file)) {
+      kept.push(file)
+      continue
+    }
+    // Uncommitted work on this file, including an untracked file where base
+    // adds one.
+    const status = await execGit(['-C', target, 'status', '--porcelain', '--', file], LITERAL)
+    if (status.code !== 0 || status.stdout.trim().length > 0) {
+      kept.push(file)
+      keptByCommit = false
+      continue
+    }
+    ;(deleted ? toDelete : toCheckout).push(file)
+  }
+
+  if (toCheckout.length === 0 && toDelete.length === 0) {
+    if (kept.length === 0) return { synced: false, skipped: 'already matches base' }
+    return { synced: false, skipped: keptByCommit ? 'local commits' : 'local changes', kept }
+  }
+  if (toCheckout.length > 0) {
+    const checkout = await execGit(['-C', target, 'checkout', ref, '--', ...toCheckout], LITERAL)
+    if (checkout.code !== 0) {
+      logger.warn('[git] config-dir sync: checkout failed', { stderr: checkout.stderr })
+      return { synced: false, skipped: 'checkout failed' }
+    }
+    // Un-stage: leave a plain working-tree change, not a staged one.
+    await execGit(['-C', target, 'reset', '-q', '--', ...toCheckout], LITERAL)
+  }
+  // Base deleted these and the session never touched them: an unstaged deletion.
+  for (const file of toDelete) await rm(join(target, file), { force: true })
+
+  logger.info('[git] synced the runtime config dir to base', {
+    dir: relConfigDir,
+    ref,
+    updated: toCheckout.length + toDelete.length,
+    kept: kept.length,
+  })
+  return { synced: true, ...(kept.length > 0 ? { kept } : {}) }
 }
