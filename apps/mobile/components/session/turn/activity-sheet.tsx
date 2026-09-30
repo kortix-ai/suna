@@ -39,6 +39,7 @@ import { activitySheetEntries, burstHasPendingPermission, type ActivitySheetEntr
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { useTabStore } from '@/stores/tab-store';
 import { ToolPartRenderer } from '@/components/session/tool/tool-part-renderer';
+import '@/components/session/tool/tools/register';
 import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import { ToolDetailContext } from '@/components/session/tool/shared/surface';
 import {
