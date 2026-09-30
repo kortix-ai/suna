@@ -132,7 +132,12 @@
     "rateLimitDescription": "Das Gateway wechselt zwischen ausgewählten Schlüsseln, wenn ein Anbieter ein Ratenlimit meldet.",
     "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
     "selectedOneForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
-    "selectedOne": "{count} Schlüssel ausgewählt"
+    "selectedOne": "{count} Schlüssel ausgewählt",
+    "opencodeSignIn": "Mit OpenCode anmelden",
+    "opencodeSignInDescription": "Nutzen Sie Ihren OpenCode-Workspace statt eines API-Schlüssels.",
+    "opencodeDeviceDescription": "Kopieren Sie diesen Code. Öffnen Sie dann die OpenCode-Seite und geben Sie ihn ein, um Ihren Workspace zu verbinden.",
+    "opencodeStarting": "Verbindung zu OpenCode wird hergestellt…",
+    "opencodeConnected": "Mit OpenCode angemeldet"
   },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"
