@@ -27,7 +27,8 @@
  * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
  * has closed, then calls `useCompactSession`; the thread's compaction divider
  * is the progress, and only a failure toasts (web `compact-modal.tsx`).
- * Disabled while the session works. View changes and Compact need the live
+ * Disabled while the session works, hidden when the runtime does not serve
+ * `session.compact` (pi). View changes and Compact need the live
  * runtime, so they show only for the thread on screen; a drawer long press on
  * another session shows none of the three. Rules:
  * `lib/session/session-actions.ts`. Export transcript and Archive are not on
@@ -82,6 +83,7 @@ import {
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
 import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+import { useRuntimeSupports } from '@/lib/opencode/runtime-capabilities';
 import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import {
@@ -202,6 +204,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       liveSessionId ? Boolean(s.compactingBySession[liveSessionId]) : false
     );
     const compactSession = useCompactSession();
+    const canCompact = useRuntimeSupports(sandboxUrl, 'session.compact');
     const { confirm, dialog: confirmDialog } = useConfirmDialog();
     // The session and runtime a Compact tap was for, kept past the sheet's close.
     const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
@@ -419,6 +422,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       isOpenThread,
       hasRuntime: !!sandboxUrl,
       canManageLifecycle,
+      canCompact,
       changes: {
         pending: changesQuery.isPending,
         error: changesQuery.isError,

@@ -118,6 +118,7 @@ import {
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
   normalizeAppPathname,
+  runtimeSupports,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
@@ -133,6 +134,7 @@ import {
   useCreateRuntimeSession,
   useModelStore,
   useProjectSessions,
+  useRuntimeConnectionStore,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
@@ -861,6 +863,8 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
+  // What the active session's runtime serves (E1): a pi session has no compact.
+  const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
   // SDK's one selectable-agent rule: the same list the composer offers. Never
@@ -1126,6 +1130,7 @@ export function CommandPalette() {
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
+      if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
@@ -1154,6 +1159,7 @@ export function CommandPalette() {
   }, [
     billingEnabled,
     currentSessionId,
+    runtimeCapabilities,
     projectId,
     selectedAccountId,
     sidebarCtx,

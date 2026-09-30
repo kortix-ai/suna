@@ -18,6 +18,7 @@ import {
 } from '../lib/pending-questions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { normalizeRuntimeRelayBody } from '@kortix/api-contract/runtime-relay';
 import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -91,10 +92,12 @@ projectsApp.openapi(
     let body: {
       session_id?: string;
       request_id?: string;
+      runtime_session_id?: string;
       questions?: unknown[];
     };
     try {
-      body = (await c.req.json()) as typeof body;
+      // A daemon built before W3 names the runtime session `opencode_session_id`.
+      body = normalizeRuntimeRelayBody((await c.req.json()) as typeof body);
     } catch {
       return c.json({ error: 'Invalid JSON body' }, 400);
     }
@@ -181,7 +184,7 @@ projectsApp.openapi(
         projectId,
         sessionId,
         requestId: body.request_id?.trim() || `q-${sessionId}`,
-        opencodeSessionId: (body as { opencode_session_id?: string }).opencode_session_id ?? null,
+        opencodeSessionId: body.runtime_session_id ?? null,
         questions,
       }).catch((err) => {
         // Never fail the relay on a bookkeeping error — the agent is blocked and

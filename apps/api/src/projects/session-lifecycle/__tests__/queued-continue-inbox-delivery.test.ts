@@ -672,7 +672,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(quickQueueControlRequests).toEqual([{
       url: 'https://sandbox.test/kortix/abort/after-tool',
       method: 'POST',
-      body: { prompt_id: 'cmd-1', opencode_session_id: OC_SESSION_ID,
+      // W3 name and the pre-W3 name, for a daemon built before W3.
+      body: { prompt_id: 'cmd-1', runtime_session_id: OC_SESSION_ID, opencode_session_id: OC_SESSION_ID,
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);

@@ -13,7 +13,10 @@ export interface HarnessEnvironmentInput {
   llmGatewayBaseUrl?: unknown
 }
 
-/** Existing response keys are compatibility fields, not native implementation types. */
+/**
+ * Response of `POST /kortix/env`. `runtime*` describes the session runtime of
+ * either harness; `routes/kortix/env.ts` adds the pre-W3 `opencode*` aliases.
+ */
 export interface HarnessEnvironmentResult {
   ok: true
   changed: boolean
@@ -25,12 +28,12 @@ export interface HarnessEnvironmentResult {
   agent_env_written: boolean
   egress_shim: 'unchanged' | 'started' | 'restarted' | 'stopped' | 'failed'
   egress_shim_hosts: readonly string[]
-  opencode_env_changed: boolean
-  opencode_env_names: string[]
-  opencode: string
-  opencode_pid: number | null
-  opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null
-  opencode_turn_ended: boolean | null
+  runtime_env_changed: boolean
+  runtime_env_names: string[]
+  runtime: string
+  runtime_pid: number | null
+  runtime_reload: 'disposed' | 'restarted' | 'kept-old' | null
+  runtime_turn_ended: boolean | null
 }
 
 export interface HarnessRefreshInput {
@@ -52,19 +55,19 @@ export interface HarnessRefreshResult {
     turn_ended?: boolean | null
     reason?: string
   }
-  opencode: string
-  opencode_pid: number | null
+  runtime: string
+  runtime_pid: number | null
 }
 
 export type HarnessAbortResult =
-  | { outcome: 'aborted'; body: { ok: true; opencode_session_id: string } }
+  | { outcome: 'aborted'; body: { ok: true; runtime_session_id: string } }
   | { outcome: 'not-pinned'; body: { ok: false; error: string } }
   | { outcome: 'failed'; body: { ok: false; error: string; detail?: string } }
 
 /** A queued prompt that interrupts the named turn after its running tool ends. */
 export interface HarnessAbortAfterToolInput {
   promptId: string
-  opencodeSessionId: string
+  runtimeSessionId: string
   messageId: string
 }
 

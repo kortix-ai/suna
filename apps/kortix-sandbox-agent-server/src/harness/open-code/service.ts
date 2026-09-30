@@ -2,7 +2,7 @@ import { OPENCODE_HOME } from './paths'
 import type { OpenCodeConfig as Config } from './config'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService } from '../harness'
-import { loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
+import { bootstrapRuntimeSessionRequested, loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
 import { createOpenCodeAssetsService } from './assets'
 import { createOpenCodeProxyService } from './proxy'
 import { createOpenCodeControlService } from './control'
@@ -113,7 +113,7 @@ export const openCodeDefinition: HarnessDefinition = {
   createBootState: () => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1',
+    initialOpenCodeSessionRequired: bootstrapRuntimeSessionRequested(),
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
   }),

@@ -57,6 +57,23 @@ describe('parseOpenCodeAuditBatch', () => {
     });
   });
 
+  test('a W3 batch names its source and harness; a pre-W3 batch is OpenCode', () => {
+    const w3 = parseOpenCodeAuditBatch(
+      { source: 'runtime', harness: 'pi', events: [event({ runtime_session_id: 'ses_pi' })] },
+      scope,
+    );
+    expect(w3.values[0]).toMatchObject({
+      source: 'runtime',
+      authoritativeSource: 'runtime',
+      metadata: { harness: 'pi', reported_provenance: { runtime_session_id: 'ses_pi' } },
+    });
+    const legacy = parseOpenCodeAuditBatch({ events: [event()] }, scope);
+    expect(legacy.values[0]).toMatchObject({ source: 'opencode', metadata: { harness: 'opencode' } });
+    // A harness value is an identifier or nothing.
+    const forged = parseOpenCodeAuditBatch({ source: 'runtime', harness: 'pi; drop', events: [event()] }, scope);
+    expect(forged.values[0]).toMatchObject({ metadata: { harness: 'opencode' } });
+  });
+
   test('preserves relay lineage only as sandbox-reported metadata', () => {
     const parsed = parseOpenCodeAuditBatch(
       {
@@ -161,8 +178,9 @@ describe('parseOpenCodeAuditBatch', () => {
       delegationDepth: 0,
       metadata: {
         provenance_trust: 'sandbox_reported',
+        // A pre-W3 daemon's `opencode_session_id` is stored under the neutral key.
         reported_provenance: {
-          opencode_session_id: 'ses_forged',
+          runtime_session_id: 'ses_forged',
           agent_id: 'ceo-agent',
           agent_name: 'ceo-agent',
           initiator_actor_type: 'human',

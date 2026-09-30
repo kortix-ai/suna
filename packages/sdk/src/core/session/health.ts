@@ -25,7 +25,55 @@ export type SessionHealthResponse = {
   boot_error?: string | null;
   reason?: string | null;
   message?: string | null;
+  /**
+   * What the daemon serves: host routes (`file.import`, ...) and, since W3,
+   * the session features of its runtime (`session.rewind`, ...). Read it with
+   * {@link runtimeSupports}.
+   */
+  capabilities?: string[];
 };
+
+/**
+ * A session feature a runtime may or may not serve. Mirrors
+ * `RUNTIME_CAPABILITIES` in `@kortix/api-contract/runtime-relay`.
+ *
+ *   - `session.rewind`    revert to a message, and restore it
+ *   - `session.compact`   summarize the conversation on demand
+ *   - `session.commands`  project slash commands
+ *   - `session.fork`      fork a session at a message
+ *   - `session.subagents` subagent child sessions
+ *   - `session.mcp`       MCP servers the runtime connects itself
+ *   - `session.todo`      the runtime's todo list
+ *   - `session.shell`     a shell command run as a turn
+ *   - `session.attach`    attach the harness's own terminal client
+ */
+export type RuntimeCapability =
+  | 'session.rewind'
+  | 'session.compact'
+  | 'session.commands'
+  | 'session.fork'
+  | 'session.subagents'
+  | 'session.mcp'
+  | 'session.todo'
+  | 'session.shell'
+  | 'session.attach';
+
+/**
+ * Does the session's runtime serve `capability`? Pass the health
+ * `capabilities` list. A host hides the control of an absent feature instead
+ * of letting it fail with `501 feature_not_supported`.
+ *
+ * A list with no `session.*` entry comes from a daemon built before runtime
+ * capabilities existed; that daemon runs OpenCode, which serves every
+ * feature. `null`/`undefined` (no probe answered yet) hides nothing either.
+ */
+export function runtimeSupports(
+  capabilities: readonly string[] | null | undefined,
+  capability: RuntimeCapability,
+): boolean {
+  if (!capabilities?.some((entry) => entry.startsWith('session.'))) return true;
+  return capabilities.includes(capability);
+}
 
 /**
  * Which hop of the sandbox proxy produced a failure, as the proxy itself

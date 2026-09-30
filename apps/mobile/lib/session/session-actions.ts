@@ -10,7 +10,8 @@
  *      every commit this branch carries over its base). Needs the live
  *      runtime, so only the open thread shows it.
  *   3. Compact — the OpenCode summarize call (`useCompactSession`). Needs the
- *      live runtime, and never runs while the session works.
+ *      live runtime, one that serves `session.compact` (not pi), and never
+ *      runs while the session works.
  *
  * No React / React Native import.
  */
@@ -158,6 +159,8 @@ export interface SessionActionRowsInput {
   hasRuntime: boolean;
   /** The viewer may manage the session (`can_manage_lifecycle !== false`). */
   canManageLifecycle: boolean;
+  /** The runtime serves `session.compact` (`useRuntimeSupports`); pi does not. */
+  canCompact: boolean;
   changes: { pending: boolean; error: boolean; count: number };
   /** The session is working (`busy` or `retry`). */
   busy: boolean;
@@ -193,7 +196,7 @@ export function sessionActionRows(input: SessionActionRowsInput): SessionActionR
   }
 
   let compact: ActionRowState = HIDDEN;
-  if (live && input.canManageLifecycle) {
+  if (live && input.canManageLifecycle && input.canCompact) {
     if (input.compacting) compact = { visible: true, enabled: false, value: 'Compacting…' };
     else if (input.busy) compact = { visible: true, enabled: false, value: 'Working' };
     else compact = { visible: true, enabled: true };

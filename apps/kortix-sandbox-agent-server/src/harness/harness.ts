@@ -1,5 +1,5 @@
 import type { Config } from '@/lib/config/config'
-import { loadHostConfig, normalizeHarnessId } from '@/lib/config/config'
+import { loadHostConfig } from '@/lib/config/config'
 import type { SandboxBootState } from './contract/boot-state'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { ResourceMonitor } from '@/services/resources/resources'
@@ -73,7 +73,8 @@ export interface HarnessDefinition {
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const host = loadHostConfig(env)
-  return { ...resolveHarness(host).loadConfig(env), ...host }
+  const definition = resolveHarness(host)
+  return { ...definition.loadConfig(env), ...host, harness: definition.id }
 }
 
 /**
@@ -84,8 +85,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
  * stays the default; an unknown id fails the boot instead of booting something
  * else. Registering a harness is one line here plus its own folder.
  */
+/** The harness an unset `KORTIX_HARNESS` selects. pi becomes the default in H4. */
+const DEFAULT_HARNESS = 'opencode'
+
 export function resolveHarness(cfg?: Pick<Config, 'harness'>, id?: string): HarnessDefinition {
-  const selected = normalizeHarnessId(id ?? cfg?.harness)
+  const selected = (id ?? cfg?.harness ?? '').trim().toLowerCase() || DEFAULT_HARNESS
   if (selected === 'opencode') return openCodeDefinition
   if (selected === 'pi') return piDefinition
   throw new Error(`Unsupported harness: ${selected}`)

@@ -1,5 +1,6 @@
 // Daemon-readiness polling, factored out of sandbox-env-sync so it can be unit
 // tested without pulling in db/config. No heavy imports here on purpose.
+import { healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 
 // When a prompt's env sync changes model-affecting env, the daemon RESTARTS
 // opencode and returns 200 the instant the new process is spawned — while it
@@ -39,12 +40,10 @@ async function fetchDaemonOpencodeState(
       signal: AbortSignal.timeout(HEALTH_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
-    const body = (await res.json().catch(() => null)) as
-      | { opencode?: unknown; status?: unknown }
-      | null;
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return null;
     return {
-      opencode: typeof body.opencode === 'string' ? body.opencode : null,
+      opencode: healthRuntimeState(body),
       status: typeof body.status === 'string' ? body.status : null,
     };
   } catch {
