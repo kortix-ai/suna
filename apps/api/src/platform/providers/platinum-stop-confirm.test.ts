@@ -119,7 +119,7 @@ test('getStatus() does not report a VM stuck in stopping as stopped', async () =
 // build reads a PATCH naming no field it knows as "clear the name".
 function stopWithSandbox(sandbox: Record<string, unknown>) {
   const patches: Array<Record<string, unknown>> = [];
-  const current = { id: 'sbx_1', state: 'stopped', ...sandbox };
+  const current: Record<string, unknown> = { id: 'sbx_1', state: 'stopped', ...sandbox };
   globalThis.fetch = (async (input, init) => {
     const method = String(init?.method ?? 'GET');
     if (method === 'PATCH') {

@@ -273,7 +273,7 @@ interface Target {
 }
 
 const SLACK_ID = /^[A-Za-z0-9]{2,64}$/;
-const SLACK_TS = /^\d{1,12}\.\d{1,9}$/;
+export const SLACK_TS = /^\d{1,12}\.\d{1,9}$/;
 const TEAMS_CHANNEL = /^19:[A-Za-z0-9._=-]{1,256}@thread\.[A-Za-z0-9]{1,16}$/;
 const TEAMS_MESSAGE = /^\d{1,24}$/;
 
@@ -378,7 +378,7 @@ function refuse(message: string): ChannelReadGate {
   return { ...deny(message), answer: PASS.answer };
 }
 
-function noInstall(platform: Platform): string {
+export function noInstall(platform: Platform): string {
   return `This project has no ${label(platform)} install on record, so the connector cannot tell which conversations are its own. Connect ${label(platform)} again in Settings → Channels.`;
 }
 
