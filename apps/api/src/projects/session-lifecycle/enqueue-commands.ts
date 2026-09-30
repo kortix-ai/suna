@@ -56,6 +56,9 @@ export interface EnqueueContinueSessionCommandInput {
   held?: boolean;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
+  /** `actorUserId` is the person who sent this prompt — see
+   *  `QueuedContinueSessionPayload.bindTurnIdentity`. */
+  bindTurnIdentity?: boolean;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -75,6 +78,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.parts ? { parts: input.parts } : {}),
     ...(input.placement ? { placement: input.placement } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
+    ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   };
   return {
     commandType: 'continue_session',

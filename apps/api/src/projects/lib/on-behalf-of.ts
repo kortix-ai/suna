@@ -11,9 +11,11 @@
  *     unattended run (trigger, cron, webhook, email/Telegram, a Slack/Teams
  *     message without a linked user, a backend service account). A child
  *     session inherits its parent session's value, never the token user.
- *   - Prompt: the first prompt from a human other than `on_behalf_of` clears it
- *     permanently for the session (closes V6: a person prompting a private
- *     session never acts through another person's accounts).
+ *   - Turn: every turn a member starts binds the session token to that member
+ *     (`bindSessionTurnIdentity`): `user_id` and `on_behalf_of` both become the
+ *     prompter, so a person never acts through another person's authority or
+ *     accounts (closes V6). A turn from a non-person (trigger, channel sender,
+ *     service account) clears `on_behalf_of` and keeps `user_id`.
  *
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
  * middleware) or `credentialOnBehalfOf(actor)` (iam/actor.ts, 15 s memo).
@@ -65,22 +67,14 @@ export function decideSessionOnBehalfOf(input: OnBehalfOfInput): string | null {
   return input.isAccountMember ? input.userId : null;
 }
 
-/** Pure prompt rule: does this prompt clear `on_behalf_of`? */
-export function promptClearsOnBehalfOf(input: {
-  onBehalfOfUserId: string | null;
-  prompterUserId: string;
-  prompterIsHuman: boolean;
-}): boolean {
-  return input.prompterIsHuman && input.onBehalfOfUserId !== null && input.onBehalfOfUserId !== input.prompterUserId;
-}
-
 /**
  * Pure rule for a prompt that did NOT come through the HTTP prompt route: a
  * trigger fire or a channel message. Returns the prompter to compare against
  * `on_behalf_of` — a human id, or `null` for a non-human prompter, which clears
- * any value — or `undefined` when this source never clears (the HTTP sources,
- * which clear in the route, and platform notifications such as
- * `system:connector-connected`, which the session's own human caused).
+ * any value — or `undefined` when this source never changes it (the HTTP
+ * sources, which mark their human prompts `bindTurnIdentity`, and platform
+ * notifications such as `system:connector-connected`, which the session's own
+ * human caused).
  *
  * The channel identities mirror the mint rule above: email and Telegram
  * senders are never Kortix identities, and a Slack/Teams message carries its
@@ -198,6 +192,60 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
     .update(projectSessions)
     .set({
       metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(${ON_BEHALF_OF_CLEARED_KEY}::text, now()::text)`,
+    })
+    .where(eq(projectSessions.sessionId, input.sessionId));
+  return true;
+}
+
+/**
+ * `prompterUserId` started a turn in session `sessionId`. From this turn on,
+ * the session token acts as them:
+ *
+ *   - a member of the account: `user_id` (authorization, LLM usage and member
+ *     budgets, audit) and `on_behalf_of` (personal resources) both become the
+ *     prompter, and the cleared stamp is removed so a re-mint follows them;
+ *   - anyone else (a service account, an API-key caller): `on_behalf_of` is
+ *     cleared and stamped, `user_id` is kept — the same result as
+ *     `clearSessionOnBehalfOfForPrompt`.
+ *
+ * One conditional UPDATE: it writes nothing when the token already acts as the
+ * prompter, which is every turn but the first after a change of hands.
+ * Returns true when it changed a token.
+ */
+export async function bindSessionTurnIdentity(input: {
+  accountId: string;
+  sessionId: string;
+  prompterUserId: string;
+}): Promise<boolean> {
+  const prompter = sql`${input.prompterUserId}::uuid`;
+  const member = sql`exists (select 1 from ${accountMemberships} where ${accountMemberships.userId} = ${prompter} and ${accountMemberships.accountId} = ${input.accountId})`;
+  const changed = await db
+    .update(accountTokens)
+    .set({
+      userId: sql`case when ${member} then ${prompter} else ${accountTokens.userId} end`,
+      onBehalfOfUserId: sql`case when ${member} then ${prompter} else null end`,
+    })
+    .where(
+      and(
+        eq(accountTokens.sessionId, input.sessionId),
+        eq(accountTokens.accountId, input.accountId),
+        eq(accountTokens.status, 'active'),
+        isNull(accountTokens.revokedAt),
+        sql`case when ${member}
+          then (${accountTokens.userId} is distinct from ${prompter} or ${accountTokens.onBehalfOfUserId} is distinct from ${prompter})
+          else ${accountTokens.onBehalfOfUserId} is not null end`,
+      ),
+    )
+    .returning({ tokenId: accountTokens.tokenId, onBehalfOfUserId: accountTokens.onBehalfOfUserId });
+  if (changed.length === 0) return false;
+  for (const row of changed) loadTokenBinding.invalidate(row.tokenId);
+  const bound = changed[0]!.onBehalfOfUserId !== null;
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: bound
+        ? sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) - ${ON_BEHALF_OF_CLEARED_KEY}::text`
+        : sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || jsonb_build_object(${ON_BEHALF_OF_CLEARED_KEY}::text, now()::text)`,
     })
     .where(eq(projectSessions.sessionId, input.sessionId));
   return true;
