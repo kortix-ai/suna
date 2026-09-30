@@ -1,12 +1,8 @@
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import type { StreamTaskChunk } from '../slack-api';
 
-export interface QuestionInfo {
-  question: string;
-  header?: string;
-  options: Array<{ label: string; description?: string }>;
-  multiple?: boolean;
-  custom?: boolean;
-}
+/** A question the agent asks, as both harnesses send it (`kortix.transcript.v1`). */
+export type QuestionInfo = RuntimeQuestion;
 
 export interface LiveTurn {
   channel: string;

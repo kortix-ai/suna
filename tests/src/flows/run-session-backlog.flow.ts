@@ -1225,7 +1225,8 @@ flow(
 
 /**
  * A manifest with one extra agent, `no-edit`, whose `.md` denies every way to
- * write a file: the file tools (`edit`), the shell, and delegation.
+ * write a file: the file tools (`edit`), the shell (`bash`, which also covers
+ * OpenCode's `pty_*` tools, W5 E9), and delegation.
  */
 const NO_EDIT_FILES = {
   'kortix.yaml': [
@@ -1285,13 +1286,18 @@ harnessFlow(
         agentName: 'no-edit',
         prompt:
           `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
+          // OpenCode's pty plugin tools never asked for permission, so `bash: deny` did not stop them.
+          (harness === 'opencode'
+            ? `If you have no file-writing tool but have a pty_spawn tool, call pty_spawn once with command "sh" and args ["-c", "printf OK > ${path}"] instead. `
+            : '') +
           `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
       });
-      await ctx.step('no file tool ran; on pi the write was attempted and refused', async () => {
+      await ctx.step('no file or pty tool ran; on pi the write was attempted and refused', async () => {
         const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
-        const fileTools = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'write' || t.tool === 'edit');
-        const ran = fileTools.filter((t) => t.status !== 'error');
-        if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
+        const tools = messages.flatMap((m) => m.tools ?? []);
+        const fileTools = tools.filter((t) => t.tool === 'write' || t.tool === 'edit');
+        const ran = [...fileTools, ...tools.filter((t) => t.tool.startsWith('pty_'))].filter((t) => t.status !== 'error');
+        if (ran.length > 0) throw new Error(`a denied file or pty tool ran: ${JSON.stringify(ran)}`);
         // OpenCode never offers a tool its policy denies, so its model has no
         // write tool to call. pi offers every tool and refuses the call; a
         // refused `write` is the proof that `edit: deny` reached it.

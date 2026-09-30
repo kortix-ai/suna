@@ -122,11 +122,19 @@ pi-only: `KORTIX_PI_STATE_DIR`.
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
 
-Permission rules follow OpenCode's semantics (`pi/interactions.ts`): a per-tool
-action, or a glob-pattern -> action map matched against the `bash` command line
-or a workspace tool's path, with the longest matching pattern winning and `*`
-the weakest. A pattern map is never collapsed to its `*` entry, and a `deny`
-outranks an earlier "always" reply on the same tool.
+A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
+`@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
+one harness's tool. Each adapter maps its tools onto them: pi's `write` is
+`edit` (`pi/interactions.ts`); OpenCode's `pty_*` tools follow `bash`, and the
+template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
+and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). Those tools
+cannot ask, so they run only when the capability is `allow`. A rule is an
+action, or a glob-pattern -> action map matched against the `bash` command
+line or a workspace tool's path, with the longest matching pattern winning and
+`*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
+request names the capability and the call's subject (`patterns`); an "always"
+reply allows the capability for the session, and a `deny` still outranks it.
+The reply is `RUNTIME_PERMISSION_REPLIES` (`once`, `always`, `reject`).
 
 ### Extensions
 
