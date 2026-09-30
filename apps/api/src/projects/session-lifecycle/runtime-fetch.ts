@@ -6,6 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
+import { RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -15,6 +16,8 @@ export const WORKSPACE = '/workspace';
 export interface ResolvedSessionRuntime {
   endpoint: { url: string; headers: Record<string, string> };
   opencodeSessionId: string;
+  /** The sandbox, for `runtimeServesTurnVerbs`. */
+  externalId?: string;
 }
 
 /**
@@ -35,4 +38,58 @@ export function sessionRuntimeFetch(
     ...(init.body === undefined ? {} : { body: init.body }),
     signal: AbortSignal.timeout(timeoutMs),
   });
+}
+
+const segment = encodeURIComponent;
+
+/** The Kortix turn routes (`routes/kortix/runtime.ts` in kortixd). */
+export const runtimeVerbPaths = {
+  messages: (sessionId: string, opts: { limit: number; before?: string | null }) =>
+    `/kortix/runtime/messages/${segment(sessionId)}?limit=${opts.limit}${opts.before ? `&before=${segment(opts.before)}` : ''}`,
+  message: (sessionId: string, messageId: string) =>
+    `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}`,
+  abort: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/abort`,
+  agents: (directory: string) => `/kortix/runtime/agents?directory=${segment(directory)}`,
+  prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
+  state: '/kortix/runtime/state',
+} as const;
+
+const TURN_VERBS_TTL_MS = 5 * 60_000;
+const TURN_VERBS_MEMO_MAX = 5_000;
+// ponytail: per-process memo, cleared when full; a box whose daemon updates in
+// place is read again after the TTL.
+const turnVerbs = new Map<string, { serves: boolean; at: number }>();
+
+/**
+ * Does this sandbox's daemon serve the Kortix turn routes (`runtime.turns.v1`
+ * in `/kortix/health` `capabilities`)? One read per sandbox per 5 minutes. A
+ * failed read answers false and is not kept: the legacy spelling works on
+ * every daemon, so a miss costs only the old path.
+ */
+export async function runtimeServesTurnVerbs(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+  now = Date.now(),
+): Promise<boolean> {
+  if (!externalId) return false;
+  const known = turnVerbs.get(externalId);
+  if (known && now - known.at < TURN_VERBS_TTL_MS) return known.serves;
+  try {
+    const resolved = await endpoint();
+    if (!resolved) return false;
+    const res = await sessionRuntimeFetch(resolved, 'GET', '/kortix/health');
+    if (!res.ok) return false;
+    const body = (await res.json().catch(() => null)) as { capabilities?: unknown } | null;
+    const serves = Array.isArray(body?.capabilities) && body.capabilities.includes(RUNTIME_TURNS_CAPABILITY);
+    if (turnVerbs.size >= TURN_VERBS_MEMO_MAX) turnVerbs.clear();
+    turnVerbs.set(externalId, { serves, at: now });
+    return serves;
+  } catch {
+    return false;
+  }
+}
+
+/** Test-only. */
+export function __resetRuntimeTurnVerbsMemo(): void {
+  turnVerbs.clear();
 }

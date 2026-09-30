@@ -1,5 +1,6 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
+import { runtimeServesTurnVerbs, runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
+import { legacyRuntimePaths } from './legacy-runtime-rest';
 
 /**
  * Abort whatever turn the runtime still thinks is running for this session.
@@ -48,11 +49,10 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    const res = await sessionRuntimeFetch(
-      resolved.endpoint,
-      'POST',
-      `/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`,
-    );
+    const path = (await runtimeServesTurnVerbs(resolved.externalId, async () => resolved.endpoint))
+      ? runtimeVerbPaths.abort(resolved.opencodeSessionId)
+      : legacyRuntimePaths.abort(resolved.opencodeSessionId);
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', path);
     return res.ok;
   } catch {
     return false;
