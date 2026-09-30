@@ -944,7 +944,6 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     origin,
     invocationSource,
-    clientReportedSource: input.request?.clientReportedSource ?? null,
     callerSessionId: input.callerSessionId,
     agentName,
     visibility,
@@ -953,16 +952,11 @@ export async function createProjectSession(input: {
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
   // The surface the create came through. The route stamps every HTTP create
-  // `ui`; a spawn from another session's credential is an `agent`, and the CLI
-  // and MCP name themselves in X-Kortix-Client. Informational only: no policy
-  // reads these values (origin keys on `trigger:`/`system:` and channels).
+  // `ui`; a spawn from another session's credential is an `agent`. Derived from
+  // the authenticated credential, never a client header. Informational only:
+  // no policy reads these values (origin keys on `trigger:`/`system:` and channels).
   const sessionSource =
-    invocationSource === 'ui' && input.callerSessionId
-      ? 'agent'
-      : invocationSource === 'ui' &&
-          (input.request?.clientReportedSource === 'cli' || input.request?.clientReportedSource === 'mcp')
-        ? input.request.clientReportedSource
-        : invocationSource;
+    invocationSource === 'ui' && input.callerSessionId ? 'agent' : invocationSource;
   const initiator: SessionInitiator =
     parentSession?.initiator ??
     resolveRootSessionInitiator({
@@ -1005,7 +999,6 @@ export async function createProjectSession(input: {
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
-      client_reported_source: auditAttribution.clientReportedSource,
       initiator_actor_type: auditAttribution.initiatorActorType,
       initiator_actor_id: auditAttribution.initiatorActorId,
       delegation_depth: auditAttribution.delegationDepth,

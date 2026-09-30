@@ -21,15 +21,12 @@ export interface TokenRetryOptions {
 }
 
 /**
- * The surfaces a host may report in `X-Kortix-Client`. Kept in lockstep with
- * `KortixPlatformConfig['clientSource']` (`core/http/config.ts`) — a value in
- * one and not the other is either an unreachable union member or a header the
- * SDK silently drops. The backend stores whatever arrives in
- * `kortix.session_audit_events.client_reported_source` (a plain `text` column)
- * after its own format check, so this set is the only allowlist in the path.
+ * @deprecated Inert. The SDK no longer sends `X-Kortix-Client`; the API audits
+ * the authenticated credential instead. Kept exported for existing consumers.
  */
 const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'tui', 'web']);
 
+/** @deprecated Inert: nothing in the SDK calls it. Removed in the next major. */
 export function normalizeClientSource(value?: string): string | null {
 	const normalized = value?.trim().toLowerCase();
 	return normalized && CLIENT_SOURCES.has(normalized) ? normalized : null;

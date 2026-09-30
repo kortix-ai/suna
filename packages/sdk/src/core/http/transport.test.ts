@@ -64,10 +64,11 @@ const live = () => ({
 });
 
 describe('send: header policy', () => {
-  test('attaches the bearer and the client surface', async () => {
+  test('attaches the bearer and never a client surface', async () => {
     await send('http://backend.test/v1/projects');
     expect(seen[0].headers.get('authorization')).toBe('Bearer tok1');
-    expect(seen[0].headers.get('x-kortix-client')).toBe('web');
+    // The audit records the authenticated credential; the SDK reports no client.
+    expect(seen[0].headers.has('x-kortix-client')).toBe(false);
   });
 
   test('attaches admin bypass and act-as while they are on', async () => {
@@ -84,12 +85,11 @@ describe('send: header policy', () => {
     expect(seen[0].headers.has('x-kortix-impersonate')).toBe(false);
   });
 
-  test("keeps a caller's own Authorization and X-Kortix-Client", async () => {
+  test("keeps a caller's own Authorization", async () => {
     await send('http://backend.test/v1/x', {
-      headers: { Authorization: 'Bearer explicit', 'X-Kortix-Client': 'cli' },
+      headers: { Authorization: 'Bearer explicit' },
     });
     expect(seen[0].headers.get('authorization')).toBe('Bearer explicit');
-    expect(seen[0].headers.get('x-kortix-client')).toBe('cli');
   });
 
   test('a URL request carries its headers as a plain record with stable names', async () => {
@@ -338,7 +338,7 @@ describe('error typing', () => {
 });
 
 describe('client surface', () => {
-  test('tui is sent; an unknown configured surface is not', async () => {
+  test('a configured client surface is inert: no header is sent', async () => {
     configureKortix({
       backendUrl: 'http://backend.test/v1',
       clientSource: 'tui',
@@ -359,6 +359,6 @@ describe('client surface', () => {
       },
     });
     await send('http://backend.test/v1/x');
-    expect(seen.map((s) => s.headers.get('x-kortix-client'))).toEqual(['tui', null]);
+    expect(seen.map((s) => s.headers.get('x-kortix-client'))).toEqual([null, null]);
   });
 });

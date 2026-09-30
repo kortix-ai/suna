@@ -154,6 +154,41 @@ export function runtimeBootEpochMs(metadata: RuntimeReadinessMetadata): number |
   return newest;
 }
 
+/**
+ * Metadata stamp: the daemon answered `/start`'s probe after this boot's epoch.
+ * Written once per boot; every stop strips it (STOPPED_SANDBOX_CLEARED_KEYS)
+ * and every wake moves the epoch past it.
+ */
+export const RUNTIME_PROVEN_AT_KEY = 'runtimeProvenAt';
+
+export function runtimeProvenThisBoot(metadata: RuntimeReadinessMetadata): boolean {
+  const provenMs = parseTimestampMs(metadata[RUNTIME_PROVEN_AT_KEY]);
+  if (provenMs === null) return false;
+  const bootEpochMs = runtimeBootEpochMs(metadata);
+  return bootEpochMs === null || provenMs >= bootEpochMs;
+}
+
+/**
+ * A `/start` probe missed a box whose daemon already answered this boot, and
+ * nothing IN the box said so. The probe crosses the provider ingress; a
+ * timeout, a 502, or the edge's own header-less 503 is that hop, not the
+ * daemon (prod 2026-09-29: ~18 min of edge timeouts to a healthy box turned
+ * into `starting`, a dead-daemon relaunch request, and a frozen session). Such
+ * a miss keeps serving the stored pin: no boot clock, no park, no relaunch.
+ * A dead daemon on a proven box is the reaper's job, confirmed in-box.
+ */
+export function servesThroughProbeMiss(
+  metadata: RuntimeReadinessMetadata,
+  probe: { reason: string; bootPhase?: string; sessions?: unknown },
+  nowMs = Date.now(),
+): boolean {
+  const daemonAnswered =
+    probe.reason !== 'unreachable' &&
+    (probe.reason !== 'not_ready' || probe.bootPhase !== undefined || probe.sessions !== undefined);
+  if (daemonAnswered) return false;
+  return runtimeProvenThisBoot(metadata) && !repairInFlight(metadata, nowMs);
+}
+
 /** A clock stamped before this boot attempt began is not evidence about it. */
 function clockForThisBoot(clockMs: number | null, bootEpochMs: number | null): number | null {
   if (clockMs === null) return null;

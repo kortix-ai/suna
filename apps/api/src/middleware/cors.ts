@@ -56,6 +56,10 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'tracestate',
       'X-Request-Id',
       'Last-Event-ID',
+      // The API no longer reads or sends X-Kortix-Client (the audit records the
+      // authenticated credential). Keep it allowed: browser tabs and cached web
+      // builds from before the change still send it, and dropping it here would
+      // fail their CORS preflight.
       'X-Kortix-Client',
       // Defense in depth for the session stream: a cross-origin SSE reader that
       // sends `Cache-Control: no-cache` (older SDKs, the opencode fallback) would

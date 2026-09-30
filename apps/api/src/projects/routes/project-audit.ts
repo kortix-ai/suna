@@ -3,6 +3,7 @@
  * endpoint, and the per-session reconstruction timeline.
  */
 
+import { auditCredentialNames } from '../../shared/audit-credential-names';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountTokens,
@@ -240,6 +241,7 @@ projectsApp.openapi(
         actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -291,6 +293,7 @@ projectsApp.openapi(
       projectId,
       sessionId: c.req.query('session_id')?.trim() || null,
       source: c.req.query('source')?.trim() || null,
+      credentialKind: c.req.query('credential_kind')?.trim() || null,
       phase: c.req.query('phase')?.trim() || null,
       outcome: c.req.query('outcome')?.trim() || null,
       requestId: c.req.query('request_id')?.trim() || null,
@@ -317,8 +320,9 @@ projectsApp.openapi(
     const hasMore = fetched.length > limit;
     const rows = hasMore ? fetched.slice(0, limit) : fetched;
     const last = rows.at(-1);
+    const names = await auditCredentialNames(rows);
     return c.json({
-      events: rows.map(serializeAuditEvent),
+      events: rows.map((row) => serializeAuditEvent(row, names)),
       next_cursor: hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null,
     });
   },
@@ -810,6 +814,7 @@ projectsApp.openapi(
     // `approval_url` rule as before — now shared with the session-open
     // bundle's `audit` leg (`../lib/session-audit-read.ts`) so the two can
     // never disagree about what is pending.
+    const names = await auditCredentialNames(eventRows);
     const auditActions = await readSessionAuditActions({
       projectId,
       sessionId,
@@ -829,7 +834,7 @@ projectsApp.openapi(
       // entitled caller (0 whenever `include_events=false`, which is every
       // poll), the PENDING-ACTIONS count otherwise.
       count: audited ? eventRows.length : auditActions.count,
-      events: eventRows.map(serializeAuditEvent),
+      events: eventRows.map((row) => serializeAuditEvent(row, names)),
       next_cursor:
         hasMoreEvents && lastEvent?.sessionSequence != null
           ? `${lastEvent.sessionSequence}|${lastEvent.eventId}`

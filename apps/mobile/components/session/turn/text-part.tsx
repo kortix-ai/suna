@@ -2,9 +2,17 @@ import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/session/SandboxPreviewCard';
+import { assistantSegments } from '@/lib/markdown/setup-links';
+import { SetupLinkCard } from './setup-link-card';
 
 /**
  * Assistant prose: markdown plus a preview card per localhost URL.
+ *
+ * A setup link the agent wrote (`/connect/<token>`, `/secret-intake/<token>`)
+ * renders as a `SetupLinkCard` where the link stood, never as a raw URL: the
+ * text is cut around it (`assistantSegments`). While the part streams, the
+ * link still arriving is already its card, with the button waiting. A bare URL
+ * in the prose becomes a tappable link, as on web.
  *
  * Mirrors apps/web `session-chat.tsx` text rendering (`min-w-0 text-sm`,
  * `ThrottledMarkdown isStreaming` while the part can still grow,
@@ -23,11 +31,27 @@ export const TextPartBlock = React.memo(function TextPartBlock({
   isStreaming?: boolean;
 }) {
   const detectedUrls = useMemo(() => detectLocalhostUrls(text), [text]);
+  const segments = useMemo(() => assistantSegments(text, isStreaming), [text, isStreaming]);
   return (
     <View style={{ minWidth: 0 }}>
-      <SelectableMarkdownText isDark={isDark} isStreaming={isStreaming}>
-        {text}
-      </SelectableMarkdownText>
+      {segments.map((segment, index) => {
+        const previous = segments[index - 1];
+        // Position is the identity: streaming only appends, so a pending card
+        // and the finished card are one component.
+        return (
+          <View
+            key={index}
+            style={previous ? { marginTop: previous.type === 'setup' && segment.type === 'setup' ? 8 : 12 } : undefined}>
+            {segment.type === 'setup' ? (
+              <SetupLinkCard kind={segment.kind} token={segment.token} href={segment.href} label={segment.label} />
+            ) : (
+              <SelectableMarkdownText isDark={isDark} isStreaming={isStreaming}>
+                {segment.text}
+              </SelectableMarkdownText>
+            )}
+          </View>
+        );
+      })}
       {/* The row names itself: "App preview · localhost:3000". Passing the URL
           as the title and "Tap to open in browser" as the description said the
           same thing three times (Jay, 2026-09-22). */}

@@ -19028,7 +19028,13 @@
       "textd71a0c697cce": "分段",
       "text9ae34cca7f2d": "由 Kortix 管理",
       "textafecbae4466e": "Kortix 会为此项目创建并管理一个私有仓库。",
-      "text6cb9b40da8a0": "Kortix 会在你的 GitHub 账户中创建一个私有仓库。"
+      "text6cb9b40da8a0": "Kortix 会在你的 GitHub 账户中创建一个私有仓库。",
+      "text2ed8b8066255": "通过",
+      "texta6d0f740e426": "个人访问令牌",
+      "text2bbd1ec2197d": "已连接应用",
+      "textda3d3fb8f598": "代理会话",
+      "text4dcb7e3b10a9": "SCIM 令牌",
+      "text36fe0f55b7f5": "任意凭据"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20199,7 +20205,6 @@
     },
     "needsReconnectHint": "这台电脑已与 Kortix 断开连接。请重新连接后再使用。",
     "actionFailed": "出了点问题，请重试。",
-    "sharedWithProject": "已与项目共享电脑",
     "alsoShareWith": "同时与 {project} 共享",
     "approvedEverywhere": "你的电脑已连接。你可以在每个项目的私人会话中使用它。可以关闭此标签页。",
     "approvedShared": "你的电脑已连接并与 {project} 共享。可以关闭此标签页。",
@@ -20247,8 +20252,6 @@
     "runInBackground": "在后台运行",
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
     "manageInProject": "在项目中管理",
-    "disconnectEllipsis": "断开连接…",
-    "yoursEveryProject": "你的 · 每个项目",
-    "sharedWithThisProject": "已与此项目共享"
+    "disconnectEllipsis": "断开连接…"
   }
 }

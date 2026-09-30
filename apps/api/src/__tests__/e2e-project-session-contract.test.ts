@@ -1355,13 +1355,14 @@ describe('project session API contract', () => {
     expect(webSession.initiator).toMatchObject({ type: 'member', id: webSession.created_by });
     expect(webSession.metadata?.source).toBe('ui');
 
+    // A self-reported X-Kortix-Client changes nothing: the API never reads it.
     const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(cli.status).toBe(201);
-    expect((await cli.json()).metadata?.source).toBe('cli');
+    expect((await cli.json()).metadata?.source).toBe('ui');
   });
 
   test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {
@@ -3437,6 +3438,63 @@ describe('project session API contract', () => {
     expect(await again.json()).toMatchObject({ stage: 'starting', reason: 'runtime_updating' });
     expect(deadDaemonRepairs).toBe(1);
     expect(providerStopCalls).toBe(0);
+  });
+
+  test('a probe miss on a box proven this boot keeps answering ready: never starting, never parked', async () => {
+    // prod 2026-09-29: ~18 min of provider-ingress timeouts to a healthy daemon
+    // flipped a live session to `starting` and asked for a relaunch mid-answer.
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', opencodeSessionId: 'ses_root_existing' };
+    const proven = (extra: Record<string, unknown> = {}): Array<SandboxRowFixture> => [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-ingress-flaky',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          runtimeProvenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          opencodeReadyWaitReason: 'unreachable',
+          ...extra,
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    sessionSandboxRows = proven();
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(await res.json()).toMatchObject({ stage: 'ready', retriable: false, opencode_session_id: 'ses_root_existing' });
+    // A daemon that really died still gets its relaunch (confirmed in-box first).
+    expect(deadDaemonRepairs).toBe(1);
+    expect(providerStopCalls).toBe(0);
+
+    // Even after a failed relaunch — the park case for an unproven box — a
+    // proven box keeps serving and is never parked on a probe miss.
+    sessionSandboxRows = proven({
+      deadDaemonRepairRequestedAt: new Date(Date.now() - 20_000).toISOString(),
+      legacyRuntimeBootstrap: {
+        state: 'failed',
+        attempts: 1,
+        manifestBuild: 1,
+        lastAttemptAt: new Date(Date.now() - 15_000).toISOString(),
+        finishedAt: new Date(Date.now() - 10_000).toISOString(),
+      },
+    });
+    const again = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(await again.json()).toMatchObject({ stage: 'ready', opencode_session_id: 'ses_root_existing' });
+    expect(providerStopCalls).toBe(0);
+    expect(sessionSandboxRows[0]?.status).toBe('active');
   });
 
   test('dashboard start parks (not preserves) a running sandbox whose relaunch could not revive its runtime', async () => {

@@ -4,7 +4,7 @@ import {
   RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections } from '@kortix/db';
+import { connectorConnections, tunnelConnections } from '@kortix/db';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   connectionIsEffectiveProjectDefault,
@@ -25,6 +25,7 @@ import { loadMutableConnection } from '../lib/connection-mutation';
 import { readJsonObject } from '../../shared/http-body';
 import { ConnectionViewSchema, serializeConnection } from '../lib/connection-view';
 import { actorOf } from '../../iam/actor';
+import { requireUserCredential } from '../../tunnel/routes/auth';
 import { assignRole } from '../../iam/assignments';
 import {
   startComposioConnect, finalizeComposioConnect,
@@ -92,14 +93,30 @@ projectsApp.openapi(
       return c.json({ error: 'Not found' }, 404);
     }
     // A computer account follows its owner into every project, including
-    // projects of other workspaces. Sharing one goes through the computers
-    // route, which checks the machine's workspace and refuses session and
-    // agent tokens; this generic route checks neither.
+    // projects of other workspaces. Only its owner, as a human, shares it, and
+    // only where the machine may go: its owner's personal workspace machine
+    // goes anywhere they manage, a team machine stays in its team.
     if (connection.providerType === 'computer') {
-      return c.json(
-        { error: "Share a computer with POST /projects/{projectId}/computers { tunnel_id, share: 'project' }" },
-        409,
-      );
+      requireUserCredential(c);
+      const [machine] = await db
+        .select({ accountId: tunnelConnections.accountId, ownerUserId: tunnelConnections.ownerUserId })
+        .from(connectorConnections)
+        .innerJoin(tunnelConnections, eq(tunnelConnections.tunnelId, connectorConnections.tunnelId))
+        .where(eq(connectorConnections.connectionId, connectionId))
+        .limit(1);
+      if (
+        !machine ||
+        machine.ownerUserId !== loaded.userId ||
+        (machine.accountId !== loaded.userId && machine.accountId !== loaded.row.accountId)
+      ) {
+        return c.json(
+          {
+            error: 'This computer belongs to another account. Pair it again from this project.',
+            code: 'COMPUTER_ACCOUNT_MISMATCH',
+          },
+          409,
+        );
+      }
     }
     if (!mutable.mayManageSystemConnections) {
       return c.json(

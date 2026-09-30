@@ -16,7 +16,6 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
@@ -54,7 +53,6 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
-  clientReportedSource?: string | null;
 };
 
 // Session-status constants live in a dependency-free module so lean callers (the
@@ -383,7 +381,6 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
-    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 

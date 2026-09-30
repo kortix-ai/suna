@@ -118,6 +118,18 @@ aws ec2 describe-flow-logs --region us-east-2 \
   --filter Name=resource-id,Values=vpc-03371e6a60dafbd25
 ```
 
+## Drata test decisions
+
+A disabled Drata test needs a recorded reason. The public API disables a test
+with `PUT /public/v2/workspaces/{ws}/monitoring-tests/{testId}` and body
+`{"enabled": false}`, and records only "Disabled via Public API". This table
+is the record.
+
+| Test | Decision | Date | Rationale |
+| --- | --- | --- | --- |
+| `225` Hardware MFA for AWS Root Account | Disabled, risk accepted by the account owner | 2026-09-29 | SOC 2 does not require hardware MFA; the test comes from the CIS AWS Foundations Benchmark. Control `DCF-90` (root account monitored) is met by test `214` (root has MFA), test `124` (root unused), no root access keys, and a page on every successful root console sign-in (`../security-baseline/root-account-alerting.tf`: EventBridge rule `kortix-root-login-failures`, us-east-1 to us-west-2, SNS `suna-api-alerts`, confirmed email subscriber). Re-evaluate at the annual policy review. |
+| `300` AWS Lambda Error Rate Monitored | Re-enabled | 2026-09-29 | Every Lambda in the account has an `Errors` alarm (`reconciler-health.tf`). |
+
 ## Drata IaC scan: how it reads this tree
 
 The `drata-compliance.yml` scan uploads every `.tf` file and returns findings
@@ -143,9 +155,11 @@ from `GET https://public-api.drata.com/public/workspaces/1/pipelines/results?run
 ## Drata IaC exclusions
 
 Each row is a finding that is correct by design or that the parser cannot
-read. Create one Drata exclusion per row (Drata → Monitoring → Pipeline →
-finding → Exclude), with the rationale below. Exclusions are keyed by finding
-ID; re-create a row if Drata renames its ID scheme.
+read. Each has a Drata exclusion on the `main` pipeline (Drata → Monitoring →
+Pipelines → `main` → Exclusions), created 2026-09-29 with the rationale below.
+Scan of `main` after the exclusions: 0 critical, 0 high, 0 moderate, 0 low.
+Exclusions are keyed by finding ID; re-create a row if Drata renames its ID
+scheme. A new finding fails the `drata-compliance.yml` gate at `CRITICAL`.
 
 | Sev | Test | Resource | Rationale |
 | --- | --- | --- | --- |

@@ -36,6 +36,7 @@ const EnvironmentSchema = z.object({
   KORTIX_PI_PACKAGES_DIR: z.string().optional(),
   // First backoff of a transient model-error retry (transient-retry.ts). Tests shorten it.
   KORTIX_PI_TURN_RETRY_BASE_MS: z.coerce.number().int().positive().optional(),
+  KORTIX_PI_NO_PROGRESS_MS: z.coerce.number().int().positive().optional(),
 })
 
 export interface PiEnvironment {
@@ -47,6 +48,7 @@ export interface PiEnvironment {
   piPackagesBundleDigest?: string
   piPackagesDir: string
   piTurnRetryBaseMs: number
+  piNoProgressMs: number
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -61,6 +63,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_PACKAGES_BUNDLE_DIGEST: env.KORTIX_PI_PACKAGES_BUNDLE_DIGEST,
     KORTIX_PI_PACKAGES_DIR: env.KORTIX_PI_PACKAGES_DIR,
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
+    KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -71,6 +74,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piPackagesBundleDigest: parsed.KORTIX_PI_PACKAGES_BUNDLE_DIGEST?.trim() || undefined,
     piPackagesDir: parsed.KORTIX_PI_PACKAGES_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi-packages'),
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
+    piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
   }
 }
 

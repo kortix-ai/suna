@@ -221,6 +221,13 @@ export interface ConnectorSetupLinkInfo {
   name?: string | null;
   /** The app's logo. `null` when the catalog has none; absent on older servers. */
   icon_url?: string | null;
+  /**
+   * An account landed on this connector after the link was minted: the ask is
+   * settled, and a card that reloads shows it as done. `false` for a link
+   * nobody has completed, even when the connector already had an account.
+   * Absent on older servers and for links minted before they recorded when.
+   */
+  connected?: boolean;
   expires_at: string;
 }
 
@@ -415,6 +422,7 @@ export async function downloadAccountAudit(
     session_id?: string;
     actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
     source?: string;
+    credential_kind?: string;
     phase?: string;
     outcome?: 'success' | 'failure' | 'denied' | 'pending';
     request_id?: string;
@@ -435,6 +443,7 @@ export async function downloadAccountAudit(
   if (query.session_id) params.set('session_id', query.session_id);
   if (query.actor_type) params.set('actor_type', query.actor_type);
   if (query.source) params.set('source', query.source);
+  if (query.credential_kind) params.set('credential_kind', query.credential_kind);
   if (query.phase) params.set('phase', query.phase);
   if (query.outcome) params.set('outcome', query.outcome);
   if (query.request_id) params.set('request_id', query.request_id);

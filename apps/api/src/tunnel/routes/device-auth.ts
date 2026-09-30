@@ -15,7 +15,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { requestClientKey } from '../../shared/client-ip';
 import { createHash } from 'node:crypto';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, desc, gt, sql } from 'drizzle-orm';
 import { tunnelConnections, tunnelDeviceAuthRequests, tunnelPermissions } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
@@ -38,6 +38,7 @@ import { loadProjectForUser, projectCapabilityAllowed } from '../../projects/lib
 import { parseConnectorConnectOwner } from '../../projects/lib/connection-access';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
+import { tunnelRelay } from '../core/relay';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**
@@ -102,6 +103,9 @@ export function createDeviceAuthPublicRouter() {
             'application/json': {
               schema: z.object({
                 machineHostname: z.string().optional(),
+                /** sha256 hex of the machine's hardware id. Approval reuses the
+                 *  approver's existing registration of this machine. */
+                machine_id: z.string().optional(),
                 /** The project the machine asks to join (`connect --project-id`). */
                 project_id: z.string().uuid().optional(),
               }),
@@ -137,6 +141,11 @@ export function createDeviceAuthPublicRouter() {
       const body = await readJsonObject(c);
       const machineHostname =
         typeof body.machineHostname === 'string' ? body.machineHostname.slice(0, 255) || null : null;
+      // An older agent sends no machine id; anything but a sha256 hex is dropped.
+      const machineId =
+        typeof body.machine_id === 'string' && /^[a-f0-9]{64}$/.test(body.machine_id)
+          ? body.machine_id
+          : null;
       // Untrusted hint from an unauthenticated machine: stored as-is, and
       // checked against the approver's project access at approval.
       const projectId = body.project_id ?? null;
@@ -157,6 +166,7 @@ export function createDeviceAuthPublicRouter() {
             deviceCode,
             deviceSecretHash,
             machineHostname,
+            machineId,
             projectId,
             expiresAt,
           });
@@ -473,23 +483,50 @@ export function createDeviceAuthRouter() {
           .returning({ id: tunnelDeviceAuthRequests.id });
         if (!claimed) return null;
 
-        const [created] = await tx
-          .insert(tunnelConnections)
-          .values({
-            accountId: machineAccountId,
-            ownerUserId: userId,
-            name,
-            capabilities,
-            status: 'offline',
-            setupTokenHash,
-          })
-          .returning();
+        // One machine, one registration: a machine the approver already paired
+        // (same hardware id) gets a new credential, name, and grants instead
+        // of a second entry. Its accounts, shares, and bindings stay.
+        const [registered] = row.machineId
+          ? await tx
+              .select({ tunnelId: tunnelConnections.tunnelId, accountId: tunnelConnections.accountId })
+              .from(tunnelConnections)
+              .where(
+                and(
+                  eq(tunnelConnections.ownerUserId, userId),
+                  sql`${tunnelConnections.machineInfo}->>'machineId' = ${row.machineId}`,
+                ),
+              )
+              .orderBy(desc(tunnelConnections.createdAt))
+              .limit(1)
+              .for('update')
+          : [];
+        if (registered) {
+          await tx
+            .update(tunnelConnections)
+            .set({ name, capabilities, setupTokenHash, updatedAt: new Date() })
+            .where(eq(tunnelConnections.tunnelId, registered.tunnelId));
+          await tx.delete(tunnelPermissions).where(eq(tunnelPermissions.tunnelId, registered.tunnelId));
+        }
+        const [created] = registered
+          ? [registered]
+          : await tx
+              .insert(tunnelConnections)
+              .values({
+                accountId: machineAccountId,
+                ownerUserId: userId,
+                name,
+                capabilities,
+                status: 'offline',
+                setupTokenHash,
+                machineInfo: row.machineId ? { machineId: row.machineId } : {},
+              })
+              .returning();
         if (!created) throw new Error('Tunnel connection insert returned no row');
 
         const grants = capabilities.flatMap((cap) =>
           (DEFAULT_PERMISSION_SCOPES[cap] ?? []).map((scope) => ({
             tunnelId: created.tunnelId,
-            accountId: machineAccountId,
+            accountId: created.accountId,
             capability: cap as 'filesystem' | 'shell' | 'desktop',
             scope,
             status: 'active' as const,
@@ -522,14 +559,18 @@ export function createDeviceAuthRouter() {
         return {
           tunnelId: created.tunnelId,
           connectionId: attached?.connection.connectionId ?? null,
+          reused: Boolean(registered),
         };
       });
 
       if (!paired) {
         return c.json({ error: 'Device auth request was already resolved' }, 409);
       }
+      const { reused, ...result } = paired;
+      // The agent still running on the old credential yields to the new one.
+      if (reused) tunnelRelay.disconnectAgent(result.tunnelId, 4003, 'setup token rotated');
 
-      return c.json({ success: true, ...paired });
+      return c.json({ success: true, ...result });
     },
   );
 
