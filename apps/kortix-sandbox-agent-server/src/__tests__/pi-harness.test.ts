@@ -874,7 +874,7 @@ describe('pi harness', () => {
   })
 
   test.each([
-    ['a messageID outside the OpenCode wire format', { messageID: 'not-a-wire-id', parts: [{ type: 'text', text: 'hi' }] }],
+    ['a messageID outside the Kortix message id format', { messageID: 'not-a-message-id', parts: [{ type: 'text', text: 'hi' }] }],
     ['an empty parts array', { parts: [] }],
     ['an unsupported part type', { parts: [{ type: 'image', url: 'x' }] }],
     ['no content at all', { parts: [{ type: 'text', text: '   ' }] }],

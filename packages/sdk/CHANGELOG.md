@@ -83,6 +83,13 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Deprecated
+- The message-id clock arithmetic (`wireIdClock`, `wireIdClockAt`,
+  `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`,
+  `newestWireIdClock`, `mintWireMessageIdAbove`, `MintedWireMessageId`,
+  `MintWireMessageIdAboveInput`, `WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`,
+  `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS`). Message ids are the
+  Kortix format v1 and opaque to clients; `mintWireMessageId` and
+  `WIRE_MESSAGE_ID` stay. The clock goes with OpenCode support.
 - `SessionHandle.runtime` (the raw runtime client): use the session verbs.
 - `openEventStream({ client })`: pass `url`.
 - The `session_transcript_history` member of `FeatureFlagKey`. Saved session

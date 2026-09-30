@@ -37,7 +37,7 @@ import { nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { TransientRetry, type RetryPlan } from './transient-retry'
-import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
+import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
 
@@ -102,8 +102,8 @@ export function parsePromptBody(raw: unknown): PromptInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new PromptRejected('prompt body must be an object')
   const body = raw as Record<string, unknown>
   if (body.messageID !== undefined) {
-    if (typeof body.messageID !== 'string' || !WIRE_MESSAGE_ID.test(body.messageID)) {
-      throw new PromptRejected('messageID must use the OpenCode wire format')
+    if (typeof body.messageID !== 'string' || !MESSAGE_ID.test(body.messageID)) {
+      throw new PromptRejected('messageID must be a Kortix message id (msg_ + 12 hex clock + 14 base62)')
     }
   }
   if (body.model !== undefined) {
@@ -237,7 +237,7 @@ export class PiRuntime {
   private readonly env: NodeJS.ProcessEnv
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
-  private readonly clock = new WireIdClock()
+  private readonly clock = new MessageIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
   private agent: Agent | null = null
