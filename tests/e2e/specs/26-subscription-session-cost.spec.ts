@@ -194,6 +194,9 @@ test("26 — ChatGPT session usage excludes historical subscription costs and re
           r.url().includes(`/sessions/${sessionId}/snapshot`) &&
           r.request().method() === "GET" &&
           r.status() === 200,
+        // The first visit to the session route compiles it in `next dev`:
+        // 21 s of compile on a CI runner (main run 36758417919), past the 20 s default.
+        { timeout: 90_000 },
       );
       await page.goto(`/projects/${projectId}/sessions/${sessionId}`, {
         waitUntil: "domcontentloaded",
