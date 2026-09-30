@@ -91,8 +91,12 @@ describe('web ECS migration', () => {
     const variables = read('infra/terraform/modules/ecs-api/variables.tf');
 
     expect(terraform).toContain('enable_http_redirect   = true');
-    expect(module).toMatch(/resource "aws_lb_listener" "http"[\s\S]*?port\s*= 80[\s\S]*?type\s*= "redirect"[\s\S]*?protocol\s*= "HTTPS"[\s\S]*?status_code\s*= "HTTP_301"/);
-    expect(module).toMatch(/description = "HTTP redirect"[\s\S]*?from_port\s*= 80[\s\S]*?to_port\s*= 80/);
+    expect(module).toMatch(
+      /resource "aws_lb_listener" "http"[\s\S]*?port\s*= 80[\s\S]*?type\s*= "redirect"[\s\S]*?protocol\s*= "HTTPS"[\s\S]*?status_code\s*= "HTTP_301"/,
+    );
+    expect(module).toMatch(
+      /description = "HTTP redirect"[\s\S]*?from_port\s*= 80[\s\S]*?to_port\s*= 80/,
+    );
     expect(variables).toContain('variable "enable_http_redirect"');
   });
 
