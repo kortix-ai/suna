@@ -16,7 +16,8 @@ import { subscribe } from '../fixtures/billing';
 import { flow, harnessFlow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
-import { assertRuntimeHarness } from '../fixtures/session-run';
+import { assertRuntimeHarness, readTranscript, readTurn } from '../fixtures/session-run';
+import { isKe2eRetryableError } from '../core/client';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -1629,6 +1630,25 @@ async function boxSession(ctx: FlowContext, fixture: Fixture) {
   );
   created!.status(200);
   const conversationId = String(created!.json<{ id: string }>().id);
+  // The boot prompt's turn must end first. A turn in flight blocks the
+  // turn-start convergence by design, so a prompt sent while "say hello" still
+  // runs is answered on the release the box was behind on (measured on a real
+  // box 2026-09-30: the boot turn ended 2.8 s after the flow pushed and prompted).
+  await waitFor(
+    async () => ({
+      turn: await readTurn(ctx, fixture.projectId, sessionId),
+      transcript: await readTranscript(ctx, fixture.projectId, sessionId),
+    }),
+    {
+      until: ({ turn, transcript }) =>
+        turn.turns.length === 0 &&
+        transcript.messages.some((m) => m.role === 'assistant' && (Boolean(m.completed) || Boolean(m.error))),
+      timeoutMs: 240_000,
+      intervalMs: 2_000,
+      description: `the boot prompt's turn to end in session ${sessionId}`,
+      retryOnError: isKe2eRetryableError,
+    },
+  );
 
   return {
     sessionId,
@@ -1763,6 +1783,8 @@ harnessFlow(
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       ...GIT_PROXY,
     ],
   },
@@ -2002,6 +2024,8 @@ harnessFlow(
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       ...GIT_PROXY,
     ],
   },
