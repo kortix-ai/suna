@@ -570,7 +570,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       retryIds?: Partial<SendIds>,
     ) => {
       // No early return on a missing `sandboxUrl`: the composer has already
-      // cleared its draft and files, and the inbox does not need the sandbox.
+      // cleared its draft and files, so a dropped send would lose them. The
+      // files path does not need the sandbox; the text path fails visibly.
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
@@ -617,6 +618,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
       void playSound('send');
 
+      // Build prompt payload
+      const payload: Record<string, any> = {
+        parts: [{ type: 'text', text: finalText }],
+      };
+      if (options.model) payload.model = options.model;
+      if (options.agent) payload.agent = options.agent;
+      if (options.variant) payload.variant = options.variant;
+
       // The prompt never reached the runtime: the message stays in the thread,
       // dimmed, with "Not sent · Try again" (COR-143). It stops being
       // optimistic, so a refetch keeps it instead of swapping it out.
@@ -633,33 +642,74 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         });
       };
 
-      // The server prompt inbox, the one send path (W5 E4), carrying any upload
-      // handles. The optimistic message's id is the prompt's `messageId`, so
-      // the echo replaces the bubble. The inbox holds the prompt while the
-      // sandbox wakes.
+      // With files: the server prompt inbox, carrying the upload handles. The
+      // optimistic message's id is the prompt's `messageId`, so the echo
+      // replaces the bubble.
+      if (attachments?.fileParts.length) {
+        try {
+          if (!projectId || !projectSessionId) throw new Error('No project session to send files to');
+          await createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId,
+            messageId,
+            parts: promptParts(finalText, attachments.fileParts),
+            overrides: {
+              agent: options.agent ?? null,
+              model: options.model ?? null,
+              variant: options.variant ?? null,
+            },
+            clientSentAtMs: Date.now(),
+          });
+          log.log('[SessionPage] Prompt with files accepted');
+          void requestPushPermissionOnce();
+        } catch (err: any) {
+          log.error('[SessionPage] Prompt with files failed:', err?.message || err);
+          userSentRef.current = false;
+          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          markFailed();
+        }
+        return;
+      }
+
+      // The sandbox is still waking: keep the message as a failed send the
+      // user can try again, never drop it silently.
+      if (!sandboxUrl) {
+        log.error('[SessionPage] Prompt not sent: no sandbox URL yet');
+        userSentRef.current = false;
+        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        markFailed();
+        return;
+      }
+
       try {
-        if (!projectId || !projectSessionId) throw new Error('No project session to send to');
-        await createSessionPrompt(projectId, projectSessionId, {
-          clientMessageId,
-          messageId,
-          parts: promptParts(finalText, attachments?.fileParts ?? []),
-          overrides: {
-            agent: options.agent ?? null,
-            model: options.model ?? null,
-            variant: options.variant ?? null,
+        const token = await getAuthToken();
+        const res = await fetch(`${sandboxUrl}/session/${sessionId}/prompt_async`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          clientSentAtMs: Date.now(),
+          body: JSON.stringify(payload),
         });
-        log.log('[SessionPage] Prompt accepted');
-        void requestPushPermissionOnce();
+
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => '');
+          log.error('[SessionPage] Prompt failed:', res.status, errorText);
+          userSentRef.current = false;
+          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          markFailed();
+        } else {
+          log.log('[SessionPage] Prompt sent (async)');
+          // The first send asks for notification permission, once per install.
+          void requestPushPermissionOnce();
+        }
       } catch (err: any) {
-        log.error('[SessionPage] Prompt failed:', err?.message || err);
+        log.error('[SessionPage] Prompt error:', err?.message || err);
         userSentRef.current = false;
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
         markFailed();
       }
     },
-    [sessionId, projectId, projectSessionId],
+    [sandboxUrl, sessionId, projectId, projectSessionId],
   );
 
   // "Try again" on a failed send: the failed copy leaves the thread and the

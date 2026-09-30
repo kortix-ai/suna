@@ -3,6 +3,7 @@ import { readFile, stat, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { overlayHash, readOverlayFromDisk, writeState, fileSha256 } from './runtime-assets-state'
 import type { RuntimeAssetsState } from './runtime-assets'
+import { harnessAssets } from './runtime-assets-swap-report'
 
 const DEFAULT_CLI_PATH = '/usr/local/bin/kortix'
 const DEFAULT_AGENT_BAKED_PATH = '/usr/local/bin/kortix-agent'
@@ -15,28 +16,11 @@ export interface BakeRuntimeAssetsStateOptions {
   managedSkillsDir?: string
   statePath?: string
   /**
-   * The OpenCode release this image installs. Omitted reads it from the
-   * symlink every image definition creates
-   * ({@link DEFAULT_OPENCODE_CURRENT_LINK}); unreadable leaves the field
-   * unset rather than guessed, and the first pass fills it in.
+   * The harness release this image installs. Omitted asks the registered
+   * harness assets (`bakedVersion`); unreadable leaves the field unset rather
+   * than guessed, and the first pass fills it in.
    */
-  opencodeVersion?: string
-}
-
-/** The launcher symlink all three image definitions point at their OpenCode. */
-const DEFAULT_OPENCODE_CURRENT_LINK = '/opt/kortix/opencode.current'
-
-/** `opencode --version` prints a bare version, so the binary can be asked. */
-async function bakedOpencodeVersion(path: string): Promise<string | undefined> {
-  try {
-    const proc = Bun.spawn([path, '--version'], { stdout: 'pipe', stderr: 'ignore', stdin: 'ignore' })
-    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited])
-    if (code !== 0) return undefined
-    const version = out.trim()
-    return /^\d+\.\d+\.\d+/.test(version) ? version : undefined
-  } catch {
-    return undefined
-  }
+  harnessVersion?: string
 }
 
 /**
@@ -91,9 +75,10 @@ export async function bakeRuntimeAssetsState(
     agent_mtime_ms: agent.mtimeMs,
     managed_skills_hash: overlayHash(overlay),
   }
-  const opencode =
-    options.opencodeVersion ?? (await bakedOpencodeVersion(DEFAULT_OPENCODE_CURRENT_LINK))
-  if (opencode) state.opencode_version = opencode
+  const assets = harnessAssets()
+  state.harness = assets.harness
+  const version = options.harnessVersion ?? (await assets.bakedVersion?.())
+  if (version) state.harness_version = version
   // `build` is deliberately absent. It records the highest manifest epoch this
   // box has READ, and an image build reads no manifest. Claiming one would arm
   // the epoch guard against an API that is legitimately older than the image.

@@ -276,10 +276,10 @@ export interface RuntimeTruthDeps {
   readConfigRelease: () => RuntimeTruthConfigReleaseState
   /** Kick a config-release convergence attempt. Must swallow its own busy/error outcomes. */
   reconcileConfigRelease: () => Promise<void>
-  /** The box's current catalog state. Read-only, no I/O beyond memory. */
-  readCatalog: () => RuntimeTruthCatalogState
+  /** The box's current catalog state. Read-only, no I/O beyond memory. Absent on a runtime without a model catalog. */
+  readCatalog?: () => RuntimeTruthCatalogState
   /** Kick a managed-catalog convergence attempt (fetch, and restart only if needed). Must swallow its own errors. */
-  reconcileCatalog: () => Promise<void>
+  reconcileCatalog?: () => Promise<void>
 }
 
 let deps: RuntimeTruthDeps | null = null
@@ -303,7 +303,7 @@ export function resetRuntimeTruthForTests(): void {
 
 async function actualValues(): Promise<Omit<RuntimeTruthReport, 'components'>> {
   const assets = await runtimeConvergenceReport()
-  const configuredIds = deps?.readCatalog().configuredIds ?? null
+  const configuredIds = deps?.readCatalog?.().configuredIds ?? null
   return {
     release_id: deps?.readConfigRelease().release_id ?? null,
     catalog_fingerprint: configuredIds ? fingerprintModelIds(configuredIds) : null,
@@ -363,13 +363,13 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
   deps?.reconcileAssets()
   await Promise.allSettled([
     deps?.reconcileConfigRelease().catch((err) => logger.warn('[runtime-truth] config-release tick failed', { err: String(err) })),
-    deps?.reconcileCatalog().catch((err) => logger.warn('[runtime-truth] catalog tick failed', { err: String(err) })),
+    deps?.reconcileCatalog?.().catch((err) => logger.warn('[runtime-truth] catalog tick failed', { err: String(err) })),
   ])
 
   const nowIso = new Date().toISOString()
   const assets = await runtimeConvergenceReport()
   const configRelease = deps?.readConfigRelease()
-  const catalog = deps?.readCatalog()
+  const catalog = deps?.readCatalog?.()
 
   ledger = {
     ...ledger,
@@ -391,7 +391,9 @@ export async function runReconcileTick(trigger: RuntimeTruthTrigger): Promise<Ru
     ),
     catalog: nextComponentEntry(
       ledger.catalog,
-      catalog ? deriveCatalogSignal(catalog) : { outcome: 'unknown', cause: NOT_WIRED_CAUSE },
+      catalog
+        ? deriveCatalogSignal(catalog)
+        : { outcome: 'unknown', cause: deps ? 'this runtime has no managed model catalog' : NOT_WIRED_CAUSE },
       nowIso,
     ),
   }

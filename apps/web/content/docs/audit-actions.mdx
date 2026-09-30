@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 695 route actions and 64 other events.
+This page lists 696 route actions and 64 other events.
 
 ## `account.`
 
@@ -275,7 +275,7 @@ This page lists 695 route actions and 64 other events.
 | `connector.connection.oauth.resource.discover` | Discovered MCP authorization server | `POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource` |
 | `connector.connection.oauth.status.read` | Viewed connector OAuth status | `GET /v1/projects/:projectId/connections/:connectionId/oauth2/status` |
 | `connector.connection.personal.create` | Created personal connector account | `POST /v1/projects/:projectId/connections/me` |
-| `connector.connection.rename` | Renamed connector account | `PUT /v1/projects/:projectId/connections/:connectionId/label` |
+| `connector.connection.rename` | Renamed connector account | `PUT /v1/projects/:projectId/connections/:connectionId/label` (also `PATCH /v1/projects/:projectId/connections/:connectionId`) |
 | `connector.connection.revoke` | Revoked connector account | `PUT /v1/projects/:projectId/connections/:connectionId/revoke` |
 | `connector.connection.roster.list` | Listed all connector accounts | `GET /v1/projects/:projectId/connections/all` |
 | `connector.connection.share` | Shared a private connector account | `POST /v1/projects/:projectId/connections/:connectionId/share` |
@@ -759,6 +759,7 @@ This page lists 695 route actions and 64 other events.
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |
 | `session.model.update` | Changed session model | `PUT /v1/projects/:projectId/sessions/:sessionId/model` |
 | `session.permission.notify` | Relayed session permission request | `POST /v1/projects/:projectId/turn-permission` |
+| `session.presence.update` | Updated session presence | `PUT /v1/projects/:projectId/sessions/:sessionId/presence` |
 | `session.preview.list` | Listed session preview candidates | `GET /v1/projects/:projectId/sessions/:sessionId/previews` |
 | `session.prompt.delete` | Removed a queued session prompt | `DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId` |
 | `session.prompt.hold.set` | Set session prompt queue hold | `POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold` |

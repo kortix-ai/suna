@@ -236,12 +236,6 @@ export const OPENCODE_NAMES_ALLOWED = {
   // W3 exit: the pre-W3 wire names an older API still reads and sends. Only
   // this compatibility module spells them; delete it with its callers.
   'src/routes/kortix/legacy-names.ts': ['opencode', 'opencodeEnv', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_port', 'opencode_reload', 'opencode_session_id', 'opencode_session_required', 'opencode_turn_ended', 'opencode_version'],
-  'src/services/runtime-assets/runtime-assets.ts': ['opencode_version'],
-  'src/services/runtime-assets/runtime-assets-bake.ts': ['DEFAULT_OPENCODE_CURRENT_LINK', 'bakedOpencodeVersion', 'opencode', 'opencode.current', 'opencodeVersion', 'opencode_version'],
-  'src/services/runtime-assets/runtime-assets-swap-report.ts': ['opencode_version'],
-  'src/services/runtime-assets/runtime-truth.ts': ['opencode'],
-  'src/services/runtime-assets/port.ts': ['opencode'],
-  'src/services/resources/resources.ts': ['opencode', 'opencode-kortix', 'opencode.exe'],
 }
 /** @type {import('eslint').Rule.RuleModule} */
 const opencodeNames = {

@@ -236,6 +236,3 @@ function ToolPartRendererImpl({
 /** Default shallow compare: parts are replaced, not mutated, when they change. */
 export const ToolPartRenderer = memo(ToolPartRendererImpl);
 ToolPartRenderer.displayName = 'ToolPartRenderer';
-
-// Registers every tool renderer (web: the same import at the end of tool-part-renderer.tsx).
-import './tools/register';

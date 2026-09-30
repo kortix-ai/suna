@@ -19,7 +19,7 @@ describe('file content renderer dispatch', () => {
   test('JSON exposes the tree toggle and starts in source mode', () => {
     const html = view('/workspace/data.json');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('aria-label="hardcodedUi.i18nComplete.text4f50bda41e87"');
+    expect(html).toContain('aria-label="Tree view"');
   });
   test('image, PDF, code, markdown, and unknown files retain their initial render states', () => {
     const states = ['/workspace/a.png', '/workspace/a.pdf', '/workspace/a.ts', '/workspace/a.md', '/workspace/a.unknown'].map(view);

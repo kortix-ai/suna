@@ -115,8 +115,10 @@ mock.module('../../channels/teams/cards', () => ({
 }));
 
 const realTurnLedger = await import('../session-turn-ledger');
+const realTurnLifecycle = await import('../sandbox-turn-lifecycle');
 
 mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
   adoptRuntimeSandboxTurn: async () => adoptResult,

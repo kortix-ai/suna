@@ -7,7 +7,7 @@
  *    to unrelated history, CFG-7): the store is tried directly by its
  *    project-scoped key. A hit is served exactly like step 3 below. On a miss,
  *    the tree may be the composed release tree of the `commit` the path names
- *    (config dir plus root skills, see `composeReleaseTree`): it is rebuilt
+ *    (config dir plus root skills and the pi config dir, see `composeReleaseTree`): it is rebuilt
  *    from that commit and served like step 4. Anything else is 404.
  * 3. In the mirror: the store presigns a download URL. Public host: `302` to
  *    it. Loopback or private host: stream the stored bytes. A cloud sandbox
@@ -30,6 +30,7 @@ import {
   ConfigArchiveTooLargeError,
   isTreeObject,
   MAX_CONFIG_ARCHIVE_BYTES,
+  isComposedSource,
   readComposedRelease,
   resolveReleaseTreeSource,
   storeConfigArchive,
@@ -240,7 +241,7 @@ async function composedArchiveBuilder(
   if (agent && !/^[a-zA-Z0-9_-]+$/.test(agent)) return null;
   const resolved = await resolveReleaseTreeSource(repo, project, commit, agent ? `agent:${agent}` : 'project').catch(() => null);
   if (!resolved) return null;
-  if (!('source' in resolved) || (resolved.source.rootSkills.length === 0 && resolved.source.plugins === null)) return null;
+  if (!('source' in resolved) || !isComposedSource(resolved.source)) return null;
   const { source } = resolved;
   const probe = await readComposedRelease(repo, source, { archive: false });
   if (probe.treeId !== treeId) return null;

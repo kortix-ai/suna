@@ -268,9 +268,10 @@ export function classifyDaemonHealth(
   const capabilities = Array.isArray(h.capabilities)
     ? h.capabilities.filter((c): c is string => typeof c === 'string')
     : [];
-  // Config releases are an OpenCode-runtime capability. pi has none yet
-  // (decoupling plan B6), and a pi box that answers is as current as its
-  // daemon build: requiring it relaunched every idle pi box on session open.
+  // pi daemons advertise `config.release.v1` since pi applies config releases
+  // (harness/pi/config-release.ts). It is still not REQUIRED of a pi box: one
+  // that runs an older daemon gets it through its runtime-assets update, and
+  // requiring it relaunched every idle pi box on session open (W0).
   const required = healthHarnessId(h) === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
   const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {

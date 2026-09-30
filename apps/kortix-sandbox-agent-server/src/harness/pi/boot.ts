@@ -40,10 +40,12 @@ import { logger } from '@/lib/log/logger'
 import { runSandboxOnBoot } from '../shared/on-boot'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
+import { configureRuntimeTruth, startRuntimeTruthTicker } from '@/services/runtime-assets/runtime-truth'
+import { ConvergeBusyError } from '@/services/config-release/release'
 import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
 import type { PiRuntimeHooks } from './runtime'
-import { createPiHarnessService } from './service'
+import { createPiHarnessService, type PiHarnessService } from './service'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
@@ -156,6 +158,10 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     }
   }
 
+  // The config release the runtime starts on (config-release.ts): fetched,
+  // verified and sealed beside the checkout. `lifecycle.start()` joins it.
+  void harness.releases.boot(bootMark)
+
   // Fresh-boot acquisition goes through the config-provider coordinator
   // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
   if (cfg.autoClone) {
@@ -200,6 +206,19 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   const runtime = harness.runtime()!
   runtime.markWorkspaceReady()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
+  convergeAfterReady(harness)
+  // The reconcile floor: every 60 s the box re-checks its release and its
+  // runtime assets, so no failure is permanent. pi has no model catalog to converge.
+  configureRuntimeTruth({
+    reconcileAssets: () => scheduleRuntimeAssetsReconcile(cfg),
+    readConfigRelease: () => harness.releases.report(),
+    reconcileConfigRelease: async () => {
+      await harness.releases.converge(harness.runtime()).catch((err) => {
+        if (!(err instanceof ConvergeBusyError)) logger.warn('[runtime-truth] config-release tick failed', { err: String(err) })
+      })
+    },
+  })
+  startRuntimeTruthTicker()
 
   if (bootState.repoMaterializationError) return
   runSandboxOnBoot(cfg)
@@ -243,4 +262,27 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   }
   scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
+}
+
+/**
+ * One convergence once pi is ready. A box that booted on a fallback (the API
+ * or the archive store could not be reached) moves onto the desired release
+ * here. Detached: it never delays readiness, and a turn in flight defers it to
+ * the API's next trigger.
+ */
+function convergeAfterReady(harness: PiHarnessService): void {
+  void harness.releases
+    .converge(harness.runtime())
+    .then((response) => {
+      logger.info('[boot] config convergence after ready', {
+        outcome: response.outcome,
+        releaseId: response.config.release_id,
+        source: response.config.source,
+        reason: response.reason,
+      })
+    })
+    .catch((err) => {
+      if (err instanceof ConvergeBusyError) return
+      logger.warn('[boot] config convergence after ready failed', { err: String(err) })
+    })
 }

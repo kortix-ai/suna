@@ -13,6 +13,7 @@ import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'
 import type { PiBootState } from './boot-state'
 import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiConfig } from './config'
+import { createPiConfigReleases, type PiConfigReleases, type PiConfigReleasesOptions } from './config-release'
 import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
 import { createPiQueryService } from './queries'
@@ -25,16 +26,24 @@ export interface PiHarnessService extends HarnessService {
   readonly id: 'pi'
   /** The live runtime; null until `lifecycle.start()` resolved. */
   readonly runtime: () => PiRuntime | null
+  /** What config the runtime reads: a config release, or the working tree while releases are off. */
+  readonly releases: PiConfigReleases
 }
 
 export function createPiHarnessService(
   cfg: PiConfig,
   projectEnv?: ProjectEnvStore,
-  options: HarnessStartupOptions & { hooks?: PiRuntimeHooks; sessionId?: string; env?: NodeJS.ProcessEnv } = {},
+  options: HarnessStartupOptions & {
+    hooks?: PiRuntimeHooks
+    sessionId?: string
+    env?: NodeJS.ProcessEnv
+    releases?: Omit<PiConfigReleasesOptions, 'cfg' | 'env'>
+  } = {},
 ): PiHarnessService {
   const env = options.env ?? process.env
   const sessionId = (options.sessionId ?? env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
-  const runtime = new PiRuntime({ cfg, sessionId, hooks: options.hooks, env })
+  const releases = createPiConfigReleases({ cfg, env, ...options.releases })
+  const runtime = new PiRuntime({ cfg, sessionId, hooks: options.hooks, env, releases })
   let started = false
   const live = () => (started ? runtime : null)
   registerPiSkillReload(async () => live()?.reloadSkills())
@@ -50,9 +59,13 @@ export function createPiHarnessService(
   return {
     id: 'pi',
     runtime: live,
+    releases,
     environment: { home: homedir() },
     lifecycle: {
       async start() {
+        // What the runtime reads is chosen before it starts. `runPi` begins this
+        // beside the repository checkout; here it is joined, or run.
+        await releases.boot(options.onStartupMark)
         await runtime.start()
         started = true
         options.onStartupMark?.('pi-ready')
@@ -92,8 +105,8 @@ export function createPiHarnessService(
       },
       forward: (input) => surface.handle(input),
     },
-    control: createPiControlService(live, () => pushProjection('kortix-env-applied')),
-    diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError),
+    control: createPiControlService(live, releases, () => pushProjection('kortix-env-applied')),
+    diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError, releases),
     queries: createPiQueryService(live),
     turns: createPiTurnService(live),
     background: { start: (currentCfg) => startPiBackground(live, currentCfg) },

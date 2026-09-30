@@ -1123,7 +1123,10 @@ function withManagedOverlay(
   if (live && Object.keys(live).length > 0) return { ...base, ...live }
   const out = { ...base }
   for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
-    if (!out[id]) out[id] = model
+    // Fill-only, except `limit`. The builder swaps a new daemon into an older
+    // image without re-baking its catalog, so this daemon's managed limit is
+    // the newer one. A stale limit puts compaction on the context wall.
+    out[id] = out[id] ? { ...out[id], limit: model.limit } : model
   }
   return out
 }

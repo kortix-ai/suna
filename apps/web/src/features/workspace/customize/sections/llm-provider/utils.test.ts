@@ -6,6 +6,7 @@ import {
   gatewayModelId,
   orderProviderRows,
   pickInitialTab,
+  prettyFieldLabel,
   providerDisconnectPlan,
   shouldSaveCredential,
 } from './utils';
@@ -323,5 +324,14 @@ describe('formatPricePerMillion', () => {
   test('returns empty string when the rate is unknown', () => {
     expect(formatPricePerMillion(null)).toBe('');
     expect(formatPricePerMillion(undefined)).toBe('');
+  });
+});
+
+describe('prettyFieldLabel', () => {
+  test('a provider-owned key name reads as "API key"', () => {
+    expect(prettyFieldLabel('OPENCODE_API_KEY')).toBe('API key');
+    expect(prettyFieldLabel('OPENCODE_GO_API_KEY')).toBe('API key');
+    expect(prettyFieldLabel('ZAI_CODING_PLAN_API_KEY')).toBe('API key');
+    expect(prettyFieldLabel('AWS_REGION')).toBe('Region');
   });
 });

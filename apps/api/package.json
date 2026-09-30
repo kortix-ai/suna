@@ -47,7 +47,7 @@
     "e2b": "2.37.0",
     "hono": "^4.4.0",
     "jose": "^5.9.6",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^10.0.13",
     "oauth4webapi": "^3.8.7",
     "postgres": "^3.4.8",
     "re2js": "2.8.6",

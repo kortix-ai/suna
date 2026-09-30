@@ -27,6 +27,18 @@ import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
+import { spawnSync } from 'node:child_process'
+import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
+import {
+  FEATURE_DISABLED,
+  buildRelease,
+  commitAll,
+  initRepo,
+  serveRelease,
+  startFakeApi,
+  write,
+  type FakeApi,
+} from './helpers/config-release-fixtures'
 
 const TOKEN = 'pi-test-token'
 const MODEL_ID = 'test-model'
@@ -173,13 +185,15 @@ async function boot(input: {
   /** Runs on the fresh workspace before the runtime starts. */
   prepare?: (workspace: string) => void
   hooks?: PiRuntimeHooks
+  /** Config release store and notice paths; a rig reads no release unless its env names an API. */
+  releases?: { root: string; noticePath: string }
 }): Promise<Rig> {
   const workspace = input.workspace ?? mkdtempSync(join(tmpdir(), 'pi-harness-'))
   input.prepare?.(workspace)
   gateway.script(input.script)
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
-  const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks })
+  const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks, releases: input.releases })
   const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialOpenCodeSessionRequired: false }
   if (input.start !== false) await service.lifecycle.start()
   const app = buildDaemonApp(cfg, service, Date.now(), bootState)
@@ -1713,6 +1727,20 @@ describe('pi subagents extension', () => {
     expect(((await r.user('/tool/ids').then((res) => res.json())) as string[]).filter((id) => id === 'task')).toHaveLength(1)
   })
 
+  test("a live agent-config change turns the agent's built-in tools off and back on", async () => {
+    const compiled = (tools?: Record<string, boolean>) => JSON.stringify({ agent: { build: { tools } } })
+    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ bash: false }) } })
+    const ids = async () => (await r.user('/tool/ids').then((res) => res.json())) as string[]
+    expect(await ids()).toEqual(['read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    const runtime = r.service.runtime()! as unknown as { env: NodeJS.ProcessEnv; reconfigure: () => Promise<unknown> }
+    runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled()
+    await runtime.reconfigure()
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
+    runtime.env.KORTIX_COMPILED_AGENT_CONFIG = compiled({ grep: false })
+    await runtime.reconfigure()
+    expect(await ids()).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'question', 'task'])
+  })
+
   test('several task calls in one message run their subagents concurrently', async () => {
     const r = await boot({
       script: [
@@ -1749,5 +1777,225 @@ describe('pi subagents extension', () => {
     expect(r.service.runtime()!.busy()).toBe(false)
     const state = r.service.runtime()!.stateDoc() as Record<string, any>
     expect(Object.values(state.statuses.value)).toEqual([{ type: 'idle' }, { type: 'idle' }])
+  })
+})
+
+describe('config releases on pi', () => {
+  const PROVISIONED = JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'PROVISIONED: the prompt compiled at provision.' } } })
+  let api: FakeApi
+  let dir: string
+  let repo: string
+  let managedBefore: string | undefined
+
+  beforeEach(() => {
+    api = startFakeApi(TOKEN)
+    dir = mkdtempSync(join(tmpdir(), 'pi-releases-'))
+    repo = join(dir, 'repo')
+    initRepo(repo)
+    // Never the machine's /opt/kortix/managed-skills.
+    managedBefore = process.env.KORTIX_MANAGED_SKILLS_DIR
+    process.env.KORTIX_MANAGED_SKILLS_DIR = join(dir, 'managed')
+    mkdirSync(join(dir, 'managed'))
+    // A refresh schedules the runtime-assets pass; main.ts registers its harness at boot.
+    registerHarnessAssets(() => piDefinition.assets)
+  })
+  afterEach(() => {
+    resetHarnessAssetsForTests()
+    api.stop()
+    spawnSync('chmod', ['-R', 'u+w', dir])
+    rmSync(dir, { recursive: true, force: true })
+    if (managedBefore === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
+    else process.env.KORTIX_MANAGED_SKILLS_DIR = managedBefore
+  })
+
+  /** Commit a skill to the base branch and build its release with `prompt` as the agent's prompt. */
+  const releaseWith = (skill: string, prompt: string) => {
+    write(repo, '.kortix/opencode/opencode.json', '{}\n')
+    write(repo, `.kortix/opencode/skills/${skill}/SKILL.md`, `---\nname: ${skill}\ndescription: ${skill} from the base branch\n---\nBody.\n`)
+    const commit = commitAll(repo, skill)
+    return buildRelease(repo, commit, '.kortix/opencode', {
+      projectId: 'proj-pi-test',
+      governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt } } }),
+    })
+  }
+
+  const bootOnReleases = (script: Step[]) =>
+    boot({
+      script,
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+      prepare: (workspace) => {
+        // The session's own checkout: an older copy of one skill and one that never reached the base branch.
+        for (const [name, description] of [['deploy', 'working tree copy'], ['draft', 'never pushed']] as const) {
+          mkdirSync(join(workspace, 'skills', name), { recursive: true })
+          writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
+        }
+      },
+    })
+
+  const skillsOf = async (r: Rig) =>
+    ((await r.user('/skill').then((res) => res.json())) as Array<{ name: string; description: string }>)
+      .map((s) => [s.name, s.description])
+      .sort()
+  const systemOf = (index: number) => JSON.stringify(gateway.sent[index]!.filter((m) => m.role === 'system'))
+  const ask = async (r: Rig, text: string) => {
+    const root = r.service.runtime()!.rootId
+    const index = gateway.sent.length
+    expect((await prompt(r, root, { parts: [{ type: 'text', text }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle() && gateway.sent.length > index)
+    return systemOf(index)
+  }
+
+  test('the release decides the skills and the prompt; a base move reaches the running session in place', async () => {
+    const one = releaseWith('deploy', 'RELEASE-ONE: the prompt on the base branch.')
+    serveRelease(api, one)
+    const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }])
+    const root = r.service.runtime()!.rootId
+
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
+    expect(health.capabilities).toContain('config.release.v1')
+    expect(health.config).toEqual({
+      release_id: one.descriptor.release_id,
+      desired_release_id: one.descriptor.release_id,
+      source: 'release',
+      mode: 'follow-base',
+      proven: true,
+      fallback_reason: null,
+      failed_release_id: null,
+    })
+    expect(health.config_dir_sha).toBe(one.descriptor.source_commit)
+    expect(health.runtimeReady).toBe(true)
+    // The base branch's skills, not the working tree's.
+    expect(await skillsOf(r)).toEqual([['deploy', 'deploy from the base branch']])
+
+    const first = await ask(r, 'first question')
+    expect(first).toContain('RELEASE-ONE')
+    expect(first).not.toContain('PROVISIONED')
+    expect(first).toContain("This session's agent config")
+    expect(first).toContain(one.descriptor.source_commit!.slice(0, 12))
+    // The platform never writes the session's checkout.
+    expect(readFileSync(join(r.workspace, 'skills', 'deploy', 'SKILL.md'), 'utf8')).toContain('working tree copy')
+
+    const two = releaseWith('review', 'RELEASE-TWO: the prompt after the merge.')
+    serveRelease(api, two)
+    const converged = await r.bearer('/kortix/config/converge', { method: 'POST' })
+    expect(converged.status).toBe(200)
+    expect(await converged.json()).toMatchObject({
+      ok: true,
+      outcome: 'applied',
+      reload: null,
+      config: { release_id: two.descriptor.release_id, source: 'release', proven: true },
+    })
+    // In place: the same root, the same transcript, nothing restarted.
+    expect(r.service.runtime()!.rootId).toBe(root)
+    expect(await skillsOf(r)).toEqual([
+      ['deploy', 'deploy from the base branch'],
+      ['review', 'review from the base branch'],
+    ])
+    const second = await ask(r, 'second question')
+    expect(second).toContain('RELEASE-TWO')
+    expect(second).not.toContain('RELEASE-ONE')
+    expect(second).toContain(two.descriptor.source_commit!.slice(0, 12))
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
+
+    const after = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
+    expect(after.config.release_id).toBe(two.descriptor.release_id)
+    expect(after.config_dir_sha).toBe(two.descriptor.source_commit)
+    const again = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
+    expect(again).toMatchObject({ ok: true, outcome: 'unchanged' })
+  })
+
+  test("the release's pi dir replaces the working tree's; a new extension reaches the session by an in-place restart", async () => {
+    const extension = (marker: string) =>
+      `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
+    write(repo, '.kortix/opencode/pi/extensions/native.ts', extension('RELEASED-PI-V1'))
+    write(repo, '.kortix/opencode/pi/skills/released-native/SKILL.md', '---\nname: released-native\ndescription: pi skill from the base branch\n---\nDo it.\n')
+    const one = releaseWith('deploy', 'RELEASE-ONE')
+    serveRelease(api, one)
+    const r = await boot({
+      script: [{ text: 'first' }, { text: 'second' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+      prepare: (workspace) => {
+        // The session's checkout has a pi dir of its own; a release must not read it.
+        const own = join(workspace, '.kortix', 'pi')
+        mkdirSync(join(own, 'extensions'), { recursive: true })
+        mkdirSync(join(own, 'skills', 'workspace-native'), { recursive: true })
+        writeFileSync(join(own, 'extensions', 'native.ts'), extension('WORKSPACE-PI'))
+        writeFileSync(join(own, 'skills', 'workspace-native', 'SKILL.md'), '---\nname: workspace-native\ndescription: w\n---\nx\n')
+      },
+    })
+    const root = r.service.runtime()!.rootId
+    const names = async () => (await skillsOf(r)).map(([name]) => name)
+    expect(await names()).toContain('released-native')
+    expect(await names()).not.toContain('workspace-native')
+    const loaded = () => r.service.runtime()!.extensionStatus().loaded
+    expect(loaded().some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/pi/extensions/native.ts'))).toBe(true)
+    expect(loaded().some((path) => path.includes('/.kortix/pi/'))).toBe(false)
+    const first = await ask(r, 'first question')
+    expect(first).toContain('RELEASED-PI-V1')
+    expect(first).not.toContain('WORKSPACE-PI')
+
+    write(repo, '.kortix/opencode/pi/extensions/native.ts', extension('RELEASED-PI-V2'))
+    serveRelease(api, releaseWith('deploy', 'RELEASE-TWO'))
+    const converged = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
+    expect(converged).toMatchObject({ ok: true, outcome: 'applied', reload: null })
+    expect(r.service.runtime()!.rootId).toBe(root)
+    const second = await ask(r, 'second question')
+    expect(second).toContain('RELEASED-PI-V2')
+    expect(second).not.toContain('RELEASED-PI-V1')
+    expect(second).toContain('RELEASE-TWO')
+    // The restart restored the transcript: both turns are still there.
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
+  })
+
+  test('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {
+    api.respond(FEATURE_DISABLED)
+    const r = await bootOnReleases([{ text: 'ok' }])
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
+    expect(health.capabilities).toContain('config.release.v1')
+    expect(health.config).toMatchObject({ source: 'workspace', release_id: null, proven: true })
+    expect(health.runtimeReady).toBe(true)
+    expect(await skillsOf(r)).toEqual([
+      ['deploy', 'working tree copy'],
+      ['draft', 'never pushed'],
+    ])
+    const system = await ask(r, 'hello')
+    expect(system).toContain('PROVISIONED')
+    expect(system).not.toContain("This session's agent config")
+  })
+
+  test('refresh with repo=0 leaves the checkout exactly as it is', async () => {
+    const origin = join(dir, 'origin.git')
+    spawnSync('git', ['init', '--bare', '--quiet', origin])
+    write(repo, 'README.md', 'one\n')
+    const firstCommit = commitAll(repo, 'one')
+    spawnSync('git', ['-C', repo, 'push', '--quiet', origin, 'HEAD:refs/heads/sess-pi-test'])
+    const r = await boot({
+      script: [],
+      env: { KORTIX_REPO_URL: `file://${origin}`, KORTIX_BRANCH_NAME: 'sess-pi-test' },
+      prepare: (workspace) => {
+        spawnSync('git', ['clone', '--quiet', '--branch', 'sess-pi-test', origin, workspace])
+      },
+    })
+    write(repo, 'README.md', 'two\n')
+    const secondCommit = commitAll(repo, 'two')
+    spawnSync('git', ['-C', repo, 'push', '--quiet', origin, 'HEAD:refs/heads/sess-pi-test'])
+    const head = () => spawnSync('git', ['-C', r.workspace, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim()
+
+    const kept = await r.bearer('/kortix/refresh?restart=0&repo=0', { method: 'POST' })
+    expect(kept.status).toBe(200)
+    const keptBody = (await kept.json()) as { repo: { before: { commit: string }; after: { commit: string } } }
+    expect(keptBody.repo.before.commit).toBe(firstCommit)
+    expect(keptBody.repo.after.commit).toBe(firstCommit)
+    expect(head()).toBe(firstCommit)
+
+    const pulled = (await r.bearer('/kortix/refresh?restart=0', { method: 'POST' }).then((res) => res.json())) as {
+      repo: { after: { commit: string } }
+    }
+    expect(pulled.repo.after.commit).toBe(secondCommit)
+    expect(head()).toBe(secondCommit)
   })
 })

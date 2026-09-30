@@ -49,4 +49,29 @@ describe('OpenCode plugin selection', () => {
       expect(await resolveReleaseTreeSource(repo, project, commit, 'project')).toHaveProperty('source');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
+  test('a per-agent release selects its plugins and still carries the pi config dir as pi/', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'agent-plugins-pi-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    try {
+      git('init', '-q');
+      mkdirSync(join(repo, 'harnesses/opencode/plugins'), { recursive: true });
+      mkdirSync(join(repo, 'harnesses/pi/extensions'), { recursive: true });
+      writeFileSync(join(repo, 'harnesses/opencode/opencode.jsonc'), '{}');
+      writeFileSync(join(repo, 'harnesses/opencode/plugins/base.ts'), 'export {}');
+      writeFileSync(join(repo, 'harnesses/opencode/plugins/other.ts'), 'export {}');
+      writeFileSync(join(repo, 'harnesses/pi/extensions/guard.ts'), 'export default () => {}');
+      writeFileSync(join(repo, 'kortix.yaml'), 'kortix_version: 2\ndefault_agent: a\nharnesses:\n  opencode:\n    plugins: [base.ts]\nagents:\n  a: {}\n');
+      git('add', '.');
+      git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'fixture');
+      const project = { manifestPath: 'kortix.yaml', projectId: '00000000-0000-4000-8000-000000000001' };
+      const commit = git('rev-parse', 'HEAD');
+      const a = await resolveReleaseTreeSource(repo, project, commit, 'agent:a');
+      if (!('source' in a)) throw new Error('missing source');
+      const release = await readComposedRelease(repo, a.source, { archive: false });
+      expect(release.files.map(([path]) => path)).toEqual(['opencode.jsonc', 'pi/extensions/guard.ts', 'plugins/base.ts']);
+      // The archive route rebuilds the same tree from the commit and the agent.
+      const response = await serveConfigArchive(project as Parameters<typeof serveConfigArchive>[0], release.treeId, async () => repo, async () => repo, { store: new MemoryConfigArchiveStore(), publicOverride: null }, commit, 'a');
+      expect(response.status).toBe(200);
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  });
 });

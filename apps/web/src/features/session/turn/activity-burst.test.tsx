@@ -1,3 +1,4 @@
+import '@/features/session/tool/tools/register';
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
 import { ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import type { Part, ToolPart } from '@/ui';
