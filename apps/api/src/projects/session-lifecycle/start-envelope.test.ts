@@ -72,10 +72,25 @@ describe('the session-open envelope states what THIS call did', () => {
     log.sawProvider('running');
     log.sawRuntime('booting', 'installing-opencode@1.18.23');
     const result = withStartEnvelope(payload({ reason: 'not_ready' }), log, {
-      opencodeBootWaitFirstSeenAt: '2026-08-26T13:59:30.000Z',
+      runtimeBootWaitFirstSeenAt: '2026-08-26T13:59:30.000Z',
     });
     expect(result.boot?.phase).toBe('booting');
     expect(result.observation?.runtime.boot_phase).toBe('installing-opencode@1.18.23');
+  });
+
+  test('booting: since = the first-seen clock, under its neutral or its pre-W4 name', () => {
+    const booting = (metadata: Record<string, unknown>) => {
+      const log = createStartCallLog(OBSERVED_AT);
+      log.sawProvider('running');
+      log.sawRuntime('booting', 'p0');
+      return withStartEnvelope(payload({ reason: 'not_ready' }), log, metadata).boot?.since;
+    };
+    expect(booting({ runtimeBootWaitFirstSeenAt: '2026-08-26T13:59:30.000Z' })).toBe(
+      '2026-08-26T13:59:30.000Z',
+    );
+    expect(booting({ opencodeBootWaitFirstSeenAt: '2026-08-26T13:59:20.000Z' })).toBe(
+      '2026-08-26T13:59:20.000Z',
+    );
   });
 
   // `cooling_down` is proven through the real /start route in

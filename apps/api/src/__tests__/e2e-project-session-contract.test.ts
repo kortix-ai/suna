@@ -1416,10 +1416,10 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
-          opencodeReadyWaitReason: 'unreachable',
-          opencodeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
-          opencodeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
+          runtimeReadyWaitStartedAt: staleReadyWaitStartedAt,
+          runtimeReadyWaitReason: 'unreachable',
+          runtimeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
+          runtimeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
           runtimeIdentityState: 'unavailable',
           runtimeUnavailableReason: 'runtime_not_ready_timeout',
         },
@@ -1470,10 +1470,10 @@ describe('project session API contract', () => {
       },
     });
     const resumedMetadata = sessionSandboxRows[0]!.metadata as Record<string, unknown>;
-    expect(resumedMetadata.opencodeReadyWaitStartedAt).toBeUndefined();
-    expect(resumedMetadata.opencodeReadyWaitReason).toBeUndefined();
-    expect(resumedMetadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
-    expect(resumedMetadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.runtimeReadyWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.runtimeReadyWaitReason).toBeUndefined();
+    expect(resumedMetadata.runtimeUnreachableWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.runtimeNotReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.runtimeIdentityState).toBeUndefined();
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
@@ -1671,7 +1671,7 @@ describe('project session API contract', () => {
 
   test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
     // SampleCo 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
-    // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
+    // `runtimeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
     // boot was judged against a 10-minute cap that had already run ~7 minutes.
     // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
     // turn at 13:34:49.216.
@@ -1696,10 +1696,10 @@ describe('project session API contract', () => {
           runtimeStartFailedAt: attempt1,
           runtimeStartRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
           // Attempt 1's clocks, which nothing used to clear.
-          opencodeBootWaitFirstSeenAt: attempt1,
-          opencodeNotReadyWaitStartedAt: attempt1,
-          opencodeReadyWaitReason: 'not_ready',
-          opencodeBootPhase: 'config-deps|opencode=starting',
+          runtimeBootWaitFirstSeenAt: attempt1,
+          runtimeNotReadyWaitStartedAt: attempt1,
+          runtimeReadyWaitReason: 'not_ready',
+          runtimeBootPhase: 'config-deps|opencode=starting',
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -1720,10 +1720,10 @@ describe('project session API contract', () => {
 
     const claimed = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     // Every readiness clock is gone: attempt 2 boots against a clean budget.
-    expect(claimed.opencodeBootWaitFirstSeenAt).toBeUndefined();
-    expect(claimed.opencodeBootPhase).toBeUndefined();
-    expect(claimed.opencodeNotReadyWaitStartedAt).toBeUndefined();
-    expect(claimed.opencodeReadyWaitReason).toBeUndefined();
+    expect(claimed.runtimeBootWaitFirstSeenAt).toBeUndefined();
+    expect(claimed.runtimeBootPhase).toBeUndefined();
+    expect(claimed.runtimeNotReadyWaitStartedAt).toBeUndefined();
+    expect(claimed.runtimeReadyWaitReason).toBeUndefined();
     // …and the escalation accounting survives, unlike a human Restart.
     expect(claimed.runtimeStartFailureCount).toBe(2);
     expect(claimed.runtimeStartFailedAt).toBe(attempt1);
@@ -3414,8 +3414,8 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
-          opencodeReadyWaitReason: 'unreachable',
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'unreachable',
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -3460,8 +3460,8 @@ describe('project session API contract', () => {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
           runtimeProvenAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
-          opencodeReadyWaitReason: 'unreachable',
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'unreachable',
           ...extra,
         },
         lastUsedAt: null,
@@ -3519,8 +3519,8 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
-          opencodeReadyWaitReason: 'unreachable',
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'unreachable',
           // The open already asked for a relaunch and it failed: only now park.
           deadDaemonRepairRequestedAt: new Date(Date.now() - 20_000).toISOString(),
           legacyRuntimeBootstrap: {
@@ -3602,8 +3602,8 @@ describe('project session API contract', () => {
         config: {},
         metadata: {
           initStatus: 'ready',
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
-          opencodeReadyWaitReason: 'not_ready',
+          runtimeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          runtimeReadyWaitReason: 'not_ready',
         },
         lastUsedAt: null,
         createdAt: new Date('2026-01-02T00:00:00Z'),
@@ -3621,8 +3621,8 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ stage: 'starting', reason: 'unreachable' });
     const metadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
-    expect(metadata.opencodeReadyWaitReason).toBe('unreachable');
-    expect(Date.parse(String(metadata.opencodeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
+    expect(metadata.runtimeReadyWaitReason).toBe('unreachable');
+    expect(Date.parse(String(metadata.runtimeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
     expect(providerStopCalls).toBe(0);
   });
 

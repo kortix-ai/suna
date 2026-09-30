@@ -21,6 +21,23 @@ export type SessionHealthResponse = {
   status?: string;
   runtimeReady?: boolean;
   version?: string;
+  /**
+   * The session runtime's own report (daemons since W3). `ready` means the
+   * harness can take a prompt; `runtimeReady` adds the host's workspace checks.
+   */
+  harness?: {
+    /** `opencode` or `pi`. */
+    id: string;
+    version: string | null;
+    /** The runtime process: `starting`, `ok`, `down` or `error`. */
+    state: string;
+    ready: boolean;
+    error: string | null;
+    session: { id: string | null; required: boolean };
+    turn: { in_flight: boolean | null; end: string | null; orphaned_prompt: boolean } | null;
+    details: Record<string, unknown>;
+  };
+  /** @deprecated The runtime process state before W3. Read `harness.state`. */
   opencode?: string | boolean;
   boot_error?: string | null;
   reason?: string | null;
@@ -118,10 +135,14 @@ export interface SessionHealthResult {
   upstreamStatus: number | null;
 }
 
-/** Whether a health payload indicates the OpenCode runtime is ready. */
+/**
+ * Whether a health payload indicates the session runtime is ready: the host's
+ * `runtimeReady`, else the `harness` block, else the pre-W3 `opencode` field.
+ */
 export function isRuntimeReady(health: SessionHealthResponse | null): boolean {
   if (!health) return false;
   if (health.runtimeReady !== undefined) return health.runtimeReady === true;
+  if (health.harness) return health.harness.ready === true;
   if (health.opencode !== undefined)
     return health.opencode === 'ok' || health.opencode === true;
   return (

@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
-import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { decideEnvSyncAction } from './env-sync-skip-decision';
@@ -590,7 +590,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // dropping the session's first prompt (the user then has to resend).
   if (opencodeState && opencodeState !== 'ok') {
     const waitStartedAt = Date.now();
-    const ready = await waitForDaemonOpencodeReady({
+    const ready = await waitForDaemonRuntimeReady({
       previewUrl: args.previewUrl,
       providerHeaders: args.providerHeaders,
     });
