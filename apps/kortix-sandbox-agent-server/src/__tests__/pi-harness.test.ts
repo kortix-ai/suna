@@ -1115,6 +1115,27 @@ function systemSent(messages: Array<{ role: string; content: unknown }>): string
     .join('\n')
 }
 
+describe('pi project config', () => {
+  test('loads .kortix/pi native extensions and skills on the daemon HTTP surface', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        const dir = join(workspace, '.kortix', 'pi')
+        mkdirSync(join(dir, 'extensions'), { recursive: true })
+        mkdirSync(join(dir, 'skills', 'native'), { recursive: true })
+        writeFileSync(join(dir, 'extensions', 'native.ts'), `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\nNATIVE PI' }))`)
+        writeFileSync(join(dir, 'skills', 'native', 'SKILL.md'), '---\nname: native\ndescription: Native Pi skill\n---\nDo it.\n')
+      },
+    })
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+    expect(skills.map((skill) => skill.name)).toContain('native')
+    expect(r.service.runtime()!.extensionStatus().loaded.some((name) => name.endsWith('/.kortix/pi/extensions/native.ts'))).toBe(true)
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'hello')
+    expect(gateway.sent.slice(sentBefore).map(systemSent).some((prompt) => prompt.includes('NATIVE PI'))).toBe(true)
+  })
+})
+
 describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     const r = await boot({

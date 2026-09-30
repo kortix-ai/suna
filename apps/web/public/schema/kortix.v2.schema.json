@@ -1428,6 +1428,21 @@
         ]
       }
     },
+    "pi": {
+      "type": "object",
+      "properties": {
+        "config_dir": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "^/|(^|/)\\.\\.($|/)"
+          },
+          "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
+        }
+      },
+      "additionalProperties": true,
+      "description": "Pi native config directory (defaults to harnesses/pi, then .kortix/pi)."
+    },
     "channels": false
   },
   "additionalProperties": true,

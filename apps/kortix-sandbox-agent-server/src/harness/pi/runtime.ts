@@ -26,7 +26,7 @@ import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { PiConfig } from './config'
-import { resolvePiSkillDirectories } from './config'
+import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
@@ -422,6 +422,7 @@ export class PiRuntime {
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
       this.pi = await host.createPiSession({
+        projectConfigDir: await resolvePiProjectConfigDir(this.cfg),
         agent,
         ref: this.runner,
         cwd: this.workspace,
@@ -1005,7 +1006,7 @@ export class PiRuntime {
 
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
     if (!this.executionEnv) return []
-    const dirs = resolvePiSkillDirectories(this.cfg).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.cfg, await resolvePiProjectConfigDir(this.cfg)).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')
