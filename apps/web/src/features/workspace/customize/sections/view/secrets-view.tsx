@@ -1083,7 +1083,6 @@ function SecretDialog({
       const queryKey = qk.project.secrets(projectId);
       await queryClient.cancelQueries({ queryKey });
       const context = beginOptimisticProjectSecretSave(queryClient, queryKey, plan.optimistic);
-      onOpenChange(false);
       return context;
     },
     onSuccess: (result, plan) => {
@@ -1101,6 +1100,7 @@ function SecretDialog({
         successToast(tI18nComplete('textaf6b8a4894f0', { value0: plan.finalIdentifier }));
       }
       resetForm();
+      onOpenChange(false);
       onSaved();
       queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
     },
@@ -1110,7 +1110,6 @@ function SecretDialog({
         qk.project.secrets(projectId),
         context?.previous,
       );
-      onOpenChange(true);
       errorToast(err.message || tI18nComplete.raw('textfc85de2d5feb'));
     },
     onSettled: () => {
