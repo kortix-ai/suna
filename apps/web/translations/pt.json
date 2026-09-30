@@ -132,7 +132,12 @@
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
     "selectedOneForSession": "{count} chave selecionada para esta sessão",
-    "selectedOne": "{count} chave selecionada"
+    "selectedOne": "{count} chave selecionada",
+    "opencodeSignIn": "Entrar com OpenCode",
+    "opencodeSignInDescription": "Use seu workspace do OpenCode em vez de uma chave de API.",
+    "opencodeDeviceDescription": "Copie este código. Depois abra a página do OpenCode e insira-o para conectar seu workspace.",
+    "opencodeStarting": "Conectando ao OpenCode…",
+    "opencodeConnected": "Conectado com OpenCode"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
@@ -1549,7 +1554,8 @@
         "restricted": "Pessoas específicas",
         "project": "Projeto inteiro"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Rótulos"
     },
     "loadingMore": "A carregar…",
     "loadMoreSessions": "Carregar mais sessões",
@@ -1561,7 +1567,21 @@
       "others": "Compartilhadas",
       "automated": "Automatizadas"
     },
-    "reminders": "Lembretes"
+    "reminders": "Lembretes",
+    "labels": {
+      "menu": "Editar rótulos",
+      "title": "Rótulos",
+      "description": "Os rótulos classificam esta sessão. Filtre a lista de sessões por eles. Agentes, a CLI e a API também podem defini-los.",
+      "placeholder": "Digite um rótulo e pressione Enter",
+      "empty": "Ainda não há rótulos.",
+      "remove": "Remover {label}",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "saved": "Rótulos salvos",
+      "failed": "Não foi possível salvar os rótulos",
+      "tooLong": "Um rótulo tem no máximo 64 caracteres.",
+      "tooMany": "Uma sessão tem no máximo 20 rótulos."
+    }
   },
   "dashboard": {
     "title": "Painel",
@@ -5153,7 +5173,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "A sandbox desta sessão foi interrompida. Abra uma nova sessão para continuar.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "O runtime do OpenCode não está pronto",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "O runtime da sessão não está pronto",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "A sandbox foi iniciada, mas o runtime do projeto não ficou utilizável.",
       "line395JsxTextRestartSession": "Reiniciar sessão",
       "line424JsxTextRestartSession": "Reiniciar sessão"
@@ -12481,7 +12501,7 @@
       "text5a0cac0326d5": "Baixar o Kortix",
       "text5a219a418ec7": "Não foi possível ler esta entrada do arquivo.",
       "text5a23444828db": "Gerenciar",
-      "text5a26f4425c82": "Sessão do OpenCode",
+      "text92fbc8484002": "Sessão do runtime",
       "text5a32374d30b4": "Atividade diária da plataforma e queima de crédito. Cada intervalo é um dia UTC.",
       "text5a37d20f1235": "Agente do canal atualizado",
       "text5a41803b2dd1": "Negar todas",
@@ -19030,7 +19050,16 @@
       "text2bbd1ec2197d": "App conectado",
       "textda3d3fb8f598": "Sessão do agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Qualquer credencial"
+      "text36fe0f55b7f5": "Qualquer credencial",
+      "textbfda026e6c59": "Vinculado",
+      "text72ea4fa7caf9": "Ditado interrompido: {value0}",
+      "text557b623f9a33": "Não foi possível iniciar o ditado. Verifique o acesso ao microfone.",
+      "textb43c4884c3be": "Controles de ditado",
+      "textd31d065a762c": "Cancelar ditado",
+      "textbbb4106e8144": "Ouvindo…",
+      "text7458028e0d1d": "Concluir ditado",
+      "text9c84d6622566": "Ditar mensagem",
+      "textf164e4b031dc": "Presença na sessão atualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20190,6 +20219,7 @@
     "commandCopied": "Comando copiado",
     "copyFailed": "Falha ao copiar",
     "copyCommand": "Copiar comando",
+    "copyCliCommand": "Copiar comando de instalação",
     "authorizeCodeHint": "Confira se este código corresponde ao exibido no seu computador.",
     "whoCanUse": "Quem pode usar este computador",
     "onlyYouDescription": "Só você, em todos os projetos, nas suas sessões privadas.",

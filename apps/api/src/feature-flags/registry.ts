@@ -135,11 +135,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_api_discover',
     name: 'Connectors API Discover',
     description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
-    stability: 'experimental',
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
+    stability: 'beta',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
-    platformDefault: () => false,
+    // The direct catalogue is available even when no managed provider is configured.
+    // Explicit project overrides still provide a rollback path.
+    platformDefault: () => true,
     enforcement: 'routes',
   },
   {
@@ -328,7 +329,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'config_releases',
     name: 'Config Releases',
     description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
     stability: 'experimental',
     available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:

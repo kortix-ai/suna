@@ -3,6 +3,7 @@ import {
   AGENT_FILE_PATTERN,
   agentFileCandidates,
   opencodeConfigDirCandidates,
+  piConfigDirCandidates,
   safeAgentFile,
   safeRepoPath,
   skillDirs,
@@ -110,4 +111,16 @@ describe('agents.<name>.file validation', () => {
       expect(issues.some((issue) => issue.path === 'agents.support.file' && issue.severity === 'error')).toBe(true);
     });
   }
+});
+
+describe('piConfigDirCandidates', () => {
+  test('harnesses/pi, then .kortix/pi; an explicit pi.config_dir is the only candidate', () => {
+    expect(piConfigDirCandidates({})).toEqual(['harnesses/pi', '.kortix/pi']);
+    expect(piConfigDirCandidates({ pi: { config_dir: 'config/pi/' } })).toEqual(['config/pi']);
+  });
+
+  test('an unsafe pi.config_dir falls back to the defaults', () => {
+    expect(piConfigDirCandidates({ pi: { config_dir: '../outside' } })).toEqual(['harnesses/pi', '.kortix/pi']);
+    expect(piConfigDirCandidates({ pi: { config_dir: '/etc' } })).toEqual(['harnesses/pi', '.kortix/pi']);
+  });
 });

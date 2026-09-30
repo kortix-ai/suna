@@ -3,9 +3,10 @@
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
@@ -73,8 +74,9 @@ projectsApp.openapi(
     const maxChars = parseBoundedPositiveInt(c.req.query('chars'), 700, 80, 5000, 'chars');
     if (!maxChars.ok) return c.json({ error: maxChars.error }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     await assertProjectCapability(
       c,
       loaded.userId,

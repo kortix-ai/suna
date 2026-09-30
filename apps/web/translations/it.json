@@ -132,7 +132,12 @@
     "rateLimitDescription": "Il gateway alterna le chiavi selezionate quando un fornitore segnala un limite di richieste.",
     "enableGateway": "Abilita il gateway LLM nelle impostazioni del progetto per usare i pool di chiavi.",
     "selectedOneForSession": "{count} chiave selezionata per questa sessione",
-    "selectedOne": "{count} chiave selezionata"
+    "selectedOne": "{count} chiave selezionata",
+    "opencodeSignIn": "Accedi con OpenCode",
+    "opencodeSignInDescription": "Usa il tuo workspace OpenCode al posto di una chiave API.",
+    "opencodeDeviceDescription": "Copia questo codice. Poi apri la pagina di OpenCode e inseriscilo per collegare il tuo workspace.",
+    "opencodeStarting": "Connessione a OpenCode…",
+    "opencodeConnected": "Accesso effettuato con OpenCode"
   },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"
@@ -1549,7 +1554,8 @@
         "restricted": "Persone specifiche",
         "project": "Tutto il progetto"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Etichette"
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni",
@@ -1561,7 +1567,21 @@
       "others": "Condivise",
       "automated": "Automatizzate"
     },
-    "reminders": "Promemoria"
+    "reminders": "Promemoria",
+    "labels": {
+      "menu": "Modifica etichette",
+      "title": "Etichette",
+      "description": "Le etichette classificano questa sessione. Filtra l’elenco delle sessioni in base a esse. Anche gli agenti, la CLI e l’API possono impostarle.",
+      "placeholder": "Scrivi un’etichetta e premi Invio",
+      "empty": "Ancora nessuna etichetta.",
+      "remove": "Rimuovi {label}",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "saved": "Etichette salvate",
+      "failed": "Impossibile salvare le etichette",
+      "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
+      "tooMany": "Una sessione ha al massimo 20 etichette."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -5153,7 +5173,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "La sandbox di questa sessione è stata arrestata. Apri una nuova sessione per continuare.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Il runtime di OpenCode non è pronto",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Il runtime della sessione non è pronto",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "La sandbox si è avviata, ma il runtime del progetto non è diventato utilizzabile.",
       "line395JsxTextRestartSession": "Riavvia sessione",
       "line424JsxTextRestartSession": "Riavvia sessione"
@@ -12481,7 +12501,7 @@
       "text5a0cac0326d5": "Scarica Kortix",
       "text5a219a418ec7": "Non è stato possibile leggere questa voce dall’archivio.",
       "text5a23444828db": "Gestisci",
-      "text5a26f4425c82": "Sessione OpenCode",
+      "text92fbc8484002": "Sessione del runtime",
       "text5a32374d30b4": "Attività quotidiana della piattaforma e consumo di credito. Ogni bucket è un giorno UTC.",
       "text5a37d20f1235": "Agente del canale aggiornato",
       "text5a41803b2dd1": "Nega tutto",
@@ -19030,7 +19050,16 @@
       "text2bbd1ec2197d": "App collegata",
       "textda3d3fb8f598": "Sessione agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Qualsiasi credenziale"
+      "text36fe0f55b7f5": "Qualsiasi credenziale",
+      "textbfda026e6c59": "Collegato",
+      "text72ea4fa7caf9": "Dettatura interrotta: {value0}",
+      "text557b623f9a33": "Impossibile avviare la dettatura. Controlla l'accesso al microfono.",
+      "textb43c4884c3be": "Controlli di dettatura",
+      "textd31d065a762c": "Annulla dettatura",
+      "textbbb4106e8144": "In ascolto…",
+      "text7458028e0d1d": "Termina dettatura",
+      "text9c84d6622566": "Detta un messaggio",
+      "textf164e4b031dc": "Presenza nella sessione aggiornata"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20190,6 +20219,7 @@
     "commandCopied": "Comando copiato",
     "copyFailed": "Copia non riuscita",
     "copyCommand": "Copia comando",
+    "copyCliCommand": "Copia comando di installazione",
     "authorizeCodeHint": "Verifica che questo codice corrisponda a quello mostrato sul tuo computer.",
     "whoCanUse": "Chi può usare questo computer",
     "onlyYouDescription": "Solo tu, in ogni progetto, nelle tue sessioni private.",

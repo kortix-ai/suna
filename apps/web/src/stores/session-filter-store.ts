@@ -102,6 +102,8 @@ interface State {
   ownerFiltersByProject: Record<string, string[]>;
   /** Access facet: who else can open the session. Sessions page only. */
   accessFiltersByProject: Record<string, SessionAccessFilter[]>;
+  /** Label facet: the list asks the server for sessions carrying EVERY label. */
+  labelFiltersByProject: Record<string, string[]>;
 }
 
 /**
@@ -122,6 +124,7 @@ interface Actions {
     surface?: SessionViewSurface,
   ) => void;
   toggleOwnerFilter: (projectId: string, ownerKey: string, surface?: SessionViewSurface) => void;
+  toggleLabelFilter: (projectId: string, label: string, surface?: SessionViewSurface) => void;
   toggleAccessFilter: (
     projectId: string,
     value: SessionAccessFilter,
@@ -148,9 +151,17 @@ interface Actions {
  * Each returns either a stored reference or the frozen `EMPTY_LIST`/a scalar —
  * never a fresh array — because zustand v5 compares snapshots with `Object.is`.
  */
-function makeScopedSelector<K extends keyof State>(mapKey: K, fallback: State[K][string], inherit = true) {
+function makeScopedSelector<K extends keyof State>(
+  mapKey: K,
+  fallback: State[K][string] | typeof EMPTY_LIST,
+  inherit = true,
+) {
+  // TypeScript cannot narrow `s[mapKey]` through the generic K, so the map is
+  // named as the record it always is.
   return (projectId: string, surface: SessionViewSurface = 'sidebar') =>
-    (s: State): State[K][string] => readScoped(s[mapKey], projectId, surface, inherit) ?? fallback;
+    (s: State): State[K][string] =>
+      readScoped(s[mapKey] as Record<string, State[K][string]>, projectId, surface, inherit) ??
+      (fallback as State[K][string]);
 }
 
 export const selectGroupMode = makeScopedSelector('groupByProject', DEFAULT_SESSION_GROUP_MODE);
@@ -164,6 +175,8 @@ export const selectSourceFilters = makeScopedSelector('sourceFiltersByProject', 
 export const selectOwnerFilters = makeScopedSelector('ownerFiltersByProject', EMPTY_LIST);
 
 export const selectAccessFilters = makeScopedSelector('accessFiltersByProject', EMPTY_LIST);
+
+export const selectLabelFilters = makeScopedSelector('labelFiltersByProject', EMPTY_LIST);
 
 export const selectHiddenSections = makeScopedSelector('hiddenSectionsByProject', EMPTY_LIST);
 
@@ -183,7 +196,7 @@ export const selectCollapsedSections = makeScopedSelector('collapsedSectionsByPr
 export const useSessionFilterStore = create<State & Actions>()(
   persist(
     (set, get) => {
-      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
+      function toggleScoped<K extends 'statusFiltersByProject' | 'sourceFiltersByProject' | 'ownerFiltersByProject' | 'accessFiltersByProject' | 'labelFiltersByProject' | 'hiddenSectionsByProject' | 'collapsedSectionsByProject'>(mapKey: K, inherit = true) {
         return (projectId: string, value: State[K][string][number], surface: SessionViewSurface = 'sidebar') => {
           const current = readScoped(get()[mapKey], projectId, surface, inherit) ?? [];
           set({ [mapKey]: { ...get()[mapKey], [scopeKey(projectId, surface)]: toggleValue(current, value) } });
@@ -227,6 +240,9 @@ export const useSessionFilterStore = create<State & Actions>()(
       accessFiltersByProject: {},
       toggleAccessFilter: toggleScoped('accessFiltersByProject'),
 
+      labelFiltersByProject: {},
+      toggleLabelFilter: toggleScoped('labelFiltersByProject'),
+
       resetFilters: (projectId, surface = 'sidebar') => {
         const key = scopeKey(projectId, surface);
         set({
@@ -234,6 +250,7 @@ export const useSessionFilterStore = create<State & Actions>()(
           sourceFiltersByProject: { ...get().sourceFiltersByProject, [key]: [] },
           ownerFiltersByProject: { ...get().ownerFiltersByProject, [key]: [] },
           accessFiltersByProject: { ...get().accessFiltersByProject, [key]: [] },
+          labelFiltersByProject: { ...get().labelFiltersByProject, [key]: [] },
         });
       },
 
@@ -282,6 +299,7 @@ export const useSessionFilterStore = create<State & Actions>()(
         collapsedSectionsByProject: pruneProjects(state.collapsedSectionsByProject),
         ownerFiltersByProject: pruneProjects(state.ownerFiltersByProject),
         accessFiltersByProject: pruneProjects(state.accessFiltersByProject),
+        labelFiltersByProject: pruneProjects(state.labelFiltersByProject),
       }),
     },
   ),

@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 // wiring under test is which value reaches which call. `between()` FAILS on a
 // missing anchor rather than yielding '' and passing.
 const chat = readFileSync(fileURLToPath(new URL('./session-chat.tsx', import.meta.url)), 'utf8');
+// The turn card's own wiring moved to `session-chat/transcript.tsx` (KRTX-355,
+// phase 2 of the session-chat split); the assertions on it read that module.
+const turn = readFileSync(
+  fileURLToPath(new URL('./session-chat/transcript.tsx', import.meta.url)),
+  'utf8',
+);
 
 function between(source: string, start: string, end: string): string {
   const from = source.indexOf(start);
@@ -202,8 +208,8 @@ describe('the turn card reads the same working answer', () => {
     // Not "the last turn": a prompt queued mid-turn is the last user message
     // while the agent still streams the turn before it — `resolveWorkingTurn`
     // picks the turn, the projection says whether it works.
-    const turn = between(chat, 'function SessionTurnImpl(', 'const activeAssistantMessage');
-    expect(turn).toContain('isWorkingTurn && sessionWorking');
+    const turnState = between(turn, 'const working = isWorkingTurn && sessionWorking;', 'const agentWorking');
+    expect(turnState).toContain('isWorkingTurn && sessionWorking');
     // The raw slot no longer decides any turn's shimmer inside the card.
     expect(turn).not.toContain('getWorkingState(');
   });
@@ -223,9 +229,9 @@ describe('the turn card reads the same working answer', () => {
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {
-    const turn = between(chat, 'function SessionTurnImpl(', '// Cost info');
-    expect(turn).toContain('getRetryInfo(sessionStatus)');
-    expect(turn).toContain('getRetryMessage(sessionStatus)');
+    const retry = between(turn, 'function useTurnRetryState(', 'return { retryInfo, retryMessage, retrySecondsLeft };');
+    expect(retry).toContain('getRetryInfo(sessionStatus)');
+    expect(retry).toContain('getRetryMessage(sessionStatus)');
   });
 
   test('the composer honors the server admission verdict — a failed row cannot pose as a sent prompt', () => {

@@ -135,7 +135,6 @@ export const STOPPED_SANDBOX_CLEARED_KEYS = [
   'runtimeWakeProviderStatus',
   'runtimeWakeCleanupId',
   'runtimeWakeCleanupLeaseExpiresAt',
-  'activeTurn',
   'activeTurns',
   'pendingStopObservedAtMs',
   'lifecycleStopClaim',

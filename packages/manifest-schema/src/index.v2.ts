@@ -133,8 +133,12 @@ export interface AgentBlockV2 {
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
+  /** Built-in tool availability; omitted names retain the runtime default. */
+  tools?: Record<string, boolean>;
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
+  /** Declarative only: sandbox egress is NOT restricted until provider gateway isolation is enabled. */
+  network_egress?: { version: 1; default: 'deny'; rules: [] };
   connectors?: GrantSetV2;
   /** Connectors that must resolve before the session starts. Each
    *  entry must also exist in this agent's resolved `connectors` grant. */
@@ -349,6 +353,7 @@ export type PiPackageEntryV2 = string | { source: string; extensions?: string[];
 export interface HarnessesV2 {
   /** `exclude` exists only on an agent: global packages that agent does not load. */
   pi?: { packages?: PiPackageEntryV2[]; exclude?: string[] };
+  opencode?: { plugins?: string[]; exclude?: string[] };
 }
 
 function validatePiPackageSource(source: unknown, where: string, issues: ManifestIssue[]): void {
@@ -375,13 +380,33 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
   }
   for (const [harness, settings] of Object.entries(node)) {
     const where = `${path}.${harness}`;
-    if (harness !== 'pi') {
-      issues.push({ path: where, message: 'only the pi harness takes settings here.', severity: 'error' });
+    if (harness !== 'pi' && harness !== 'opencode') {
+      issues.push({ path: where, message: 'only pi and opencode take settings here.', severity: 'error' });
       continue;
     }
     if (settings === undefined || settings === null) continue;
     if (!isTable(settings)) {
       issues.push({ path: where, message: 'must be a map.', severity: 'error' });
+      continue;
+    }
+    if (harness === 'opencode') {
+      for (const key of Object.keys(settings)) {
+        if (key !== 'plugins' && !(scope === 'agent' && key === 'exclude')) {
+          issues.push({ path: `${where}.${key}`, message: 'unknown OpenCode setting; use plugins or agent-level exclude.', severity: 'error' });
+        }
+      }
+      for (const key of ['plugins', 'exclude'] as const) {
+        if (settings[key] === undefined) continue;
+        if (!Array.isArray(settings[key])) {
+          issues.push({ path: `${where}.${key}`, message: 'must be a list of plugin filenames.', severity: 'error' });
+          continue;
+        }
+        settings[key].forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]+\.[cm]?[jt]s$/.test(name)) {
+            issues.push({ path: `${where}.${key}[${index}]`, message: 'must name a plugins/ filename (for example, audit.ts).', severity: 'error' });
+          }
+        });
+      }
       continue;
     }
     const keys = scope === 'agent' ? ['packages', 'exclude'] : ['packages'];
@@ -640,6 +665,10 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     return;
   }
 
+  if (entry.tools !== undefined && (!isTable(entry.tools) || Object.values(entry.tools).some((value) => typeof value !== 'boolean'))) {
+    issues.push({ path: `${where}.tools`, message: 'tools must map tool names to booleans.', severity: 'error' });
+  }
+
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     issues.push({ path: `${where}.enabled`, message: 'must be a boolean.', severity: 'error' });
   }
@@ -652,6 +681,19 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
         message: 'sandbox must be a valid template slug.',
         severity: 'error',
       });
+    }
+  }
+
+  // A declaration is not an enforcement point: the provider gateway must
+  // isolate all outbound traffic before any policy can be applied.
+  if (entry.network_egress !== undefined) {
+    const policy = entry.network_egress;
+    if (!isTable(policy) || policy.version !== 1 || policy.default !== 'deny' ||
+        !Array.isArray(policy.rules) || policy.rules.length !== 0 ||
+        Object.keys(policy).some((key) => !['version', 'default', 'rules'].includes(key))) {
+      issues.push({ path: `${where}.network_egress`, message: 'only version 1 default-deny with empty rules is supported; network egress is not enforced.', severity: 'error' });
+    } else {
+      issues.push({ path: `${where}.network_egress`, message: 'declaration only: network egress is not enforced until provider gateway isolation is available.', severity: 'warning' });
     }
   }
 

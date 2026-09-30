@@ -47,6 +47,7 @@ import {
   setProjectSessionSharing,
   stopProjectSession,
   updateProjectSession,
+  type UpdateProjectSessionInput,
 } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -664,6 +665,14 @@ test('updateProjectSession PATCHes the name/metadata input', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ name: 'Renamed' });
+});
+
+test('updateProjectSession PATCHes labels and a null metadata value (removes the key)', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', labels: ['bug'] } };
+  const input: UpdateProjectSessionInput = { labels: ['bug'], metadata: { ticket: 'T-1', stale: null } };
+  await updateProjectSession('P1', 'S1', input);
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ labels: ['bug'], metadata: { ticket: 'T-1', stale: null } });
 });
 
 test('deleteProjectSession DELETEs the session', async () => {
@@ -1503,6 +1512,14 @@ test('listProjectSessions omits filter params that are absent or blank', async (
   expect(last().url).not.toContain('q=');
   expect(last().url).not.toContain('parent=');
   expect(last().url).not.toContain('started_by=');
+});
+
+test('listProjectSessionsPage repeats label once per label, free-form text intact', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessionsPage('P1', { labels: ['bug', 'customer: acme/eu'] });
+  expect(new URL(last().url).searchParams.getAll('label')).toEqual(['bug', 'customer: acme/eu']);
+  await listProjectSessions('P1', { labels: [] });
+  expect(last().url).not.toContain('label=');
 });
 
 test('sessionParentId prefers parent_session_id over metadata.spawned_by_session', () => {

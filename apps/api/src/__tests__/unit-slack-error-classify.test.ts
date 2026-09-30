@@ -112,6 +112,18 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('context window');
   });
 
+  // OpenCode compacts on overflow by itself; this error reaches a thread only
+  // when its compaction failed, and a summary request would fail the same way.
+  test('OpenCode`s ContextOverflowError → "Conversation too long", never "ask me to summarize"', () => {
+    const r = classifyTurnError({
+      name: 'ContextOverflowError',
+      message: 'Conversation history too large to compact - exceeds model context limit',
+    });
+    expect(r.title).toBe('Conversation too long');
+    expect(r.text).toContain('Start a new thread');
+    expect(r.text.toLowerCase()).not.toContain('summarize');
+  });
+
   test('model-not-found (404) → "Model unavailable" with a config next step', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
     expect(r.title).toBe('Model unavailable');

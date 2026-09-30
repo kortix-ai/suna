@@ -24,7 +24,6 @@ import {
   ArrowUpRightIcon as ArrowUpRight,
   ClipboardIcon as ClipboardCopy,
   CopyIcon as Copy,
-  DownloadIcon as Download,
   EyeIcon as Eye,
   ClockCounterClockwiseIcon as History,
   DotsThreeVerticalIcon as MoreVertical,
@@ -38,6 +37,7 @@ import { rowDragIntent } from '../upload-batch';
 import { DriveFolderIcon } from './drive-folder-icon';
 import { getFileIcon } from './file-icon';
 import { FileThumbnail } from './file-thumbnail';
+import { Download } from '@/features/icon/icons/download';
 
 interface DriveGridItemProps {
   node: FileNode;

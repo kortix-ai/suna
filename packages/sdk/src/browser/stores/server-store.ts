@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { getActiveOpenCodeUrl } from '../../core/session/server-store/active';
+import { getActiveRuntimeUrl } from '../../core/session/server-store/active';
 import type { ServerStore } from '../../core/session/server-store/types';
 
 // Re-export the public surface that lives in sibling modules so importers of
@@ -10,6 +10,7 @@ export {
   deriveSubdomainOpts,
   getActiveDbSandboxId,
   getActiveOpenCodeUrl,
+  getActiveRuntimeUrl,
   getActiveSandboxId,
   getBackendPort,
 } from '../../core/session/server-store/active';
@@ -28,5 +29,5 @@ export {
  * zustand read surface for React hosts.
  */
 export const useServerStore = create<ServerStore>(() => ({
-  getActiveServerUrl: () => getActiveOpenCodeUrl(),
+  getActiveServerUrl: () => getActiveRuntimeUrl(),
 }));

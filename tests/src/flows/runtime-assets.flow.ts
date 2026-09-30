@@ -391,7 +391,7 @@ flow(
 // NEITHER RUNS AGAINST A LOCAL STACK, and not because of the capability flag: a
 // local-target project is a database project whose `repo_url` is unreachable
 // from a cloud box, so the box boots to
-// `opencodeBootPhase=…|repo_materialization_failed` and is stopped with
+// `runtimeBootPhase=…|repo_materialization_failed` and is stopped with
 // `stopReason=runtime_boot_failed` (observed 2026-09-26). That is what
 // `EXTERNAL_CAPABILITIES` excludes from the local profile, and it is why these
 // are deployed-target flows.

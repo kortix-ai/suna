@@ -6,9 +6,10 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { StatusDot } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
-import { WarningIcon as AlertTriangle, BracketsCurlyIcon as Braces, CheckIcon as Check, WarningCircleIcon as CircleAlert, CodeIcon as Code, DownloadIcon as Download, EyeIcon as Eye, GlobeIcon as Globe, ArrowCounterClockwiseIcon as RotateCcw, FloppyDiskIcon as Save } from '@phosphor-icons/react';
+import { WarningIcon as AlertTriangle, BracketsCurlyIcon as Braces, CheckIcon as Check, WarningCircleIcon as CircleAlert, CodeIcon as Code, EyeIcon as Eye, GlobeIcon as Globe, ArrowCounterClockwiseIcon as RotateCcw, FloppyDiskIcon as Save } from '@phosphor-icons/react';
 import type { ComponentType, ReactNode, Dispatch, SetStateAction, MutableRefObject } from 'react';
 import type { FileContent } from './file-source';
+import { Download } from '@/features/icon/icons/download';
 
 interface FileHeaderProps {
   showHeader: boolean;

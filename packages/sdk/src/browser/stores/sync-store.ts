@@ -2,7 +2,7 @@
 
 import type {
 	Message,
-	Event as OpenCodeEvent,
+	Event as RuntimeEvent,
 	Part,
 	ReasoningPart,
 	SessionStatus,
@@ -268,7 +268,7 @@ interface SyncState {
 	sessionRevertNeedsTailReconcile: Record<string, boolean>;
 
 	// ---- Actions ----
-	applyEvent: (event: OpenCodeEvent) => void;
+	applyEvent: (event: RuntimeEvent) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
 	removeMessage: (sessionID: string, messageID: string) => void;
 	/**
@@ -512,7 +512,7 @@ interface SyncState {
 	 * the arrays it read.
 	 *
 	 * Every consumer selects through here — `useSessionSync` and
-	 * `useOpenCodeMessages` alike. It has to be one shared memo rather than one
+	 * `useRuntimeMessages` alike. It has to be one shared memo rather than one
 	 * per hook: `getMessages` rebuilds via `.map()` on every call, so a raw
 	 * selector returns a new array each time, fails `useSyncExternalStore`'s
 	 * `Object.is` check and re-renders forever. The memo previously existed
@@ -1131,7 +1131,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * that every retain in a commit lands first would buy nothing, because the
  * ordering it would buy is already guaranteed. The case that motivates
  * deferral is a parent's spawn-tool preview of a child session, and the
- * preview's `useOpenCodeMessages(childId)` is always a React DESCENDANT of the
+ * preview's `useRuntimeMessages(childId)` is always a React DESCENDANT of the
  * component that retains the parent (`SessionLayout` → the transcript → the
  * tool part). React runs passive effects bottom-up, so in any commit that
  * mounts both, the child's retain lands before the parent's — and therefore
@@ -1152,7 +1152,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * A preview showing a transcript has no repaint path of its own, so closing
  * the rest needs the reference declared before the data is read — either the
  * host retaining child ids when it parses the parent's transcript, or
- * `useOpenCodeMessages` reading the disk cache the way `useSessionSync` does.
+ * `useRuntimeMessages` reading the disk cache the way `useSessionSync` does.
  * The second needs the child's `kortixSessionScope` plumbed through from the
  * host: entries written for an opened session are keyed
  * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and

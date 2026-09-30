@@ -402,6 +402,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
           turn_token: 't-boot',
           state: 'delivering',
           message_id: 'msg_boot',
+          runtime_session_id: null,
           opencode_session_id: null,
           started_at: '2026-08-17T00:00:00.000Z',
           accepted_at: null,
@@ -495,6 +496,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
         turn_token: 't-live',
         state: 'active',
         message_id: 'msg_1',
+        runtime_session_id: 'ses_root',
         opencode_session_id: 'ses_root',
         started_at: '2026-08-17T00:00:00.000Z',
         accepted_at: '2026-08-17T00:00:01.000Z',
@@ -523,48 +525,19 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     expect(queries[1].where).toContain('col:turn_token in');
   });
 
-  test('falls back to the ledger start when the authority record carries none', async () => {
-    // A legacy `activeTurn` record from a pre-`activeTurns` deploy has no
-    // `startedAtMs`. The ledger row is then the only place the start instant
-    // exists.
+  test('a retired single-record activeTurn is not turn authority', async () => {
+    // KRTX-255 cut the legacy `metadata.activeTurn` arm over. Only the
+    // token-keyed `activeTurns` map reports a live turn.
     sandboxTable = [
       {
         session_id: SESSION_ID,
         status: 'active',
-        metadata: {
-          activeTurn: { token: 't-legacy', state: 'active', opencodeSessionId: 'ses_root' },
-        },
+        metadata: { activeTurn: { token: 't-legacy', state: 'active', opencodeSessionId: 'ses_root' } },
       },
     ];
-    turnTable = [
-      ledgerRow({ turn_token: 't-legacy', started_at: new Date('2026-08-17T00:00:04.000Z') }),
-    ];
+    turnTable = [ledgerRow({ turn_token: 't-legacy' })];
     const body = await (await getTurn()).json();
-    expect(body.turns[0].started_at).toBe('2026-08-17T00:00:04.000Z');
-  });
-
-  test('reports a live turn with a null started_at rather than hiding it', async () => {
-    // Neither source carries a start instant. The turn is still RUNNING, and
-    // dropping it because one field is unknown would reintroduce the phantom
-    // idle this endpoint exists to kill.
-    sandboxTable = [
-      {
-        session_id: SESSION_ID,
-        status: 'active',
-        metadata: { activeTurn: { token: 't-legacy', state: 'active' } },
-      },
-    ];
-    const body = await (await getTurn()).json();
-    expect(body.turns).toEqual([
-      {
-        turn_token: 't-legacy',
-        state: 'active',
-        message_id: null,
-        opencode_session_id: null,
-        started_at: null,
-        accepted_at: null,
-      },
-    ]);
+    expect(body.turns).toEqual([]);
   });
 
   test('identifies a completed turn alongside an overlapping live turn', async () => {
@@ -622,7 +595,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     ]);
   });
 
-  test('a requested stop is never reported as the last turn\'s error', async () => {
+  test("a requested stop is never reported as the last turn's error", async () => {
     turnTable = [
       ledgerRow({
         turn_token: 't-stopped',

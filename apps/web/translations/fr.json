@@ -132,7 +132,12 @@
     "rateLimitDescription": "La passerelle passe aux autres clés sélectionnées lorsqu’un fournisseur signale une limite de débit.",
     "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
     "selectedOneForSession": "{count} clé sélectionnée pour cette session",
-    "selectedOne": "{count} clé sélectionnée"
+    "selectedOne": "{count} clé sélectionnée",
+    "opencodeSignIn": "Se connecter avec OpenCode",
+    "opencodeSignInDescription": "Utilisez votre espace de travail OpenCode au lieu d’une clé API.",
+    "opencodeDeviceDescription": "Copiez ce code. Ouvrez ensuite la page OpenCode et saisissez-le pour connecter votre espace de travail.",
+    "opencodeStarting": "Connexion à OpenCode…",
+    "opencodeConnected": "Connecté avec OpenCode"
   },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"
@@ -1549,7 +1554,8 @@
         "restricted": "Personnes choisies",
         "project": "Tout le projet"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Libellés"
     },
     "loadingMore": "Chargement…",
     "loadMoreSessions": "Charger plus de sessions",
@@ -1561,7 +1567,21 @@
       "others": "Partagées",
       "automated": "Automatisées"
     },
-    "reminders": "Rappels"
+    "reminders": "Rappels",
+    "labels": {
+      "menu": "Modifier les libellés",
+      "title": "Libellés",
+      "description": "Les libellés classent cette session. Filtrez la liste des sessions avec eux. Les agents, la CLI et l’API peuvent aussi les définir.",
+      "placeholder": "Saisissez un libellé puis Entrée",
+      "empty": "Aucun libellé pour l’instant.",
+      "remove": "Retirer {label}",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "saved": "Libellés enregistrés",
+      "failed": "Impossible d’enregistrer les libellés",
+      "tooLong": "Un libellé compte au plus 64 caractères.",
+      "tooMany": "Une session a au plus 20 libellés."
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -5153,7 +5173,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "Le sandbox de cette session a été arrêté. Ouvrez une nouvelle session pour continuer.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Le runtime OpenCode n’est pas prêt",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Le runtime de la session n’est pas prêt",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "Le sandbox a démarré, mais le runtime du projet n’est pas devenu utilisable.",
       "line395JsxTextRestartSession": "Redémarrer la session",
       "line424JsxTextRestartSession": "Redémarrer la session"
@@ -12481,7 +12501,7 @@
       "text5a0cac0326d5": "Télécharger Kortix",
       "text5a219a418ec7": "Cette entrée n’a pas pu être lue depuis l’archive.",
       "text5a23444828db": "Gérer",
-      "text5a26f4425c82": "Session OpenCode",
+      "text92fbc8484002": "Session du runtime",
       "text5a32374d30b4": "Activité quotidienne de la plateforme et consommation de crédit. Chaque compartiment est un jour UTC.",
       "text5a37d20f1235": "Agent du canal mis à jour",
       "text5a41803b2dd1": "Tout refuser",
@@ -19030,7 +19050,16 @@
       "text2bbd1ec2197d": "Application connectée",
       "textda3d3fb8f598": "Session d'agent",
       "text4dcb7e3b10a9": "Jeton SCIM",
-      "text36fe0f55b7f5": "Toute information d'identification"
+      "text36fe0f55b7f5": "Toute information d'identification",
+      "textbfda026e6c59": "Associé",
+      "text72ea4fa7caf9": "Dictée arrêtée : {value0}",
+      "text557b623f9a33": "Impossible de démarrer la dictée. Vérifiez l'accès au microphone.",
+      "textb43c4884c3be": "Commandes de dictée",
+      "textd31d065a762c": "Annuler la dictée",
+      "textbbb4106e8144": "Écoute en cours…",
+      "text7458028e0d1d": "Terminer la dictée",
+      "text9c84d6622566": "Dicter un message",
+      "textf164e4b031dc": "Présence dans la session mise à jour"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20190,6 +20219,7 @@
     "commandCopied": "Commande copiée",
     "copyFailed": "Échec de la copie",
     "copyCommand": "Copier la commande",
+    "copyCliCommand": "Copier la commande d'installation",
     "authorizeCodeHint": "Vérifiez que ce code correspond à celui affiché sur votre ordinateur.",
     "whoCanUse": "Qui peut utiliser cet ordinateur",
     "onlyYouDescription": "Vous seul, dans chaque projet, dans vos sessions privées.",

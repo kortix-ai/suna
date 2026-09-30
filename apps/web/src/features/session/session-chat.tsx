@@ -1,11 +1,10 @@
 'use client';
 
-import { isQuestionTool } from './session-activity-groups';
 
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { detectCommandFromText } from '@/features/session/detect-command';
+import { isQuestionTool } from './session-activity-groups';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
 import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
+import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { useTranslations } from '@/i18n/use-translations';
@@ -15,24 +14,14 @@ import {
   type SandboxLifecycle,
   type SessionPrompt,
   type SessionPromptPart,
-  groupShowSegments,
   hasRetryingAssistantTurn,
   listSessionPrompts,
   getSessionMessageAuthors,
   projectSessionConnection,
 } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
-import {
-  WarningIcon as AlertTriangle,
-  ArrowBendUpLeftIcon,
-  CaretDownIcon,
-  CheckCircleIcon as CheckCircle,
-  CheckIcon,
-  CaretDownIcon as ChevronDown,
-  ArrowSquareOutIcon as ExternalLink,
-  StackIcon as Layers,
-} from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
+import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
+import { m } from 'motion/react';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -47,34 +36,12 @@ import {
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import {
-  SystemNotificationCard,
-  parseSystemNotifications,
-  stripSystemPtyText,
-} from './message-parsing';
 import { composeTakeBack, isFirstPromptRow, projectQueueRows } from './queue-projection';
 import { createQueueUndoAction, restoreQueuedMessage } from './queued-message-restore';
-import { ActivityBurst } from './turn/activity-burst';
-import {
-  CompactionFailedRow,
-  CompactionMarker,
-  CompactionSummaryBody,
-} from './turn/compaction-card';
+import { CompactionMarker, CompactionSummaryBody } from './turn/compaction-card';
 import { compactionTurnInfo } from './turn/compaction-state';
-import { ExpandableOutput } from './turn/expandable-output';
-import { chatPlanAnchorId, isPlanWriteTool } from './turn/plan-anchor';
-import {
-  QUEUED_BUBBLE_OPACITY_CLASS,
-  queuedBubbleTone,
-  type QueuedPromptState,
-  QueuedPromptFailure,
-  QueuedPromptProgress,
-  type QueuedPromptStatusState,
-} from './turn/queued-prompt-bubbles';
-import { ShowGroupRenderer } from './tool/show-group-renderer';
-import { segmentTurn } from './turn/segment-turn';
+import { chatPlanAnchorId } from './turn/plan-anchor';
 import { stabilizeTurns } from './turn/stable-turns';
-import { statusElapsedFrame } from './turn/status-elapsed';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
@@ -107,10 +74,7 @@ import {
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { claimFirstTurnRow } from '@/features/session/inbox-row-claims';
-import {
-  ConnectProviderDialog,
-  type ModelDefaultControls,
-} from '@/features/session/model-selector';
+import { type ModelDefaultControls } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { inboxHoldsLivePrompt } from '@/features/session/inbox-live-prompt';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
@@ -126,7 +90,7 @@ import {
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import type { AttachedFile, TrackedMention } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
-import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
+import { TurnErrorDisplay } from '@/features/session/session-error-banner';
 import {
   deliverAfterPaint,
   sentFailureMessage,
@@ -138,29 +102,17 @@ import type { AttachmentUploadStatus } from '@/features/session/turn/user-messag
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
-import { SessionTurnMeta } from './session-turn-meta';
-import {
-  sessionTurnDurationMs,
-  sessionTurnEndedAt,
-  sessionTurnSpan,
-} from './session-turn-meta-rows';
+import { sessionTurnSpan } from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import { dismissToast, errorToast, infoToast } from '@/components/ui/toast';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
 import { ChatMinimap } from '@/features/session/chat-minimap';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { usePlanInChat } from '@/features/session/plan-surface';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { SubSessionModal } from '@/features/session/sub-session-modal';
-import {
-  ToolActivateContext,
-  ToolPartRenderer,
-  TurnLiveContext,
-} from '@/features/session/tool/tool-renderers';
+import { ToolActivateContext } from '@/features/session/tool/tool-renderers';
 import {
   firstPromptAttachments,
   retainSentAttachmentPreviews,
@@ -173,7 +125,6 @@ import {
   sentAttachmentsOf,
 } from '@/features/session/uploaded-file-refs';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
-import { useModelPricingLookup } from '@/lib/model-pricing';
 import {
   type AgentRefLike,
   type FileRefLike,
@@ -184,13 +135,6 @@ import {
 import { playSound } from '@/lib/sounds';
 import { track } from '@/lib/track';
 import { cn } from '@/lib/utils';
-import {
-  type KortixSystemMessage,
-  type SessionReport,
-  extractKortixSystemMessages,
-  extractSessionReport,
-  stripKortixSystemTags,
-} from '@/lib/utils/kortix-system-tags';
 import { useChatSendStore } from '@/stores/chat-send-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
@@ -208,47 +152,17 @@ import {
   useSessionPrefill,
 } from '@/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-// Shared UI primitives (framework-agnostic, reusable on mobile)
-import { Copy } from '@/features/icon/icons/copy';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import {
   type Command,
-  type MessageWithParts,
-  type Part,
-  type PermissionRequest,
   type QuestionRequest,
-  type TextPart,
   type ToolPart,
   type Turn,
-  collectTurnParts,
-  findLastTextPart,
-  formatDuration,
-  getPermissionForTool,
   getRetryInfo,
-  getRetryMessage,
-  getShellModePart,
-  getTurnCost,
-  getTurnError,
-  getTurnErrorDetails,
-  getTurnErrorRawText,
-  getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
-  isAgentPart,
-  isAttachment,
-  isReasoningPart,
-  isTextPart,
-  isToolPart,
-  shouldShowToolPart,
-  unwrapError,
 } from '@/ui';
-import {
-  isAbortError,
-  turnEndNotice,
-  type SessionTurnOutcome,
-  type TurnEndNotice,
-} from '@kortix/sdk';
-import type { ProviderListResponse } from '@kortix/sdk/react';
+import { isAbortError } from '@kortix/sdk';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -291,7 +205,6 @@ import {
   useRuntimeSupports,
   useSessionModelSelection,
   useSessionPrompts,
-  isOptimisticSessionPrompt,
   useSessionStateStore,
   useSessionMessages,
   useSessionSync,
@@ -301,7 +214,6 @@ import {
 } from '@kortix/sdk/react';
 import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useReloadForensics } from './reload-forensics';
-import { CodeBlockEndpoints, SandboxUrlDetector } from './sandbox-url-detector';
 import {
   resolveLastTurnWorking,
   serverHoldsOpenTurn,
@@ -317,69 +229,15 @@ import {
 import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
 
+import { TranscriptTurnRow, optimisticAnswersCache, resolveTurnError } from './session-chat/transcript';
+export { SessionReportCard, deriveTurnErrorAbortState, deriveTurnErrorPresentation } from './session-chat/transcript';
+
 // ============================================================================
 // Sub-Session Breadcrumb
 // ============================================================================
 
 // SubSessionBar removed — subsessions show their parent as the header breadcrumb
 
-// ============================================================================
-// Optimistic answers cache
-// ============================================================================
-// When a user answers a question, we save the answers here immediately.
-// This survives SSE `message.part.updated` events that may overwrite the
-// tool part's state before the server has merged the answers.  The cache
-// is keyed by the question tool part's `id` (stable across updates).
-// Entries are cleaned up once the server's authoritative part arrives with
-// real `metadata.answers`.
-
-const optimisticAnswersCache = new Map<
-  string,
-  { answers: string[][]; input: Record<string, unknown> }
->();
-
-// ============================================================================
-// Parse answers from the question tool's output string
-// ============================================================================
-// When metadata.answers is missing (e.g. after page reload, or the server
-// never finalized the tool part), we can try to extract answers from the
-// output string. The server formats it as:
-//   "User has answered your questions: \"Q1\"=\"A1\". You can now continue..."
-// This is a best-effort parser; if it can't match, returns null.
-
-function parseAnswersFromOutput(
-  output: string,
-  input?: { questions?: Array<{ question: string }> },
-): string[][] | null {
-  if (!output) return null;
-
-  const questions = input?.questions;
-  if (!questions || questions.length === 0) return null;
-
-  // Try to extract "question"="answer" pairs from the output
-  const pairRegex = /"([^"]*)"="([^"]*)"/g;
-  const pairs: { question: string; answer: string }[] = [];
-  let match;
-  while ((match = pairRegex.exec(output)) !== null) {
-    pairs.push({ question: match[1], answer: match[2] });
-  }
-
-  if (pairs.length > 0) {
-    // Match pairs to input questions by order (they correspond 1:1)
-    return questions.map((_, i) => {
-      const pair = pairs[i];
-      return pair ? [pair.answer] : [];
-    });
-  }
-
-  // Fallback: if we can't parse pairs but the output mentions "answered",
-  // return a placeholder to indicate the question was answered
-  if (output.toLowerCase().includes('answered')) {
-    return questions.map(() => ['Answered']);
-  }
-
-  return null;
-}
 
 function formatCommandError(errorLike: unknown): string {
   const err = errorLike as any;
@@ -437,92 +295,6 @@ function classifySessionError(err: unknown): KortixSendError {
 }
 
 // ============================================================================
-// System message indicator — subtle inline pill for kortix_system messages
-// ============================================================================
-
-function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] }) {
-  if (messages.length === 0) return null;
-
-  // Combine all messages into a single line: "Goal · iteration 3/50"
-  const parts = messages.map((msg) => (msg.detail ? `${msg.label} · ${msg.detail}` : msg.label));
-  const text = parts.join('  ·  ');
-
-  return (
-    <div className="-my-1 flex items-center gap-2">
-      <div className="bg-border/30 h-px flex-1" />
-      <span className="text-muted-foreground/30 text-xs whitespace-nowrap select-none">{text}</span>
-      <div className="bg-border/30 h-px flex-1" />
-    </div>
-  );
-}
-
-// ============================================================================
-// Answered question card — collapsible summary of completed Q&A
-// ============================================================================
-
-function AnsweredQuestionCard({ part }: { part: ToolPart }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [expanded, setExpanded] = useState(false);
-  const input = (part.state as any)?.input ?? {};
-  const metadata = (part.state as any)?.metadata ?? {};
-  const questions: Array<{ question: string; options?: { label: string }[] }> = Array.isArray(
-    input.questions,
-  )
-    ? input.questions
-    : [];
-  const answers: string[][] = Array.isArray(metadata.answers) ? metadata.answers : [];
-  if (questions.length === 0 || answers.length === 0) return null;
-
-  const answeredCount = answers.filter((a) => a.length > 0).length;
-
-  return (
-    <Disclosure
-      variant="outline"
-      className="bg-card overflow-hidden"
-      open={expanded}
-      onOpenChange={setExpanded}
-    >
-      <DisclosureTrigger variant="outline">
-        <Button
-          type="button"
-          variant="popover"
-          className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
-        >
-          <span className="text-foreground text-xs font-medium">
-            {tI18nComplete.raw('text9a72221a2747')}
-          </span>
-          <span className="text-muted-foreground text-xs tabular-nums">
-            {answeredCount} {tI18nComplete.raw('text68c780cd132a')}
-          </span>
-          <ChevronDown
-            className={cn(
-              'text-muted-foreground ml-auto shrink-0 transition-transform',
-              expanded && 'rotate-180',
-            )}
-          />
-        </Button>
-      </DisclosureTrigger>
-      <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="space-y-2 px-3.5 py-2">
-          {questions.map((q, i) => {
-            const answer = answers[i] || [];
-            const answerText = answer.join(', ') || tI18nComplete.raw('text7e49c68db30e');
-            return (
-              <div key={q.question} className="space-y-0.5">
-                <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
-                  <UnifiedMarkdown content={q.question} trust="agent" />
-                </div>
-                <p className="text-foreground text-sm font-medium text-pretty">{answerText}</p>
-              </div>
-            );
-          })}
-        </div>
-      </DisclosureContent>
-    </Disclosure>
-  );
-}
-
-// ============================================================================
 // Message parsing exported to message-parsing.tsx
 // ============================================================================
 
@@ -533,10 +305,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
  *  with the agent still running. One round-trip's worth, no more. */
 const STOP_HOLD_DEADLINE_MS = 1500;
 
-/** After this long on one status the working label shows elapsed time. */
-const STATUS_STALL_AFTER_MS = 20_000;
-
-// ============================================================================
+================================================
 // Notification-only turn detection
 // ============================================================================
 
@@ -2109,6 +1878,8 @@ const TranscriptTurnRow = memo(function TranscriptTurnRow({
   );
 });
 TranscriptTurnRow.displayName = 'TranscriptTurnRow';
+=======
+>>>>>>> origin/main
 
 // ============================================================================
 // Main SessionChat Component
@@ -5186,7 +4957,7 @@ export function SessionChat({
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
 
   // The parent crumb's destination, resolved the moment the
-  // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
+  // parent session loads. It is a route-cache miss on the `?rs=` branch, so it
   // is warmed below instead of being fetched cold on the click.
   const backToParentHref = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return null;
@@ -5194,7 +4965,7 @@ export function SessionChat({
     if (!projectRoute) return null;
     const [, projectId, projectSessionId] = projectRoute;
     return parentSessionData.parentID
-      ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+      ? childSessionHref(`/projects/${projectId}/sessions/${projectSessionId}`, parentSessionData.id)
       : `/projects/${projectId}/sessions/${projectSessionId}`;
   }, [session?.parentID, parentSessionData, pathname]);
 

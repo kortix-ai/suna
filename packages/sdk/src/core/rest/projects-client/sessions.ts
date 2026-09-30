@@ -69,10 +69,13 @@ export interface ProjectSession {
   sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
   sandbox_id: string;
   sandbox_url: string | null;
+  /** The session's root conversation in its runtime. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /**
    * Resolved display name. Precedence: the user-set `custom_name`, then the
-   * runtime's own root-conversation title (the `opencode_sessions` snapshot —
+   * runtime's own root-conversation title (the `runtime_sessions` snapshot —
    * the same string the session header shows), then the Kortix-generated
    * first-prompt title (`metadata.name`).
    */
@@ -83,11 +86,19 @@ export interface ProjectSession {
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
+  /**
+   * Free-form labels for classifying and filtering the session. Set at create
+   * or with `updateProjectSession`. Absent on a server older than labels.
+   */
+  labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: ProjectSessionMetadata;
-  opencode_sessions: ProjectOpenCodeSession[];
+  /** The runtime's conversation tree. Served by APIs since W4. */
+  runtime_sessions?: ProjectRuntimeSession[];
+  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
+  opencode_sessions: ProjectRuntimeSession[];
   // Ownership + org-visibility (Phase 2 session sharing).
   created_by?: string | null;
   /** The session that spawned this one, or null for a top-level session. */
@@ -210,8 +221,13 @@ export interface CreateProjectSessionInput {
   initial_prompt?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
+  /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
+  model?: string;
+  /** @deprecated The pre-W4 name of `model`. Every API version accepts it. */
   opencode_model?: string;
   name?: string;
+  /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
+  labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
@@ -272,7 +288,8 @@ export interface ClaimWarmProjectSessionInput {
   pending_prompt?: PendingSessionPrompt;
 }
 
-export interface ProjectOpenCodeSession {
+/** One conversation in the session runtime's tree (the root and its subagent children). */
+export interface ProjectRuntimeSession {
   id: string;
   title: string | null;
   parent_id: string | null;
@@ -281,6 +298,9 @@ export interface ProjectOpenCodeSession {
   updated_at: number | null;
   archived_at: number | null;
 }
+
+/** @deprecated Renamed to `ProjectRuntimeSession`. Removed in the next major. */
+export type ProjectOpenCodeSession = ProjectRuntimeSession;
 
 /** Default page size the API applies when `limit` is omitted. Mirrors
  *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
@@ -318,6 +338,8 @@ export interface ListProjectSessionsOptions {
   startedBy?: 'me' | 'others' | 'automated';
   /** Server-side search over every session the viewer may see (1..200 chars). */
   q?: string;
+  /** Only sessions that carry EVERY one of these labels (exact match). */
+  labels?: string[];
 }
 
 /** One keyset page of a project's sessions. */
@@ -336,6 +358,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (options?.startedBy) params.set('started_by', options.startedBy);
   const q = options?.q?.trim();
   if (q) params.set('q', q);
+  for (const label of options?.labels ?? []) params.append('label', label);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -739,6 +762,9 @@ export interface SessionTranscript {
   complete: boolean;
   /** When the mirror was last written; null for a live read. */
   captured_at: string | null;
+  /** The runtime session this belongs to. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   message_count: number;
   messages: SessionTranscriptMessage[];
@@ -765,6 +791,9 @@ export interface SessionTranscriptSyncEnvelope {
   source: SessionTranscriptSource;
   complete: boolean;
   captured_at: string | null;
+  /** The runtime session this belongs to. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /** How many messages are in THIS window of the transcript. */
   message_count: number;
@@ -854,6 +883,9 @@ export interface SessionTurn {
   turn_token: string;
   state: SessionTurnState;
   message_id: string | null;
+  /** The runtime session this belongs to. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /** Null only for a legacy authority record written before the control plane
    *  recorded a start instant. The turn is running either way — a missing
@@ -1313,13 +1345,26 @@ export async function holdSessionPrompts(
   );
 }
 
+/** Body of `updateProjectSession`. Every field is optional; send only what changes. */
+export interface UpdateProjectSessionInput {
+  /** New display name. `""` or `null` clears it and reverts to the auto title. */
+  name?: string | null;
+  /**
+   * Replaces the session's labels. Each is trimmed, 1..64 characters; at most
+   * 20; duplicates drop. `[]` clears them.
+   */
+  labels?: string[];
+  /**
+   * Keys merged into the session's metadata. A `null` value removes that key.
+   * Server-managed keys are refused (400). At most 16,384 characters of JSON.
+   */
+  metadata?: Record<string, unknown>;
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
-  input: {
-    name?: string;
-    metadata?: Record<string, unknown>;
-  },
+  input: UpdateProjectSessionInput,
 ) {
   return unwrap(
     await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
@@ -1788,6 +1833,9 @@ export async function setProjectSessionScope(
 }
 
 export interface SessionModelChangeResult {
+  /** The stored model. Served by APIs since W4. */
+  model?: string;
+  /** @deprecated The pre-W4 name of `model`. Same value. */
   opencode_model: string;
   /** True only when a LIVE sandbox took the new model. */
   applied_live: boolean;

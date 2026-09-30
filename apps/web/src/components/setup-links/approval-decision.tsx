@@ -108,12 +108,11 @@ export function ApprovalDecision({ token }: { token: string }) {
       await resolveApproval(details.project_id, details.execution_id, decision, { note });
       setOutcome(decision);
       setDetails((current) => (current ? { ...current, pending: false } : current));
+      // Compared against the value, not a catalogue string: in a locale
+      // that translates "approve", every approval toasted "Action denied".
+      const approved = decision === 'approve';
       successToast(
-        // Compared against the value, not a catalogue string: in a locale
-        // that translates "approve", every approval toasted "Action denied".
-        decision === 'approve'
-          ? tI18nComplete.raw('text0674d4a026cb')
-          : tI18nComplete.raw('text4341be8eb7f0'),
+        approved ? tI18nComplete.raw('text0674d4a026cb') : tI18nComplete.raw('text4341be8eb7f0'),
       );
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Could not record your decision.';

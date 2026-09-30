@@ -31,6 +31,7 @@ import {
   SessionConnectorBindingsSchema,
   SessionCreateAcceptedSchema,
   SessionCreateInputSchema,
+  SessionUpdateInputSchema,
   SessionScopeInputSchema,
   SessionScopeSchema,
   SessionRuntimeContextSchema,
@@ -167,13 +168,16 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_provider: 'daytona',
     sandbox_id: null,
     sandbox_url: null,
+    runtime_session_id: 'ses_abc',
     opencode_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
+    labels: [],
     agent_name: 'default',
     status: 'running',
     error: null,
     metadata: { name: 'Fix the login bug' },
+    runtime_sessions: [],
     opencode_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
@@ -814,6 +818,11 @@ describe('SessionCreateInputSchema runtime_context', () => {
     ).toBe(false);
   });
 
+  test('accepts the model under its neutral name', () => {
+    expect(SessionCreateInputSchema.safeParse({ model: 'kortix/glm-5.3-flash' }).success).toBe(true);
+    expect(SessionCreateInputSchema.safeParse({ model: '' }).success).toBe(false);
+  });
+
   test('retains deprecated camelCase inputs already accepted by the route', () => {
     expect(
       SessionCreateInputSchema.safeParse({
@@ -1359,4 +1368,21 @@ describe('SecretEgressPolicySchema — `inject` is optional', () => {
         .success,
     ).toBe(false);
   });
+});
+test('session create bounds labels', () => {
+  expect(SessionCreateInputSchema.parse({ labels: ['  urgent  '] }).labels).toEqual(['urgent']);
+  expect(SessionCreateInputSchema.safeParse({ labels: Array(21).fill('x') }).success).toBe(false);
+  expect(SessionCreateInputSchema.safeParse({ labels: [' '] }).success).toBe(false);
+  expect(SessionCreateInputSchema.safeParse({ labels: ['x'.repeat(65)] }).success).toBe(false);
+  expect(SessionCreateInputSchema.parse({ labels: ['bug', ' bug', 'ui'] }).labels).toEqual(['bug', 'ui']);
+});
+test('session metadata is capped at 16 KB of JSON on create and update', () => {
+  expect(SessionCreateInputSchema.safeParse({ metadata: { a: 'x'.repeat(16_000) } }).success).toBe(true);
+  expect(SessionCreateInputSchema.safeParse({ metadata: { a: 'x'.repeat(16_385) } }).success).toBe(false);
+  expect(SessionUpdateInputSchema.safeParse({ metadata: { a: 'x'.repeat(16_385) } }).success).toBe(false);
+});
+test('session update accepts name, labels and metadata only', () => {
+  expect(SessionUpdateInputSchema.parse({ labels: ['a', 'a'], metadata: { k: null } })).toEqual({ labels: ['a'], metadata: { k: null } });
+  expect(SessionUpdateInputSchema.parse({ name: null })).toEqual({ name: null });
+  expect(SessionUpdateInputSchema.safeParse({ labels: 'a' }).success).toBe(false);
 });

@@ -65,7 +65,10 @@ describe('loadProjectAgents — blank managed project (no manifest committed yet
       connectors: 'all',
       permissions: 'all',
       env: 'all',
+      // KRTX-165: no human declared it, so it keeps the project checkout.
+      repositoryAccess: true,
     });
+    expect(repositoryAccessFromLoadedAgents('kortix', loaded)).toBe(true);
   });
 
   // GAP 1 (dev-live repro): sessions.ts resolves the launching agent through
@@ -249,6 +252,8 @@ describe('workspace — v2 agent workspace declaration', () => {
         '    workspace: runtime',
         '  engineer:',
         '    workspace: branch',
+        '  assistant:',
+        '    connectors: none',
         '',
       ].join('\n'),
     };
@@ -259,6 +264,7 @@ describe('workspace — v2 agent workspace declaration', () => {
     expect(repositoryAccessFromLoadedAgents('support', loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents(DEFAULT_AGENT_SENTINEL, loaded)).toBe(false);
     expect(repositoryAccessFromLoadedAgents('engineer', loaded)).toBe(true);
-    expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(true);
+    expect(repositoryAccessFromLoadedAgents('assistant', loaded)).toBe(false);
+    expect(repositoryAccessFromLoadedAgents('missing', loaded)).toBe(false);
   });
 });

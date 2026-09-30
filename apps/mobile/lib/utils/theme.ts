@@ -87,23 +87,23 @@ export function toHexColor(hslColor: string, alpha?: number): string {
 export const THEME = {
   light: {
     background: 'hsl(0 0% 100%)', // --background
-    foreground: 'hsl(0 0% 0%)', // --foreground
+    foreground: 'hsl(0 0% 12.2%)', // --foreground
     card: 'hsl(0 0% 95.7%)', // --card
-    cardForeground: 'hsl(0 0% 0%)', // --card-foreground
+    cardForeground: 'hsl(0 0% 12.2%)', // --card-foreground
     popover: 'hsl(0 0% 100%)', // --popover
-    popoverForeground: 'hsl(0 0% 0%)', // --popover-foreground
-    primary: 'hsl(0 0% 0%)', // --primary
+    popoverForeground: 'hsl(0 0% 12.2%)', // --popover-foreground
+    primary: 'hsl(0 0% 12.2%)', // --primary
     primaryForeground: 'hsl(0 0% 100%)', // --primary-foreground
-    secondary: 'hsl(0 0% 92.6%)', // --secondary
-    secondaryForeground: 'hsl(0 0% 0%)', // --secondary-foreground
-    muted: 'hsl(0 0% 92.6%)', // --muted
+    secondary: 'hsl(0 0% 92.9%)', // --secondary
+    secondaryForeground: 'hsl(0 0% 12.2%)', // --secondary-foreground
+    muted: 'hsl(0 0% 92.9%)', // --muted
     mutedForeground: 'hsl(0 0% 40%)', // --muted-foreground
     accent: 'hsl(0 0% 95.7%)', // --accent
-    accentForeground: 'hsl(0 0% 0%)', // --accent-foreground
+    accentForeground: 'hsl(0 0% 12.2%)', // --accent-foreground
     destructive: 'hsl(357.2 100% 45.3%)', // --destructive
     destructiveForeground: 'hsl(60 0% 98%)', // --destructive-foreground
     border: 'hsl(0 0% 88.6%)', // --border
-    input: 'hsl(0 0% 92.6%)', // --input
+    input: 'hsl(0 0% 92.9%)', // --input
     ring: 'hsl(204 100% 50%)', // --ring
     pane: 'hsl(0 0% 100%)', // --pane
     surface: 'hsl(0 0% 98.8%)', // --surface
@@ -111,14 +111,14 @@ export const THEME = {
     active: 'hsla(0, 0%, 0%, 0.075)', // --active
     focusRing: 'hsl(204 100% 50%)', // --focus-ring (= var(--ring))
     chromeBackground: 'hsl(0 0% 95.7%)', // --chrome-background (= var(--sidebar))
-    foregroundStrong: 'hsl(0 0% 0%)', // --foreground-strong (= var(--foreground))
+    foregroundStrong: 'hsl(0 0% 12.2%)', // --foreground-strong (= var(--foreground))
     foregroundWeak: 'hsl(0 0% 40%)', // --foreground-weak (= var(--muted-foreground))
     sidebar: 'hsl(0 0% 95.7%)', // --sidebar
-    sidebarForeground: 'hsl(0 0% 0%)', // --sidebar-foreground
+    sidebarForeground: 'hsl(0 0% 12.2%)', // --sidebar-foreground
     sidebarPrimary: 'hsl(204 100% 50%)', // --sidebar-primary
     sidebarPrimaryForeground: 'hsl(0 0% 100%)', // --sidebar-primary-foreground
-    sidebarAccent: 'hsl(0 0% 92.6%)', // --sidebar-accent
-    sidebarAccentForeground: 'hsl(0 0% 0%)', // --sidebar-accent-foreground
+    sidebarAccent: 'hsl(0 0% 92.9%)', // --sidebar-accent
+    sidebarAccentForeground: 'hsl(0 0% 12.2%)', // --sidebar-accent-foreground
     sidebarBorder: 'hsl(0 0% 88.6%)', // --sidebar-border
     sidebarRing: 'hsl(204 100% 50%)', // --sidebar-ring
     success: 'hsl(160 100% 29.9%)', // --success (web emerald-600)

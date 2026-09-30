@@ -15,7 +15,7 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { AccessMemberSchema, projectsApp } from '../lib/app';
-import { getAccountMembership } from '../lib/git';
+import { getAccountMembership } from '../lib/user-identity';
 import { readJsonObject } from '../../shared/http-body';
 
 // GET /v1/projects/:projectId/access

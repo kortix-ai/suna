@@ -123,6 +123,9 @@ const resolveProjectSharedProviderSecrets = async (input: {
 };
 
 const accountResource = {
+  // Imported by the OpenCode Console login module; never called by this suite.
+  encryptAccountSecret: (_accountId: string, value: string) => value,
+  decryptAccountSecret: (_accountId: string, value: string) => value,
   listUsableGatewaySecrets: async (input: {
     accountId: string;
     projectId: string;

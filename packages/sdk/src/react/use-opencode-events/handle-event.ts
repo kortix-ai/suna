@@ -22,7 +22,7 @@ import {
 } from '../../core/session-sync/session-sync-controller';
 import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { ptyKeys } from '../use-opencode-pty';
-import { type MessageWithParts, opencodeKeys, type Session } from '../use-opencode-sessions';
+import { type MessageWithParts, runtimeKeys, type Session } from '../use-opencode-sessions';
 import { applyPartDiagnostics } from './diagnostics';
 import {
   asStringOrUndefined,
@@ -32,7 +32,7 @@ import {
   refetchKortixSessionMirrors,
   scheduleProjectMetadataRefetch,
 } from './helpers';
-import type { NormalizeDiagnosticPaths, OpenCodeEvent } from './types';
+import type { NormalizeDiagnosticPaths, RuntimeEvent } from './types';
 
 /** See `createEventHandler`'s `userPartsGraceMs`. */
 export const USER_PARTS_GRACE_MS = 1_500;
@@ -93,12 +93,12 @@ export function createEventHandler(deps: {
 
   // Helper: look up a session title from the React Query cache for notifications
   function getSessionTitle(sessionID: string): string | undefined {
-    const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
+    const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
     if (sessions) {
       const s = sessions.find((s) => s.id === sessionID);
       if (s?.title) return s.title;
     }
-    const session = queryClient.getQueryData<Session>(opencodeKeys.runtimeSession(sessionID));
+    const session = queryClient.getQueryData<Session>(runtimeKeys.runtimeSession(sessionID));
     return session?.title || undefined;
   }
 
@@ -112,7 +112,7 @@ export function createEventHandler(deps: {
   function invalidateWorkspaceFilesAfterTurn() {
     for (const queryKey of [
       gitStatusKeys.all,
-      opencodeKeys.vcsDiffAll(),
+      runtimeKeys.vcsDiffAll(),
       fileListKeys.all,
       fileContentKeys.all,
       binaryBlobKeys.all,
@@ -121,13 +121,13 @@ export function createEventHandler(deps: {
     }
   }
 
-  function handleEvent(event: OpenCodeEvent) {
+  function handleEvent(event: RuntimeEvent) {
     // Sync store is the SINGLE source of truth for messages & parts.
     // This matches OpenCode's architecture where the SolidJS store is
     // the only place message/part data lives.
     //
     // `event` also carries the frontend-synthesized `lsp.client.diagnostics`
-    // member (see `OpenCodeEvent`), which isn't a real wire event and doesn't
+    // member (see `RuntimeEvent`), which isn't a real wire event and doesn't
     // match any `applyEvent` case (falls through to its `default`) — the
     // assertion below just widens past that one extra union member.
     //
@@ -199,7 +199,7 @@ export function createEventHandler(deps: {
           // dedicated wire events (also routed through `applySyncEvent`
           // above) do that.
           useSyncStore.getState().syncSessionRevertFromInfo(info.id, info.revert ?? null);
-          queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+          queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
             if (!old) return [info];
             const exists = old.findIndex((s) => s.id === info.id);
             if (exists >= 0) {
@@ -211,7 +211,7 @@ export function createEventHandler(deps: {
             }
             return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
           });
-          queryClient.setQueryData(opencodeKeys.runtimeSession(info.id), info);
+          queryClient.setQueryData(runtimeKeys.runtimeSession(info.id), info);
           patchKortixSessionTitleMirrors(
             queryClient,
             projectId,
@@ -233,15 +233,15 @@ export function createEventHandler(deps: {
           // force the server-owned mirror read when the title actually changed.
           const prevTitle =
             queryClient
-              .getQueryData<Session[]>(opencodeKeys.sessions())
+              .getQueryData<Session[]>(runtimeKeys.sessions())
               ?.find((s) => s.id === info.id)?.title ??
-            queryClient.getQueryData<Session>(opencodeKeys.runtimeSession(info.id))?.title ??
+            queryClient.getQueryData<Session>(runtimeKeys.runtimeSession(info.id))?.title ??
             null;
           const titleChanged = !!info.title && info.title !== prevTitle;
           // Only update individual session cache (cheap, targeted)
-          queryClient.setQueryData(opencodeKeys.runtimeSession(info.id), info);
+          queryClient.setQueryData(runtimeKeys.runtimeSession(info.id), info);
           // Update session list only if the session actually changed
-          queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+          queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
             if (!old) return old;
             const idx = old.findIndex((s) => s.id === info.id);
             if (idx < 0) return old;
@@ -273,17 +273,17 @@ export function createEventHandler(deps: {
       case 'session.deleted': {
         const info = readSessionInfo(event);
         if (info) {
-          queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+          queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
             if (!old) return old;
             const found = old.some((s) => s.id === info.id);
             if (!found) return old;
             return old.filter((s) => s.id !== info.id);
           });
           queryClient.removeQueries({
-            queryKey: opencodeKeys.runtimeSession(info.id),
+            queryKey: runtimeKeys.runtimeSession(info.id),
           });
           queryClient.removeQueries({
-            queryKey: opencodeKeys.runtimeMessages(info.id),
+            queryKey: runtimeKeys.runtimeMessages(info.id),
           });
           deleteSessionFromIDB(info.id);
         }
@@ -303,12 +303,12 @@ export function createEventHandler(deps: {
           //
           // It is not the ONLY path any more: a failure here (this fetch has
           // no retry of its own) used to leave `time.compacting` stale in the
-          // `opencodeKeys.runtimeSession` cache FOREVER — `useOpenCodeSession`
+          // `runtimeKeys.runtimeSession` cache FOREVER — `useRuntimeSession`
           // reads it with `staleTime: Infinity` and nothing else refetches it,
           // so `projectCompacting`'s server-observed rule (`core/session/
           // compaction.ts`) stayed pinned `true` for the rest of the tab's
           // life. On failure, route the retry through the SAME query
-          // `useOpenCodeSession` registers (3 attempts, exponential backoff)
+          // `useRuntimeSession` registers (3 attempts, exponential backoff)
           // instead of swallowing it silently. `use-session.ts` also arms a
           // `serverCompactionRevalidateAtMs` timer as a second, frame-
           // independent backstop — see that function's doc comment.
@@ -317,9 +317,9 @@ export function createEventHandler(deps: {
             .then((res) => {
               if (res.data) {
                 const session = res.data;
-                queryClient.setQueryData(opencodeKeys.runtimeSession(sessionID), session);
+                queryClient.setQueryData(runtimeKeys.runtimeSession(sessionID), session);
                 // Also update in session list
-                queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+                queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
                   if (!old) return old;
                   const idx = old.findIndex((s) => s.id === sessionID);
                   if (idx < 0) return old;
@@ -329,13 +329,13 @@ export function createEventHandler(deps: {
                 });
               } else {
                 void queryClient.invalidateQueries({
-                  queryKey: opencodeKeys.runtimeSession(sessionID),
+                  queryKey: runtimeKeys.runtimeSession(sessionID),
                 });
               }
             })
             .catch(() => {
               void queryClient.invalidateQueries({
-                queryKey: opencodeKeys.runtimeSession(sessionID),
+                queryKey: runtimeKeys.runtimeSession(sessionID),
               });
             });
         }
@@ -409,7 +409,7 @@ export function createEventHandler(deps: {
           // 2. Some error paths (model-not-found, agent-not-found) never
           //    emit message.updated with .error at all
           // 3. Polling can race and overwrite the error from message.updated
-          const key = opencodeKeys.runtimeMessages(sessionID);
+          const key = runtimeKeys.runtimeMessages(sessionID);
           queryClient.cancelQueries({ queryKey: key });
           queryClient.setQueryData<MessageWithParts[]>(key, (old) => {
             if (!old || old.length === 0) return old;
@@ -509,7 +509,7 @@ export function createEventHandler(deps: {
         // it is a precise "files just moved" signal, so it is what keeps the
         // panel live MID-turn instead of only at idle.
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.vcsDiffAll(),
+          queryKey: runtimeKeys.vcsDiffAll(),
           type: 'active',
         });
         break;
@@ -533,7 +533,7 @@ export function createEventHandler(deps: {
         // A different branch is a different base — every `mode: 'branch'` diff
         // in the cache now describes a comparison that no longer applies.
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.vcsDiffAll(),
+          queryKey: runtimeKeys.vcsDiffAll(),
           type: 'active',
         });
         break;
@@ -554,27 +554,27 @@ export function createEventHandler(deps: {
         // the UI picks up newly installed marketplace components or
         // agent-created skills/agents immediately.
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.sessions(),
+          queryKey: runtimeKeys.sessions(),
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.mcpStatus(),
+          queryKey: runtimeKeys.mcpStatus(),
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.skills(),
+          queryKey: runtimeKeys.skills(),
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.agents(),
+          queryKey: runtimeKeys.agents(),
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.toolIds(),
+          queryKey: runtimeKeys.toolIds(),
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.commands(),
+          queryKey: runtimeKeys.commands(),
           type: 'active',
         });
         break;
@@ -606,11 +606,11 @@ export function createEventHandler(deps: {
         // MCP server tools were added/removed/changed — refresh status + tool lists.
         // Only refetch if queries are actively mounted (type: 'active').
         queryClient.refetchQueries({
-          queryKey: opencodeKeys.mcpStatus(),
+          queryKey: runtimeKeys.mcpStatus(),
           type: 'active',
         });
         queryClient.refetchQueries({
-          queryKey: opencodeKeys.toolIds(),
+          queryKey: runtimeKeys.toolIds(),
           type: 'active',
         });
         break;
@@ -631,11 +631,11 @@ export function createEventHandler(deps: {
       // ---- Worktree events — disabled for now ----
       case 'worktree.ready': {
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.worktrees(),
+          queryKey: runtimeKeys.worktrees(),
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.projects(),
+          queryKey: runtimeKeys.projects(),
           type: 'active',
         });
         break;
@@ -643,7 +643,7 @@ export function createEventHandler(deps: {
 
       case 'worktree.failed': {
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.worktrees(),
+          queryKey: runtimeKeys.worktrees(),
           type: 'active',
         });
         break;
@@ -670,7 +670,7 @@ export function createEventHandler(deps: {
           type: 'active',
         });
         queryClient.invalidateQueries({
-          queryKey: opencodeKeys.vcsDiffAll(),
+          queryKey: runtimeKeys.vcsDiffAll(),
           type: 'active',
         });
         if (fileProps.file) {

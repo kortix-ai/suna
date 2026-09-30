@@ -44,3 +44,17 @@ describe('getDiagnosticFields', () => {
     expect(getDiagnosticFields()).toEqual({});
   });
 });
+
+describe('config stage diagnostic allowlist', () => {
+  test('exposes stage names and durations but never identity', () => {
+    runWithContext('GET', '/v1/projects/example/sessions/example/config', () => {
+      setContextField('config_pending_stages', 'latest_etag,sandbox_state');
+      setContextField('config_project_access_ms', '25000');
+      setContextField('userEmail', 'someone@example.com');
+      expect(getDiagnosticFields()).toEqual({
+        config_pending_stages: 'latest_etag,sandbox_state',
+        config_project_access_ms: '25000',
+      });
+    });
+  });
+});

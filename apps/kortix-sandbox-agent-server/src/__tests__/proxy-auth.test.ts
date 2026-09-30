@@ -245,7 +245,7 @@ describe('daemon proxy auth gate', () => {
     })
     expect(res.status).toBe(503)
     const body = (await res.json()) as { reason: string }
-    expect(body.reason).toBe('initial_opencode_session_pending')
+    expect(body.reason).toBe('initial_runtime_session_pending')
   })
 
   it('holds every caller off until the workspace is complete, then lets them through', async () => {
@@ -284,7 +284,7 @@ describe('daemon proxy auth gate', () => {
 
     const failed = await request()
     expect(failed.status).toBe(503)
-    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_opencode_session_failed')
+    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_runtime_session_failed')
 
     finalizeInitialSession(bootState, 'ses_root_abc')
 

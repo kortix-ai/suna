@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../core/runtime/client';
 import type { Config } from '@opencode-ai/sdk/v2/client';
-import { useOpenCodeRuntimeReady } from './use-opencode-sessions/keys';
+import { useRuntimeReady } from './use-opencode-sessions/keys';
 
 export type { Config };
 
@@ -25,8 +25,8 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
   return result.data as T;
 }
 
-export function useOpenCodeConfig() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeConfig() {
+  const runtimeReady = useRuntimeReady();
   return useQuery<Config>({
     queryKey: configKeys.all,
     queryFn: async () => {
@@ -40,7 +40,7 @@ export function useOpenCodeConfig() {
   });
 }
 
-export function useUpdateOpenCodeConfig() {
+export function useUpdateRuntimeConfig() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -87,3 +87,9 @@ export function useUpdateOpenCodeConfig() {
 export function clearConfigOverrides(): void {
   // no-op — localStorage overrides removed
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeConfig`. Removed in the next major. */
+export const useOpenCodeConfig = useRuntimeConfig;
+/** @deprecated Renamed to `useUpdateRuntimeConfig`. Removed in the next major. */
+export const useUpdateOpenCodeConfig = useUpdateRuntimeConfig;

@@ -33,6 +33,11 @@ const CONTEXT_OVERFLOW_PATTERNS = [
   /prompt is too long/i,
   /input is too long/i,
   /(?:input|prompt)[\s\S]*exceeds?[\s\S]*context (?:limit|window)/i,
+  // OpenRouter endpoints, probed 2026-09-30: Decart "exceeds the model's
+  // maximum context length of 1048576 tokens"; CoreWeave "accepts at most
+  // 1048576 combined input and output tokens".
+  /exceeds (?:the )?(?:model'?s )?maximum context length/i,
+  /combined input and output tokens/i,
 ];
 
 /**

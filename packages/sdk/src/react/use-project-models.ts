@@ -41,7 +41,7 @@ export function useProjectModelPickerCatalog(
 export function useProjectModels(projectId: string | null | undefined): FlatModel[] {
   // `/model-picker` is a gateway route: with the project's llm_gateway flag
   // off it answers 404 llm_gateway_disabled — never fetch. Native projects
-  // read models from the session runtime (`useOpenCodeProviders`).
+  // read models from the session runtime (`useRuntimeProviders`).
   const gateway = useProjectLlmGatewayEnabled(projectId);
   const { data } = useQuery({
     // Shared with `useModelEnablement` (same fetcher) and the routing-policy

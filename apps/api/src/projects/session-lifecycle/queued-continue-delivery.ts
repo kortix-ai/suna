@@ -133,6 +133,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(wireMessageId ? { wireMessageId } : {}),
         materializationKey: row.commandId, isPendingFirstPrompt,
         ...(noReply ? { noReply } : {}),
+        ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
       payload.clientMessageId ? () => assertInboxDeliveryActive(row.commandId) : undefined);
       tl.mark('delivered');

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { waitForDaemonOpencodeReady } from '../projects/lib/sandbox-daemon-ready';
+import { waitForDaemonRuntimeReady } from '../projects/lib/sandbox-daemon-ready';
 
-type HealthBody = { opencode?: string; status?: string };
+type HealthBody = { opencode?: string; status?: string; harness?: { id: string; state: string } };
 
 // A fake fetch that walks a fixed sequence of /kortix/health responses. 'fail'
 // models an unreachable probe (non-2xx); the last entry repeats once exhausted.
@@ -34,10 +34,10 @@ function fakeClock() {
   };
 }
 
-describe('waitForDaemonOpencodeReady', () => {
+describe('waitForDaemonRuntimeReady', () => {
   test('resolves true once opencode reports ok (the post-restart window clears)', async () => {
     const clock = fakeClock();
-    const ready = await waitForDaemonOpencodeReady({
+    const ready = await waitForDaemonRuntimeReady({
       previewUrl: 'http://127.0.0.1:1/',
       providerHeaders: {},
       deps: {
@@ -53,10 +53,29 @@ describe('waitForDaemonOpencodeReady', () => {
     expect(ready).toBe(true);
   });
 
+  test('reads the harness block before the flat pre-W3 field (a pi box)', async () => {
+    const clock = fakeClock();
+    const ready = await waitForDaemonRuntimeReady({
+      previewUrl: 'http://127.0.0.1:1/',
+      budgetMs: 1_000,
+      deps: {
+        fetchImpl: fakeHealthFetch([
+          // The flat field says ok; the harness block says the process is still starting.
+          { opencode: 'ok', harness: { id: 'pi', state: 'starting' } },
+          { harness: { id: 'pi', state: 'ok' } },
+        ]),
+        sleep: clock.sleep,
+        now: clock.now,
+      },
+    });
+    expect(ready).toBe(true);
+    expect(clock.now()).toBe(300);
+  });
+
   test('keeps polling through a transient unreachable probe, then succeeds', async () => {
     const clock = fakeClock();
     const calls: Array<{ url: string; headers: unknown }> = [];
-    const ready = await waitForDaemonOpencodeReady({
+    const ready = await waitForDaemonRuntimeReady({
       previewUrl: 'http://127.0.0.1:1/',
       providerHeaders: { 'e2b-traffic-access-token': 'tok' },
       deps: {
@@ -77,7 +96,7 @@ describe('waitForDaemonOpencodeReady', () => {
 
   test('short-circuits false on a boot error — waiting cannot fix repo/init failures', async () => {
     const clock = fakeClock();
-    const ready = await waitForDaemonOpencodeReady({
+    const ready = await waitForDaemonRuntimeReady({
       previewUrl: 'http://127.0.0.1:1/',
       providerHeaders: {},
       deps: {
@@ -91,7 +110,7 @@ describe('waitForDaemonOpencodeReady', () => {
 
   test('gives up false when the budget is exhausted (cold boot overruns)', async () => {
     const clock = fakeClock();
-    const ready = await waitForDaemonOpencodeReady({
+    const ready = await waitForDaemonRuntimeReady({
       previewUrl: 'http://127.0.0.1:1/',
       providerHeaders: {},
       budgetMs: 1_000,
