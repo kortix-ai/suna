@@ -11,6 +11,7 @@
  */
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage as PiAssistantMessage, Usage } from '@earendil-works/pi-ai'
+import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import type {
   KortixAssistantMessageInfo,
   KortixMessageError,
@@ -18,6 +19,7 @@ import type {
   KortixToolState,
   RuntimeToolRef,
 } from '@kortix/api-contract/transcript'
+import { turnErrorCode } from '../shared/turn-relay'
 
 export type TurnEventEmission = KortixSessionEvent & {
   /** Fold into the transcript, keep off the bus (the full-text twin of a delta). */
@@ -88,19 +90,32 @@ export function assistantInfoFields(
   }
 }
 
-/** The `error` of a terminal pi assistant message, or undefined. */
+/** The HTTP status pi-ai puts first in a provider error's text (`"429: …"`, `"402 Payment Required"`). */
+function errorStatus(text: string | null): number | undefined {
+  const match = text ? /^([45]\d\d)\b/.exec(text) : null
+  return match ? Number(match[1]) : undefined
+}
+
+/** The `error` of a terminal pi assistant message, with its `TurnErrorCode`, or undefined. */
 export function assistantMessageError(
   message: Pick<PiAssistantMessage, 'stopReason' | 'errorMessage'>,
 ): KortixMessageError | undefined {
-  const detail = typeof message.errorMessage === 'string' && message.errorMessage.trim() ? message.errorMessage : null
+  const detail = typeof message.errorMessage === 'string' && message.errorMessage.trim() ? message.errorMessage.trim() : null
   if (message.stopReason === 'aborted') {
-    return { name: 'MessageAbortedError', data: { message: detail ?? 'The message was aborted' } }
+    return { name: 'MessageAbortedError', data: { message: detail ?? 'The message was aborted' }, code: 'aborted' }
   }
-  if (message.stopReason === 'error') {
-    return { name: 'UnknownError', data: { message: detail ?? 'The model request failed' } }
+  if (message.stopReason === 'length') return { name: 'MessageOutputLengthError', data: {}, code: 'output_length' }
+  if (message.stopReason !== 'error') return undefined
+  // pi-ai's own provider patterns; with no context window it reads only the error text.
+  if (isContextOverflow(message as PiAssistantMessage)) {
+    return { name: 'ContextOverflowError', data: { message: detail ?? 'The conversation is too long for the model' }, code: 'context_length' }
   }
-  if (message.stopReason === 'length') return { name: 'MessageOutputLengthError', data: {} }
-  return undefined
+  const statusCode = errorStatus(detail)
+  return {
+    name: 'UnknownError',
+    data: { message: detail ?? 'The model request failed', ...(statusCode ? { statusCode } : {}) },
+    code: turnErrorCode({ statusCode }),
+  }
 }
 
 export class PiTurnEvents {

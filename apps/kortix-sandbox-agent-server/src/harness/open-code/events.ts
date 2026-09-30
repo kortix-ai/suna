@@ -1,34 +1,7 @@
 import { logger } from '@/lib/log/logger'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
-
-// opencode's QuestionInfo schema, mirrored from the v2 SDK. Anything richer
-// (like permission.asked) is layered on top of the same SSE stream.
-interface QuestionInfo {
-  question: string
-  header: string
-  options: Array<{ value: string; label?: string }>
-  multiple?: boolean
-  custom?: boolean
-}
-
-export interface QuestionRequest {
-  id: string
-  sessionID: string
-  questions: QuestionInfo[]
-}
-
-// opencode's PermissionRequest (`permission.asked` properties), mirrored from
-// the v2 SDK. `metadata` is tool-specific (an edit carries its diff).
-export interface PermissionRequest {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: string[]
-  metadata?: Record<string, unknown>
-  always?: string[]
-  tool?: { messageID: string; callID: string }
-}
+import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 
 // Flattened opencode error (from session.error / AssistantMessage.error), passed
 // to onSessionError so the turn-end relay can tell apps/api *why* a run failed
@@ -49,8 +22,8 @@ export interface OpencodeTurnError {
 export type OpencodeEventHandlers = {
   /** Every parsed OpenCode event, before specialized dispatch. */
   onEvent?: (event: { type?: string; properties?: unknown }) => void
-  onQuestionAsked?: (req: QuestionRequest) => void
-  onPermissionAsked?: (req: PermissionRequest) => void
+  onQuestionAsked?: (req: RuntimeQuestionRequest) => void
+  onPermissionAsked?: (req: RuntimePermissionRequest) => void
   // Fired when an opencode session finishes processing a turn (idle) or dies
   // mid-turn (error). opencode emits these for EVERY session — including
   // subagent (Task tool) child sessions — so the handler is responsible for
@@ -306,14 +279,14 @@ export function dispatch(
 ): void {
   handlers.onEvent?.(event)
   if (event.type === 'question.asked' && handlers.onQuestionAsked) {
-    const req = event.properties as QuestionRequest
+    const req = event.properties as RuntimeQuestionRequest
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {
       handlers.onQuestionAsked(req)
     }
     return
   }
   if (event.type === 'permission.asked' && handlers.onPermissionAsked) {
-    const req = event.properties as PermissionRequest
+    const req = event.properties as RuntimePermissionRequest
     if (req?.id && req?.sessionID) handlers.onPermissionAsked(req)
     return
   }

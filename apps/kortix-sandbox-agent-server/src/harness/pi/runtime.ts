@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
-import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
+import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
@@ -154,7 +154,7 @@ export type TurnOutcome = 'completed' | 'error' | 'aborted'
 export interface TurnEnd {
   messageId: string
   status: 'idle' | 'error'
-  error?: { name: string; message?: string }
+  error?: { name: string; message?: string; statusCode?: number; code?: TurnErrorCode }
 }
 
 export interface PiRuntimeHooks {
@@ -644,7 +644,8 @@ export class PiRuntime {
       else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
-        error = wire ? { name: wire.name, message: (wire.data as { message?: string }).message } : undefined
+        const data = wire?.data as { message?: string; statusCode?: number } | undefined
+        error = wire ? { name: wire.name, message: data?.message, statusCode: data?.statusCode, code: wire.code } : undefined
       }
     } catch (err) {
       outcome = 'error'

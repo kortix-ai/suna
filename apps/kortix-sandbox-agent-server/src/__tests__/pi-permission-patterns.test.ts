@@ -66,6 +66,32 @@ describe('pi per-pattern permissions', () => {
     expect(permissions.rule('bash', { command: 'rm -rf /' })).toBe('deny')
   })
 
+  // E9: a request names the capability and the call's subject, and "always" covers the capability.
+  test('a write asks as "edit" with its path as the pattern', () => {
+    const permissions = broker({ edit: 'ask' })
+    void permissions.ask({ tool: 'write', args: { path: 'notes/a.md', content: 'x' } })
+    expect(permissions.list()[0]).toMatchObject({ permission: 'edit', patterns: ['notes/a.md'], always: ['*'] })
+  })
+
+  test('a bash call names its command; a call with no subject names "*"', () => {
+    const permissions = broker({ bash: 'ask', glob: 'ask' })
+    void permissions.ask({ tool: 'bash', args: { command: 'ls -la' } })
+    void permissions.ask({ tool: 'glob', args: { pattern: '*.ts' } })
+    expect(permissions.list().map((request) => [request.permission, request.patterns])).toEqual([
+      ['bash', ['ls -la']],
+      ['glob', ['*']],
+    ])
+  })
+
+  test('"always" on write covers edit, and a deny still wins', () => {
+    const permissions = broker({ edit: { '*.env': 'deny', '*': 'ask' } })
+    void permissions.ask({ tool: 'write', args: { path: 'a.txt' } })
+    permissions.reply(permissions.list()[0]!.id, 'always')
+    expect(permissions.rule('edit', { path: 'b.txt' })).toBe('allow')
+    expect(permissions.rule('write', { path: 'c.txt' })).toBe('allow')
+    expect(permissions.rule('edit', { path: 'apps/.env' })).toBe('deny')
+  })
+
   // B3: the manifest `skills:` grant compiles to `permission.skill`; pi filters its skill list by it.
   test.each([
     ['no policy grants every skill', {}, 'kortix-memory', true],

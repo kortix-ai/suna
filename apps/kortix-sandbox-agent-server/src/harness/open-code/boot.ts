@@ -1,3 +1,4 @@
+import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import { publishOpenCodeEvent } from './event-bus'
 import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-guard'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
@@ -49,8 +50,6 @@ import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import {
   flattenOpencodeError,
-  type PermissionRequest,
-  type QuestionRequest,
   type OpencodeTurnError,
 } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
@@ -771,14 +770,14 @@ async function startSessionRuntime(
       })
     }
   }
-  const onQuestionAsked = (req: QuestionRequest) => {
+  const onQuestionAsked = (req: RuntimeQuestionRequest) => {
     void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
   // Report only: apps/api pushes "needs your approval". The permission itself
-  // stays open for the user (shared/permission-relay.ts).
-  const onPermissionAsked = (req: PermissionRequest) => {
+  // stays open for the user (shared/turn-relay.ts `relayPermission`).
+  const onPermissionAsked = (req: RuntimePermissionRequest) => {
     void relayPermission(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
     )

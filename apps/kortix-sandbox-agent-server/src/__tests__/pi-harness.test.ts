@@ -687,7 +687,7 @@ describe('pi harness', () => {
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
     await waitFor(() => r.service.runtime()!.permissions.list().length === 1)
     const pending = r.service.runtime()!.permissions.list()[0]!
-    expect(asked).toEqual([expect.objectContaining({ id: pending.id, sessionID: root, permission: 'bash', patterns: ['bash'] })])
+    expect(asked).toEqual([expect.objectContaining({ id: pending.id, sessionID: root, permission: 'bash', patterns: ['echo gated'] })])
     r.service.runtime()!.permissions.reply(pending.id, 'once')
     await waitFor(() => !r.service.runtime()!.busy())
   })
@@ -969,7 +969,7 @@ describe('pi harness', () => {
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('failed')
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
-    expect(page.messages.at(-1)!.info.error).toEqual({ name: 'UnknownError', data: { message: 'Stream ended without finish_reason' } })
+    expect(page.messages.at(-1)!.info.error).toEqual({ name: 'UnknownError', data: { message: 'Stream ended without finish_reason' }, code: 'unknown' })
     const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
     expect(state.statuses.value[root]).toEqual({ type: 'idle' })
   })
