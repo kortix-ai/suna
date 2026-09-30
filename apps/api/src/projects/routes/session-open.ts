@@ -13,7 +13,6 @@ import { inspectSandboxRuntime } from '../runtime-inspection';
 import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../session-lifecycle/start-envelope';
 import type {
   OpenSessionArgs,
-  OpenSessionRow,
   OpenSessionRowWithExternalId,
 } from './session-open-context';
 import {
@@ -103,6 +102,7 @@ async function runOpenSession(
 ): Promise<SessionStartResult> {
   const { visible, projectId, sessionId } = args;
   const accountId = visible.row.accountId;
+  let stoppedProviderStatus: SandboxStatus | null = null;
 
   let [row] = await db
     .select()
@@ -130,8 +130,7 @@ async function runOpenSession(
     return existingWake;
   }
 
-  const hibernated = await resumeHibernatedOnOpen(log, row);
-  row = hibernated.row;
+  ({ row, stoppedProviderStatus } = await resumeHibernatedOnOpen(log, row));
 
   const resumedWake = stoppedWakeResult(
     row,
@@ -144,7 +143,7 @@ async function runOpenSession(
     return resumedWake;
   }
 
-  const unusable = await openUnusableRow(args, log, row, hibernated.stoppedProviderStatus);
+  const unusable = await openUnusableRow(args, log, row, stoppedProviderStatus);
   if (unusable) return unusable;
 
   const stale = await openStaleProvisioningRow(args, log, row);
@@ -158,34 +157,15 @@ async function runOpenSession(
 
   // The gate above answers every row still missing its external_id; the
   // established-row phases all read it as set. Narrow once, without a cast.
-  if (!row.externalId) {
-    throw new Error('runOpenSession: established row without external_id');
-  }
+  if (!row.externalId) throw new Error('runOpenSession: established row without external_id');
   const establishedRow = { ...row, externalId: row.externalId };
+  const observed = await observeProviderStatus(args, log, establishedRow, stoppedProviderStatus);
+  const { provider, providerStatus } = observed;
 
-  const observed = await observeProviderStatus(
-    args,
-    log,
-    establishedRow,
-    hibernated.stoppedProviderStatus,
-  );
-
-  const removed = await openRemovedBox(
-    args,
-    log,
-    establishedRow,
-    observed.provider,
-    observed.providerStatus,
-  );
+  const removed = await openRemovedBox(args, log, establishedRow, provider, providerStatus);
   if (removed) return removed;
 
-  const notRunning = await openNotRunningBox(
-    args,
-    log,
-    establishedRow,
-    observed.provider,
-    observed.providerStatus,
-  );
+  const notRunning = await openNotRunningBox(args, log, establishedRow, provider, providerStatus);
   if (notRunning) return notRunning;
 
   return stageRunningOpen(args, log, establishedRow);

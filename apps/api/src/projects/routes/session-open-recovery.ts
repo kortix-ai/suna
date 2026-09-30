@@ -8,7 +8,6 @@ import type { SessionStartResult } from '@kortix/api-contract';
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
-import { type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
 import { runStoppedObservationFollowUp } from '../session-lifecycle/stopped-observation-followup';
 import type { StartCallLog } from '../session-lifecycle/start-envelope';

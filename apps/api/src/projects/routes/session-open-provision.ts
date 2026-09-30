@@ -35,7 +35,6 @@ import type { StopReason } from '../stop-reason';
 import type {
   OpenSessionArgs,
   OpenSessionRow,
-  OpenSessionRowWithExternalId,
 } from './session-open-context';
 import {
   sandboxMetadata,

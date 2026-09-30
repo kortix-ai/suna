@@ -1,7 +1,5 @@
 /** Types shared by the session-open orchestrator and its phase modules. */
 import type { sessionSandboxes } from '@kortix/db';
-import type { SandboxStatus } from '../../platform/providers';
-import type { StartCallLog } from '../session-lifecycle/start-envelope';
 import type { ProjectRow } from '../lib/serializers';
 
 /** The sandbox row the open resolves. `undefined` until the row select ran. */
@@ -29,10 +27,4 @@ export type OpenSessionArgs = {
   };
   projectId: string;
   sessionId: string;
-};
-
-/** What {@link openSession}'s provider observation hands to the later phases. */
-export type ObservedProvider = {
-  provider: ReturnType<typeof import('../../platform/providers').getProvider>;
-  providerStatus: SandboxStatus;
 };

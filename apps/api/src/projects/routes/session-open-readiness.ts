@@ -25,7 +25,6 @@ import {
 import type {
   OpenSessionArgs,
   OpenSessionRow,
-  OpenSessionRowWithExternalId,
 } from './session-open-context';
 import { preserveEstablishedRuntimeOnOpen } from './session-open-provision';
 import {

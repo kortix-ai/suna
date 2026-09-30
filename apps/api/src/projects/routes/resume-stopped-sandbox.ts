@@ -29,7 +29,7 @@ import {
   runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
-import type { OpenSessionArgs, OpenSessionRow } from './session-open-context';
+import type { OpenSessionRow } from './session-open-context';
 
 /**
  * Keys a WAKE CLAIM drops. The readiness clocks are appended, so a re-attempt
