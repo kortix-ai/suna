@@ -83,12 +83,16 @@ function create(env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: PROVISI
 }
 
 function fakeRuntime(opts: { refuse?: string } = {}) {
-  const state = { idle: true, reconfigures: 0, refuse: opts.refuse ?? null }
+  const state = { idle: true, reconfigures: 0, restarts: 0, refuse: opts.refuse ?? null }
   return {
     state,
     idle: () => state.idle,
     async reconfigure() {
       state.reconfigures += 1
+      if (state.refuse) throw new Error(state.refuse)
+    },
+    async restart() {
+      state.restarts += 1
       if (state.refuse) throw new Error(state.refuse)
     },
   }
@@ -346,10 +350,11 @@ describe('pi config releases: convergence', () => {
     expect(releases.skillDirs()).toBeNull()
     expect(existsSync(noticePath)).toBe(false)
     expect(await readBootConfigPointer(root)).toBeNull()
-    expect(runtime.state.reconfigures).toBe(1)
+    // The working tree may carry a pi dir with extensions: only a start reads them.
+    expect(runtime.state.restarts).toBe(1)
     // Already there: nothing to do.
     expect((await releases.converge(runtime)).outcome).toBe('unchanged')
-    expect(runtime.state.reconfigures).toBe(1)
+    expect(runtime.state.restarts).toBe(1)
   })
 
   test('single flight: a second convergence while one runs is refused', async () => {
@@ -361,6 +366,41 @@ describe('pi config releases: convergence', () => {
     const first = releases.converge(runtime, { delayBeforeSwapMs: 50 })
     await expect(releases.converge(runtime)).rejects.toBeInstanceOf(ConvergeBusyError)
     expect((await first).outcome).toBe('applied')
+  })
+
+  test("the release's pi/ is pi's config dir: a pi skill reconfigures, an extension restarts", async () => {
+    write(repo, `${DIR}/pi/extensions/hello.ts`, 'export default function () {}\n')
+    const one = release('deploy', 'from release one')
+    serveRelease(api, one)
+    const { releases } = create()
+    await releases.boot()
+    expect(releases.piConfigDir()).toBe(join(releaseDir(root, one.descriptor.release_id!), 'pi'))
+    const runtime = fakeRuntime()
+
+    write(repo, `${DIR}/pi/skills/native/SKILL.md`, '---\nname: native\ndescription: a pi-native skill\n---\nBody.\n')
+    const two = buildRelease(repo, commitAll(repo, 'pi skill'), DIR, { projectId: 'proj-1', governance: governance('two') })
+    serveRelease(api, two)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+    expect(releases.piConfigDir()).toBe(join(releaseDir(root, two.descriptor.release_id!), 'pi'))
+
+    write(repo, `${DIR}/pi/extensions/hello.ts`, 'export default function () { return 2 }\n')
+    const three = buildRelease(repo, commitAll(repo, 'extension v2'), DIR, { projectId: 'proj-1', governance: governance('two') })
+    serveRelease(api, three)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+  })
+
+  test('a release without pi/ leaves pi no config dir; with releases off pi resolves the working tree', async () => {
+    serveRelease(api, release('deploy', 'from release one'))
+    const on = create()
+    await on.releases.boot()
+    expect(on.releases.piConfigDir()).toBeNull()
+
+    api.respond(FEATURE_DISABLED)
+    const off = create()
+    await off.releases.boot()
+    expect(off.releases.piConfigDir()).toBeUndefined()
   })
 
   test('no runtime yet: nothing to apply, and it says so', async () => {

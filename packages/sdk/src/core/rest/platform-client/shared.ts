@@ -8,6 +8,7 @@
 
 import { platformConfig } from '../../http/config';
 import { safeEnv } from '../../http/env';
+import { stripTrailingSlashes } from '../../../platform/strings';
 import {
   listProjectSessions,
   listProjects,
@@ -34,6 +35,12 @@ export function getPlatformUrl(): string {
 
   // Fallback for local dev
   return 'http://localhost:8008/v1';
+}
+
+/** Backend URL → platform API base: trailing slashes stripped, `/v1` appended when absent. */
+export function platformApiBase(backendUrl: string): string {
+  const base = stripTrailingSlashes(backendUrl);
+  return base.endsWith('/v1') ? base : `${base}/v1`;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,11 +80,7 @@ export const LOCAL_PLATFORM_CANDIDATES = [
 ];
 
 export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
-  // quadratically on adversarial input (CodeQL js/polynomial-redos).
-  let end = baseUrl.length;
-  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* '/' */) end--;
-  return `${baseUrl.slice(0, end)}/platform/local-bridge/status`;
+  return `${stripTrailingSlashes(baseUrl)}/platform/local-bridge/status`;
 }
 
 function normalizeSessionStatus(status: string | undefined): string {

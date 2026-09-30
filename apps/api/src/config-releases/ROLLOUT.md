@@ -2,8 +2,10 @@
 
 Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
-`/workspace` checkout. Both session runtimes apply them: OpenCode swaps in a
-proven replacement process, pi reloads the release in place. Full contract:
+`/workspace` checkout. A release is the OpenCode config dir, the root
+`skills/`, and the pi config dir as `pi/` (`builder.ts`, `composeReleaseTree`).
+Both session runtimes apply them: OpenCode swaps in a proven replacement
+process, pi reloads the release in place. Full contract:
 `apps/api/src/config-releases/`,
 `apps/kortix-sandbox-agent-server/src/services/config-release/`,
 `apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`,

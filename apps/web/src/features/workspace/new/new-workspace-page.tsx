@@ -23,13 +23,13 @@ import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
-  filterCreatableAccounts,
   isForeignAccountList,
   isSubmittable,
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
 import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
 import {
@@ -228,7 +228,7 @@ export function NewWorkspacePage() {
   // here; the result feeds both `AccountPicker` and `isSubmittable` below —
   // never the raw list to one and this to the other, which would let "what
   // the user can pick" and "what gates submit" disagree.
-  const creatableAccounts = filterCreatableAccounts(accounts);
+  const creatableAccounts = useCreatableAccounts(accounts);
 
   // `user?.id` is `string | undefined`; the identity helpers below require an
   // explicit `string | null` — an omitted/undefined argument used to compile

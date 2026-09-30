@@ -15,9 +15,12 @@
  * restart, so no turn ends. A turn in flight still defers the apply, because a
  * reconfigure mid-turn would change the model, policy and prompt under it.
  *
- * pi reads agents from the compiled governance and skills from `skills/`. The
- * rest of a release (the OpenCode config dir's `opencode.json`, `tools/`,
- * `plugins/`) is OpenCode's and pi ignores it.
+ * pi reads agents from the compiled governance, skills from `skills/`, and its
+ * own config dir from `pi/` (the repository's `pi.config_dir`, `harnesses/pi`
+ * or `.kortix/pi`: skills, extensions, prompts, `settings.json`). The rest of a
+ * release (`opencode.json`, `tools/`, `plugins/`) is OpenCode's and pi ignores
+ * it. Extensions, prompts and settings are read when the runtime starts, so a
+ * release that changes them restarts the runtime in place, while it is idle.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -71,6 +74,8 @@ export interface PiReleaseRuntime {
   idle(): boolean
   /** Re-read the env and the skill directories. Throws when the runtime cannot take the config. */
   reconfigure(): Promise<unknown>
+  /** Stop and start in place: everything is re-read, the transcript is restored. Throws when start fails. */
+  restart(): Promise<unknown>
 }
 
 interface RunningConfig extends ConfigReleaseReport {
@@ -115,6 +120,12 @@ export interface PiConfigReleases {
    * overlay. Null while releases are not in play: pi then reads the working tree.
    */
   skillDirs(): string[] | null
+  /**
+   * The pi-native config dir the running config decides: `<release>/pi`, or
+   * null when the running config has none. Undefined while releases are not
+   * in play: pi then resolves the working tree's.
+   */
+  piConfigDir(): string | null | undefined
   /** The notice text for the system prompt, or null when no release runs. */
   notice(): string | null
   /** True once a release owns the compiled governance: a `/kortix/env` push of it is dropped. */
@@ -136,6 +147,15 @@ export interface PiConfigReleases {
  */
 export function piReleaseSourcePaths(configDir: string | null): string[] {
   return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills']
+}
+
+/** The release's pi-native files that only a runtime start reads: everything under `pi/` except its skills. */
+function startOnlyFiles(files: readonly (readonly string[])[] | null): string {
+  return (files ?? [])
+    .filter(([path]) => path!.startsWith('pi/') && !path!.startsWith('pi/skills/'))
+    .map(([path, , blob]) => `${path}:${blob}`)
+    .sort()
+    .join('\n')
 }
 
 /** A release's compiled governance must parse to a config object. Null governance keeps the running one. */
@@ -382,19 +402,31 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     runtime: PiReleaseRuntime,
     next: RunningConfig,
     governance: { value: string | null; etag: string | null },
+    restart = false,
   ): Promise<string | null> {
     const previous = current
     const restoreGovernance = deliverGovernance(governance.value, governance.etag, env)
+    const load = () => (restart ? runtime.restart() : runtime.reconfigure())
     setCurrent(next)
     try {
-      await runtime.reconfigure()
+      await load()
+      if (restart) logger.info('[pi-config] the release changes pi extensions, prompts or settings; the runtime restarted in place')
       return null
     } catch (err) {
       restoreGovernance()
       setCurrent(previous)
-      await runtime.reconfigure().catch(() => undefined)
+      await load().catch(() => undefined)
       return err instanceof Error ? err.message : String(err)
     }
+  }
+
+  /** The start-only pi files the runtime loaded: the running release's, or the working tree's pi dir. */
+  async function loadedStartOnlyFiles(): Promise<string | null> {
+    if (current.source === 'release' && current.release_id) {
+      return startOnlyFiles((await readReleaseManifest(root, current.release_id))?.files ?? null)
+    }
+    // Off the release path the working tree's pi dir may hold extensions: unknown, so restart.
+    return current.source === 'workspace' ? null : ''
   }
 
   /** Record why the box keeps its running config instead of `releaseId`. The first reason for a release stays. */
@@ -414,7 +446,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     if (!runtime.idle()) return respond('failed', 'a turn is running; the revert waits for the next trigger')
     clearNotice()
     // Governance is not touched: with the flag off the API pushes it itself.
-    const refused = await swap(runtime, { ...WORKSPACE, proven: true }, { value: null, etag: null })
+    // The working tree may carry a pi dir of its own: a restart loads whatever it holds.
+    const refused = await swap(runtime, { ...WORKSPACE, proven: true }, { value: null, etag: null }, true)
     if (refused) return respond('declined', refused)
     await deactivateBootConfig(root)
     logger.info('[pi-config] disabled for this project; pi reverted to the working tree')
@@ -455,6 +488,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
         return respond('declined', problem)
       }
       if (!runtime.idle()) return busy()
+      const loaded = await loadedStartOnlyFiles()
       const refused = await swap(
         runtime,
         {
@@ -469,6 +503,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           dir: null,
         },
         governance,
+        loaded !== '',
       )
       if (refused) {
         recordKeptFailure(releaseId, refused)
@@ -518,6 +553,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     // The download took time; a prompt may have arrived. Ask again right before the swap.
     if (!runtime.idle()) return busy()
 
+    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest.files)
     writeNotice(manifest, dir)
     const refused = await swap(
       runtime,
@@ -533,6 +569,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
         dir,
       },
       governance,
+      restart,
     )
     if (refused) {
       // The notice must name what runs: put back the previous release's, or none.
@@ -555,6 +592,11 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     skillDirs: () => {
       if (current.source === 'workspace') return null
       return current.dir ? [join(current.dir, 'skills')] : []
+    },
+    piConfigDir: () => {
+      if (current.source === 'workspace') return undefined
+      const dir = current.dir ? join(current.dir, 'pi') : null
+      return dir && existsSync(dir) ? dir : null
     },
     notice: () => {
       if (current.source !== 'release') return null

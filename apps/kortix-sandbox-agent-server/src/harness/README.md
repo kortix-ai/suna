@@ -125,10 +125,13 @@ With the project's `config_releases` flag on, pi runs the base branch's
 current config release, exactly as OpenCode does (`pi/config-release.ts`,
 contract in `services/config-release/`). A release is the same archive under
 `/opt/kortix/config/<release_id>`, verified against its Git blob IDs and
-sealed read-only. pi reads two things from it: the compiled governance
-(`KORTIX_COMPILED_AGENT_CONFIG`, the agents) and `skills/`. The rest of the
-archive (`opencode.json`, `tools/`, `plugins/`) is OpenCode's and pi ignores
-it, so a commit that breaks only those files is a working config on pi.
+sealed read-only. pi reads three things from it: the compiled governance
+(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/`, and `pi/`, its own
+config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`: skills,
+extensions, prompts, `settings.json`), which the API composes into the release.
+The rest of the archive (`opencode.json`, `tools/`, `plugins/`) is OpenCode's
+and pi ignores it, so a commit that breaks only those files is a working config
+on pi.
 
 - **Boot.** `runPi` starts the choice beside the repository checkout, and
   `lifecycle.start()` waits for it: the desired release, then the last release
@@ -137,8 +140,11 @@ it, so a commit that breaks only those files is a working config on pi.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
   into the runtime's env, the skill directory moves to `<release>/skills`, and
-  `PiRuntime.reconfigure()` re-reads both. Nothing restarts, so the answer
-  carries `reload: null`. A turn in flight, or one admitted behind it
+  `PiRuntime.reconfigure()` re-reads both. A release that changes anything
+  under `pi/` other than its skills (extensions, prompts, settings, which only
+  a start reads) restarts the runtime in place instead: the same root, the
+  transcript restored. Nothing else restarts, and the answer carries
+  `reload: null` either way. A turn in flight, or one admitted behind it
   (`PiRuntime.idle()`), defers the apply; it is asked again after the download,
   right before the swap. A runtime that refuses the config keeps the previous
   one, and the release is quarantined on the box.
@@ -147,9 +153,9 @@ it, so a commit that breaks only those files is a working config on pi.
   owns the governance, a `/kortix/env` push of `KORTIX_COMPILED_AGENT_CONFIG`
   is dropped. The session notice (`/tmp/kortix/config-release.md`) is part of
   pi's system prompt while a release runs.
-- **Not in a release.** pi packages (`harnesses.pi.packages`) and repo-local
-  `.pi/extensions` load when the runtime starts, as before. A change to them
-  reaches a session at its next boot or restart.
+- **Not in a release.** npm pi packages (`harnesses.pi.packages`) and pi's own
+  `<workspace>/.pi/extensions` discovery load when the runtime starts, as
+  before. A change to them reaches a session at its next boot or restart.
 
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.

@@ -1872,10 +1872,13 @@ harnessFlow(
 
       await ctx.step('a skill merged to the base branch reaches the running session', async () => {
         const before = String((await releaseOf())?.running_release_id ?? '');
+        const skill = (name: string) => `---\nname: ${name}\ndescription: merged while the session ran\n---\nUse it when asked.\n`;
+        // pi also reads its own config dir (`.kortix/pi` here), which a release carries as `pi/`.
+        const expected = harness === 'pi' ? ['cfg-merged-skill', 'cfg-pi-native-skill'] : ['cfg-merged-skill'];
         await fixture.commit(
           {
-            '.kortix/opencode/skills/cfg-merged-skill/SKILL.md':
-              '---\nname: cfg-merged-skill\ndescription: merged while the session ran\n---\nUse it when asked.\n',
+            '.kortix/opencode/skills/cfg-merged-skill/SKILL.md': skill('cfg-merged-skill'),
+            ...(harness === 'pi' ? { '.kortix/pi/skills/cfg-pi-native-skill/SKILL.md': skill('cfg-pi-native-skill') } : {}),
           },
           'merge a skill',
         );
@@ -1891,9 +1894,10 @@ harnessFlow(
         });
         const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/skill'));
         r.status(200);
-        const names = r.json<Array<{ name: string }>>().map((skill) => skill.name);
-        if (!names.includes('cfg-merged-skill')) {
-          throw new Error(`the running session does not list the merged skill: ${names.join(', ')}`);
+        const names = r.json<Array<{ name: string }>>().map((entry) => entry.name);
+        const missing = expected.filter((name) => !names.includes(name));
+        if (missing.length > 0) {
+          throw new Error(`the running session does not list ${missing.join(', ')}: ${names.join(', ')}`);
         }
       });
 

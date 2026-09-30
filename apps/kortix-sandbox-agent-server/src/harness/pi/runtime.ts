@@ -26,7 +26,7 @@ import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { PiConfig } from './config'
-import { resolvePiSkillDirectories } from './config'
+import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
@@ -173,7 +173,7 @@ export interface PiRuntimeOptions {
   hooks?: PiRuntimeHooks
   env?: NodeJS.ProcessEnv
   /** The config release the runtime reads skills and the session notice from (config-release.ts). */
-  releases?: Pick<PiConfigReleases, 'skillDirs' | 'notice'>
+  releases?: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'>
 }
 
 /** A child session a system extension spawned (a subagent). Lives beside the root, never in its transcript. */
@@ -238,7 +238,7 @@ export class PiRuntime {
   private readonly env: NodeJS.ProcessEnv
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
-  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'notice'> | null
+  private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'> | null
   private readonly clock = new WireIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
@@ -429,6 +429,7 @@ export class PiRuntime {
       const extensionsStartedAt = performance.now()
       const project = await this.projectPackages(host, prebuiltRoot)
       this.pi = await host.createPiSession({
+        projectConfigDir: await this.projectConfigDir(),
         agent,
         ref: this.runner,
         cwd: this.workspace,
@@ -1021,9 +1022,15 @@ export class PiRuntime {
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
   }
 
+  /** The pi-native config dir: the release's `pi/` while a release runs, else the working tree's. */
+  private async projectConfigDir(): Promise<string | null> {
+    const released = this.releases?.piConfigDir()
+    return released !== undefined ? released : resolvePiProjectConfigDir(this.cfg)
+  }
+
   private async loadSkills(load: typeof import('@earendil-works/pi-agent-core').loadSkills): Promise<Skill[]> {
     if (!this.executionEnv) return []
-    const dirs = resolvePiSkillDirectories(this.cfg, this.releases?.skillDirs() ?? null).filter((dir) => existsSync(dir))
+    const dirs = resolvePiSkillDirectories(this.cfg, await this.projectConfigDir(), this.releases?.skillDirs() ?? null).filter((dir) => existsSync(dir))
     if (dirs.length === 0) return []
     try {
       const { BACKGROUND_CONTEXT } = await import('@earendil-works/pi-agent-core/harness/context')

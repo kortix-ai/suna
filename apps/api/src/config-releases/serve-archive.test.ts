@@ -271,3 +271,33 @@ describe('serveConfigArchive — a composed release tree (root skills/)', () => 
     ).toBe(404);
   });
 });
+
+describe('serveConfigArchive — a composed release tree (the pi config dir alone)', () => {
+  test('rebuilds a release that differs from the config dir only by pi/ from its commit', async () => {
+    // No root skills: the pi config dir alone makes the tree a composed one.
+    git('rm', '-rq', 'skills');
+    mkdirSync(join(repo, 'harnesses/pi/extensions'), { recursive: true });
+    writeFileSync(join(repo, 'harnesses/pi/extensions/guard.ts'), 'export default () => {}\n');
+    git('add', '-A');
+    git('commit', '-qm', 'pi config dir only');
+    const piCommit = git('rev-parse', 'HEAD');
+    const resolved = await resolveReleaseTreeSource(repo, project, piCommit);
+    if (!('source' in resolved)) throw new Error(resolved.reason);
+    expect(resolved.source.rootSkills).toEqual([]);
+    expect(resolved.source.piTree).not.toBeNull();
+    const read = await readComposedRelease(repo, resolved.source, { archive: false });
+    expect(read.files.map(([path]) => path)).toEqual(['opencode.jsonc', 'pi/extensions/guard.ts']);
+
+    const m = mirrors();
+    const response = await serveConfigArchive(
+      project,
+      read.treeId,
+      m.mirror,
+      m.forced,
+      { store: new MemoryConfigArchiveStore(), ...PRIVATE },
+      piCommit,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Kortix-Config-Archive-Source')).toBe('mirror');
+  });
+});

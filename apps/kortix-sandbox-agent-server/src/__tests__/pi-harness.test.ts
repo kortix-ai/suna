@@ -1129,6 +1129,27 @@ function systemSent(messages: Array<{ role: string; content: unknown }>): string
     .join('\n')
 }
 
+describe('pi project config', () => {
+  test('loads .kortix/pi native extensions and skills on the daemon HTTP surface', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        const dir = join(workspace, '.kortix', 'pi')
+        mkdirSync(join(dir, 'extensions'), { recursive: true })
+        mkdirSync(join(dir, 'skills', 'native'), { recursive: true })
+        writeFileSync(join(dir, 'extensions', 'native.ts'), `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\nNATIVE PI' }))`)
+        writeFileSync(join(dir, 'skills', 'native', 'SKILL.md'), '---\nname: native\ndescription: Native Pi skill\n---\nDo it.\n')
+      },
+    })
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+    expect(skills.map((skill) => skill.name)).toContain('native')
+    expect(r.service.runtime()!.extensionStatus().loaded.some((name) => name.endsWith('/.kortix/pi/extensions/native.ts'))).toBe(true)
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'hello')
+    expect(gateway.sent.slice(sentBefore).map(systemSent).some((prompt) => prompt.includes('NATIVE PI'))).toBe(true)
+  })
+})
+
 describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     const r = await boot({
@@ -1801,6 +1822,51 @@ describe('config releases on pi', () => {
     expect(after.config_dir_sha).toBe(two.descriptor.source_commit)
     const again = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
     expect(again).toMatchObject({ ok: true, outcome: 'unchanged' })
+  })
+
+  test("the release's pi dir replaces the working tree's; a new extension reaches the session by an in-place restart", async () => {
+    const extension = (marker: string) =>
+      `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\n${marker}' }))\n`
+    write(repo, '.kortix/opencode/pi/extensions/native.ts', extension('RELEASED-PI-V1'))
+    write(repo, '.kortix/opencode/pi/skills/released-native/SKILL.md', '---\nname: released-native\ndescription: pi skill from the base branch\n---\nDo it.\n')
+    const one = releaseWith('deploy', 'RELEASE-ONE')
+    serveRelease(api, one)
+    const r = await boot({
+      script: [{ text: 'first' }, { text: 'second' }],
+      env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
+      releases: { root: join(dir, 'store'), noticePath: join(dir, 'notice.md') },
+      prepare: (workspace) => {
+        // The session's checkout has a pi dir of its own; a release must not read it.
+        const own = join(workspace, '.kortix', 'pi')
+        mkdirSync(join(own, 'extensions'), { recursive: true })
+        mkdirSync(join(own, 'skills', 'workspace-native'), { recursive: true })
+        writeFileSync(join(own, 'extensions', 'native.ts'), extension('WORKSPACE-PI'))
+        writeFileSync(join(own, 'skills', 'workspace-native', 'SKILL.md'), '---\nname: workspace-native\ndescription: w\n---\nx\n')
+      },
+    })
+    const root = r.service.runtime()!.rootId
+    const names = async () => (await skillsOf(r)).map(([name]) => name)
+    expect(await names()).toContain('released-native')
+    expect(await names()).not.toContain('workspace-native')
+    const loaded = () => r.service.runtime()!.extensionStatus().loaded
+    expect(loaded().some((path) => path.startsWith(join(dir, 'store')) && path.endsWith('/pi/extensions/native.ts'))).toBe(true)
+    expect(loaded().some((path) => path.includes('/.kortix/pi/'))).toBe(false)
+    const first = await ask(r, 'first question')
+    expect(first).toContain('RELEASED-PI-V1')
+    expect(first).not.toContain('WORKSPACE-PI')
+
+    write(repo, '.kortix/opencode/pi/extensions/native.ts', extension('RELEASED-PI-V2'))
+    serveRelease(api, releaseWith('deploy', 'RELEASE-TWO'))
+    const converged = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
+    expect(converged).toMatchObject({ ok: true, outcome: 'applied', reload: null })
+    expect(r.service.runtime()!.rootId).toBe(root)
+    const second = await ask(r, 'second question')
+    expect(second).toContain('RELEASED-PI-V2')
+    expect(second).not.toContain('RELEASED-PI-V1')
+    expect(second).toContain('RELEASE-TWO')
+    // The restart restored the transcript: both turns are still there.
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
   })
 
   test('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {

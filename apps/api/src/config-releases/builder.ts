@@ -12,7 +12,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { config } from '../config';
-import { SKILLS_DIR } from '@kortix/manifest-schema';
+import { SKILLS_DIR, piConfigDirCandidates } from '@kortix/manifest-schema';
 import { execFileAsync, refreshMirror, runGitCapture, spawn } from '../projects/git/mirror';
 import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
@@ -256,10 +256,10 @@ async function archiveTree(
  * What a config release tree is made of at one commit.
  *
  * The OpenCode config dir, plus the skills of the root `skills/` dir (the
- * harness-neutral project layout, `@kortix/manifest-schema/layout`). A root
- * skill replaces a config-dir skill of the same name. Only a
- * root entry that holds a `SKILL.md` counts, so an unrelated `skills/` folder
- * in a code repository adds nothing.
+ * harness-neutral project layout, `@kortix/manifest-schema/layout`), plus the
+ * pi config dir as `pi/`. A root skill replaces a config-dir skill of the same
+ * name. Only a root entry that holds a `SKILL.md` counts, so an unrelated
+ * `skills/` folder in a code repository adds nothing.
  */
 export interface ReleaseTreeSource {
   configDir: string;
@@ -267,6 +267,20 @@ export interface ReleaseTreeSource {
   configTree: string;
   /** Root `skills/` entries, as `git ls-tree -z` records, that hold a SKILL.md. */
   rootSkills: string[];
+  /** The pi config dir's tree ID (`piConfigDirCandidates`), or null when the commit has none. */
+  piTree: string | null;
+}
+
+/** The pi config dir's place in a release: pi reads `<release>/pi`; OpenCode ignores it. */
+export const PI_RELEASE_DIR = 'pi';
+
+/**
+ * Is the release tree composed, rather than the config dir's own tree? A
+ * composed tree exists in no mirror: its archive URL carries the commit, and
+ * the archive route rebuilds it from there.
+ */
+export function isComposedSource(source: ReleaseTreeSource): boolean {
+  return source.rootSkills.length > 0 || source.piTree !== null;
 }
 
 /** `git ls-tree -z <tree>`: the tree's records, keyed by entry name. */
@@ -328,26 +342,43 @@ async function mktree(repo: string, env: Record<string, string>, records: string
 
 /**
  * The release tree ID of `source`, written into `repo` (a scratch repository
- * that reads the mirror through alternates). With no root skills it is the
- * config dir's own tree, so a project on the legacy layout keeps its tree ID,
- * its release ID and its archive bytes exactly.
+ * that reads the mirror through alternates). With no root skills and no pi
+ * config dir it is the config dir's own tree, so a project on the legacy
+ * layout keeps its tree ID, its release ID and its archive bytes exactly.
  */
 export async function composeReleaseTree(
   repo: string,
   env: Record<string, string>,
   source: ReleaseTreeSource,
 ): Promise<string> {
-  if (source.rootSkills.length === 0) return source.configTree;
+  if (!isComposedSource(source)) return source.configTree;
   const top = await treeRecords(repo, source.configTree, env);
-  const skills = new Map<string, string>();
-  const configSkills = top.get(SKILLS_DIR);
-  if (configSkills && configSkills.split(' ')[1] === 'tree') {
-    const configSkillsTree = configSkills.slice(0, configSkills.indexOf('\t')).split(' ')[2]!;
-    for (const [name, record] of await treeRecords(repo, configSkillsTree, env)) skills.set(name, record);
+  if (source.rootSkills.length > 0) {
+    const skills = new Map<string, string>();
+    const configSkills = top.get(SKILLS_DIR);
+    if (configSkills && configSkills.split(' ')[1] === 'tree') {
+      const configSkillsTree = configSkills.slice(0, configSkills.indexOf('\t')).split(' ')[2]!;
+      for (const [name, record] of await treeRecords(repo, configSkillsTree, env)) skills.set(name, record);
+    }
+    for (const record of source.rootSkills) skills.set(record.slice(record.indexOf('\t') + 1), record);
+    top.set(SKILLS_DIR, `040000 tree ${await mktree(repo, env, [...skills.values()])}\t${SKILLS_DIR}`);
   }
-  for (const record of source.rootSkills) skills.set(record.slice(record.indexOf('\t') + 1), record);
-  top.set(SKILLS_DIR, `040000 tree ${await mktree(repo, env, [...skills.values()])}\t${SKILLS_DIR}`);
+  // Replaces a `pi/` folder of the OpenCode config dir, which no reader loads.
+  if (source.piTree) top.set(PI_RELEASE_DIR, `040000 tree ${source.piTree}\t${PI_RELEASE_DIR}`);
   return mktree(repo, env, [...top.values()]);
+}
+
+/** The first `piConfigDirCandidates` entry that is a tree at `commit`, or null. */
+export async function resolvePiConfigTree(
+  mirror: string,
+  commit: string,
+  manifest: Record<string, unknown> | null,
+): Promise<string | null> {
+  for (const dir of piConfigDirCandidates(manifest)) {
+    const tree = await resolveConfigTreeId(mirror, commit, dir);
+    if (tree) return tree;
+  }
+  return null;
 }
 
 /** Compose the release tree of `source` in a scratch repository and read it there. */
@@ -381,7 +412,14 @@ export async function resolveReleaseTreeSource(
   if (!configDir) return { configDir: null, reason: 'the commit has no OpenCode config dir' };
   const configTree = await resolveConfigTreeId(mirror, commit, configDir);
   if (!configTree) return { configDir, reason: `config dir ${configDir} is not a tree at ${commit}` };
-  return { source: { configDir, configTree, rootSkills: await rootSkillRecords(mirror, commit) } };
+  return {
+    source: {
+      configDir,
+      configTree,
+      rootSkills: await rootSkillRecords(mirror, commit),
+      piTree: await resolvePiConfigTree(mirror, commit, manifest),
+    },
+  };
 }
 
 /**
@@ -544,7 +582,7 @@ async function build(
   }
   const { source } = resolved;
   const configDir = source.configDir;
-  const composed = source.rootSkills.length > 0;
+  const composed = isComposedSource(source);
 
   let treeId = source.configTree;
   let files: ConfigReleaseFile[] | null = null;
@@ -566,7 +604,7 @@ async function build(
         ...withGovernance,
         config_dir: configDir,
         config_tree_id: composed ? null : treeId,
-        reason: `config dir ${configDir}${composed ? ` with ${SKILLS_DIR}/` : ''} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`,
+        reason: `config dir ${configDir}${composed ? ` with ${SKILLS_DIR}/ and the pi config dir` : ''} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`,
       };
     }
     throw error;

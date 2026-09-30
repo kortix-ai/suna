@@ -815,6 +815,19 @@ function FeatureFlagsPage({
   );
 }
 
+const sessionName = (s: ProjectSession) =>
+  s.name ||
+  (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
+  s.branch_name ||
+  s.session_id.slice(0, 8);
+
+export function sessionMatchesPaletteQuery(session: ProjectSession, query: string): boolean {
+  return (
+    sessionName(session).toLowerCase().includes(query) ||
+    session.session_id.toLowerCase().startsWith(query)
+  );
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -1400,12 +1413,6 @@ export function CommandPalette() {
     [projectId, openProjectTab, router, close],
   );
 
-  const sessionName = (s: ProjectSession) =>
-    s.name ||
-    (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
-    s.branch_name ||
-    s.session_id.slice(0, 8);
-
   /**
    * Every workspace the user can switch to, in the sidebar's order — active
    * account first, then alphabetical, most-recently-opened first inside each.
@@ -1474,7 +1481,7 @@ export function CommandPalette() {
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
     if (!q) return sorted.slice(0, 50);
     // Instant local matches first, then the server's answer for the rest.
-    const local = sorted.filter((s) => sessionName(s).toLowerCase().includes(q));
+    const local = sorted.filter((s) => sessionMatchesPaletteQuery(s, q));
     const seen = new Set(local.map((s) => s.session_id));
     const remote = serverSessionMatches.filter((s) => !seen.has(s.session_id));
     return [...local, ...remote].slice(0, 50);

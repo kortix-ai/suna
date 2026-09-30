@@ -73,6 +73,7 @@ export {
   legacyConfigDir,
   manifestOpencodeConfigDir,
   opencodeConfigDirCandidates,
+  piConfigDirCandidates,
   safeAgentFile,
   safeRepoPath,
   skillDirs,
@@ -343,6 +344,7 @@ function validateManifestBodyV2(
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
   validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateOpenCode(parsed.pi, 'pi', issues);
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);

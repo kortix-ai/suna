@@ -59,7 +59,7 @@ The platform never writes `/workspace` to do this. `/workspace` stays the full c
 
 The unit a session runs is a **config release**: one archive of the OpenCode config directory (`harnesses/opencode` unless the manifest sets `opencode.config_dir`) and the root `skills/` at a base commit, plus the agent config the API compiles from `kortix.yaml` and the agent files. A project created before 2026-09 uses `.kortix/opencode`, which also holds its agents and skills. The release ID covers both halves. A commit that changes neither produces the same release ID, so nothing restarts.
 
-Both session runtimes run config releases. OpenCode reads the whole archive. pi reads the agents, from the compiled agent config, and `skills/`. The OpenCode files in the archive (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session.
+Both session runtimes run config releases. OpenCode reads the whole archive. pi reads the agents, from the compiled agent config, `skills/`, and its own config directory: `pi.config_dir` in the manifest, else `harnesses/pi`, else `.kortix/pi`. The release carries that directory as `pi/`, so pi's skills, extensions, prompts, and `settings.json` also come from the base branch. The OpenCode files in the archive (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session.
 
 Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
 
@@ -67,7 +67,7 @@ Convergence never ends a turn. A turn that is already running blocks it, and the
 
 1. The box asks the API which release it should run. The request carries no inputs: the answer is always the base branch's current release for that session.
 2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there. pi reads its skills from there.
-3. On OpenCode, the daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. On pi, the runtime runs inside the daemon, so the daemon loads the new config in place. Nothing restarts. A config that pi does not accept leaves the previous config running. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
+3. On OpenCode, the daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. On pi, the runtime runs inside the daemon, so the daemon loads the new config in place. A release that changes pi extensions, prompts, or settings restarts the pi runtime in place, while no turn runs; the conversation continues. A config that pi does not accept leaves the previous config running. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
 
 #### `/workspace` is where you edit, the base branch is what runs
 
