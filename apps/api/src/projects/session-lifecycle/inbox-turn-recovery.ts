@@ -2,7 +2,8 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { clearSandboxTurn, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { clearSandboxTurn } from '../sandbox-turn-lifecycle';
+import { storedSandboxTurns } from '../session-turn-ledger';
 import { observeSandboxTurn } from '../sandbox-turn-observation';
 
 type Box = Pick<typeof sessionSandboxes.$inferSelect, 'sessionId' | 'sandboxId' | 'externalId' | 'provider' | 'metadata'>;

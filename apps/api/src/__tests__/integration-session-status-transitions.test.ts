@@ -231,7 +231,6 @@ describe('stop (applyStoppedState)', () => {
     for (const key of [
       'runtimeWakeId',
       'runtimeWakeStartedAt',
-      'activeTurn',
       'activeTurns',
       'lifecycleStopClaim',
       'pendingStopObservedAtMs',

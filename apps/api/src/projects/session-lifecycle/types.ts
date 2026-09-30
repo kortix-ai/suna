@@ -145,6 +145,10 @@ export interface ContinueSessionCommand {
   noReply?: boolean;
   /** Skip legacy first-message repair only for the pending-first row itself. */
   isPendingFirstPrompt?: boolean;
+  /** `userId` is the person who sent this prompt: the session token acts as
+   *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
+   *  route for a non-agent caller; absent keeps the token's identity. */
+  bindTurnIdentity?: boolean;
 }
 
 /** JSON metadata used to gate the one-time repair of pre-materialization prompts. */

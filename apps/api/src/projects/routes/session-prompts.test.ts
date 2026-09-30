@@ -332,11 +332,15 @@ mock.module('../lib/agent-access', () => ({
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
-mock.module('../sandbox-turn-lifecycle', () => ({
-  ...realTurnLifecycle,
+const realTurnLedger = await import('../session-turn-ledger');
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
     stopLog.push(['stamp', sessionId, name, scope]);
   },
+}));
+mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
 }));
 mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   ...realHoldSettle,

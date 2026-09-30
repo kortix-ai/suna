@@ -37,7 +37,7 @@ export async function abortRuntimeTurn(
     if (!resolved) return false;
     if (opts.requestedStop) {
       try {
-        const { markTurnStopRequested } = await import('../sandbox-turn-lifecycle');
+        const { markTurnStopRequested } = await import('../session-turn-ledger');
         await markTurnStopRequested(sessionId, 'UserStop', {
           opencodeSessionId: resolved.opencodeSessionId,
         });

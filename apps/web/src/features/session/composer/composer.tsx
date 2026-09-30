@@ -47,6 +47,11 @@ import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-ac
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
 import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
+import {
+  ComposerAboveCard,
+  type ComposerAboveCardDerived,
+} from './ComposerAboveCard';
+import { ComposerCard, type ComposerCardDerived } from './ComposerCard';
 
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
@@ -417,11 +422,11 @@ export const COMPOSER_INPUT_SLOT_CLASS =
   'bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden';
 
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
-const EMPTY_AGENTS: Agent[] = [];
-const EMPTY_COMMANDS: Command[] = [];
-const EMPTY_MODELS: FlatModel[] = [];
-const EMPTY_VARIANTS: string[] = [];
-const EMPTY_SLASH_FILES: SlashFile[] = [];
+export const EMPTY_AGENTS: Agent[] = [];
+export const EMPTY_COMMANDS: Command[] = [];
+export const EMPTY_MODELS: FlatModel[] = [];
+export const EMPTY_VARIANTS: string[] = [];
+export const EMPTY_SLASH_FILES: SlashFile[] = [];
 const NO_QUOTE_REQUESTS: readonly QuoteRequest[] = [];
 
 /** Stable identities for the command-chip subscription below. */
@@ -429,14 +434,6 @@ const NO_SUBSCRIPTION = () => {};
 const NO_COMMAND_CHIP = () => null;
 
 const EMPTY_DOCUMENT = textToDocument('');
-
-const ComposerEditorLazy = lazy(() =>
-  import('./editor/composer-editor').then((mod) => ({ default: mod.ComposerEditor })),
-);
-
-function ComposerEditorFallback() {
-  return <div className="min-h-[1.5em]" aria-hidden />;
-}
 
 function setDocumentWithoutStealingFocus(
   handle: ComposerEditorHandle | null,
@@ -452,7 +449,8 @@ function setDocumentWithoutStealingFocus(
   }
 }
 
-function ComposerImpl({
+function ComposerImpl(props: SessionChatInputProps) {
+  const {
   onSend,
   promptAttachments: hostPromptAttachments,
   isBusy = false,
@@ -513,7 +511,7 @@ function ComposerImpl({
   onQuestionAction,
   escCount = 0,
   parentClassName,
-}: SessionChatInputProps) {
+  } = props;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tModelGate = useTranslations('sessionUi.modelGate');
   const tComposerAttachments = useTranslations('hardcodedUi.composerAttachments');
@@ -589,7 +587,6 @@ function ComposerImpl({
 
   useMenuRevalidation(menuOpen, projectId);
 
-  const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
   const savedDocBeforeQuestionRef = useRef<JSONContent | null>(null);
@@ -664,7 +661,6 @@ function ComposerImpl({
   );
 
   const editorDisabled = disabled || lockForApproval;
-  const inlineUnderbar = underbarPlacement === 'inline';
 
   const appendAttachedFiles = useCallback(
     (files: Iterable<File>) => {
@@ -1706,6 +1702,58 @@ function ComposerImpl({
    */
   const showQueueStrip = Boolean(inputSlot);
 
+  const cardProps: ComposerCardDerived = {
+    tHardcodedUi,
+    isDragOver,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDropFiles,
+    attachedFiles,
+    promptAttachmentItems,
+    removeAttachedFile,
+    retryAttachedFile,
+    commandAttachmentPlan,
+    editorDisabled,
+    editorRef,
+    setEditorRef,
+    editorPlaceholder,
+    animatePlaceholder,
+    handleSubmit,
+    handleArrowUpAtStart,
+    setIsEmpty,
+    handleDocChange,
+    allSessions,
+    slashActions,
+    handleSelectAction,
+    dockId,
+    setMenuOpen,
+    fileInputRef,
+    handleFileSelect,
+    handleAttachClick,
+    primaryAgents,
+    availableSelectedModel,
+    modelMenuOpen,
+    setModelMenuOpen,
+    reasoningMenuOpen,
+    setReasoningMenuOpen,
+    isEmpty,
+    canSubmit,
+    submitDisabled,
+    attachmentFailed,
+    modelRejectingImages,
+    imagesUnsupportedReason,
+    modelUnavailable,
+    agentUnavailable,
+    noModelsConnected,
+  };
+  const aboveProps: ComposerAboveCardDerived = {
+    dockId,
+    quotes,
+    quoteListLabels,
+    handleRemoveQuote,
+  };
+
   return (
     <div
       className={cn(
@@ -1718,371 +1766,8 @@ function ComposerImpl({
         parentClassName,
       )}
     >
-      {/*
-        The "still waking" notice. Above the card, in flow, so it pushes the
-        composer down rather than covering anything — the same reasoning as the
-        `/` dock below it.
-
-        This replaces disabling the input. A stopped sandbox does not clear on
-        its own, so the old treatment (dead editor, spinner where the send
-        button belongs, no text) was indistinguishable from a broken composer.
-        The input stays live; the submit becomes a durable inbox row and the
-        control plane delivers it when the box answers, so nothing is lost by
-        letting people type.
-
-        `role="status"` + `aria-live="polite"`: this appears without the user
-        doing anything, and it changes what the send button will DO. A screen
-        reader that never announces it leaves exactly the confusion this bar
-        exists to remove.
-      */}
-      {slashMenuPlacement === 'above' && <div id={dockId} />}
-
-      {/*
-        The reply quotes, as their own card above everything else in the
-        stack — the queued-messages card's chrome and mount. `QuoteList`
-        renders nothing for an empty list, and `empty:hidden` then drops this
-        wrapper and its margin.
-      */}
-      <div className="mb-2 w-full empty:hidden">
-        {/* Keyed on emptiness: an emptied card remounts, so the next quote
-            always opens it expanded, whatever the user collapsed last time. */}
-        <QuoteList
-          key={quotes.length === 0 ? 'empty' : 'quotes'}
-          quotes={quotes}
-          labels={quoteListLabels}
-          onRemove={handleRemoveQuote}
-        />
-      </div>
-
-      {/*
-        The stack above the card. Each layer owns its OWN top rounding rather
-        than leaning on a wrapper clip: the old `overflow-hidden rounded-t-xl`
-        on this wrapper only rounded whichever child happened to be topmost,
-        so a full-width notice under the 96%-wide queue strip kept square
-        corners — the "sometimes it breaks" bug. The rule now is width-based
-        and unconditional: a layer wider than the one above it rounds its top
-        (queue strip at 96%, first full-width bar, the card itself); a layer
-        the SAME width as the one above stays square and shares the divider.
-      */}
-      {(notice || showQueueStrip) && (
-        <div className="relative isolate flex w-full flex-col items-center justify-center">
-          {/*
-            ONE element carries both the strip's chrome (bg, border, padding)
-            AND `empty:hidden`. `inputSlot` is a fragment whose children all
-            self-hide, so it is ALWAYS a truthy ReactNode — no JS condition can
-            know whether it rendered anything. Only CSS `:empty` can, and it
-            only works on the element that owns the visible chrome: the old
-            two-div version hid an inner wrapper while the padded, bordered
-            shell around it kept painting as an empty sliver.
-          */}
-          {showQueueStrip && (
-            <div className={COMPOSER_INPUT_SLOT_CLASS}>
-              {inputSlot}
-            </div>
-          )}
-
-          {notice && (
-            <div
-              role="status"
-              aria-live="polite"
-              // Always rounded: it is either the topmost layer or sits under
-              // the NARROWER queue strip — both cases expose its top corners.
-              className="bg-sidebar border-border flex w-full items-center gap-2 rounded-t-xl border border-b-0 px-3 py-1.5"
-            >
-              {notice === SESSION_NOTICE.idle ? (
-                <MoonIcon className="text-muted-foreground size-3.5 shrink-0" aria-hidden="true" />
-              ) : (
-                <Loading className="size-3.5 shrink-0" />
-              )}
-              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-                {notice}
-              </span>
-              {onNoticeRetry && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="xs"
-                  className="text-muted-foreground hover:text-foreground h-auto shrink-0 px-1.5 py-0.5 text-xs"
-                  onClick={onNoticeRetry}
-                >
-                  {'Retry'}
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div
-        ref={cardRef}
-        onDragEnter={handleDragEnter}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDropFiles}
-        className={cn(
-          // One shadow, from the ladder. `shadow-card` is defined nowhere in
-          // `globals.css` and `shadow-xl` was dead — twMerge dropped it for the
-          // arbitrary `shadow-[…oklch…]` that followed, which was the only
-          // raw colour left in the composer.
-          'bg-background border-border relative isolate z-10 w-full rounded-xl border',
-          'pt-3',
-          // The drag border swaps colour AND gains a ring. Without this it
-          // snapped: a hard flash the moment a file crossed the card.
-          'duration-normal ease-default transition-[border-color]',
-          'motion-reduce:transition-none',
-          cardClassName,
-          isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
-          notice && 'rounded-t-none',
-        )}
-      >
-        {/* What the dimmed card is asking for. Without it the drag state said
-            only "something is happening" — it never named the action or its
-            result. `pointer-events-none` so it can never eat the drop. */}
-        {isDragOver && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center"
-          >
-            <span className="text-foreground bg-sidebar/80 rounded-md px-3 py-1.5 text-sm font-medium">
-              {tHardcodedUi.raw('i18nComplete.text1ab1b095c1ed')}
-            </span>
-          </div>
-        )}
-
-        <div
-          className={cn(
-            'relative z-[1] flex w-full flex-col overflow-visible',
-            'transition-opacity duration-(--duration-normal) ease-[cubic-bezier(0.23,1,0.32,1)]',
-            'motion-reduce:transition-none',
-            isDragOver && 'opacity-30',
-          )}
-        >
-          {/* Inline chips: thread context, todos, queue — unified spacing */}
-
-          <AttachmentTiles
-            files={attachedFiles}
-            uploads={promptAttachmentItems}
-            onRemove={removeAttachedFile}
-            onRetry={retryAttachedFile}
-          />
-
-          {/*
-            The `/` command + attachments refusal. Directly under the tiles it
-            refers to, and above the editor, so the files, the reason, and the
-            two ways out are all in one glance.
-
-            `role="alert"`: this appears in response to the user's own edit but
-            it also DISABLES the send button, and a control that goes dead with
-            no announcement is the exact "indistinguishable from broken" state
-            the notice bar above the card exists to prevent.
-          */}
-          {commandAttachmentPlan.kind === 'refuse' && (
-            <div
-              role="alert"
-              className="text-muted-foreground flex items-start gap-2 px-4 pt-3 text-xs"
-            >
-              <WarningIcon className="mt-px size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 text-balance">
-                <span className="text-foreground font-medium">
-                  {commandAttachmentPlan.message}.
-                </span>{' '}
-                {commandAttachmentPlan.description}
-              </span>
-            </div>
-          )}
-
-          <div
-            className={cn(
-              'flex min-w-0 flex-col px-2 pb-2',
-              lockForApproval && 'composer-locked-approval',
-              attachedFiles.length > 0 && 'pt-3',
-            )}
-          >
-            {/*
-              This padding is part of the input, so it has to behave like it.
-              `px-1 pb-9` lives on THIS element, not on the contenteditable
-              inside it, so the band under the last line and the strip down
-              each side were dead: a press landed on the div, the editor
-              never took focus, and nothing happened. That band is exactly
-              where you click to resume typing, which made the composer read as
-              broken. `cursor-text` matches the affordance to the behaviour.
-
-              The guard is in `shouldFocusEditorFromPadding` — see it for why
-              only a press that TERMINATES here may be forwarded.
-            */}
-            <div
-              className="relative min-w-0 cursor-text px-1 pb-9"
-              onMouseDown={(e) => {
-                if (
-                  !shouldFocusEditorFromPadding({
-                    onWrapperItself: e.target === e.currentTarget,
-                    disabled: editorDisabled,
-                  })
-                ) {
-                  return;
-                }
-                // Before focusing, or the browser starts its own selection on
-                // the div and immediately fights the caret we are placing.
-                e.preventDefault();
-                editorRef.current?.focus();
-              }}
-            >
-              <AnimatedComposerPlaceholder
-                placeholder={editorPlaceholder}
-                active={animatePlaceholder}
-              />
-              <Suspense fallback={<ComposerEditorFallback />}>
-                <ComposerEditorLazy
-                  ref={setEditorRef}
-                  placeholder={animatePlaceholder ? '' : editorPlaceholder}
-                  disabled={editorDisabled}
-                  onSubmit={handleSubmit}
-                  onArrowUpAtStart={onArrowUpAtStart ? handleArrowUpAtStart : undefined}
-                  onEmptyChange={setIsEmpty}
-                  onDocChange={handleDocChange}
-                  agents={agents}
-                  sessions={allSessions ?? []}
-                  currentSessionId={sessionId}
-                  commands={commands}
-                  actions={slashActions}
-                  files={slashFiles}
-                  onSelectAction={handleSelectAction}
-                  slashDockSelector={`#${dockId}`}
-                  onMenuOpenChange={setMenuOpen}
-                />
-              </Suspense>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
-              multiple
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-            <ComposerToolbar
-              leading={
-                <>
-                  <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
-                  {inlineUnderbar ? (
-                  <ComposerUnderbar
-                    variant="inline"
-                    onAttachClick={handleAttachClick}
-                    agents={primaryAgents}
-                    selectedAgent={selectedAgent}
-                    onAgentChange={onAgentChange}
-                    agentSelectorLocked={agentSelectorLocked}
-                    noAccessibleAgents={noAccessibleAgents}
-                    messages={messages}
-                    models={models}
-                    selectedModel={availableSelectedModel}
-                    onContextClick={onContextClick}
-                  />
-                  ) : null}
-                </>
-              }
-              modelsLoading={modelsLoading}
-              models={models}
-              selectedModel={availableSelectedModel}
-              onModelChange={onModelChange}
-              modelDefaultControls={modelDefaultControls}
-              providers={providers}
-              modelRequired={modelRequired}
-              modelMenuOpen={modelMenuOpen}
-              onModelMenuOpenChange={setModelMenuOpen}
-              reasoningMenuOpen={reasoningMenuOpen}
-              onReasoningMenuOpenChange={setReasoningMenuOpen}
-              variants={variants}
-              selectedVariant={selectedVariant}
-              onVariantChange={onVariantChange}
-              projectId={projectId}
-              // Inline placement has no under-row, so the slot (the session
-              // overrides gear, meta indicator) rides the toolbar itself. With
-              // the 'below' placement the ComposerUnderbar further down renders
-              // it — passing it here as well would show the gear twice.
-              toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
-              rewind={rewind}
-              isSending={isSending}
-              isBusy={isBusy}
-              onStop={onStop}
-              stopDisabled={stopDisabled}
-              escCount={escCount}
-              lockForQuestion={lockForQuestion}
-              questionButtonLabel={questionButtonLabel}
-              questionCanAct={questionCanAct}
-              hasText={!isEmpty}
-              canSubmit={canSubmit}
-              submitDisabled={
-                submitDisabled ||
-                attachmentFailed ||
-                modelRejectingImages !== null ||
-                commandAttachmentPlan.kind === 'refuse'
-              }
-              attachmentFailed={attachmentFailed}
-              attachmentUnsupported={imagesUnsupportedReason}
-              disabled={disabled}
-              modelUnavailable={modelUnavailable}
-              agentUnavailable={agentUnavailable}
-              onSubmit={() => handleSubmit()}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/*
-        Directly under the card, and BEFORE the underbar — the bar is a tray
-        that hangs off the card's bottom edge (see `ModelConnectionBar` for the
-        overlap), so it has to be the card's next sibling. Below the underbar it
-        was a third detached box under a second detached box.
-
-        The card is `isolate z-10` and this is `z-0`, so the card paints over
-        the overlap and only the tray's exposed strip shows.
-      */}
-      <ModelConnectionBar show={noModelsConnected} />
-      <ImagesUnsupportedBar modelName={noModelsConnected ? null : modelRejectingImages} />
-
-      {/*
-        Attach + agent + context ring, in a row UNDER the card — not in the
-        toolbar inside it. The card carries the message and the controls that
-        shape the reply; this row carries what you bring to the message and
-        what it costs. See `composer-underbar.tsx` for the layout rationale.
-      */}
-      {inlineUnderbar ? null : (
-        <ComposerUnderbar
-          onAttachClick={handleAttachClick}
-          agents={primaryAgents}
-          selectedAgent={selectedAgent}
-          onAgentChange={onAgentChange}
-          agentSelectorLocked={agentSelectorLocked}
-          noAccessibleAgents={noAccessibleAgents}
-          messages={messages}
-          models={models}
-          selectedModel={availableSelectedModel}
-          onContextClick={onContextClick}
-          toolbarSlot={toolbarSlot}
-        />
-      )}
-
-      {/*
-        The `'below'` dock. Absolute, not in flow: `top-full` hangs it off the
-        shell's bottom edge so an opening menu paints OVER whatever sits under
-        the composer (starter chips, empty page) instead of pushing it down.
-        `mt-2.5` is the same gap the menu's own `mb-2.5` gives the `'above'`
-        dock — there the margin faces the card, here it faces away, so the
-        gap moves to the dock. The horizontal inset mirrors the shell's
-        `px-4` gutter so the menu stays flush with the card edges.
-        Empty (menu closed) it has zero height and intercepts nothing.
-
-        `z-99` only beats siblings inside THIS shell (the card is
-        `isolate z-10`). The shell itself is raised to `z-50` when placement
-        is `'below'` so this whole stacking context sits above later siblings
-        (starter suggestions). A z-index on those siblings that exceeds `z-50`
-        would cover the menu again — they must stay unstacked.
-      */}
-      {slashMenuPlacement === 'below' && (
-        <div id={dockId} className="absolute top-full right-4 left-4 z-99 mt-3.5" />
-      )}
+      <ComposerAboveCard {...props} {...aboveProps} />
+      <ComposerCard {...props} {...cardProps} />
     </div>
   );
 }

@@ -58,10 +58,12 @@ mock.module('../shared/db', () => ({ ...realDbModule, db }));
 const {
   acceptSandboxTurn,
   beginSandboxTurn,
+} = await import('../projects/sandbox-turn-lifecycle');
+const {
   settleOpenSandboxTurns,
   settleOrphanedSandboxTurns,
   settleOrphanedSandboxTurnsQuery,
-} = await import('../projects/sandbox-turn-lifecycle');
+} = await import('../projects/session-turn-ledger');
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
 
 const rows = (result: unknown) =>

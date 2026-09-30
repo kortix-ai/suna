@@ -1,9 +1,9 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
-import { reconcileInboxTurn } from './inbox-turn-recovery';
+import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
 import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
+import { reconcileInboxTurn } from './inbox-turn-recovery';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
 /**
@@ -136,10 +136,7 @@ export interface InboxAdmissionDeps {
   readSandbox: (
     sessionId: string,
   ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
-  hasOlderPendingPrompt: (
-    sessionId: string,
-    row: SessionLifecycleCommandRow,
-  ) => Promise<boolean>;
+  hasOlderPendingPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;

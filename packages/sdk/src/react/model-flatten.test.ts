@@ -327,9 +327,9 @@ describe('flattenModels — SDK semantics the host copy still lacks (characteriz
     ]);
   });
 
-  test('free is not carried on the SDK FlatModel — the host-only field', () => {
+  test('free is carried on the SDK FlatModel for both free and paid models', () => {
     const flat = flattenModels(driftList);
-    expect(flat.some((m) => m.modelID === 'kortix/free-tier')).toBe(true);
-    expect(flat.every((m) => !('free' in m))).toBe(true);
+    expect(flat.find((m) => m.modelID === 'kortix/free-tier')?.free).toBe(true);
+    expect(flat.find((m) => m.modelID === 'kortix/paid-tier')?.free).toBe(false);
   });
 });

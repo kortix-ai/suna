@@ -21,6 +21,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { errorSqlstate } from '../../shared/error-cause';
 import {
   readTranscriptPages,
   retryTranscriptCapture,
@@ -480,7 +481,7 @@ async function captureSessionTranscript(
   } catch (err) {
     console.warn(
       `[transcript-mirror] capture failed for session ${sessionId}:`,
-      err instanceof Error ? err.message : err,
+      `sqlstate=${errorSqlstate(err) ?? 'unknown'}`,
     );
     return null;
   }
@@ -647,7 +648,7 @@ export function backfillSessionTranscriptMirrorOnWake(
     } catch (err) {
       console.warn(
         `[transcript-mirror] wake backfill failed for session ${sessionId}:`,
-        err instanceof Error ? err.message : err,
+        `sqlstate=${errorSqlstate(err) ?? 'unknown'}`,
       );
     }
   })();

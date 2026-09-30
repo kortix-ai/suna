@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { StoredSandboxTurn } from '../sandbox-turn-lifecycle';
+import type { StoredSandboxTurn } from '../session-turn-ledger';
 import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
 import type { PlacementTipMessage } from './forwarded-placement';
 import { type StrandReconcileDeps, reconcileForwardedTurnsAtEnd } from './forwarded-strand-reconcile';

@@ -2195,6 +2195,10 @@ flow(
       expectIds(await ids(owner, 'label=nope'), [], 'unknown');
     });
 
+    await ctx.step('a flat list filtered by label never adds an unlabeled coordinator as tree context', async () => {
+      expectIds(await ids(owner, 'label=worker'), [worker], 'flat worker');
+    });
+
     await ctx.step('with parent=root a label on a worker lists its coordinator, like q', async () => {
       expectIds(await ids(owner, 'parent=root&label=worker'), [coordinator], 'root via child');
       expectIds(await ids(owner, `parent=${coordinator}&label=worker`), [worker], 'children');

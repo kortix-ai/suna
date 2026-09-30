@@ -97,6 +97,20 @@ mock.module('../channels/slack/selection', () => ({
   modelLabel: (id: string) => id,
 }));
 
+// Session selection is the subject here; model availability is pinned in
+// unit-channel-model-access and must not depend on provider credentials.
+mock.module('../channels/model-access', () => ({
+  agentGrantEnvFor: () => async () => null,
+  projectChannelModelScope: async () => null,
+  planChannelSessionStart: async ({ chosenModel }: { chosenModel?: string | null }) => ({ model: chosenModel ?? null }),
+  planChannelFollowUp: async () => null,
+  listChannelModels: async () => ({ models: [], defaultModel: null }),
+  checkChannelModel: async () => ({ ok: true }),
+  describeKeys: () => '',
+  channelKeySelection: async () => null,
+  channelModelScope: () => null,
+}));
+
 const realIam = await import('../iam');
 mock.module('../iam', () => ({
   ...realIam,
