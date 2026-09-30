@@ -377,21 +377,9 @@ export function isTerminalTurnEnd(
   return error?.isRetryable !== true;
 }
 
-/**
- * Is this sandbox row an unclaimed WARM-POOL box?
- *
- * The warm marker is written onto `project_sessions.metadata.warm_session` by
- * the warm coordinator and forwarded verbatim into the sandbox row's own
- * metadata at provision (projects/lib/sessions.ts passes `input.metadata`
- * through to provisionSessionSandbox), so this needs no join. It is a SNAPSHOT
- * of the state at bake time and is never updated on claim — which is fine and
- * deliberate: a claimed box is extended by its first real turn, and the warm
- * grant it was born with is only ever a floor.
- */
+/** A speculative session carries the same marker into its sandbox at provision. */
 export function isWarmPoolBox(metadata: Record<string, unknown> | null | undefined): boolean {
-  const warm = metadata?.warm_session;
-  if (!warm || typeof warm !== 'object' || Array.isArray(warm)) return false;
-  return (warm as { state?: unknown }).state === 'available';
+  return metadata?.warm === true;
 }
 
 /**

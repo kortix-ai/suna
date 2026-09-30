@@ -412,6 +412,21 @@ describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
     expect(keyChecks[0]).toMatchObject({ grantUserId: serviceAccountId, ids: [keyId(1), keyId(2)] });
   });
 
+  test('the body may name the model `model`; the answer carries both names', async () => {
+    callerId = serviceAccountId;
+    keys = [projectKey(1), projectKey(2)];
+    const response = await app.request(`/${projectId}/sessions/${sessionId}/model`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.model).toBe(storedModel!);
+    expect(body.opencode_model).toBe(storedModel!);
+    expect(storedModel).toContain(model);
+  });
+
   test('a member caller stores the same selection', async () => {
     keys = [projectKey(1), projectKey(2)];
     expect((await putModel(model)).status).toBe(200);

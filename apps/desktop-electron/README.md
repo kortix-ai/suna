@@ -61,6 +61,11 @@ owner-scoped `kortix_last_project` cookie — the same as `kortix.com` in a
 browser. With no remembered project it lands on the `/projects/start` door. A
 saved URL with any other path loads as saved.
 
+**Go ▸ Copy Current URL** (⌘/Ctrl+L) copies the address the window is on — the
+session URL inside a session — so it can be pasted and shared. It is enabled
+only on app pages (the same in-app routes the navigation gate allows); on a
+blank, error, or external page it is disabled.
+
 ### First launch: choose a Kortix instance
 
 A new profile asks which instance to connect to before any page loads. The

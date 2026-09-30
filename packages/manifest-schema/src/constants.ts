@@ -237,6 +237,7 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.trigger.fire',
   'project.gateway.logs.read',
   'project.gateway.spend.read',
+  'project.usage.read',
   'project.gateway.budget.set',
   'project.gateway.keys.manage',
   // IAM v1 per-capability leaves.

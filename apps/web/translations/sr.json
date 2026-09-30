@@ -188,11 +188,7 @@
       "label": "Налог",
       "createIn": "Направи у налогу {account}",
       "choose": "Изаберите налог",
-      "loggedInAs": "Пријављени сте као",
-      "nameLabel": "Назив налога",
-      "nameHint": "Ваш тим га види на бочној траци и у позивницама. Можете га касније променити.",
-      "nameRequired": "Назив налога је обавезан",
-      "renameFailed": "Назив налога није сачуван. Покушајте поново."
+      "loggedInAs": "Пријављени сте као"
     },
     "name": {
       "label": "Назив пројекта",
@@ -1553,7 +1549,8 @@
         "restricted": "Одређене особе",
         "project": "Цео пројекат"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Oznake"
     },
     "loadingMore": "Учитавање…",
     "loadMoreSessions": "Учитајте још сесија",
@@ -1565,7 +1562,21 @@
       "others": "Deljene",
       "automated": "Automatizovane"
     },
-    "reminders": "Подсетници"
+    "reminders": "Подсетници",
+    "labels": {
+      "menu": "Uredi oznake",
+      "title": "Oznake",
+      "description": "Oznake klasifikuju ovu sesiju. Filtrirajte listu sesija po njima. Agenti, CLI i API takođe mogu da ih postave.",
+      "placeholder": "Unesite oznaku i pritisnite Enter",
+      "empty": "Još nema oznaka.",
+      "remove": "Ukloni {label}",
+      "save": "Sačuvaj",
+      "cancel": "Otkaži",
+      "saved": "Oznake su sačuvane",
+      "failed": "Oznake nije moguće sačuvati",
+      "tooLong": "Oznaka ima najviše 64 znaka.",
+      "tooMany": "Sesija ima najviše 20 oznaka."
+    }
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -5157,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "Сандбок за ову сесију је заустављен. Отворите нову сесију да бисте наставили.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode време рада није спремно",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Време рада сесије није спремно",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "Сандбок се покренуо, али време извођења пројекта није постало употребљиво.",
       "line395JsxTextRestartSession": "Поново покрените сесију",
       "line424JsxTextRestartSession": "Поново покрените сесију"
@@ -12485,7 +12496,7 @@
       "text5a0cac0326d5": "Преузми Kortix",
       "text5a219a418ec7": "Ова ставка није могла да се прочита из архиве.",
       "text5a23444828db": "Управљај",
-      "text5a26f4425c82": "OpenCode сесија",
+      "text92fbc8484002": "Сесија времена рада",
       "text5a32374d30b4": "Дневна активност платформе и спаљивање кредита. Свака канта је УТЦ дан.",
       "text5a37d20f1235": "Агент канала је ажуриран",
       "text5a41803b2dd1": "Одбиј све",
@@ -19063,7 +19074,24 @@
       "mismatch": "Ova instalacija je pokrenuta sa drugog Kortix naloga ili za drugi projekat. Prijavite se tim nalogom ili ponovo pokrenite instalaciju iz projekta.",
       "expired": "Ovaj link za instalaciju je nevažeći ili je istekao. Ponovo pokrenite instalaciju iz projekta.",
       "failed": "Instalacija nije mogla da se završi. Ponovo je pokrenite iz projekta.",
-      "backToProject": "Nazad na projekat"
+      "backToProject": "Nazad na projekat",
+      "finishingTitle": "Završavanje instalacije za {service}",
+      "finishingDescription": "Kortix se dodaje u {service} za ovaj projekat. Vraćate se na projekat kada se završi.",
+      "installingAs": "Instalira se kao",
+      "recording": "Beleženje instalacije…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Otvaranje pregleda",
+      "openingDescription": "Prijavljujete se u aplikaciju koju pokreće vaša sesija.",
+      "preview": "Pregled",
+      "address": "Adresa",
+      "signingIn": "Prijavljivanje. Pregled se otvara sam.",
+      "signInAgain": "Prijavi se ponovo",
+      "notServed": "Ta adresa nije pregled koji ova instalacija služi. Otvorite pregled iz svoje sesije.",
+      "sessionExpired": "Vaša sesija je istekla. Prijavite se ponovo i ponovo otvorite pregled."
+    },
+    "approvalPage": {
+      "title": "Odobrite {connector} akciju"
     },
     "secretIntakeWithheld": {
       "title": "Сачувано, али {agent} још не може да га прочита",
@@ -19938,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Dobro došli u Kortix",
-    "nameAccountTitle": "Дајте назив налогу",
-    "nameAccountBody": "Овде се налазе ваши пројекти, агенти и чланови тима.",
-    "nameAccountContinue": "Настави",
     "welcomeBack": "Dobro došli nazad",
     "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
     "descriptionReturning": "Otvorite projekat ili napravite novi.",

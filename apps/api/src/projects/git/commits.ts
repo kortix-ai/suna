@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateRef, validateSha } from '../git-ref';
 import { normalizeTreePath, refreshMirror, runGit } from './mirror';
-import { resolveOpencodeConfigDirAtSha } from './opencode-config-dir';
 import { scaffoldTreeSha } from './scaffold-identity';
 import type {
   CommitDiff,
@@ -119,12 +118,6 @@ export interface FastBootGitHint {
    * negotiated `git fetch` through the proxy.
    */
   gitDeltaBundleRemote?: boolean;
-  /**
-   * OpenCode config dir at `baseSha`, relative to the repo root, or `null` when
-   * the revision ships no `opencode.json[c]` (daemon uses its baked default).
-   * Lets the daemon spawn OpenCode BEFORE the checkout exists.
-   */
-  opencodeConfigDir?: string | null;
 }
 
 /** Hard ceiling for a remote (downloaded) fast-boot bundle. */
@@ -310,23 +303,17 @@ export async function resolveFastBootGitHint(
   if (!/^[0-9a-f]{40}$/.test(baseSha)) {
     throw new Error(`Unexpected git rev-parse output for ${treeRef}: ${baseSha}`);
   }
-  // Both look-ups read the same mirror and are independent; the config dir is
-  // what lets the daemon spawn OpenCode before the checkout lands.
-  const [delta, opencodeConfigDir] = await Promise.all([
-    scaffoldTreeSha()
-      .then((tree) => buildScaffoldDeltaBundle(repoPath, treeRef, { scaffoldTreeSha: tree }))
-      .catch((error) => {
-        console.warn('[git] fast-boot delta bundle unavailable', {
-          projectId: project.projectId,
-          ref: treeRef,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return null;
-      }),
-    resolveOpencodeConfigDirAtSha(repoPath, project, baseSha).catch(() => undefined),
-  ]);
+  const delta = await scaffoldTreeSha()
+    .then((tree) => buildScaffoldDeltaBundle(repoPath, treeRef, { scaffoldTreeSha: tree }))
+    .catch((error) => {
+      console.warn('[git] fast-boot delta bundle unavailable', {
+        projectId: project.projectId,
+        ref: treeRef,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    });
   const hint: FastBootGitHint = { baseSha };
-  if (opencodeConfigDir !== undefined) hint.opencodeConfigDir = opencodeConfigDir;
   if (delta?.baseSha === baseSha) {
     hint.gitDeltaParentSha = delta.parentSha;
     hint.gitDeltaParentCommitBase64 = delta.parentCommitBase64;

@@ -2,9 +2,10 @@
  * ConnectProviderSheet — the handoff before the composer's model picker sends
  * the user to the browser to connect a provider (COR-125/COR-158 Task 9).
  *
- * Handle only, no title row: two 56pt tiles (a plug icon on `bg-secondary`,
- * the Kortix symbol on `bg-foreground`, joined by a dashed connector) over a
- * title and one muted line, then a primary "Continue" pill (opens
+ * Handle only, no title row: `HandoffSheetBody` — `ConnectorHandshake` (the
+ * Kortix tile, the dotted bridge, a plug tile — no provider is chosen yet)
+ * over a title and one muted line, then a primary "Continue to kortix.com"
+ * pill (opens
  * `/projects/:id/customize/models?return_to=kortix://providers/connected` in
  * an in-app auth session that closes itself once a provider is connected)
  * and a secondary
@@ -32,22 +33,18 @@
  * after the browser closes means the trip connected a provider.
  */
 import * as React from 'react';
-import { View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import { useColorScheme } from 'nativewind';
 
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { Sheet, type SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { Icon } from '@/components/ui/icon';
-import { PlugIcon } from '@/lib/icons';
 import {
   PROVIDER_CONNECTED_URI,
   PROVIDER_RETURN_URL,
   projectModelsWebUrl,
 } from '@/lib/session/connect-model';
-import { HandoffShell, TILE_SIZE, useHandoffDismiss } from './handoff-sheet';
-
+import { HandoffSheetBody } from './connector-handshake';
+import { useHandoffDismiss } from './handoff-sheet';
 
 export interface ConnectProviderSheetProps {
   projectId: string;
@@ -58,8 +55,6 @@ export interface ConnectProviderSheetProps {
 
 export const ConnectProviderSheet = React.forwardRef<SheetRef, ConnectProviderSheetProps>(
   ({ projectId, onRefetchModels }, ref) => {
-    const { colorScheme } = useColorScheme();
-    const isDark = colorScheme === 'dark';
     const toast = useToast();
     const sheetRef = React.useRef<SheetRef>(null);
 
@@ -93,14 +88,15 @@ export const ConnectProviderSheet = React.forwardRef<SheetRef, ConnectProviderSh
 
     return (
       <Sheet ref={sheetRef} enablePanDownToClose onDismiss={handleDismiss}>
-        <HandoffShell
-          leadingTile={<View className="items-center justify-center rounded-2xl bg-secondary" style={{ width: TILE_SIZE, height: TILE_SIZE }}><Icon as={PlugIcon} size={24} className="text-foreground" /></View>}
+        {/* No provider is chosen yet, so the app tile is the plug. */}
+        <HandoffSheetBody
+          name=""
+          iconUrl={null}
           title="Connect a model provider"
           body="Add a provider on kortix.com. You come back here when you're done."
+          action="Continue to kortix.com"
           onContinue={handleContinue}
           onClose={() => sheetRef.current?.close()}
-          notNowVariant="secondary"
-          isDark={isDark}
         />
       </Sheet>
     );

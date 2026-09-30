@@ -279,6 +279,8 @@ const SessionTurnSchema = z.object({
   turn_token: z.string(),
   state: z.enum(['delivering', 'active']),
   message_id: z.string().nullable(),
+  runtime_session_id: z.string().nullable(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   started_at: z.string().nullable(),
   accepted_at: z.string().nullable(),

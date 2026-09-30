@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   activateBootConfig,
@@ -235,6 +235,20 @@ export interface ConvergeDeps {
 
 type ConfigDepsOptions = Omit<NonNullable<Parameters<typeof ensureOpencodeConfigDeps>[1]>, 'platformOwned'>
 
+/** Legacy harness MCP declarations do not create persistent Kortix connectors. */
+async function warnOnHarnessMcp(dir: string): Promise<void> {
+  for (const name of ['opencode.jsonc', 'opencode.json']) {
+    try {
+      const raw = await readFile(join(dir, name), 'utf8')
+      if (/"mcp"\s*:/.test(raw)) {
+        logger.warn('[config-release] harness MCP entries are session-local; configure persistent MCP servers through Kortix connectors', { file: name })
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+}
+
 /** Dependencies and the managed-skill overlay, the preparation every config dir in the working tree gets. */
 export async function prepareConfigDir(
   dir: string,
@@ -242,6 +256,7 @@ export async function prepareConfigDir(
   depsOptions: ConfigDepsOptions = {},
   projectRoot?: string,
 ): Promise<void> {
+  await warnOnHarnessMcp(dir)
   await ensureOpencodeConfigDeps(dir, depsOptions)
   await ensureInjectedManagedSkills(
     managedOverlayRoot(dir, projectRoot),
@@ -265,6 +280,7 @@ export async function preparePlatformConfigDir(
   managedSkillsDir?: string,
   depsOptions: ConfigDepsOptions = {},
 ): Promise<void> {
+  await warnOnHarnessMcp(dir)
   await ensureOpencodeConfigDeps(dir, { ...depsOptions, platformOwned: true })
   await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
 }

@@ -433,7 +433,7 @@ describe('bakeRuntimeAssetsState', () => {
       agentPath: join(ws.root, 'bin', 'kortix-agent'),
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
-      opencodeVersion: '1.18.23',
+      harnessVersion: '1.18.23',
     })
 
     const onDisk = JSON.parse(await readFile(ws.statePath, 'utf8'))
@@ -443,7 +443,8 @@ describe('bakeRuntimeAssetsState', () => {
     expect(state.agent_sha256).toBe(sha('AGENT-BYTES'))
     expect(state.agent_path).toBe(join(ws.root, 'bin', 'kortix-agent'))
     expect(state.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
-    expect(state.opencode_version).toBe('1.18.23')
+    expect(state.harness).toBe('opencode')
+    expect(state.harness_version).toBe('1.18.23')
     // `build` is the epoch of a manifest this box READ. An image build reads
     // none, so claiming one would let the epoch guard refuse a legitimate API.
     expect(state.build).toBeUndefined()
@@ -456,7 +457,7 @@ describe('bakeRuntimeAssetsState', () => {
       agentPath: join(ws.root, 'bin', 'kortix-agent'),
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
-      opencodeVersion: '1.18.23',
+      harnessVersion: '1.18.23',
     })
 
     const stub = stubFetch({
@@ -477,7 +478,7 @@ describe('bakeRuntimeAssetsState', () => {
       agentPath: join(ws.root, 'bin', 'kortix-agent'),
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
-      opencodeVersion: '1.18.23',
+      harnessVersion: '1.18.23',
     })
 
     const running = await runningRuntimeAssets(ws.statePath)
@@ -485,7 +486,8 @@ describe('bakeRuntimeAssetsState', () => {
     expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
     expect(running.agent_sha256).toBe(sha('AGENT-BYTES'))
     expect(running.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
-    expect(running.opencode_version).toBe('1.18.23')
+    expect(running.harness).toBe('opencode')
+    expect(running.harness_version).toBe('1.18.23')
   })
 
   test('a missing baked asset fails the image build instead of shipping a lie', async () => {

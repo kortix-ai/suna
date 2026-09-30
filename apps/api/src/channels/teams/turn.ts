@@ -217,7 +217,7 @@ async function liveRuntimeTurnTokens(sessionId: string): Promise<string[]> {
   try {
     const [{ sessionSandboxes }, { RUNNING_SANDBOX_STATUSES, storedSandboxTurns }] = await Promise.all([
       import('@kortix/db'),
-      import('../../projects/sandbox-turn-lifecycle'),
+      import('../../projects/session-turn-ledger'),
     ]);
     const [box] = await db
       .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })

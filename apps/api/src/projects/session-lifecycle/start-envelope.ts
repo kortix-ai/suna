@@ -174,6 +174,9 @@ export function deriveBoot(
         : phase === 'booting'
           ? firstTimestamp(
               metadata,
+              'runtimeBootWaitFirstSeenAt',
+              'runtimeReadyWaitStartedAt',
+              // The same two clocks as a pre-W4 API wrote them.
               'opencodeBootWaitFirstSeenAt',
               'opencodeReadyWaitStartedAt',
               'providerRunningConfirmedAt',
@@ -197,6 +200,7 @@ export function withStartEnvelope(
 ): SessionStartResult {
   return {
     ...result,
+    runtime_session_id: result.opencode_session_id,
     observed_at: log.observedAt.toISOString(),
     action: log.action,
     observation: log.observation,

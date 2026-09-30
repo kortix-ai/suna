@@ -48,7 +48,7 @@ import {
   sessionFileKindLabel,
   type SessionFile,
 } from '@/lib/session/session-files';
-import { showFileTypeIcon } from './tool/shared/show-helpers';
+import { showFileTypeIcon } from './tool/shared/tool-icons';
 
 const SNAP_POINTS = ['100%'];
 /** How long Copy shows its check. */

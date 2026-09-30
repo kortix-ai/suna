@@ -22,8 +22,6 @@ export interface CachedFastBootGitHint {
   /** '' when no delta boundary was resolved (tip == root, import, too deep). */
   parent_sha: string;
   parent_commit_base64: string;
-  /** Relative dir, '' for "no project OpenCode config at this tip", absent = unknown. */
-  opencode_config_dir?: string;
   cached_at: string;
 }
 
@@ -68,9 +66,6 @@ export function buildCachedFastBootGitHint(
     parent_commit_base64: hasDelta ? parentCommit : '',
     cached_at: cachedAt,
   };
-  if (hint.opencodeConfigDir !== undefined) {
-    entry.opencode_config_dir = hint.opencodeConfigDir ?? '';
-  }
   return entry;
 }
 
@@ -91,9 +86,6 @@ export function readCachedFastBootGitHint(metadata: unknown, ref: string): FastB
     hint.gitDeltaParentCommitBase64 = str('parent_commit_base64');
     if (remote) hint.gitDeltaBundleRemote = true;
     else hint.gitDeltaBundleBase64 = str('bundle_base64');
-  }
-  if (typeof entry.opencode_config_dir === 'string') {
-    hint.opencodeConfigDir = entry.opencode_config_dir === '' ? null : entry.opencode_config_dir;
   }
   const candidate = buildCachedFastBootGitHint(str('ref'), hint, str('cached_at'));
   if (!candidate || candidate.ref !== ref || candidate.cached_at.length === 0) return null;

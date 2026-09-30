@@ -54,6 +54,10 @@ const cases = [
   ['service to hono', 'src/services/llm-proxy/llm-proxy.ts', "import { Hono } from 'hono';", false],
   ['egress-shim to the shared relay contract', 'src/services/egress-shim/relay-client.ts', "import '@kortix/api-contract/secret-relay';", true],
   ['another service to the shared relay contract', 'src/services/llm-proxy/llm-proxy.ts', "import '@kortix/api-contract/secret-relay';", false],
+  ['harness shared code to the daemon wire contract', 'src/harness/shared/turn-relay.ts', "import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';", true],
+  ['harness contract to the daemon wire contract', 'src/harness/contract/diagnostics.ts', "import type { HarnessHealth } from '@kortix/api-contract/runtime-relay';", true],
+  ['a route to the daemon wire contract', 'src/routes/kortix/health.ts', "import { RUNTIME_CAPABILITIES } from '@kortix/api-contract/runtime-relay';", true],
+  ['lib to the daemon wire contract', 'src/lib/config/config.ts', "import '@kortix/api-contract/runtime-relay';", false],
   ['egress-shim to node-forge', 'src/services/egress-shim/ca.ts', "import forge from 'node-forge';", true],
 
   // harness/ — its own layer; adapters are isolated; only harness.ts reaches into one
@@ -62,7 +66,7 @@ const cases = [
   ['adapter to the contract', 'src/harness/pi/boot.ts', "import type { SandboxBootState } from '../contract/boot-state';", true],
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],
   ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", true],
-  ['adapter to types', 'src/harness/pi/relay.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
+  ['adapter to types', 'src/harness/pi/boot.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
   ['adapter to another adapter', 'src/harness/pi/boot.ts', "import '../open-code/boot';", false],
   ['adapter to another adapter, type-only', 'src/harness/pi/boot.ts', "import type { Opencode } from '../open-code/lifecycle';", false],
   ['adapter to another adapter, dynamic', 'src/harness/pi/boot.ts', "void import('../open-code/boot');", false],
@@ -188,7 +192,7 @@ const opencodeNameCases = [
   ['the pi adapter, until E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', []],
   ['the resolver', 'src/harness/harness.ts', 'const opencodePort = 1', []],
   ['a test file', 'src/__tests__/pi-harness.test.ts', 'const opencodePort = 1', []],
-  ['an allowlisted word in its own file', 'src/routes/kortix/env.ts', 'const opencodeEnv = 1', []],
+  ['an allowlisted word in its own file', 'src/routes/kortix/legacy-names.ts', 'const opencodeEnv = 1', []],
   ['an allowlisted word in another file', 'src/routes/kortix/health.ts', 'const opencodeEnv = 1', ['opencodeEnv']],
 ]
 for (const [name, file, code, words] of opencodeNameCases) {
@@ -201,7 +205,7 @@ for (const [name, file, code, words] of opencodeNameCases) {
 }
 
 test('opencode names: an allowlisted word that no longer occurs is stale', async () => {
-  const file = 'src/lib/config/config.ts'
+  const file = 'src/routes/kortix/legacy-names.ts'
   const [result] = await eslint.lintText('export {}', { filePath: resolve(root, file) })
   const stale = result.messages.filter((m) => m.ruleId === 'kortixd/opencode-names' && m.messageId === 'stale').map((m) => m.message.split("'")[1])
   assert.deepEqual(stale, OPENCODE_NAMES_ALLOWED[file])

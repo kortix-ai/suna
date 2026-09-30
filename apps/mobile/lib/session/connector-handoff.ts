@@ -9,10 +9,11 @@
  * `apps/api/src/connectors/db-deps.ts` `mintConnectorConnectLink`). Web's
  * markdown link interceptor turns that link into `SetupLinkButton` /
  * `ConnectorIntake` wherever the agent happens to paste it in prose. Mobile
- * has no markdown link interception, so it reads the SAME field straight off
- * the `kortix-connectors_call` tool part instead
+ * reads the SAME field straight off the `kortix-connectors_call` tool part
  * (`components/session/tool/tools/connector-tools.tsx`'s `ConnectorCallTool`)
- * — the tool part is the one place this fact is guaranteed to show up.
+ * — the tool part is the one place this fact is guaranteed to show up — and
+ * draws the same row for a link in prose (`lib/markdown/setup-links.ts`,
+ * `components/session/turn/setup-link-card.tsx`).
  *
  * The connect hand-off itself prefers the project's own Pipedream connect
  * round trip (`lib/projects/projects-client.ts` `pipedreamConnect` /
@@ -210,10 +211,19 @@ export function connectorApprovalState(input: ConnectorApprovalStateInput): Conn
   return 'resolved';
 }
 
-export function connectorHandoffCopy(providerLabel: string): { title: string; body: string } {
+/**
+ * The connect sheet's words. The title is the card's title, so the sheet
+ * continues the row that opened it. The body says where the sign-in happens
+ * and the one thing a reader worries about; the pill names where it goes.
+ */
+export function connectorHandoffCopy(
+  providerLabel: string,
+  projectName?: string | null,
+): { title: string; body: string; action: string } {
   return {
-    title: `Connect ${providerLabel}`,
-    body: "Sign in on kortix.com. You come back to this chat when it's done.",
+    title: projectName ? `Connect ${providerLabel} to ${projectName}` : `Connect ${providerLabel}`,
+    body: `You sign in on ${providerLabel} in the browser, then come back to this chat. Kortix never sees your password.`,
+    action: `Continue to ${providerLabel}`,
   };
 }
 
