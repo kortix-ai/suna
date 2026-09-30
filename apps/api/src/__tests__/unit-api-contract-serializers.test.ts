@@ -66,6 +66,7 @@ function sessionRow(
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,

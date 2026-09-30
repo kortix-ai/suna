@@ -22,7 +22,7 @@ ID, and the branch name are the same value. See
 | Method | Wraps | What it does |
 |---|---|---|
 | `s.get(opts?)` | `GET /projects/:pid/sessions/:sid` | Reads session details |
-| `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
+| `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session, replaces its labels, or merges metadata keys |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
 | `s.configState()` | `GET …/sessions/:sid/config` | Reads config freshness (`stale`) and the config release state (`release`) |
@@ -43,6 +43,48 @@ ID, and the branch name are the same value. See
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
 :::
+
+## Labels and metadata
+
+Every session carries `labels: string[]` and a `metadata` object. Use them to
+classify sessions and to decide how your app renders one.
+
+- **Labels** are free-form: each is trimmed, 1–64 characters, at most 20 per
+  session, duplicates dropped. Matching is exact and case-sensitive.
+- **Metadata** is a free-form JSON object for your own keys, at most 16,384
+  characters of JSON per write. The server also stores its own keys there
+  (`custom_name`, `source`, …); a request that names a server-managed key is
+  refused with `400`. Prefix your keys (`app_…`) to stay clear of them.
+
+```ts
+// Set both at create.
+const project = kortix.project(projectId)
+const created = await project.sessions.create({
+  initial_prompt: 'Triage ticket T-142',
+  labels: ['support', 'tier:gold'],
+  metadata: { app_ticket: 'T-142', app_priority: 2 },
+})
+
+// Update later. `labels` replaces the list; `metadata` merges keys and a
+// `null` value removes that key.
+const s = kortix.session(projectId, created.session_id)
+await s.update({ labels: ['support', 'resolved'], metadata: { app_priority: null } })
+
+// List by label, server-side: a session must carry EVERY given label.
+const { items } = await project.sessions.listPage({ labels: ['support', 'resolved'] })
+
+// Render conditionally.
+for (const session of items) {
+  const badge = session.labels?.includes('tier:gold') ? 'Gold' : null
+  const ticket = session.metadata.app_ticket as string | undefined
+}
+```
+
+In React, pass `labels` to `useProjectSessions(projectId, { labels })`; each
+label set gets its own cache entry. Agents set the same fields from the CLI
+(`kortix sessions new --label … --meta k=v`, `kortix sessions update --label …`)
+and from the hosted MCP server (`start_session` `labels` / `metadata`,
+`list_sessions` `labels`). A runnable version is `packages/sdk/examples/12-session-labels.ts`.
 
 With `pooled_provider_secrets` and `llm_gateway` enabled, a session can select
 several available account secrets for one provider. Create a project-scoped resource through

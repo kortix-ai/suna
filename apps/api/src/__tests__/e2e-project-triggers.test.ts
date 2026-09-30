@@ -490,6 +490,7 @@ const triggerDbMock: any = {
               requiredConnectors: null,
               connectorBindingsInheritUnbound: values.connectorBindingsInheritUnbound ?? false,
               connectorBindingsConfigured: values.connectorBindingsConfigured ?? false,
+              labels: values.labels ?? [],
               metadata: values.metadata ?? {},
               createdAt: values.createdAt ?? now,
               updatedAt: values.updatedAt ?? now,
@@ -1520,6 +1521,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     // Pre-seed a reusable session so the fire path finds it and enqueues (rather
     // than creating a fresh session, which would return `fired`).
     sessionRows.push({
+      labels: [],
       sessionId: 'sess-reuse',
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,

@@ -266,12 +266,13 @@ const liveCaptureDeps: CaptureDeps = {
   },
 };
 
-function timeField(info: Record<string, unknown>, key: 'created' | 'completed'): Date | null {
+export function timeField(info: Record<string, unknown>, key: 'created' | 'completed'): Date | null {
   const time = info.time;
   if (!time || typeof time !== 'object' || Array.isArray(time)) return null;
   const value = (time as Record<string, unknown>)[key];
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-  return new Date(value);
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /**

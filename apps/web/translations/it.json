@@ -188,11 +188,7 @@
       "label": "Account",
       "createIn": "Crea in {account}",
       "choose": "Scegli un account",
-      "loggedInAs": "Accesso effettuato come",
-      "nameLabel": "Nome dell'account",
-      "nameHint": "Il tuo team lo vede nella barra laterale e negli inviti. Puoi cambiarlo in seguito.",
-      "nameRequired": "Il nome dell'account è obbligatorio",
-      "renameFailed": "Impossibile salvare il nome dell'account. Riprova."
+      "loggedInAs": "Accesso effettuato come"
     },
     "name": {
       "label": "Nome dello progetto",
@@ -1553,7 +1549,8 @@
         "restricted": "Persone specifiche",
         "project": "Tutto il progetto"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Etichette"
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni",
@@ -1565,7 +1562,21 @@
       "others": "Condivise",
       "automated": "Automatizzate"
     },
-    "reminders": "Promemoria"
+    "reminders": "Promemoria",
+    "labels": {
+      "menu": "Modifica etichette",
+      "title": "Etichette",
+      "description": "Le etichette classificano questa sessione. Filtra l’elenco delle sessioni in base a esse. Anche gli agenti, la CLI e l’API possono impostarle.",
+      "placeholder": "Scrivi un’etichetta e premi Invio",
+      "empty": "Ancora nessuna etichetta.",
+      "remove": "Rimuovi {label}",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "saved": "Etichette salvate",
+      "failed": "Impossibile salvare le etichette",
+      "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
+      "tooMany": "Una sessione ha al massimo 20 etichette."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -19955,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Benvenuto in Kortix",
-    "nameAccountTitle": "Dai un nome al tuo account",
-    "nameAccountBody": "Qui vivono i tuoi progetti, agenti e membri del team.",
-    "nameAccountContinue": "Continua",
     "welcomeBack": "Bentornato",
     "descriptionNew": "Crea il tuo primo progetto o unisciti a uno condiviso dal tuo team.",
     "descriptionReturning": "Apri un progetto o creane uno nuovo.",

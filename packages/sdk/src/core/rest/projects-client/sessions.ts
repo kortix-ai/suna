@@ -86,6 +86,11 @@ export interface ProjectSession {
    * override (display falls back to the auto title / branch).
    */
   custom_name: string | null;
+  /**
+   * Free-form labels for classifying and filtering the session. Set at create
+   * or with `updateProjectSession`. Absent on a server older than labels.
+   */
+  labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
@@ -221,6 +226,8 @@ export interface CreateProjectSessionInput {
   /** @deprecated The pre-W4 name of `model`. Every API version accepts it. */
   opencode_model?: string;
   name?: string;
+  /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
+  labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
@@ -331,6 +338,8 @@ export interface ListProjectSessionsOptions {
   startedBy?: 'me' | 'others' | 'automated';
   /** Server-side search over every session the viewer may see (1..200 chars). */
   q?: string;
+  /** Only sessions that carry EVERY one of these labels (exact match). */
+  labels?: string[];
 }
 
 /** One keyset page of a project's sessions. */
@@ -349,6 +358,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   if (options?.startedBy) params.set('started_by', options.startedBy);
   const q = options?.q?.trim();
   if (q) params.set('q', q);
+  for (const label of options?.labels ?? []) params.append('label', label);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -1335,13 +1345,26 @@ export async function holdSessionPrompts(
   );
 }
 
+/** Body of `updateProjectSession`. Every field is optional; send only what changes. */
+export interface UpdateProjectSessionInput {
+  /** New display name. `""` or `null` clears it and reverts to the auto title. */
+  name?: string | null;
+  /**
+   * Replaces the session's labels. Each is trimmed, 1..64 characters; at most
+   * 20; duplicates drop. `[]` clears them.
+   */
+  labels?: string[];
+  /**
+   * Keys merged into the session's metadata. A `null` value removes that key.
+   * Server-managed keys are refused (400). At most 16,384 characters of JSON.
+   */
+  metadata?: Record<string, unknown>;
+}
+
 export async function updateProjectSession(
   projectId: string,
   sessionId: string,
-  input: {
-    name?: string;
-    metadata?: Record<string, unknown>;
-  },
+  input: UpdateProjectSessionInput,
 ) {
   return unwrap(
     await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),

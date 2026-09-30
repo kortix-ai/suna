@@ -3,7 +3,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(import.meta.dir + '/ProjectScreen.tsx', 'utf8') + readFileSync(import.meta.dir + '/../../lib/session/project-connect.ts', 'utf8');
+const source = readFileSync(import.meta.dir + '/ProjectScreen.tsx', 'utf8') + readFileSync(import.meta.dir + '/../../lib/session/project-connect.ts', 'utf8') + readFileSync(import.meta.dir + '/use-project-stack.ts', 'utf8') + readFileSync(import.meta.dir + '/use-project-home-send.ts', 'utf8');
 const calls: { name: string; args: any[] }[] = [];
 const spy = (name: string) => (...args: any[]) => { calls.push({ name, args }); };
 const seen = (name: string) => calls.filter((call) => call.name === name);
@@ -66,7 +66,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
 };
 
 for (const [, name] of source.matchAll(/from ['"]([^'"]+)['"]/g)) {
-  if (name === 'react' || name === '@/lib/session/project-connect' || name.startsWith('@/lib/session/') && ['project-stack', 'connect-step'].some((part) => name.endsWith(part))) continue;
+  if (name === 'react' || name === '@/lib/session/project-connect' || name.startsWith('@/lib/session/') && ['project-stack', 'connect-step'].some((part) => name.endsWith(part)) || name === '@/components/session/use-project-stack' || name === '@/components/session/use-project-home-send') continue;
   const values = moduleMocks[name] ?? {};
   if (name !== 'react-native' && name !== 'expo-router' && name !== 'expo-router/react-navigation') {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

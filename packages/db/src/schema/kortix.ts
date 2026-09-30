@@ -1032,6 +1032,7 @@ export const projectSessions = kortixSchema.table(
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
+    labels: jsonb('labels').$type<string[]>().default([]).notNull(),
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
