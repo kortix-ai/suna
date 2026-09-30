@@ -612,6 +612,7 @@ function agentBlockV2Schema(): JsonSchemaFragment {
         description: "Repo-relative path of this agent's .md (frontmatter + prompt). Defaults to agents/<name>.md.",
       },
       enabled: { type: 'boolean' },
+      tools: { type: 'object', additionalProperties: { type: 'boolean' } },
       sandbox: SLUG_SCHEMA,
       connectors: grantSetSchema(),
       connectors_required: {

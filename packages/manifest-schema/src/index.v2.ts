@@ -133,6 +133,8 @@ export interface AgentBlockV2 {
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
+  /** Built-in tool availability; omitted names retain the runtime default. */
+  tools?: Record<string, boolean>;
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
   connectors?: GrantSetV2;
@@ -638,6 +640,10 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   if (!isTable(entry)) {
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
+  }
+
+  if (entry.tools !== undefined && (!isTable(entry.tools) || Object.values(entry.tools).some((value) => typeof value !== 'boolean'))) {
+    issues.push({ path: `${where}.tools`, message: 'tools must map tool names to booleans.', severity: 'error' });
   }
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {

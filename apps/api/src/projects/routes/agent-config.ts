@@ -85,6 +85,7 @@ const GrantSetSchema = z.union([
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
+    tools: z.record(z.string(), z.boolean()).optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
     connectors: GrantSetSchema.optional(),
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),

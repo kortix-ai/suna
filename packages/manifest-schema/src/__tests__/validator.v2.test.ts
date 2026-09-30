@@ -1276,3 +1276,8 @@ describe('v2 harnesses.pi.packages', () => {
     expect(validateManifest(manifest(many), 'yaml').valid).toBe(false);
   });
 });
+
+ test('agent tool toggles require boolean values', () => {
+  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: false, read: true }\n    connectors: [github, slack]')).errorPaths).not.toContain('agents.support.tools');
+  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: nope }\n    connectors: [github, slack]')).errorPaths).toContain('agents.support.tools');
+});
