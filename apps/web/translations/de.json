@@ -20199,7 +20199,6 @@
     },
     "needsReconnectHint": "Dieser Computer wurde von Kortix getrennt. Verbinde ihn erneut, um ihn zu nutzen.",
     "actionFailed": "Etwas ist schiefgelaufen. Versuche es erneut.",
-    "sharedWithProject": "Computer mit dem Projekt geteilt",
     "alsoShareWith": "Auch mit {project} teilen",
     "approvedEverywhere": "Dein Computer ist verbunden. Du kannst ihn in jedem Projekt in deinen privaten Sitzungen nutzen. Du kannst diesen Tab schließen.",
     "approvedShared": "Dein Computer ist verbunden und mit {project} geteilt. Du kannst diesen Tab schließen.",
@@ -20247,8 +20246,6 @@
     "runInBackground": "Im Hintergrund ausführen",
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
     "manageInProject": "Im Projekt verwalten",
-    "disconnectEllipsis": "Trennen…",
-    "yoursEveryProject": "Deiner · jedes Projekt",
-    "sharedWithThisProject": "Mit diesem Projekt geteilt"
+    "disconnectEllipsis": "Trennen…"
   }
 }

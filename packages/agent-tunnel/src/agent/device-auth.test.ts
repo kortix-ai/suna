@@ -3,6 +3,7 @@ import {
   InvalidDeviceAuthResponseError,
   awaitDeviceAuthorization,
   machineDisplayName,
+  machineId,
   parseDeviceAuthChallenge,
   parseDeviceAuthStatus,
   requestDeviceAuthorization,
@@ -185,5 +186,66 @@ describe('machine display name', () => {
       globalThis.fetch = original;
     }
     expect(body.machineHostname).toBe(machineDisplayName());
+  });
+});
+
+describe('machine id', () => {
+  const HEX = /^[a-f0-9]{64}$/;
+  const fails = () => {
+    throw new Error('not available');
+  };
+  const UUID = '8B1F2C3D-4E5F-4A6B-9C7D-0E1F2A3B4C5D';
+
+  test('macOS hashes the IOPlatformUUID; the raw id never leaves the machine', () => {
+    const id = machineId({
+      os: 'darwin',
+      run: (command, args) => {
+        expect([command, ...args]).toEqual(['ioreg', '-rd1', '-c', 'IOPlatformExpertDevice']);
+        return `+-o J316sAP  <class IOPlatformExpertDevice>\n    "IOPlatformUUID" = "${UUID}"\n`;
+      },
+      read: fails,
+    });
+    expect(id).toMatch(HEX);
+    expect(id).not.toContain(UUID.toLowerCase().replace(/-/g, ''));
+  });
+
+  test('the same hardware gives the same id on every platform source, and other hardware a different one', () => {
+    const mac = (uuid: string) => machineId({ os: 'darwin', run: () => `"IOPlatformUUID" = "${uuid}"`, read: fails });
+    expect(mac(UUID)).toBe(mac(UUID));
+    expect(mac(UUID)).not.toBe(mac(UUID.replace('8B1F', '9B1F')));
+    const win = machineId({
+      os: 'win32',
+      run: () => `\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography\r\n    MachineGuid    REG_SZ    ${UUID}\r\n`,
+      read: fails,
+    });
+    expect(win).toBe(mac(UUID));
+  });
+
+  test('Linux reads /etc/machine-id, then the dbus copy', () => {
+    const first = machineId({ os: 'linux', run: fails, read: (path) => (path === '/etc/machine-id' ? 'abc123\n' : fails()) });
+    const dbus = machineId({ os: 'linux', run: fails, read: (path) => (path === '/etc/machine-id' ? fails() : 'abc123') });
+    expect(first).toMatch(HEX);
+    expect(dbus).toBe(first);
+  });
+
+  test('an unreadable or empty id is null, never a random one', () => {
+    expect(machineId({ os: 'darwin', run: fails, read: fails })).toBeNull();
+    expect(machineId({ os: 'darwin', run: () => 'no uuid here', read: fails })).toBeNull();
+    expect(machineId({ os: 'linux', run: fails, read: () => '  \n' })).toBeNull();
+  });
+
+  test('pairing sends the machine id', async () => {
+    const original = globalThis.fetch;
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      body = JSON.parse(String(init.body));
+      return new Response(JSON.stringify(challenge()), { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      await requestDeviceAuthorization('https://api.kortix.com/v1/tunnel');
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(body.machine_id).toBe(machineId() ?? undefined);
   });
 });
