@@ -165,7 +165,7 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
 describe('grantWarmPoolLifetime — the one box that can never be observed', () => {
   test('REGRESSION: a warm box is granted its bounded hour at bake time', async () => {
     await grantWarmPoolLifetime('sb-1', {
-      warm_session: { state: 'available', sandbox_slug: 'default' },
+      warm: true, source: 'ui',
     });
 
     expect(executed).toHaveLength(1);
@@ -177,7 +177,7 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
   test('an ordinary box is untouched — no extra write on the provision hot path', async () => {
     await grantWarmPoolLifetime('sb-1', { session_id: 'sess-1' });
     await grantWarmPoolLifetime('sb-1', null);
-    await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'claimed' } });
+    await grantWarmPoolLifetime('sb-1', { warm_session: { state: 'available' } });
 
     expect(executed).toEqual([]);
   });
@@ -185,7 +185,7 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
   test('the warm lifetime is tunable', async () => {
     process.env.KORTIX_SANDBOX_WARM_GRANT_MINUTES = '10';
     await grantWarmPoolLifetime('sb-1', {
-      warm_session: { state: 'available' },
+      warm: true,
     });
 
     expect(executed[0]).toContain('600');
@@ -196,7 +196,7 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
 
     expect(
       await grantWarmPoolLifetime('sb-1', {
-        warm_session: { state: 'available' },
+        warm: true,
       }),
     ).toBeUndefined();
   });

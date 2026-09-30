@@ -18,6 +18,7 @@ import { GitDiffIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useEffect, type ReactElement } from 'react';
 import { shortRelative } from './project-session-list-helpers';
+import { SessionLabelBadges } from '@/features/workspace/project-sessions/session-label-badges';
 import { SOURCE_ICONS } from './session-source-icons';
 import { SessionStatusMark } from './session-status-mark';
 
@@ -57,6 +58,8 @@ interface SessionBrief {
   createdAt: string;
   source: SessionSource;
   changeRequests: readonly ChangeRequest[];
+  /** The session's free-form labels; the sidebar row has no room for them. */
+  labels?: readonly string[];
 }
 
 interface SessionBriefInteractionProps {
@@ -147,6 +150,7 @@ function SessionBriefContent({
   createdAt,
   source,
   changeRequests,
+  labels,
   projectId,
   onDismiss,
 }: SessionBrief & SessionBriefInteractionProps & { onDismiss: () => void }) {
@@ -176,6 +180,8 @@ function SessionBriefContent({
             </span>
           </div>
         ) : null}
+
+        {labels?.length ? <SessionLabelBadges session={{ labels: [...labels] }} max={6} className="flex-wrap" /> : null}
       </div>
 
       {changeRequests.length > 0 ? (

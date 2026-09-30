@@ -15,7 +15,7 @@ import { Linking, Pressable, View } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Sheet, type SheetRef } from '@/components/kortix/sheet';
+import { Sheet, useCloseThen, type SheetRef } from '@/components/kortix/sheet';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -55,36 +55,35 @@ export interface AttachSheetProps {
 export const AttachSheet = React.forwardRef<AttachSheetRef, AttachSheetProps>(
   ({ onPick, children }, ref) => {
     const sheetRef = React.useRef<SheetRef>(null);
-    const afterCloseRef = React.useRef<(() => void) | null>(null);
+    const { deferAfterClose, takeAfterClose, clearAfterClose } = useCloseThen();
     const insets = useSafeAreaInsets();
     const [cameraDenied, setCameraDenied] = React.useState(false);
 
     const showCameraDenied = React.useCallback(() => setCameraDenied(true), []);
     const openSource = useAttachmentPicker(onPick, showCameraDenied);
 
-    const closeThen = React.useCallback((action: () => void) => {
-      afterCloseRef.current = action;
-      sheetRef.current?.close();
-    }, []);
+    const closeThen = React.useCallback(
+      (action: () => void) => {
+        deferAfterClose(action);
+        sheetRef.current?.close();
+      },
+      [deferAfterClose]
+    );
 
     React.useImperativeHandle(
       ref,
       () => ({
         open: () => {
-          afterCloseRef.current = null;
+          clearAfterClose();
           sheetRef.current?.open();
         },
         close: () => sheetRef.current?.close(),
         closeThen,
       }),
-      [closeThen],
+      [closeThen, clearAfterClose],
     );
 
-    const handleDismiss = React.useCallback(() => {
-      const action = afterCloseRef.current;
-      afterCloseRef.current = null;
-      action?.();
-    }, []);
+    const handleDismiss = React.useCallback(() => takeAfterClose()?.(), [takeAfterClose]);
 
     return (
       <>

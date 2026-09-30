@@ -61,18 +61,16 @@ describe('fast boot Git hint cache', () => {
   });
 
 
-  test('round-trips a remote delta and the OpenCode config dir hint', () => {
+  test('round-trips a remote delta', () => {
     const remote: FastBootGitHint = {
       baseSha: 'a'.repeat(40),
       gitDeltaBundleRemote: true,
       gitDeltaParentSha: 'b'.repeat(40),
       gitDeltaParentCommitBase64: Buffer.from('tree deadbeef\n').toString('base64'),
-      opencodeConfigDir: '.kortix/opencode',
     };
     const entry = metadataFor(remote).git.fast_boot;
     expect(entry?.bundle_remote).toBe(true);
     expect(entry?.bundle_base64).toBe('');
-    expect(entry?.opencode_config_dir).toBe('.kortix/opencode');
     expect(readCachedFastBootGitHint(metadataFor(remote), 'main')).toEqual(remote);
     // A remote delta must not also carry an inline bundle.
     expect(
@@ -80,13 +78,11 @@ describe('fast boot Git hint cache', () => {
     ).toBeNull();
   });
 
-  test('caches a bare tip with "no project config" so the daemon can spawn early', () => {
-    const bare: FastBootGitHint = { baseSha: 'a'.repeat(40), opencodeConfigDir: null };
-    expect(metadataFor(bare).git.fast_boot?.opencode_config_dir).toBe('');
-    expect(readCachedFastBootGitHint(metadataFor(bare), 'main')).toEqual(bare);
-    const unknown: FastBootGitHint = { baseSha: 'a'.repeat(40) };
-    expect(metadataFor(unknown).git.fast_boot).not.toHaveProperty('opencode_config_dir');
-    expect(readCachedFastBootGitHint(metadataFor(unknown), 'main')).toEqual(unknown);
+  test('an entry written before the config-dir hint was removed still reads, without it', () => {
+    // The daemon stopped reading KORTIX_OPENCODE_CONFIG_DIR_HINT in #7403 (W3 D3).
+    const cached = metadataFor({ baseSha: 'a'.repeat(40) });
+    (cached.git.fast_boot as unknown as Record<string, unknown>).opencode_config_dir = '.kortix/opencode';
+    expect(readCachedFastBootGitHint(cached, 'main')).toEqual({ baseSha: 'a'.repeat(40) });
   });
 
   test('reuses a cache entry only when the remote tip still matches', async () => {

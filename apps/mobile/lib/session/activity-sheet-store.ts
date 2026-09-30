@@ -9,9 +9,24 @@
 
 import { create } from 'zustand';
 import { isToolPart, type Part } from '@kortix/sdk';
-import type { ActivityContextValue } from '@/components/session/turn/activity-step';
+import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 import type { BurstView } from './activity';
 import { ownsBurst } from './activity-sheet';
+
+/**
+ * The context a burst carries into the sheet — moved here when the dead
+ * `turn/activity-step.tsx` inline row was deleted (web keeps its own twin).
+ */
+export interface ActivityContextValue {
+  sessionId?: string;
+  /** The owning turn is still working. */
+  turnLive: boolean;
+  /** Opens a file the agent read or wrote (the chat's file viewer). */
+  onOpenFile?: (path: string) => void;
+  /** Absolute sandbox path → the path a reader sees. */
+  toDisplayPath?: (path: string) => string;
+  onPermissionReply?: (requestId: string, reply: PermissionReply) => void;
+}
 
 export interface OpenActivitySheet {
   /** Parts of the burst as last synced — decides which row owns the sheet. */

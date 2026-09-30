@@ -163,4 +163,8 @@ export interface QueuedContinueSessionPayload {
   placement?: 'transcript' | 'composer';
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
+  /** The row's `actor_user_id` is the person who sent it — see
+   *  `ContinueSessionCommand.bindTurnIdentity`. Absent on older rows, which
+   *  keep the token's identity. */
+  bindTurnIdentity?: boolean;
 }

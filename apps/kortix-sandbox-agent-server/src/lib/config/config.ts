@@ -113,16 +113,12 @@ const Schema = z.object({
   KORTIX_HARNESS: z.string().default(''),
 })
 
-/** Registered harness ids. `resolveHarness` is the only place that maps them. */
-export type HarnessId = 'opencode' | 'pi'
-
-export function normalizeHarnessId(raw: string | undefined): string {
-  return (raw ?? '').trim().toLowerCase() || 'opencode'
-}
-
 /** Host configuration. Native adapters own and validate their additional fields. */
 export type Config = {
-  /** The selected harness id (`KORTIX_HARNESS`, normalized). `loadConfig` always sets it; absent means `opencode`. */
+  /**
+   * The selected harness id: `KORTIX_HARNESS`, lower-cased. Empty selects the
+   * default, which only `resolveHarness` knows; `loadConfig` stores the id it resolved.
+   */
   harness?: string
   servicePort: number
   staticPort: number
@@ -206,7 +202,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_HARNESS: env.KORTIX_HARNESS,
   })
 
-  const harness = normalizeHarnessId(parsed.KORTIX_HARNESS)
+  const harness = parsed.KORTIX_HARNESS.trim().toLowerCase()
   return {
     harness,
     servicePort: parsed.KORTIX_SERVICE_PORT,

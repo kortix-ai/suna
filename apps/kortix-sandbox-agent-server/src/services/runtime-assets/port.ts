@@ -2,11 +2,6 @@ import type { Config } from '@/lib/config/config'
 
 export type HarnessAssetOutcome = 'skipped' | 'current' | 'updated' | 'failed' | 'staged'
 
-/** Existing health/reconcile wire fields, retained for native compatibility. */
-export interface HarnessAssetsCompatibilityResult {
-  opencode?: HarnessAssetOutcome
-}
-
 export interface HarnessAssetsInput {
   /** The adapter owns interpretation of its entries in the shared manifest. */
   manifest: { components?: unknown }
@@ -19,11 +14,17 @@ export interface HarnessAssetsResult {
   reasons: Record<string, string>
   /** Adapter-owned diagnostic values merged into the existing digest state. */
   state: Record<string, string>
+  /** The harness release on disk after this pass. Absent when the pass could not tell. */
+  version?: string
 }
 
 /** Harness-owned asset installation, reconciliation, and skill placement. */
 export interface HarnessAssetsService {
+  /** The harness these assets belong to, as health names it (`opencode`, `pi`). */
+  readonly harness: string
   readonly componentNames: readonly string[]
+  /** IMAGE BUILD ONLY: the harness release the image carries, or undefined when it cannot tell. */
+  bakedVersion?(): Promise<string | undefined>
   resolveConfigDir(cfg: Config): Promise<string>
   injectSkills(configDir: string, bakedDir: string): Promise<void>
   /** Resolve failures to component outcomes; never discard another component's result. */

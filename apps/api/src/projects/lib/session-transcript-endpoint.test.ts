@@ -46,7 +46,7 @@ const { buildSessionTranscriptDigest } = await import('./session-transcript');
 const runningSession = {
   sessionId: 'sess-1',
   status: 'running',
-  opencodeSessionId: 'ses_root',
+  runtimeSessionId: 'ses_root',
   // `sandboxUrl` names the external id, so no sandbox row lookup runs.
   sandboxUrl: 'https://preview.example.test/v1/p/sandbox-ext-1/8000',
 } as never;

@@ -114,6 +114,7 @@ describe('sessionActionRows', () => {
     isOpenThread: true,
     hasRuntime: true,
     canManageLifecycle: true,
+    canCompact: true,
     changes: { pending: false, error: false, count: 3 },
     busy: false,
     compacting: false,
@@ -172,6 +173,13 @@ describe('sessionActionRows', () => {
     const rows = sessionActionRows({ ...base, canManageLifecycle: false });
     expect(rows.compact.visible).toBe(false);
     expect(rows.viewChanges.visible).toBe(true);
+  });
+
+  test('a runtime without session.compact (pi) hides Compact only', () => {
+    const rows = sessionActionRows({ ...base, canCompact: false });
+    expect(rows.compact.visible).toBe(false);
+    expect(rows.viewChanges.visible).toBe(true);
+    expect(rows.openChangeRequest.visible).toBe(true);
   });
 
   test('Open change request shows only while the session has changes', () => {

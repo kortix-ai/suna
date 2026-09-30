@@ -1,4 +1,5 @@
 import {
+  ATTACH_UNSUPPORTED,
   attachOpenCodeSession,
   AttachOpenCodeError,
   attachSessionLabel,
@@ -24,6 +25,10 @@ sessions attach immediately, stopped ones are restarted and awaited, and
 The \`opencode\` binary is managed for you: the CLI downloads the exact version
 the session's server runs (cached under ~/.kortix/opencode/<version>/) so the
 TUI and server never skew. Set KORTIX_OPENCODE_BIN to force your own binary.
+
+A session whose runtime has no terminal client to attach (a pi session) exits
+1 before anything downloads. Use \`kortix sessions shell\` for a shell in its
+sandbox, or \`kortix sessions chat\` to talk to its agent.
 
 Given a session id, resolves the right host/project on its own: tries the
 active/linked project first, then — unless you pin --host/--project — scans
@@ -147,6 +152,12 @@ function reportAttachFailure(err: unknown, sessionId: string): number {
     }
   }
   process.stderr.write(`${status.err(err.message)}\n`);
+  if (err.message === ATTACH_UNSUPPORTED) {
+    process.stderr.write(
+      `  ${C.dim}Open a shell in its sandbox: \`kortix sessions shell ${sessionId}\`. ` +
+        `Talk to its agent: \`kortix sessions chat ${sessionId}\`.${C.reset}\n`,
+    );
+  }
   if (err.stage === 'attached') {
     process.stderr.write(`  ${C.dim}Install OpenCode or set KORTIX_OPENCODE_BIN.${C.reset}\n`);
   }

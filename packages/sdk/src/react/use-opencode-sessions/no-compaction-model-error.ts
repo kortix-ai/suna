@@ -1,6 +1,6 @@
 /**
  * `NoCompactionModelError` — the EXPECTED, user-facing configuration state
- * surfaced by the compaction (`useSummarizeOpenCodeSession`) mutation when
+ * surfaced by the compaction (`useSummarizeRuntimeSession`) mutation when
  * every model-resolution fallback tier fails (no config default, no assistant
  * message in the thread, no connected provider/model).
  *

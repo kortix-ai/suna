@@ -13,6 +13,8 @@
  * lives in `lib/opencode`.
  */
 
+import { featureNotSupportedError } from './runtime-capabilities';
+
 export interface RevertSessionInput {
   /** The session's OpenCode base URL (`SandboxContext.sandboxUrl`). */
   sandboxUrl: string;
@@ -42,6 +44,6 @@ export async function revertSession({
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`Revert failed (${res.status})${detail ? `: ${detail}` : ''}`);
+    throw featureNotSupportedError(res.status, detail) ?? new Error(`Revert failed (${res.status})${detail ? `: ${detail}` : ''}`);
   }
 }

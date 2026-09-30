@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 /**
  * Standalone approval page — the surface a human lands on from an approval link,
  * wherever that link was relayed (in-platform, chat, email).
@@ -12,30 +11,10 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { ApprovalDecision } from '@/components/setup-links/approval-decision';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useParams } from 'next/navigation';
 
 export default function ApprovalPage() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const params = useParams();
   const token = Array.isArray(params.token) ? params.token[0] : (params.token as string);
-
-  return (
-    <div className="bg-background flex min-h-screen w-full items-center justify-center px-4 py-10">
-      <main className="w-full max-w-lg space-y-6">
-        <div className="flex justify-center">
-          <KortixLogo />
-        </div>
-        <header className="space-y-1 text-center">
-          <h1 className="text-foreground text-xl font-medium text-balance">
-            {tI18nComplete.raw('text1862f81ed9d6')}
-          </h1>
-          <p className="text-muted-foreground text-sm text-pretty">
-            {tI18nComplete.raw('text32c6817c8380')}
-          </p>
-        </header>
-        <ApprovalDecision token={token} />
-      </main>
-    </div>
-  );
+  return <ApprovalDecision token={token} />;
 }

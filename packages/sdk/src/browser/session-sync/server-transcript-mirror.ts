@@ -75,7 +75,7 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	if (envelope.messages.length === 0) return false;
 	// THE IDENTITY GUARD: ids from another OpenCode root can never be settled by
 	// this root's runtime read.
-	if (envelope.opencode_session_id !== runtimeSessionId) return false;
+	if ((envelope.runtime_session_id ?? envelope.opencode_session_id) !== runtimeSessionId) return false;
 	return true;
 }
 

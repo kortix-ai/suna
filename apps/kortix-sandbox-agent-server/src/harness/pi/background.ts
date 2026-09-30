@@ -6,7 +6,7 @@
  * exhausted (see `resources.ts` `pickShedCandidate`).
  */
 import { logger } from '@/lib/log/logger'
-import { relayMemoryGuardTurnEnd } from '../shared/memory-guard-relay'
+import { relayMemoryGuardTurnEnd } from '../shared/turn-relay'
 import { startResourceMonitor, type ResourceMonitor } from '@/services/resources/resources'
 import type { Config } from '@/lib/config/config'
 import type { PiRuntime } from './runtime'
@@ -41,8 +41,8 @@ export function startPiBackground(runtime: () => PiRuntime | null, cfg: Config):
         await relayMemoryGuardTurnEnd({
           reason,
           aborted,
-          opencodeRssMb: snapshot.runtime?.rssMb ?? null,
-          opencodeSessionId: guardedRootId,
+          runtimeRssMb: snapshot.runtime?.rssMb ?? null,
+          runtimeSessionId: guardedRootId,
           turnMessageId: guardedTurnMessageId,
         })
       },

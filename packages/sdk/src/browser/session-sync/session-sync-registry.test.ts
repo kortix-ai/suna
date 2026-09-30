@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
-import { SandboxNotReadyError } from '../../core/http/opencode-errors';
+import { SandboxNotReadyError } from '../../core/http/runtime-errors';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
 import { configureKortix, platformConfig } from '../../core/http/config';

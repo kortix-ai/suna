@@ -2,12 +2,6 @@
  * `show` tool helpers.
  *
  * Mirrors apps/web `tool/shared/show-helpers.tsx`:
- * - `SHOW_HTML_EXT_RE`, `showDomain`, `buildHtmlStaticUrl` (pure);
- * - `SHOW_BORDER_STYLES` — `STATUS_BORDER` tone per `show` variant, as palette
- *   keys (`useTurnPalette()[SHOW_BORDER_STYLES.success]`);
- * - `showTypeIcon` / `showFileTypeIcon` — the glyph per `show` type and file
- *   extension. Web returns a sized node; mobile returns the `AppIcon` so the
- *   caller sizes and tints it (`<ToolIconSlot icon={…} size color />`);
  * - `useShowOpenInTab` — an HTML file → its static-server preview, a localhost
  *   URL → the sandbox preview, both in-session (`SandboxPreviewSheet`, KRTX-602);
  *   a safe http(s) URL → external; a path → the file viewer (`showOpenTarget`;
@@ -16,146 +10,28 @@
  *   · "Preview" inline, Refresh · Full screen in the panel (`showFileActions`):
  *   both open the same full-screen viewer, so only one is shown.
  *
- * Not ported here: `ShowCarousel` / `ShowContentRenderer` (web
- * `features/file-renderers`). They are content renderers, not primitives, and
- * belong to the `show` renderer port.
+ * The show type/file glyphs (`showTypeIcon` / `showFileTypeIcon`) live in
+ * `./tool-icons`, with the other tool icon maps. Not ported here:
+ * `ShowCarousel` / `ShowContentRenderer` (web `features/file-renderers`). They
+ * are content renderers, not primitives, and belong to the `show` renderer port.
  */
 
 import { useCallback, useMemo, useState } from 'react';
 import { Image, View } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { buildStaticFileLocalUrl } from '@kortix/sdk';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import {
-  ArrowClockwiseIcon,
-  ArrowSquareOutIcon,
-  ArrowsOutSimpleIcon,
-  CaretRightIcon,
-  CodeSimpleIcon,
-  FileCodeIcon,
-  FileCsvIcon,
-  FileDocIcon,
-  FileHtmlIcon,
-  FileIcon,
-  FileMdIcon,
-  FilePdfIcon,
-  FilePptIcon,
-  FileSvgIcon,
-  FileTextIcon,
-  FileXlsIcon,
-  FileZipIcon,
-  GlobeIcon,
-  ImageIcon,
-  MusicNotesIcon,
-  TextTIcon,
-  VideoIcon,
-  WarningIcon,
-  type AppIcon,
-} from '@/lib/icons';
+import { ArrowClockwiseIcon, ArrowsOutSimpleIcon, type AppIcon } from '@/lib/icons';
 import { fileKeys } from '@/lib/files/hooks';
 import { showFileActions, showOpenTarget, type ShowRowModel } from '@/lib/session/tools/web-show';
 import { useSandboxImage } from '@/components/session/turn/use-sandbox-image';
 import { SettingsRow } from '@/components/kortix/settings-list';
-import { THEME } from '@/lib/utils/theme';
-import { useColorScheme } from 'nativewind';
 import { webSpace } from '@/lib/session/user-message';
-import { TURN_SPACE, TURN_TYPE, useTurnPalette, type TurnPalette } from './styles';
+import { TURN_SPACE, useTurnPalette } from './styles';
 import { useProxyUrl, useServicePreview, useToolNavigation, ServicePreviewViewport } from './navigation';
 
 export { ServicePreviewViewport, useServicePreview };
-
-export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
-
-export function showDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace('www.', '');
-  } catch {
-    return url;
-  }
-}
-
-export function buildHtmlStaticUrl(filePath: string): string {
-  return buildStaticFileLocalUrl(filePath);
-}
-
-export const SHOW_BORDER_STYLES: Record<string, keyof TurnPalette> = {
-  default: 'border',
-  success: 'successBorder',
-  warning: 'warningBorder',
-  info: 'infoBorder',
-  danger: 'destructive30',
-};
-
-export function showTypeIcon(type: string): AppIcon {
-  switch (type) {
-    case 'image':
-      return ImageIcon;
-    case 'video':
-      return VideoIcon;
-    case 'audio':
-      return MusicNotesIcon;
-    case 'code':
-      return CodeSimpleIcon;
-    case 'markdown':
-    case 'text':
-      return TextTIcon;
-    case 'html':
-    case 'url':
-      return GlobeIcon;
-    case 'pdf':
-      return FileTextIcon;
-    case 'error':
-      return WarningIcon;
-    case 'file':
-      return FileIcon;
-    default:
-      return ArrowSquareOutIcon;
-  }
-}
-
-const SHOW_EXT_ICONS: Array<[RegExp, AppIcon]> = [
-  [/\.pdf$/i, FilePdfIcon],
-  [/\.(pptx?|key|odp)$/i, FilePptIcon],
-  [/\.(docx?|rtf|odt)$/i, FileDocIcon],
-  [/\.(xlsx?|ods)$/i, FileXlsIcon],
-  [/\.(csv|tsv)$/i, FileCsvIcon],
-  [/\.(html?|xhtml)$/i, FileHtmlIcon],
-  [/\.(mdx?|markdown)$/i, FileMdIcon],
-  [/\.svg$/i, FileSvgIcon],
-  [/\.(zip|tar|gz|tgz|rar|7z)$/i, FileZipIcon],
-  [/\.(png|jpe?g|gif|webp|avif|heic|bmp|ico)$/i, ImageIcon],
-  [/\.(mp4|mov|webm|mkv|avi)$/i, VideoIcon],
-  [/\.(mp3|wav|m4a|aac|ogg|flac)$/i, MusicNotesIcon],
-  [
-    /\.(m?[jt]sx?|py|rb|go|rs|java|cc?|cpp|hpp?|cs|php|sh|bash|zsh|json|ya?ml|toml|sql|s?css|less|vue|swift|kt)$/i,
-    FileCodeIcon,
-  ],
-];
-
-const SHOW_TYPE_FILE_ICONS: Record<string, AppIcon> = {
-  pdf: FilePdfIcon,
-  ppt: FilePptIcon,
-  pptx: FilePptIcon,
-  doc: FileDocIcon,
-  docx: FileDocIcon,
-  xls: FileXlsIcon,
-  xlsx: FileXlsIcon,
-  csv: FileCsvIcon,
-  audio: MusicNotesIcon,
-  code: FileCodeIcon,
-  markdown: FileMdIcon,
-};
-
-export function showFileTypeIcon(type: string, path?: string): AppIcon {
-  if (path) {
-    for (const [re, ExtIcon] of SHOW_EXT_ICONS) {
-      if (re.test(path)) return ExtIcon;
-    }
-  }
-  return SHOW_TYPE_FILE_ICONS[type] ?? showTypeIcon(type);
-}
 
 export function useShowOpenInTab(props: { type: string; url: string; path: string; title: string }) {
   const { type, url, path, title } = props;

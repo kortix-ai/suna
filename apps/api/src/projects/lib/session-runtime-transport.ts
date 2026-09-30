@@ -1,16 +1,16 @@
 /**
- * The API's own client for the daemon's `/kortix/opencode/*` namespace.
+ * The API's own client for the daemon's `/kortix/runtime/*` namespace (`/kortix/opencode/*` on a pre-W3 daemon).
  *
  * Two calls, both over the EXISTING sandbox transport (`resolveSandboxIngress`
  * + `buildSandboxUpstreamHeaders` — the same resolver the `/v1/p/` proxy and
  * the WebSocket upstream use, so provider routing, preview links, service keys
  * and the signed user context are resolved in exactly one place):
  *
- *   • {@link fetchRuntimeState}  — `GET /kortix/opencode/state`, gzipped on the
+ *   • {@link fetchRuntimeState}  — `GET /kortix/runtime/state`, gzipped on the
  *     wire, `If-None-Match` honoured.
- *   • {@link openRuntimeEventStream} — `GET /kortix/opencode/events?since=&epoch=`,
+ *   • {@link openRuntimeEventStream} — `GET /kortix/runtime/events?since=&epoch=`,
  *     an SSE body handed back UNREAD so the caller can pump it.
- *   • {@link fetchRuntimeMessages} — `GET /kortix/opencode/messages/:sessionId`,
+ *   • {@link fetchRuntimeMessages} — `GET /kortix/runtime/messages/:sessionId`,
  *     one transcript page. Every harness serves it.
  *
  * ─── THE STREAM IS NEVER BUFFERED ──────────────────────────────────────────
@@ -68,6 +68,42 @@ async function daemonEndpoint(
   return { url: ingress.url.replace(/\/$/, ''), headers };
 }
 
+/** The daemon's Runtime API since W3. */
+const RUNTIME_API = '/kortix/runtime';
+/** Its path on a daemon built before W3. */
+const LEGACY_RUNTIME_API = '/kortix/opencode';
+/** Sandboxes whose daemon answered only the pre-W3 path. */
+// ponytail: per-process memo, cleared when full; a box that updates its daemon
+// keeps the legacy path here until the memo clears or the process restarts.
+const legacyRuntimeApi = new Set<string>();
+const LEGACY_RUNTIME_API_MEMO_MAX = 5_000;
+
+/**
+ * Call the Runtime API at `/kortix/runtime<path>`, or at its pre-W3 path on a
+ * daemon that does not serve the new one: that daemon answers 404 JSON from its
+ * `/kortix/*` catch-all, or, older still, the runtime's HTML shell.
+ */
+async function fetchRuntimeApi(
+  externalId: string,
+  url: (base: string) => URL | string,
+  init: RequestInit,
+): Promise<Response> {
+  if (!legacyRuntimeApi.has(externalId)) {
+    const response = await fetch(url(RUNTIME_API), init);
+    const html = (response.headers.get('content-type') ?? '').toLowerCase().startsWith('text/html');
+    if (response.status !== 404 && !html) return response;
+    await response.body?.cancel().catch(() => {});
+    if (legacyRuntimeApi.size >= LEGACY_RUNTIME_API_MEMO_MAX) legacyRuntimeApi.clear();
+    legacyRuntimeApi.add(externalId);
+  }
+  return fetch(url(LEGACY_RUNTIME_API), init);
+}
+
+/** Test seam: forget which sandboxes answered only the pre-W3 path. */
+export function resetLegacyRuntimeApiForTests(): void {
+  legacyRuntimeApi.clear();
+}
+
 export type RuntimeStateFetch =
   | { ok: true; status: 200; doc: Record<string, unknown>; etag: string | null }
   | { ok: true; status: 304; etag: string | null }
@@ -101,7 +137,8 @@ export async function fetchRuntimeState(
   if (options.ifNoneMatch) headers['If-None-Match'] = options.ifNoneMatch;
 
   try {
-    const response = await fetch(`${endpoint.url}/kortix/opencode/state`, {
+    const url = endpoint.url;
+    const response = await fetchRuntimeApi(target.externalId, (api) => `${url}${api}/state`, {
       headers,
       signal: options.signal ?? AbortSignal.timeout(RUNTIME_STATE_TIMEOUT_MS),
     });
@@ -141,10 +178,14 @@ export async function fetchRuntimeMessages(
   }
   if (!endpoint) return { ok: false, reason: 'no_service_key', status: null };
 
-  const url = new URL(`${endpoint.url}/kortix/opencode/messages/${encodeURIComponent(sessionId)}`);
-  url.searchParams.set('limit', String(options.limit));
+  const base = endpoint.url;
+  const url = (api: string) => {
+    const next = new URL(`${base}${api}/messages/${encodeURIComponent(sessionId)}`);
+    next.searchParams.set('limit', String(options.limit));
+    return next;
+  };
   try {
-    const response = await fetch(url, {
+    const response = await fetchRuntimeApi(target.externalId, url, {
       headers: { ...endpoint.headers, Accept: 'application/json', 'Accept-Encoding': 'gzip' },
       signal: options.signal ?? AbortSignal.timeout(RUNTIME_STATE_TIMEOUT_MS),
     });
@@ -182,11 +223,15 @@ export async function openRuntimeEventStream(
   }
   if (!endpoint) return { ok: false, reason: 'no_service_key', status: null };
 
-  const url = new URL(`${endpoint.url}/kortix/opencode/events`);
-  if (typeof options.since === 'number' && Number.isFinite(options.since)) {
-    url.searchParams.set('since', String(options.since));
-  }
-  if (options.epoch) url.searchParams.set('epoch', options.epoch);
+  const base = endpoint.url;
+  const url = (api: string) => {
+    const next = new URL(`${base}${api}/events`);
+    if (typeof options.since === 'number' && Number.isFinite(options.since)) {
+      next.searchParams.set('since', String(options.since));
+    }
+    if (options.epoch) next.searchParams.set('epoch', options.epoch);
+    return next;
+  };
 
   // The connect is bounded; the STREAM is not. Two signals, combined, because
   // `AbortSignal.timeout` on the request would also abort the live body.
@@ -198,7 +243,7 @@ export async function openRuntimeEventStream(
   connectTimeout.addEventListener('abort', onConnectTimeout, { once: true });
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchRuntimeApi(target.externalId, url, {
       headers: {
         ...endpoint.headers,
         Accept: 'text/event-stream',

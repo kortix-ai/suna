@@ -29,3 +29,21 @@ that the project will use.
 
 Run `kortix system-skills get kortix-system --full` for the current platform
 instructions. Run `kortix schema --version 2` for the exact manifest schema.
+
+### Per-agent OpenCode plugins
+
+Keep plugin implementations in `harnesses/opencode/plugins/`. A v2 manifest may select filename references per agent:
+
+```yaml
+harnesses:
+  opencode:
+    plugins: [audit.ts] # enabled for every agent
+agents:
+  specialist:
+    harnesses:
+      opencode:
+        exclude: [audit.ts]
+        plugins: [specialist.ts]
+```
+
+The selected agent gets its own config release. Unselected plugin entrypoints do not load, including their import-time hooks and sub-agent registrations. Imported modules under `plugins/` remain available. When no OpenCode plugin selection is declared, existing auto-discovery remains unchanged. Pi uses `harnesses.pi.packages` and agent-level `exclude` instead.

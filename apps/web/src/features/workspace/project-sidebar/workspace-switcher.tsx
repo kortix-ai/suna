@@ -176,7 +176,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <SidebarMenuButton
                 aria-label={t('workspace.switch')}
                 className={cn(
-                  'group/workspace hover:bg-card relative flex cursor-pointer items-center gap-2 rounded-md px-1',
+                  'group/workspace hover:bg-sidebar-row relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >

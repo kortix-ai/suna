@@ -33,18 +33,28 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
-import { observeSandboxTurn, type SandboxTurnReading } from '../sandbox-turn-observation';
-import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
-import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
-import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
+import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
+import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
-import { turnAbsoluteMaxMs, turnDeliveryGraceMs, turnGrantMs, turnNoBeginRelayMaxMs } from '../sandbox-deadline-policy';
+import {
+  turnAbsoluteMaxMs,
+  turnDeliveryGraceMs,
+  turnGrantMs,
+  turnNoBeginRelayMaxMs,
+} from '../sandbox-deadline-policy';
+import {
+  clearSandboxTurn,
+  reconcileSandboxTurnDelivery,
+  renewActiveSandboxTurn,
+} from '../sandbox-turn-lifecycle';
+import { type SandboxTurnReading, observeSandboxTurn } from '../sandbox-turn-observation';
 import {
   PROMPT_NEVER_RAN_END_REASONS,
   requeueAbandonedPrompt,
@@ -52,16 +62,13 @@ import {
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
+  REAPER_TURN_CAUSES,
   type SandboxTurnDeliveryReconciliation,
   type SessionTurnEndReason,
   type StoredSandboxTurn,
-  REAPER_TURN_CAUSES,
-  clearSandboxTurn,
-  reconcileSandboxTurnDelivery,
-  renewActiveSandboxTurn,
   settleOrphanedSandboxTurns,
   storedSandboxTurns,
-} from '../sandbox-turn-lifecycle';
+} from '../session-turn-ledger';
 import {
   countReapCandidates,
   markReaperVisited,
@@ -118,7 +125,10 @@ export interface SandboxReaperDependencies {
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
   promoteNextInboxRow: typeof promoteNextInboxRow;
-  drainSessionLifecycleQueue: (input: { idempotencyKey: string; coalesce?: boolean }) => Promise<unknown>;
+  drainSessionLifecycleQueue: (input: {
+    idempotencyKey: string;
+    coalesce?: boolean;
+  }) => Promise<unknown>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
@@ -136,7 +146,6 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
     return drainSessionLifecycleQueue(input);
   },
 };
-
 
 /**
  * Per-sandbox probe back-off after an `unknown` turn observation, in this
@@ -430,7 +439,12 @@ export async function reapAndReconcileSandboxes(
                 // never reported ended, and nothing here observed how it
                 // finished. `runtime_gone` would claim the runtime went away
                 // and `completed` would claim it worked.
-                await dependencies.clearSandboxTurn(row.sandboxId, turn.token, undefined, 'unknown');
+                await dependencies.clearSandboxTurn(
+                  row.sandboxId,
+                  turn.token,
+                  undefined,
+                  'unknown',
+                );
                 result.turnsSettled += 1;
                 continue;
               }
@@ -477,7 +491,12 @@ export async function reapAndReconcileSandboxes(
               const backoff = probeBackoff.get(row.sandboxId);
               const backedOff = backoff !== undefined && backoff.until > now.getTime();
               const { observation, endReason, daemonAnswered, orphanedPrompt } = backedOff
-                ? ({ observation: 'unknown', endReason: null, daemonAnswered: false, orphanedPrompt: false } as const)
+                ? ({
+                    observation: 'unknown',
+                    endReason: null,
+                    daemonAnswered: false,
+                    orphanedPrompt: false,
+                  } as const)
                 : await dependencies.observeSandboxTurn(
                     provider,
                     row.externalId,
@@ -509,11 +528,11 @@ export async function reapAndReconcileSandboxes(
               // `messageId` is what keeps that abort honest: every prompt of a
               // session shares one root, so the finalizer must prove the open
               // assistant message answers THIS record before it aborts.
-              if (observation === 'terminal' && turn.opencodeSessionId) {
+              if (observation === 'terminal' && turn.runtimeSessionId) {
                 const huskOutcome = await dependencies.finalizeHuskTurn({
                   sandboxId: row.sandboxId,
                   externalId: row.externalId,
-                  opencodeSessionId: turn.opencodeSessionId,
+                  opencodeSessionId: turn.runtimeSessionId,
                   messageId: turn.messageId,
                 });
                 if (huskOutcome === 'finalized') {
@@ -740,15 +759,22 @@ export async function reapAndReconcileSandboxes(
             if (backedOffProbes === 0) {
               const nextBackoffMs = Math.min(
                 PROBE_BACKOFF_MAX_MS,
-                Math.max(PROBE_BACKOFF_MIN_MS, (probeBackoff.get(row.sandboxId)?.backoffMs ?? 0) * 2),
+                Math.max(
+                  PROBE_BACKOFF_MIN_MS,
+                  (probeBackoff.get(row.sandboxId)?.backoffMs ?? 0) * 2,
+                ),
               );
-              probeBackoff.set(row.sandboxId, { backoffMs: nextBackoffMs, until: now.getTime() + nextBackoffMs });
+              probeBackoff.set(row.sandboxId, {
+                backoffMs: nextBackoffMs,
+                until: now.getTime() + nextBackoffMs,
+              });
             }
             // An unchanged unreadable turn is one incident, not one warning
             // every 20 s. A readable answer clears the back-off above; the next
             // unknown episode warns again. Log a failed extension on every pass.
             if (
-              (backedOffProbes === 0 && probeBackoff.get(row.sandboxId)?.backoffMs === PROBE_BACKOFF_MIN_MS) ||
+              (backedOffProbes === 0 &&
+                probeBackoff.get(row.sandboxId)?.backoffMs === PROBE_BACKOFF_MIN_MS) ||
               !extended
             ) {
               console.warn('[reaper] turn observation unknown; drip-extending', {

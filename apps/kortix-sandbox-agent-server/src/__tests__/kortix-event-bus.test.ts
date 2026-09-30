@@ -99,7 +99,7 @@ describe('resync — the daemon says so instead of pretending', () => {
       head_seq: 20,
       requested_since: 2,
     })
-    expect(sub.resync!.recover).toContain('GET /kortix/opencode/state')
+    expect(sub.resync!.recover).toContain('GET /kortix/runtime/state')
   })
 
   test('the OLDEST replayable cursor still replays exactly — the boundary is inclusive', () => {

@@ -19,7 +19,7 @@ let mentionDirScanCache:
     }
   | undefined;
 
-export async function findOpenCodeFiles(query: string): Promise<string[]> {
+export async function findRuntimeFiles(query: string): Promise<string[]> {
   const client = getClient();
   const normalizedQuery = query.trim();
   const ql = normalizedQuery.toLowerCase();
@@ -200,3 +200,7 @@ export async function findOpenCodeFiles(query: string): Promise<string[]> {
     .sort((a, b) => rankFile(a) - rankFile(b) || a.localeCompare(b))
     .slice(0, 20);
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `findRuntimeFiles`. Removed in the next major. */
+export const findOpenCodeFiles = findRuntimeFiles;

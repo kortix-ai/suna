@@ -48,6 +48,18 @@ describe('sanitizeTranscript', () => {
     expect(empty.complete).toBe(false);
   });
 
+  test('the runtime session is served neutrally, and under its pre-W4 key', () => {
+    // A W4 API names it `runtime_session_id` (wins); an older one only `opencode_session_id`.
+    const neutral = sanitizeTranscript(
+      { available: true, runtime_session_id: 'ses_new', opencode_session_id: 'ses_old' },
+      null,
+    );
+    expect(neutral.runtime_session_id).toBe('ses_new');
+    expect(neutral.opencode_session_id).toBe('ses_new');
+    const older = sanitizeTranscript({ available: true, opencode_session_id: 'ses_old' }, null);
+    expect(older.runtime_session_id).toBe('ses_old');
+  });
+
   test('a garbage body degrades to an unavailable transcript, never a crash', () => {
     const t = sanitizeTranscript('not an object', 'ses_fb');
     expect(t).toMatchObject({

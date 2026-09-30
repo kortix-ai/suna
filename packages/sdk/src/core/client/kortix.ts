@@ -20,6 +20,7 @@ import * as F from '../files/client';
 import { createPromptAttachmentController } from '../attachments/prompt-attachments';
 import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
+import { backendApi } from '../http/api-client';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
 import * as A from '../rest/platform-client/auth';
@@ -39,7 +40,7 @@ import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers'
 import {
   openEventStream,
   type EventStreamHandle,
-  type OpenCodeEvent,
+  type RuntimeEvent,
 } from '../stream/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -1085,11 +1086,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             Math.min(30_000, remainingMs()),
           );
         }
+        const runtimeSessionId = started?.runtime_session_id ?? started?.opencode_session_id;
         if (
           !started ||
           started.stage !== 'ready' ||
           !started.sandbox ||
-          !started.opencode_session_id
+          !runtimeSessionId
         ) {
           throw new ApiError(runtimeNotReadyMessage(started), {
             code: 'RUNTIME_UNAVAILABLE',
@@ -1110,7 +1112,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         // handle's own operations never read it back, only `_ready` below.
         setCurrentRuntime(runtimeUrl, externalId);
         return {
-          opencodeSessionId: started.opencode_session_id,
+          runtimeSessionId,
+          opencodeSessionId: runtimeSessionId,
           runtimeUrl,
           sandboxId: externalId,
         };
@@ -1147,6 +1150,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     return {
       // ── lifecycle (Kortix REST) ──────────────────────────────────────────
       get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
+      presence: (input: { tab_id: string; active: boolean }) =>
+        backendApi.put<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}/presence`, input, { showErrors: false }),
       /** Unified finalized LLM and compute cost for this session. */
       cost: () => P.getSessionCostRecord(sessionId, { projectId }),
       update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
@@ -1331,14 +1336,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * choices for this message only.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         const selectedModel = opts?.model ?? _model;
         const selectedAgent = opts?.agent ?? _agent;
         const persisted = selectedModel && selectedAgent ? {} : await persistedPromptDefaults();
         const model = selectedModel ?? persisted.model;
         const agent = selectedAgent ?? persisted.agent;
         return getClientForUrl(runtimeUrl).session.prompt({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
           parts: [{ type: 'text', text }],
           ...(model ? { model } : {}),
           ...(agent ? { agent } : {}),
@@ -1346,9 +1351,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.abort({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
         });
       },
       /**
@@ -1356,17 +1361,17 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * OpenCode session. The next prompt commits the new path.
        */
       rewind: async (messageId: string) => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.revert({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
           messageID: messageId,
         });
       },
       /** Restore the path removed by `rewind()` before another prompt commits it. */
       restoreRewind: async () => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.unrevert({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
         });
       },
       /**
@@ -1374,7 +1379,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * updates, session status, permissions/questions, lsp diagnostics, …).
        * A thin facade over the framework-free `openEventStream` primitive
        * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
-       * `@kortix/sdk/react`'s `useOpenCodeEventStream`): resolves THIS
+       * `@kortix/sdk/react`'s `useRuntimeEventStream`): resolves THIS
        * handle's own runtime first (`ensureReady()`), then connects a client
        * bound to that runtime URL — never the module-global "active" one, so
        * two session handles on two different sandboxes never cross wires.
@@ -1389,7 +1394,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *   handle.close();
        */
       stream: async (opts: {
-        onEvent: (event: OpenCodeEvent) => void;
+        onEvent: (event: RuntimeEvent) => void;
         onGapRehydrate?: (gapMs: number) => void;
         signal?: AbortSignal;
       }): Promise<EventStreamHandle> => {

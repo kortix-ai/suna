@@ -46,12 +46,12 @@
     --foreground: oklch(0 0 0);
     --card: oklch(0.9672 0 0);
     --popover: oklch(1 0 0);
-    --secondary: oklch(0.9431 0 0);
-    --muted: oklch(0.9431 0 0);
+    --secondary: oklch(0.9461 0 0);
+    --muted: oklch(0.9461 0 0);
     --muted-foreground: oklch(0.5103 0 0);
     --accent: oklch(0.9672 0 0);
     --border: oklch(0.9128 0 0);
-    --input: oklch(0.9431 0 0);
+    --input: oklch(0.9461 0 0);
   }
 
   html,

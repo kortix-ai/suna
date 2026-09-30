@@ -17,6 +17,7 @@ describe('providerIconSrc', () => {
     expect(providerIconSrc('google-vertex')).toBe('/provider-icons/google.svg');
     expect(providerIconSrc('google-vertex-anthropic')).toBe('/provider-icons/anthropic.svg');
     expect(providerIconSrc('cohere-platform')).toBe('/provider-icons/cohere.svg');
+    expect(providerIconSrc('opencode-go')).toBe('/provider-icons/opencode.svg');
   });
 
   test('renders the three distinct Moonshot providers with the Moonshot mark', () => {

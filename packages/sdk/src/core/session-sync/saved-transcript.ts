@@ -82,9 +82,8 @@ export function savedCopyEmptyRoot(
     envelope.source === 'mirror' &&
     envelope.complete &&
     envelope.total === 0 &&
-    envelope.messages.length === 0 &&
-    envelope.opencode_session_id
-    ? envelope.opencode_session_id
+    envelope.messages.length === 0
+    ? (envelope.runtime_session_id ?? envelope.opencode_session_id ?? null)
     : null;
 }
 

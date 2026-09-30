@@ -784,7 +784,7 @@ export async function readSessionTranscriptMirror(input: {
     async (tx) => {
       const [state] = await tx
         .select({
-          opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+          opencodeSessionId: sessionTranscriptMirrors.runtimeSessionId,
           headComplete: sessionTranscriptMirrors.headComplete,
           capturedAt: sessionTranscriptMirrors.capturedAt,
         })
@@ -797,7 +797,7 @@ export async function readSessionTranscriptMirror(input: {
       const scope = target
         ? and(
             eq(sessionTranscriptMessages.sessionId, input.sessionId),
-            eq(sessionTranscriptMessages.opencodeSessionId, target),
+            eq(sessionTranscriptMessages.runtimeSessionId, target),
           )
         : eq(sessionTranscriptMessages.sessionId, input.sessionId);
 

@@ -21,7 +21,7 @@ import {
   clearOptimistic,
   markBridgedParts,
 } from './sync-store';
-import { isLiveSession, isLiveSessionOn, reconcileLiveSession, reconcileLiveSessions } from './session-sync';
+import { hydrateLiveStatuses, isLiveSession, reconcileLiveSession, reconcileLiveSessions } from './session-sync';
 import { createEventBatcher, type StreamEvent } from './event-batcher';
 import { createCueTracker, cueForEvent, type EventCue } from './event-cues';
 import { haptics } from '@/lib/haptics';
@@ -38,7 +38,6 @@ import {
   onForeground,
   patchSessionList,
   questionsToHydrate,
-  statusesToHydrate,
   shouldReconcileOnOpen,
   shouldRecycleStream,
   type OpenCause,
@@ -405,32 +404,6 @@ async function hydratePermissionsAfterGap(sandboxUrl: string, isStale: () => boo
   }
 }
 
-/**
- * One `/session/status` read on every stream open. Busy/idle otherwise comes
- * only from live frames, so a thread opened — or a stream reopened — mid-turn
- * read "not running" until the next status frame (KRTX-606).
- */
-async function hydrateStatusesOnOpen(sandboxUrl: string, isStale: () => boolean) {
-  try {
-    const before = useSyncStore.getState().sessionStatus;
-    const token = await getAuthToken();
-    const res = await fetch(`${sandboxUrl}/session/status`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (!res.ok || isStale()) return;
-    const body: unknown = await res.json();
-    if (isStale()) return;
-    const store = useSyncStore.getState();
-    const writes = statusesToHydrate(body, before, store.sessionStatus, (id) => isLiveSessionOn(id, sandboxUrl));
-    for (const [sessionId, status] of writes) store.setStatus(sessionId, status);
-  } catch {
-    // The next open retries; live frames keep correcting it meanwhile.
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -477,6 +450,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * - after an interrupted connection reopens past the gap threshold, or after a
  *   recycle, the live sessions re-read one tail page each and `/question` is
  *   read once;
+ * - every open reads `/session/status` once and settles a working session the
+ *   runtime no longer lists;
  * - past `STREAM_RECYCLE_BYTES` the connection is recycled, because the XHR
  *   transport keeps the whole body in memory;
  * - backoff has jitter; after `MAX_HARD_FAILURES` consecutive failures the
@@ -730,7 +705,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         lastReceivedAt = openedAt;
         health.dispatch({ type: 'open', at: openedAt });
         armHeartbeat(HEARTBEAT_TIMEOUT_MS);
-        void hydrateStatusesOnOpen(sandboxUrl, () => disposed || es !== source);
+        void hydrateLiveStatuses(sandboxUrl, () => disposed || es !== source);
         stableTimer = setTimeout(() => {
           stableTimer = null;
           if (!disposed && es === source) markStable();
