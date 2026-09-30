@@ -51,6 +51,8 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-row: var(--sidebar-row);
+  --color-sidebar-row-control: var(--sidebar-row-control);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -559,6 +561,12 @@
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.9461 0 0); /* surface-2 #ededed */
   --sidebar-accent-foreground: oklch(0.2393 0 0); /* ink #1f1f1f */
+  /* A hovered or selected row on the sidebar canvas, as a SOLID fill: the
+     session row uses it as a mask over its own title, so it cannot be a
+     translucent `--hover`. `-control` is one step above it, for a control
+     that sits on a filled row. */
+  --sidebar-row: var(--card); /* surface-1 #f4f4f4 */
+  --sidebar-row-control: var(--sidebar-accent); /* surface-2 #ededed */
   --sidebar-border: oklch(0.9128 0 0); /* hairline */
   --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
@@ -648,6 +656,10 @@
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.2264 0 0); /* surface-2 */
   --sidebar-accent-foreground: oklch(1 0 0);
+  /* One step higher than light. Surface-1 (#141414) on the #0b0b0b canvas is
+     1.07:1 and did not read as a fill; surface-2 is 1.15:1. */
+  --sidebar-row: var(--sidebar-accent); /* surface-2 #1c1c1c */
+  --sidebar-row-control: oklch(0.2686 0 0); /* #262626 */
   --sidebar-border: oklch(0.2178 0 0); /* hairline-soft #1a1a1a */
   --sidebar-ring: oklch(0.669 0.1837 248.8066);
 
@@ -1322,7 +1334,10 @@ html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx
   height: max(6px, var(--kx-titlebar-inset));
 }
 html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome,
-html[data-desktop-platform='macos'] body:not(:has([data-kx-titlebar-owner])) .kx-desktop-chrome > * {
+html[data-desktop-platform='macos']
+  body:not(:has([data-kx-titlebar-owner]))
+  .kx-desktop-chrome
+  > * {
   pointer-events: none;
 }
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
@@ -1507,23 +1522,59 @@ html[data-desktop='true'] .kx-titlebar-spacer {
 html[data-desktop-platform='macos']
   :where(body:has([data-kx-titlebar-owner]))
   :is(
-    button, a, input, textarea, select, option, label, summary, video, audio, iframe,
-    [role='button'], [role='tab'], [role='link'], [role='menuitem'], [role='textbox'],
-    [contenteditable], [data-no-drag]
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
   ) {
   -webkit-app-region: initial;
   app-region: initial;
 }
 html[data-desktop-platform='macos']
   :is(
-    .kx-titlebar-row, .kx-titlebar-tabs, .kx-project-sidebar-header,
-    [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'],
-    [data-radix-popper-content-wrapper], [data-sonner-toaster]
+    .kx-titlebar-row,
+    .kx-titlebar-tabs,
+    .kx-project-sidebar-header,
+    [role='dialog'],
+    [role='alertdialog'],
+    [role='menu'],
+    [role='listbox'],
+    [data-radix-popper-content-wrapper],
+    [data-sonner-toaster]
   )
   :is(
-    button, a, input, textarea, select, option, label, summary, video, audio, iframe,
-    [role='button'], [role='tab'], [role='link'], [role='menuitem'], [role='textbox'],
-    [contenteditable], [data-no-drag]
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    option,
+    label,
+    summary,
+    video,
+    audio,
+    iframe,
+    [role='button'],
+    [role='tab'],
+    [role='link'],
+    [role='menuitem'],
+    [role='textbox'],
+    [contenteditable],
+    [data-no-drag]
   ),
 html[data-desktop-platform='macos'] [class*='app-region:no-drag'] {
   -webkit-app-region: no-drag;
@@ -1614,7 +1665,8 @@ html[data-desktop-platform='macos'] .kx-account-hub-header[data-sidebar-collapse
 html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-overlay-sidebar-titlebar {
   padding-left: 0.5rem;
 }
-html[data-desktop-platform='macos'][data-desktop-fullscreen='true'] .kx-account-hub-header[data-sidebar-collapsed] {
+html[data-desktop-platform='macos'][data-desktop-fullscreen='true']
+  .kx-account-hub-header[data-sidebar-collapsed] {
   padding-left: 0.5rem;
 }
 /* The narrow Settings rail is a horizontal tab strip. Its default 36px list,
