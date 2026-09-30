@@ -1,7 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitMultipleFilesToBranch } from '../git/branches';
-import { isRemotePushPolicyRejection } from '../git/mirror';
+import { isRemotePushPolicyRejection, isTransientGitMirrorError } from '../git/mirror';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import { MANIFEST_FILENAME, type GitTriggerSpec, type ParsedManifest, manifestWrites, readManifest, synthesizeBlankManifest, triggerSpecToTomlEntry } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
@@ -250,6 +250,9 @@ async function commitGitCliRepoFile(
         error: 'The repository rejected the push because of branch protection or repository rules. Allow the Kortix GitHub App to push to the default branch, or connect a repository where it can, then try again.',
         status: 409,
       };
+    }
+    if (isTransientGitMirrorError(err)) {
+      return { error: 'git mirror is temporarily unavailable', status: 503 };
     }
     return {
       error: `Failed to commit ${path}: ${(err as Error).message || String(err)}`,

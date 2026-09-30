@@ -49,7 +49,15 @@ The command prints a code and opens the approval page. On the approval page:
 4. Select what agents may do: **Filesystem**, **Shell**, **Computer Use**.
 
 The computer then shows under **Customize → Connectors → Computer →
-Accounts** in every project you belong to. Each row has an online dot.
+Accounts** in every project you belong to. Its row looks and works like every
+other connector account; a computer that is not connected right now says
+**Offline** under its name.
+
+Kortix knows each computer by a hash of its hardware ID (the IOPlatformUUID
+on macOS, `/etc/machine-id` on Linux, `MachineGuid` on Windows). Connecting
+the same computer again, after a reinstall, a rename, or a new network,
+updates its one entry instead of adding a second one. Its name, sharing, and
+session bindings stay.
 
 ## Your computer (desktop app)
 
@@ -67,8 +75,8 @@ elsewhere; **Connect this computer** pairs it again). From there you can:
 - **Keep this computer awake while plugged in** (macOS and Linux): the
   computer does not sleep on power, so agents can reach it. Off by default.
   On Windows the row shows that it is not available yet.
-- **Sharing**: open the computer connector's Accounts tab, where you share
-  the computer with the project.
+- **Sharing**: open the computer connector's Accounts tab and choose
+  **Share** on the computer's row.
 - **Show logs**: open the agent's log file.
 - **Disconnect**: remove the computer from Kortix and from every project, and
   stop the background service.
@@ -106,16 +114,17 @@ waiting for your approval.
 
 A computer follows the same rules as every other connector account:
 
-- A **private** computer (the default) runs only in the owner's own private
-  sessions, in every project the owner belongs to. Another member cannot see
-  or use it. The Accounts tab lists it under **Yours (every project)**.
-- A **shared** computer runs for everyone in the project, including
+- A **private** computer (the default, **Only you**) runs only in the owner's
+  own private sessions, in every project the owner belongs to. Another member
+  cannot see or use it.
+- **Share** on the computer's row opens the same dialog as for a Gmail
+  account: pick people, groups, or everyone in the project. Nothing changes
+  until you choose **Save**, and you stay on it unless you remove yourself.
+  Sharing needs permission to manage the project's connections. The computer
+  stays one account in that project; the row then shows who can use it.
+- A computer shared with everyone runs for everyone in the project, including
   unattended runs: triggers, schedules, and Slack messages without a linked
-  user. An unattended run can reach only shared computers. The Accounts tab
-  lists it under **Shared with this project**.
-- To share your computer with a project, choose **Share** on its row under
-  **Yours**. This needs permission to manage the project's connections. Your
-  private account stays. To stop sharing, disconnect the shared row.
+  user. An unattended run can reach only shared computers.
 - Your own row follows you, so it is not removed from one project alone.
   **Disconnect** on it removes the computer from Kortix and every project. To
   keep it connected but unused, set its access to **Off** on the computer.
@@ -180,17 +189,19 @@ A call fails with a named reason instead of guessing:
 ## Disconnect a computer
 
 - **In the desktop app:** open **Your computer** in the workspace menu, or
-  the menu-bar icon, and choose **Disconnect**. Kortix removes the machine, and
-  every project account that pointed at it shows as disconnected.
+  the menu-bar icon, and choose **Disconnect**. Kortix removes the machine and
+  every project account that pointed at it. A disconnected account no longer
+  shows in any Accounts list.
 - **With the CLI:** run `npx --yes @kortix/agent-tunnel@latest logout` on the
   computer. It removes the machine from Kortix with its own token, then
   deletes the local credential. Offline, it deletes only the local credential.
 - **From anywhere else**, for example for a lost laptop: on **Customize →
-  Connectors → Computer → Accounts**, open the computer's row under **Yours**
-  and choose **Disconnect**. A desktop app still running on that computer shows
+  Connectors → Computer → Accounts**, open the computer's row and choose
+  **Disconnect**. A desktop app still running on that computer shows
   **Needs reconnect**.
-- **A shared row, from one project:** open it on the Accounts tab and choose
-  **Disconnect**. Your own row stays.
+- **A shared computer, from one project:** a manager opens its row on the
+  Accounts tab and chooses **Disconnect**. The computer stays connected, and
+  in that project it goes back to **Only you** for its owner.
 
 A computer authenticates with a machine-specific token stored on the
 computer. The API stores only its hash. Remote connections require

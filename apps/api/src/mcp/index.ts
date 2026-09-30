@@ -102,8 +102,6 @@ async function callApi(
     headers.delete(name);
   }
   headers.set('authorization', ctx.authorization);
-  // The audit's client_reported_source, as `cli` and `web` set it for theirs.
-  headers.set('x-kortix-client', 'mcp');
   headers.set('accept', 'application/json');
   if (opts.body !== undefined) headers.set('content-type', 'application/json');
   for (const [k, v] of Object.entries(opts.raw?.headers ?? {})) headers.set(k, v);

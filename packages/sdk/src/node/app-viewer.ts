@@ -190,6 +190,5 @@ export async function createAppViewerKortix(
   return createScopedKortix({
     backendUrl: options.backendUrl,
     getToken: async () => token,
-    clientSource: 'web',
   });
 }

@@ -440,10 +440,12 @@ flow(
         throw new Error(`read_session: ${JSON.stringify(read).slice(0, 400)}`);
       }
     });
-    await ctx.step("tool calls are audited as the mcp client (client_reported_source = mcp)", async () => {
+    await ctx.step("tool calls are audited by the credential the API authenticated: an oauth_app named for the client, with its client id (never a reported client)", async () => {
       const correlationId = ctx.fixtures.name("mcp-audit");
       const r = await mcp(rpc(20, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects/{projectId}", project_id: p.id } }), {
         "x-correlation-id": correlationId,
+        // A self-reported client changes nothing: the API never reads it.
+        "x-kortix-client": "web",
       });
       r.status(200);
       const audit = await waitFor(
@@ -462,9 +464,16 @@ flow(
         },
       );
       const events = audit.json<{ events: Array<Record<string, unknown>> }>().events;
-      // The tool's own API call carries the client; the outer row is `mcp.request`.
+      // The tool's own API call carries the OAuth token; the outer row is `mcp.request`.
       const read = events.find((e) => e.action === "project.read");
-      if (read?.client_reported_source !== "mcp") throw new Error(`audit: ${JSON.stringify(read)}`);
+      if (
+        read?.credential_kind !== "oauth_app" ||
+        read.credential_id !== clientId ||
+        read.credential_name !== "Flow MCP" ||
+        read.client_reported_source != null
+      ) {
+        throw new Error(`audit: ${JSON.stringify(read)}`);
+      }
     });
     await ctx.step("protocol: -32700 on bad JSON, -32600 on a batch / a wrong jsonrpc, 202 for a client response, -32602 for an unknown tool, latest version for an unknown one, 400 for a bad MCP-Protocol-Version", async () => {
       const raw = (body: string, headers: Record<string, string> = {}) =>
@@ -650,6 +659,10 @@ flow(
       res.end(JSON.stringify(req.url?.startsWith("/big") ? { rows: "x".repeat(90_000) } : { items: [{ id: 1, name: "widget" }] }));
     });
     const port = await new Promise<number>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve((upstream.address() as { port: number }).port)));
+    // A deployed API cannot reach the runner's loopback upstream, and its egress guard refuses
+    // private hosts. Only the local profile (KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS=127.0.0.1)
+    // runs the steps that need upstream data.
+    const onLocal = ctx.env.target === "local";
     const slug = `ke2e-mcp-${Date.now().toString(36)}`;
     const idle = `${slug}-idle`;
     let pat = "";
@@ -748,16 +761,20 @@ flow(
         const malformed = await tool(10, "describe_connector_action", { project_id: p.id, tool: "nodot" });
         if (!malformed.isError) throw new Error("a tool without a dot must be isError");
       });
-      await ctx.step("call_connector runs the read action and returns its data and the account that ran it", async () => {
+      await ctx.step(onLocal ? "call_connector runs the read action and returns its data and the account that ran it" : "call_connector refuses a private upstream through the egress guard; a wrong account is named", async () => {
         const before = hits.length;
         const r = await tool(11, "call_connector", { project_id: p.id, tool: `${slug}.list_items`, args: JSON.stringify({ limit: 5 }) });
-        const body = r.json();
-        if (r.isError || body.ok !== true || body.data?.items?.[0]?.name !== "widget" || body.account?.label !== "Warehouse team" || body.risk !== "read") throw new Error(`call: ${r.text}`);
-        if (hits.length !== before + 1 || !hits.at(-1)!.startsWith("GET /items")) throw new Error(`upstream: ${hits.at(-1)}`);
+        if (onLocal) {
+          const body = r.json();
+          if (r.isError || body.ok !== true || body.data?.items?.[0]?.name !== "widget" || body.account?.label !== "Warehouse team" || body.risk !== "read") throw new Error(`call: ${r.text}`);
+          if (hits.length !== before + 1 || !hits.at(-1)!.startsWith("GET /items")) throw new Error(`upstream: ${hits.at(-1)}`);
+        } else if (!r.isError || !r.text.includes("connector_egress_blocked") || hits.length !== before) {
+          throw new Error(`egress: ${r.text.slice(0, 300)}`);
+        }
         const wrong = await tool(12, "call_connector", { project_id: p.id, tool: `${slug}.list_items`, account: "No such account" });
         if (!wrong.isError || wrong.json().reason !== "connector_not_connected" || wrong.json().available_accounts?.[0] !== "Warehouse team" || !wrong.json().next) throw new Error(`wrong account: ${wrong.text}`);
       });
-      await ctx.step("a result over the cap is replaced by a marked preview: the reply stays valid JSON", async () => {
+      if (onLocal) await ctx.step("a result over the cap is replaced by a marked preview: the reply stays valid JSON", async () => {
         const r = await tool(13, "call_connector", { project_id: p.id, tool: `${slug}.big_report` });
         const body = r.json();
         if (r.isError || body.data_truncated !== true || body.data_chars < 90_000 || body.data_preview.length > 40_000 || !String(body.note).includes("Narrow")) throw new Error(`big: ${r.text.slice(0, 300)}`);

@@ -19028,7 +19028,13 @@
       "textd71a0c697cce": "セグメント",
       "text9ae34cca7f2d": "Kortix が管理",
       "textafecbae4466e": "Kortix がこのプロジェクト用のプライベートリポジトリを作成して管理します。",
-      "text6cb9b40da8a0": "Kortix があなたの GitHub アカウントにプライベートリポジトリを作成します。"
+      "text6cb9b40da8a0": "Kortix があなたの GitHub アカウントにプライベートリポジトリを作成します。",
+      "text2ed8b8066255": "経由",
+      "texta6d0f740e426": "個人用アクセストークン",
+      "text2bbd1ec2197d": "接続済みアプリ",
+      "textda3d3fb8f598": "エージェントセッション",
+      "text4dcb7e3b10a9": "SCIMトークン",
+      "text36fe0f55b7f5": "すべての認証情報"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20199,7 +20205,6 @@
     },
     "needsReconnectHint": "このコンピューターは Kortix から切断されました。使うにはもう一度接続してください。",
     "actionFailed": "問題が発生しました。もう一度お試しください。",
-    "sharedWithProject": "コンピューターをプロジェクトと共有しました",
     "alsoShareWith": "{project} とも共有する",
     "approvedEverywhere": "コンピューターを接続しました。すべてのプロジェクトの、あなたのプライベートセッションで使えます。このタブは閉じてかまいません。",
     "approvedShared": "コンピューターを接続し、{project} と共有しました。このタブは閉じてかまいません。",
@@ -20247,8 +20252,6 @@
     "runInBackground": "バックグラウンドで実行",
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
-    "disconnectEllipsis": "接続を解除…",
-    "yoursEveryProject": "あなたのもの · すべてのプロジェクト",
-    "sharedWithThisProject": "このプロジェクトと共有"
+    "disconnectEllipsis": "接続を解除…"
   }
 }

@@ -66,6 +66,7 @@ import { executeComputerCall } from '../tunnel/core/rpc-core';
 import { getRequestOnBehalfOf } from '../projects/lib/on-behalf-of';
 import { tokenAgentPrincipalScope } from '../projects/lib/personal-resources';
 import { connectorAttachmentStore } from './attachments';
+import { gateChannelRead } from './channel-read-scope';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
 import { notifyConnectorSession } from './notify-session';
@@ -745,6 +746,7 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     // for inbox, thread, or message identifiers. A future channel-owned binding
     // may provide this context; until then callers must pass explicit action args.
     bindSlackThread: (input) => bindSlackThreadToSession(input),
+    gateChannelRead: (input) => gateChannelRead(input),
     loadEmailSessionContext: async () => null,
     loadEmailConnectorContext: async (projectId, connectorSlug) => {
       const install = await loadAgentMailInstall(projectId, connectorSlug).catch(() => null);

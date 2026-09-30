@@ -273,6 +273,12 @@ flow(
       token.status(201);
       scim = ctx.client.withBearer(token.json<any>().secret, 'SCIM');
     });
+    await ctx.step('OWNER removes a malformed user id → 400, not 500', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: 'not-a-uuid' },
+      });
+      r.status(400).body().has('$.message', 'Validation failed');
+    });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
         params: { accountId: team.id, userId: member.userId! },

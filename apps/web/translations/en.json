@@ -19041,7 +19041,13 @@
       "textd71a0c697cce": "Segmented",
       "text9ae34cca7f2d": "Kortix managed",
       "textafecbae4466e": "Kortix creates and manages a private repository for this project.",
-      "text6cb9b40da8a0": "Kortix creates a private repository in your GitHub account."
+      "text6cb9b40da8a0": "Kortix creates a private repository in your GitHub account.",
+      "text2ed8b8066255": "Via",
+      "texta6d0f740e426": "Personal access token",
+      "text2bbd1ec2197d": "Connected app",
+      "textda3d3fb8f598": "Agent session",
+      "text4dcb7e3b10a9": "SCIM token",
+      "text36fe0f55b7f5": "Any credential"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20199,7 +20205,6 @@
     },
     "needsReconnectHint": "This computer was disconnected from Kortix. Connect it again to use it.",
     "actionFailed": "Something went wrong. Try again.",
-    "sharedWithProject": "Computer shared with the project",
     "alsoShareWith": "Also share with {project}",
     "approvedEverywhere": "Your computer is connected. You can use it in every project, in your private sessions. You can close this tab.",
     "approvedShared": "Your computer is connected and shared with {project}. You can close this tab.",
@@ -20247,8 +20252,6 @@
     "runInBackground": "Run in the background",
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
     "manageInProject": "Manage in project",
-    "disconnectEllipsis": "Disconnect…",
-    "yoursEveryProject": "Yours · every project",
-    "sharedWithThisProject": "Shared with this project"
+    "disconnectEllipsis": "Disconnect…"
   }
 }

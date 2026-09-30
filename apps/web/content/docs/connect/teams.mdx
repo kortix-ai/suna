@@ -284,8 +284,28 @@ a team. A team that added the app before that permission was requested must
 remove and re-add it. In a personal chat every message already reaches the
 session, so there is nothing earlier to read.
 
+Every project connected to the same Microsoft 365 tenant uses the same app, so
+Kortix keeps each read inside the project's own conversations. In a channel,
+every new post is its own conversation:
+
+| Read | Allowed when |
+| --- | --- |
+| A thread (`teams thread`) | The thread is a conversation of this project, or of no project and the channel is readable |
+| A channel's recent posts (`teams history`) | This project has a conversation in the channel. Posts that start another project's conversation are left out |
+| A channel no project has a conversation in | No other project is connected to the tenant |
+
+A refused read answers `403` with the reason `conversation_not_in_project` and
+a message that names the channel or thread. To read a channel of the first kind
+in a tenant with several projects, mention the bot in it and pick this project.
+
+`get_channel` and `list_channels` answer for standard channels. A private or
+shared channel appears only when the agent may read it by the rules above.
+`get_team`, `list_members`, `get_user` and `list_teams` read the tenant
+directory and are not limited.
+
 ## Limits
 
 Teams bots cannot add message reactions, send ephemeral (only-you) messages, or
 search messages — those Slack affordances have no Teams equivalent. The agent
-can read a channel only in a team the app was added to.
+can read a channel only in a team the app was added to, and only by the rules
+in [Reading a channel](#reading-a-channel).
