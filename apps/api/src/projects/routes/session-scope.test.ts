@@ -111,6 +111,14 @@ mock.module('../lib/access', () => ({
     ownerIsMachine: false,
   }),
 }));
+const realMirror = await import('../git/mirror');
+let staleReadCalls = 0;
+mock.module('../git/mirror', () => ({
+  ...realMirror,
+  allowStaleMirrorReads: () => {
+    staleReadCalls++;
+  },
+}));
 const realSecretGrant = await import('../lib/secret-grant');
 mock.module('../lib/secret-grant', () => ({
   ...realSecretGrant,
@@ -490,5 +498,14 @@ describe('PUT scope — connector bindings decision', () => {
     const response = await putScope({ connector_bindings: { gmail: { connection_id: connId1 } } });
     expect(response.status).toBe(200);
     expect((await response.json()).dropped_bindings).toEqual(['sheets']);
+  });
+});
+
+describe('GET scope — page-view git reads', () => {
+  test('allows the warm-mirror read path before resolving the agent grant', async () => {
+    staleReadCalls = 0;
+    const response = await app.request(base);
+    expect(response.status).toBe(200);
+    expect(staleReadCalls).toBe(1);
   });
 });

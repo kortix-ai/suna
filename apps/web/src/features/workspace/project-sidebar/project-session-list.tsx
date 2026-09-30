@@ -583,22 +583,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           </SessionListSection>
         ))}
         {hasNextPage && (
-          <div className="px-2 pt-1 pb-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
-              disabled={isFetchingNextPage}
-              onClick={() => fetchNextPage()}
-            >
-              {/* A failed page keeps the rows above it; the button is the retry. */}
-              {isFetchingNextPage
-                ? t('loadingMore')
-                : isFetchNextPageError
-                  ? t('retry')
-                  : t('loadMore')}
-            </Button>
-          </div>
+          <ShowMoreButton
+            loading={isFetchingNextPage}
+            failed={isFetchNextPageError}
+            label={t('loadMore')}
+            onClick={() => fetchNextPage()}
+          />
         )}
         <StarterSection
           title={t('startedBy.others')}
@@ -1004,7 +994,7 @@ function ShowMoreButton({
     <Button
       variant="ghost"
       size="sm"
-      className="text-muted-foreground hover:text-foreground h-6 w-full justify-center px-2 text-xs"
+      className="text-muted-foreground hover:text-foreground h-8 w-full justify-start px-2 text-xs"
       disabled={loading}
       onClick={onClick}
     >
@@ -1242,17 +1232,17 @@ function ProjectSessionRow({
         >
           {showStarter && (
             <span
-              className="flex size-4 shrink-0 items-center justify-center"
+              className="flex size-5 shrink-0 items-center justify-center"
               data-session-source="true"
               data-session-starter={starter.type}
             >
               <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
-                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                <span className="text-muted-foreground/70 flex size-5 items-center justify-center">
                   <SessionStarterMark
                     session={session}
                     starter={starter}
                     iconClassName="size-3"
-                    avatarClassName="size-4"
+                    avatarClassName="size-5"
                   />
                 </span>
               </Hint>
