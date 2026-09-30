@@ -998,15 +998,10 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // In-session agent switching is allowed, unconditionally — there is no flag
-  // and no refusal. A concrete agent is forwarded untouched whatever the
-  // session booted with; only the literal 'default' sentinel is stripped. A new
-  // session is stored with the sentinel, and the client echoes back the
-  // concrete name it resolved "the default" to (the reported "agent switch
-  // requires a new session" false positive).
+  // A concrete agent is forwarded when it matches the session's agent or
+  // resolves the legacy default sentinel. Switching concrete agents is refused.
   test.each([
     ['the agent the session runs', 'reviewer', 'reviewer'],
-    ['a different concrete agent', 'reviewer', 'researcher'],
     ['a concrete agent in a default session', 'default', 'kortix'],
   ])('prompt_async naming %s is forwarded untouched', async (_label, sessionAgent, requested) => {
     mockDbSandbox = { ...mockDbSandbox, agentName: sessionAgent };
@@ -1030,6 +1025,20 @@ describe('Preview proxy: forwarding', () => {
       agent: requested,
       parts: [{ type: 'text', text: 'hi' }],
     });
+  });
+
+  test('refuses a different concrete agent before forwarding prompt_async', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+    expect(mockFetchCalls).toEqual([]);
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {
