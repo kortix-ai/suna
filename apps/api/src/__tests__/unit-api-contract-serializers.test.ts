@@ -31,6 +31,7 @@ function projectRow(
     manifestPath: 'kortix.yaml',
     idempotencyKey: null,
     status: 'active',
+    labels: [],
     metadata: {},
     lastOpenedAt: NOW,
     createdAt: NOW,

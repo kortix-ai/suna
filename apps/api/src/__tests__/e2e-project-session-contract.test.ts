@@ -177,6 +177,7 @@ function resetState() {
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: { existing: true },
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -795,7 +796,8 @@ mock.module('../shared/db', () => ({
               lastValidatedAt: values.lastValidatedAt ?? now,
               lastErrorCode: values.lastErrorCode ?? null,
               lastErrorMessage: values.lastErrorMessage ?? null,
-              metadata: values.metadata ?? {},
+              labels: values.labels ?? [],
+            metadata: values.metadata ?? {},
               createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitConnections.$inferSelect;
