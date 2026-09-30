@@ -509,7 +509,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     if (
       lastEnded &&
       endedAt !== null &&
-      endedAt >= idleFrame.atMs &&
+      Math.abs(endedAt - idleFrame.atMs) <= 1_000 &&
       lastEnded.turn_token !== candidate.turn_token
     ) return false;
     // Otherwise the frame ends the only turn we can identify.
