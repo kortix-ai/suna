@@ -9,6 +9,7 @@ import {
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
   deleteProjectSecret,
+  listProjectProviderOAuth,
   listProjectSecrets,
   pollProjectProviderOAuth,
   setPersonalProjectSecret,
@@ -166,6 +167,16 @@ test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () =
     },
   });
   expect(result.status).toBe(201);
+});
+
+test('listProjectProviderOAuth returns the connected provider logins', async () => {
+  const items = [{ provider_id: 'opencode-go', expires_in_ms: 1000, updated_at: '2026-10-01T00:00:00.000Z' }];
+  nextResponse = { status: 200, body: { items } };
+  const result = await listProjectProviderOAuth('P1');
+  expect(last().url).toContain('/projects/P1/oauth');
+  expect(last().url.endsWith('/oauth')).toBe(true);
+  expect(last().method).toBe('GET');
+  expect(result).toEqual(items);
 });
 
 test('startProjectProviderOAuth posts to the provider start endpoint with the sharing intent', async () => {

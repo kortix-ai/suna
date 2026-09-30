@@ -237,6 +237,12 @@ export type ProviderOAuthPoll =
   | { status: 'expired' }
   | { status: 'failed'; error: string };
 
+/** The provider logins (ChatGPT, OpenCode Zen, OpenCode Go) saved on a project. */
+export async function listProjectProviderOAuth(projectId: string): Promise<ProviderOAuthCredential[]> {
+  const result = unwrap(await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/projects/${projectId}/oauth`));
+  return result.items ?? [];
+}
+
 export async function startProjectProviderOAuth(
   projectId: string,
   provider: string,
