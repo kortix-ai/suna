@@ -170,7 +170,7 @@ export type {
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
  * heartbeat watchdog, and event coalescing, with ZERO react/react-query
- * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
+ * imports. `@kortix/sdk/react`'s `useRuntimeEventStream` is a thin wrapper
  * around this for the React host; any other host (worker, CLI, non-React UI)
  * can call it directly.
  */
@@ -179,7 +179,7 @@ export {
   type EventStreamClient,
   type EventStreamHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from './core/stream/event-stream';
 
@@ -247,7 +247,7 @@ export {
 } from './core/turns';
 
 /**
- * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
+ * The curated chat-event union — narrows the full `RuntimeEvent` wire union
  * down to the ~12 events a product chat UI needs (message/part updates,
  * session status/idle/error, question asked/answered, permission
  * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
@@ -500,7 +500,7 @@ export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
 export * from './core/http/impersonation';
 export * from './core/http/instance-routes';
-export * from './core/http/opencode-errors';
+export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/cache/persisted-query-cache';
@@ -526,15 +526,8 @@ export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
 
-// Runtime-neutral compatibility names for host applications. The original
-// OpenCode-named exports remain public for backward compatibility.
-export { formatOpenCodeRuntimeError as formatRuntimeError } from './core/http/opencode-errors';
-export type {
-  ProjectOpenCodeSession as ProjectRuntimeSession,
-} from './core/rest/projects-client/sessions';
-export type {
-  OpencodeAgentConfig as RuntimeAgentConfig,
-} from './core/rest/projects-client/agent-config';
+// Runtime-neutral names are the declarations; each pre-W4 OpenCode name is a
+// separate `@deprecated` binding beside it, public until the next major.
 
 /**
  * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
@@ -555,7 +548,7 @@ export {
  * (through the `./react` hooks) and mobile build the pickers and resolve what
  * to send with the same functions.
  *
- * Agents: `projectConfigAgentsToOpenCodeAgents` (project detail → roster,
+ * Agents: `projectConfigAgentsToRuntimeAgents` (project detail → roster,
  * default first) → `composerSelectableAgents` (picker list) →
  * `resolveComposerAgent` (what runs, and whether send is allowed).
  * Models: `pickerProviderList` (raw sources → provider list) →
@@ -565,6 +558,7 @@ export {
 export {
   composerSelectableAgents,
   projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
   resolveComposerAgent,
   type ComposerAgentReason,
   type ComposerAgentResolution,

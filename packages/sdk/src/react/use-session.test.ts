@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:tes
 
 // Mock the lowest network boundary the reply/send paths go through — the
 // OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
-// `promptOpenCodeMessage` run for real, matching session.test.ts's approach of
+// `promptRuntimeMessage` run for real, matching session.test.ts's approach of
 // stubbing the boundary rather than the wrapper.
 let permissionReplyImpl: (args: unknown) => Promise<{
   data?: unknown;
@@ -48,14 +48,14 @@ import {
   getSessionSyncController,
   resetSessionSyncControllers,
 } from '../browser/session-sync/session-sync-registry';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { BillingError } from '../core/http/api/errors';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import type { ModelKey } from './use-model-store';
-import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
+import { promptRuntimeMessage } from './use-opencode-sessions/messages';
 import {
   SESSION_START_FRESH_MS,
   SESSION_START_POLL_MS,
@@ -85,7 +85,7 @@ import { derivePhase } from './use-session-phase';
 import { OPTIMISTIC_RECEIPT_MAX_MS, projectWorking } from '../core/session/working';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
-  useOpenCodePendingStore.getState().addQuestion({
+  useRuntimePendingStore.getState().addQuestion({
     id,
     sessionID,
     questions: [{ text: 'Continue?', options: [] }],
@@ -93,7 +93,7 @@ function seedQuestion(id: string, sessionID = 'sess-1') {
 }
 
 function seedPermission(id: string, sessionID = 'sess-1') {
-  useOpenCodePendingStore.getState().addPermission({
+  useRuntimePendingStore.getState().addPermission({
     id,
     sessionID,
     permission: 'bash',
@@ -106,7 +106,7 @@ function seedPermission(id: string, sessionID = 'sess-1') {
 beforeEach(() => {
   resetSessionSyncControllers();
   setCurrentRuntime(null);
-  useOpenCodePendingStore.getState().clear();
+  useRuntimePendingStore.getState().clear();
   permissionReplyImpl = async () => ({ data: {} });
   questionReplyImpl = async () => ({ data: {} });
   questionRejectImpl = async () => ({ data: {} });
@@ -199,7 +199,7 @@ describe('answerQuestion', () => {
     await answerQuestion('q1', [['yes']]);
 
     expect(captured).toEqual({ requestID: 'q1', answers: [['yes']] });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeUndefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed KortixSendError', async () => {
@@ -210,7 +210,7 @@ describe('answerQuestion', () => {
       kind: 'runtime-error',
       message: 'boom',
     });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeDefined();
   });
 });
 
@@ -226,7 +226,7 @@ describe('rejectQuestion', () => {
     await rejectQuestion('q1');
 
     expect(captured).toEqual({ requestID: 'q1' });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeUndefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed error', async () => {
@@ -236,7 +236,7 @@ describe('rejectQuestion', () => {
     await expect(rejectQuestion('q1')).rejects.toMatchObject({
       kind: 'runtime-error',
     });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeDefined();
   });
 });
 
@@ -256,7 +256,7 @@ describe('answerPermission', () => {
       reply: 'once',
       message: 'go ahead',
     });
-    expect(useOpenCodePendingStore.getState().permissions['p1']).toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed error', async () => {
@@ -268,7 +268,7 @@ describe('answerPermission', () => {
     await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
       kind: 'runtime-error',
     });
-    expect(useOpenCodePendingStore.getState().permissions['p1']).toBeDefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
   });
 });
 
@@ -355,7 +355,7 @@ describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
       response: new Response(null, { status: 402 }),
     });
 
-    const thrown = await promptOpenCodeMessage({
+    const thrown = await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
     }).then(

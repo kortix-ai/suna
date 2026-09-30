@@ -758,14 +758,14 @@ import {
   flattenModels,
   modelInDefaultView,
   pickerProviderList,
-  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
   resolveComposerAgent,
   resolveComposerModel,
   resolveModelDefault,
 } from '@kortix/sdk';
 
 // Agents: the roster, the picker list, and the agent the send carries.
-const roster = projectConfigAgentsToOpenCodeAgents(detail.config);
+const roster = projectConfigAgentsToRuntimeAgents(detail.config);
 const pickerAgents = composerSelectableAgents(roster, { enableProjects: false });
 const agent = resolveComposerAgent({
   agents: roster,

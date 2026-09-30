@@ -15,7 +15,7 @@ import { LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS } from '../lib/legacy-runtime-boots
 import {
   REPAIR_IN_FLIGHT_GRACE_MS,
   repairInFlight,
-  staleOpencodeReadyReason,
+  staleRuntimeReadyReason,
 } from './readiness-clocks';
 
 const NOW = Date.parse('2026-09-28T06:00:00.000Z');
@@ -24,8 +24,8 @@ const ago = (ms: number) => new Date(NOW - ms).toISOString();
 /** A row that has been unreachable long past the 5-minute park threshold. */
 function staleUnreachableRow(bootstrap?: Record<string, unknown>) {
   return {
-    opencodeUnreachableWaitStartedAt: ago(9 * 60 * 1000),
-    opencodeBootWaitFirstSeenAt: ago(9 * 60 * 1000),
+    runtimeUnreachableWaitStartedAt: ago(9 * 60 * 1000),
+    runtimeBootWaitFirstSeenAt: ago(9 * 60 * 1000),
     ...(bootstrap ? { legacyRuntimeBootstrap: bootstrap } : {}),
   };
 }
@@ -38,7 +38,7 @@ describe('the readiness clock defers to a repair that is actually running', () =
   });
 
   test('without a repair, a long-unreachable row still parks', () => {
-    expect(staleOpencodeReadyReason(staleUnreachableRow(), 'unreachable', NOW)).toBe(
+    expect(staleRuntimeReadyReason(staleUnreachableRow(), 'unreachable', NOW)).toBe(
       'runtime_unreachable_timeout',
     );
   });
@@ -46,7 +46,7 @@ describe('the readiness clock defers to a repair that is actually running', () =
   test('a repair running inside its budget holds the park off', () => {
     const row = staleUnreachableRow({ state: 'running', lastAttemptAt: ago(60 * 1000) });
     expect(repairInFlight(row, NOW)).toBe(true);
-    expect(staleOpencodeReadyReason(row, 'unreachable', NOW)).toBeNull();
+    expect(staleRuntimeReadyReason(row, 'unreachable', NOW)).toBeNull();
   });
 
   test('a repair past its budget stops holding it — a wedged repair cannot park forever', () => {
@@ -55,7 +55,7 @@ describe('the readiness clock defers to a repair that is actually running', () =
       lastAttemptAt: ago(REPAIR_IN_FLIGHT_GRACE_MS + 1000),
     });
     expect(repairInFlight(row, NOW)).toBe(false);
-    expect(staleOpencodeReadyReason(row, 'unreachable', NOW)).toBe(
+    expect(staleRuntimeReadyReason(row, 'unreachable', NOW)).toBe(
       'runtime_unreachable_timeout',
     );
   });
@@ -64,7 +64,7 @@ describe('the readiness clock defers to a repair that is actually running', () =
     for (const state of ['converged', 'failed']) {
       const row = staleUnreachableRow({ state, lastAttemptAt: ago(60 * 1000) });
       expect(repairInFlight(row, NOW)).toBe(false);
-      expect(staleOpencodeReadyReason(row, 'unreachable', NOW)).toBe(
+      expect(staleRuntimeReadyReason(row, 'unreachable', NOW)).toBe(
         'runtime_unreachable_timeout',
       );
     }

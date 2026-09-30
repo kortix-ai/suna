@@ -2,7 +2,7 @@
  * The durable `unreachable` cause must be cleared like every other readiness
  * field.
  *
- * The open stamps `opencodeUnreachableCause` on the sandbox row so a box that
+ * The open stamps `runtimeUnreachableCause` on the sandbox row so a box that
  * has been cycling for an hour can be diagnosed from the row rather than from
  * a log line nobody can still reach. #7962 made the cause observable and
  * stopped at a `console.warn`, which left it unreadable from outside the
@@ -24,20 +24,20 @@ import {
 
 describe('the durable unreachable cause', () => {
   test('is a readiness clock key, so every clearing path clears it', () => {
-    expect(RUNTIME_READINESS_CLOCK_KEYS).toContain('opencodeUnreachableCause');
-    expect(RUNTIME_READINESS_CLOCK_KEYS).toContain('opencodeUnreachableCauseAt');
+    expect(RUNTIME_READINESS_CLOCK_KEYS).toContain('runtimeUnreachableCause');
+    expect(RUNTIME_READINESS_CLOCK_KEYS).toContain('runtimeUnreachableCauseAt');
   });
 
   test('is cleared by an in-place restart alongside the other clocks', () => {
     // The restart path clears a superset. If the cause were not in the base
     // list, a restarted box would keep claiming a failure it no longer has.
-    expect(IN_PLACE_RESTART_CLEARED_KEYS).toContain('opencodeUnreachableCause');
-    expect(IN_PLACE_RESTART_CLEARED_KEYS).toContain('opencodeUnreachableCauseAt');
+    expect(IN_PLACE_RESTART_CLEARED_KEYS).toContain('runtimeUnreachableCause');
+    expect(IN_PLACE_RESTART_CLEARED_KEYS).toContain('runtimeUnreachableCauseAt');
   });
 
   test('the cause sits beside the clock it explains', () => {
-    // `opencodeUnreachableWaitStartedAt` is WHEN; the cause is WHY. One without
+    // `runtimeUnreachableWaitStartedAt` is WHEN; the cause is WHY. One without
     // the other is what made these boxes undiagnosable in the first place.
-    expect(RUNTIME_READINESS_CLOCK_KEYS).toContain('opencodeUnreachableWaitStartedAt');
+    expect(RUNTIME_READINESS_CLOCK_KEYS).toContain('runtimeUnreachableWaitStartedAt');
   });
 });
