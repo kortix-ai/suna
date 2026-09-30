@@ -94,10 +94,10 @@ export function createPiHarnessService(
         if (current.autoClone && !(await isRepoMaterialized(current.projectTarget))) return notReady('repo_not_materialized', { reason: 'repo_not_materialized' })
         if (state.workspaceReady === false) return notReady('workspace_not_ready', { reason: 'workspace_not_ready' })
         if (state.initialOpenCodeSessionError) {
-          return notReady('initial_session_failed', { reason: 'initial_opencode_session_failed', message: state.initialOpenCodeSessionError })
+          return notReady('initial_session_failed', { reason: 'initial_runtime_session_failed', message: state.initialOpenCodeSessionError })
         }
         if (state.initialOpenCodeSessionRequired && !state.initialOpenCodeSessionId) {
-          return notReady('initial_session_pending', { reason: 'initial_opencode_session_pending' })
+          return notReady('initial_session_pending', { reason: 'initial_runtime_session_pending' })
         }
         if (runtime.getState() !== 'ok' || !started) return notReady('pi_not_ready', { reason: 'pi_not_ready', opencode: runtime.getState() })
         return { ready: true }

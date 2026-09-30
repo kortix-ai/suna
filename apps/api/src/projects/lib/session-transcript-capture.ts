@@ -21,6 +21,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { errorSqlstate } from '../../shared/error-cause';
 import {
   readTranscriptPages,
   retryTranscriptCapture,
@@ -110,7 +111,7 @@ const liveCaptureDeps: CaptureDeps = {
         messageId: sessionTranscriptMessages.messageId,
         parts: sessionTranscriptMessages.parts,
         messageCompletedAt: sessionTranscriptMessages.messageCompletedAt,
-        opencodeSessionId: sessionTranscriptMessages.opencodeSessionId,
+        opencodeSessionId: sessionTranscriptMessages.runtimeSessionId,
         role: sessionTranscriptMessages.role,
       })
       .from(sessionTranscriptMessages)
@@ -190,7 +191,7 @@ const liveCaptureDeps: CaptureDeps = {
           .where(
             and(
               eq(sessionTranscriptMirrors.sessionId, sessionId),
-              eq(sessionTranscriptMirrors.opencodeSessionId, resolved.opencodeSessionId),
+              eq(sessionTranscriptMirrors.runtimeSessionId, resolved.opencodeSessionId),
             ),
           )
           .limit(1)
@@ -334,7 +335,7 @@ async function captureSessionTranscript(
         const [existing] = await tx
           .select({
             headComplete: sessionTranscriptMirrors.headComplete,
-            opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+            opencodeSessionId: sessionTranscriptMirrors.runtimeSessionId,
             capturedAt: sessionTranscriptMirrors.capturedAt,
           })
           .from(sessionTranscriptMirrors)
@@ -342,7 +343,7 @@ async function captureSessionTranscript(
           .limit(1);
         if (existing && new Date(existing.capturedAt) > startedAt) return null;
         const [current] = await tx
-          .select({ root: projectSessions.opencodeSessionId })
+          .select({ root: projectSessions.runtimeSessionId })
           .from(projectSessions)
           .where(eq(projectSessions.sessionId, sessionId))
           .limit(1);
@@ -367,7 +368,7 @@ async function captureSessionTranscript(
             sessionId,
             projectId: session.projectId,
             accountId: session.accountId,
-            opencodeSessionId: read.opencodeSessionId,
+            runtimeSessionId: read.opencodeSessionId,
             headComplete,
             capturedAt: now,
             updatedAt: now,
@@ -375,7 +376,7 @@ async function captureSessionTranscript(
           .onConflictDoUpdate({
             target: sessionTranscriptMirrors.sessionId,
             set: {
-              opencodeSessionId: read.opencodeSessionId,
+              runtimeSessionId: read.opencodeSessionId,
               headComplete,
               capturedAt: now,
               updatedAt: now,
@@ -480,7 +481,7 @@ async function captureSessionTranscript(
   } catch (err) {
     console.warn(
       `[transcript-mirror] capture failed for session ${sessionId}:`,
-      err instanceof Error ? err.message : err,
+      `sqlstate=${errorSqlstate(err) ?? 'unknown'}`,
     );
     return null;
   }
@@ -501,7 +502,7 @@ async function upsertMirrorRows(
     messageId: String(row.info.id),
     parentMessageId:
       typeof row.info.parentID === 'string' && row.info.parentID ? row.info.parentID : null,
-    opencodeSessionId,
+    runtimeSessionId: opencodeSessionId,
     role: typeof row.info.role === 'string' && row.info.role ? row.info.role : 'unknown',
     messageCreatedAt: timeField(row.info, 'created'),
     messageCompletedAt: timeField(row.info, 'completed'),
@@ -517,7 +518,7 @@ async function upsertMirrorRows(
         target: [sessionTranscriptMessages.sessionId, sessionTranscriptMessages.messageId],
         set: {
           parentMessageId: sql`excluded.parent_message_id`,
-          opencodeSessionId: sql`excluded.opencode_session_id`,
+          runtimeSessionId: sql`excluded.opencode_session_id`,
           role: sql`excluded.role`,
           messageCreatedAt: sql`excluded.message_created_at`,
           messageCompletedAt: sql`excluded.message_completed_at`,
@@ -616,8 +617,8 @@ export function backfillSessionTranscriptMirrorOnWake(
     try {
       const [row] = await db
         .select({
-          root: projectSessions.opencodeSessionId,
-          mirrorRoot: sessionTranscriptMirrors.opencodeSessionId,
+          root: projectSessions.runtimeSessionId,
+          mirrorRoot: sessionTranscriptMirrors.runtimeSessionId,
           headComplete: sessionTranscriptMirrors.headComplete,
         })
         .from(projectSessions)
@@ -647,7 +648,7 @@ export function backfillSessionTranscriptMirrorOnWake(
     } catch (err) {
       console.warn(
         `[transcript-mirror] wake backfill failed for session ${sessionId}:`,
-        err instanceof Error ? err.message : err,
+        `sqlstate=${errorSqlstate(err) ?? 'unknown'}`,
       );
     }
   })();

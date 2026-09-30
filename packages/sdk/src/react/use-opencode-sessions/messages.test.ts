@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, mock } from 'bun:test';
 
 let promptImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
   async () => ({ data: {} });
-/** Overridable per-test — the `client.session.abort()` call `abortOpenCodeSession` makes. */
+/** Overridable per-test — the `client.session.abort()` call `abortRuntimeSession` makes. */
 let abortImpl: (args: unknown) => Promise<{ data?: unknown; error?: unknown; response?: Response }> =
   async () => ({ data: {} });
 /** Overridable per-test — the post-abort `client.session.status()` re-read. */
@@ -39,14 +39,14 @@ import { useSyncStore } from '../../browser/stores/sync-store';
 import { isAbortError } from '../../core/http/abort-error';
 import {
   abortInFlightDeliveries,
-  abortOpenCodeSession,
+  abortRuntimeSession,
   awaitAbortSettlement,
   extractSendErrorMessage,
   getSendRetryDelayMs,
-  isOpenCodeNotReadyError,
+  isRuntimeNotReadyError,
   isTransientSendStatus,
   mintSessionWireMessageId,
-  promptOpenCodeMessage,
+  promptRuntimeMessage,
 } from './messages';
 
 
@@ -63,7 +63,7 @@ beforeEach(() => {
   });
 });
 
-describe('promptOpenCodeMessage', () => {
+describe('promptRuntimeMessage', () => {
   test('resolves on a successful prompt (via the async/fire-and-forget endpoint)', async () => {
     let captured: unknown;
     promptImpl = async (args) => {
@@ -72,7 +72,7 @@ describe('promptOpenCodeMessage', () => {
     };
 
     await expect(
-      promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
+      promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
     ).resolves.toBeUndefined();
     expect(captured).toMatchObject({ sessionID: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
   });
@@ -84,7 +84,7 @@ describe('promptOpenCodeMessage', () => {
       return { data: {} };
     };
 
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       options: { directory: '/workspace/project' },
@@ -102,7 +102,7 @@ describe('promptOpenCodeMessage', () => {
       };
     };
 
-    const err = await promptOpenCodeMessage({
+    const err = await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
     }).then(
@@ -127,7 +127,7 @@ describe('promptOpenCodeMessage', () => {
       };
     };
 
-    const err = await promptOpenCodeMessage({
+    const err = await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
     }).then(
@@ -151,7 +151,7 @@ describe('promptOpenCodeMessage', () => {
     };
 
     await expect(
-      promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
+      promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
     ).resolves.toBeUndefined();
     expect(calls).toBe(3);
   });
@@ -163,7 +163,7 @@ describe('promptOpenCodeMessage', () => {
       return { error: { message: 'upstream blip' }, response: new Response(null, { status: 502 }) };
     };
 
-    const err = await promptOpenCodeMessage({
+    const err = await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
     }).then(
@@ -183,7 +183,7 @@ describe('promptOpenCodeMessage', () => {
       throw new Error('Failed to fetch');
     };
 
-    const err = await promptOpenCodeMessage({
+    const err = await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
     }).then(
@@ -216,7 +216,7 @@ describe('promptOpenCodeMessage', () => {
     };
 
     await expect(
-      promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
+      promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
     ).resolves.toBeUndefined();
 
     expect(getClientCalls).toBe(3);
@@ -239,7 +239,7 @@ describe('promptOpenCodeMessage', () => {
       fn: (...args: unknown[]) => void,
     ) => realSetTimeout(fn, 0)) as typeof setTimeout;
     try {
-      const err = await promptOpenCodeMessage({
+      const err = await promptRuntimeMessage({
         sessionId: 'sess-1',
         parts: [{ type: 'text', text: 'hi' }],
       }).then(
@@ -266,7 +266,7 @@ describe('promptOpenCodeMessage', () => {
 // repeat is answered `200 {"status":"duplicate","deduplicated":true}` and is
 // never forwarded to opencode.
 //
-// `promptOpenCodeMessage` used to build a payload out of nothing but the
+// `promptRuntimeMessage` used to build a payload out of nothing but the
 // session id, the mapped parts (part ids dropped) and the model/agent picks —
 // so sending the SAME text twice inside 60s produced a byte-identical body,
 // the second POST hashed to the same key, and the message was silently lost:
@@ -299,7 +299,7 @@ async function tick(rounds = 10): Promise<void> {
   for (let i = 0; i < rounds; i++) await Promise.resolve();
 }
 
-describe('promptOpenCodeMessage messageID', () => {
+describe('promptRuntimeMessage messageID', () => {
   let captured: Array<Record<string, unknown>>;
 
   beforeEach(() => {
@@ -312,15 +312,15 @@ describe('promptOpenCodeMessage messageID', () => {
   });
 
   test('mints a messageID for a submission that carries none', async () => {
-    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
 
     expect(captured).toHaveLength(1);
     expect(captured[0].messageID).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
   });
 
   test('two identical submissions differ, so the proxy cannot hash them to one delivery', async () => {
-    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
-    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
 
     expect(captured).toHaveLength(2);
     const [first, second] = captured;
@@ -349,7 +349,7 @@ describe('promptOpenCodeMessage messageID', () => {
     };
 
     await withInstantBackoff(() =>
-      promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
+      promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] }),
     );
 
     expect(captured).toHaveLength(3);
@@ -377,7 +377,7 @@ describe('promptOpenCodeMessage messageID', () => {
     // Browser runs 60s fast — well inside ordinary unsynced-clock drift.
     Date.now = () => sandboxNow + 60_000;
     try {
-      await promptOpenCodeMessage({
+      await promptRuntimeMessage({
         sessionId: 'sess-skew',
         parts: [{ type: 'text', text: 'hi' }],
       });
@@ -402,7 +402,7 @@ describe('promptOpenCodeMessage messageID', () => {
       messages: { 'sess-ok': [{ id: wireMessageId(now - 2_000) }] as never },
     });
 
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-ok',
       parts: [{ type: 'text', text: 'hi' }],
     });
@@ -413,7 +413,7 @@ describe('promptOpenCodeMessage messageID', () => {
   });
 
   test('a caller-supplied messageID is never overwritten', async () => {
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       messageID: 'msg_callersupplied000000000',
@@ -432,12 +432,12 @@ describe('promptOpenCodeMessage messageID', () => {
     // `clientMessageId` is the queue entry's own stable key (see
     // `QueuedMessageInput.clientMessageId`), so one submission keeps one id
     // across every dispatch of it.
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_7',
     });
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_7',
@@ -454,12 +454,12 @@ describe('promptOpenCodeMessage messageID', () => {
     // The other half of the contract: a deliberate identical re-send is a new
     // submission with a new queue entry, and must NOT be swallowed as a
     // duplicate. Threading the stable id must not undo that.
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_7',
     });
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_8',
@@ -472,12 +472,12 @@ describe('promptOpenCodeMessage messageID', () => {
     // Queue keys are minted per host store, not globally, and a message id has
     // to sort against ITS session's transcript. Two sessions sharing a key must
     // not share an id.
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_7',
     });
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-2',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_7',
@@ -487,7 +487,7 @@ describe('promptOpenCodeMessage messageID', () => {
   });
 
   test('an explicit messageID still wins over a clientMessageId', async () => {
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_7',
@@ -501,20 +501,20 @@ describe('promptOpenCodeMessage messageID', () => {
     // A long-lived tab must not accumulate one entry per message forever. The
     // cache is a small insertion-ordered window: past it the oldest submission
     // re-mints, which is exactly today's behaviour, never a wrong id.
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-bound',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_first',
     });
     const first = captured[0].messageID;
     for (let i = 0; i < 256; i++) {
-      await promptOpenCodeMessage({
+      await promptRuntimeMessage({
         sessionId: 'sess-bound',
         parts: [{ type: 'text', text: 'hi' }],
         clientMessageId: `cm_filler_${i}`,
       });
     }
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-bound',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_first',
@@ -523,7 +523,7 @@ describe('promptOpenCodeMessage messageID', () => {
     expect(captured[captured.length - 1].messageID).not.toBe(first);
     // The MOST RECENT submission is still remembered — the window evicts the
     // oldest, not everything.
-    await promptOpenCodeMessage({
+    await promptRuntimeMessage({
       sessionId: 'sess-bound',
       parts: [{ type: 'text', text: 'hi' }],
       clientMessageId: 'cm_filler_255',
@@ -543,7 +543,7 @@ describe('promptOpenCodeMessage messageID', () => {
     // reads a stale assistant reply as the answer to it — which is why
     // apps/web deliberately sends no client ids today.
     const before = Date.now();
-    await promptOpenCodeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-1', parts: [{ type: 'text', text: 'hi' }] });
     const after = Date.now();
 
     // The window is the browser clock MINUS `CLOCK_SKEW_BACKDATE_MS`: a mint is
@@ -567,7 +567,7 @@ describe('promptOpenCodeMessage messageID', () => {
       messages: { 'sess-skew': [{ id: skewed, role: 'user' } as never] },
     });
 
-    await promptOpenCodeMessage({ sessionId: 'sess-skew', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-skew', parts: [{ type: 'text', text: 'hi' }] });
 
     expect(encodedOf(captured[0].messageID as string)).toBeGreaterThan(encodedOf(skewed));
   });
@@ -581,7 +581,7 @@ describe('promptOpenCodeMessage messageID', () => {
     });
 
     const before = Date.now();
-    await promptOpenCodeMessage({ sessionId: 'sess-absurd', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-absurd', parts: [{ type: 'text', text: 'hi' }] });
 
     const minted = encodedOf(captured[0].messageID as string);
     expect(minted).toBeLessThan(encodedAt(before + 60_000));
@@ -608,7 +608,7 @@ describe('promptOpenCodeMessage messageID', () => {
         const realNow = Date.now;
         Date.now = () => vector.nowMs;
         try {
-          await promptOpenCodeMessage({ sessionId, parts: [{ type: 'text', text: 'hi' }] });
+          await promptRuntimeMessage({ sessionId, parts: [{ type: 'text', text: 'hi' }] });
         } finally {
           Date.now = realNow;
         }
@@ -623,7 +623,7 @@ describe('promptOpenCodeMessage messageID', () => {
 // Before this, a prompt still retrying its boot-window backoff when the user
 // hit Stop had no `AbortSignal` at all — it landed AFTER the abort and ran
 // the OLD text. `abortInFlightDeliveries` lets `cancel()` reach every
-// in-flight `promptOpenCodeMessage` call for a session and stop it before its
+// in-flight `promptRuntimeMessage` call for a session and stop it before its
 // next attempt, whether that attempt is mid-network-call or mid-backoff-sleep.
 describe('abortInFlightDeliveries', () => {
   test('a delivery mid-retry-backoff is aborted before its next attempt fires', async () => {
@@ -636,7 +636,7 @@ describe('abortInFlightDeliveries', () => {
       return { error: { message: 'opencode not ready' }, response: new Response(null, { status: 503 }) };
     };
 
-    const delivery = promptOpenCodeMessage({
+    const delivery = promptRuntimeMessage({
       sessionId: 'sess-abort-1',
       parts: [{ type: 'text', text: 'hi' }],
     });
@@ -665,7 +665,7 @@ describe('abortInFlightDeliveries', () => {
       throw new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
     };
 
-    const delivery = promptOpenCodeMessage({
+    const delivery = promptRuntimeMessage({
       sessionId: 'sess-abort-2',
       parts: [{ type: 'text', text: 'hi' }],
     });
@@ -696,8 +696,8 @@ describe('abortInFlightDeliveries', () => {
       return { error: { message: 'opencode not ready' }, response: new Response(null, { status: 503 }) };
     };
 
-    const deliveryA = promptOpenCodeMessage({ sessionId: 'sess-a', parts: [{ type: 'text', text: 'hi' }] });
-    const deliveryB = promptOpenCodeMessage({ sessionId: 'sess-b', parts: [{ type: 'text', text: 'hi' }] });
+    const deliveryA = promptRuntimeMessage({ sessionId: 'sess-a', parts: [{ type: 'text', text: 'hi' }] });
+    const deliveryB = promptRuntimeMessage({ sessionId: 'sess-b', parts: [{ type: 'text', text: 'hi' }] });
     await tick(10);
     expect(callsA).toBe(1);
     expect(callsB).toBe(1);
@@ -723,13 +723,13 @@ describe('abortInFlightDeliveries', () => {
 
   test('a resolved delivery unregisters itself — a later abort call finds nothing', async () => {
     promptImpl = async () => ({ data: {} });
-    await promptOpenCodeMessage({ sessionId: 'sess-done', parts: [{ type: 'text', text: 'hi' }] });
+    await promptRuntimeMessage({ sessionId: 'sess-done', parts: [{ type: 'text', text: 'hi' }] });
 
     expect(abortInFlightDeliveries('sess-done')).toBe(0);
   });
 });
 
-describe('abortOpenCodeSession', () => {
+describe('abortRuntimeSession', () => {
   test('POSTs the abort to the runtime for the given session', async () => {
     let captured: unknown;
     abortImpl = async (args) => {
@@ -737,7 +737,7 @@ describe('abortOpenCodeSession', () => {
       return { data: {} };
     };
 
-    await expect(abortOpenCodeSession('sess-1')).resolves.toBeUndefined();
+    await expect(abortRuntimeSession('sess-1')).resolves.toBeUndefined();
     expect(captured).toEqual({ sessionID: 'sess-1' });
   });
 
@@ -745,7 +745,7 @@ describe('abortOpenCodeSession', () => {
     statusImpl = async () => ({ data: { 'sess-1': { type: 'busy' } } });
     useSyncStore.setState({ sessionStatus: {} });
 
-    await abortOpenCodeSession('sess-1');
+    await abortRuntimeSession('sess-1');
 
     expect(useSyncStore.getState().sessionStatus['sess-1']).toEqual({ type: 'busy' });
   });
@@ -756,7 +756,7 @@ describe('abortOpenCodeSession', () => {
       response: new Response(null, { status: 500 }),
     });
 
-    await expect(abortOpenCodeSession('sess-1')).rejects.toThrow();
+    await expect(abortRuntimeSession('sess-1')).rejects.toThrow();
   });
 
   test('a status-recheck failure after a successful abort is non-fatal', async () => {
@@ -765,7 +765,7 @@ describe('abortOpenCodeSession', () => {
       throw new Error('status endpoint unreachable');
     };
 
-    await expect(abortOpenCodeSession('sess-1')).resolves.toBeUndefined();
+    await expect(abortRuntimeSession('sess-1')).resolves.toBeUndefined();
   });
 });
 
@@ -843,18 +843,18 @@ describe('extractSendErrorMessage', () => {
   });
 });
 
-describe('isOpenCodeNotReadyError', () => {
+describe('isRuntimeNotReadyError', () => {
   test('matches the boot 503 across shapes and casing', () => {
-    expect(isOpenCodeNotReadyError(new Error('opencode not ready'))).toBe(true);
-    expect(isOpenCodeNotReadyError('OpenCode Not Ready')).toBe(true);
-    expect(isOpenCodeNotReadyError({ data: { message: 'opencode not ready' } })).toBe(true);
-    expect(isOpenCodeNotReadyError('Failed to perform action: opencode not ready')).toBe(true);
+    expect(isRuntimeNotReadyError(new Error('opencode not ready'))).toBe(true);
+    expect(isRuntimeNotReadyError('OpenCode Not Ready')).toBe(true);
+    expect(isRuntimeNotReadyError({ data: { message: 'opencode not ready' } })).toBe(true);
+    expect(isRuntimeNotReadyError('Failed to perform action: opencode not ready')).toBe(true);
   });
 
   test('does not match unrelated errors', () => {
-    expect(isOpenCodeNotReadyError(new Error('Insufficient credits'))).toBe(false);
-    expect(isOpenCodeNotReadyError({ data: { message: 'Bad request' } })).toBe(false);
-    expect(isOpenCodeNotReadyError(null)).toBe(false);
+    expect(isRuntimeNotReadyError(new Error('Insufficient credits'))).toBe(false);
+    expect(isRuntimeNotReadyError({ data: { message: 'Bad request' } })).toBe(false);
+    expect(isRuntimeNotReadyError(null)).toBe(false);
   });
 });
 
@@ -941,8 +941,8 @@ describe('getSendRetryDelayMs', () => {
 
 // ── The prompt mutation must never be retried by TanStack Query ────────────
 //
-// `promptOpenCodeMessage` POSTs `prompt_async`, which CREATES a user message.
-// Its two siblings — `useExecuteOpenCodeCommand` and the session-init mutation
+// `promptRuntimeMessage` POSTs `prompt_async`, which CREATES a user message.
+// Its two siblings — `useExecuteRuntimeCommand` and the session-init mutation
 // — both carry `retry: false` with that exact reasoning; this one did not, so
 // it inherited the host's default. apps/web's is:
 //
@@ -956,14 +956,14 @@ describe('getSendRetryDelayMs', () => {
 // it, which is precisely the "one layer relies on another's guard" shape that
 // produced the 4x duplicate command. A non-idempotent call declares its own
 // retry policy.
-describe('useSendOpenCodeMessage retry policy', () => {
+describe('useSendRuntimeMessage retry policy', () => {
   const SRC = require('node:fs').readFileSync(
     new URL('./messages.ts', import.meta.url).pathname,
     'utf8',
   ) as string;
 
   test('declares retry: false rather than inheriting the host default', () => {
-    const start = SRC.indexOf('export function useSendOpenCodeMessage()');
+    const start = SRC.indexOf('export function useSendRuntimeMessage()');
     expect(start).toBeGreaterThan(-1);
     const body = SRC.slice(start, SRC.indexOf('\n}', start));
     expect(body).toContain('retry: false');

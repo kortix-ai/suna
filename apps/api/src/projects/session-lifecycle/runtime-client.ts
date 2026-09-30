@@ -25,7 +25,7 @@ import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { WORKSPACE, sessionRuntimeFetch, type ResolvedSessionRuntime } from './runtime-fetch';
 import { sendQuickQueueControl } from './quick-queue-control';
-import { clearTurnStopRequest, markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { clearTurnStopRequest, markTurnStopRequested } from '../session-turn-ledger';
 import { db } from '../../shared/db';
 import type { SessionLifecycleCommandRow, PromptOverridesWire, PromptPartWire } from './store';
 import { type PlacementTipMessage, parsePlacementTip } from './forwarded-placement';
@@ -50,7 +50,7 @@ export async function resolveSessionOpencodeEndpoint(
   if (!sessionId) return null;
   const [session] = await db
     .select({
-      opencodeSessionId: projectSessions.opencodeSessionId,
+      opencodeSessionId: projectSessions.runtimeSessionId,
       sandboxUrl: projectSessions.sandboxUrl,
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,

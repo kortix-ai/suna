@@ -6,7 +6,7 @@ import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
 
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { qk } from '../query-keys';
-import { opencodeKeys } from '../use-opencode-sessions';
+import { runtimeKeys } from '../use-opencode-sessions';
 import { useEventStreamRefs } from './use-event-stream-refs';
 
 // T2: `markSessionAbortedLocally` (invoked from the
@@ -115,7 +115,7 @@ describe('markSessionAbortedLocally', () => {
     // Not the transcript, not the session row, not another factory's keys.
     expect(matches!({ queryKey: qk.project.messages('p1', 's1') })).toBe(false);
     expect(matches!({ queryKey: qk.project.session('p1', 's1') })).toBe(false);
-    expect(matches!({ queryKey: opencodeKeys.runtimeSession('s1') })).toBe(false);
+    expect(matches!({ queryKey: runtimeKeys.runtimeSession('s1') })).toBe(false);
   });
 
   test('the un-echoed bubble of a prompt the inbox will redeliver is never wiped', () => {

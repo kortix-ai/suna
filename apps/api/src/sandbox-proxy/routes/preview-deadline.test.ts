@@ -13,8 +13,8 @@
 // `mock.module` is process-global in bun, so this lives in its own file.
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sb-1',
@@ -97,9 +97,13 @@ mock.module('../../projects/sandbox-deadline', () => ({
   },
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
+const realTurnLedger = await import('../../projects/session-turn-ledger');
+mock.module('../../projects/session-turn-ledger', () => ({
+  ...realTurnLedger,
+  extractTurnIdentity: () => ({ opencodeSessionId: 'sess-1', messageId: 'msg-turn-1' }),
+}));
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
-  extractTurnIdentity: () => ({ opencodeSessionId: 'sess-1', messageId: 'msg-turn-1' }),
   beginSandboxTurn: async (target: unknown, turn: Record<string, unknown>) => {
     begunTurns.push({ target, turn });
     if (turnBeginError) throw turnBeginError;

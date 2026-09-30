@@ -1,8 +1,8 @@
 import { test, expect } from 'bun:test';
-import { formatOpenCodeRuntimeError, isSandboxNotReadyError } from './opencode-errors';
+import { formatRuntimeError, isSandboxNotReadyError } from './runtime-errors';
 
 // Both inputs below are constructed as real `Error` instances — that is the
-// ONLY shape `formatOpenCodeRuntimeError` is ever actually called with.
+// ONLY shape `formatRuntimeError` is ever actually called with.
 // `unwrap()` (react/use-opencode-sessions/shared.ts) is what turns the
 // proxy's parsed JSON body into the error this function receives, and it
 // always `throw new Error(String(msg))`. A plain object literal (`{ message:
@@ -17,9 +17,9 @@ test('a stopped-sandbox 503 is dormancy, not an OpenCode failure', () => {
   // (`{ error: 'sandbox not ready (status: stopped)', port, status }`) and
   // re-throws `new Error(body.error)` — the JSON wrapper does NOT survive,
   // only the bare phrase does.
-  const formatted = formatOpenCodeRuntimeError(new Error('sandbox not ready (status: stopped)'));
+  const formatted = formatRuntimeError(new Error('sandbox not ready (status: stopped)'));
   expect(formatted.title).toBe('Session is waking up');
-  expect(formatted.title).not.toBe('OpenCode failed to load');
+  expect(formatted.title).not.toBe('The session runtime failed to load');
 });
 
 // ── isSandboxNotReadyError ──────────────────────────────────────────────────
@@ -90,13 +90,13 @@ test('does not classify genuine failures as sandbox-not-ready', () => {
   expect(isSandboxNotReadyError(undefined)).toBe(false);
 });
 
-test('formatOpenCodeRuntimeError treats every readiness phrase as waking, not just status: stopped', () => {
+test('formatRuntimeError treats every readiness phrase as waking, not just status: stopped', () => {
   for (const phrase of [
     'sandbox not ready (status: starting)',
     'sandbox not ready',
     'Sandbox is not ready',
   ]) {
-    const formatted = formatOpenCodeRuntimeError(new Error(phrase));
+    const formatted = formatRuntimeError(new Error(phrase));
     expect({ phrase, title: formatted.title }).toEqual({
       phrase,
       title: 'Session is waking up',
@@ -109,8 +109,16 @@ test('a genuine config error keeps its own title', () => {
   // ConfigInvalidError body, so it falls through to `JSON.stringify(err)` and
   // throws `new Error('{"name":"ConfigInvalidError",...}')` — the JSON
   // survives whole this time, inside a real Error's `.message`.
-  const formatted = formatOpenCodeRuntimeError(
+  const formatted = formatRuntimeError(
     new Error(JSON.stringify({ name: 'ConfigInvalidError', data: { path: '/workspace/opencode.json' } })),
   );
   expect(formatted.title).toBe('OpenCode config is invalid');
+});
+
+test("a genuine runtime failure names the runtime, not a harness", () => {
+  const formatted = formatRuntimeError(new Error("Internal Server Error"));
+  expect(formatted.title).toBe("The session runtime failed to load");
+  expect(formatRuntimeError(new Error("")).message).toBe(
+    "The sandbox is running, but its runtime returned an error.",
+  );
 });

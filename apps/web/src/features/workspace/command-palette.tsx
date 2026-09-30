@@ -2013,13 +2013,6 @@ export function CommandPalette() {
     });
   }, [close]);
 
-  const handleGenerateSSHKey = useCallback(() => {
-    close();
-    import('@/stores/ssh-dialog-store').then(({ useSSHDialogStore }) => {
-      useSSHDialogStore.getState().openSSHDialog();
-    });
-  }, [close]);
-
   // A rejected promise is not guaranteed to carry an Error, and a toast reading
   // "undefined" is worse than a generic one.
   const reloadErrorMessage = (err: unknown): string =>
@@ -2081,7 +2074,6 @@ export function CommandPalette() {
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
-      generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
       reconcileSession: handleReconcileSession,
     }),
@@ -2103,7 +2095,6 @@ export function CommandPalette() {
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
-      handleGenerateSSHKey,
       handleRestartConfig,
       handleReconcileSession,
     ],

@@ -495,6 +495,9 @@ export async function handlePreviewOriginRequest(
             // correct agent binding for the manager-override gate.
             boundCredentialSessionId: session.callerSessionId,
             sandboxAuthored: session.sandboxAuthored,
+            // A person's credential (never bound to a session) starting a turn
+            // on this origin binds the session token to them.
+            bindTurnIdentity: session.callerSessionId === null,
           }
         : { kind: 'public_share' },
       req.method,

@@ -972,7 +972,7 @@ async function startSessionRuntime(
     // NOT established — a `defer` (opencode slow to answer, prior root pinned)
     // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
     // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
-    // request `initial_opencode_session_pending`, and the session spun "Waking
+    // request `initial_runtime_session_pending`, and the session spun "Waking
     // the agent" until a human clicked Restart (reported session, 10+ min).
     // The runtime is unusable without the root, so retry until established —
     // bounded interval, detached so the rest of boot (readiness probe, event
@@ -1411,14 +1411,14 @@ type InitialSessionBootState = Pick<
  * and release a poisoned failure flag left by an earlier attempt.
  *
  * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
- * not the box. `proxy.ts` (`initial_opencode_session_failed`, 503) and
+ * not the box. `proxy.ts` (`initial_runtime_session_failed`, 503) and
  * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
  * because until now nothing ever cleared it: it was written on a caught
  * throw in two places and cleared in none, so one throwing attempt wedged
  * the sandbox for its whole life even after `retryUntilInitialSessionEstablished`
  * established the root on a later rung. Only a manual Restart healed it.
  * Exported so proxy-auth.test.ts can prove the HTTP consequence: the proxy
- * stops answering `initial_opencode_session_failed` once this runs.
+ * stops answering `initial_runtime_session_failed` once this runs.
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
   bootState.initialOpenCodeSessionId = sessionId

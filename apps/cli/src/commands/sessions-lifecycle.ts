@@ -56,7 +56,7 @@ Needs project.session.stop, and the session owner or an account owner/admin.
 const START_HELP = help`Usage: kortix sessions start <session-id> [options]
 
 Wake a session: provisions a missing sandbox, resumes a stopped one, and
-resolves its OpenCode runtime. Idempotent — calling it on a running session
+resolves its session runtime. Idempotent — calling it on a running session
 just reports \`ready\`. Without --wait it reports the stage it reached in one
 call and exits 0.
 
@@ -431,6 +431,7 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   if (json) {
     emitJson({
       session_id: resolved.session.session_id,
+      runtime_session_id: resolved.opencodeSessionId,
       opencode_session_id: resolved.opencodeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,

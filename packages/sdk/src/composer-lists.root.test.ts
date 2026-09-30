@@ -11,7 +11,7 @@ import * as react from './react/index';
  * copies that can drift.
  */
 const ROOT_COMPOSER_FUNCTIONS = [
-  'projectConfigAgentsToOpenCodeAgents',
+  'projectConfigAgentsToRuntimeAgents',
   'composerSelectableAgents',
   'resolveComposerAgent',
   'flattenModels',
@@ -34,7 +34,7 @@ test('the composer list builders are functions on the root entry', () => {
 
 test('names that ./react already exported are the same bindings as the root ones', () => {
   for (const name of [
-    'projectConfigAgentsToOpenCodeAgents',
+    'projectConfigAgentsToRuntimeAgents',
     'flattenModels',
     'isOfferedModel',
     'resolveModelDefault',

@@ -1,5 +1,5 @@
 import type { Config } from '@/lib/config/config'
-import type { RepoInfo } from '@/lib/git/git'
+import type { ConfigDirSyncResult, RepoInfo } from '@/lib/git/git'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
@@ -41,6 +41,13 @@ export interface HarnessRefreshInput {
   skipRestart: boolean
   /** Leave the checkout exactly as it is — no pull of the session branch. */
   skipRepo?: boolean
+  /**
+   * Bring the base branch's OpenCode config dir into the checkout
+   * (`syncConfigDirToBase`: refuses local edits and commits, never moves a
+   * ref). The runtime reloads when files changed, even with `skipRestart`,
+   * because it reads those files only when it loads its config.
+   */
+  syncBaseConfig?: boolean
   baseSha?: string
   forceFail: boolean
 }
@@ -55,6 +62,8 @@ export interface HarnessRefreshResult {
     turn_ended?: boolean | null
     reason?: string
   }
+  /** Present when `syncBaseConfig` was asked and the runtime supports it. */
+  config_dir?: ConfigDirSyncResult
   runtime: string
   runtime_pid: number | null
 }

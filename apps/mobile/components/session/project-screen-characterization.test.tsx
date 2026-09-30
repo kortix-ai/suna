@@ -146,7 +146,7 @@ describe('ProjectScreen connect and stack', () => {
     response = async () => ({ stage: 'starting', retriable: true, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1' } });
     health = async () => ({ ok: true, status: 200, json: async () => ({ boot_error: 'runtime failed' }) });
     await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-2' }));
-    expect(connecting.error).toMatchObject({ title: 'OpenCode runtime is not ready', detail: 'runtime failed' });
+    expect(connecting.error).toMatchObject({ title: 'Session runtime is not ready', detail: 'runtime failed' });
     expect(seen('switchSandbox')).toHaveLength(0);
   });
 

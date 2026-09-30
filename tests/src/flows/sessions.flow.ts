@@ -915,11 +915,16 @@ flow(
       'anon: the transcript share reads the conversation → 503 until the sandbox is active, then a 200 digest from the live sandbox or the saved transcript',
       async () => {
         // The fixture session was created moments ago; while its sandbox starts
-        // and nothing is saved, the contract answers 503.
+        // and nothing is saved, the contract answers 503. Once the sandbox is
+        // active but its runtime has no root conversation yet, it answers 200
+        // `source:"none"` (the spec's retry signal) — a box that turns active
+        // in ~5 s (a warm Platinum claim) sits in that window for seconds.
         const r = await waitFor(
           () => anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: transcriptShareId } }),
           {
-            until: (res) => res.statusCode !== 503,
+            until: (res) =>
+              res.statusCode !== 503 &&
+              !(res.statusCode === 200 && res.json<{ source?: string }>().source === 'none'),
             timeoutMs: 180_000,
             intervalMs: 2_000,
             description: 'the shared session to become readable',
@@ -2188,6 +2193,10 @@ flow(
       expectIds(await ids(owner, 'label=bug&label=urgent'), [coordinator], 'bug+urgent');
       expectIds(await ids(owner, `label=${encodeURIComponent('customer: acme/eu')}`), [coordinator], 'free-form label');
       expectIds(await ids(owner, 'label=nope'), [], 'unknown');
+    });
+
+    await ctx.step('a flat list filtered by label never adds an unlabeled coordinator as tree context', async () => {
+      expectIds(await ids(owner, 'label=worker'), [worker], 'flat worker');
     });
 
     await ctx.step('with parent=root a label on a worker lists its coordinator, like q', async () => {

@@ -60,7 +60,7 @@ export async function getPublicSessionInfo(sessionId: string): Promise<PublicSes
     .select({
       sessionId: projectSessions.sessionId,
       status: projectSessions.status,
-      opencodeSessionId: projectSessions.opencodeSessionId,
+      opencodeSessionId: projectSessions.runtimeSessionId,
       metadata: projectSessions.metadata,
       createdAt: projectSessions.createdAt,
       updatedAt: projectSessions.updatedAt,
@@ -258,7 +258,7 @@ export async function getPublicSessionMessages(
   let rootId = projectionIdentity(state.doc).opencode_session_id;
   if (!rootId) {
     const [sessionRow] = await db
-      .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+      .select({ opencodeSessionId: projectSessions.runtimeSessionId })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, row.sessionId))
       .limit(1);

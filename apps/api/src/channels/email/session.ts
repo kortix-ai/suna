@@ -145,7 +145,7 @@ async function createThreadSession(
   const [selection] = await db
     .select({
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
     })
     .from(chatChannelBindings)
     .where(

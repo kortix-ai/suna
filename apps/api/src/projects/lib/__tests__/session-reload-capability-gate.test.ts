@@ -64,6 +64,10 @@ function fakeDaemon(opts: {
   converge?: unknown;
   convergeStatus?: number[];
   etagAfter?: string;
+  /** What `POST /kortix/refresh` answers. */
+  refreshBody?: Record<string, unknown>;
+  /** What the governance push returns. */
+  push?: Record<string, unknown>;
 }) {
   const requests: Array<{ method: string; path: string }> = [];
   let healthReads = 0;
@@ -86,7 +90,9 @@ function fakeDaemon(opts: {
           ...(opts.capable ? { config: healthConfig() } : {}),
         });
       }
-      if (u.pathname === '/kortix/refresh') return Response.json({ repo: { after: { commit: 'd'.repeat(40) } } });
+      if (u.pathname === '/kortix/refresh') {
+        return Response.json({ repo: { after: { commit: 'd'.repeat(40) } }, ...opts.refreshBody });
+      }
       if (u.pathname === '/kortix/config/converge') {
         const status = convergeStatuses.shift() ?? 200;
         if (status !== 200) return Response.json({ error: 'busy' }, { status });
@@ -96,7 +102,7 @@ function fakeDaemon(opts: {
     },
     pushGovernance: async (input) => {
       pushes.push(input);
-      return { applied: true, opencodeReload: 'restarted', opencodeTurnEnded: false } as never;
+      return (opts.push ?? { applied: true, opencodeReload: 'restarted', opencodeTurnEnded: false }) as never;
     },
     latestEtag: async () => 'ffff',
     sleep: async () => {},
@@ -202,9 +208,11 @@ describe('reloadSessionConfig capability gate', () => {
     const daemon = fakeDaemon({ capable: false });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
+    // `base_config=1` is ignored by a daemon built before it; it answers
+    // without `config_dir`, which reads back as 'unknown'.
     expect(daemon.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       'GET /kortix/health?turn=1',
-      'POST /kortix/refresh?restart=0',
+      'POST /kortix/refresh?restart=0&base_config=1',
     ]);
     expect(daemon.pushes.length).toBe(1);
     expect(result.config_path).toBe('legacy');
@@ -440,7 +448,7 @@ describe('reloadSessionConfig with config_releases off', () => {
 
     expect(daemon.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       'GET /kortix/health?turn=1',
-      'POST /kortix/refresh?restart=0',
+      'POST /kortix/refresh?restart=0&base_config=1',
     ]);
     expect(daemon.requests.map((r) => r.path)).not.toContain('/kortix/config/converge');
     expect(daemon.pushes.length).toBe(1);
@@ -467,6 +475,63 @@ describe('reloadSessionConfig with config_releases off', () => {
     const daemon = fakeDaemon({ capable: true, releasesEnabled: false });
     await reloadSessionConfig(INPUT, daemon.deps);
     expect(daemon.requests.filter((r) => r.path.includes('config_dir'))).toEqual([]);
+  });
+
+  // Prod 2026-09-30: with the flag off OpenCode reads the agent files in the
+  // session's checkout, and a fix merged to base never reached a live session
+  // through two reloads. The refresh now brings the base config dir in.
+  test('the base agent files are brought forward, and the daemon reload counts as applied', async () => {
+    const daemon = fakeDaemon({
+      capable: true,
+      releasesEnabled: false,
+      refreshBody: { config_dir: { synced: true }, reload: { outcome: 'swapped', port: 4097, pid: 2, turn_ended: false } },
+      push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
+    });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(result).toMatchObject({
+      applied: true,
+      agent_files: 'updated',
+      opencode_reload: 'restarted',
+      turn_ended: false,
+      config_path: 'legacy',
+    });
+    expect(result.reason).toBeUndefined();
+    expect(reloadDetail(result)).toContain('The next prompt runs the new config.');
+  });
+
+  test('the session\'s own agent edits are kept and reported', async () => {
+    const daemon = fakeDaemon({
+      capable: true,
+      releasesEnabled: false,
+      refreshBody: { config_dir: { synced: false, skipped: 'local changes' } },
+      push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
+    });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(result).toMatchObject({ applied: false, agent_files: 'kept-yours', opencode_reload: null });
+    expect(reloadNeedsAttention(result)).toBe(true);
+  });
+
+  test('agent files already on base read "already current", not the governance skip', async () => {
+    const daemon = fakeDaemon({
+      capable: true,
+      releasesEnabled: false,
+      refreshBody: { config_dir: { synced: false, skipped: 'already matches base' } },
+      push: { applied: false, reason: 'the daemon receives compiled governance in its config release' },
+    });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(result).toMatchObject({ applied: false, agent_files: 'already-current', reason: 'already current' });
+  });
+
+  test('refresh_repo false never asks for the base config', async () => {
+    const daemon = fakeDaemon({ capable: true, releasesEnabled: false });
+    const result = await reloadSessionConfig({ ...INPUT, refreshRepo: false }, daemon.deps);
+
+    expect(daemon.requests.map((r) => r.path)).toContain('/kortix/refresh?restart=0&repo=0');
+    expect(daemon.requests.some((r) => r.path.includes('base_config'))).toBe(false);
+    expect(result.agent_files).toBe('not-requested');
   });
 
   test('turning the flag back ON converges the same session again', async () => {

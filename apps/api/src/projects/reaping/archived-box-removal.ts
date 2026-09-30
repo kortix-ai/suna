@@ -40,7 +40,6 @@ export const DELETED_SESSION_CLEARED_KEYS = [
   'runtimeRecoveryLeaseId',
   'runtimeRecoveryLeaseAt',
   'runtimeRecoveryLeaseExpiresAtMs',
-  'activeTurn',
   'activeTurns',
 ] as const;
 

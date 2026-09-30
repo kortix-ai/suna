@@ -97,6 +97,8 @@ beforeEach(() => {
   write({
     'kortix.yaml': ROOT,
     '.kortix/agents.yaml': 'agents:\n  galileo:\n    connectors: none\n',
+    'agents/kortix.md': '# Kortix\n',
+    'agents/galileo.md': '# Galileo\n',
     '.kortix/triggers/reports/weekly.yaml': WEEKLY,
     '.kortix/triggers/dockets.yaml': DOCKETS,
     'config.json': JSON.stringify({ active: 'test', hosts: {} }),

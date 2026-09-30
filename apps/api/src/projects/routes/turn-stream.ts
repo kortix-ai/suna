@@ -153,7 +153,7 @@ projectsApp.openapi(
         accountId: projectSessions.accountId,
         createdBy: projectSessions.createdBy,
         metadata: projectSessions.metadata,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
       })
       .from(projectSessions)
       .where(
