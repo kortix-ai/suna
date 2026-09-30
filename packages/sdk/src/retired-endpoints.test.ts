@@ -1,22 +1,14 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import {
-  acceptInvite,
   ApiError,
-  claimComputer,
   configureKortix,
   convertPresentationToGoogleSlides,
-  declineInvite,
-  deleteInstance,
   getGoogleAuthUrl,
-  getInvite,
   getReferralCode,
   getReferralStats,
-  getSandboxProvisionStatus,
-  getSandboxProvisionStreamUrl,
   getTemplate,
   installTemplate,
   listReferrals,
-  markInstanceError,
   refreshReferralCode,
   sendReferralEmails,
   updateTemplateWarmPool,
@@ -49,15 +41,13 @@ const RETIRED: Array<[name: string, call: () => Promise<unknown>]> = [
   ['listReferrals', () => listReferrals({ limit: 10 })],
   ['sendReferralEmails', () => sendReferralEmails(['someone@example.com'])],
   ['getGoogleAuthUrl', () => getGoogleAuthUrl('https://app.test/')],
-  ['convertPresentationToGoogleSlides', () => convertPresentationToGoogleSlides('/deck', 'https://sandbox.test')],
+  [
+    'convertPresentationToGoogleSlides',
+    () => convertPresentationToGoogleSlides('/deck', 'https://sandbox.test'),
+  ],
   ['getTemplate', () => getTemplate('template-1')],
   ['installTemplate', () => installTemplate('template-1', { project_id: 'p', inputs: {} })],
   ['updateTemplateWarmPool', () => updateTemplateWarmPool('p', { slug: 'default', enabled: true })],
-  ['getInvite', () => getInvite('invite-1')],
-  ['acceptInvite', () => acceptInvite('invite-1')],
-  ['declineInvite', () => declineInvite('invite-1')],
-  ['deleteInstance', () => deleteInstance('sandbox-1')],
-  ['claimComputer', () => claimComputer()],
 ];
 
 test.each(RETIRED)('%s rejects with ENDPOINT_RETIRED and sends no request', async (name, call) => {
@@ -70,21 +60,4 @@ test.each(RETIRED)('%s rejects with ENDPOINT_RETIRED and sends no request', asyn
   expect((error as ApiError).code).toBe('ENDPOINT_RETIRED');
   expect((error as ApiError).message).toContain(name);
   expect(requests).toEqual([]);
-});
-
-test('best-effort retired helpers keep their no-throw contract and send no request', async () => {
-  await expect(markInstanceError('sandbox-1', 'boom')).resolves.toBeUndefined();
-  await expect(getSandboxProvisionStatus('sandbox-1')).resolves.toBeNull();
-  expect(requests).toEqual([]);
-});
-
-test('getSandboxProvisionStreamUrl throws instead of building a URL that 404s', () => {
-  let error: unknown;
-  try {
-    getSandboxProvisionStreamUrl('sandbox-1', 'token');
-  } catch (e) {
-    error = e;
-  }
-  expect(error).toBeInstanceOf(ApiError);
-  expect((error as ApiError).code).toBe('ENDPOINT_RETIRED');
 });
