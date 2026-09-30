@@ -221,6 +221,7 @@ function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null 
     markup: llmPriceMarkup(),
     resolvedModel: managed.id,
     pricing: managedPricing(managed),
+    strictChatSchema: true,
     failover: true,
     publicProvider: 'kortix',
   };
