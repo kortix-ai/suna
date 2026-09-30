@@ -133,11 +133,17 @@
     "enableGateway": "Abilita il gateway LLM nelle impostazioni del progetto per usare i pool di chiavi.",
     "selectedOneForSession": "{count} chiave selezionata per questa sessione",
     "selectedOne": "{count} chiave selezionata",
-    "opencodeSignIn": "Accedi con OpenCode",
-    "opencodeSignInDescription": "Usa il tuo workspace OpenCode al posto di una chiave API.",
     "opencodeDeviceDescription": "Copia questo codice. Poi apri la pagina di OpenCode e inseriscilo per collegare il tuo workspace.",
     "opencodeStarting": "Connessione a OpenCode…",
-    "opencodeConnected": "Accesso effettuato con OpenCode"
+    "opencodeConnected": "Accesso effettuato con OpenCode",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Accedi con il tuo account OpenCode. Salviamo l’accesso come segreto di progetto cifrato, così le sessioni future lo riutilizzano.",
+    "opencodeGoConnectedBanner": "OpenCode Go connesso.",
+    "opencodeGoDisconnected": "OpenCode Go disconnesso",
+    "opencodeGoConnect": "Connetti OpenCode Go",
+    "opencodeGoReconnect": "Riconnetti OpenCode Go",
+    "opencodeGoDisconnect": "Disconnetti OpenCode Go",
+    "opencodeGoFailed": "Impossibile connettere OpenCode Go"
   },
   "useCases": {
     "headline": "I processi che fanno funzionare un'azienda"

@@ -133,11 +133,17 @@
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
     "selectedOneForSession": "此会话已选择 {count} 个密钥",
     "selectedOne": "已选择 {count} 个密钥",
-    "opencodeSignIn": "使用 OpenCode 登录",
-    "opencodeSignInDescription": "使用你的 OpenCode 工作区代替 API 密钥。",
     "opencodeDeviceDescription": "复制此代码，然后打开 OpenCode 页面并输入它以连接你的工作区。",
     "opencodeStarting": "正在连接 OpenCode…",
-    "opencodeConnected": "已使用 OpenCode 登录"
+    "opencodeConnected": "已使用 OpenCode 登录",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "使用你的 OpenCode 账户登录。我们会将登录信息保存为加密的项目密钥，供以后的会话复用。",
+    "opencodeGoConnectedBanner": "OpenCode Go 已连接。",
+    "opencodeGoDisconnected": "OpenCode Go 已断开",
+    "opencodeGoConnect": "连接 OpenCode Go",
+    "opencodeGoReconnect": "重新连接 OpenCode Go",
+    "opencodeGoDisconnect": "断开 OpenCode Go",
+    "opencodeGoFailed": "无法连接 OpenCode Go"
   },
   "useCases": {
     "headline": "驱动公司运转的循环"

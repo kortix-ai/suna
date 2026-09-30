@@ -133,11 +133,17 @@
     "enableGateway": "Aktivieren Sie das LLM-Gateway in den Projekteinstellungen, um Schlüssel-Pools zu verwenden.",
     "selectedOneForSession": "{count} Schlüssel für diese Sitzung ausgewählt",
     "selectedOne": "{count} Schlüssel ausgewählt",
-    "opencodeSignIn": "Mit OpenCode anmelden",
-    "opencodeSignInDescription": "Nutzen Sie Ihren OpenCode-Workspace statt eines API-Schlüssels.",
     "opencodeDeviceDescription": "Kopieren Sie diesen Code. Öffnen Sie dann die OpenCode-Seite und geben Sie ihn ein, um Ihren Workspace zu verbinden.",
     "opencodeStarting": "Verbindung zu OpenCode wird hergestellt…",
-    "opencodeConnected": "Mit OpenCode angemeldet"
+    "opencodeConnected": "Mit OpenCode angemeldet",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Melden Sie sich mit Ihrem OpenCode-Konto an. Wir speichern die Anmeldung als verschlüsseltes Projekt-Secret, damit künftige Sitzungen sie wiederverwenden.",
+    "opencodeGoConnectedBanner": "OpenCode Go verbunden.",
+    "opencodeGoDisconnected": "OpenCode Go getrennt",
+    "opencodeGoConnect": "OpenCode Go verbinden",
+    "opencodeGoReconnect": "OpenCode Go erneut verbinden",
+    "opencodeGoDisconnect": "OpenCode Go trennen",
+    "opencodeGoFailed": "OpenCode Go konnte nicht verbunden werden"
   },
   "useCases": {
     "headline": "Die Abläufe, die ein Unternehmen am Laufen halten"

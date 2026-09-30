@@ -77,6 +77,16 @@ export interface ProjectSecret {
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   /** True when an earlier sandbox may retain the previous value. */
   requires_rotation?: boolean;
+  /** Who can use the shared value; empty = everyone in the project. */
+  shared_with?: Array<{
+    grant_id: string;
+    principal_type: 'member' | 'group' | 'project';
+    principal_id: string;
+    label: string;
+    expires_at: string | null;
+  }>;
+  /** False when the value is shared with specific people and the caller is not one of them. */
+  usable?: boolean;
 }
 
 export interface ProjectSecretsResponse {
