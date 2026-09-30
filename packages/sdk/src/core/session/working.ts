@@ -507,10 +507,13 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     const lastEnded = server?.lastEnded;
     const endedAt = instant(lastEnded?.ended_at);
     if (
-      lastEnded && endedAt !== null && endedAt >= idleFrame.atMs &&
+      lastEnded &&
+      endedAt !== null &&
+      endedAt >= idleFrame.atMs &&
       lastEnded.turn_token !== candidate.turn_token
     ) return false;
-    // Otherwise the frame ends the only turn we can identify. It used to expire after
+    // Otherwise the frame ends the only turn we can identify.
+    // It used to expire after
     // `TURN_END_LEDGER_LAG_MS`, on the theory that a row still open past the
     // relay's lag must mean the frame was a retry's `session.error` rather than
     // the end of anything. But time is not evidence: when the `kind:"end"`
