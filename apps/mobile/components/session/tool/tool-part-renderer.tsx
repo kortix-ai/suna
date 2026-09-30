@@ -349,4 +349,3 @@ export const ToolCard = memo(function ToolCard({
 }) {
   return <ToolPartRenderer part={tool as unknown as SdkToolPart} turnLive={working} />;
 });
-
