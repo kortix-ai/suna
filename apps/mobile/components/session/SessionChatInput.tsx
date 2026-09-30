@@ -125,7 +125,7 @@ interface SessionChatInputProps {
   /** The thread can carry files (it has a project session). False refuses a send with files. */
   canAttach?: boolean;
   /** Called when the user submits while agent is busy — enqueue instead of send */
-  onEnqueue?: (text: string) => void;
+  onEnqueue?: (text: string, options: PromptOptions, mentions?: TrackedMention[]) => Promise<void>;
   /** Slot rendered above the text input inside the card (used for queue UI) */
   inputSlot?: React.ReactNode;
   /** Emits whether the draft currently has non-whitespace content */
@@ -414,21 +414,22 @@ function SessionChatInputImpl({
       return;
     }
 
-    // The agent is busy and there is an enqueue handler: queue instead of sending.
-    if (plan === 'queue' && onEnqueue) {
-      onEnqueue(trimmed);
-      setText('');
-      mention.reset();
-      skill.reset();
-      return;
-    }
-
     const options: PromptOptions = {};
     if (agent?.name) options.agent = agent.name;
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
-
     const trackedMentions = mention.mentions.length > 0 ? [...mention.mentions] : undefined;
+
+    if (plan === 'queue' && onEnqueue) {
+      // Keep the draft on a refused write; server acceptance is the durability boundary.
+      try {
+        await onEnqueue(trimmed, options, trackedMentions);
+        setText('');
+        mention.reset();
+        skill.reset();
+      } catch { /* The queue handler reports the refusal. */ }
+      return;
+    }
 
     if (fileCount === 0) {
       // Clear input immediately for snappy UX

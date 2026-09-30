@@ -598,6 +598,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/events': { action: 'session.event.stream', title: 'Streamed session events' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/model': { action: 'session.model.update', title: 'Changed session model' },
   'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle': 'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
+  'PUT /v1/projects/:projectId/sessions/:sessionId/presence': { action: 'session.presence.update', title: 'Updated session presence' },
   'GET /v1/projects/:projectId/sessions/:sessionId/previews': { action: 'session.preview.list', title: 'Listed session preview candidates' },
   'GET /v1/projects/:projectId/sessions/:sessionId/prompts': { action: 'session.prompt.list', title: 'Viewed queued session prompts' },
   'POST /v1/projects/:projectId/sessions/:sessionId/prompts': { action: 'session.prompt.send', title: 'Queued a session prompt' },
