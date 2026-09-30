@@ -439,11 +439,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
@@ -451,11 +451,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND (entry.value->>'opencodeSessionId' IS NULL
            OR ( ses_root ::text IS NOT NULL
@@ -492,11 +492,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
+                   FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
@@ -591,11 +591,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
@@ -603,11 +603,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND (entry.value->>'opencodeSessionId' IS NULL
            OR ( ses_root ::text IS NOT NULL
@@ -644,11 +644,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
+                   FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
@@ -743,11 +743,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
@@ -755,11 +755,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND (entry.value->>'opencodeSessionId' IS NULL
            OR ( ses_root ::text IS NOT NULL
@@ -796,11 +796,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
+                   FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
@@ -905,11 +905,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
@@ -917,11 +917,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND (entry.value->>'opencodeSessionId' IS NULL
            OR ( ses_root ::text IS NOT NULL
@@ -958,11 +958,11 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
+                   FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
@@ -1055,11 +1055,11 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
+        CROSS JOIN LATERAL  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
           ELSE '{}'::jsonb
-        END) entry
+        END) entry 
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND entry.value->>'messageId' =  msg_turn_1 
     ), next_state AS ( SELECT target.sandbox_id,
@@ -1068,11 +1068,11 @@ exports[`golden SQL: terminal evidence closeSandboxTurnByMessageId closes by mes
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
+                   FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( target.metadata ->'activeTurns') = 'object'
+            THEN  target.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id

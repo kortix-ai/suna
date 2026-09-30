@@ -30,6 +30,7 @@ import {
 } from './sandbox-deadline-policy';
 import { confirmInboxPromptConsumed } from './session-lifecycle/consumption';
 import {
+  activeTurnEntries,
   ABORT_END_ERROR_NAMES,
   type ActiveTurnRenewal,
   type RuntimeTurnAdoption,
@@ -73,6 +74,7 @@ function jsonbObject(value: SQL): SQL {
   END`;
 }
 
+
 /**
  * The FOR UPDATE read of one session's live sandbox row, as the `target` CTE
  * body both multi-turn end writers start from.
@@ -97,11 +99,7 @@ function turnSelectionCtes(identity?: Partial<SandboxTurnIdentity> | null): SQL 
       SELECT target.sandbox_id,
              coalesce(entry.value->>'token', entry.key) AS token
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
-          ELSE '{}'::jsonb
-        END) entry
+        CROSS JOIN LATERAL ${activeTurnEntries(sql`target.metadata`)}
        WHERE entry.value->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
@@ -109,11 +107,7 @@ function turnSelectionCtes(identity?: Partial<SandboxTurnIdentity> | null): SQL 
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
-          ELSE '{}'::jsonb
-        END) entry
+        CROSS JOIN LATERAL ${activeTurnEntries(sql`target.metadata`)}
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND (entry.value->>'opencodeSessionId' IS NULL
            OR (${identity?.opencodeSessionId ?? null}::text IS NOT NULL
@@ -618,11 +612,7 @@ export async function closeSandboxTurnByMessageId(
              entry.value->>'token' AS token,
              entry.value
         FROM target
-        CROSS JOIN LATERAL jsonb_each(CASE
-          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-            THEN target.metadata->'activeTurns'
-          ELSE '{}'::jsonb
-        END) entry
+        CROSS JOIN LATERAL ${activeTurnEntries(sql`target.metadata`)}
        WHERE entry.value->>'state' IN ('delivering', 'active')
          AND entry.value->>'messageId' = ${messageId}
     ), next_state AS (${removeAndReturnTurns()}

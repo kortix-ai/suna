@@ -65,6 +65,18 @@ export interface StoredSandboxTurn extends SandboxTurnIdentity {
   startedAtMs: number | null;
 }
 /**
+ * Iterate a sandbox row's live turn metadata: the `activeTurns` object when it
+ * is one, nothing otherwise. The jsonb_each alias is `entry`.
+ */
+export function activeTurnEntries(metadata: SQL): SQL {
+  return sql`jsonb_each(CASE
+          WHEN jsonb_typeof(${metadata}->'activeTurns') = 'object'
+            THEN ${metadata}->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry`;
+}
+
+/**
  * The next-state projection both multi-turn end writers share: erase every
  * turn the `selected` CTE matched from `activeTurns`, keep every other entry,
  * and return the turns it erased as `ended_turns` for the ledger settle.
@@ -77,11 +89,7 @@ export function removeAndReturnTurns(): SQL {
                '{activeTurns}',
                coalesce((
                  SELECT jsonb_object_agg(entry.key, entry.value)
-                   FROM jsonb_each(CASE
-                     WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
-                       THEN target.metadata->'activeTurns'
-                     ELSE '{}'::jsonb
-                   END) entry
+                   FROM ${activeTurnEntries(sql`target.metadata`)}
                   WHERE NOT EXISTS (
                     SELECT 1 FROM selected
                      WHERE selected.sandbox_id = target.sandbox_id
