@@ -57,6 +57,8 @@ function startFakeGateway() {
   const requests: Array<{ path: string; auth: string | null }> = []
   /** The chat messages of each request, so a test reads what the model was sent. */
   const sent: Array<Array<{ role: string; content: unknown }>> = []
+  /** The sampling fields of each request body. */
+  const sampling: Array<{ temperature?: number; top_p?: number; tool_choice?: unknown; tools: number }> = []
   const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
     `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
   const server = Bun.serve({
@@ -64,7 +66,9 @@ function startFakeGateway() {
     async fetch(req) {
       const url = new URL(req.url)
       if (req.method !== 'POST' || !url.pathname.endsWith('/chat/completions')) return new Response('not found', { status: 404 })
-      sent.push(((await req.json()) as { messages: Array<{ role: string; content: unknown }> }).messages)
+      const json = (await req.json()) as { messages: Array<{ role: string; content: unknown }>; temperature?: number; top_p?: number; tool_choice?: unknown; tools?: unknown[] }
+      sent.push(json.messages)
+      sampling.push({ temperature: json.temperature, top_p: json.top_p, tool_choice: json.tool_choice, tools: json.tools?.length ?? 0 })
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
@@ -108,6 +112,7 @@ function startFakeGateway() {
     baseUrl: `http://127.0.0.1:${server.port}/v1/llm`,
     requests,
     sent,
+    sampling,
     script: (steps: Step[]) => {
       script = [...steps]
     },
@@ -477,23 +482,36 @@ describe('pi harness', () => {
     expect(newest.headers.get('x-next-cursor')).toBe(ids[1]!)
   })
 
-  test('the catalog reads the composer needs answer from the runtime', async () => {
-    // The pattern map survives compilation into the agent object the web shows.
-    const permission = { bash: { 'rm -rf *': 'deny', '*': 'allow' } }
-    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code', permission } } }) } })
-    const config = (await r.user('/config').then((res) => res.json())) as Record<string, unknown>
-    expect(config.default_agent).toBe('coder')
-    expect(config.model).toBe(`kortix/${MODEL_ID}`)
-    const agents = (await r.user('/agent').then((res) => res.json())) as Array<Record<string, unknown>>
-    expect(agents[0]).toMatchObject({ name: 'coder', description: 'Writes code', mode: 'primary', prompt: 'You code.', permission })
+  test('the catalogs are the project\'s: pi serves no config, agent, provider or command document', async () => {
+    // Pickers read the API (`/detail`, `/model-picker`); slash commands are
+    // an OpenCode capability pi does not advertise. The routes 404 instead of
+    // answering with objects pi would have to invent.
+    const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code' } } }) } })
+    for (const path of ['/config', '/global/config', '/agent', '/provider', '/config/providers', '/command']) {
+      expect({ path, status: (await r.user(path)).status }).toEqual({ path, status: 404 })
+    }
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
     expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'question', 'task'])
-    const providers = (await r.user('/provider').then((res) => res.json())) as { all: Array<{ id: string }>; default: Record<string, string> }
-    expect(providers.all[0]!.id).toBe('kortix')
-    expect(providers.default).toEqual({ kortix: MODEL_ID })
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
     expect((await r.user('/lsp/diagnostics')).status).toBe(200)
     expect((await r.user('/no/such/route')).status).toBe(404)
+  })
+
+  test('the agent\'s temperature, top_p and steps reach the gateway request', async () => {
+    const agent = { prompt: 'You code.', temperature: 0.3, top_p: 0.8, steps: 2 }
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'true' } }, { text: 'Done.' }],
+      env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: agent } }) },
+    })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sampling.length
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    // Step 2 of 2 is the last: the model may not call another tool.
+    expect(gateway.sampling.slice(before)).toEqual([
+      { temperature: 0.3, top_p: 0.8, tool_choice: undefined, tools: 8 },
+      { temperature: 0.3, top_p: 0.8, tool_choice: 'none', tools: 8 },
+    ])
   })
 
   test('a permission policy of ask pauses the tool until the product replies', async () => {

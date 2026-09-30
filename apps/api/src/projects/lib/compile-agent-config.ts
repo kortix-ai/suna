@@ -33,6 +33,7 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
+import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
 import {
   agentFileCandidates,
   defaultAgentFile,
@@ -58,42 +59,20 @@ import {
   type GitBackedProject,
 } from '../git';
 
-/** OpenCode's per-agent `AgentConfig` — the compiled shape for one `agent.<name>` entry. */
-export interface OpencodeAgentConfig {
-  description?: string;
-  mode?: 'primary' | 'subagent' | 'all';
-  model?: string;
-  variant?: string;
-  temperature?: number;
-  top_p?: number;
-  /** The agent's `.md` body (frontmatter stripped) — its system prompt. */
-  prompt?: string;
-  disable?: boolean;
-  hidden?: boolean;
-  options?: Record<string, unknown>;
-  color?: string;
-  steps?: number;
-  permission?: PermissionConfigV2;
-}
+/**
+ * One compiled agent (`CompiledAgent` in `@kortix/api-contract/runtime-relay`,
+ * the shape both harnesses read), with the manifest's permission type.
+ */
+export type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
 
-/** The compiled OpenCode config fragment `compileAgentConfig` produces. */
-export interface OpencodeConfig {
-  /** Top-level default model passthrough — the manifest's `default_agent`'s
-   *  compiled model (from ITS `.md` frontmatter), so a brand-new session (no
-   *  agent picked yet) starts on the same model its default agent would
-   *  resolve to. Omitted when the default agent declares no model (the
-   *  platform/account default applies, same as today). */
-  model?: string;
-  /** No compiled field maps to a top-level `small_model` today — passthrough
-   *  is a no-op until one exists. Reserved so a future field has somewhere to
-   *  land without another signature change. */
-  small_model?: string;
-  /** The manifest's `default_agent`: the agent a session with no agent chosen
-   *  runs, on every runtime (OpenCode reads this key; so does pi). Omitted when
-   *  that agent is disabled or a subagent, which cannot run as the primary. */
-  default_agent?: string;
-  agent: Record<string, OpencodeAgentConfig>;
-}
+/**
+ * The compiled agent set `compileAgentConfig` produces (`CompiledAgentSet`).
+ * `model` is the default agent's compiled model, so a session that picked no
+ * agent starts on the model its default agent resolves to; omitted when that
+ * agent declares none. `default_agent` is omitted when that agent is disabled
+ * or a subagent, which cannot run as the primary.
+ */
+export type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
 
 /** Raised when a v2 manifest can't be compiled — a genuine authoring error
  *  (malformed `.md` frontmatter, unsupported runtime), not a transient I/O
@@ -198,7 +177,7 @@ export const KNOWN_BEHAVIOR_KEYS = BEHAVIOR_FRONTMATTER_KEYS.filter(
  *  frontmatter shape (a generic per-key schema can't express "temperature is
  *  a number, permission is a tree, model is a string" from a flat string
  *  array), PLUS `prompt` (the `.md` BODY, not a frontmatter key — see
- *  `OpencodeAgentConfig.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
+ *  `CompiledAgentEntry.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
  *  rather than re-declared in the route so the two are visibly one thing;
  *  `compile-agent-config.test.ts`'s coordination test fails loudly the moment
  *  a field is added to one without the other. */
@@ -247,7 +226,7 @@ export function compileAgentConfig(
   manifest: Record<string, unknown>,
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
-): OpencodeConfig | null {
+): CompiledAgents | null {
   if (manifestSchemaVersion(manifest) !== 2) return null;
 
   if (runtime !== 'opencode') {
@@ -260,7 +239,7 @@ export function compileAgentConfig(
   const rawAgents =
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
 
-  const agent: Record<string, OpencodeAgentConfig> = {};
+  const agent: Record<string, CompiledAgentEntry> = {};
   for (const [name, block] of Object.entries(rawAgents)) {
     const md = suppliedAgentMarkdown(manifest, name, agentMdFiles);
     agent[name] = compileAgentBlock(name, block, md.path, md.content);
@@ -284,7 +263,7 @@ export function compileSelectedAgentConfig(
   agentName: string,
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
-): OpencodeConfig {
+): CompiledAgents {
   if (manifestSchemaVersion(manifest) !== 2) {
     throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2.');
   }
@@ -329,8 +308,8 @@ function compileAgentBlock(
   block: AgentBlockV2,
   mdPath: string,
   mdContent: string | undefined,
-): OpencodeAgentConfig {
-  const out: OpencodeAgentConfig = {};
+): CompiledAgentEntry {
+  const out: CompiledAgentEntry = {};
 
   if (mdContent !== undefined) {
     const { frontmatter, body } = parseAgentMarkdown(mdContent);

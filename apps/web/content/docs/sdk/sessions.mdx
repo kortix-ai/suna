@@ -324,8 +324,9 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 
 `health.capabilities` lists the session features the runtime serves. Read one
 with `runtimeSupports(capabilities, capability)` and hide the control when it
-returns `false`. An OpenCode session serves all nine; a pi session serves
-`session.subagents` only and answers the others with `501 feature_not_supported`.
+returns `false`. An OpenCode session serves all ten; a pi session serves
+`session.subagents` only and answers the others with `501 feature_not_supported`
+(`404` for the config document).
 
 | Capability | Feature |
 | --- | --- |
@@ -338,6 +339,7 @@ returns `false`. An OpenCode session serves all nine; a pi session serves
 | `session.todo` | The runtime's todo list |
 | `session.shell` | A shell command run as a turn |
 | `session.attach` | Attach the harness's own terminal client |
+| `session.config` | A runtime config document (`/global/config`); agents and models come from the project either way |
 
 ```ts
 import { runtimeSupports } from '@kortix/sdk';

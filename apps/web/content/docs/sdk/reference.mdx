@@ -801,7 +801,10 @@ const { model, explicit } = resolveComposerModel({
 ```
 
 `resolveComposerModel` returns `explicit: undefined` when the composer is on
-its default. `model` is the key to display and send.
+its default. `model` is the key to display and send. Each flattened model's
+`id` is the ref a pick stores; `modelRefToKey(ref, gatewayEnabled)` reads a
+stored ref (a session pin, a channel binding, a trigger's `model`) back into a
+key.
 
 ### Supported subpaths
 

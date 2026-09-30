@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
+import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -31,38 +32,20 @@ import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
 import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
-import type { CatalogModel, PiModels, SelectedModel } from './model'
+import type { PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
 import { PiTurnEvents, assistantMessageError, type TurnEventEmission } from './turn-events'
+import { withAgentSampling } from './sampling'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
 
 import { PI_HARNESS_VERSION } from './version'
 
-/** OpenCode `AgentConfig`, as apps/api compiles it (compile-agent-config.ts). */
-export interface CompiledAgent {
-  description?: string
-  mode?: 'primary' | 'subagent' | 'all'
-  model?: string
-  variant?: string
-  temperature?: number
-  top_p?: number
-  prompt?: string
-  disable?: boolean
-  hidden?: boolean
-  options?: Record<string, unknown>
-  color?: string
-  steps?: number
-  permission?: unknown
-}
+export type { CompiledAgent }
 
-export interface CompiledAgentConfig {
-  model?: string
-  /** The manifest's `default_agent`, when it is declared, enabled and primary. */
-  default_agent?: string
-  agent?: Record<string, CompiledAgent>
-}
+/** The compiled agent set as `KORTIX_COMPILED_AGENT_CONFIG` carries it (apps/api compile-agent-config.ts). */
+export type CompiledAgentConfig = Partial<CompiledAgentSet>
 
 export function parseCompiledAgentConfig(raw: string | undefined): CompiledAgentConfig | null {
   if (!raw?.trim()) return null
@@ -405,8 +388,12 @@ export class PiRuntime {
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
+      if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
-        streamFn: (model, context, options) => this.models!.models.streamSimple(model, context, options),
+        streamFn: withAgentSampling(
+          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          () => this.sampling(this.compiledAgent(), this.selected!),
+        ),
         convertToLlm,
         toolExecution: 'parallel',
         initialState: {
@@ -800,7 +787,10 @@ export class PiRuntime {
       retryPlan: (message) => retryStatus(retry.plan(message)),
     })
     const agent = new core.Agent({
-      streamFn: (m, context, options) => this.models!.models.streamSimple(m, context, options),
+      streamFn: withAgentSampling(
+        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+      ),
       toolExecution: 'sequential',
       initialState: {
         systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt, { base: input.systemPrompt, tools, policy, interactive: false }),
@@ -1001,6 +991,16 @@ export class PiRuntime {
     return this.compiled?.agent?.[this.agentName]
   }
 
+  /** An agent's `temperature`, `top_p` and `steps` for its requests on `model`. */
+  private sampling(agent: CompiledAgent | undefined, model: SelectedModel) {
+    return {
+      temperature: agent?.temperature,
+      top_p: agent?.top_p,
+      steps: agent?.steps,
+      acceptsTemperature: this.models?.catalog[model.modelID]?.temperature !== false,
+    }
+  }
+
   private thinkingLevel(variant: string | undefined, selected: SelectedModel | null = this.selected): ModelThinkingLevel {
     if (!selected || !variant) return 'off'
     return selected.variants.includes(variant) ? (variant as ModelThinkingLevel) : 'off'
@@ -1095,95 +1095,6 @@ export class PiRuntime {
       title: this.title,
       version: PI_HARNESS_VERSION,
       time: { created: this.createdAt, updated: this.updatedAt },
-    }
-  }
-
-  /** The OpenCode `Agent` object for the selected agent. */
-  agentObject(): Record<string, unknown> {
-    const agent = this.compiledAgent() ?? {}
-    return {
-      name: this.agentName,
-      ...(agent.description !== undefined ? { description: agent.description } : {}),
-      mode: agent.mode ?? 'primary',
-      native: false,
-      hidden: agent.hidden === true || agent.disable === true,
-      ...(agent.top_p !== undefined ? { topP: agent.top_p } : {}),
-      ...(agent.temperature !== undefined ? { temperature: agent.temperature } : {}),
-      ...(agent.color !== undefined ? { color: agent.color } : {}),
-      permission: this.policy,
-      ...(this.selected ? { model: { providerID: this.selected.providerID, modelID: this.selected.modelID } } : {}),
-      ...(agent.variant !== undefined ? { variant: agent.variant } : {}),
-      ...(agent.prompt !== undefined ? { prompt: agent.prompt } : {}),
-      options: { ...(agent.options ?? {}) },
-      ...(agent.steps !== undefined ? { steps: agent.steps } : {}),
-    }
-  }
-
-  /** The OpenCode `Config` document the picker and composer read. */
-  configObject(): Record<string, unknown> {
-    const selected = this.selected
-    const provider =
-      selected && (selected.variants.length > 0 || selected.images)
-        ? {
-            provider: {
-              [selected.providerID]: {
-                models: {
-                  [selected.modelID]: {
-                    ...(selected.variants.length ? { variants: Object.fromEntries(selected.variants.map((v) => [v, {}])) } : {}),
-                    attachment: selected.images,
-                  },
-                },
-              },
-            },
-          }
-        : {}
-    return {
-      ...provider,
-      default_agent: this.agentName,
-      ...(selected ? { model: `${selected.providerID}/${selected.modelID}` } : {}),
-      agent: this.compiled?.agent ?? {},
-      permission: this.compiledAgent()?.permission ?? {},
-      autoupdate: false,
-    }
-  }
-
-  /** The OpenCode `/provider` document: one gateway provider, the catalog as its models. */
-  providerList(): Record<string, unknown> {
-    const selected = this.selected
-    const catalog = this.models?.catalog ?? {}
-    const providerID = selected?.providerID ?? 'kortix'
-    const models: Record<string, unknown> = {}
-    const entries: Array<[string, CatalogModel]> =
-      Object.keys(catalog).length > 0 ? Object.entries(catalog) : selected ? [[selected.modelID, { name: selected.modelID }]] : []
-    for (const [id, entry] of entries) {
-      models[id] = {
-        id,
-        providerID,
-        name: entry.name ?? id,
-        api: { id: 'openai-completions', url: '', npm: '@earendil-works/pi-ai' },
-        capabilities: {
-          temperature: true,
-          reasoning: entry.reasoning === true,
-          attachment: entry.attachment === true,
-          toolcall: true,
-          input: { text: true, audio: false, image: entry.attachment === true, video: false, pdf: false },
-          output: { text: true, audio: false, image: false, video: false, pdf: false },
-          interleaved: false,
-        },
-        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-        limit: { context: entry.limit?.context ?? 128_000, output: entry.limit?.output ?? 32_768 },
-        status: 'active',
-        options: {},
-        headers: {},
-        release_date: '',
-        variants: Object.fromEntries(Object.keys(entry.variants ?? {}).map((v) => [v, {}])),
-      }
-    }
-    const provider = { id: providerID, name: 'Kortix', source: 'config', env: [], options: {}, models }
-    return {
-      all: [provider],
-      default: selected ? { [providerID]: selected.modelID } : {},
-      connected: [providerID],
     }
   }
 

@@ -6,6 +6,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `modelRefToKey(ref, gatewayEnabled)`: one parser for a stored model ref
+  (session pin, channel binding, trigger, agent `model`). Gateway on, `kortix/x`
+  and `x` both name the gateway model `x`; gateway off, the ref splits on its
+  first `/` into the native provider and model.
+- `ModelOption` (`FlatModel` plus `id`, the ref a pick stores and sends).
+  `flattenModels` returns it.
+- `AgentConfigResponse` gains optional `harness` (the harness a new session of
+  the project runs) and `ignored_settings` (the `behavior` settings it does
+  not apply).
+- `RuntimeCapability` gains `session.config`: the runtime serves a config
+  document (`/global/config`). OpenCode does; pi does not.
 - The Kortix transcript format, `kortix.transcript.v1`
   (`KORTIX_TRANSCRIPT_SCHEMA`): `KortixMessage` (`{ info, parts }`),
   `KortixMessageInfo`, the `KortixPart` union and its 12 part types, the
@@ -175,6 +186,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `502`/`503`/`504` responses on idempotent reads (`GET`/`HEAD`) up to two times
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
+
+### Changed
+- `useRuntimeCommands` loads only when the runtime serves `session.commands`,
+  and `useRuntimeConfig` only when it serves `session.config`. On pi both stay
+  empty instead of asking for documents pi does not have.
 
 ### Removed
 
