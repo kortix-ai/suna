@@ -45,6 +45,9 @@ describe('the notice text', () => {
     expect(body).toContain('kortix sessions reload ses-1')
     expect(body).toContain('does NOT change the config this')
     expect(body).toContain('pushed to the base branch')
+    expect(body).toContain('commit and push a session branch and open a change request')
+    expect(body).toContain('Review the Git diff of those source files')
+    expect(body).toContain('no reverse mapping to kortix.yaml')
   })
 
   test('names the read-only directory, so a permission error explains itself', () => {
@@ -81,6 +84,15 @@ describe('the notice text', () => {
     const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths('.kortix/opencode') })
     expect(body).toContain('Editing a file under `/workspace/.kortix/opencode` does NOT change')
     expect(body).not.toContain('/workspace/skills')
+    expect(body).not.toContain('/workspace/kortix.yaml')
+    expect(body).toContain('edit `/workspace/.kortix/opencode`')
+  })
+
+  test('names the manifest as the editable source for a root-layout project', () => {
+    const body = renderConfigReleaseNotice({ sourceCommit: COMMIT, sourcePaths: releaseSourcePaths(null) })
+    expect(body).toContain('`/workspace/kortix.yaml`')
+    expect(body).toContain('`/workspace/agents`')
+    expect(body).toContain('`/workspace/skills`')
   })
 
   test('names the project config dir when the manifest moved it', () => {

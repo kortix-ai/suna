@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
 import { useMyInvites } from '@/hooks/account/use-my-invites';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
@@ -50,6 +51,8 @@ export function useProjectSelectorData() {
   const invitesQuery = useMyInvites();
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
 
+  const creatableAccounts = useCreatableAccounts(accounts);
+  const creatableAccountIds = useMemo(() => new Set(creatableAccounts.map((a) => a.account_id)), [creatableAccounts]);
   const { user } = useAuth();
   const cachedAccountId = useCurrentAccountStore((state) => state.selectedAccountId);
   const speculativeAccountId = speculativeProjectListAccountId({
@@ -81,6 +84,7 @@ export function useProjectSelectorData() {
     () =>
       buildAccountSections({
         accounts,
+        creatableAccountIds,
         lists: accounts.map((account, index) => ({
           accountId: account.account_id,
           data: listQueries[index]?.data,
@@ -89,7 +93,7 @@ export function useProjectSelectorData() {
       }),
     // `listQueries` is a new array every render; the signature is its identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, listSignature],
+    [accounts, creatableAccountIds, listSignature],
   );
 
   const retryAccount = (accountId: string) => {

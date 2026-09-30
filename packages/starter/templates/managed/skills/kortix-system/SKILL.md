@@ -154,6 +154,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "what is another agent / session doing right now?" | `kortix sessions log <id>` *(read-only peek; `--json`)* |
 | "talk to / pick a session to interact with" | `kortix sessions chat` *(picker)* · `kortix sessions chat <id> --prompt "…"` *(one-shot)* |
 | "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
+| "label / classify a session, or find sessions by label" | `kortix sessions new --label <l> --meta k=v …` · `kortix sessions update [<id>] --label <l> --unlabel <l> --meta k=v --unmeta k` *(no id = this session)* · `kortix sessions ls --label <l>` |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |

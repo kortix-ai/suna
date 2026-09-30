@@ -38,6 +38,13 @@ describe('isDeliveredButDisconnected — nothing was delivered, keep failing', (
     expect(isDeliveredButDisconnected('opencode not ready — upstream unreachable')).toBe(false);
   });
 
+  test('a box still pinning its initial session refused, under either reason name', () => {
+    // A W4 daemon names the reason `initial_runtime_session_*`; an older one `initial_opencode_session_*`.
+    for (const reason of ['initial_runtime_session_pending', 'initial_opencode_session_failed']) {
+      expect(isDeliveredButDisconnected(`${reason} — upstream unreachable`)).toBe(false);
+    }
+  });
+
   test('auth, billing and dedupe are not delivery timeouts', () => {
     expect(isDeliveredButDisconnected('sandbox proxy authentication rejected')).toBe(false);
     expect(isDeliveredButDisconnected('Payment Required: Insufficient credits')).toBe(false);

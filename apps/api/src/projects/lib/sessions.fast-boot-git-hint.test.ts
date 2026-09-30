@@ -38,7 +38,7 @@ describe('session fast boot Git hint cache', () => {
       sessionsSource(),
       Bun.file(new URL('./session-runtime-allocator.ts', import.meta.url)).text(),
       Bun.file(new URL('../session-lifecycle/actions.ts', import.meta.url)).text(),
-      Bun.file(new URL('../routes/shared.ts', import.meta.url)).text(),
+      Bun.file(new URL('../routes/session-open-provision.ts', import.meta.url)).text(),
       Bun.file(new URL('../../platform/services/session-sandbox.ts', import.meta.url)).text(),
     ]);
 

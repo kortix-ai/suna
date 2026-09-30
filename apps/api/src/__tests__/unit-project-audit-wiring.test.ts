@@ -2,7 +2,9 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 const accessSource = readFileSync(
-  new URL('../projects/lib/access.ts', import.meta.url),
+  // The account/project stamps moved into project-access.ts with the access.ts
+  // split (KRTX-301); this pin reads the module that owns them now.
+  new URL('../projects/lib/project-access.ts', import.meta.url),
   'utf8',
 );
 const routesSource = readFileSync(

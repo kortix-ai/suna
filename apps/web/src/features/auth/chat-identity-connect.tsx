@@ -35,6 +35,7 @@ type Phase = 'idle' | 'binding' | 'success' | 'error';
 
 export function ChatIdentityConnect({
   service,
+  icon: ServiceIcon,
   token,
   loginPath,
   bind,
@@ -44,6 +45,8 @@ export function ChatIdentityConnect({
 }: {
   /** Display name used in titles and success copy ("Slack", "Teams"). */
   service: string;
+  /** The service's mark, shown beside the chat account it identifies. */
+  icon?: React.ComponentType<{ className?: string }>;
   token: string;
   /** Path back to this page, used as the sign-in redirect target. */
   loginPath: string;
@@ -164,7 +167,16 @@ export function ChatIdentityConnect({
         <DetailPanel>
           <DetailRow
             label={tHardcodedUi('chatIdentityConnect.chatAccount', { service })}
-            value={chatAccount}
+            value={
+              ServiceIcon ? (
+                <span className="inline-flex max-w-full items-center gap-2">
+                  <ServiceIcon className="size-4 shrink-0" />
+                  <span className="truncate">{chatAccount}</span>
+                </span>
+              ) : (
+                chatAccount
+              )
+            }
           />
           {identity?.workspaceName ? (
             <DetailRow

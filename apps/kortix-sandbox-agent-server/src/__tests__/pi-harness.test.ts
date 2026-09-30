@@ -24,6 +24,7 @@ import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCa
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
 import { readHostHealth } from '@/harness/shared/host-health'
+import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 
@@ -271,18 +272,25 @@ describe('pi harness', () => {
   })
   test('health reports the pi runtime before and after start', async () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
-    const before = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>
-    expect(before.harness).toBe('pi')
+    const before = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
+    expect(before.harness).toMatchObject({ id: 'pi', version: expect.stringContaining('pi-agent-core@'), state: 'down', ready: false })
+    // E1: pi serves subagents and none of the features its surface answers 501 for.
+    expect(before.capabilities).toContain('session.subagents')
+    expect(before.capabilities).not.toContain('session.rewind')
+    expect(before.capabilities).not.toContain('session.compact')
+    expect(before.capabilities).not.toContain('session.commands')
+    expect(before.capabilities).not.toContain('session.attach')
     expect(before.runtimeReady).toBe(false)
     expect(before.opencode).toBe('down')
     expect((await r.user('/session')).status).toBe(503)
 
     await r.service.lifecycle.start()
-    const after = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, unknown>
+    const after = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
     expect(after.runtimeReady).toBe(true)
     expect(after.status).toBe('ok')
+    expect(after.harness).toMatchObject({ state: 'ok', ready: true, error: null })
     expect(after.opencode).toBe('ok')
-    expect(after.model).toBe(`kortix/${MODEL_ID}`)
+    expect(after.harness.details.model).toBe(`kortix/${MODEL_ID}`)
     // The host facts every harness reports (E19): pi's runtime_truth is the
     // pure read — identity real, components unknown until pi runs the ticker.
     const truth = after.runtime_truth as { daemon_build: unknown; components: Record<string, { state: string }> }
@@ -328,7 +336,7 @@ describe('pi harness', () => {
       { path: '/v1/llm/chat/completions', auth: `Bearer ${TOKEN}` },
     ])
 
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as {
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as {
       source: string
       messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>
     }
@@ -354,7 +362,7 @@ describe('pi harness', () => {
     expect((await r.user(`/session/${root}/message/msg_000000000000zzzzzzzzzzzzzz`)).status).toBe(404)
 
     // The sequenced stream replays the whole turn, deltas included.
-    const stream = await r.bearer(`/kortix/opencode/events?since=0`)
+    const stream = await r.bearer(`/kortix/runtime/events?since=0`)
     expect(stream.headers.get('content-type')).toContain('text/event-stream')
     const text = await readSse(stream, (t) => t.includes('event: session.idle'))
     expect(text).toContain('event: kortix.hello')
@@ -363,9 +371,13 @@ describe('pi harness', () => {
     expect(text).toContain('event: session.idle')
 
     // The state document and the turn probes the control plane polls.
-    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
+    expect(state.identity.runtime_session_id).toBe(root)
     expect(state.identity.opencode_session_id).toBe(root)
     expect(state.identity.harness).toBe('pi')
+    // `/kortix/opencode/*` is the pre-W3 path of the same router, for an older API.
+    const legacy = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    expect(legacy.identity.runtime_session_id).toBe(root)
     expect(state.statuses.value[root]).toEqual({ type: 'idle' })
     expect(state.agents.value[0].name).toBe('build')
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
@@ -495,13 +507,13 @@ describe('pi harness', () => {
     const pending = (await r.user('/permission').then((res) => res.json())) as Array<Record<string, unknown>>
     expect(pending[0]).toMatchObject({ permission: 'bash', sessionID: root })
     expect(pending[0]!.tool).toMatchObject({ messageID: expect.any(String), callID: expect.any(String) })
-    const stateWhileAsked = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    const stateWhileAsked = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
     expect(stateWhileAsked.permissions.value).toHaveLength(1)
 
     const replied = await r.user(`/permission/${pending[0]!.id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'once' }) })
     expect(replied.status).toBe(200)
     await waitFor(() => !r.service.runtime()!.busy())
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(tool.state).toMatchObject({ status: 'completed', output: expect.stringContaining('gated') })
     const stream = await r.bearer('/kortix/opencode/events?since=0')
@@ -526,7 +538,7 @@ describe('pi harness', () => {
     const rejected = await r.user(`/permission/${id}/reply`, { method: 'POST', body: JSON.stringify({ reply: 'reject' }) })
     expect(rejected.status).toBe(200)
     await waitFor(() => !r.service.runtime()!.busy())
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(tool.state).toMatchObject({ status: 'error' })
     expect(String((tool.state as { error: string }).error)).toContain('rejected')
@@ -548,7 +560,7 @@ describe('pi harness', () => {
     await waitFor(() => !denied.service.runtime()!.busy())
     expect(denied.service.runtime()!.permissions.list()).toHaveLength(0)
     expect(existsSync(join(denied.workspace, 'keep', 'sentinel'))).toBe(true)
-    const deniedPage = (await denied.bearer(`/kortix/opencode/messages/${deniedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const deniedPage = (await denied.bearer(`/kortix/runtime/messages/${deniedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const deniedTool = deniedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(deniedTool.state).toMatchObject({ status: 'error' })
     expect(String((deniedTool.state as { error: string }).error)).toContain('denies')
@@ -560,7 +572,7 @@ describe('pi harness', () => {
     const allowedRoot = allowed.service.runtime()!.rootId
     expect((await prompt(allowed, allowedRoot, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
     await waitFor(() => !allowed.service.runtime()!.busy())
-    const allowedPage = (await allowed.bearer(`/kortix/opencode/messages/${allowedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const allowedPage = (await allowed.bearer(`/kortix/runtime/messages/${allowedRoot}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     const allowedTool = allowedPage.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
     expect(allowedTool.state).toMatchObject({ status: 'completed', output: expect.stringContaining('fine') })
   })
@@ -570,7 +582,7 @@ describe('pi harness', () => {
     const root = r.service.runtime()!.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
     await waitFor(() => !r.service.runtime()!.busy())
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, unknown>> }> }
     return page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')! as { state: { status: string; error?: string; output?: string } }
   }
 
@@ -680,6 +692,24 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
   })
 
+  test('every published frame reaches the audit trail, and a tool call sanitizes to an audit event (E12)', async () => {
+    const frames: Array<{ type: string; properties: Record<string, unknown> }> = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo audited' } }, { text: 'done' }],
+      hooks: { onFrame: (frame) => frames.push(frame) },
+    })
+    const root = r.service.runtime()!.rootId
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    const tool = frames.find((frame) => frame.type === 'message.part.updated' && (frame.properties.part as { type?: string })?.type === 'tool')
+    expect(tool).toBeDefined()
+    // The shared sanitizer (the same one OpenCode's events go through) turns it into a ledger row.
+    const event = sanitizeRuntimeEvent(tool!)
+    expect(event).toMatchObject({ runtime_session_id: root, type: 'message.part.updated' })
+    expect(event!.tool_call_id).toBeTruthy()
+    expect(JSON.stringify(event)).not.toContain('audited')
+  })
+
   test('abort stops a running tool and ends the turn as aborted', async () => {
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 20' } }, { text: 'unreachable' }] })
     const root = r.service.runtime()!.rootId
@@ -693,7 +723,7 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     const after = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(after.turn_in_flight).toBe(false)
-    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
     expect(state.statuses.value[root]).toEqual({ type: 'idle' })
   })
 
@@ -705,7 +735,7 @@ describe('pi harness', () => {
     await waitForRunningTool(r, root)
     const armed = await r.user('/kortix/abort/after-tool', {
       method: 'POST',
-      body: JSON.stringify({ prompt_id: 'prm_queue_1', opencode_session_id: root, turn_message_id: messageID }),
+      body: JSON.stringify({ prompt_id: 'prm_queue_1', runtime_session_id: root, turn_message_id: messageID }),
     })
     expect(armed.status).toBe(202)
     // The tool is still running: arming must not kill it.
@@ -720,8 +750,8 @@ describe('pi harness', () => {
   })
 
   test.each([
-    ['another turn', (root: string) => ({ opencode_session_id: root, turn_message_id: 'msg_0198e2a4b0c5ABCDEFGHIJKLMN' })],
-    ['another session', () => ({ opencode_session_id: 'ses_someone_else', turn_message_id: 'msg_0198e2a4b0c4ABCDEFGHIJKLMN' })],
+    ['another turn', (root: string) => ({ runtime_session_id: root, turn_message_id: 'msg_0198e2a4b0c5ABCDEFGHIJKLMN' })],
+    ['another session', () => ({ runtime_session_id: 'ses_someone_else', turn_message_id: 'msg_0198e2a4b0c4ABCDEFGHIJKLMN' })],
   ])('an abort-after-tool armed for %s is ignored and the turn finishes', async (_name, target) => {
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.5; echo ok' } }, { text: 'finished normally' }] })
     const root = r.service.runtime()!.rootId
@@ -747,7 +777,7 @@ describe('pi harness', () => {
     await waitForRunningTool(r, root)
     await r.user('/kortix/abort/after-tool', {
       method: 'POST',
-      body: JSON.stringify({ prompt_id: 'prm_live', opencode_session_id: root, turn_message_id: messageID }),
+      body: JSON.stringify({ prompt_id: 'prm_live', runtime_session_id: root, turn_message_id: messageID }),
     })
     const disarmed = await r.user('/kortix/abort/after-tool', { method: 'DELETE', body: JSON.stringify({ prompt_id: 'prm_live' }) })
     expect(disarmed.status).toBe(200)
@@ -771,7 +801,7 @@ describe('pi harness', () => {
     const restarted = await boot({ script: [{ text: 'second answer' }], workspace: r.workspace })
     rigs.splice(rigs.indexOf(r), 1)
     expect(restarted.service.runtime()!.rootId).toBe(root)
-    const page = (await restarted.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> }
+    const page = (await restarted.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> }
     expect(page.messages.map((m) => m.info.role)).toEqual(['user', 'assistant'])
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
     const sessions = (await restarted.user('/session').then((res) => res.json())) as Array<{ title: string }>
@@ -865,7 +895,7 @@ describe('pi harness', () => {
 
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('completed')
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     // No message carries the cut as a terminal error, and the answer is the last word.
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
     expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Full answer.' })
@@ -898,7 +928,7 @@ describe('pi harness', () => {
     expect(gateway.requests.length - calls).toBe(2)
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('completed')
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
     expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Whole answer.' })
   })
@@ -938,9 +968,9 @@ describe('pi harness', () => {
     expect(gateway.requests.length - calls).toBe(9)
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('failed')
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     expect(page.messages.at(-1)!.info.error).toEqual({ name: 'UnknownError', data: { message: 'Stream ended without finish_reason' } })
-    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
     expect(state.statuses.value[root]).toEqual({ type: 'idle' })
   })
 
@@ -968,7 +998,7 @@ describe('pi harness', () => {
     expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
     await waitFor(() => !r.service.runtime()!.busy(), 2_000)
     expect(gateway.requests.length - calls).toBe(1)
-    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
     expect(state.statuses.value[root]).toEqual({ type: 'idle' })
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_in_flight).toBe(false)
@@ -1085,6 +1115,27 @@ function systemSent(messages: Array<{ role: string; content: unknown }>): string
     .join('\n')
 }
 
+describe('pi project config', () => {
+  test('loads .kortix/pi native extensions and skills on the daemon HTTP surface', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        const dir = join(workspace, '.kortix', 'pi')
+        mkdirSync(join(dir, 'extensions'), { recursive: true })
+        mkdirSync(join(dir, 'skills', 'native'), { recursive: true })
+        writeFileSync(join(dir, 'extensions', 'native.ts'), `export default (pi) => pi.on('before_agent_start', (event) => ({ systemPrompt: event.systemPrompt + '\\nNATIVE PI' }))`)
+        writeFileSync(join(dir, 'skills', 'native', 'SKILL.md'), '---\nname: native\ndescription: Native Pi skill\n---\nDo it.\n')
+      },
+    })
+    const skills = (await r.user('/skill').then((res) => res.json())) as Array<{ name: string }>
+    expect(skills.map((skill) => skill.name)).toContain('native')
+    expect(r.service.runtime()!.extensionStatus().loaded.some((name) => name.endsWith('/.kortix/pi/extensions/native.ts'))).toBe(true)
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'hello')
+    expect(gateway.sent.slice(sentBefore).map(systemSent).some((prompt) => prompt.includes('NATIVE PI'))).toBe(true)
+  })
+})
+
 describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     const r = await boot({
@@ -1105,7 +1156,7 @@ describe('pi extensions', () => {
     await promptAndSettle(r, 'try')
     expect(existsSync(join(r.workspace, 'blocked.txt'))).toBe(false)
     const root = r.service.runtime()!.rootId
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'write')[0]!.state.status).toBe('error')
     expect(String(toolParts(page, 'write')[0]!.state.error)).toContain('writes are blocked by guard')
     expect(toolParts(page, 'bash')[0]!.state.status).toBe('completed')
@@ -1253,10 +1304,10 @@ describe('pi packages', () => {
       { name: 'npm:project-missing@1.0.0', error: 'package is not installed' },
     ])
     // The same report, where support reads it: the daemon's health.
-    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { extensions: typeof status }
-    expect(health.extensions).toEqual(status)
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { harness: { details: { extensions: typeof status } } }
+    expect(health.harness.details.extensions).toEqual(status)
     await promptAndSettle(r, 'use them')
-    const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'system_echo')[0]!.state.output).toBe('system:hi')
     expect(toolParts(page, 'project_echo')[0]!.state.output).toBe('project:yo')
     expect(toolParts(page, 'local_echo')[0]!.state.output).toBe('local:l')
@@ -1277,7 +1328,7 @@ describe('pi packages', () => {
       },
     })
     await promptAndSettle(r, 'go')
-    const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'shared_echo').map((p) => p.state.output)).toEqual(['project:x'])
   })
 
@@ -1310,7 +1361,7 @@ describe('pi packages', () => {
       expect(downloads).toBe(1)
       expect(r.service.runtime()!.extensionStatus().loaded).toContain('npm:bundled-ext@3.0.0')
       await promptAndSettle(r, 'go')
-      const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
       expect(toolParts(page, 'bundled_echo')[0]!.state.output).toBe('bundled:b')
       // Nothing lands in the repo; a restart reuses the unpacked bundle.
       expect(existsSync(join(r.workspace, 'node_modules'))).toBe(false)
@@ -1355,7 +1406,7 @@ describe('pi packages', () => {
       expect(status.loaded).toEqual(expect.arrayContaining(['npm:fb-ext@1.0.0', 'npm:throws-ext@1.0.0', 'npm:filtered-ext@1.0.0']))
       expect(status.failed).toEqual([])
       await promptAndSettle(r, 'go')
-      const page = (await r.bearer(`/kortix/opencode/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
       expect([toolParts(page, 'fb_echo'), toolParts(page, 'thr_echo'), toolParts(page, 'fil_echo')].map((parts) => parts[0]!.state.output)).toEqual(['fb:1', 'thr:2', 'fil:3'])
     } finally {
       server.stop(true)
@@ -1429,7 +1480,7 @@ describe('pi subagents extension', () => {
     await promptAndSettle(r, 'delegate it')
     expect(readFileSync(join(r.workspace, 'sub.txt'), 'utf8')).toBe('from-subagent')
 
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const task = toolParts(page, 'task')[0]!
     const childId = task.state.metadata.sessionId as string
     expect(childId).toMatch(/^ses_pi[0-9a-f]{24}$/)
@@ -1440,7 +1491,7 @@ describe('pi subagents extension', () => {
     expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'parent done' })
 
     // The child session, through every read the web client uses.
-    const child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    const child = (await r.bearer(`/kortix/runtime/messages/${childId}`).then((res) => res.json())) as WirePage
     expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'assistant'])
     expect(child.messages.every((m) => m.info.sessionID === childId)).toBe(true)
     expect(child.messages[0]!.parts[0]).toMatchObject({ type: 'text', text: 'write sub.txt' })
@@ -1461,7 +1512,7 @@ describe('pi subagents extension', () => {
     // The root transcript holds no child message.
     expect(page.messages.every((m) => m.info.sessionID === root)).toBe(true)
 
-    const state = (await r.bearer('/kortix/opencode/state').then((res) => res.json())) as Record<string, any>
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as Record<string, any>
     expect(state.sessions.value.map((s: { id: string; parent_id: string | null }) => [s.id, s.parent_id])).toEqual([[root, null], [childId, root]])
     expect(state.statuses.value).toEqual({ [root]: { type: 'idle' }, [childId]: { type: 'idle' } })
 
@@ -1479,11 +1530,11 @@ describe('pi subagents extension', () => {
     const r = await boot({ script: [TASK({}), { cut: 'partial' }, { text: 'child finished' }, { text: 'parent done' }] })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'delegate it')
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const task = toolParts(page, 'task')[0]!
     expect(task.state.status).toBe('completed')
     expect(task.state.output).toContain('<task_result>\nchild finished\n</task_result>')
-    const child = (await r.bearer(`/kortix/opencode/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+    const child = (await r.bearer(`/kortix/runtime/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
     expect(child.messages.filter((m) => m.info.error)).toEqual([])
     expect(child.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'child finished' })
   })
@@ -1502,12 +1553,12 @@ describe('pi subagents extension', () => {
     await promptAndSettle(r, 'explore')
     expect(require('node:fs').existsSync(join(r.workspace, 'nope.txt'))).toBe(false)
     const root = r.service.runtime()!.rootId
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const [explore, wizard] = toolParts(page, 'task')
     expect(explore!.state.status).toBe('completed')
     expect(wizard!.state.status).toBe('error')
     expect(wizard!.state.error).toBe('Unknown subagent_type "wizard". Available: general, explore.')
-    const child = (await r.bearer(`/kortix/opencode/messages/${explore!.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+    const child = (await r.bearer(`/kortix/runtime/messages/${explore!.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
     expect(toolParts(child, 'write')[0]!.state.status).toBe('error')
     expect(toolParts(child, 'task')[0]!.state.status).toBe('error')
     expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
@@ -1530,9 +1581,9 @@ describe('pi subagents extension', () => {
     expect(described.description).not.toContain('hidden')
     await promptAndSettle(r, 'review')
     const root = r.service.runtime()!.rootId
-    let page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    let page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const childId = toolParts(page, 'task')[0]!.state.metadata.sessionId as string
-    let child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    let child = (await r.bearer(`/kortix/runtime/messages/${childId}`).then((res) => res.json())) as WirePage
     expect(child.messages[1]!.info.agent).toBe('reviewer')
 
     gateway.script([TASK({ subagent_type: 'reviewer', prompt: 'check again', task_id: childId }), { text: 'still good' }, { text: 'second done' }])
@@ -1540,9 +1591,9 @@ describe('pi subagents extension', () => {
     await r.service.lifecycle.start()
     expect((await r.user(`/session/${childId}/message`)).status).toBe(200)
     await promptAndSettle(r, 'again')
-    child = (await r.bearer(`/kortix/opencode/messages/${childId}`).then((res) => res.json())) as WirePage
+    child = (await r.bearer(`/kortix/runtime/messages/${childId}`).then((res) => res.json())) as WirePage
     expect(child.messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
-    page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     expect(toolParts(page, 'task')[1]!.state.output).toContain('<task_result>\nstill good\n</task_result>')
     expect(((await r.user(`/session/${root}/children`).then((res) => res.json())) as unknown[]).length).toBe(1)
   })
@@ -1571,11 +1622,11 @@ describe('pi subagents extension', () => {
     await promptAndSettle(r, 'clean up')
     expect(readFileSync(join(r.workspace, 'keep', 'file'), 'utf8')).toBe('x')
     const root = r.service.runtime()!.rootId
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const tasks = toolParts(page, 'task')
     expect(tasks.map((t) => t.state.status)).toEqual(['completed', 'completed'])
     for (const task of tasks) {
-      const child = (await r.bearer(`/kortix/opencode/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
+      const child = (await r.bearer(`/kortix/runtime/messages/${task.state.metadata.sessionId}`).then((res) => res.json())) as WirePage
       const bash = toolParts(child, 'bash')[0]!
       expect(bash.state.status).toBe('error')
       expect(String(bash.state.error)).toContain('denies')
@@ -1612,7 +1663,7 @@ describe('pi subagents extension', () => {
     expect(readFileSync(join(r.workspace, 'ran.txt'), 'utf8')).toBe('xx')
     expect(elapsed).toBeLessThan(1_900)
     const root = r.service.runtime()!.rootId
-    const page = (await r.bearer(`/kortix/opencode/messages/${root}`).then((res) => res.json())) as WirePage
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const tasks = toolParts(page, 'task')
     expect(tasks.map((t) => t.state.status)).toEqual(['completed', 'completed'])
     expect(new Set(tasks.map((t) => t.state.metadata.sessionId)).size).toBe(2)

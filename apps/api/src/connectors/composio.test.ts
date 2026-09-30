@@ -515,6 +515,27 @@ test('executeComposio resumes the selected connection session and returns real d
   ]);
 });
 
+test('executeComposio treats invalid Linear GraphQL as caller error, not provider failure', async () => {
+  const resumed = session({
+    id: 'persisted-session',
+    toolkit: { slug: 'linear', name: 'Linear', isNoAuth: true },
+    execute: async () => ({
+      data: { message: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED' },
+      error: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED',
+      logId: 'log-invalid',
+    }),
+  });
+  const result = await executeComposio({
+    projectId: 'project-1', connectorSlug: 'linear', connectionId: 'connection-1',
+    sessionId: 'persisted-session', toolkit: 'linear', toolSlug: 'LINEAR_RUN_QUERY_OR_MUTATION',
+    args: { query_or_mutation: 'query { badField }' }, connectedAccountId: null,
+    runtime: fakeRuntime({ resumed }),
+  });
+  expect(result.ok).toBe(false);
+  expect(result.status).toBe(400);
+  expect(result.data).toMatchObject({ error: 'Cannot query field on Issue | Code: GRAPHQL_VALIDATION_FAILED' });
+});
+
 test('executeComposio supports no-auth direct tools without an account id', async () => {
   const resumed = session({
     id: 'persisted-session',

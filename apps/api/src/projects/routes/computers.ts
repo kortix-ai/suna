@@ -127,7 +127,7 @@ projectsApp.openapi(
     }
 
     const connectorId = await ensureComputerConnector(projectId, accountId);
-    const { connection, created } = await db.transaction((tx) =>
+    const attached = await db.transaction((tx) =>
       attachComputerConnection(tx, {
         accountId,
         projectId,
@@ -139,6 +139,9 @@ projectsApp.openapi(
         createdBy: userId,
       }),
     );
+    // Unpaired between the lookup above and the attach.
+    if (!attached) return c.json({ error: 'Computer not found' }, 404);
+    const { connection, created } = attached;
     const [connector] = await db
       .select({ slug: connectors.slug })
       .from(connectors)

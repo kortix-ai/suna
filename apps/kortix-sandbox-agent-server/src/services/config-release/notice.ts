@@ -67,6 +67,7 @@ function short(sha: string): string {
 export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
   const commit = notice.sourceCommit ? short(notice.sourceCommit) : null
   const paths = notice.sourcePaths.map((path) => `\`/workspace/${path}\``)
+  const sourceFiles = notice.sourcePaths.length > 1 ? ['`/workspace/kortix.yaml`', ...paths] : paths
   const editedPaths =
     paths.length > 1 ? `${paths.slice(0, -1).join(', ')} or ${paths.at(-1)}` : (paths[0] ?? '`/workspace`')
   const reload = notice.sessionId ? `kortix sessions reload ${notice.sessionId}` : 'kortix sessions reload <session id>'
@@ -84,6 +85,10 @@ export function renderConfigReleaseNotice(notice: ConfigReleaseNotice): string {
     '  Run `git pull` in `/workspace` to read the same files.',
     `- Editing a file under ${editedPaths} does NOT change the config this`,
     '  session runs. The change takes effect after it is pushed to the base branch.',
+    `- To change this agent, edit ${sourceFiles.join(', ')} in the Git checkout,`,
+    '  then commit and push a session branch and open a change request against the base branch.',
+    '  Review the Git diff of those source files. Do not edit or commit the compiled',
+    '  runtime config: it is generated and has no reverse mapping to kortix.yaml.',
     `- Writing into \`${servedFrom}\` fails with a permission error, on purpose.`,
     '  That copy is the platform\'s; edit the project\'s files in `/workspace`.',
     `- \`${reload}\` refreshes the \`/workspace\` checkout and moves this`,

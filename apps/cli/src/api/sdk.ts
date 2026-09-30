@@ -78,7 +78,7 @@ interface RuntimeResult<T> {
 
 function runtimeErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error;
-  if (!error || typeof error !== 'object') return 'OpenCode request failed';
+  if (!error || typeof error !== 'object') return 'Runtime request failed';
   const record = error as Record<string, unknown>;
   if (typeof record.message === 'string') return record.message;
   const data = record.data;
@@ -89,7 +89,7 @@ function runtimeErrorMessage(error: unknown): string {
   ) {
     return (data as Record<string, unknown>).message as string;
   }
-  return 'OpenCode request failed';
+  return 'Runtime request failed';
 }
 
 /**

@@ -22,18 +22,31 @@ const { resolveFeatureFlag, buildFeatureFlagCatalog } = await import('../../feat
 
 const ON = { experimental: { us_region: true } };
 const OFF = { experimental: { us_region: false } };
-let saved: string | undefined;
+const regionEnv = ['KORTIX_PLATINUM_US_REGION', 'AWS_REGION', 'DATABASE_URL', 'KORTIX_PROJECT_SNAPSHOT_S3_REGION', 'KORTIX_CONFIG_ARCHIVE_S3_REGION'] as const;
+let saved: Record<string, string | undefined>;
 
-beforeEach(() => { saved = process.env.KORTIX_PLATINUM_US_REGION; });
+beforeEach(() => { saved = Object.fromEntries(regionEnv.map((key) => [key, process.env[key]])); });
 afterEach(() => {
-  if (saved === undefined) delete process.env.KORTIX_PLATINUM_US_REGION;
-  else process.env.KORTIX_PLATINUM_US_REGION = saved;
+  for (const key of regionEnv) {
+    if (saved[key] === undefined) delete process.env[key];
+    else process.env[key] = saved[key];
+  }
 });
 
 describe('us_region', () => {
   test('flag on and the environment names the region ⇒ that region', () => {
     process.env.KORTIX_PLATINUM_US_REGION = 'us-east';
+    process.env.AWS_REGION = 'us-east-1';
+    process.env.DATABASE_URL = 'postgres://u:p@db.cluster-test.us-east-1.rds.amazonaws.com/db';
+    process.env.KORTIX_PROJECT_SNAPSHOT_S3_REGION = 'us-east-1';
+    process.env.KORTIX_CONFIG_ARCHIVE_S3_REGION = 'us-east-1';
     expect(resolveSessionSandboxRegion(ON)).toBe('us-east');
+    for (const key of ['AWS_REGION', 'DATABASE_URL', 'KORTIX_PROJECT_SNAPSHOT_S3_REGION', 'KORTIX_CONFIG_ARCHIVE_S3_REGION']) {
+      const original = process.env[key];
+      delete process.env[key];
+      expect(resolveSessionSandboxRegion(ON)).toBeUndefined();
+      process.env[key] = original;
+    }
   });
 
   test('flag off, or never chosen (default off) ⇒ the home region (undefined)', () => {

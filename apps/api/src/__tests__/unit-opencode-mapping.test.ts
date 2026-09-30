@@ -90,6 +90,6 @@ describe('ensureOpencodeSessionPin', () => {
 
     expect(result).toMatchObject({ pin: 'ses_root', changed: true, reason: 'healed' });
     expect(fetchCalls.map((call) => call.method)).toEqual(['GET']);
-    expect(dbUpdates.at(-1)).toMatchObject({ opencodeSessionId: 'ses_root' });
+    expect(dbUpdates.at(-1)).toMatchObject({ runtimeSessionId: 'ses_root' });
   });
 });

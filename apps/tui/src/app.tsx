@@ -39,7 +39,12 @@ import { type ResolvedHost, hostOrigin } from './auth/hosts.ts';
 import { AccountScreen } from './features/account/index.ts';
 import { AppsScreen } from './features/apps/index.ts';
 import { attachResultToast } from './features/attach/attach-status.tsx';
-import { type AttachStatus, type RunAttachResult, runAttach } from './features/attach/attach.ts';
+import {
+  type AttachStatus,
+  type RunAttachResult,
+  attachRefusal,
+  runAttach,
+} from './features/attach/attach.ts';
 import { CustomizeScreen } from './features/customize/index.ts';
 import { FilesScreen } from './features/files/index.ts';
 import { HelpOverlay } from './features/help/index.ts';
@@ -182,6 +187,8 @@ export function App({
   const [portsApi, setPortsApi] = useState<UsePortsResult | null>(null);
   const onPortsApi = useCallback((api: UsePortsResult) => setPortsApi(api), []);
   const [links, setLinks] = useState<LinkRow[]>([]);
+  // The open session's runtime capabilities, hoisted from `SessionView`.
+  const [capabilities, setCapabilities] = useState<readonly string[] | null>(null);
 
   const wide = dimensions.width >= SPLIT_MIN_COLUMNS;
   const showSidebar = sidebarVisible(dimensions.width, sidebarHidden);
@@ -202,6 +209,7 @@ export function App({
   useEffect(() => {
     setPortsApi(null);
     setLinks([]);
+    setCapabilities(null);
   }, [sessionId]);
 
   useEffect(() => {
@@ -285,6 +293,11 @@ export function App({
         return;
       }
       if (attaching) return;
+      const refusal = attachRefusal(targetSessionId, sessionId, capabilities);
+      if (refusal) {
+        pushToast(refusal, 'error');
+        return;
+      }
       setAttaching(true);
       setOverlay(null);
       try {
@@ -307,7 +320,7 @@ export function App({
         setAttaching(false);
       }
     },
-    [projectId, attaching, attachImpl, renderer, host, pushToast],
+    [projectId, attaching, sessionId, capabilities, attachImpl, renderer, host, pushToast],
   );
 
   const runCommand = useCallback(
@@ -457,6 +470,7 @@ export function App({
             onToast={pushToast}
             onPortsApi={onPortsApi}
             onLinks={setLinks}
+            onCapabilities={setCapabilities}
           />
         ) : null}
 

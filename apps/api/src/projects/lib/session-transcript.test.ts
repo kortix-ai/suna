@@ -28,7 +28,7 @@ const session = (status: string) =>
   ({
     sessionId: 'sess-1',
     status,
-    opencodeSessionId: 'ses_pin',
+    runtimeSessionId: 'ses_pin',
     sandboxUrl: null,
   }) as never;
 
@@ -89,6 +89,7 @@ describe('a stopped session serves the mirror instead of nothing', () => {
     expect(digest.messages[1].completed).toBe(new Date(1200).toISOString());
     expect(digest.captured_at).toBe('2026-08-26T06:00:00.000Z');
     expect(digest.opencode_session_id).toBe('ses_mirror');
+    expect(digest.runtime_session_id).toBe('ses_mirror');
   });
 
   test('the reason still says WHY it is not live — the mirror does not hide it', async () => {
@@ -113,6 +114,7 @@ describe('with no mirror, the old honest answer is unchanged', () => {
     expect(digest.messages).toEqual([]);
     expect(digest.reason).toBe('session is stopped; live transcript requires a running sandbox');
     expect(digest.opencode_session_id).toBe('ses_pin');
+    expect(digest.runtime_session_id).toBe('ses_pin');
   });
 });
 
@@ -307,6 +309,7 @@ describe("a sub-agent's saved transcript is its own window", () => {
     expect(asked).toEqual(['ses_child']);
     expect(envelope.available).toBe(true);
     expect(envelope.opencode_session_id).toBe('ses_child');
+    expect(envelope.runtime_session_id).toBe('ses_child');
   });
 
   test('a root read asks for the root, never a child', async () => {
@@ -331,6 +334,7 @@ describe("a sub-agent's saved transcript is its own window", () => {
     expect(envelope.available).toBe(false);
     expect(envelope.source).toBe('none');
     expect(envelope.opencode_session_id).toBe('ses_child');
+    expect(envelope.runtime_session_id).toBe('ses_child');
   });
 });
 
@@ -343,6 +347,7 @@ describe('early history requires the current server-owned root', () => {
     expect(envelope.available).toBe(false);
     expect(envelope.messages).toEqual([]);
     expect(envelope.opencode_session_id).toBe('ses_pin');
+    expect(envelope.runtime_session_id).toBe('ses_pin');
   });
   test('a matching root serves completed messages without reading the runtime', async () => {
     const envelope = await buildSessionTranscriptSyncEnvelope(
@@ -359,7 +364,7 @@ describe('a running session reads the daemon, and degrades instead of failing', 
   const running = {
     sessionId: 'sess-1',
     status: 'running',
-    opencodeSessionId: 'ses_root',
+    runtimeSessionId: 'ses_root',
     sandboxUrl: 'https://preview.example.test/v1/p/sandbox-ext-1/8000',
   } as never;
   const read = () =>

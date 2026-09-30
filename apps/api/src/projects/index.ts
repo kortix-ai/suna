@@ -70,6 +70,7 @@ import './routes/session-config';
 import '../config-releases/routes';
 import './routes/public-shares';
 import './routes/session-runtime';
+import './routes/session-presence';
 import './routes/session-prompts';
 import './routes/session-reminders';
 import './routes/change-requests';

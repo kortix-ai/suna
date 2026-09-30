@@ -19,7 +19,7 @@ import {
 } from './provider-selection';
 
 /**
- * The composer's model list, framework-free. `useOpenCodeProviders` (web) and
+ * The composer's model list, framework-free. `useRuntimeProviders` (web) and
  * mobile build the picker from these, so the gateway/native source rules, the
  * default-view curation, and the default-model chain exist once.
  */

@@ -3,8 +3,10 @@
 import { getAuthToken } from '@/api/config';
 import { createHttpSessionSyncController, type SessionSyncMessage } from '@kortix/sdk';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import { selectSessionsToEvict, useSyncStore } from './sync-store';
-import type { MessageWithParts } from './types';
+import { statusesToHydrate, transcriptEndsFinished, unlistedWorkingSessions } from './stream-policy';
+import { clearDeltaActiveParts, isOptimistic, selectSessionsToEvict, useSyncStore } from './sync-store';
+import { useCompactionStore } from '@/stores/compaction-store';
+import type { MessageWithParts, SessionStatus } from './types';
 
 type SessionSyncController = ReturnType<typeof createHttpSessionSyncController>;
 type SessionSyncSnapshot = ReturnType<SessionSyncController['getSnapshot']>;
@@ -132,6 +134,77 @@ export function reconcileLiveSession(sessionId: string, reason: SessionSyncReaso
   return Promise.all(requests).then(() => undefined);
 }
 
+/**
+ * One `GET /session/status` read, on every stream open and when a session
+ * page mounts. Busy/idle otherwise comes only from live frames, so a thread
+ * opened — or a stream reopened — mid-turn read "not running" until the next
+ * status frame (KRTX-606).
+ *
+ * It also settles the opposite loss. A turn that ends while the stream is down
+ * (app in the background, a network drop, a recycle) loses its `session.idle`
+ * frame, and nothing else writes idle: the slot read busy until the next turn.
+ * Absence from a 200 status read carries the proof; the transcript check
+ * guards the seeded first prompt. It judges the transcript the store holds after
+ * the re-read, and a failed re-read leaves the older transcript. A session with
+ * a send in flight (an optimistic message) is skipped, because the re-read can
+ * drop that message.
+ *
+ * `reread: false` skips the tail read when the caller has just made one.
+ * `before` replaces the status snapshot taken on entry: a caller that read
+ * the tail first passes the snapshot from before that read.
+ */
+export async function hydrateLiveStatuses(
+  sandboxUrl: string,
+  isStale: () => boolean,
+  options: { reread?: boolean; before?: Readonly<Record<string, SessionStatus | undefined>> } = {},
+): Promise<void> {
+  if (isStale()) return;
+  try {
+    const before = options.before ?? useSyncStore.getState().sessionStatus;
+    // Before the first await: a gap reconcile issued right after this call can
+    // drop the optimistic message first.
+    const sending = new Set<string>();
+    for (const [sessionId, messages] of Object.entries(useSyncStore.getState().messages)) {
+      if (messages.some((m) => isOptimistic(m.info.id))) sending.add(sessionId);
+    }
+    const token = await getAuthToken();
+    const res = await fetch(`${sandboxUrl}/session/status`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok || isStale()) return;
+    const body: unknown = await res.json();
+    if (isStale()) return;
+    const store = useSyncStore.getState();
+    const onThisComputer = (id: string) => isLiveSessionOn(id, sandboxUrl);
+    const unlisted = unlistedWorkingSessions(body, before, store.sessionStatus, onThisComputer).filter(
+      (sessionId) => !sending.has(sessionId),
+    );
+    for (const [sessionId, status] of statusesToHydrate(body, before, store.sessionStatus, onThisComputer)) {
+      store.setStatus(sessionId, status);
+    }
+    await Promise.all(
+      unlisted.map(async (sessionId) => {
+        const slot = before[sessionId];
+        if (options.reread !== false) await reconcileLiveSession(sessionId, 'sse-gap');
+        if (isStale()) return;
+        const now = useSyncStore.getState();
+        // A frame that landed during the re-read is newer than this read.
+        if (now.sessionStatus[sessionId] !== slot) return;
+        if (!transcriptEndsFinished(now.messages[sessionId])) return;
+        // Mirrors the `session.idle` frame handler in event-stream.ts.
+        now.setStatus(sessionId, { type: 'idle' });
+        useCompactionStore.getState().stopCompaction(sessionId);
+        clearDeltaActiveParts();
+      }),
+    );
+  } catch {
+    // The next open retries; live frames keep correcting it meanwhile.
+  }
+}
+
 /** The most older pages `loadFullHistory` reads before it gives up. */
 export const FULL_HISTORY_MAX_PAGES = 20;
 
@@ -226,8 +299,18 @@ export function useSessionSync(sandboxUrl: string | undefined, sessionId: string
   useEffect(() => {
     if (!controller || !sandboxUrl || !sessionId) return;
     const unregister = registerLiveSession({ sessionId, sandboxUrl, controller });
-    void controller.start();
+    let unmounted = false;
+    // A thread opened with a stale busy slot: the stream does not reopen on the
+    // same computer, so this is the only status read it gets. `start()` has
+    // just attempted the tail read. `before` is taken ahead of it, so a send
+    // made meanwhile (a new slot object) is skipped by the identity checks.
+    const before = useSyncStore.getState().sessionStatus;
+    void controller
+      .start()
+      .then(() => hydrateLiveStatuses(sandboxUrl, () => unmounted, { reread: false, before }))
+      .catch(() => {});
     return () => {
+      unmounted = true;
       controller.destroy();
       unregister();
     };

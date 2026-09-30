@@ -117,7 +117,7 @@ function applyOrder(rows: any[], now: Date = NOW): any[] {
 }
 
 function hasTurnAuthority(row: any): boolean {
-  const states = [row.metadata?.activeTurn?.state];
+  const states: unknown[] = [];
   const activeTurns = row.metadata?.activeTurns;
   if (activeTurns && typeof activeTurns === 'object' && !Array.isArray(activeTurns)) {
     states.push(...Object.values(activeTurns).map((turn: any) => turn?.state));
@@ -249,7 +249,7 @@ mock.module('../shared/db', () => ({
             const predicateText = describeSql(predicate);
             const boundValues = new Set(sqlValues(predicate));
             const selectsWithoutTurnAuthority =
-              predicateText.includes('activeTurn') && /\band\s+not\s*\(/i.test(predicateText);
+              predicateText.includes('activeTurn') && /and\s+not\s+exists\s*\(/i.test(predicateText);
             const selectedSandboxRows = candidates
               .filter((row) =>
                 !predicateText.includes('activeTurn')
@@ -581,7 +581,7 @@ describe('provider-neutral turn observation', () => {
         },
         'ext-1',
         'sb-1',
-        { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+        { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
       );
 
       expect(observation).toEqual({
@@ -677,7 +677,7 @@ describe('provider-neutral turn observation', () => {
           { resolveEndpoint: async () => ({ url: `http://127.0.0.1:${server.port}`, headers: {} }) },
           'ext-1',
           'sb-1',
-          { opencodeSessionId: 'ses_root', messageId: 'msg_turn_1' },
+          { runtimeSessionId: 'ses_root', messageId: 'msg_turn_1' },
         ),
       ).toEqual({
         observation: 'terminal',
