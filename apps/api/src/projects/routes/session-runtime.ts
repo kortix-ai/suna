@@ -74,6 +74,11 @@ projectsApp.openapi(
     // restartable and the UI offers a Restart that can never work. 404, the
     // same answer the read-by-id gives (see sessionIsTombstoned).
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    // Account-scoped keys have no member identity to sign for the daemon.
+    // Reject before provisioning rather than returning a misleading ready/start response.
+    if (c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'user') {
+      return c.json({ error: 'A user or service-account credential is required to start a session' }, 403);
+    }
     const projectMetadata = loaded.row.metadata as Record<string, unknown>;
     const sessionMetadata = visible.row.metadata as Record<string, unknown>;
     const repositoryMode = c.req.query('repository_mode');
