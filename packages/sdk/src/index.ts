@@ -585,3 +585,6 @@ export {
   resolveModelDefault,
   type ComposerModelResolution,
 } from './core/models/composer-model';
+
+export * from './workspace-search/core';
+export * from './workspace-search/client';
