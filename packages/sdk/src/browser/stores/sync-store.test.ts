@@ -975,6 +975,24 @@ describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + 
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
 	});
 
+	test("a part snapshot and message frame after a delta keep one complete assistant answer", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		store.applyEvent({ id: "evt_1", type: "message.part.delta", properties: {
+			messageID: "msg_asst", partID: "prt_1", sessionID: "ses_1", field: "text", delta: "Hello",
+		} } as never);
+		store.applyEvent({ type: "message.part.updated", properties: {
+			part: textPart("prt_1", "msg_asst", "Hello world"),
+		} } as never);
+		store.applyEvent({ type: "message.updated", properties: {
+			info: assistantMessage("msg_asst"),
+		} } as never);
+
+		expect(useSyncStore.getState().messages.ses_1.map((message) => message.id)).toEqual(["msg_user", "msg_asst"]);
+		expect(useSyncStore.getState().parts.msg_asst).toHaveLength(1);
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello world");
+	});
+
 	test("does not create a stub assistant message before any user message exists", () => {
 		const store = useSyncStore.getState();
 		store.applyEvent({
