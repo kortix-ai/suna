@@ -467,6 +467,7 @@ describe('exported constants', () => {
   test('GRANTABLE_KORTIX_PERMISSIONS includes project actions but not billing or channel.*', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.read');
     expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.connector.write');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.usage.read');
     expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('billing.read');
     // channel.* was removed from the catalog — never wired to any route.
     expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('channel.send');

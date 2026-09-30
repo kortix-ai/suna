@@ -36,6 +36,7 @@ import {
   ChatTeardropTextIcon,
   DotsThreeIcon,
   PencilSimpleIcon,
+  TagIcon,
   ShareNetworkIcon,
   SquareIcon,
   TrashIcon,
@@ -47,6 +48,7 @@ import { SESSION_ACCESS_ICONS } from '@/features/workspace/project-sidebar/sessi
 import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 
 import { sessionAccessMeta } from './project-sessions-helpers';
+import { SessionLabelBadges } from './session-label-badges';
 import { sessionAccessKind, sessionOwnerKey } from './session-owner-filters';
 import { SessionStarterMark, useSessionStarter } from './session-starter-mark';
 
@@ -173,6 +175,7 @@ function sessionStatusTile(
 
 export interface SessionRowActions {
   onRename: (sessionId: string, currentName: string) => void;
+  onEditLabels: (session: ProjectSession) => void;
   onShare: (session: ProjectSession) => void;
   onDelete: (sessionId: string, label: string) => void;
   onRestart: (sessionId: string, label: string) => void;
@@ -221,6 +224,7 @@ function SessionRowImpl({
 }: SessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tStatus = useTranslations('sidebar.sessionList.status');
+  const tLabels = useTranslations('sidebar.labels');
   const [menuOpen, setMenuOpen] = useState(false);
   const title = getSessionDisplayTitle(session);
   const source = sessionSource(session, tI18nComplete);
@@ -281,6 +285,7 @@ function SessionRowImpl({
             onToggle={() => onToggleChildren(session.session_id)}
           />
         ) : null}
+        <SessionLabelBadges session={session} className="max-sm:hidden" />
         <SessionOwnerChip session={session} />
       </span>
     </>
@@ -408,6 +413,15 @@ function SessionRowImpl({
                       >
                         <PencilSimpleIcon />
                         {tI18nComplete.raw('text3064d79a295c')}
+                      </DropdownMenuItem>
+                    ) : null}
+                    {hasLifecycleActions ? (
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => deferAfterClose(() => actions.onEditLabels(session))}
+                      >
+                        <TagIcon />
+                        {tLabels('menu')}
                       </DropdownMenuItem>
                     ) : null}
                     {showAccessEntry ? (

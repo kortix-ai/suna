@@ -106,7 +106,10 @@ mock.module('../projects/session-lifecycle/runtime-client', () => ({
   resolveSessionOpencodeEndpoint: async () => endpoint,
 }));
 
-mock.module('../projects/sandbox-turn-lifecycle', () => ({
+const realTurnLedger = await import('../projects/session-turn-ledger');
+
+mock.module('../projects/session-turn-ledger', () => ({
+  ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope: { opencodeSessionId?: string | null }) => {
     if (markThrows) throw new Error('db down');
     marks.push({ sessionId, name, opencodeSessionId: scope.opencodeSessionId });

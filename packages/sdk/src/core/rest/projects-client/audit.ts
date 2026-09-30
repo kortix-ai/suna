@@ -13,6 +13,9 @@ export interface AuditEvent {
   account_id?: string | null;
   project_id: string | null;
   session_id: string | null;
+  /** The runtime session the event came from. Served by APIs since W4. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id?: string | null;
   turn_id?: string | null;
   message_id?: string | null;

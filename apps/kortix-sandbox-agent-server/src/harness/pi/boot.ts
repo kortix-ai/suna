@@ -10,9 +10,21 @@
  * as fast as the model catalog reads from disk.
  */
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
-import { relayPermissionToApi } from '../shared/permission-relay'
+import { createRuntimeAuditRelay, type AuditRelay } from '../shared/audit-relay'
+import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import {
+  claimInitialTurn,
+  relayPermission,
+  relayQuestion,
+  relayRuntimeSession,
+  relayTurnAccepted,
+  relayTurnBegin,
+  relayTurnEnd,
+} from '../shared/turn-relay'
+import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { materializeProject } from '@/services/config-provider/config-provider'
 import { startEgressShim } from '@/services/egress-shim'
 import {
@@ -28,24 +40,17 @@ import { logger } from '@/lib/log/logger'
 import { runSandboxOnBoot } from '../shared/on-boot'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
+import { configureRuntimeTruth, startRuntimeTruthTicker } from '@/services/runtime-assets/runtime-truth'
+import { ConvergeBusyError } from '@/services/config-release/release'
 import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
-import {
-  claimInitialTurn,
-  relayBootstrapPin,
-  relayInitialTurnAccepted,
-  relayQuestion,
-  relayTurnBegin,
-  relayTurnEnd,
-  schedulePiProjectionPush,
-} from './relay'
 import type { PiRuntimeHooks } from './runtime'
-import { createPiHarnessService } from './service'
+import { createPiHarnessService, type PiHarnessService } from './service'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
   const sessionId = (process.env.KORTIX_SESSION_ID ?? '').trim()
-  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1'
   const home = homedir()
 
   try {
@@ -69,21 +74,55 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
   }
 
+  // The tool audit trail (shared/audit-relay.ts): every frame the runtime
+  // publishes, sanitized and spooled until apps/api accepts it. A spool that
+  // cannot load marks the runtime unhealthy, exactly as it does on OpenCode.
+  let auditRelay: AuditRelay | null = null
+  try {
+    auditRelay = createRuntimeAuditRelay(
+      'pi',
+      process.env.KORTIX_AUDIT_SPOOL_PATH?.trim() || join(resolveKortixRuntimeStateDirectory(), 'runtime-audit-spool.json'),
+    )
+  } catch (err) {
+    bootState.auditRelayError = err instanceof Error ? err.message : String(err)
+    logger.error('[pi] audit relay failed to start; runtime is unhealthy', { err: bootState.auditRelayError })
+  }
+  const flushAuditRelay = () => {
+    void auditRelay?.stop().catch((err) => logger.warn('[pi] audit relay shutdown flush failed', { err: (err as Error).message }))
+  }
+  process.once('SIGTERM', flushAuditRelay)
+  process.once('SIGINT', flushAuditRelay)
+
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
+  const relayedTurnEnds = new Set<string>()
   const hooks: PiRuntimeHooks = {
     onTurnBegin: ({ rootId, messageId }) => {
-      void relayTurnBegin(rootId, messageId).catch((err) => logger.warn('[pi] turn-begin relay failed', { err: (err as Error).message }))
+      void relayTurnBegin(rootId, messageId)
     },
     onTurnEnd: ({ rootId, messageId, status, error }) => {
       kortixEventBus().publishDaemon('kortix.turn', { opencode_session_id: rootId, verdict: status, error: error ?? null }, rootId)
-      void relayTurnEnd(rootId, messageId, status, error).catch((err) => logger.warn('[pi] turn-end relay failed', { err: (err as Error).message }))
+      if (relayedTurnEnds.has(messageId)) return
+      void relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error }).then((settled) => {
+        if (settled) relayedTurnEnds.add(messageId)
+      })
     },
     onQuestionAsked: (request, answer) => {
-      void relayQuestion(request, answer).catch((err) => logger.warn('[pi] question relay failed', { err: (err as Error).message }))
+      void relayQuestion(request).then((answers) => {
+        if (answers) answer(answers)
+      })
     },
     // Report only: apps/api pushes "needs your approval"; the request stays open for the user.
     onPermissionAsked: (request) => {
-      void relayPermissionToApi(request).catch((err) => logger.warn('[pi] permission relay failed', { err: (err as Error).message }))
+      void relayPermission(request)
+    },
+    onFrame: (frame) => {
+      if (!auditRelay) return
+      try {
+        auditRelay.enqueue(frame)
+      } catch (err) {
+        bootState.auditRelayError = err instanceof Error ? err.message : String(err)
+        logger.error('[pi] audit relay persistence failed; runtime is unhealthy', { err: bootState.auditRelayError })
+      }
     },
   }
   const harness = createPiHarnessService(cfg, projectEnv, { onStartupMark: bootMark, hooks, sessionId })
@@ -118,6 +157,10 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       bootMark('llm-proxy-started')
     }
   }
+
+  // The config release the runtime starts on (config-release.ts): fetched,
+  // verified and sealed beside the checkout. `lifecycle.start()` joins it.
+  void harness.releases.boot(bootMark)
 
   // Fresh-boot acquisition goes through the config-provider coordinator
   // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
@@ -163,6 +206,19 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   const runtime = harness.runtime()!
   runtime.markWorkspaceReady()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
+  convergeAfterReady(harness)
+  // The reconcile floor: every 60 s the box re-checks its release and its
+  // runtime assets, so no failure is permanent. pi has no model catalog to converge.
+  configureRuntimeTruth({
+    reconcileAssets: () => scheduleRuntimeAssetsReconcile(cfg),
+    readConfigRelease: () => harness.releases.report(),
+    reconcileConfigRelease: async () => {
+      await harness.releases.converge(harness.runtime()).catch((err) => {
+        if (!(err instanceof ConvergeBusyError)) logger.warn('[runtime-truth] config-release tick failed', { err: String(err) })
+      })
+    },
+  })
+  startRuntimeTruthTicker()
 
   if (bootState.repoMaterializationError) return
   runSandboxOnBoot(cfg)
@@ -175,7 +231,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── The session's root and its first turn ───────────────────────────────
   // One deterministic root per session: nothing to create, nothing to list.
-  void relayBootstrapPin(runtime.rootId)
+  void relayRuntimeSession(runtime.rootId)
   const claim = await claimPromise
   if (claim?.prompt) {
     try {
@@ -185,7 +241,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       // control plane must never promote a `delivering` record for a turn the
       // runtime has not accepted.
       bootState.initialOpenCodeSessionId = runtime.rootId
-      void relayInitialTurnAccepted(runtime.rootId, admitted.messageId, claim.turnToken)
+      void relayTurnAccepted(runtime.rootId, admitted.messageId, claim.turnToken)
         .then(() => bootMark('initial-turn-accepted'))
         .catch((err) => logger.warn('[boot] initial turn acceptance relay failed', { err: (err as Error).message }))
     } catch (err) {
@@ -204,9 +260,29 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     bootState.deferredHistoryBackfill = null
     run()
   }
-  schedulePiProjectionPush(() => {
-    const doc = runtime.stateDoc()
-    return { doc, etag: runtime.stateEtag(doc) }
-  }, 'boot')
+  scheduleRuntimeProjectionPush('boot')
   scheduleRuntimeAssetsReconcile(cfg)
+}
+
+/**
+ * One convergence once pi is ready. A box that booted on a fallback (the API
+ * or the archive store could not be reached) moves onto the desired release
+ * here. Detached: it never delays readiness, and a turn in flight defers it to
+ * the API's next trigger.
+ */
+function convergeAfterReady(harness: PiHarnessService): void {
+  void harness.releases
+    .converge(harness.runtime())
+    .then((response) => {
+      logger.info('[boot] config convergence after ready', {
+        outcome: response.outcome,
+        releaseId: response.config.release_id,
+        source: response.config.source,
+        reason: response.reason,
+      })
+    })
+    .catch((err) => {
+      if (err instanceof ConvergeBusyError) return
+      logger.warn('[boot] config convergence after ready failed', { err: String(err) })
+    })
 }

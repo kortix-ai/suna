@@ -1,5 +1,5 @@
 import type { Config } from '@/lib/config/config'
-import type { RepoInfo } from '@/lib/git/git'
+import type { ConfigDirSyncResult, RepoInfo } from '@/lib/git/git'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
@@ -13,7 +13,10 @@ export interface HarnessEnvironmentInput {
   llmGatewayBaseUrl?: unknown
 }
 
-/** Existing response keys are compatibility fields, not native implementation types. */
+/**
+ * Response of `POST /kortix/env`. `runtime*` describes the session runtime of
+ * either harness; `routes/kortix/env.ts` adds the pre-W3 `opencode*` aliases.
+ */
 export interface HarnessEnvironmentResult {
   ok: true
   changed: boolean
@@ -25,12 +28,12 @@ export interface HarnessEnvironmentResult {
   agent_env_written: boolean
   egress_shim: 'unchanged' | 'started' | 'restarted' | 'stopped' | 'failed'
   egress_shim_hosts: readonly string[]
-  opencode_env_changed: boolean
-  opencode_env_names: string[]
-  opencode: string
-  opencode_pid: number | null
-  opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null
-  opencode_turn_ended: boolean | null
+  runtime_env_changed: boolean
+  runtime_env_names: string[]
+  runtime: string
+  runtime_pid: number | null
+  runtime_reload: 'disposed' | 'restarted' | 'kept-old' | null
+  runtime_turn_ended: boolean | null
 }
 
 export interface HarnessRefreshInput {
@@ -38,6 +41,14 @@ export interface HarnessRefreshInput {
   skipRestart: boolean
   /** Leave the checkout exactly as it is — no pull of the session branch. */
   skipRepo?: boolean
+  /**
+   * Bring the base branch's OpenCode config dir into the checkout
+   * (`syncConfigDirToBase`: file by file over what base changed, keeps the
+   * session's own edits and commits, never moves a ref). The runtime reloads
+   * its config when files changed, even with `skipRestart`, because it reads
+   * those files only when it loads its config.
+   */
+  syncBaseConfig?: boolean
   baseSha?: string
   forceFail: boolean
 }
@@ -52,19 +63,27 @@ export interface HarnessRefreshResult {
     turn_ended?: boolean | null
     reason?: string
   }
-  opencode: string
-  opencode_pid: number | null
+  /**
+   * Present when `syncBaseConfig` was asked and the runtime supports it.
+   * `reload` is the config reload the sync caused under `skipRestart`.
+   */
+  config_dir?: ConfigDirSyncResult & {
+    reload?: 'disposed' | 'restarted' | 'kept-old'
+    turn_ended?: boolean | null
+  }
+  runtime: string
+  runtime_pid: number | null
 }
 
 export type HarnessAbortResult =
-  | { outcome: 'aborted'; body: { ok: true; opencode_session_id: string } }
+  | { outcome: 'aborted'; body: { ok: true; runtime_session_id: string } }
   | { outcome: 'not-pinned'; body: { ok: false; error: string } }
   | { outcome: 'failed'; body: { ok: false; error: string; detail?: string } }
 
 /** A queued prompt that interrupts the named turn after its running tool ends. */
 export interface HarnessAbortAfterToolInput {
   promptId: string
-  opencodeSessionId: string
+  runtimeSessionId: string
   messageId: string
 }
 
@@ -164,9 +183,9 @@ export interface HarnessControlService {
    * `app/server.ts`: the harness ownership boundary (eslint.config.mjs,
    * ARCHITECTURE.md) forbids host production code from
    * importing a concrete adapter directly. Absent, or answering `false`
-   * unconditionally, on a runtime without a config-convergence concept (the
-   * `pi` harness) — it never blocks there, which is correct: nothing is
-   * mid-verify on a runtime that never verifies one.
+   * unconditionally, on a runtime without a config-convergence concept — it
+   * never blocks there, which is correct: nothing is mid-verify on a runtime
+   * that never verifies one.
    */
   convergenceInFlight?(): boolean
 }

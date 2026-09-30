@@ -188,11 +188,7 @@
       "label": "Compte",
       "createIn": "Créer dans {account}",
       "choose": "Choisir un compte",
-      "loggedInAs": "Connecté en tant que",
-      "nameLabel": "Nom du compte",
-      "nameHint": "Votre équipe le voit dans la barre latérale et dans les invitations. Vous pourrez le modifier plus tard.",
-      "nameRequired": "Le nom du compte est obligatoire",
-      "renameFailed": "Impossible d'enregistrer le nom du compte. Réessayez."
+      "loggedInAs": "Connecté en tant que"
     },
     "name": {
       "label": "Nom de le projet",
@@ -1553,7 +1549,8 @@
         "restricted": "Personnes choisies",
         "project": "Tout le projet"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Libellés"
     },
     "loadingMore": "Chargement…",
     "loadMoreSessions": "Charger plus de sessions",
@@ -1565,7 +1562,21 @@
       "others": "Partagées",
       "automated": "Automatisées"
     },
-    "reminders": "Rappels"
+    "reminders": "Rappels",
+    "labels": {
+      "menu": "Modifier les libellés",
+      "title": "Libellés",
+      "description": "Les libellés classent cette session. Filtrez la liste des sessions avec eux. Les agents, la CLI et l’API peuvent aussi les définir.",
+      "placeholder": "Saisissez un libellé puis Entrée",
+      "empty": "Aucun libellé pour l’instant.",
+      "remove": "Retirer {label}",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "saved": "Libellés enregistrés",
+      "failed": "Impossible d’enregistrer les libellés",
+      "tooLong": "Un libellé compte au plus 64 caractères.",
+      "tooMany": "Une session a au plus 20 libellés."
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -5157,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "Le sandbox de cette session a été arrêté. Ouvrez une nouvelle session pour continuer.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Le runtime OpenCode n’est pas prêt",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Le runtime de la session n’est pas prêt",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "Le sandbox a démarré, mais le runtime du projet n’est pas devenu utilisable.",
       "line395JsxTextRestartSession": "Redémarrer la session",
       "line424JsxTextRestartSession": "Redémarrer la session"
@@ -12485,7 +12496,7 @@
       "text5a0cac0326d5": "Télécharger Kortix",
       "text5a219a418ec7": "Cette entrée n’a pas pu être lue depuis l’archive.",
       "text5a23444828db": "Gérer",
-      "text5a26f4425c82": "Session OpenCode",
+      "text92fbc8484002": "Session du runtime",
       "text5a32374d30b4": "Activité quotidienne de la plateforme et consommation de crédit. Chaque compartiment est un jour UTC.",
       "text5a37d20f1235": "Agent du canal mis à jour",
       "text5a41803b2dd1": "Tout refuser",
@@ -19063,7 +19074,24 @@
       "mismatch": "Cette installation a été lancée depuis un autre compte Kortix ou pour un autre projet. Connectez-vous avec ce compte, ou relancez l’installation depuis le projet.",
       "expired": "Ce lien d’installation est invalide ou a expiré. Relancez l’installation depuis le projet.",
       "failed": "L’installation n’a pas pu être terminée. Relancez-la depuis le projet.",
-      "backToProject": "Retour au projet"
+      "backToProject": "Retour au projet",
+      "finishingTitle": "Finalisation de l’installation de {service}",
+      "finishingDescription": "Kortix est en cours d’ajout à {service} pour ce projet. Vous revenez au projet une fois l’opération terminée.",
+      "installingAs": "Installation en tant que",
+      "recording": "Enregistrement de l’installation…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Ouverture de l’aperçu",
+      "openingDescription": "Vous êtes en cours de connexion à l’application exécutée par votre session.",
+      "preview": "Aperçu",
+      "address": "Adresse",
+      "signingIn": "Connexion en cours. L’aperçu s’ouvre tout seul.",
+      "signInAgain": "Se reconnecter",
+      "notServed": "Cette adresse n’est pas un aperçu servi par ce déploiement. Ouvrez plutôt l’aperçu depuis votre session.",
+      "sessionExpired": "Votre session a expiré. Reconnectez-vous et rouvrez l’aperçu."
+    },
+    "approvalPage": {
+      "title": "Approuver une action {connector}"
     },
     "secretIntakeWithheld": {
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",
@@ -19938,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Bienvenue sur Kortix",
-    "nameAccountTitle": "Nommez votre compte",
-    "nameAccountBody": "Vos projets, agents et coéquipiers se trouvent ici.",
-    "nameAccountContinue": "Continuer",
     "welcomeBack": "Bon retour",
     "descriptionNew": "Créez votre premier projet ou rejoignez un projet partagé par votre équipe.",
     "descriptionReturning": "Ouvrez un projet ou créez-en un nouveau.",
@@ -20180,6 +20205,7 @@
     "commandCopied": "Commande copiée",
     "copyFailed": "Échec de la copie",
     "copyCommand": "Copier la commande",
+    "copyCliCommand": "Copier la commande d'installation",
     "authorizeCodeHint": "Vérifiez que ce code correspond à celui affiché sur votre ordinateur.",
     "whoCanUse": "Qui peut utiliser cet ordinateur",
     "onlyYouDescription": "Vous seul, dans chaque projet, dans vos sessions privées.",

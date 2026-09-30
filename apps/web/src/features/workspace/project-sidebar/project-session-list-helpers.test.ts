@@ -373,6 +373,15 @@ describe('shortRelative', () => {
 });
 
 describe('resolveSessionListViewState', () => {
+  test('a server-side filter that matches nothing is "no-matches", never the empty onboarding state', () => {
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0, serverFiltered: true }),
+    ).toBe('no-matches');
+    expect(
+      resolveSessionListViewState({ hasData: true, isError: false, totalCount: 0, visibleCount: 0 }),
+    ).toBe('empty');
+  });
+
   test('a list with no data and no error is loading, never "empty"', () => {
     // The first load running, paused offline (TanStack `fetchStatus: 'paused'`,
     // `isLoading` false), or not enabled yet: none of them means "no sessions".

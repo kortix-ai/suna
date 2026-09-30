@@ -215,18 +215,21 @@ async function processSnapshot(pid: number | null): Promise<ProcessSnapshot | nu
   return parseProcStatus(pid, text)
 }
 
-const KNOWN_PROCESS_NAMES = new Set(['bun', 'node', 'python', 'python3', 'tsc', 'chrome', 'chromium', 'postgres', 'opencode', 'opencode.exe', 'opencode-kortix', 'kortixd'])
+/** Process names reported as themselves; any other process reads as `other`. */
+const HOST_PROCESS_NAMES = ['bun', 'node', 'python', 'python3', 'tsc', 'chrome', 'chromium', 'postgres', 'kortixd']
 
-export function parseMemoryConsumer(pid: number, status: string): MemoryConsumer | null {
+/** `runtimeNames`: the harness's own binaries (`ResourceMonitorOptions.runtimeProcessNames`). */
+export function parseMemoryConsumer(pid: number, status: string, runtimeNames: readonly string[] = []): MemoryConsumer | null {
   const rss = status.match(/^VmRSS:\s+(\d+)\s*kB/m)
   if (!rss) return null
   const rawName = status.match(/^Name:\s+(\S+)/m)?.[1] ?? ''
   const rssMb = Math.round(Number(rss[1]) / 1024)
   if (!Number.isFinite(rssMb) || rssMb <= 0) return null
-  return { pid, name: KNOWN_PROCESS_NAMES.has(rawName) ? rawName : 'other', rssMb }
+  const known = HOST_PROCESS_NAMES.includes(rawName) || runtimeNames.includes(rawName)
+  return { pid, name: known ? rawName : 'other', rssMb }
 }
 
-export async function readTopMemoryProcesses(procRoot = '/proc'): Promise<MemoryConsumer[]> {
+export async function readTopMemoryProcesses(procRoot = '/proc', runtimeNames: readonly string[] = []): Promise<MemoryConsumer[]> {
   const entries = await readdir(procRoot).catch(() => [])
   const pids = entries.filter((entry) => /^\d+$/.test(entry)).map(Number)
   const top: MemoryConsumer[] = []
@@ -234,7 +237,7 @@ export async function readTopMemoryProcesses(procRoot = '/proc'): Promise<Memory
   for (let offset = 0; offset < pids.length; offset += 32) {
     const batch = await Promise.all(pids.slice(offset, offset + 32).map(async (pid) => {
       const status = await readText(`${procRoot}/${pid}/status`)
-      return status === null ? null : parseMemoryConsumer(pid, status)
+      return status === null ? null : parseMemoryConsumer(pid, status, runtimeNames)
     }))
     for (const process of batch) if (process) top.push(process)
     top.sort((a, b) => b.rssMb - a.rssMb)
@@ -248,6 +251,8 @@ export interface SnapshotInputs {
   runtimePid: number | null
   diskPaths: string[]
   discoverRuntimePids?: () => Promise<number[]>
+  /** The harness's binary names, reported by name among the top processes. */
+  runtimeProcessNames?: readonly string[]
   readTopProcesses?: () => Promise<MemoryConsumer[]>
 }
 
@@ -284,7 +289,7 @@ export async function readResourceSnapshot(inputs: SnapshotInputs): Promise<Reso
     : { totalMb: null, availableMb: null, usedPct: null, swapTotalMb: null, swapFreeMb: null }
   const pressure = Math.max(memory.usedPct ?? 0, cgroup.usedPct ?? 0)
   const topProcesses = pressure >= 80
-    ? await (inputs.readTopProcesses ?? readTopMemoryProcesses)().catch(() => [])
+    ? await (inputs.readTopProcesses ?? (() => readTopMemoryProcesses('/proc', inputs.runtimeProcessNames)))().catch(() => [])
     : []
   return {
     at: new Date().toISOString(),
@@ -425,6 +430,8 @@ export interface ResourceMonitorOptions {
   runtimeState?: () => string
   snapshot?: (inputs: SnapshotInputs) => Promise<ResourceSnapshot>
   discoverRuntimePids?: () => Promise<number[]>
+  /** The harness's binary names, reported by name among the top processes. */
+  runtimeProcessNames?: readonly string[]
   pressure?: (snapshot: ResourceSnapshot, previous?: ResourceSnapshot | null) => PressureFinding[]
   formatSnapshot?: (snapshot: ResourceSnapshot) => Record<string, unknown>
   formatState?: (state: string | null) => Record<string, unknown>
@@ -555,6 +562,7 @@ export function startResourceMonitor(opts: ResourceMonitorOptions): ResourceMoni
       runtimePid: opts.runtimePid(),
       diskPaths,
       discoverRuntimePids: opts.discoverRuntimePids,
+      runtimeProcessNames: opts.runtimeProcessNames,
     })
     try {
       const findings = pressure(s, latest)

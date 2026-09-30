@@ -10,7 +10,7 @@ import { qk } from './query-keys';
  * Pure predicate: the project's effective `llm_gateway` flag from a
  * `getProjectDetail` response. `experimental` is the full effective flag map
  * (explicit project choice over platform default, AND-gated on operator
- * availability) — the same field `useOpenCodeProviders` forks provider
+ * availability) — the same field `useRuntimeProviders` forks provider
  * loading on, so every gateway-gated query in this package answers from ONE
  * source and can never disagree with the provider mode.
  */

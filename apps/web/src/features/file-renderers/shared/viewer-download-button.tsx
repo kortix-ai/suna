@@ -18,7 +18,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { DownloadSimpleIcon } from '@phosphor-icons/react';
+import { Download } from '@/features/icon/icons/download';
 
 export function ViewerDownloadButton({
   onDownload,
@@ -57,7 +57,7 @@ export function ViewerDownloadButton({
         {pending ? (
           <Loading className="text-muted-foreground size-3.5 shrink-0 motion-reduce:animate-none" />
         ) : (
-          <DownloadSimpleIcon className="size-3.5" />
+          <Download className="size-3.5" />
         )}
       </Button>
     </Hint>

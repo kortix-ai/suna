@@ -23,11 +23,27 @@ const SESSION = '00000000-0000-4000-a000-000000000501';
 const SESSION_B = '00000000-0000-4000-a000-000000000502';
 /** Same session, but with no persisted model — exercises the compact fallback. */
 const SESSION_C = '00000000-0000-4000-a000-000000000503';
+/** A pi-harness session: its runtime lists no `session.compact` / `session.attach`. */
+const SESSION_PI = '00000000-0000-4000-a000-000000000504';
 const ACCOUNT = '00000000-0000-4000-a000-000000000401';
 const EXECUTION = '00000000-0000-4000-a000-000000000601';
 const PROMPT_ROW = '00000000-0000-4000-a000-000000000701';
 const SHARE = '00000000-0000-4000-a000-000000000801';
 const EXTERNAL = 'sandbox-parity';
+const EXTERNAL_PI = 'sandbox-pi';
+/** `GET /kortix/health` capabilities, as the W3 daemon lists them per harness. */
+const OPENCODE_CAPABILITIES = [
+  'session.rewind',
+  'session.compact',
+  'session.commands',
+  'session.fork',
+  'session.subagents',
+  'session.mcp',
+  'session.todo',
+  'session.shell',
+  'session.attach',
+];
+const PI_CAPABILITIES = ['session.subagents'];
 
 interface Seen {
   method: string;
@@ -137,6 +153,21 @@ function startServer(): string {
       }
       if (method === 'GET' && path === `${project}/sessions/${SESSION_C}`) {
         return Response.json({ ...sessionRow(SESSION_C), metadata: {} });
+      }
+      if (method === 'GET' && path === `${project}/sessions/${SESSION_PI}`) {
+        return Response.json(sessionRow(SESSION_PI));
+      }
+      if (method === 'POST' && path === `${project}/sessions/${SESSION_PI}/start`) {
+        return Response.json({
+          stage: 'ready',
+          agent_name: 'kortix',
+          retriable: false,
+          sandbox: { external_id: EXTERNAL_PI },
+          opencode_session_id: 'ses_oc',
+        });
+      }
+      if (method === 'GET' && path === `/v1/p/${EXTERNAL_PI}/8000/kortix/health`) {
+        return Response.json({ status: 'ok', runtimeReady: true, capabilities: PI_CAPABILITIES });
       }
       if (method === 'POST' && path === `${project}/sessions/${SESSION_C}/start`) {
         return Response.json({
@@ -266,6 +297,13 @@ function startServer(): string {
       }
 
       // ── sandbox daemon (through the /v1/p proxy) ─────────────────────────
+      if (method === 'GET' && path === `${daemon}/kortix/health`) {
+        return Response.json({
+          status: 'ok',
+          runtimeReady: true,
+          capabilities: ['file.import', ...OPENCODE_CAPABILITIES],
+        });
+      }
       if (method === 'GET' && path === `${daemon}/file`) {
         return Response.json([
           { name: 'report.md', path: 'out/report.md', absolute: '/workspace/out/report.md', type: 'file', ignored: false },
@@ -721,6 +759,25 @@ describe('kortix sessions compact', () => {
     const r = await runCli(['sessions', 'compact', ...P], config);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('Pass a session id');
+  });
+
+  test('a runtime without session.compact exits 1 before any summarize call', async () => {
+    const r = await runCli(['sessions', 'compact', SESSION_PI, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("This session's runtime does not support compacting the conversation.");
+    expect(calls('GET', `/v1/p/${EXTERNAL_PI}/8000/kortix/health`)).toHaveLength(1);
+    expect(calls('POST', `/v1/p/${EXTERNAL_PI}/8000/session`)).toEqual([]);
+  });
+});
+
+describe('kortix connect', () => {
+  test('a runtime without session.attach exits 1 with the reason, before any download', async () => {
+    const r = await runCli(['connect', SESSION_PI, ...P], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("This session's runtime does not support attaching a terminal client.");
+    expect(r.stderr).toContain(`kortix sessions shell ${SESSION_PI}`);
+    // The version probe precedes the opencode download; it never ran.
+    expect(calls('GET', `/v1/p/${EXTERNAL_PI}/8000/global/health`)).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { StoredSandboxTurn } from '../sandbox-turn-lifecycle';
+import type { StoredSandboxTurn } from '../session-turn-ledger';
 import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
 import type { PlacementTipMessage } from './forwarded-placement';
 import { type StrandReconcileDeps, reconcileForwardedTurnsAtEnd } from './forwarded-strand-reconcile';
@@ -40,7 +40,7 @@ const turn = (
   token: `tok-${messageId}`,
   state,
   messageId,
-  opencodeSessionId: 'ses_root',
+  runtimeSessionId: 'ses_root',
   startedAtMs,
 });
 
@@ -326,7 +326,7 @@ describe('reconcileForwardedTurnsAtEnd', () => {
   });
 
   test('turns of another opencode root are ignored', async () => {
-    const foreign = { ...turn(u1), opencodeSessionId: 'ses_child' };
+    const foreign = { ...turn(u1), runtimeSessionId: 'ses_child' };
     const { deps, calls } = fakeDeps({ open: [foreign], tip: [] });
     const out = await reconcileForwardedTurnsAtEnd({ sessionId: 's', opencodeSessionId: 'ses_root', endedMessageId: M }, deps);
     expect(out.closedOlder).toBe(0);

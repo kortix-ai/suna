@@ -25,11 +25,11 @@ import {
   SIDEBAR_WIDTH_ICON,
   SIDEBAR_WIDTH_MOBILE,
   SidebarContext,
-  type SidebarContextProps,
-  type SidebarToggleOptions,
   resolveInstant,
   useOptionalSidebar,
   useSidebar,
+  type SidebarContextProps,
+  type SidebarToggleOptions,
 } from '@/components/ui/sidebar-context';
 import { createPeekController } from '@/components/ui/sidebar-peek';
 import {
@@ -43,9 +43,9 @@ import {
 } from '@/components/ui/sidebar-width';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { SidebarToggle as PanelLeftIcon } from '@/features/icon/icons/sidebar-toggle';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { SidebarToggle as PanelLeftIcon } from '@/features/icon/icons/sidebar-toggle';
 
 function SidebarProvider({
   defaultOpen = true,
@@ -854,7 +854,7 @@ const sidebarMenuButtonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'text-muted-foreground hover:bg-card hover:text-sidebar-foreground',
+        default: 'text-muted-foreground hover:bg-sidebar-row hover:text-sidebar-foreground',
         outline:
           'bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-hover hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
         success:

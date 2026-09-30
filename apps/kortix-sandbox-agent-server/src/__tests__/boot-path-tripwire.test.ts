@@ -134,6 +134,10 @@ describe('the one boot path is enforced, not merely intended', () => {
     expect(runningWriteLeaks(sources)).toEqual([])
   })
 
+  test('T4 on pi — its running config has exactly one writer too, and it is setCurrent', () => {
+    expect(runningWriters(file('harness/pi/config-release.ts').source, 'current')).toEqual(['setCurrent:current'])
+  })
+
   test('T4 negative — a field patch outside the setter is caught', () => {
     const probe = parse(
       'function setRunningConfig(n){ running = { ...running, ...n } }\n' +

@@ -328,7 +328,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'config_releases',
     name: 'Config Releases',
     description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
     stability: 'experimental',
     available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
