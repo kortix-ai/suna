@@ -10,31 +10,34 @@ const ROSTER = { names: ['build', 'plan', 'general'] };
 
 describe('resolveDeliverableAgent', () => {
   test('keeps an agent the runtime has', () => {
-    expect(resolveDeliverableAgent('build', ROSTER)).toEqual({ agent: 'build' });
+    expect(resolveDeliverableAgent('build', ROSTER)).toEqual({ agent: 'build', dropped: false });
   });
 
-  test('refuses an agent the runtime does not have', () => {
+  test('DROPS an agent the runtime does not have — the prompt runs, it does not vanish', () => {
     // The measured defect: `agent:"kortix"` on a runtime without it was
     // acknowledged 204 and the message was destroyed.
-    expect(() => resolveDeliverableAgent('kortix', ROSTER)).toThrow('Runtime agent "kortix" is not registered');
+    expect(resolveDeliverableAgent('kortix', ROSTER)).toEqual({ agent: null, dropped: true });
   });
 
-  test('refuses an unreadable roster rather than forwarding an unchecked name', () => {
-    expect(() => resolveDeliverableAgent('kortix', { names: null })).toThrow('agent roster unavailable');
+  test('an unreadable roster changes nothing — a failed read is not evidence', () => {
+    expect(resolveDeliverableAgent('kortix', { names: null })).toEqual({
+      agent: 'kortix',
+      dropped: false,
+    });
   });
 
-  test('no request means no agent field', () => {
+  test('no request means no agent field and no drop', () => {
     for (const requested of [null, undefined, '', '   ']) {
-      expect(resolveDeliverableAgent(requested, ROSTER)).toEqual({ agent: null });
+      expect(resolveDeliverableAgent(requested, ROSTER)).toEqual({ agent: null, dropped: false });
     }
   });
 
   test('the requested name is trimmed before it is matched', () => {
-    expect(resolveDeliverableAgent('  build  ', ROSTER)).toEqual({ agent: 'build' });
+    expect(resolveDeliverableAgent('  build  ', ROSTER)).toEqual({ agent: 'build', dropped: false });
   });
 
-  test('an empty roster refuses every pick', () => {
-    expect(() => resolveDeliverableAgent('build', { names: [] })).toThrow('not registered');
+  test('an EMPTY roster drops every pick rather than refusing the prompt', () => {
+    expect(resolveDeliverableAgent('build', { names: [] })).toEqual({ agent: null, dropped: true });
   });
 });
 
