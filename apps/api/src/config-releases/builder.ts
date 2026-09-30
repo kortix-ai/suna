@@ -134,9 +134,9 @@ export function configReleaseId(configTreeId: string | null, compiledGovernanceE
  * exists in no mirror, so its path carries the commit it was composed from and
  * the route rebuilds it from there. The daemon accepts a query string.
  */
-export function configArchiveRoute(projectId: string, configTreeId: string, composedFrom?: string): string {
+export function configArchiveRoute(projectId: string, configTreeId: string, composedFrom?: string, variant?: ConfigReleaseVariant): string {
   const path = `/v1/projects/${projectId}/config-archives/${configTreeId}`;
-  return composedFrom ? `${path}?commit=${composedFrom}` : path;
+  return composedFrom ? `${path}?commit=${composedFrom}${variant?.startsWith('agent:') ? `&agent=${encodeURIComponent(variant.slice(6))}` : ''}` : path;
 }
 
 /** Resolve `git rev-parse <commit>:<config dir>` to a tree ID, or null. */
@@ -267,6 +267,8 @@ export interface ReleaseTreeSource {
   configTree: string;
   /** Root `skills/` entries, as `git ls-tree -z` records, that hold a SKILL.md. */
   rootSkills: string[];
+  /** Selected plugins; null keeps the legacy, globally auto-discovered set. */
+  plugins: string[] | null;
 }
 
 /** `git ls-tree -z <tree>`: the tree's records, keyed by entry name. */
@@ -337,16 +339,31 @@ export async function composeReleaseTree(
   env: Record<string, string>,
   source: ReleaseTreeSource,
 ): Promise<string> {
-  if (source.rootSkills.length === 0) return source.configTree;
+  if (source.rootSkills.length === 0 && source.plugins === null) return source.configTree;
   const top = await treeRecords(repo, source.configTree, env);
-  const skills = new Map<string, string>();
-  const configSkills = top.get(SKILLS_DIR);
-  if (configSkills && configSkills.split(' ')[1] === 'tree') {
-    const configSkillsTree = configSkills.slice(0, configSkills.indexOf('\t')).split(' ')[2]!;
-    for (const [name, record] of await treeRecords(repo, configSkillsTree, env)) skills.set(name, record);
+  if (source.rootSkills.length) {
+    const skills = new Map<string, string>();
+    const configSkills = top.get(SKILLS_DIR);
+    if (configSkills && configSkills.split(' ')[1] === 'tree') {
+      const tree = configSkills.slice(0, configSkills.indexOf('\t')).split(' ')[2]!;
+      for (const [name, record] of await treeRecords(repo, tree, env)) skills.set(name, record);
+    }
+    for (const record of source.rootSkills) skills.set(record.slice(record.indexOf('\t') + 1), record);
+    top.set(SKILLS_DIR, `040000 tree ${await mktree(repo, env, [...skills.values()])}\t${SKILLS_DIR}`);
   }
-  for (const record of source.rootSkills) skills.set(record.slice(record.indexOf('\t') + 1), record);
-  top.set(SKILLS_DIR, `040000 tree ${await mktree(repo, env, [...skills.values()])}\t${SKILLS_DIR}`);
+  if (source.plugins !== null) {
+    const selected = new Set(source.plugins);
+    const pluginTree = top.get('plugins');
+    if (pluginTree) {
+      const tree = pluginTree.slice(0, pluginTree.indexOf('\t')).split(' ')[2]!;
+      const entries = await treeRecords(repo, tree, env);
+      for (const [name, record] of entries) {
+        if (/\.[cm]?[jt]s$/.test(name) && record.split(' ')[1] === 'blob' && !selected.has(name)) entries.delete(name);
+      }
+      if (entries.size) top.set('plugins', `040000 tree ${await mktree(repo, env, [...entries.values()])}\tplugins`);
+      else top.delete('plugins');
+    }
+  }
   return mktree(repo, env, [...top.values()]);
 }
 
@@ -366,6 +383,18 @@ export async function readComposedRelease(
   });
 }
 
+/** Filename references only. The plugin implementation stays in the repository. */
+export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
+  if (manifest?.kortix_version !== 2) return null;
+  const global = (manifest.harnesses as { opencode?: { plugins?: string[] } } | undefined)?.opencode?.plugins;
+  const agents = manifest.agents as Record<string, { harnesses?: { opencode?: { plugins?: string[]; exclude?: string[] } } }> | undefined;
+  const local = agents?.[agent]?.harnesses?.opencode;
+  if (!agents?.[agent]) return null;
+  if (!global && !local) return null;
+  const excluded = new Set(local?.exclude ?? []);
+  return [...new Set([...(global ?? []).filter((name) => !excluded.has(name)), ...(local?.plugins ?? [])])];
+}
+
 /**
  * The release tree source of `commit`, or a reason there is none. Shared by
  * the builder and the archive route, which rebuilds a composed tree from the
@@ -375,13 +404,22 @@ export async function resolveReleaseTreeSource(
   mirror: string,
   project: Pick<GitBackedProject, 'manifestPath'>,
   commit: string,
+  variant: ConfigReleaseVariant = 'project',
 ): Promise<{ source: ReleaseTreeSource } | { configDir: string | null; reason: string }> {
   const manifest = await readManifestAtSha(mirror, project, commit);
   const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit, manifest);
   if (!configDir) return { configDir: null, reason: 'the commit has no OpenCode config dir' };
   const configTree = await resolveConfigTreeId(mirror, commit, configDir);
   if (!configTree) return { configDir, reason: `config dir ${configDir} is not a tree at ${commit}` };
-  return { source: { configDir, configTree, rootSkills: await rootSkillRecords(mirror, commit) } };
+  const plugins = variant.startsWith('agent:') ? selectedOpenCodePlugins(manifest, variant.slice(6)) : null;
+  if (plugins !== null) {
+    const available = (await listConfigFiles(mirror, configTree))
+      .filter(([path]) => /^plugins\/[^/]+\.[cm]?[jt]s$/.test(path))
+      .map(([path]) => path.slice(8));
+    const missing = plugins.filter((name) => !available.includes(name));
+    if (missing.length) throw new Error(`OpenCode plugin not found in ${configDir}/plugins: ${missing.join(', ')}`);
+  }
+  return { source: { configDir, configTree, rootSkills: await rootSkillRecords(mirror, commit), plugins } };
 }
 
 /**
@@ -538,13 +576,18 @@ async function build(
   // No config dir: a governance-only release. The daemon runs the image
   // default config dir with this governance.
   const governanceOnly = configReleaseId(null, etag);
-  const resolved = await resolveReleaseTreeSource(mirror, project, commit);
+  let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
+  try {
+    resolved = await resolveReleaseTreeSource(mirror, project, commit, variant);
+  } catch (error) {
+    return { ...withGovernance, reason: (error as Error).message };
+  }
   if (!('source' in resolved)) {
     return { ...withGovernance, release_id: governanceOnly, config_dir: resolved.configDir, reason: resolved.reason };
   }
   const { source } = resolved;
   const configDir = source.configDir;
-  const composed = source.rootSkills.length > 0;
+  const composed = source.rootSkills.length > 0 || source.plugins !== null;
 
   let treeId = source.configTree;
   let files: ConfigReleaseFile[] | null = null;
@@ -583,7 +626,7 @@ async function build(
   return {
     ...located,
     release_id: configReleaseId(treeId, etag),
-    archive: { url: configArchiveRoute(project.projectId, treeId, composed ? commit : undefined), bytes },
+    archive: { url: configArchiveRoute(project.projectId, treeId, composed ? commit : undefined, variant), bytes },
     files: files ?? (await listConfigFiles(mirror, treeId)),
   };
 }

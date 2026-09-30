@@ -171,6 +171,7 @@ export async function serveConfigArchive(
   deps: ServeConfigArchiveDeps = {},
   /** The commit a composed release tree was built from (the path's `?commit=`). */
   composedFrom?: string | null,
+  agent?: string | null,
 ): Promise<Response> {
   const store = deps.store ?? getConfigArchiveStore();
   const key = configArchiveKey(project.projectId, treeId);
@@ -195,7 +196,7 @@ export async function serveConfigArchive(
     } catch (error) {
       console.warn(`[config-releases] store read ${key} failed for a mirror-less tree: ${(error as Error).message}`);
     }
-    const composed = await composedArchiveBuilder(repo, project, treeId, composedFrom);
+    const composed = await composedArchiveBuilder(repo, project, treeId, composedFrom, agent);
     if (!composed) return json(404, { error: 'Not found' });
     build = composed;
   } else {
@@ -231,12 +232,15 @@ async function composedArchiveBuilder(
   project: GitBackedProject,
   treeId: string,
   commit: string | null | undefined,
+  agent?: string | null,
 ): Promise<(() => Promise<Buffer>) | null> {
   if (!commit || !/^[0-9a-f]{40}$/.test(commit)) return null;
   const known = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repo);
   if (known.exitCode !== 0) return null;
-  const resolved = await resolveReleaseTreeSource(repo, project, commit);
-  if (!('source' in resolved) || resolved.source.rootSkills.length === 0) return null;
+  if (agent && !/^[a-zA-Z0-9_-]+$/.test(agent)) return null;
+  const resolved = await resolveReleaseTreeSource(repo, project, commit, agent ? `agent:${agent}` : 'project').catch(() => null);
+  if (!resolved) return null;
+  if (!('source' in resolved) || (resolved.source.rootSkills.length === 0 && resolved.source.plugins === null)) return null;
   const { source } = resolved;
   const probe = await readComposedRelease(repo, source, { archive: false });
   if (probe.treeId !== treeId) return null;
