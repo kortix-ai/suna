@@ -19,6 +19,7 @@ import {
   resolveProjectSecretsForConsumer,
 } from '../../projects/secrets';
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
+import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';
 import {
   canonicalManagedModelId,
@@ -257,7 +258,7 @@ function opencodeHeaders(baseUrl: string, principal: AuthedPrincipal): Record<st
  */
 async function byokDescriptors(context: Context, provider: string,
   byok: NonNullable<ReturnType<typeof resolveCatalogUpstream>>,
-  keys: Array<{ identifier: string; value: string }>, pooled: boolean): Promise<UpstreamDescriptor[]> {
+  keys: Array<{ identifier: string; secretId: string; value: string }>, pooled: boolean): Promise<UpstreamDescriptor[]> {
   const { principal, effectiveModel } = context;
   const resolvedModelId = effectiveModel.slice(provider.length + 1);
   const capabilities = capabilitiesForModel(provider, resolvedModelId);
@@ -275,17 +276,41 @@ async function byokDescriptors(context: Context, provider: string,
   const invokeModelId = byok.kind === 'bedrock'
     ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion) : resolvedModelId;
   const headers = opencodeHeaders(baseUrl, principal);
-  return keys.map(({ identifier, value }) => ({
-    provider, kind: byok.kind, npm: byok.npm, baseUrl,
-    ...(headers ? { headers } : {}),
-    ...(bedrockRegion ? { region: bedrockRegion } : {}),
-    apiKey: value, credentialRef: identifier,
-    ...(pooled ? { poolSecretId: identifier } : {}),
-    billingMode: 'none', markup: 0, resolvedModel: invokeModelId,
-    pricing: livePricing(provider, byok.kind === 'bedrock'
-      ? stripBedrockInferenceProfilePrefix(invokeModelId) : invokeModelId),
-    reasoning: capabilities.reasoning, temperature: capabilities.temperature,
-  }));
+  const descriptors: UpstreamDescriptor[] = [];
+  let expiredLogin = false;
+  for (const { identifier, secretId, value } of keys) {
+    const base: UpstreamDescriptor = {
+      provider, kind: byok.kind, npm: byok.npm, baseUrl,
+      ...(headers ? { headers } : {}),
+      ...(bedrockRegion ? { region: bedrockRegion } : {}),
+      apiKey: value, credentialRef: identifier,
+      ...(pooled ? { poolSecretId: identifier } : {}),
+      billingMode: 'none', markup: 0, resolvedModel: invokeModelId,
+      pricing: livePricing(provider, byok.kind === 'bedrock'
+        ? stripBedrockInferenceProfilePrefix(invokeModelId) : invokeModelId),
+      reasoning: capabilities.reasoning, temperature: capabilities.temperature,
+    };
+    // An OpenCode Console login ("Sign in with OpenCode") stored in place of
+    // the API key: its token only works on the inference endpoints.
+    const loginBase = byok.kind === 'bedrock' ? null : opencodeInferenceBaseUrl(provider, byok.kind, byok.npm);
+    if (loginBase && parseOpencodeLogin(value)) {
+      const login = await resolveOpencodeLogin({
+        storage: pooled ? 'account_resource' : 'project', accountId: principal.accountId,
+        projectId: principal.projectId!, secretId, value,
+        sessionId: principal.sessionId ?? null, actorUserId: principal.userId,
+      }).catch(() => null);
+      if (!login) { expiredLogin = true; continue; }
+      descriptors.push({
+        ...base, baseUrl: loginBase, apiKey: login.access, credentialRef: secretId, refreshableCredential: true,
+        headers: { ...opencodeHeaders(loginBase, principal), ...(login.orgId ? { 'x-opencode-org-id': login.orgId } : {}) },
+      });
+      continue;
+    }
+    descriptors.push(base);
+  }
+  if (!descriptors.length && expiredLogin) throw new GatewayResolutionError('provider_reauth_required',
+    'Your OpenCode login has expired or was revoked.', 'Sign in with OpenCode again in project settings, then retry.');
+  return descriptors;
 }
 
 async function resolveByokCandidates(context: Context, provider: string,
@@ -299,7 +324,7 @@ async function resolveByokCandidates(context: Context, provider: string,
   }
   const keys = pool?.configured
     // A pooled key this API cannot decrypt is skipped, as if it were not selected.
-    ? pool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, value: secret.value }])
+    ? pool.secrets.flatMap((secret) => secret.value === null ? [] : [{ identifier: secret.secretId, secretId: secret.secretId, value: secret.value }])
     : await resolveProjectSecretsForConsumer({
         projectId: principal.projectId!, accountId: principal.accountId,
         sessionId: principal.sessionId, actorUserId: principal.userId,

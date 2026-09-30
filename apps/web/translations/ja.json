@@ -132,7 +132,12 @@
     "rateLimitDescription": "プロバイダーがレート制限を返した場合、ゲートウェイは選択したキーを順に使用します。",
     "enableGateway": "キープールを使用するには、プロジェクト設定で LLM ゲートウェイを有効にしてください。",
     "selectedOneForSession": "このセッションで {count} 個のキーを選択済み",
-    "selectedOne": "{count} 個のキーを選択済み"
+    "selectedOne": "{count} 個のキーを選択済み",
+    "opencodeSignIn": "OpenCode でサインイン",
+    "opencodeSignInDescription": "API キーの代わりに OpenCode ワークスペースを使用します。",
+    "opencodeDeviceDescription": "このコードをコピーしてから OpenCode のページを開き、入力してワークスペースを接続します。",
+    "opencodeStarting": "OpenCode に接続しています…",
+    "opencodeConnected": "OpenCode でサインインしました"
   },
   "useCases": {
     "headline": "会社を動かすループ"

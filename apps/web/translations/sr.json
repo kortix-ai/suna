@@ -132,7 +132,12 @@
     "rateLimitDescription": "Мрежни пролаз мења изабране кључеве када провајдер пријави ограничење захтева.",
     "enableGateway": "Укључите LLM мрежни пролаз у подешавањима пројекта да бисте користили скупове кључева.",
     "selectedOneForSession": "{count} кључ изабран за ову сесију",
-    "selectedOne": "{count} кључ изабран"
+    "selectedOne": "{count} кључ изабран",
+    "opencodeSignIn": "Prijavi se preko OpenCode-a",
+    "opencodeSignInDescription": "Koristi svoj OpenCode radni prostor umesto API ključa.",
+    "opencodeDeviceDescription": "Kopiraj ovaj kod. Zatim otvori OpenCode stranicu i unesi ga da povežeš radni prostor.",
+    "opencodeStarting": "Povezivanje sa OpenCode-om…",
+    "opencodeConnected": "Prijavljen preko OpenCode-a"
   },
   "useCases": {
     "headline": "Циклуси који покрећу компанију"

@@ -132,7 +132,12 @@
     "sharedSessionKeys": "This session is shared with the project, so only keys shared with the whole project work here. Keys granted to you work in your private sessions.",
     "projectDefaultShort": "Project default",
     "rateLimitDescription": "The gateway rotates through selected keys when a provider reports a rate limit.",
-    "enableGateway": "Enable LLM gateway in project settings to use pooled keys."
+    "enableGateway": "Enable LLM gateway in project settings to use pooled keys.",
+    "opencodeSignIn": "Sign in with OpenCode",
+    "opencodeSignInDescription": "Use your OpenCode workspace instead of an API key.",
+    "opencodeDeviceDescription": "Copy this code. Then open the OpenCode page and enter it to connect your workspace.",
+    "opencodeStarting": "Connecting to OpenCode…",
+    "opencodeConnected": "Signed in with OpenCode"
   },
   "useCases": {
     "headline": "The loops that run a company"
