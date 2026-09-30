@@ -557,7 +557,7 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
     // The session switches before the route mounts the reconnect poller.
     resetForServerSwitch(url);
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     resetForServerSwitch(url);
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
   });
