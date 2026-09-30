@@ -244,6 +244,13 @@ export function parseOpenCodeAuditBatch(
   if (!Array.isArray(events) || events.length === 0 || events.length > MAX_BATCH_SIZE) {
     throw new Error(`events must contain 1 to ${MAX_BATCH_SIZE} items`);
   }
+  // Since W3 the daemon tags a batch with `source: 'runtime'` and the harness
+  // that produced it. A batch without them comes from a daemon built before
+  // W3, which only ever ran OpenCode.
+  const batch = body as { source?: unknown; harness?: unknown };
+  const source = batch.source === 'runtime' ? 'runtime' : 'opencode';
+  const harness =
+    typeof batch.harness === 'string' && IDENTIFIER_RE.test(batch.harness) ? batch.harness : 'opencode';
 
   const values = events.map((item, index): AuditInsert => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -297,10 +304,10 @@ export function parseOpenCodeAuditBatch(
     const inputSummary = sanitizeSummary(event.input_summary, index, 'input_summary');
     const outputSummary = sanitizeSummary(event.output_summary, index, 'output_summary');
     const reportedProvenance = {
-      opencode_session_id: optionalIdentifier(
-        event.opencode_session_id,
+      runtime_session_id: optionalIdentifier(
+        event.runtime_session_id ?? event.opencode_session_id,
         index,
-        'opencode_session_id',
+        'runtime_session_id',
       ),
       agent_id: optionalIdentifier(event.agent_id, index, 'agent_id'),
       agent_name: optionalIdentifier(event.agent_name, index, 'agent_name'),
@@ -316,7 +323,7 @@ export function parseOpenCodeAuditBatch(
       accountId: scope.accountId,
       projectId: scope.projectId,
       sessionId: scope.sessionId,
-      opencodeSessionId: trusted?.opencodeSessionId ?? null,
+      runtimeSessionId: trusted?.opencodeSessionId ?? null,
       turnId: optionalIdentifier(event.turn_id, index, 'turn_id'),
       messageId: optionalIdentifier(event.message_id, index, 'message_id'),
       toolCallId: optionalIdentifier(event.tool_call_id, index, 'tool_call_id'),
@@ -328,8 +335,8 @@ export function parseOpenCodeAuditBatch(
       initiatorActorId: trusted?.initiatorActorId ?? null,
       onBehalfOfUserId: trusted?.onBehalfOfUserId ?? null,
       delegationDepth: trusted?.delegationDepth ?? 0,
-      source: 'opencode',
-      authoritativeSource: 'opencode',
+      source,
+      authoritativeSource: source,
       outcome,
       action: canonicalOpenCodeAction(type, inputSummary),
       phase,
@@ -355,6 +362,7 @@ export function parseOpenCodeAuditBatch(
         ...sanitizeMetadata(event.metadata, index),
         provenance_trust: 'sandbox_reported',
         reported_provenance: reportedProvenance,
+        harness,
       },
       occurredAt,
     };

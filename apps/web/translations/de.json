@@ -188,11 +188,7 @@
       "label": "Konto",
       "createIn": "Erstellen in {account}",
       "choose": "Konto auswählen",
-      "loggedInAs": "Angemeldet als",
-      "nameLabel": "Kontoname",
-      "nameHint": "Dein Team sieht ihn in der Seitenleiste und in Einladungen. Du kannst ihn später ändern.",
-      "nameRequired": "Kontoname ist erforderlich",
-      "renameFailed": "Der Kontoname konnte nicht gespeichert werden. Versuche es erneut."
+      "loggedInAs": "Angemeldet als"
     },
     "name": {
       "label": "Name des Projekts",
@@ -1553,7 +1549,8 @@
         "restricted": "Bestimmte Personen",
         "project": "Ganzes Projekt"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Labels"
     },
     "loadingMore": "Wird geladen …",
     "loadMoreSessions": "Weitere Sitzungen laden",
@@ -1565,7 +1562,21 @@
       "others": "Geteilt",
       "automated": "Automatisiert"
     },
-    "reminders": "Erinnerungen"
+    "reminders": "Erinnerungen",
+    "labels": {
+      "menu": "Labels bearbeiten",
+      "title": "Labels",
+      "description": "Labels ordnen diese Sitzung ein. Filtere die Sitzungsliste danach. Agenten, die CLI und die API können sie ebenfalls setzen.",
+      "placeholder": "Label eingeben und Enter drücken",
+      "empty": "Noch keine Labels.",
+      "remove": "{label} entfernen",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "saved": "Labels gespeichert",
+      "failed": "Die Labels konnten nicht gespeichert werden",
+      "tooLong": "Ein Label hat höchstens 64 Zeichen.",
+      "tooMany": "Eine Sitzung hat höchstens 20 Labels."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -5157,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "Die Sandbox für diese Sitzung wurde gestoppt. Öffne eine neue Sitzung, um fortzufahren.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode-Runtime ist nicht bereit",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Sitzungs-Runtime ist nicht bereit",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "Die Sandbox wurde gestartet, aber die Projekt-Runtime wurde nicht nutzbar.",
       "line395JsxTextRestartSession": "Sitzung neu starten",
       "line424JsxTextRestartSession": "Sitzung neu starten"
@@ -12485,7 +12496,7 @@
       "text5a0cac0326d5": "Kortix herunterladen",
       "text5a219a418ec7": "Dieser Eintrag konnte nicht aus dem Archiv gelesen werden.",
       "text5a23444828db": "Verwalten",
-      "text5a26f4425c82": "OpenCode-Sitzung",
+      "text92fbc8484002": "Runtime-Sitzung",
       "text5a32374d30b4": "Tägliche Plattformaktivität und Kreditverbrennung. Jeder Bucket ist ein UTC-Tag.",
       "text5a37d20f1235": "Kanal-Agent aktualisiert",
       "text5a41803b2dd1": "Alle ablehnen",
@@ -19063,7 +19074,24 @@
       "mismatch": "Diese Installation wurde von einem anderen Kortix-Konto oder für ein anderes Projekt gestartet. Melde dich mit diesem Konto an oder starte die Installation im Projekt erneut.",
       "expired": "Dieser Installationslink ist ungültig oder abgelaufen. Starte die Installation im Projekt erneut.",
       "failed": "Die Installation konnte nicht abgeschlossen werden. Starte sie im Projekt erneut.",
-      "backToProject": "Zurück zum Projekt"
+      "backToProject": "Zurück zum Projekt",
+      "finishingTitle": "{service}-Installation wird abgeschlossen",
+      "finishingDescription": "Kortix wird für dieses Projekt zu {service} hinzugefügt. Danach geht es zurück zum Projekt.",
+      "installingAs": "Installation als",
+      "recording": "Installation wird gespeichert…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Vorschau wird geöffnet",
+      "openingDescription": "Sie werden bei der App angemeldet, die in Ihrer Sitzung läuft.",
+      "preview": "Vorschau",
+      "address": "Adresse",
+      "signingIn": "Anmeldung läuft. Die Vorschau öffnet sich von selbst.",
+      "signInAgain": "Erneut anmelden",
+      "notServed": "Diese Adresse ist keine Vorschau, die diese Bereitstellung ausliefert. Öffnen Sie die Vorschau stattdessen aus Ihrer Sitzung.",
+      "sessionExpired": "Ihre Sitzung ist abgelaufen. Melden Sie sich erneut an und öffnen Sie die Vorschau noch einmal."
+    },
+    "approvalPage": {
+      "title": "{connector}-Aktion genehmigen"
     },
     "secretIntakeWithheld": {
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
@@ -19938,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Willkommen bei Kortix",
-    "nameAccountTitle": "Benenne dein Konto",
-    "nameAccountBody": "Hier leben deine Projekte, Agenten und Teammitglieder.",
-    "nameAccountContinue": "Weiter",
     "welcomeBack": "Willkommen zurück",
     "descriptionNew": "Erstelle dein erstes Projekt oder tritt einem bei, das dein Team geteilt hat.",
     "descriptionReturning": "Öffne ein Projekt oder erstelle ein neues.",

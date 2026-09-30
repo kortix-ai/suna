@@ -9,6 +9,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectRuntimeSession } from '@kortix/sdk';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { useState, type ReactElement } from 'react';
+import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 
 /** A subsession's own title, without OpenCode's "(@general subagent)" suffix. */
 export function subagentTitle(title: string): string {
@@ -70,7 +71,7 @@ export function SubagentHoverCard({
             {subsessions.map((child) => (
               <li key={child.id}>
                 <HoverPrefetchLink
-                  href={`${href}?oc=${encodeURIComponent(child.id)}`}
+                  href={childSessionHref(href, child.id)}
                   onClick={() => setOpen(false)}
                   className={menuRow('sm', 'default', 'cursor-pointer')}
                 >

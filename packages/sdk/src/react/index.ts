@@ -10,6 +10,7 @@ export { resetIdentityState } from './reset-identity-state';
 // verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
+export { useRuntimeSupports } from './use-runtime-supports';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -36,7 +37,7 @@ export {
   type BillingErrorUI,
 } from '../core/http/api/errors';
 
-// The framework-free SSE event-stream primitive that `useOpenCodeEventStream`
+// The framework-free SSE event-stream primitive that `useRuntimeEventStream`
 // (exported above via `./opencode`) wraps. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding
 // (e.g. a non-QueryClient consumer) without a second import from
@@ -47,6 +48,7 @@ export {
   type EventStreamHandle,
   type EventStreamTimers,
   type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from '../core/stream/event-stream';
 
@@ -75,6 +77,7 @@ export {
   applyOptimisticAbort,
   replayStartStash,
   type OpenCodeMessagesClient,
+  type RuntimeMessagesClient,
   type SendWithReceiptArgs,
   type StopWithReceiptOptions,
   type SendRecoveryOptions,
@@ -131,7 +134,7 @@ export {
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by
-// `useSummarizeOpenCodeSession`'s mutation when every model-resolution fallback
+// `useSummarizeRuntimeSession`'s mutation when every model-resolution fallback
 // tier fails. Re-exported here so hosts + the telemetry noise gate can
 // `instanceof`-match it without reaching into the hook's internal path.
 export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';

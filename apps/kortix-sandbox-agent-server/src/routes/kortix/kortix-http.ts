@@ -1,5 +1,5 @@
 /**
- * Response helpers for the Kortix Runtime API (`/kortix/opencode/*`).
+ * Response helpers for the Kortix Runtime API (`/kortix/runtime/*`).
  *
  * GZIP. Nothing on the sandbox read path is compressed today — measured, the
  * projections these routes serve shrink 2.6x on top of the projection's own

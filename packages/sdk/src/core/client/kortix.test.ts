@@ -133,6 +133,16 @@ test('session(projectId, sessionId) binds both ids', async () => {
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
 });
 
+test('session presence writes a tab-scoped lease through the authenticated backend', async () => {
+  const tabId = '00000000-0000-4000-8000-000000000001';
+  await kortix.session('PID123', 'SID456').presence({ tab_id: tabId, active: true });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/PID123/sessions/SID456/presence',
+    method: 'PUT',
+    body: { tab_id: tabId, active: true },
+  });
+});
+
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
   await kortix.session('PID123', 'SID456').cost();
 
@@ -866,6 +876,24 @@ function mockTwoSessionSandboxes() {
   }) as unknown as typeof fetch;
 }
 
+test('ensureReady names the runtime session from runtime_session_id first', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/sessions/SESS-NEUTRAL/start')) {
+      return jsonResponse({
+        ...sessionStartPayload('sb-neutral', ''),
+        runtime_session_id: 'rs-neutral',
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
+  expect(ready.runtimeSessionId).toBe('rs-neutral');
+  expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {
   globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -1491,6 +1519,7 @@ test('ensureReady() polls through provisioning/starting until the runtime report
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
   expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.runtimeSessionId).toBe('ocs-poll');
   expect(ready.sandboxId).toBe('sb-poll');
   expect(polls).toBeGreaterThanOrEqual(3);
 });

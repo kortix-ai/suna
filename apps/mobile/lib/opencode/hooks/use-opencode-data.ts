@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { PickerProviderListInput, projectConfigAgentsToOpenCodeAgents } from '@kortix/sdk';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
+import { featureNotSupportedError } from '@/lib/opencode/runtime-capabilities';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ export async function opencodeFetch<T>(sandboxUrl: string, path: string, init?: 
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`OpenCode ${path}: ${res.status} ${body}`);
+    throw featureNotSupportedError(res.status, body) ?? new Error(`OpenCode ${path}: ${res.status} ${body}`);
   }
   return res.json();
 }

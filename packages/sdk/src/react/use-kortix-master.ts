@@ -21,7 +21,7 @@
  * hooks.
  *
  * The "active server" resolution (which sandbox these calls hit) does NOT
- * need injecting: `useServerStore`/`getActiveOpenCodeUrl` (`../state/server-store`)
+ * need injecting: `useServerStore`/`getActiveRuntimeUrl` (`../state/server-store`)
  * is already a host-agnostic part of this SDK — apps/web's
  * `@/stores/server-store` is already just a re-export of it. Hooks here use
  * it directly, exactly like the existing `./use-runtime-reconnect` and

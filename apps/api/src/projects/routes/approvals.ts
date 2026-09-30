@@ -180,7 +180,7 @@ projectsApp.openapi(
     const sess = await db
       .select({
         sessionId: projectSessions.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
         createdBy: projectSessions.createdBy,
         origin: projectSessions.origin,
       })

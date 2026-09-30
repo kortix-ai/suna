@@ -164,6 +164,7 @@ flow(
       "GET /v1/projects/:projectId/files/content",
       "GET /v1/projects/:projectId/sessions",
       "GET /v1/projects/:projectId/sessions/:sessionId",
+      "PATCH /v1/projects/:projectId/sessions/:sessionId",
       "GET /v1/projects/:projectId/sessions/:sessionId/turn",
       "GET /v1/projects/:projectId/sessions/:sessionId/prompts",
       "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
@@ -542,6 +543,18 @@ flow(
       if (second.sessions.length !== 1 || second.sessions[0].session_id === first.sessions[0].session_id) throw new Error(`page 2: ${JSON.stringify(second)}`);
       void a; void b;
       const bad = await mcp(rpc(53, "tools/call", { name: "list_sessions", arguments: { project_id: p.id, limit: "abc" } }));
+      bad.status(200).body().has("$.result.isError", true);
+    });
+    await ctx.step("list_sessions labels: a label set through call_api PATCH filters the list to that session, and each row carries labels", async () => {
+      const [target] = JSON.parse(await toolText(56, "list_sessions", { project_id: p.id, limit: 1 })).sessions as Array<{ session_id: string }>;
+      const label = `mcp-flow-${Date.now()}`;
+      const patched = await mcp(rpc(57, "tools/call", { name: "call_api", arguments: { method: "PATCH", path: `/v1/projects/{projectId}/sessions/${target!.session_id}`, project_id: p.id, body: { labels: [label, "shared"] } } }));
+      if (patched.json<any>().result.isError) throw new Error(`label PATCH: ${JSON.stringify(patched.json<any>().result).slice(0, 300)}`);
+      const listed = JSON.parse(await toolText(58, "list_sessions", { project_id: p.id, labels: [label, "shared"] })).sessions as Array<{ session_id: string; labels: string[] }>;
+      if (listed.length !== 1 || listed[0]!.session_id !== target!.session_id || !listed[0]!.labels.includes(label)) throw new Error(`labels filter: ${JSON.stringify(listed)}`);
+      const none = JSON.parse(await toolText(59, "list_sessions", { project_id: p.id, labels: [label, "absent"] })).sessions;
+      if (none.length !== 0) throw new Error(`AND filter: ${JSON.stringify(none)}`);
+      const bad = await mcp(rpc(60, "tools/call", { name: "list_sessions", arguments: { project_id: p.id, labels: "bug" } }));
       bad.status(200).body().has("$.result.isError", true);
     });
     await ctx.step("search_api: a stopword or a 1-letter term matches nothing; `secret` finds the secrets routes", async () => {

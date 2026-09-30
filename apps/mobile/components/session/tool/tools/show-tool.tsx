@@ -72,7 +72,8 @@ import {
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { SettingsGroup } from '@/components/kortix/settings-list';
-import { ShowFileActions, ShowResultRow, showFileTypeIcon, useShowOpenInTab } from '../shared/show-helpers';
+import { showFileTypeIcon } from '../shared/tool-icons';
+import { ShowFileActions, ShowResultRow, useShowOpenInTab } from '../shared/show-helpers';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 import { ShowCarousel } from './show-carousel';

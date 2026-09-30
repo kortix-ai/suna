@@ -285,7 +285,7 @@ export async function ensureOpencodeSessionPin(input: {
 
   await db
     .update(projectSessions)
-    .set({ opencodeSessionId: resolved, updatedAt: new Date() })
+    .set({ runtimeSessionId: resolved, updatedAt: new Date() })
     .where(
       and(
         eq(projectSessions.sessionId, sessionId),

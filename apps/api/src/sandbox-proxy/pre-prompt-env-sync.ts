@@ -31,6 +31,7 @@ import {
   stripInBoxProxyPrefix,
 } from '../projects/turn-start-request';
 import type { ProviderName } from '../platform/providers';
+import type { bindSessionTurnIdentity } from '../projects/lib/on-behalf-of';
 import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
 import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
 import {
@@ -317,6 +318,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
 export interface PrePromptEnvSyncDeps {
   syncEnv: typeof syncSandboxEnvForPrompt;
   remintGrant: typeof remintGrantForAgentSwitch;
+  bindTurnIdentity: typeof bindSessionTurnIdentity;
   scheduleSnapshot: typeof scheduleOpencodeSnapshotSync;
   generateTitle: typeof generateSessionTitleFromFirstPrompt;
 }
@@ -352,6 +354,10 @@ export async function runPrePromptEnvSync(
     serviceKey: string | null;
     /** The body's `agent`, read BEFORE the sentinel rewrite. */
     requestedAgent: string | null;
+    /** `userId` is the person who started this turn directly through the proxy
+     *  (not the queue, which binds in `continueSession`, and not the sandbox's
+     *  own token): the session token acts as them from this turn on. */
+    bindTurnIdentity: boolean;
     body: ArrayBuffer | undefined;
     incomingHeaders: Headers;
   },
@@ -405,18 +411,32 @@ export async function runPrePromptEnvSync(
     // latency win; the invariant test caught it (`remintGrant` fired even
     // though `syncEnv` threw) and it was reverted. Sequential is correct
     // here, not merely unoptimized.
-    await deps.syncEnv({
-      projectId: record.projectId,
-      sessionId: record.sessionId,
-      externalId: record.externalId,
-      serviceKey: input.serviceKey,
-      previewUrl: input.previewUrl,
-      providerHeaders: input.providerHeaders,
-      providerName: record.provider as ProviderName,
-      // The secret grant is resolved from the agent this prompt actually runs,
-      // not the session's create-time column — see projects/lib/secret-grant.ts.
-      requestedAgent,
-    });
+    // The turn-identity bind is one DB statement with no dependency on the env
+    // push, so it runs alongside it instead of after it. A failed bind refuses
+    // the turn like a failed grant re-mint: no turn runs as the previous prompter.
+    await Promise.all([
+      deps.syncEnv({
+        projectId: record.projectId,
+        sessionId: record.sessionId,
+        externalId: record.externalId,
+        serviceKey: input.serviceKey,
+        previewUrl: input.previewUrl,
+        providerHeaders: input.providerHeaders,
+        providerName: record.provider as ProviderName,
+        // The secret grant is resolved from the agent this prompt actually runs,
+        // not the session's create-time column — see projects/lib/secret-grant.ts.
+        requestedAgent,
+      }),
+      input.bindTurnIdentity && userId
+        ? deps
+            .bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
+            .catch((err) => {
+              // The cause stays in the log; the client gets no SQL text.
+              console.warn(`[PREVIEW] Turn identity bind failed for ${sandboxId}: ${errorMessage(err, 'bind failed')}`);
+              throw new Error('could not bind the session to the person starting this turn');
+            })
+        : null,
+    ]);
     // The env sync above applied the running agent's secret grant, or refused it
     // when the optional strict lock is enabled. Re-point the token's
     // connector/CLI grant at the agent that will actually run — it was frozen at

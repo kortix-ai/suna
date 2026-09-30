@@ -128,10 +128,10 @@ export function createOpenCodeProxyService(
         return notReady(
           {
             error: 'sandbox runtime not ready',
-            reason: 'initial_opencode_session_failed',
+            reason: 'initial_runtime_session_failed',
             message: bootState.initialOpenCodeSessionError,
           },
-          'initial_opencode_session_failed',
+          'initial_session_failed',
         )
       }
 
@@ -139,9 +139,9 @@ export function createOpenCodeProxyService(
         return notReady(
           {
             error: 'sandbox runtime not ready',
-            reason: 'initial_opencode_session_pending',
+            reason: 'initial_runtime_session_pending',
           },
-          'initial_opencode_session_pending',
+          'initial_session_pending',
         )
       }
 

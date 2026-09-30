@@ -344,9 +344,11 @@ export function resolveSessionListViewState(params: {
   isError: boolean;
   totalCount: number;
   visibleCount: number;
+  /** The server already applied a filter (labels): zero rows is "no matches". */
+  serverFiltered?: boolean;
 }): SessionListViewState {
   if (!params.hasData) return params.isError ? 'error' : 'loading';
-  if (params.totalCount === 0) return 'empty';
+  if (params.totalCount === 0) return params.serverFiltered ? 'no-matches' : 'empty';
   if (params.visibleCount === 0) return 'no-matches';
   return 'content';
 }

@@ -6,7 +6,7 @@ import type { VcsFileDiff } from '@opencode-ai/sdk/v2/client';
 
 import { getClient } from '../../core/runtime/client';
 import { useCurrentRuntime } from '../use-current-runtime';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
 
 // Re-exported so a host reads the diff shape from `@kortix/sdk`, never from
@@ -36,16 +36,16 @@ export type VcsDiffMode = 'git' | 'branch';
  * fresh session with no user message returned `[]` while `git status` reported
  * a dirty tree.
  */
-export function useOpenCodeVcsDiff(
+export function useRuntimeVcsDiff(
   mode: VcsDiffMode = 'branch',
   options?: { enabled?: boolean },
 ) {
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   // Subscribe to the active sandbox so the key recomputes the instant the
   // runtime switches — session A's diff must never paint under session B.
   const serverId = useCurrentRuntime((s) => s.sandboxId) ?? undefined;
   return useQuery<VcsFileDiff[]>({
-    queryKey: opencodeKeys.vcsDiff(mode, serverId),
+    queryKey: runtimeKeys.vcsDiff(mode, serverId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.vcs.diff({ mode });
@@ -61,3 +61,7 @@ export function useOpenCodeVcsDiff(
     refetchOnWindowFocus: false,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeVcsDiff`. Removed in the next major. */
+export const useOpenCodeVcsDiff = useRuntimeVcsDiff;

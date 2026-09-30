@@ -29,7 +29,7 @@ session (a restart or resume re-reads the selection).
 | --- | --- |
 | `harness.ts` | Resolution, `loadConfig`, the boot context and the union helpers every box uses |
 | `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`); no router dependencies |
-| `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, boot-timeline and memory-guard relays, the host facts of `/kortix/health` (`host-health.ts`) |
+| `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, the host facts of `/kortix/health` (`host-health.ts`), and every daemon-to-API callback (see below) |
 | `../services/runtime-assets/port.ts` | Harness maintenance contract, owned by the service that consumes it |
 | `open-code/service.ts` | Composition over one lifecycle; native typed ports |
 | `open-code/boot.ts` | Native cold boot, warm seed/adoption, first turn, reconciliation and relays |
@@ -45,8 +45,39 @@ session (a restart or resume re-reads the selection).
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/wire.ts`, `pi/transcript.ts` | pi events → OpenCode wire frames; the transcript store |
-| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/relay.ts` | Permissions/questions, workspace tools, gateway model, control-plane callbacks |
+| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts` | Permissions/questions, workspace tools, gateway model |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
+
+## One host relay (E12)
+
+Every callback a box makes to apps/api lives in `shared/`, with Kortix names
+and the body types of `@kortix/api-contract/runtime-relay`. An adapter decides
+WHEN a turn begins or ends and what its identity is; the shared module owns the
+route, the body, the credential, the retries and the dead-token breaker.
+
+| Module | Callback |
+| --- | --- |
+| `shared/turn-relay.ts` | `POST /projects/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, memory-guard end), `/turn-question`, `/turn-permission` |
+| `shared/projection-relay.ts` | `POST /platform/runtime-projection`; the adapter registers its state reader |
+| `shared/audit-relay.ts` | `POST /projects/:id/sessions/:id/audit/events`: sanitize, batch, spool; batches carry `source: 'runtime'` and the harness id. pi feeds it every frame it publishes (`PiRuntimeHooks.onFrame`), so pi sessions have a tool audit trail |
+| `shared/boot-timeline-relay.ts` | `POST /platform/boot-timeline` |
+
+A callback added here reaches every harness. The API accepts the pre-W3
+spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
+
+## Health and capabilities (E19, E1)
+
+`GET /kortix/health` is composed by `routes/kortix/health.ts`: the host facts
+(`shared/host-health.ts`), the harness's closed `harness` block
+`{ id, version, state, ready, error, session, turn, details }`
+(`HarnessDiagnosticsService.health`; OpenCode's pid/port and pi's model and
+extensions are in `details`), `runtimeReady` computed once from both, and
+`capabilities`: the host's `file.import`/`file.append`, the control's
+`config.release.v1`, and the session features the runtime serves
+(`HarnessDiagnosticsService.capabilities`: all nine on OpenCode,
+`session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
+`opencode_port`, `opencode_session_id`, …) are composed from the block in
+`routes/kortix/legacy-names.ts` for an older API.
 
 The host retains its entrypoint and monitor mode (`src/app/`), Git/files/PTYs,
 authentication, static previews, the LLM/connector proxy, the resource sampler,
@@ -75,7 +106,7 @@ daemon's localhost LLM proxy, under the same `kortix` provider id OpenCode uses.
 What the product sees is unchanged: pi's events are reshaped into the OpenCode
 wire (`message.updated`, `message.part.updated`, `message.part.delta`,
 `session.status`, `session.idle`, `permission.*`, `question.*`), served over the
-same `/kortix/opencode/*` namespace and the same raw routes
+same `/kortix/runtime/*` namespace and the same raw routes
 (`/session`, `/session/:id/prompt_async`, `/session/:id/message`, `/config`,
 `/agent`, `/provider`, `/permission/:id/reply`, …). One pi session is one Kortix
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic, so a
@@ -83,7 +114,7 @@ restart resolves the same root and restores the transcript from
 `$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`.
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
-`KORTIX_OPENCODE_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
+`KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
 (agent prompt, model, permission policy), `KORTIX_AGENT_NAME`, `KORTIX_LLM_BASE_URL`
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
@@ -139,7 +170,7 @@ subagent_type, task_id? }`, the child id in the part's `metadata.sessionId`
 runs an in-process pi agent in a child session (`parentID` = root), with its
 own wire transcript served by `/session`, `/session/:id`,
 `/session/:id/message`, `/session/:root/children`, the state document and
-`/kortix/opencode/messages/:id`, and persisted in the root's dump so `task_id`
+`/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
 resumes it after a restart. Types: `general` (all workspace tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
 or `all`. A child gets no `task` (no nesting) and no `question`. Several task
@@ -199,8 +230,8 @@ events and full lifecycle operations stay typed inside `open-code/`; pi's stay
 inside `pi/`. No silent feature fallback or harness switching is added.
 
 `createService` does not spawn a process or subscribe to events. Controllers
-receive the resolved service through dependency injection; `/kortix/opencode/*`
-remains a compatibility URL, not an implementation selector. The adapter cannot
+receive the resolved service through dependency injection; `/kortix/runtime/*`
+(and its pre-W3 alias `/kortix/opencode/*`) is a URL, not an implementation selector. The adapter cannot
 register routes or receive a Hono context.
 
 ## Unchanged contracts

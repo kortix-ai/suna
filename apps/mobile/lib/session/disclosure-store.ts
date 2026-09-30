@@ -11,6 +11,8 @@
  */
 
 import { create } from 'zustand';
+import { useCallback, useEffect, useState } from 'react';
+import { resolveDisclosureOpen } from './activity';
 
 export type DisclosureKind = 'thought' | 'chips' | 'tool' | 'trace';
 
@@ -40,4 +42,30 @@ export const useDisclosureStore = create<DisclosureState>()((set) => ({
 /** The user's choice for one key — `undefined` until they toggle it. */
 export function useDisclosureChoice(key: string): boolean | undefined {
   return useDisclosureStore((state) => state.choices[key]);
+}
+
+/** Store-backed choice when keyed; local choice when a row has no stable id. */
+export function useDisclosureState(
+  disclosureId: string | undefined,
+  { auto, forceOpen, locked }: { auto: boolean; forceOpen?: boolean; locked?: boolean },
+) {
+  const storedChoice = useDisclosureChoice(disclosureId ?? '');
+  const [localChoice, setLocalChoice] = useState<boolean | undefined>(undefined);
+  const open = resolveDisclosureOpen({ userChoice: disclosureId ? storedChoice : localChoice, auto, forceOpen });
+
+  // `forceOpen` latches: once a permission or question opened the row, it
+  // stays open after the prompt resolves.
+  useEffect(() => {
+    if (!forceOpen) return;
+    if (disclosureId) useDisclosureStore.getState().setChoice(disclosureId, true);
+    else setLocalChoice(true);
+  }, [forceOpen, disclosureId]);
+
+  const toggle = useCallback(() => {
+    if (locked && open) return;
+    if (disclosureId) useDisclosureStore.getState().setChoice(disclosureId, !open);
+    else setLocalChoice(!open);
+  }, [disclosureId, locked, open]);
+
+  return { open, toggle };
 }

@@ -420,7 +420,7 @@ function buildAuditRow(rawInput: AuditEventInput): AuditRow {
     accountId: uuidOrNull(input.accountId || request?.accountId),
     projectId: uuidOrNull(input.projectId || request?.projectId),
     sessionId: input.sessionId || request?.sessionId || null,
-    opencodeSessionId: input.opencodeSessionId ?? null,
+    runtimeSessionId: input.opencodeSessionId ?? null,
     turnId: input.turnId ?? null,
     messageId: input.messageId ?? null,
     toolCallId: input.toolCallId ?? null,

@@ -331,10 +331,10 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
             if (ensuringRef.current !== sessionId) return; // back on project home (goHome)
 
             // Fatal runtime boot failure — stop waiting and surface it with a
-            // Restart button (web parity with "OpenCode runtime is not ready").
+            // Restart button (web parity with "Session runtime is not ready").
             if (health.bootError) {
               failConnect(sessionId, {
-                title: 'OpenCode runtime is not ready',
+                title: 'Session runtime is not ready',
                 message: 'The sandbox booted, but the project runtime did not become usable.',
                 detail: health.bootError,
               });

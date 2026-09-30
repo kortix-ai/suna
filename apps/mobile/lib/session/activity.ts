@@ -14,7 +14,6 @@
 import {
   burstSummary,
   burstSummaryLabel,
-  familyForTool,
   formatDuration,
   isReasoningPart,
   isToolPart,
@@ -197,18 +196,6 @@ export function burstView(
 }
 
 // ─── Step rows ───────────────────────────────────────────────────────────────
-
-/**
- * A bare row drops its leading glyph — the glyph anchors the chain rail, and one
- * row has no rail. Two exceptions keep it: a failed row (the mark is the only
- * verdict left) and a delegate row (it anchors a nested thread of its own).
- */
-export function hideStepIcon(part: Part, bare: boolean): boolean {
-  if (!bare) return false;
-  if (!isToolPart(part)) return true;
-  if (partOutcome(part) !== 'ok') return false;
-  return familyForTool(part.tool) !== 'delegate';
-}
 
 export type ActivityIconKey =
   | 'read'

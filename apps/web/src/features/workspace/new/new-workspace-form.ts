@@ -41,40 +41,11 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
   repoFullName: null,
 };
 
-/**
- * Accounts the signed-in user may actually create a workspace in — owner or
- * admin. `POST /provision` requires `ACCOUNT_ACTIONS.PROJECT_CREATE` and
- * returns 403 "Owner or admin role required" for anyone else
- * (`apps/api/src/projects/routes/projects.ts`), so offering any other account
- * would be a choice that can only fail: the user fills in a name, presses
- * Create, and gets a 403 with no warning.
- *
- * Same predicate as `create-account-selection.ts`'s `options` filter, so the
- * two never disagree about who can create a workspace while both exist.
- *
- * `account_role` is optional on `KortixAccount` — an account with no role at
- * all is excluded too (`undefined !== 'owner'`), the same fail-closed
- * direction the modal's filter takes.
- *
- * Called exactly ONCE per render, in `new-workspace-page.tsx`, and the result
- * feeds both `AccountPicker` and `isSubmittable` below — never the raw list
- * to one and this to the other, which would let "what the user can pick" and
- * "what gates submit" disagree.
- *
- * Does NOT strip the `'s Account` possessive `bootstrap-personal-account.ts`
- * stores on every personal account's `name`. That possessive is the only
- * thing that marks the string as an account name rather than a bare email —
- * stripping it here used to hand `AccountPicker` a value indistinguishable
- * from `user.email`, which it then painted straight into the identity slot.
- * An invited admin whose one creatable account is the owner's personal
- * account saw the account owner's address labelled as their own identity.
- * `AccountPicker` now renders `fallbackLabel` in that slot and this `name`
- * only in the separate, explicitly labelled "Create in" line — never merged.
- */
-export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
+/** Filter account choices by the server's project.create verdict, not role labels. */
+export function filterCreatableAccounts(accounts: KortixAccount[], permissions: Readonly<Record<string, boolean>>): KortixAccount[] {
   const creatable: KortixAccount[] = [];
   for (const account of accounts) {
-    if (account.account_role === 'owner' || account.account_role === 'admin') {
+    if (permissions[account.account_id] === true) {
       creatable.push({
         ...account,
         name: account.name.trim(),

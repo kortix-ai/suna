@@ -11,7 +11,7 @@
  *   (`ToolDetailContext` `body`), the steps and banner alone.
  *
  * Web's press target opens `SubSessionModal` and "Open session" navigates to
- * `/projects/:id/sessions/:sid?oc=<child>` (`session-spawn-urls.ts`). Mobile
+ * `/projects/:id/sessions/:sid?rs=<child>` (`session-spawn-urls.ts`). Mobile
  * has neither a sub-session modal nor URL routes inside a project, so both
  * open the child session in the app (`useToolNavigation().openSession`).
  * Web's running mark is a pulsing dot; mobile's loading rule allows only

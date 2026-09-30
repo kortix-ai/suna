@@ -428,6 +428,8 @@ const TOOLS = [
         prompt: { type: 'string', description: 'The task for the agent.' },
         name: { type: 'string', description: 'Optional session title.' },
         agent: { type: 'string', description: 'Optional agent name; the project default when omitted.' },
+        labels: { type: 'array', items: { type: 'string' }, description: 'Optional free-form labels to classify the session (each 1-64 chars, at most 20). Filter by them with list_sessions labels.' },
+        metadata: { type: 'object', description: 'Optional free-form JSON object stored on the session (at most 16,384 characters). Server-managed keys are refused.' },
       },
       required: ['project_id', 'prompt'],
       additionalProperties: false,
@@ -468,7 +470,7 @@ const TOOLS = [
     name: 'list_sessions',
     title: 'List sessions',
     description:
-      "List the top-level sessions you can see in a project, in the project's list order: id, title, status, agent, owner, started_by (who started the run), child_count, branch, created_at, updated_at. Filter with started_by and query (searches every session you can see, not only recent ones). A row with child_count > 0 has sub-sessions: pass its session_id as parent_session_id to list them. `next_cursor` is set when more exist: pass it back as `cursor`.",
+      "List the top-level sessions you can see in a project, in the project's list order: id, title, labels, status, agent, owner, started_by (who started the run), child_count, branch, created_at, updated_at. Filter with started_by, labels and query (searches every session you can see, not only recent ones). A row with child_count > 0 has sub-sessions: pass its session_id as parent_session_id to list them. `next_cursor` is set when more exist: pass it back as `cursor`.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -478,6 +480,7 @@ const TOOLS = [
         started_by: { type: 'string', enum: ['me', 'others', 'automated'], description: 'me = you started it; others = another member; automated = a trigger, channel or API key.' },
         query: { type: 'string', description: 'Case-insensitive text matched against title, starter, agent, owner and session id prefix (1-200 chars).' },
         parent_session_id: { type: 'string', description: 'List only the children of this session instead of top-level sessions.' },
+        labels: { type: 'array', items: { type: 'string' }, description: 'Only sessions that carry every one of these labels (exact match). A top-level session also matches through a child.' },
       },
       required: ['project_id'],
       additionalProperties: false,
@@ -646,8 +649,8 @@ class ToolInputError extends Error {}
 const STARTED_BY = ['me', 'others', 'automated'];
 
 /** Query for the list route: top-level sessions (or one parent's children), optionally filtered. */
-export function listSessionsQuery(input: Record<string, unknown>): Record<string, string | number> {
-  const query: Record<string, string | number> = {
+export function listSessionsQuery(input: Record<string, unknown>): Record<string, string | number | string[]> {
+  const query: Record<string, string | number | string[]> = {
     limit: limitArg(input, 'limit', 20, 200),
     parent: optionalArg(input, 'parent_session_id') ?? 'root',
   };
@@ -663,7 +666,35 @@ export function listSessionsQuery(input: Record<string, unknown>): Record<string
     if (q.length > 200) throw new ToolInputError('query is at most 200 characters');
     query.q = q;
   }
+  const labels = labelsArg(input);
+  if (labels?.length) query.label = labels;
   return query;
+}
+
+function labelsArg(input: Record<string, unknown>): string[] | undefined {
+  const labels = input.labels;
+  if (labels === undefined) return undefined;
+  if (!Array.isArray(labels) || !labels.every((label) => typeof label === 'string')) {
+    throw new ToolInputError('labels must be a list of strings');
+  }
+  return labels;
+}
+
+/** The POST /sessions body for start_session. */
+export function startSessionBody(input: Record<string, unknown>): Record<string, unknown> {
+  const body: Record<string, unknown> = { initial_prompt: arg(input, 'prompt') };
+  if (optionalArg(input, 'name')) body.name = optionalArg(input, 'name');
+  if (optionalArg(input, 'agent')) body.agent_name = optionalArg(input, 'agent');
+  const labels = labelsArg(input);
+  if (labels) body.labels = labels;
+  const metadata = input.metadata;
+  if (metadata !== undefined) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new ToolInputError('metadata must be a JSON object');
+    }
+    body.metadata = metadata;
+  }
+  return body;
 }
 
 /** One bounded row of `list_sessions` output. */
@@ -671,6 +702,7 @@ export function listSessionRow(s: any) {
   return {
     session_id: s.session_id,
     name: s.name ?? null,
+    labels: s.labels ?? [],
     status: s.status,
     agent: s.agent_name,
     owner: s.owner_name ?? s.owner_email ?? null,
@@ -722,15 +754,13 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       return text(projects.length ? JSON.stringify(projects, null, 2) : 'No projects. Create one in the web app or with `kortix init`.');
     }
     case 'start_session': {
-      const body: Record<string, unknown> = { initial_prompt: arg(input, 'prompt') };
-      if (optionalArg(input, 'name')) body.name = optionalArg(input, 'name');
-      if (optionalArg(input, 'agent')) body.agent_name = optionalArg(input, 'agent');
+      const body = startSessionBody(input);
       const r = await callApi(ctx, 'POST', `/v1/projects/${projectArg(input)}/sessions`, { body });
       if (r.status >= 400) return apiResult(r);
       const session = JSON.parse(r.body);
       return text(
         JSON.stringify(
-          { session_id: session.session_id, project_id: session.project_id, name: session.name ?? null, status: session.status, branch: session.branch_name ?? null },
+          { session_id: session.session_id, project_id: session.project_id, name: session.name ?? null, labels: session.labels ?? [], status: session.status, branch: session.branch_name ?? null },
           null,
           2,
         ),

@@ -81,7 +81,7 @@ export async function readMirrorWatermark(sessionId: string): Promise<MirrorWate
     .select({
       capturedAt: sessionTranscriptMirrors.capturedAt,
       headComplete: sessionTranscriptMirrors.headComplete,
-      opencodeSessionId: sessionTranscriptMirrors.opencodeSessionId,
+      opencodeSessionId: sessionTranscriptMirrors.runtimeSessionId,
     })
     .from(sessionTranscriptMirrors)
     .where(eq(sessionTranscriptMirrors.sessionId, sessionId))

@@ -45,6 +45,19 @@
     "harnesses": {
       "type": "object",
       "properties": {
+        "opencode": {
+          "type": "object",
+          "properties": {
+            "plugins": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
         "pi": {
           "type": "object",
           "properties": {
@@ -261,6 +274,7 @@
                     "project.trigger.fire",
                     "project.gateway.logs.read",
                     "project.gateway.spend.read",
+                    "project.usage.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
                     "project.agent.read",
@@ -329,6 +343,7 @@
                     "project.trigger.fire",
                     "project.gateway.logs.read",
                     "project.gateway.spend.read",
+                    "project.usage.read",
                     "project.gateway.budget.set",
                     "project.gateway.keys.manage",
                     "project.agent.read",
@@ -390,6 +405,26 @@
           "harnesses": {
             "type": "object",
             "properties": {
+              "opencode": {
+                "type": "object",
+                "properties": {
+                  "plugins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                    }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9_-]+\\.[cm]?[jt]s$"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              },
               "pi": {
                 "type": "object",
                 "properties": {
@@ -1431,6 +1466,21 @@
           }
         ]
       }
+    },
+    "pi": {
+      "type": "object",
+      "properties": {
+        "config_dir": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "^/|(^|/)\\.\\.($|/)"
+          },
+          "description": "Directory with the OpenCode-only files (opencode.jsonc, plugins/, tools/). Defaults to harnesses/opencode, then the legacy .kortix/opencode."
+        }
+      },
+      "additionalProperties": true,
+      "description": "Pi native config directory (defaults to harnesses/pi, then .kortix/pi)."
     },
     "channels": false
   },

@@ -1,37 +1,55 @@
 export type RuntimeReadinessMetadata = Record<string, unknown>;
 
-export const RUNTIME_READINESS_CLOCK_KEYS = [
-  'runtimeWakeStartedAt',
-  'runtimeWakeProviderStatus',
-  'runtimeWakeError',
-  'runtimeWakeFailedAt',
-  'opencodeReadyWaitStartedAt',
-  'opencodeReadyWaitReason',
-  'opencodeUnreachableWaitStartedAt',
-  'opencodeNotReadyWaitStartedAt',
-  'opencodeBootPhase',
-  'opencodeBootWaitFirstSeenAt',
+/**
+ * The runtime boot-wait clocks, and the name an API before W4 wrote each one
+ * under. Rows stamped by that API still carry the old names: every reader goes
+ * through {@link readinessValue}, and every clearing list strips both names.
+ * ponytail: drop the old names once no row carries them (they clear on the next ready answer or wake).
+ */
+const PRE_W4_READINESS_KEYS = {
+  runtimeReadyWaitStartedAt: 'opencodeReadyWaitStartedAt',
+  runtimeReadyWaitReason: 'opencodeReadyWaitReason',
+  runtimeUnreachableWaitStartedAt: 'opencodeUnreachableWaitStartedAt',
+  runtimeNotReadyWaitStartedAt: 'opencodeNotReadyWaitStartedAt',
+  runtimeBootPhase: 'opencodeBootPhase',
+  runtimeBootWaitFirstSeenAt: 'opencodeBootWaitFirstSeenAt',
   // WHY the last `unreachable` happened, stamped by the open (routes/shared.ts)
   // so a box that has been cycling for an hour can be diagnosed from the row
   // instead of from logs nobody can still reach. Cleared with every other
   // readiness field: a cause left behind after a good boot is a stale reading,
   // and a stale reading is worse than none — it is the trap this whole class of
   // bug keeps setting.
-  'opencodeUnreachableCause',
-  'opencodeUnreachableCauseAt',
-  'opencodeUnreachableResponder',
-  'opencodeUnreachableDetail',
+  runtimeUnreachableCause: 'opencodeUnreachableCause',
+  runtimeUnreachableCauseAt: 'opencodeUnreachableCauseAt',
+  runtimeUnreachableResponder: 'opencodeUnreachableResponder',
+  runtimeUnreachableDetail: 'opencodeUnreachableDetail',
+} as const;
+
+export type RuntimeReadinessKey = keyof typeof PRE_W4_READINESS_KEYS;
+
+/** A readiness field under its neutral name, else under the name a pre-W4 API wrote. */
+export function readinessValue(metadata: RuntimeReadinessMetadata, key: RuntimeReadinessKey): unknown {
+  return metadata[key] ?? metadata[PRE_W4_READINESS_KEYS[key]];
+}
+
+export const RUNTIME_READINESS_CLOCK_KEYS = [
+  'runtimeWakeStartedAt',
+  'runtimeWakeProviderStatus',
+  'runtimeWakeError',
+  'runtimeWakeFailedAt',
+  ...(Object.keys(PRE_W4_READINESS_KEYS) as RuntimeReadinessKey[]),
+  ...Object.values(PRE_W4_READINESS_KEYS),
 ] as const;
 
 /**
- * Absolute ceiling on ONE OpenCode boot wait, phase changes or not. The
+ * Absolute ceiling on ONE runtime boot wait, phase changes or not. The
  * per-reason budgets below restart on progress; this one never does, so a box
  * that keeps changing phase without ever becoming ready is still bounded.
  *
  * "ONE boot wait" is load-bearing and was not enforced. See
  * {@link runtimeBootEpochMs}.
  */
-export const STALE_OPENCODE_BOOT_HARD_MS = 10 * 60 * 1000;
+export const STALE_RUNTIME_BOOT_HARD_MS = 10 * 60 * 1000;
 
 /**
  * How long a repair that reports itself RUNNING holds the readiness clock off.
@@ -196,31 +214,32 @@ function clockForThisBoot(clockMs: number | null, bootEpochMs: number | null): n
   return clockMs;
 }
 
-export function staleOpencodeReadyReason(
+export function staleRuntimeReadyReason(
   metadata: RuntimeReadinessMetadata,
   reason: string,
   nowMs = Date.now(),
   staleAfterMs = 5 * 60 * 1000,
-  hardCapMs = STALE_OPENCODE_BOOT_HARD_MS,
+  hardCapMs = STALE_RUNTIME_BOOT_HARD_MS,
 ): string | null {
   if (reason !== 'not_ready' && reason !== 'unreachable') return null;
   // An active repair is progress: never park a session the platform is fixing.
   if (repairInFlight(metadata, nowMs)) return null;
   const bootEpochMs = runtimeBootEpochMs(metadata);
   const firstSeenMs = clockForThisBoot(
-    parseTimestampMs(metadata.opencodeBootWaitFirstSeenAt),
+    parseTimestampMs(readinessValue(metadata, 'runtimeBootWaitFirstSeenAt')),
     bootEpochMs,
   );
   if (firstSeenMs && nowMs - firstSeenMs > hardCapMs) {
     return reason === 'not_ready' ? 'runtime_not_ready_timeout' : 'runtime_unreachable_timeout';
   }
-  const reasonStartedAt =
-    reason === 'unreachable'
-      ? metadata.opencodeUnreachableWaitStartedAt
-      : metadata.opencodeNotReadyWaitStartedAt;
+  const reasonStartedAt = readinessValue(
+    metadata,
+    reason === 'unreachable' ? 'runtimeUnreachableWaitStartedAt' : 'runtimeNotReadyWaitStartedAt',
+  );
+  const legacyReason = readinessValue(metadata, 'runtimeReadyWaitReason');
   const legacyStartedAt =
-    metadata.opencodeReadyWaitReason === undefined || metadata.opencodeReadyWaitReason === reason
-      ? metadata.opencodeReadyWaitStartedAt
+    legacyReason === undefined || legacyReason === reason
+      ? readinessValue(metadata, 'runtimeReadyWaitStartedAt')
       : null;
   const readyWaitStartedAtMs = clockForThisBoot(
     parseTimestampMs(reasonStartedAt) ?? parseTimestampMs(legacyStartedAt),
@@ -238,56 +257,55 @@ export function hasRuntimeReadinessClock(metadata: RuntimeReadinessMetadata): bo
  * The metadata patch that records one more not-ready observation, or null when
  * nothing changes.
  *
- * The per-reason clock (`opencodeNotReadyWaitStartedAt` /
- * `opencodeUnreachableWaitStartedAt`; legacy rows carry only
- * `opencodeReadyWaitStartedAt` + `opencodeReadyWaitReason`) is the one
- * `staleOpencodeReadyReason` budgets. It starts on the first observation of
+ * The per-reason clock (`runtimeNotReadyWaitStartedAt` /
+ * `runtimeUnreachableWaitStartedAt`; legacy rows carry only
+ * `runtimeReadyWaitStartedAt` + `runtimeReadyWaitReason`) is the one
+ * `staleRuntimeReadyReason` budgets. It starts on the first observation of
  * that reason and — the point of this function — RESTARTS whenever the daemon
  * reports a different boot phase than last time: a box that is still making
- * progress has not stalled. `opencodeBootWaitFirstSeenAt` is written once per
+ * progress has not stalled. `runtimeBootWaitFirstSeenAt` is written once per
  * boot wait and never moved; it feeds the hard cap.
  *
  * SampleCo 2026-08-25 17:23–17:24: two resumes converged OpenCode 1.18.19 →
  * 1.18.23 and sat through that version's 53 s first init — legitimate work the
  * old fixed 90 s budget turned into `runtime_boot_failed` on both boxes.
  */
-export function opencodeReadyWaitPatch(
+export function runtimeReadyWaitPatch(
   metadata: RuntimeReadinessMetadata,
   reason: 'not_ready' | 'unreachable',
   bootPhase: string | undefined,
   now = new Date(),
 ): RuntimeReadinessMetadata | null {
   const reasonClockKey =
-    reason === 'unreachable' ? 'opencodeUnreachableWaitStartedAt' : 'opencodeNotReadyWaitStartedAt';
+    reason === 'unreachable' ? 'runtimeUnreachableWaitStartedAt' : 'runtimeNotReadyWaitStartedAt';
   const bootEpochMs = runtimeBootEpochMs(metadata);
   // A clock stamped before this boot attempt began belongs to the previous one.
   // Treat it as absent so the patch re-baselines it, instead of leaving the row
   // carrying a budget it has already half spent (session 29861dfa).
-  const firstSeenMs = parseTimestampMs(metadata.opencodeBootWaitFirstSeenAt);
+  const storedFirstSeen = readinessValue(metadata, 'runtimeBootWaitFirstSeenAt');
+  const firstSeenMs = parseTimestampMs(storedFirstSeen);
   // INHERITED, not merely absent: the key exists and predates this attempt.
   const inheritedFirstSeen =
     firstSeenMs !== null && bootEpochMs !== null && firstSeenMs < bootEpochMs;
+  const storedPhase = readinessValue(metadata, 'runtimeBootPhase');
   const previousPhase =
-    !inheritedFirstSeen && typeof metadata.opencodeBootPhase === 'string'
-      ? metadata.opencodeBootPhase
-      : undefined;
+    !inheritedFirstSeen && typeof storedPhase === 'string' ? storedPhase : undefined;
   const phaseChanged = bootPhase !== undefined && bootPhase !== previousPhase;
   const legacyClockRunning =
-    metadata.opencodeReadyWaitReason === reason &&
-    typeof metadata.opencodeReadyWaitStartedAt === 'string';
+    readinessValue(metadata, 'runtimeReadyWaitReason') === reason &&
+    typeof readinessValue(metadata, 'runtimeReadyWaitStartedAt') === 'string';
   const clockRunning =
-    !inheritedFirstSeen && (typeof metadata[reasonClockKey] === 'string' || legacyClockRunning);
+    !inheritedFirstSeen &&
+    (typeof readinessValue(metadata, reasonClockKey) === 'string' || legacyClockRunning);
   if (clockRunning && !phaseChanged) return null;
   const startedAt = now.toISOString();
   return {
     ...metadata,
-    opencodeReadyWaitStartedAt: startedAt,
-    opencodeReadyWaitReason: reason,
+    runtimeReadyWaitStartedAt: startedAt,
+    runtimeReadyWaitReason: reason,
     [reasonClockKey]: startedAt,
-    opencodeBootWaitFirstSeenAt:
-      !inheritedFirstSeen && typeof metadata.opencodeBootWaitFirstSeenAt === 'string'
-        ? metadata.opencodeBootWaitFirstSeenAt
-        : startedAt,
-    ...(bootPhase !== undefined ? { opencodeBootPhase: bootPhase } : {}),
+    runtimeBootWaitFirstSeenAt:
+      !inheritedFirstSeen && typeof storedFirstSeen === 'string' ? storedFirstSeen : startedAt,
+    ...(bootPhase !== undefined ? { runtimeBootPhase: bootPhase } : {}),
   };
 }
