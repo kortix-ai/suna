@@ -116,9 +116,9 @@ export const openCodeDefinition: HarnessDefinition = {
   createBootState: () => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: bootstrapRuntimeSessionRequested(),
-    initialOpenCodeSessionId: null,
-    initialOpenCodeSessionError: null,
+    initialRuntimeSessionRequired: bootstrapRuntimeSessionRequested(),
+    initialRuntimeSessionId: null,
+    initialRuntimeSessionError: null,
   }),
   bootDetails: (cfg) => {
     const native = requireOpenCodeConfig(cfg)

@@ -492,7 +492,7 @@ function armSeedAdoption(
       // Re-arm the proxy with the session's tokens — the seed booted with the
       // deriving session's credentials, which must never serve this fork.
       server.reload(cfg2)
-      bootState.initialOpenCodeSessionRequired =
+      bootState.initialRuntimeSessionRequired =
         bootstrapRuntimeSessionRequested()
       logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -870,7 +870,7 @@ async function startSessionRuntime(
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
-    const opencodeSessionId = bootState.initialOpenCodeSessionId
+    const opencodeSessionId = bootState.initialRuntimeSessionId
     const turnToken = initialTurnClaim()?.turnToken
     const messageId = initialTurnClaim()?.messageId
     if (!opencodeSessionId || !turnToken || !messageId) return
@@ -927,7 +927,7 @@ async function startSessionRuntime(
     onReconcile: onConnected,
   }
   let loopStarted = false
-  if (bootState.initialOpenCodeSessionRequired) {
+  if (bootState.initialRuntimeSessionRequired) {
     // Start the /event loop before resolving the root and delivering the prompt.
     // Do not await the response headers: OpenCode can withhold them until the
     // first event, which makes an await here deadlock with prompt delivery. The
@@ -938,11 +938,11 @@ async function startSessionRuntime(
       // `maybeCreateInitialOpencodeSession` (direct call above, or via
       // `attemptInitialSession` under the retry ladder below) already wrote
       // the id onto `bootState` before this runs — see the `if
-      // (bootState.initialOpenCodeSessionId)` / `established()` guards at
+      // (bootState.initialRuntimeSessionId)` / `established()` guards at
       // both call sites. Re-applying it through the pure helper is what
-      // clears a poisoned `initialOpenCodeSessionError` from an earlier
+      // clears a poisoned `initialRuntimeSessionError` from an earlier
       // failed attempt; see `finalizeInitialSession`.
-      finalizeInitialSession(bootState, bootState.initialOpenCodeSessionId as string)
+      finalizeInitialSession(bootState, bootState.initialRuntimeSessionId as string)
       await reconcileInitialTurnAcceptance()
       bootMark('initial-turn-accepted')
       opencode.markReady()
@@ -960,11 +960,11 @@ async function startSessionRuntime(
         bootMark,
         markOpencodeListening,
       ).catch((err) => {
-        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        bootState.initialRuntimeSessionError = err instanceof Error ? err.message : String(err)
         logger.warn('[boot] initial opencode session setup failed', err)
       })
     await attemptInitialSession()
-    if (bootState.initialOpenCodeSessionId) {
+    if (bootState.initialRuntimeSessionId) {
       await completeInitialSessionBoot()
       return
     }
@@ -978,7 +978,7 @@ async function startSessionRuntime(
     // loop fallback below) proceeds and the box stays observable meanwhile.
     void retryUntilInitialSessionEstablished({
       attempt: attemptInitialSession,
-      established: () => bootState.initialOpenCodeSessionId !== null,
+      established: () => bootState.initialRuntimeSessionId !== null,
       finalize: completeInitialSessionBoot,
     })
   }
@@ -1238,7 +1238,7 @@ async function runWarmSeedMode(
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted
       // tokenless or with seed-only credentials.
       server.reload(cfg2)
-      bootState.initialOpenCodeSessionRequired =
+      bootState.initialRuntimeSessionRequired =
         bootstrapRuntimeSessionRequested()
       logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -1402,14 +1402,14 @@ export function initialSessionRetryDelayMs(attempt: number): number {
 /** The subset of `SandboxBootState` the initial-session finalizer touches. */
 type InitialSessionBootState = Pick<
   SandboxBootState,
-  'initialOpenCodeSessionId' | 'initialOpenCodeSessionError' | 'initialOpenCodeSessionRequired'
+  'initialRuntimeSessionId' | 'initialRuntimeSessionError' | 'initialRuntimeSessionRequired'
 >
 
 /**
  * Record that the initial OpenCode session is established under `sessionId`,
  * and release a poisoned failure flag left by an earlier attempt.
  *
- * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
+ * `initialRuntimeSessionError` describes ONE attempt of the retry ladder,
  * not the box. `proxy.ts` (`initial_runtime_session_failed`, 503) and
  * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
  * because until now nothing ever cleared it: it was written on a caught
@@ -1420,8 +1420,8 @@ type InitialSessionBootState = Pick<
  * stops answering `initial_runtime_session_failed` once this runs.
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
-  bootState.initialOpenCodeSessionId = sessionId
-  bootState.initialOpenCodeSessionError = null
+  bootState.initialRuntimeSessionId = sessionId
+  bootState.initialRuntimeSessionError = null
 }
 
 /**
@@ -1519,7 +1519,7 @@ async function maybeCreateInitialOpencodeSession(
     // root IS pinned — see `resolveExistingRoot`'s `defer` outcome. Creating
     // (and pinning) a fresh root here would risk orphaning that conversation
     // under a competing one — the exact 2026-06-15 spinner-incident shape (see
-    // the comment above this function). Leave `bootState.initialOpenCodeSessionId`
+    // the comment above this function). Leave `bootState.initialRuntimeSessionId`
     // unset and return: boot falls through to the `waitForOpencodeReady`
     // fallback path below instead of the initial-session fast path, and
     // nothing here touches the existing root or delivers `prompt` anywhere.
@@ -1605,12 +1605,12 @@ async function maybeCreateInitialOpencodeSession(
     bootMark('initial-prompt-delivered')
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
-    bootState.initialOpenCodeSessionId = sessionId
+    bootState.initialRuntimeSessionId = sessionId
     logger.info('[boot] initial prompt already delivered to reused root; not re-running', {
       sessionId,
     })
   } else {
-    bootState.initialOpenCodeSessionId = sessionId
+    bootState.initialRuntimeSessionId = sessionId
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
@@ -1619,7 +1619,7 @@ async function maybeCreateInitialOpencodeSession(
 /**
  * Publish the boot root only after OpenCode accepts the initial prompt.
  *
- * The event-loop reconciliation timer reads `initialOpenCodeSessionId` as its
+ * The event-loop reconciliation timer reads `initialRuntimeSessionId` as its
  * acceptance gate. Publishing the id before `prompt_async` returns lets that
  * timer promote a `delivering` database record while the request is still in
  * flight, including before OpenCode has received one byte.
@@ -1631,7 +1631,7 @@ export async function publishInitialOpenCodeSessionAfterPrompt(
 ): Promise<void> {
   await deliver()
   bootState.initialPromptDeliveredAtMs = Date.now()
-  bootState.initialOpenCodeSessionId = sessionId
+  bootState.initialRuntimeSessionId = sessionId
 }
 
 /**

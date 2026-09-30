@@ -189,7 +189,7 @@ const opencodeNameCases = [
   ['a word inside a sentence', 'src/app/server.ts', "const e = 'prompt_id and opencode_session_id are required'", ['opencode_session_id']],
   ['a comment', 'src/routes/kortix/health.ts', '// opencode\nexport {}', []],
   ['the OpenCode adapter', 'src/harness/open-code/boot.ts', 'const opencodePort = 1', []],
-  ['the pi adapter, until E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', []],
+  ['the pi adapter, since E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', ['opencodePort']],
   ['the resolver', 'src/harness/harness.ts', 'const opencodePort = 1', []],
   ['a test file', 'src/__tests__/pi-harness.test.ts', 'const opencodePort = 1', []],
   ['an allowlisted word in its own file', 'src/routes/kortix/legacy-names.ts', 'const opencodeEnv = 1', []],

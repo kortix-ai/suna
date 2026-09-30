@@ -194,7 +194,7 @@ async function boot(input: {
   const env = rigEnv(workspace, input.env)
   const cfg = requirePiConfig(loadConfig(env))
   const service = createPiHarnessService(cfg, undefined, { env, hooks: input.hooks, releases: input.releases })
-  const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialOpenCodeSessionRequired: false }
+  const bootState: PiBootState = { repoMaterializationError: null, timeline: [], initialRuntimeSessionRequired: false }
   if (input.start !== false) await service.lifecycle.start()
   const app = buildDaemonApp(cfg, service, Date.now(), bootState)
   const ctx = signTestUserContext({ userId: 'u1', sandboxId: 's1', sandboxRole: 'owner' }, TOKEN)
