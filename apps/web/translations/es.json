@@ -20199,7 +20199,6 @@
     },
     "needsReconnectHint": "Este ordenador se desconectó de Kortix. Vuelve a conectarlo para usarlo.",
     "actionFailed": "Algo salió mal. Inténtalo de nuevo.",
-    "sharedWithProject": "Ordenador compartido con el proyecto",
     "alsoShareWith": "Compartir también con {project}",
     "approvedEverywhere": "Tu ordenador está conectado. Puedes usarlo en todos los proyectos, en tus sesiones privadas. Puedes cerrar esta pestaña.",
     "approvedShared": "Tu ordenador está conectado y compartido con {project}. Puedes cerrar esta pestaña.",
@@ -20247,8 +20246,6 @@
     "runInBackground": "Ejecutar en segundo plano",
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
     "manageInProject": "Gestionar en el proyecto",
-    "disconnectEllipsis": "Desconectar…",
-    "yoursEveryProject": "Tuyo · todos los proyectos",
-    "sharedWithThisProject": "Compartido con este proyecto"
+    "disconnectEllipsis": "Desconectar…"
   }
 }

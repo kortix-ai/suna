@@ -20199,7 +20199,6 @@
     },
     "needsReconnectHint": "Questo computer è stato scollegato da Kortix. Ricollegalo per usarlo.",
     "actionFailed": "Qualcosa è andato storto. Riprova.",
-    "sharedWithProject": "Computer condiviso con il progetto",
     "alsoShareWith": "Condividi anche con {project}",
     "approvedEverywhere": "Il tuo computer è collegato. Puoi usarlo in ogni progetto, nelle tue sessioni private. Puoi chiudere questa scheda.",
     "approvedShared": "Il tuo computer è collegato e condiviso con {project}. Puoi chiudere questa scheda.",
@@ -20247,8 +20246,6 @@
     "runInBackground": "Esegui in background",
     "runInBackgroundDescription": "Se disattivato, la connessione resta in pausa anche dopo un riavvio.",
     "manageInProject": "Gestisci nel progetto",
-    "disconnectEllipsis": "Disconnetti…",
-    "yoursEveryProject": "Tuo · ogni progetto",
-    "sharedWithThisProject": "Condiviso con questo progetto"
+    "disconnectEllipsis": "Disconnetti…"
   }
 }
