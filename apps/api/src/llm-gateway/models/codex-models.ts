@@ -11,7 +11,7 @@ export const CODEX_AUTH_SECRET_NAME = 'CODEX_AUTH_JSON';
 export const CODEX_MODELS_URL =
   'https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json';
 
-// Offline fallback only. Regenerate: `bun apps/api/src/llm-gateway/models/codex-models.ts`
+// Offline fallback only. Regenerate: `bun apps/api/scripts/refresh-codex-seed.ts`
 // (the weekly catalog-refresh workflow does).
 export const CODEX_SEED_MODEL_IDS: readonly string[] = CODEX_SEED;
 
@@ -34,10 +34,3 @@ export function parseCodexModelIds(body: unknown): string[] {
   return ids;
 }
 
-if (import.meta.main) {
-  const res = await fetch(CODEX_MODELS_URL);
-  if (!res.ok) throw new Error(`${CODEX_MODELS_URL}: HTTP ${res.status}`);
-  const ids = parseCodexModelIds(await res.json());
-  await Bun.write(new URL('./codex-models.seed.json', import.meta.url), `${JSON.stringify(ids, null, 2)}\n`);
-  console.log(`codex seed: ${ids.join(', ')}`);
-}

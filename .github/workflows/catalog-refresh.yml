@@ -49,7 +49,7 @@ jobs:
         run: bun scripts/enrich-llm-catalog-capabilities.ts
 
       - name: Regenerate the Codex lineup seed
-        run: bun apps/api/src/llm-gateway/models/codex-models.ts
+        run: bun apps/api/scripts/refresh-codex-seed.ts
 
       - name: Diff summary
         id: diff
