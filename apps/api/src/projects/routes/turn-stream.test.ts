@@ -114,6 +114,8 @@ mock.module('../../channels/teams/cards', () => ({
   buildFormCard: () => formCardResult,
 }));
 
+const realTurnLedger = await import('../session-turn-ledger');
+
 mock.module('../sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => abandonResult,
   acceptSandboxTurn: async () => true,
@@ -122,11 +124,15 @@ mock.module('../sandbox-turn-lifecycle', () => ({
     order.push('complete');
     return completionResult;
   },
-  recordUnidentifiedTurnCause: async () => causeResult,
   turnCompletionAllowsQueuePromotion: (result: { outcome: string }) =>
     result.outcome === 'closed' ||
     result.outcome === 'already_closed' ||
     result.outcome === 'no_active_turn',
+}));
+
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
+  recordUnidentifiedTurnCause: async () => causeResult,
 }));
 
 mock.module('../session-lifecycle', () => ({

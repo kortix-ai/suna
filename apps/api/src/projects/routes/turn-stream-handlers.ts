@@ -23,9 +23,9 @@ import {
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
-  recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
+import { recordUnidentifiedTurnCause } from '../session-turn-ledger';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';

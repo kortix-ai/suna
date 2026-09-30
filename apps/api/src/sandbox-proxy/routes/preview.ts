@@ -1,6 +1,6 @@
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
-import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';

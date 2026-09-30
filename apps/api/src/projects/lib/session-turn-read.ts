@@ -21,11 +21,13 @@ import { db } from '../../shared/db';
 import { sessionSandboxes, sessionTurns } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
-  ABORT_END_ERROR_NAMES,
   RUNNING_SANDBOX_STATUSES,
-  isRequestedStopName,
   storedSandboxTurns,
 } from '../sandbox-turn-lifecycle';
+import {
+  ABORT_END_ERROR_NAMES,
+  isRequestedStopName,
+} from '../session-turn-ledger';
 
 /** One turn the control plane is holding open, in wire shape. */
 export interface SessionTurnView {

@@ -23,7 +23,8 @@
 import { eq, sql } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
-import { settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { settleOpenSandboxTurns } from '../session-turn-ledger';
+import { storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import { type PromptRedelivery, requeueAbandonedPrompt } from './redelivery';
 import { reArmRuntimeBlockedPrompts } from './store';
 

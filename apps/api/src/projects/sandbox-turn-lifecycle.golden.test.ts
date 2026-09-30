@@ -15,6 +15,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import type { SandboxTurnLedgerTransaction } from './session-turn-ledger';
 
 let executed: string[] = [];
 let executeResults: unknown[] = [];
@@ -31,6 +32,10 @@ function render(query: unknown): string {
 }
 
 mock.module('../config', () => mockConfigModule());
+// `adoptRuntimeSandboxTurn` mints the adopted turn's token with `randomUUID`;
+// pin it so the adoption snapshot is deterministic across runs.
+const realCrypto = await import('node:crypto');
+mock.module('node:crypto', () => ({ ...realCrypto, randomUUID: () => 'adopt-token' }));
 mock.module('../shared/db', () => ({
   db: {
     execute: async (query: unknown) => {
@@ -46,25 +51,26 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-// Every name still lives in the one module; the authority/ledger split moves
-// the ledger half to ./session-turn-ledger and only this import block follows.
 const {
   abandonSandboxTurn,
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   beginSandboxTurn,
   clearSandboxTurn,
-  clearTurnStopRequest,
   closeSandboxTurnByMessageId,
   completeSandboxTurn,
+  renewActiveSandboxTurn,
+} = await import('./sandbox-turn-lifecycle');
+
+const {
+  clearTurnStopRequest,
   markTurnStopRequested,
   recordUnidentifiedTurnCause,
-  renewActiveSandboxTurn,
   settleOpenSandboxTurns,
   settleOpenSandboxTurnsQuery,
   settleOrphanedSandboxTurns,
   settleOrphanedSandboxTurnsQuery,
-} = await import('./sandbox-turn-lifecycle');
+} = await import('./session-turn-ledger');
 
 const OWNER = {
   sandbox_id: '11111111-1111-4111-8111-111111111111',
@@ -141,7 +147,12 @@ describe('golden SQL: turn authority statements', () => {
       [
         {
           ...OWNER,
-          turn: { token: 'turn-token', state: 'delivering', ...IDENTITY, startedAtMs: OBSERVED_AT_MS },
+          turn: {
+            token: 'turn-token',
+            state: 'delivering',
+            ...IDENTITY,
+            startedAtMs: OBSERVED_AT_MS,
+          },
           abandoned: true,
         },
       ],
@@ -171,13 +182,17 @@ describe('golden SQL: turn authority statements', () => {
 
 describe('golden SQL: terminal evidence', () => {
   test('completeSandboxTurn closes the matched turn and ends its ledger row', async () => {
-    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], active_turn_count: 1, completed: true }]];
+    executeResults = [
+      [{ ...OWNER, ended_turns: [ENDED_TURN], active_turn_count: 1, completed: true }],
+    ];
     await completeSandboxTurn('sess-1', 'idle', IDENTITY);
     expect(executed).toMatchSnapshot();
   });
 
   test('completeSandboxTurn records a named failure', async () => {
-    executeResults = [[{ ...OWNER, ended_turns: [ENDED_TURN], active_turn_count: 1, completed: true }]];
+    executeResults = [
+      [{ ...OWNER, ended_turns: [ENDED_TURN], active_turn_count: 1, completed: true }],
+    ];
     await completeSandboxTurn('sess-1', 'error', IDENTITY, {
       name: 'ModelError',
       message: 'upstream 500',
@@ -274,7 +289,9 @@ describe('golden SQL: unidentified-cause recorder', () => {
 
 describe('golden SQL: settle backstops', () => {
   test('settleOpenSandboxTurnsQuery ends every open row with the cause', () => {
-    expect(render(settleOpenSandboxTurnsQuery('sb-1', 'runtime_gone', REAPER_CAUSE))).toMatchSnapshot();
+    expect(
+      render(settleOpenSandboxTurnsQuery('sb-1', 'runtime_gone', REAPER_CAUSE)),
+    ).toMatchSnapshot();
   });
 
   test('settleOpenSandboxTurnsQuery without a cause leaves end_error alone', () => {
@@ -282,12 +299,12 @@ describe('golden SQL: settle backstops', () => {
   });
 
   test('settleOpenSandboxTurns runs inside the caller transaction', async () => {
-    const tx = {
+    const tx: SandboxTurnLedgerTransaction = {
       execute: async (query: unknown) => {
         executed.push(render(query));
         return [];
       },
-      transaction: async (fn: (savepoint: typeof tx) => Promise<void>) => fn(tx),
+      transaction: (fn) => fn(tx),
     };
     await settleOpenSandboxTurns(tx, 'sb-1', 'runtime_gone', REAPER_CAUSE);
     expect(executed).toMatchSnapshot();

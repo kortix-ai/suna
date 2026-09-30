@@ -1408,9 +1408,9 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
     WHEN jsonb_typeof( s.metadata->'activeTurns' ) = 'object' THEN  s.metadata->'activeTurns' 
     ELSE '{}'::jsonb
   END  || jsonb_build_object(
-                  3d91c86f-e4a8-44ea-94c8-0188db0efa73 ::text,
+                  adopt-token ::text,
                  jsonb_build_object(
-                   'token',  3d91c86f-e4a8-44ea-94c8-0188db0efa73 ::text,
+                   'token',  adopt-token ::text,
                    'state', 'delivering',
                    'opencodeSessionId',  ses_root ::text,
                    'messageId',  msg_adopt ::text,
@@ -1433,7 +1433,7 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
 "INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
              opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  3d91c86f-e4a8-44ea-94c8-0188db0efa73 , owner.session_id, owner.sandbox_id,
+          SELECT  adopt-token , owner.session_id, owner.sandbox_id,
                  owner.project_id, owner.account_id,
                   ses_root ,  msg_adopt , 'delivering',
                   now() , now(), now()
@@ -1442,11 +1442,11 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
               WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
                 AND s.status IN ('active', 'provisioning')
                 AND (
-                  s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73  IS NOT NULL
+                  s.metadata->'activeTurns'-> adopt-token  IS NOT NULL
                   -- The legacy single-record arm every writer still accepts
                   -- during a rolling deploy. The stop erases it in the same
                   -- statement, so it gates this INSERT identically.
-                  OR s.metadata->'activeTurn'->>'token' =  3d91c86f-e4a8-44ea-94c8-0188db0efa73 )
+                  OR s.metadata->'activeTurn'->>'token' =  adopt-token )
               FOR UPDATE ) owner
           ON CONFLICT (turn_token) DO NOTHING"
 ,
@@ -1454,11 +1454,11 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
 "
     UPDATE kortix.session_sandboxes s
        SET metadata = CASE
-             WHEN s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73  IS NOT NULL THEN
+             WHEN s.metadata->'activeTurns'-> adopt-token  IS NOT NULL THEN
                jsonb_set(
                  s.metadata,
-                 ARRAY['activeTurns',  3d91c86f-e4a8-44ea-94c8-0188db0efa73 ]::text[],
-                 (s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ) || jsonb_strip_nulls(jsonb_build_object(
+                 ARRAY['activeTurns',  adopt-token ]::text[],
+                 (s.metadata->'activeTurns'-> adopt-token ) || jsonb_strip_nulls(jsonb_build_object(
                    'state', 'active',
                    'opencodeSessionId',  ses_root ::text,
                    'messageId',  msg_adopt ::text)),
@@ -1479,12 +1479,12 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
      WHERE  s.sandbox_id =  sb-1 ::uuid 
        AND s.status IN ('active', 'provisioning')
        AND (
-         (s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ->>'token' =  3d91c86f-e4a8-44ea-94c8-0188db0efa73 
-           AND s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ->>'state' IN ('delivering', 'active'))
-         OR (s.metadata->'activeTurn'->>'token' =  3d91c86f-e4a8-44ea-94c8-0188db0efa73 
+         (s.metadata->'activeTurns'-> adopt-token ->>'token' =  adopt-token 
+           AND s.metadata->'activeTurns'-> adopt-token ->>'state' IN ('delivering', 'active'))
+         OR (s.metadata->'activeTurn'->>'token' =  adopt-token 
            AND s.metadata->'activeTurn'->>'state' IN ('delivering', 'active')))
     RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
-              coalesce(s.metadata->'activeTurns'-> 3d91c86f-e4a8-44ea-94c8-0188db0efa73 ->>'messageId',
+              coalesce(s.metadata->'activeTurns'-> adopt-token ->>'messageId',
                        s.metadata->'activeTurn'->>'messageId') AS turn_message_id"
 ,
 ]

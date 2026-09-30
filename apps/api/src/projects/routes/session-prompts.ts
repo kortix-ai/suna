@@ -26,7 +26,7 @@ import {
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
-import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {

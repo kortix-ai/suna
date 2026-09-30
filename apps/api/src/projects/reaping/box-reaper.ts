@@ -53,15 +53,17 @@ import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   type SandboxTurnDeliveryReconciliation,
-  type SessionTurnEndReason,
   type StoredSandboxTurn,
-  REAPER_TURN_CAUSES,
   clearSandboxTurn,
   reconcileSandboxTurnDelivery,
   renewActiveSandboxTurn,
-  settleOrphanedSandboxTurns,
   storedSandboxTurns,
 } from '../sandbox-turn-lifecycle';
+import {
+  REAPER_TURN_CAUSES,
+  type SessionTurnEndReason,
+  settleOrphanedSandboxTurns,
+} from '../session-turn-ledger';
 import {
   countReapCandidates,
   markReaperVisited,
