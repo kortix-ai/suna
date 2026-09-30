@@ -240,7 +240,9 @@ export const OPENCODE_NAMES_ALLOWED = {
   'src/routes/kortix/harness-control.ts': ['opencode'],
   'src/services/resources/resources.ts': ['opencode', 'opencode-kortix', 'opencode.exe'],
   'src/services/runtime-assets/port.ts': ['opencode'],
-  'src/services/runtime-assets/runtime-assets.ts': ['DEFAULT_OPENCODE_CURRENT_LINK', 'bakedOpencodeVersion', 'opencode', 'opencode.current', 'opencodeVersion', 'opencode_version'],
+  'src/services/runtime-assets/runtime-assets.ts': ['opencode_version'],
+  'src/services/runtime-assets/runtime-assets-bake.ts': ['DEFAULT_OPENCODE_CURRENT_LINK', 'bakedOpencodeVersion', 'opencode', 'opencode.current', 'opencodeVersion', 'opencode_version'],
+  'src/services/runtime-assets/runtime-assets-swap-report.ts': ['opencode_version'],
   'src/services/runtime-assets/runtime-truth.ts': ['opencode'],
 }
 /** @type {import('eslint').Rule.RuleModule} */
