@@ -31,6 +31,7 @@ import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-bound
 import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
+import '@/features/session/tool/tools/register';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
