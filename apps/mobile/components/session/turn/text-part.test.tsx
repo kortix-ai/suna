@@ -34,6 +34,9 @@ if (process.env[PROBE_ENV] === '1') {
   mock.module('@/components/kortix/selectable-markdown', () => ({
     SelectableMarkdownText: ({ children }: any) => children,
   }));
+  // SetupLinkCard pulls the RNR primitives (not loadable under bun); prose
+  // without a /connect link never renders it.
+  mock.module('./setup-link-card', () => ({ SetupLinkCard: () => null }));
   mock.module('@/components/session/tool/shared/result-row', () => ({
     ResultRow: (props: any) => {
       rows.push(props);
