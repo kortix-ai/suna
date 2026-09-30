@@ -356,6 +356,9 @@ export interface SheetRef {
   open: () => void;
   close: () => void;
 }
+
+export { useCloseThen } from './use-close-then';
+
 interface SheetProps {
   snapPoints?: (string | number)[];
   /** Present at full screen height (100%) with a safe-area top inset. */
