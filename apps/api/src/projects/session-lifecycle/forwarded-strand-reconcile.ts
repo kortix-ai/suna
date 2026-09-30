@@ -88,7 +88,7 @@ const liveDeps: StrandReconcileDeps = {
       .select({
         token: sessionTurns.turnToken,
         messageId: sessionTurns.messageId,
-        opencodeSessionId: sessionTurns.opencodeSessionId,
+        opencodeSessionId: sessionTurns.runtimeSessionId,
         state: sessionTurns.state,
         startedAt: sessionTurns.startedAt,
       })
@@ -98,7 +98,7 @@ const liveDeps: StrandReconcileDeps = {
       (row): StoredSandboxTurn => ({
         token: row.token,
         messageId: row.messageId ?? null,
-        opencodeSessionId: row.opencodeSessionId ?? '',
+        runtimeSessionId: row.opencodeSessionId ?? '',
         state: row.state === 'active' ? 'active' : 'delivering',
         startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
       }),
@@ -198,7 +198,7 @@ export async function reconcileForwardedTurnsAtEnd(
     return out;
   }
   const sameRoot = (turn: StoredSandboxTurn) =>
-    !input.opencodeSessionId || !turn.opencodeSessionId || turn.opencodeSessionId === input.opencodeSessionId;
+    !input.opencodeSessionId || !turn.runtimeSessionId || turn.runtimeSessionId === input.opencodeSessionId;
   const forwarded = open.filter((turn) => !!turn.messageId && sameRoot(turn));
   if (forwarded.length === 0) return out;
   // ONE tip read for everything below. It also stands in for the relay when
@@ -246,7 +246,7 @@ export async function reconcileForwardedTurnsAtEnd(
   }
   for (const turn of older) {
     try {
-      await deps.closeOlderTurn(input.sessionId, turn.opencodeSessionId, turn.messageId!);
+      await deps.closeOlderTurn(input.sessionId, turn.runtimeSessionId, turn.messageId!);
       out.closedOlder += 1;
     } catch (err) {
       logger.warn('[forwarded-turns] could not close an older forwarded turn', {

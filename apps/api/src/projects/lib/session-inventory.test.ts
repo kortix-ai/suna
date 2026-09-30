@@ -27,7 +27,7 @@ function row(
     sandboxProvider: 'daytona',
     sandboxId: sessionId,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'running',
     error: null,

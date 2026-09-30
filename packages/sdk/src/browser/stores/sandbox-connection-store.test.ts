@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
 	requestRuntimeReconnect,
 	resetForServerSwitch,
-	setOpenCodeHealth,
+	setRuntimeHealth,
 	setRuntimeCapabilities,
 	setSandboxStatus,
 	useSandboxConnectionStore,
@@ -16,7 +16,7 @@ import {
  * answered the health probe from the session row — `hop === 'control_plane'`,
  * i.e. `503 sandbox not ready (status: stopped)`, nothing was ever dialled)
  * from a BOOTING one (the proxy reached the box and OpenCode is still coming
- * up). It passed that distinction to `setOpenCodeHealth` only to keep the
+ * up). It passed that distinction to `setRuntimeHealth` only to keep the
  * stall clock off, and then dropped it.
  *
  * Every other surface therefore had to guess, and the Files panel guessed
@@ -52,48 +52,48 @@ describe("sandbox connection store: parked", () => {
 	});
 
 	test("records a parked box so a surface can say 'idle' instead of 'waking'", () => {
-		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
+		setRuntimeHealth(false, "1.2.3", null, { parked: true });
 		expect(useSandboxConnectionStore.getState().parked).toBe(true);
 		expect(useSandboxConnectionStore.getState().healthy).toBe(false);
 	});
 
 	test("a BOOTING box is not parked — it really is coming up on its own", () => {
-		setOpenCodeHealth(false, "1.2.3", "schema not ready");
+		setRuntimeHealth(false, "1.2.3", "schema not ready");
 		expect(useSandboxConnectionStore.getState().parked).toBe(false);
 	});
 
 	test("going healthy clears parked", () => {
-		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
+		setRuntimeHealth(false, "1.2.3", null, { parked: true });
 		expect(useSandboxConnectionStore.getState().parked).toBe(true);
-		setOpenCodeHealth(true, "1.2.3");
+		setRuntimeHealth(true, "1.2.3");
 		expect(useSandboxConnectionStore.getState().parked).toBe(false);
 	});
 
 	test("a booting probe after a parked one clears parked", () => {
-		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
-		setOpenCodeHealth(false, "1.2.3", "schema not ready");
+		setRuntimeHealth(false, "1.2.3", null, { parked: true });
+		setRuntimeHealth(false, "1.2.3", "schema not ready");
 		expect(useSandboxConnectionStore.getState().parked).toBe(false);
 	});
 
 	test("a manual retry clears parked — the user just asked for a fresh look", () => {
-		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
+		setRuntimeHealth(false, "1.2.3", null, { parked: true });
 		requestRuntimeReconnect();
 		expect(useSandboxConnectionStore.getState().parked).toBe(false);
 	});
 
 	test("parked leaves the stall clock off, exactly as before", () => {
-		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
+		setRuntimeHealth(false, "1.2.3", null, { parked: true });
 		expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
 	});
 
 	test("a booting box still arms the stall clock", () => {
-		setOpenCodeHealth(false, "1.2.3", "schema not ready");
+		setRuntimeHealth(false, "1.2.3", "schema not ready");
 		expect(useSandboxConnectionStore.getState().bootingSinceAt).not.toBeNull();
 	});
 
 	test("status is untouched by parking — the row, not the socket, is what parked", () => {
 		setSandboxStatus("connected");
-		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
+		setRuntimeHealth(false, "1.2.3", null, { parked: true });
 		expect(useSandboxConnectionStore.getState().status).toBe("connected");
 	});
 });

@@ -180,7 +180,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
-      opencodeSessionId: 'ses_server_owned',
+      runtimeSessionId: 'ses_server_owned',
       actorType: 'agent',
       agentId: AGENT_ID,
       agentName: 'trusted-agent',

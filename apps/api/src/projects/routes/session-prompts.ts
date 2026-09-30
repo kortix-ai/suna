@@ -638,7 +638,7 @@ projectsApp.openapi(
     // the proxy stamp. The write never throws.
     if (body.held) {
       await markTurnStopRequested(sessionId, 'UserStop', {
-        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+        opencodeSessionId: visible.row.runtimeSessionId ?? null,
       });
     }
     await holdInboxPrompts(sessionId, body.held);

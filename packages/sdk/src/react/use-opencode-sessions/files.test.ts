@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 
-// `findOpenCodeFiles` resolves `getClient()` fresh on every call — swap the
+// `findRuntimeFiles` resolves `getClient()` fresh on every call — swap the
 // implementation per-test via `clientImpl` to control exactly what
 // `client.find.files()` / `client.file.list()` resolve to.
 let clientImpl: {
@@ -12,10 +12,10 @@ mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
 }));
 
-const { findOpenCodeFiles } = await import('./files');
+const { findRuntimeFiles } = await import('./files');
 
 /**
- * `findOpenCodeFiles` keeps a couple of module-level caches
+ * `findRuntimeFiles` keeps a couple of module-level caches
  * (`mentionFileIndexCache`, `mentionDirScanCache`) that persist across calls
  * within this process and aren't exported for a test to reset. To keep tests
  * independent without fighting that cache:
@@ -39,7 +39,7 @@ beforeEach(() => {
   };
 });
 
-describe('findOpenCodeFiles — ranking and dedup', () => {
+describe('findRuntimeFiles — ranking and dedup', () => {
   test('ranks an exact basename match first, then prefix, then substring, then path-substring', async () => {
     // `find.files({ query })` is trusted as already server-filtered — this
     // function's own job is ranking what comes back, not re-filtering it
@@ -53,7 +53,7 @@ describe('findOpenCodeFiles — ranking and dedup', () => {
       'app-folder/utils.ts', // path-substring only (directory name, not basename)
     ]);
 
-    const results = await findOpenCodeFiles('app');
+    const results = await findRuntimeFiles('app');
     expect(results).toHaveLength(4);
     // Exact basename match ranks above a prefix match, which ranks above a
     // substring-only match, which ranks above a path-only substring match.
@@ -70,7 +70,7 @@ describe('findOpenCodeFiles — ranking and dedup', () => {
       return { data: ['src/app.ts'] };
     };
 
-    const results = await findOpenCodeFiles('app');
+    const results = await findRuntimeFiles('app');
     expect(callCount).toBe(2); // strict + broad, each returning the same path
     expect(results).toEqual(['src/app.ts']);
   });
@@ -82,7 +82,7 @@ describe('findOpenCodeFiles — ranking and dedup', () => {
     // entries are harmless.
     clientImpl.find.files = async () => ({ data: ['a/b/c/deep.ts', 'top.ts', 'a/mid.ts'] });
 
-    const results = await findOpenCodeFiles('');
+    const results = await findRuntimeFiles('');
     expect(results).toEqual(['top.ts', 'a/mid.ts', 'a/b/c/deep.ts']);
   });
 
@@ -92,7 +92,7 @@ describe('findOpenCodeFiles — ranking and dedup', () => {
       { path: 'src/nested', type: 'directory' },
     ]);
 
-    const results = await findOpenCodeFiles('app');
+    const results = await findRuntimeFiles('app');
     expect(results).toEqual(['src/app.ts']);
     // The directory entry is never returned as a file match (only used
     // internally to seed the directory-expansion fallback).
@@ -104,7 +104,7 @@ describe('findOpenCodeFiles — ranking and dedup', () => {
     const many = Array.from({ length: 30 }, (_, i) => `file${String(i).padStart(2, '0')}.ts`);
     clientImpl.find.files = queryAwareFiles(many);
 
-    const results = await findOpenCodeFiles('file');
+    const results = await findRuntimeFiles('file');
     expect(results).toHaveLength(20);
   });
 
@@ -112,11 +112,11 @@ describe('findOpenCodeFiles — ranking and dedup', () => {
     clientImpl.find.files = async () => {
       throw new Error('network down');
     };
-    await expect(findOpenCodeFiles('anything')).resolves.toEqual([]);
+    await expect(findRuntimeFiles('anything')).resolves.toEqual([]);
   });
 });
 
-describe('findOpenCodeFiles — directory-expansion fallback', () => {
+describe('findRuntimeFiles — directory-expansion fallback', () => {
   test('expands a matched directory into its children when strict/broad matches are sparse', async () => {
     clientImpl.find.files = async ({ type, query }) => {
       if (query === '' || type === 'file') return { data: [] };
@@ -132,7 +132,7 @@ describe('findOpenCodeFiles — directory-expansion fallback', () => {
       return { data: [] };
     };
 
-    const results = await findOpenCodeFiles('app');
+    const results = await findRuntimeFiles('app');
     expect(results).toContain('src/utils/app-helpers.ts');
     expect(results).not.toContain('src/utils/other.ts'); // doesn't match the query "app"
   });

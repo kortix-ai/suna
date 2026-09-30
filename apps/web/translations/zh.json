@@ -5168,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "此会话的沙盒已停止。请打开一个新会话以继续。",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode 运行时尚未就绪",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "会话运行时尚未就绪",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "沙盒已启动，但项目运行时未能变为可用状态。",
       "line395JsxTextRestartSession": "重启会话",
       "line424JsxTextRestartSession": "重启会话"
@@ -12496,7 +12496,7 @@
       "text5a0cac0326d5": "下载 Kortix",
       "text5a219a418ec7": "无法从归档中读取此条目。",
       "text5a23444828db": "管理",
-      "text5a26f4425c82": "OpenCode 会话",
+      "text92fbc8484002": "运行时会话",
       "text5a32374d30b4": "每日平台活动和信用消耗。每个桶都是 UTC 日。",
       "text5a37d20f1235": "频道智能体已更新",
       "text5a41803b2dd1": "全部拒绝",

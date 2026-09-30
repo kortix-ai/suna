@@ -206,9 +206,9 @@ describe('SessionSiteHeader subagent hover card', () => {
     expect(source.lastIndexOf('<Hint', hintAt)).toBeGreaterThan(cardEnd);
   });
 
-  test('the card uses the HoverCard primitive and links each row to its ?oc= route', () => {
+  test('the card uses the HoverCard primitive and links each row to its child-session route', () => {
     expect(cardSource).toContain("from '@/components/ui/hover-card'");
-    expect(cardSource).toContain('?oc=${encodeURIComponent(child.id)}');
+    expect(cardSource).toContain('href={childSessionHref(href, child.id)}');
     expect(cardSource).toContain('<HoverPrefetchLink');
     expect(cardSource).toContain("menuRow('sm', 'default'");
     // A row click closes the card before the route changes under it.
