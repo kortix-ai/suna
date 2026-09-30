@@ -1549,7 +1549,8 @@
         "restricted": "Specific people",
         "project": "Whole project"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Labels"
     },
     "loadingMore": "Loading…",
     "loadMoreSessions": "Load more sessions",
@@ -1561,7 +1562,21 @@
       "others": "Shared",
       "automated": "Automated"
     },
-    "reminders": "Reminders"
+    "reminders": "Reminders",
+    "labels": {
+      "menu": "Edit labels",
+      "title": "Labels",
+      "description": "Labels classify this session. Filter the session list by them. Agents, the CLI and the API can set them too.",
+      "placeholder": "Add a label and press Enter",
+      "empty": "No labels yet.",
+      "remove": "Remove {label}",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saved": "Labels saved",
+      "failed": "Could not save the labels",
+      "tooLong": "A label has at most 64 characters.",
+      "tooMany": "A session has at most 20 labels."
+    }
   },
   "dashboard": {
     "title": "Dashboard",

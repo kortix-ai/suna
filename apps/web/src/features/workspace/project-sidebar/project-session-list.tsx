@@ -38,6 +38,7 @@ import {
 } from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionsEmptyState } from '@/features/workspace/project-sessions/sessions-empty-state';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
@@ -73,6 +74,7 @@ import {
   selectCollapsedSections,
   selectGroupMode,
   selectHiddenSections,
+  selectLabelFilters,
   selectOrderMode,
   selectSourceFilters,
   selectStatusFilters,
@@ -93,6 +95,7 @@ import {
   DotsThreeIcon,
   FolderSimpleIcon as MetaFolder,
   PencilSimpleIcon,
+  TagIcon,
   ArrowCounterClockwiseIcon as RotateCcw,
   ShareIcon as Share,
   SquareIcon as Square,
@@ -223,6 +226,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   );
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
+  const [sessionToLabel, setSessionToLabel] = useState<ProjectSession | null>(null);
+  // The Labels facet filters server-side: each section asks for sessions that
+  // carry every selected label, so a match on an unloaded page still shows.
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId));
+  const labels = labelFilters.length > 0 ? labelFilters : undefined;
 
   // Paged, not the whole inventory. This list is the always-mounted poller: it
   // re-fetches every 5s while any loaded row is still provisioning, so its cost
@@ -246,6 +254,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // sections below, each its own paged query.
     parent: 'root',
     startedBy: 'me',
+    labels,
     refetchInterval: (loaded) =>
       projectSessionsRefetchInterval({
         sessions: loaded,
@@ -264,12 +273,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const sharedQuery = useProjectSessions(projectId, {
     parent: 'root',
     startedBy: 'others',
+    labels,
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
   const automatedQuery = useProjectSessions(projectId, {
     parent: 'root',
     startedBy: 'automated',
+    labels,
     limit: SIDEBAR_PAGE_SIZE,
     refetchOnWindowFocus: true,
   });
@@ -367,6 +378,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     isError,
     totalCount: sessions.length + otherCount,
     visibleCount: visibleSessions.length + visibleOtherCount,
+    serverFiltered: labels !== undefined,
   });
 
   // One session row, its opencode sub-sessions, and (top-level rows only) the
@@ -409,6 +421,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onDelete={(id, label) => setSessionToDelete({ id, label })}
           onShare={(s) => setSessionToShare(s)}
           onRename={(id, name) => setSessionToRename({ id, name })}
+          onEditLabels={setSessionToLabel}
           onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
           isRestarting={
             restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
@@ -635,6 +648,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         }
       />
 
+      <SessionLabelsModal
+        projectId={projectId}
+        session={sessionToLabel}
+        open={!!sessionToLabel}
+        onOpenChange={(open) => !open && setSessionToLabel(null)}
+      />
       <RenameSessionModal
         projectId={projectId}
         sessionId={sessionToRename?.id ?? null}
@@ -1058,6 +1077,7 @@ interface ProjectSessionRowProps {
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
+  onEditLabels: (session: ProjectSession) => void;
   onRestart: (sessionId: string, label: string) => void;
   isRestarting: boolean;
   onStop: (sessionId: string, label: string) => void;
@@ -1083,6 +1103,7 @@ function ProjectSessionRow({
   onDelete,
   onShare,
   onRename,
+  onEditLabels,
   onRestart,
   isRestarting,
   onStop,
@@ -1270,6 +1291,7 @@ function ProjectSessionRow({
             createdAt={session.created_at}
             source={source}
             changeRequests={changeRequests}
+            labels={session.labels}
             projectId={session.project_id}
           >
             {sessionLink}
@@ -1335,6 +1357,13 @@ function ProjectSessionRow({
             >
               <PencilSimpleIcon />
               {tI18nComplete.raw('text3064d79a295c')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onEditLabels(session))}
+            >
+              <TagIcon />
+              {t('labels.menu')}
             </DropdownMenuItem>
             {/* Shown to everyone who can open the session: the owner
                 changes access here, everyone else reads who has it. */}
