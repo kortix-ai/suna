@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { errorSqlstate, innermostMessage } from './error-cause';
+import { errorSqlstate, innermostMessage, retryOnDeadlock } from './error-cause';
 
 describe('errorSqlstate', () => {
   test('finds the driver SQLSTATE under a wrapper that has none', () => {
@@ -64,5 +64,31 @@ describe('cycle and depth safety', () => {
     let node = new Error('leaf') as Error & { cause?: unknown };
     for (let i = 0; i < 50; i++) node = Object.assign(new Error(`link-${i}`), { cause: node });
     expect(innermostMessage(node)).toContain('link-');
+  });
+});
+
+describe('retryOnDeadlock', () => {
+  const deadlock = () => Object.assign(new Error('deadlock detected'), { code: '40P01' });
+
+  test('re-runs a deadlock victim and returns the result', async () => {
+    let calls = 0;
+    const result = await retryOnDeadlock(async () => {
+      calls += 1;
+      if (calls < 3) throw deadlock();
+      return 'ok';
+    });
+    expect([result, calls]).toEqual(['ok', 3]);
+  });
+
+  test('gives up after the third deadlock', async () => {
+    let calls = 0;
+    await expect(retryOnDeadlock(async () => { calls += 1; throw deadlock(); })).rejects.toThrow('deadlock detected');
+    expect(calls).toBe(3);
+  });
+
+  test('does not retry any other error', async () => {
+    let calls = 0;
+    await expect(retryOnDeadlock(async () => { calls += 1; throw Object.assign(new Error('x'), { code: '23503' }); })).rejects.toThrow('x');
+    expect(calls).toBe(1);
   });
 });
