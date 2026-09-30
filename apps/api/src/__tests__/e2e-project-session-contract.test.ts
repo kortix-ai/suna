@@ -1355,13 +1355,14 @@ describe('project session API contract', () => {
     expect(webSession.initiator).toMatchObject({ type: 'member', id: webSession.created_by });
     expect(webSession.metadata?.source).toBe('ui');
 
+    // A self-reported X-Kortix-Client changes nothing: the API never reads it.
     const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
       body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(cli.status).toBe(201);
-    expect((await cli.json()).metadata?.source).toBe('cli');
+    expect((await cli.json()).metadata?.source).toBe('ui');
   });
 
   test('a plain browser create is NOT session-bound, so it keeps the private default', async () => {

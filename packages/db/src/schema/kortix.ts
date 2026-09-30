@@ -3276,7 +3276,13 @@ export const auditEvents = kortixSchema.table(
     delegationDepth: integer('delegation_depth').default(0).notNull(),
     source: text('source'),
     authoritativeSource: text('authoritative_source'),
+    /** Deprecated: never written since the credential-source audit. Phase 2 drops it. */
     clientReportedSource: text('client_reported_source'),
+    /** What the API authenticated: browser_session | personal_access_token | oauth_app |
+     *  session_token | api_key | service_account | scim_token. NULL = not known. */
+    credentialKind: text('credential_kind'),
+    /** Identifier of that credential (token id, OAuth client id, session id, key id). Never a secret. */
+    credentialId: text('credential_id'),
     outcome: text('outcome'),
     action: text('action').notNull(),
     phase: text('phase').default('completed').notNull(),

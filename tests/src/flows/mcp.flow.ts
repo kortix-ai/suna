@@ -440,10 +440,12 @@ flow(
         throw new Error(`read_session: ${JSON.stringify(read).slice(0, 400)}`);
       }
     });
-    await ctx.step("tool calls are audited as the mcp client (client_reported_source = mcp)", async () => {
+    await ctx.step("tool calls are audited by the credential the API authenticated: an oauth_app named for the client, with its client id (never a reported client)", async () => {
       const correlationId = ctx.fixtures.name("mcp-audit");
       const r = await mcp(rpc(20, "tools/call", { name: "call_api", arguments: { method: "GET", path: "/v1/projects/{projectId}", project_id: p.id } }), {
         "x-correlation-id": correlationId,
+        // A self-reported client changes nothing: the API never reads it.
+        "x-kortix-client": "web",
       });
       r.status(200);
       const audit = await waitFor(
@@ -462,9 +464,16 @@ flow(
         },
       );
       const events = audit.json<{ events: Array<Record<string, unknown>> }>().events;
-      // The tool's own API call carries the client; the outer row is `mcp.request`.
+      // The tool's own API call carries the OAuth token; the outer row is `mcp.request`.
       const read = events.find((e) => e.action === "project.read");
-      if (read?.client_reported_source !== "mcp") throw new Error(`audit: ${JSON.stringify(read)}`);
+      if (
+        read?.credential_kind !== "oauth_app" ||
+        read.credential_id !== clientId ||
+        read.credential_name !== "Flow MCP" ||
+        read.client_reported_source != null
+      ) {
+        throw new Error(`audit: ${JSON.stringify(read)}`);
+      }
     });
     await ctx.step("protocol: -32700 on bad JSON, -32600 on a batch / a wrong jsonrpc, 202 for a client response, -32602 for an unknown tool, latest version for an unknown one, 400 for a bad MCP-Protocol-Version", async () => {
       const raw = (body: string, headers: Record<string, string> = {}) =>

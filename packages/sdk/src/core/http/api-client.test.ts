@@ -78,7 +78,7 @@ describe('makeRequest admin-bypass header', () => {
     }
   });
 
-  test('attaches the configured client surface to backend requests', async () => {
+  test('a configured client surface is inert: backend requests carry no X-Kortix-Client', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',
       getToken: async () => 'test-token',
@@ -87,7 +87,7 @@ describe('makeRequest admin-bypass header', () => {
     const stub = stubFetch();
     try {
       await backendApi.get('/projects/abc/detail');
-      expect(stub.getHeaders()?.['X-Kortix-Client']).toBe('cli');
+      expect(stub.getHeaders()?.['X-Kortix-Client']).toBeUndefined();
     } finally {
       stub.restore();
     }

@@ -105,4 +105,11 @@ describe('audit buildFilters', () => {
     });
     expect(conds).toHaveLength(8);
   });
+
+  test('credentialKind and source each add one condition', () => {
+    const base = { actor: null, actionPrefix: null, resourceType: null, sinceRaw: null, untilRaw: null, q: null };
+    expect(buildFilters(ACCOUNT, { ...base, credentialKind: 'oauth_app' })).toHaveLength(2);
+    // One condition (authoritative_source), not the old OR across both columns.
+    expect(buildFilters(ACCOUNT, { ...base, source: 'cli' })).toHaveLength(2);
+  });
 });

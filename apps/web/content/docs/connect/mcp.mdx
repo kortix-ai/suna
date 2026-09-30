@@ -178,7 +178,8 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 refuses `/v1/oauth/*` and any path that reaches an MCP endpoint. Fill every
 other `{placeholder}` in the path yourself. Each call passes the same
 authorization and audit as a request from the web app. The audit records each
-call with `client_reported_source: "mcp"`.
+call with `credential_kind: "oauth_app"` and the connected app's name, because
+the API records the credential it authenticated, not a label the client sends.
 
 ### Run any CLI command
 
@@ -236,8 +237,9 @@ the alternative.
 | `chat` and `sessions chat` without `--prompt` | Open an interactive chat. | `start_session`, `send_message`, or add `--prompt "<text>"`. |
 | `connectors mcp` | Starts a stdio MCP server. | `list_connectors`, `call_connector`. |
 
-The audit records a CLI command with `client_reported_source: "cli"`, because
-the CLI names itself. It does not record `mcp`.
+The audit records a CLI command with the same credential as every other call
+on the connection (`credential_kind: "oauth_app"`). It cannot tell the `kortix`
+tool from `call_api`: both reach the API with your token.
 
 ### Project skills
 

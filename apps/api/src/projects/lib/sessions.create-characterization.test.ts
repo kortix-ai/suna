@@ -83,7 +83,7 @@ test('insert stores the exact create-time metadata fields and override order', a
     repository_access: false, repository_generation: null, workspace_mode: 'runtime',
     sandbox_slug: 'default',
     audit_v2: {
-      actor_type: 'human', authoritative_source: 'human', client_reported_source: null,
+      actor_type: 'human', authoritative_source: 'human',
       initiator_actor_type: null, initiator_actor_id: null, delegation_depth: 0,
     },
   });

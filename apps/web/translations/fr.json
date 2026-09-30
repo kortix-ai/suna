@@ -19028,7 +19028,13 @@
       "textd71a0c697cce": "Segmenté",
       "text9ae34cca7f2d": "Géré par Kortix",
       "textafecbae4466e": "Kortix crée et gère un dépôt privé pour ce projet.",
-      "text6cb9b40da8a0": "Kortix crée un dépôt privé dans votre compte GitHub."
+      "text6cb9b40da8a0": "Kortix crée un dépôt privé dans votre compte GitHub.",
+      "text2ed8b8066255": "Via",
+      "texta6d0f740e426": "Jeton d'accès personnel",
+      "text2bbd1ec2197d": "Application connectée",
+      "textda3d3fb8f598": "Session d'agent",
+      "text4dcb7e3b10a9": "Jeton SCIM",
+      "text36fe0f55b7f5": "Toute information d'identification"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
