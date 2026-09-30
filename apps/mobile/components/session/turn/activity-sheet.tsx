@@ -48,7 +48,7 @@ import {
   type ConnectorHandoffRequest,
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ACTIVITY_ICONS } from '@/components/session/tool/shared/tool-icons';
-import type { ActivityContextValue } from './activity-step';
+import type { ActivityContextValue } from '@/lib/session/activity-sheet-store';
 
 /**
  * Lengths in pt, measured on the reference sheet (1080px @3x) unless noted.
