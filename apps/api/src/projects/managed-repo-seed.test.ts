@@ -3,6 +3,7 @@ import {
   ManagedRepoSeedError,
   buildManagedRepoSeedState,
   isMissingRemoteBranchError,
+  isRepoNotYetReachableError,
   pushVerifiedSeed,
   readManagedRepoSeedState,
   shouldSelfHealManagedRepoSeed,
@@ -346,5 +347,109 @@ describe('shouldSelfHealManagedRepoSeed', () => {
 
   test('never touches a repo Kortix does not manage', () => {
     expect(shouldSelfHealManagedRepoSeed({ managed: false, metadata: null })).toBe(false);
+  });
+});
+
+describe('pushVerifiedSeed: freshly created repo not yet reachable over git', () => {
+  const NOT_FOUND = new Error(
+    "git seed failed — remote: Repository not found.\nfatal: repository 'https://example.test/org/repo.git/' not found",
+  );
+
+  test('classifies the propagation signatures and nothing else', () => {
+    expect(isRepoNotYetReachableError(NOT_FOUND)).toBe(true);
+    expect(isRepoNotYetReachableError(new Error('error: RPC failed; HTTP 404 curl 22 The requested URL returned error: 404'))).toBe(true);
+    expect(isRepoNotYetReachableError(new Error('remote: Write access to repository not granted.'))).toBe(true);
+    expect(isRepoNotYetReachableError(new Error('commit to repo#main failed: 503'))).toBe(false);
+    expect(isRepoNotYetReachableError(new Error('Authentication failed'))).toBe(false);
+    expect(isRepoNotYetReachableError(undefined)).toBe(false);
+  });
+
+  test('backs off and succeeds once the repo becomes reachable', async () => {
+    let pushes = 0;
+    const waits: number[] = [];
+    await pushVerifiedSeed({
+      projectId: PROJECT_ID,
+      branch: 'main',
+      push: async () => {
+        pushes += 1;
+        if (pushes <= 4) throw NOT_FOUND;
+      },
+      remoteHasBranch: async () => pushes >= 5,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    expect(pushes).toBe(5);
+    expect(waits).toEqual([1000, 2000, 4000, 8000]);
+  });
+
+  test('a repo that never becomes reachable still fails as a push-stage error, inside the window', async () => {
+    let pushes = 0;
+    const waits: number[] = [];
+    const log = captureErrorLogs();
+    let caught: unknown;
+    try {
+      await pushVerifiedSeed({
+        projectId: PROJECT_ID,
+        branch: 'main',
+        push: async () => {
+          pushes += 1;
+          throw NOT_FOUND;
+        },
+        remoteHasBranch: async () => false,
+        sleep: async (ms) => {
+          waits.push(ms);
+        },
+      });
+    } catch (error) {
+      caught = error;
+    } finally {
+      log.restore();
+    }
+    expect(caught).toBeInstanceOf(ManagedRepoSeedError);
+    expect((caught as ManagedRepoSeedError).stage).toBe('push');
+    expect(pushes).toBe(waits.length + 1);
+    const total = waits.reduce((a, b) => a + b, 0);
+    expect(total).toBeGreaterThanOrEqual(30_000);
+    expect(total).toBeLessThanOrEqual(45_000);
+  });
+
+  test('other push errors keep failing fast without sleeping', async () => {
+    let pushes = 0;
+    let slept = 0;
+    const log = captureErrorLogs();
+    try {
+      await pushVerifiedSeed({
+        projectId: PROJECT_ID,
+        branch: 'main',
+        push: async () => {
+          pushes += 1;
+          throw new Error('commit to repo#main failed: 503');
+        },
+        remoteHasBranch: async () => false,
+        sleep: async () => {
+          slept += 1;
+        },
+      }).catch(() => {});
+    } finally {
+      log.restore();
+    }
+    expect(pushes).toBe(2);
+    expect(slept).toBe(0);
+  });
+
+  test('a retry that finds the branch already on the remote does not push again', async () => {
+    let pushes = 0;
+    await pushVerifiedSeed({
+      projectId: PROJECT_ID,
+      branch: 'main',
+      push: async () => {
+        pushes += 1;
+        throw new Error('! [rejected] main -> main (fetch first)');
+      },
+      remoteHasBranch: async () => pushes >= 1,
+      sleep: async () => {},
+    });
+    expect(pushes).toBe(1);
   });
 });
