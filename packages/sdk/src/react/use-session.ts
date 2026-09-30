@@ -19,7 +19,7 @@
  * and the `/start` poll for `(projectId, sessionId)`.
  */
 
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../core/runtime/runtime-types';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 

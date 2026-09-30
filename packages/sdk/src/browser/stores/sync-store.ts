@@ -8,7 +8,7 @@ import type {
 	SessionStatus,
 	TextPart,
 	Todo,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../core/runtime/runtime-types";
 import { create } from "zustand";
 
 import {

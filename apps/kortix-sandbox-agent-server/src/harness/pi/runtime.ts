@@ -3,14 +3,14 @@
  *
  * There is no child process, no port and no RPC. pi's tools run against this
  * sandbox's own filesystem and shell, the model goes through the Kortix LLM
- * gateway, and every lifecycle event is reshaped into the OpenCode wire the
- * product already renders (see wire.ts). One pi session IS one Kortix session:
+ * gateway, and every lifecycle event is emitted as a Kortix session event
+ * (`kortix.transcript.v1`, see turn-events.ts). One pi session IS one Kortix session:
  * the root id is a deterministic function of the session id, so a restart
  * resolves the same root and restores the same transcript from disk.
  *
  * Extensions are pi's own: the Agent runs inside pi-coding-agent's
  * `AgentSession` (extensions/host.ts), so a package from pi.dev loads and runs
- * unmodified. Kortix keeps the model, the tools, the permission gate and the wire.
+ * unmodified. Kortix keeps the model, the tools, the permission gate and the event format.
  *
  * Heavy dependencies (`@earendil-works/pi-*`) load on `start()`, never at
  * import: the resolver imports this module for every boot, including OpenCode's.
@@ -20,6 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
+import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
@@ -29,11 +30,11 @@ import type { PiConfig } from './config'
 import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
-import { WireTranscript, type WireFrame, type WireMessage } from './transcript'
-import { PiWireAdapter, assistantMessageError, type WireEmission } from './wire'
+import { TranscriptStore, type RuntimeFrame } from './transcript'
+import { PiTurnEvents, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { TransientRetry, type RetryPlan } from './transient-retry'
 import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
 
@@ -159,11 +160,11 @@ export interface TurnEnd {
 export interface PiRuntimeHooks {
   onTurnBegin?: (turn: { rootId: string; messageId: string }) => void
   onTurnEnd?: (turn: TurnEnd & { rootId: string }) => void
-  onQuestionAsked?: (request: QuestionRequestWire, answer: (answers: string[][]) => void) => void
+  onQuestionAsked?: (request: RuntimeQuestionRequest, answer: (answers: string[][]) => void) => void
   /** A tool call waits for the user's approval (root or subagent). Report only: the reply comes over the permission routes. */
-  onPermissionAsked?: (request: PermissionRequestWire) => void
+  onPermissionAsked?: (request: RuntimePermissionRequest) => void
   /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
-  onFrame?: (frame: WireFrame) => void
+  onFrame?: (frame: RuntimeFrame) => void
 }
 
 export interface PiRuntimeOptions {
@@ -181,7 +182,7 @@ interface ChildSession {
   createdAt: number
   updatedAt: number
   status: 'idle' | 'busy'
-  transcript: WireTranscript
+  transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
   /** Set while a prompt runs in the child. */
@@ -195,7 +196,7 @@ interface ChildDump {
   createdAt: number
   updatedAt: number
   agentMessages: AgentMessage[]
-  transcript: WireMessage[]
+  transcript: KortixMessage[]
 }
 
 interface Turn {
@@ -211,7 +212,7 @@ interface Dump {
   title: string
   createdAt: number
   agentMessages: AgentMessage[]
-  transcript: WireMessage[]
+  transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
   children?: ChildDump[]
@@ -224,7 +225,7 @@ function decodeDataUrl(url: string): { mime: string; data: string } | null {
 
 export class PiRuntime {
   readonly rootId: string
-  readonly transcript = new WireTranscript()
+  readonly transcript = new TranscriptStore()
   readonly permissions: PermissionBroker
   readonly questions: QuestionBroker
   readonly createdAt: number
@@ -262,7 +263,7 @@ export class PiRuntime {
   private compiled: CompiledAgentConfig | null = null
   private agentName = 'build'
   private policy: PermissionPolicy = {}
-  private adapter: PiWireAdapter | null = null
+  private adapter: PiTurnEvents | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private active: Turn | null = null
   private runningTools = 0
@@ -383,7 +384,7 @@ export class PiRuntime {
       // pi spreads the live process.env into every shell itself; BASH_ENV adds
       // the egress shim's proxy + CA, which only the agent env file carries.
       this.executionEnv = new node.NodeExecutionEnv({ cwd: this.workspace, shellEnv: { ...AGENT_SHELL_ENV } })
-      this.adapter = new PiWireAdapter({
+      this.adapter = new PiTurnEvents({
         sessionID: this.rootId,
         mintMessageId: () => this.clock.mint(this.now()),
         parentMessageId: () => this.active?.messageId ?? null,
@@ -629,8 +630,9 @@ export class PiRuntime {
       for (const frame of this.adapter!.settleRetry()) this.publish(frame)
       if (timedOut) {
         outcome = 'error'
-        error = { name: 'TimeoutError', message: 'The session made no progress. Please try again.' }
-        this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message: error.message } } } })
+        const message = 'The session made no progress. Please try again.'
+        error = { name: 'TimeoutError', message }
+        this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
         this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
         this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
       }
@@ -650,7 +652,7 @@ export class PiRuntime {
       error = { name: timedOut ? 'TimeoutError' : 'UnknownError', message }
       this.adapter?.settleRetry()
       logger.error('[pi] turn failed', { messageId: turn.messageId, err: message })
-      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message } } } })
+      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
       this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
@@ -772,7 +774,7 @@ export class PiRuntime {
         createdAt,
         updatedAt: createdAt,
         status: 'idle',
-        transcript: new WireTranscript(),
+        transcript: new TranscriptStore(),
         agentMessages: [],
         agent: null,
       }
@@ -786,7 +788,7 @@ export class PiRuntime {
     const messageId = this.clock.mint(this.now())
     this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
     const retry = new TransientRetry({ baseDelayMs: this.cfg.piTurnRetryBaseMs, contextWindow: () => selected.model.contextWindow ?? 0, now: this.now })
-    const adapter = new PiWireAdapter({
+    const adapter = new PiTurnEvents({
       sessionID: child.id,
       mintMessageId: () => this.clock.mint(this.now()),
       parentMessageId: () => messageId,
@@ -863,7 +865,7 @@ export class PiRuntime {
   }
 
   /** The child session a read names, or null. */
-  childSession(id: string): { object: Record<string, unknown>; transcript: WireTranscript } | null {
+  childSession(id: string): { object: Record<string, unknown>; transcript: TranscriptStore } | null {
     const child = this.children.get(id)
     return child ? { object: this.childSessionObject(child), transcript: child.transcript } : null
   }
@@ -882,7 +884,7 @@ export class PiRuntime {
 
   private translateAndPublish(event: AgentEvent): void {
     if (!this.adapter) return
-    let frames: WireEmission[]
+    let frames: TurnEventEmission[]
     try {
       frames = this.adapter.translate(event)
     } catch (err) {
@@ -893,8 +895,8 @@ export class PiRuntime {
   }
 
   /** Sequence one wire frame onto the bus AND fold it into the transcript. */
-  publish(frame: WireFrame, opts: { transcriptOnly?: boolean; busOnly?: boolean } = {}): void {
-    const p = frame.properties
+  publish(frame: RuntimeFrame, opts: { transcriptOnly?: boolean; busOnly?: boolean } = {}): void {
+    const p = frame.properties as Record<string, unknown>
     const session =
       (p.sessionID as string | undefined) ??
       (p.info as { sessionID?: string } | undefined)?.sessionID ??
@@ -1351,7 +1353,7 @@ export class PiRuntime {
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
       this.children.clear()
       for (const saved of dump.children ?? []) {
-        const transcript = new WireTranscript()
+        const transcript = new TranscriptStore()
         transcript.load(saved.transcript)
         for (const message of saved.transcript) this.clock.observe(message.info.id as string)
         const { transcript: _saved, ...rest } = saved

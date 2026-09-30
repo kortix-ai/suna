@@ -17,7 +17,7 @@
  * (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
 import { logger } from '../http/logger';
 

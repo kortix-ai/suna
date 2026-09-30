@@ -61,7 +61,7 @@ const cases = [
   ['egress-shim to node-forge', 'src/services/egress-shim/ca.ts', "import forge from 'node-forge';", true],
 
   // harness/ — its own layer; adapters are isolated; only harness.ts reaches into one
-  ['adapter to own folder', 'src/harness/pi/boot.ts', "import './wire';", true],
+  ['adapter to own folder', 'src/harness/pi/boot.ts', "import './turn-events';", true],
   ['adapter to own nested folder', 'src/harness/pi/runtime.ts', "import './extensions/host';", true],
   ['adapter to the contract', 'src/harness/pi/boot.ts', "import type { SandboxBootState } from '../contract/boot-state';", true],
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],

@@ -6,6 +6,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- The Kortix transcript format, `kortix.transcript.v1`
+  (`KORTIX_TRANSCRIPT_SCHEMA`): `KortixMessage` (`{ info, parts }`),
+  `KortixMessageInfo`, the `KortixPart` union and its 12 part types, the
+  message errors (`KortixMessageError`, each with an optional `code`),
+  `KortixSessionEvent` (the 14 session events, including
+  `message.part.delta`), `RuntimeQuestion`, `RuntimeQuestionRequest`,
+  `RuntimePermissionRequest`, `RUNTIME_PERMISSION_REPLIES`,
+  `RUNTIME_PERMISSION_CAPABILITIES`, `TURN_ERROR_CODES` and `isTurnErrorCode`.
+  They keep OpenCode 1.18's field names, so every value a runtime sends
+  today is valid. `Message`, `Part`, `TextPart`, `ToolPart`, `SessionStatus`,
+  `PermissionRequest`, `QuestionRequest` and the other transcript names this
+  package published before are now aliases of these types.
 - Computers are connector accounts. `addComputerToProject(projectId,
   { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
   `project(id).connectors.connections.addComputer`, and
@@ -165,6 +177,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   retried.
 
 ### Removed
+
+- The OpenCode type re-export. `@kortix/sdk` and `@kortix/sdk/opencode-client`
+  no longer re-export every type of `@opencode-ai/sdk` (1,369 names, among
+  them the 88 `V2Event*` aliases and every `*Data`/`*Responses` request
+  type). The transcript names are Kortix types now (see Added); the runtime
+  types this package still reads (`Session`, `Agent`, `Command`, `Config`,
+  `Model`, `Provider`, `ProviderListResponse`, `McpStatus`, `Project`,
+  `Path`, `Pty`, `VcsFileDiff`, `Worktree*`, `FileContent`, the
+  `ProviderAuth*` types and the `Event` union of the 37 runtime events it
+  handles) are declared in this package, frozen at `@opencode-ai/sdk`
+  1.18.23. A consumer that imported any other OpenCode type from this
+  package must import it from `@opencode-ai/sdk`. This is an intentional
+  breaking type-contract change and requires a breaking SDK release.
 
 - The retired local sandbox value was removed from `AppHostingProvider`. This
   is an intentional breaking type-contract change and requires a breaking SDK

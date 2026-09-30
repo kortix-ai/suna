@@ -1,4 +1,4 @@
-import type { Model } from '@opencode-ai/sdk/v2/client';
+import type { Model } from '../runtime/runtime-types';
 import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './provider-selection';
 
 /**

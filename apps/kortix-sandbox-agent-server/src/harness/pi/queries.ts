@@ -24,10 +24,10 @@ export function createPiQueryService(runtime: () => PiRuntime | null): HarnessQu
       const rt = runtime()
       const message = rt?.transcript.messageById(messageId)
       const part = message?.parts.find((candidate) => candidate.id === partId)
-      if (!rt || !part) return { kind: 'error', reason: 'not-found', body: { error: 'attachment not found' } }
-      const decoded = typeof part.url === 'string' ? decodeDataUrl(part.url) : null
+      if (!rt || !part || part.type !== 'file') return { kind: 'error', reason: 'not-found', body: { error: 'attachment not found' } }
+      const decoded = decodeDataUrl(part.url)
       if (!decoded) return { kind: 'error', reason: 'missing-bytes', body: { error: 'attachment bytes are not held by this box' } }
-      return { kind: 'bytes', bytes: decoded.bytes, mime: (part.mime as string | undefined) ?? decoded.mime }
+      return { kind: 'bytes', bytes: decoded.bytes, mime: part.mime || decoded.mime }
     },
   }
 
@@ -51,15 +51,15 @@ export function createPiQueryService(runtime: () => PiRuntime | null): HarnessQu
           const transcript = sessionId === rt.rootId ? rt.transcript : rt.childSession(sessionId)?.transcript
           const page = transcript
             ? after
-              ? { messages: transcript.all().filter((m) => (m.info.id as string) > after).slice(0, limit), hasMore: false }
+              ? { messages: transcript.all().filter((m) => m.info.id > after).slice(0, limit), hasMore: false }
               : transcript.page({ limit, before })
             : { messages: [], hasMore: false }
           let truncated = 0
           const projected = page.messages.map((message) => ({
             info: message.info,
             parts: message.parts.map((part) => {
-              const state = part.state as Record<string, unknown> | undefined
-              if (state && typeof state.output === 'string' && state.output.length > TOOL_OUTPUT_MAX_BYTES) {
+              const state = part.type === 'tool' ? part.state : undefined
+              if (state?.status === 'completed' && state.output.length > TOOL_OUTPUT_MAX_BYTES) {
                 truncated++
                 return {
                   ...part,

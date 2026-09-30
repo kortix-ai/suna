@@ -1,4 +1,4 @@
-import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part, SessionStatus } from '../../core/runtime/runtime-types';
 import { getClient, getClientForUrl, RuntimeNotReadyError } from '../../core/runtime/client';
 import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/runtime-errors';
 import { ApiError } from '../../core/http/api/errors';

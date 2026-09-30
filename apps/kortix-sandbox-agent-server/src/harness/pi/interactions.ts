@@ -1,44 +1,21 @@
 /**
  * The two blocking interactions a turn can raise: a permission request before
- * a tool runs, and a question the agent asks the user. Both are OpenCode wire
- * objects (`PermissionRequest`, `QuestionRequest`) answered over the same
+ * a tool runs, and a question the agent asks the user. Both are Kortix types
+ * (`RuntimePermissionRequest`, `RuntimeQuestionRequest`), answered over the
  * routes the product already calls (`/permission/:id/reply`,
  * `/question/:id/reply|reject`).
  */
 import { randomUUID } from 'node:crypto'
-import type { WireFrame } from './transcript'
+import type {
+  RuntimePermissionReply,
+  RuntimePermissionRequest,
+  RuntimeQuestion,
+  RuntimeQuestionRequest,
+  RuntimeToolRef,
+} from '@kortix/api-contract/transcript'
+import type { RuntimeFrame } from './transcript'
 
-export type PermissionReply = 'once' | 'always' | 'reject'
-
-export interface PermissionRequestWire {
-  id: string
-  sessionID: string
-  permission: string
-  patterns: string[]
-  metadata: Record<string, unknown>
-  always: string[]
-  tool?: { messageID: string; callID: string }
-}
-
-export interface QuestionOption {
-  label: string
-  description: string
-}
-
-export interface QuestionInfo {
-  question: string
-  header: string
-  options: QuestionOption[]
-  multiple?: boolean
-  custom?: boolean
-}
-
-export interface QuestionRequestWire {
-  id: string
-  sessionID: string
-  questions: QuestionInfo[]
-  tool?: { messageID: string; callID: string }
-}
+export type PermissionReply = RuntimePermissionReply
 
 /** `allow` | `ask` | `deny` per tool name, `*` as the default. */
 export type PermissionRule = 'allow' | 'ask' | 'deny'
@@ -147,14 +124,14 @@ export function skillGranted(policy: PermissionPolicy, name: string): boolean {
 }
 
 export class PermissionBroker {
-  private readonly pending = new Map<string, { request: PermissionRequestWire; resolve: (reply: PermissionReply) => void }>()
+  private readonly pending = new Map<string, { request: RuntimePermissionRequest; resolve: (reply: PermissionReply) => void }>()
   private readonly alwaysAllowed = new Set<string>()
 
   constructor(
     private readonly sessionID: string,
-    private readonly publish: (frame: WireFrame) => void,
+    private readonly publish: (frame: RuntimeFrame) => void,
     private policy: PermissionPolicy = {},
-    private readonly onAsked?: (request: PermissionRequestWire) => void,
+    private readonly onAsked?: (request: RuntimePermissionRequest) => void,
   ) {}
 
   setPolicy(policy: PermissionPolicy): void {
@@ -171,8 +148,8 @@ export class PermissionBroker {
   }
 
   /** Resolves with the user's reply; never rejects. */
-  ask(input: { tool: string; args: unknown; ref?: { messageID: string; callID: string } }): Promise<PermissionReply> {
-    const request: PermissionRequestWire = {
+  ask(input: { tool: string; args: unknown; ref?: RuntimeToolRef }): Promise<PermissionReply> {
+    const request: RuntimePermissionRequest = {
       id: `perm_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
       sessionID: this.sessionID,
       permission: input.tool,
@@ -198,7 +175,7 @@ export class PermissionBroker {
     return true
   }
 
-  list(): PermissionRequestWire[] {
+  list(): RuntimePermissionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
   }
 
@@ -209,17 +186,17 @@ export class PermissionBroker {
 }
 
 export class QuestionBroker {
-  private readonly pending = new Map<string, { request: QuestionRequestWire; resolve: (answers: string[][] | null) => void }>()
+  private readonly pending = new Map<string, { request: RuntimeQuestionRequest; resolve: (answers: string[][] | null) => void }>()
 
   constructor(
     private readonly sessionID: string,
-    private readonly publish: (frame: WireFrame) => void,
-    private readonly onAsked?: (request: QuestionRequestWire) => void,
+    private readonly publish: (frame: RuntimeFrame) => void,
+    private readonly onAsked?: (request: RuntimeQuestionRequest) => void,
   ) {}
 
   /** Resolves with the answers, or null when rejected; never rejects. */
-  ask(questions: QuestionInfo[], ref?: { messageID: string; callID: string }): Promise<string[][] | null> {
-    const request: QuestionRequestWire = {
+  ask(questions: RuntimeQuestion[], ref?: RuntimeToolRef): Promise<string[][] | null> {
+    const request: RuntimeQuestionRequest = {
       id: `que_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
       sessionID: this.sessionID,
       questions,
@@ -250,7 +227,7 @@ export class QuestionBroker {
     return true
   }
 
-  list(): QuestionRequestWire[] {
+  list(): RuntimeQuestionRequest[] {
     return [...this.pending.values()].map((entry) => entry.request)
   }
 

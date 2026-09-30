@@ -1,4 +1,4 @@
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import type { RuntimeClient } from '../runtime/client';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -47,7 +47,7 @@ import {
 export type SessionModel = { providerID: string; modelID: string };
 
 /** The opencode runtime client for the currently-active sandbox (set by the host). */
-function runtime(): OpencodeClient {
+function runtime(): RuntimeClient {
   return getClient();
 }
 
@@ -1411,7 +1411,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       // The typed opencode client, reached ONLY through the SDK. The host never
       // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
       // with server-owned side-effects) layer on top of this as they land.
-      get runtime(): OpencodeClient {
+      get runtime(): RuntimeClient {
         return getClientForUrl(requireReady('runtime').runtimeUrl);
       },
 

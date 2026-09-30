@@ -481,7 +481,7 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ambiguity pins for names reachable both from our modules and from the
-// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// vendor type star (`export type * from './core/runtime/runtime-types'` inside
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
