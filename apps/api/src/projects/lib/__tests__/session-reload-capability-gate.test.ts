@@ -150,6 +150,28 @@ describe('reloadSessionConfig capability gate', () => {
     });
   });
 
+  test('a daemon that applies in place (pi, reload: null) still reports the etag it runs now', async () => {
+    const daemon = fakeDaemon({ capable: true, etagAfter: 'ffff', converge: convergeBody('applied', { reload: null }) });
+    const result = await reloadSessionConfig(INPUT, daemon.deps);
+
+    expect(daemon.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+      'GET /kortix/health?turn=1',
+      'POST /kortix/refresh?restart=0',
+      'POST /kortix/config/converge',
+      'GET /kortix/health',
+    ]);
+    expect(result).toMatchObject({
+      applied: true,
+      agent_files: 'updated',
+      opencode_reload: null,
+      turn_ended: null,
+      previous_etag: 'eeee',
+      etag: 'ffff',
+      release_outcome: 'applied',
+      release: { running_release_id: RELEASE_B, desired_release_id: RELEASE_B },
+    });
+  });
+
   test('the health report and the converge report both reach the quarantine recorder', async () => {
     const daemon = fakeDaemon({
       capable: true,
@@ -266,6 +288,13 @@ describe('convergeToReloadResult', () => {
       agent_files: 'updated',
       opencode_reload: 'restarted',
       turn_ended: true,
+      etag: 'ffff',
+    });
+    expect(convergeToReloadResult(converge('applied', { reload: null }), etags)).toMatchObject({
+      applied: true,
+      agent_files: 'updated',
+      opencode_reload: null,
+      turn_ended: null,
       etag: 'ffff',
     });
     expect(convergeToReloadResult(converge('unchanged'), etags)).toMatchObject({
