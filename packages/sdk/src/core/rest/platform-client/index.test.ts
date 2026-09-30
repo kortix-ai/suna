@@ -23,15 +23,6 @@ const EXPECTED_FUNCTIONS = [
   'listSandboxProjectMembers',
   'grantSandboxProjectAccess',
   'revokeSandboxProjectAccess',
-  'getInvite',
-  'acceptInvite',
-  'declineInvite',
-  'listBackups',
-  'createBackup',
-  'restoreBackup',
-  'deleteBackup',
-  'setupSSH',
-  'getSSHConnection',
   'isDestructivePhase',
   'getSandboxUpdateStatus',
   'getLatestSandboxVersion',
@@ -71,4 +62,27 @@ test('shared internals stay off the public surface', () => {
   expect(surface.platformFetch).toBeUndefined();
   expect(surface.findProjectSessionSandbox).toBeUndefined();
   expect(surface.listProjectSessionSandboxes).toBeUndefined();
+});
+
+test('retired platform-client shims are absent from the public barrel', () => {
+  for (const name of [
+    'getInvite',
+    'acceptInvite',
+    'declineInvite',
+    'listBackups',
+    'createBackup',
+    'restoreBackup',
+    'deleteBackup',
+    'setupSSH',
+    'getSSHConnection',
+    'createInstance',
+    'deleteInstance',
+    'markInstanceError',
+    'claimComputer',
+    'getJustavpsServerTypes',
+    'getSandboxProvisionStatus',
+    'getSandboxProvisionStreamUrl',
+  ]) {
+    expect(name in platformClient).toBe(false);
+  }
 });
