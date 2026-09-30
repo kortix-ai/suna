@@ -26,7 +26,7 @@ const baseFixtureMessages = [
     parts: [{ id: 'answer-fixture', type: 'text', text: 'synthetic answer' }],
   },
 ];
-let fixtureMessages = baseFixtureMessages;
+let fixtureMessages: any[] = baseFixtureMessages;
 const userFixture = (id: string, text: string) => ({
   info: { id, role: 'user', time: { created: 1 } },
   parts: [{ id: `${id}-text`, type: 'text', text }],
