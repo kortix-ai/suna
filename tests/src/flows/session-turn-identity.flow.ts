@@ -14,6 +14,7 @@ import { flow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import type { Principal } from '../core/types';
+import { subscribe } from '../fixtures/billing';
 import { mintWireMessageId, readTranscript, waitForSessionReady } from '../fixtures/session-run';
 
 const probe = (nonce: string) =>
@@ -34,7 +35,14 @@ flow(
     ],
   },
   async (ctx) => {
-    const project = await ctx.fixtures.sharedSeededProject();
+    // Two humans of one account: the owner and an account admin. Team-scoped
+    // principals exist only on a team account, so the flow funds its own.
+    const team = await ctx.fixtures.team();
+    await ctx.step('fund the team account', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+    });
+    const admin = await team.addMember('admin');
+    const project = await team.project({ seed: true });
     const session = await ctx.fixtures.session(project);
     const params = { projectId: project.id, sessionId: session.id };
     const run = Date.now().toString(36);
@@ -78,7 +86,7 @@ flow(
       });
 
     await turn(ctx.P.OWNER, 'the owner', 1);
-    await turn(ctx.P.ADMIN, 'an account admin', 2);
+    await turn(admin, 'an account admin', 2);
     await turn(ctx.P.OWNER, 'the owner', 3);
   },
 );
