@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // `@/api/config` pulls in the Supabase client, which cannot load under bun.
 // bun's mock.module is process-wide, so the stub carries every export of
@@ -14,6 +14,7 @@ const {
   DETACHED_SESSION_LIMIT,
   EMPTY_SNAPSHOT,
   getEmptySnapshot,
+  hydrateLiveStatuses,
   loadFullHistory,
   noopSubscribe,
   reconcileLiveSession,
@@ -257,5 +258,131 @@ describe('loadFullHistory', () => {
 
   test('no mounted controller: unknown, reported incomplete', async () => {
     expect(await loadFullHistory('nobody')).toEqual({ complete: false });
+  });
+});
+
+describe('hydrateLiveStatuses', () => {
+  const url = 'http://box.test';
+  const realFetch = globalThis.fetch;
+  const statusBody = (body: unknown) => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+  };
+  const user = { info: { id: 'm1', role: 'user', sessionID: 's1', time: { created: 1 } }, parts: [] };
+  const reply = (completed?: number) => ({
+    info: { id: 'm2', role: 'assistant', sessionID: 's1', time: { created: 2, ...(completed ? { completed } : {}) } },
+    parts: [],
+  });
+  /** A controller whose tail read lands `messages` in the store. */
+  const controllerLanding = (messages: unknown[]) => ({
+    calls: [] as string[],
+    async reconcile(this: { calls: string[] }, reason?: string) {
+      this.calls.push(reason ?? 'manual');
+      useSyncStore.getState().hydrate('s1', messages as never);
+    },
+  });
+
+  beforeEach(() => {
+    resetLiveSessionsForTest();
+    useSyncStore.getState().reset();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  test('a busy slot the runtime no longer lists goes idle once the re-read transcript ends finished', async () => {
+    const controller = controllerLanding([user, reply(3)]);
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller });
+    useSyncStore.getState().hydrate('s1', [user, reply()] as never);
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(controller.calls).toEqual(['sse-gap']);
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'idle' });
+  });
+
+  test('it stays busy while the re-read transcript is still open', async () => {
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller: controllerLanding([user, reply()]) });
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('it stays busy for a prompt the runtime has not answered yet', async () => {
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller: controllerLanding([user]) });
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a status frame that lands during the re-read wins', async () => {
+    const frame = { type: 'busy' as const };
+    registerLiveSession({
+      sessionId: 's1',
+      sandboxUrl: url,
+      controller: {
+        async reconcile() {
+          useSyncStore.getState().hydrate('s1', [user, reply(3)] as never);
+          useSyncStore.getState().setStatus('s1', frame);
+        },
+      },
+    });
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toBe(frame);
+  });
+
+  test('a session that is not mounted is left alone', async () => {
+    useSyncStore.getState().hydrate('s1', [user, reply(3)] as never);
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a stale read writes nothing', async () => {
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller: controllerLanding([user, reply(3)]) });
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => true);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('a listed working session still fills a slot with no status', async () => {
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller: controllerLanding([user, reply()]) });
+    statusBody({ s1: { type: 'busy' } });
+
+    await hydrateLiveStatuses(url, () => false);
+
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'busy' });
+  });
+
+  test('with reread off it judges the transcript already in the store', async () => {
+    const controller = controllerLanding([user, reply()]);
+    registerLiveSession({ sessionId: 's1', sandboxUrl: url, controller });
+    useSyncStore.getState().hydrate('s1', [user, reply(3)] as never);
+    useSyncStore.getState().setStatus('s1', { type: 'busy' });
+    statusBody({});
+
+    await hydrateLiveStatuses(url, () => false, { reread: false });
+
+    expect(controller.calls).toEqual([]);
+    expect(useSyncStore.getState().sessionStatus.s1).toEqual({ type: 'idle' });
   });
 });

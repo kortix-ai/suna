@@ -3,6 +3,7 @@
 import { getAuthToken } from '@/api/config';
 import { createHttpSessionSyncController, type SessionSyncMessage } from '@kortix/sdk';
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { statusesToHydrate, transcriptEndsFinished, unlistedWorkingSessions } from './stream-policy';
 import { selectSessionsToEvict, useSyncStore } from './sync-store';
 import type { MessageWithParts } from './types';
 
@@ -132,6 +133,60 @@ export function reconcileLiveSession(sessionId: string, reason: SessionSyncReaso
   return Promise.all(requests).then(() => undefined);
 }
 
+/**
+ * One `GET /session/status` read, on every stream open and when a session
+ * page mounts. Busy/idle otherwise comes only from live frames, so a thread
+ * opened — or a stream reopened — mid-turn read "not running" until the next
+ * status frame (KRTX-606).
+ *
+ * It also settles the opposite loss. A turn that ends while the stream is down
+ * (app in the background, a network drop, a recycle) loses its `session.idle`
+ * frame, and nothing else writes idle: the slot read busy until the next turn.
+ * Absence from the list is not proof on its own, so a working session the
+ * runtime no longer lists goes idle only when its re-read transcript ends on a
+ * finished reply.
+ *
+ * `reread: false` skips the tail read when the caller has just made one.
+ */
+export async function hydrateLiveStatuses(
+  sandboxUrl: string,
+  isStale: () => boolean,
+  options: { reread?: boolean } = {},
+): Promise<void> {
+  try {
+    const before = useSyncStore.getState().sessionStatus;
+    const token = await getAuthToken();
+    const res = await fetch(`${sandboxUrl}/session/status`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok || isStale()) return;
+    const body: unknown = await res.json();
+    if (isStale()) return;
+    const store = useSyncStore.getState();
+    const onThisComputer = (id: string) => isLiveSessionOn(id, sandboxUrl);
+    const unlisted = unlistedWorkingSessions(body, before, store.sessionStatus, onThisComputer);
+    for (const [sessionId, status] of statusesToHydrate(body, before, store.sessionStatus, onThisComputer)) {
+      store.setStatus(sessionId, status);
+    }
+    await Promise.all(
+      unlisted.map(async (sessionId) => {
+        const slot = before[sessionId];
+        if (options.reread !== false) await reconcileLiveSession(sessionId, 'sse-gap');
+        if (isStale()) return;
+        const now = useSyncStore.getState();
+        // A frame that landed during the re-read is newer than this read.
+        if (now.sessionStatus[sessionId] !== slot) return;
+        if (transcriptEndsFinished(now.messages[sessionId])) now.setStatus(sessionId, { type: 'idle' });
+      }),
+    );
+  } catch {
+    // The next open retries; live frames keep correcting it meanwhile.
+  }
+}
+
 /** The most older pages `loadFullHistory` reads before it gives up. */
 export const FULL_HISTORY_MAX_PAGES = 20;
 
@@ -226,8 +281,15 @@ export function useSessionSync(sandboxUrl: string | undefined, sessionId: string
   useEffect(() => {
     if (!controller || !sandboxUrl || !sessionId) return;
     const unregister = registerLiveSession({ sessionId, sandboxUrl, controller });
-    void controller.start();
+    let unmounted = false;
+    // A thread opened with a stale busy slot: the stream does not reopen, so
+    // this is the only status read it gets. `start()` just read the tail.
+    void controller
+      .start()
+      .then(() => hydrateLiveStatuses(sandboxUrl, () => unmounted, { reread: false }))
+      .catch(() => {});
     return () => {
+      unmounted = true;
       controller.destroy();
       unregister();
     };
