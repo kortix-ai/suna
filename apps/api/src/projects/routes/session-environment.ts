@@ -7,6 +7,7 @@
  * traffic runs over the edge, never through the session proxy.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
@@ -15,10 +16,9 @@ import {
   SessionEnvironmentError,
   stopSessionEnvironment,
 } from '../../platform/services/session-environment';
-import { assertProjectCapability, loadProjectForUser } from '../lib/access';
+import { assertProjectCapability, type loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { isUuid } from '../../shared/validate';
 import { guardSession, sessionAccessDenied, type SessionNeed } from '../lib/session-access';
 
 const EnvironmentSchema = z.object({
@@ -67,11 +67,9 @@ async function authorizeEnvironmentCall(
 > {
   const projectId = c.req.param('projectId') ?? '';
   const sessionId = c.req.param('sessionId') ?? '';
-  if (!isUuid(sessionId)) {
-    return { kind: 'error', response: c.json({ error: 'Invalid session id' }, 400) };
-  }
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
+  const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+  if (binding.kind === 'error') return binding;
+  const { loaded } = binding;
   const callerSession = callerKortixSessionId(c);
   if (callerSession && callerSession !== sessionId) {
     return { kind: 'error', response: c.json({ error: 'Forbidden' }, 403) };

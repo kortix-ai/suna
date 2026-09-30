@@ -150,7 +150,33 @@ project.
 - `list_users`, `user_info` and `auth_test` read the workspace directory and are
   not limited.
 
-These rules apply to reads. Sending a message is not limited by them.
+Writes follow their own rule, below.
+
+## What the agent can post
+
+Posting, sending a file, editing, deleting, reacting, joining a channel and
+binding a thread follow one rule: the agent never acts inside another
+project's channel or thread.
+
+| Target | Write |
+|---|---|
+| A channel of this project, or a thread one of its sessions started or joined | Allowed |
+| A channel no project is connected to | Allowed. A new message starts this project's thread, so replies come back to the session |
+| A direct message with a person | Allowed, also when that person's DM with the bot runs another project |
+| A channel or group DM of another project | Refused |
+| A thread of another project, in any conversation | Refused: no reply, edit, delete or reaction |
+
+A refused write answers `403` with the reason `conversation_not_in_project`
+and a message that names the conversation. `slack send --file` and
+`slack bind-thread` follow the same rule.
+
+`channel` must be the conversation or user id, such as `C0123ABCD` or
+`U0123ABCD`, not a channel name. Slack posts to a name, and a name cannot be
+checked against the rule. If Slack still posts a message anywhere but the
+conversation that was checked, Kortix deletes the message and refuses the post.
+
+To post in a channel that another project runs, run `/kortix switch` in it and
+pick this project, or post from that project.
 
 ## Control a session with slash commands
 

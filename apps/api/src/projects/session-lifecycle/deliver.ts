@@ -159,7 +159,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
           sandboxProvider: projectSessions.sandboxProvider,
           baseRef: projectSessions.baseRef,
           agentName: projectSessions.agentName,
-          opencodeSessionId: projectSessions.opencodeSessionId,
+          runtimeSessionId: projectSessions.runtimeSessionId,
           accountId: projectSessions.accountId,
           metadata: projectSessions.metadata,
         })
@@ -348,7 +348,7 @@ export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTa
     db
       .select({
         status: projectSessions.status,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
       })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))

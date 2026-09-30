@@ -116,14 +116,14 @@ export async function runDoctor(argv: string[]): Promise<number> {
   };
 
   try {
-    // ── 5. Resolve the session-scoped OpenCode runtime ──────────────────
+    // ── 5. Resolve the session-scoped runtime ──────────────────────────
     process.stdout.write(`  ${C.dim}waiting for sandbox to come up…${C.reset}\n`);
-    let opencodeSessionId: string;
+    let runtimeSessionId: string;
     try {
       const ready = await withKortixScope(auth, () =>
         handle.ensureReady({ readyTimeoutMs: flags.timeoutSec * 1000 }),
       );
-      opencodeSessionId = ready.opencodeSessionId;
+      runtimeSessionId = ready.runtimeSessionId;
     } catch (error) {
       process.stdout.write(`${status.err(`session runtime failed: ${describe(error)}`)}\n`);
       failures += 1;
@@ -132,7 +132,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
     const provisionMs = Date.now() - t0;
     process.stdout.write(`${status.ok(`sandbox running (${(provisionMs / 1000).toFixed(1)}s)`)}\n`);
     process.stdout.write(
-      `${status.ok(`opencode session ${C.faded}${opencodeSessionId}${C.reset}`)}\n`,
+      `${status.ok(`runtime session ${C.faded}${runtimeSessionId}${C.reset}`)}\n`,
     );
 
     // ── 6. Send through the session-scoped SDK handle ────────────────────

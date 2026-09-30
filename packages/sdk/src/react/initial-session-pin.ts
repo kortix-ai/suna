@@ -18,7 +18,7 @@ export function resolveSessionPin({
 // `persistedPin` above used to be fed ONLY from `getProjectSession` (a REST
 // round trip via `useProjectSession`). That is real, durable, server-side
 // storage — but it is never available on the FIRST render of a cold mount, so
-// `useCanonicalOpenCodeSession` painted nothing until that fetch (or /start's
+// `useCanonicalRuntimeSession` painted nothing until that fetch (or /start's
 // much slower long-poll) came back, even for a session whose transcript was
 // already sitting in this browser's IDB cache under the very id we're waiting
 // to learn.

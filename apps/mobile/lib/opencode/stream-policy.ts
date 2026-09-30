@@ -251,3 +251,38 @@ export function statusesToHydrate<S extends StatusLike>(
   }
   return writes;
 }
+
+/**
+ * Live sessions the store reads working that one `GET /session/status` read no
+ * longer lists. Absence alone is not evidence of idle (see
+ * `statusesToHydrate`), so these are only candidates: the caller re-reads each
+ * transcript and asks `transcriptEndsFinished`.
+ */
+export function unlistedWorkingSessions<S extends StatusLike>(
+  fetched: unknown,
+  before: Readonly<Record<string, S | undefined>>,
+  current: Readonly<Record<string, S | undefined>>,
+  include: (sessionId: string) => boolean,
+): string[] {
+  if (!fetched || typeof fetched !== 'object' || Array.isArray(fetched)) return [];
+  const listed = fetched as Record<string, S>;
+  return Object.keys(current).filter((sessionId) => {
+    const type = current[sessionId]?.type;
+    return (
+      (type === 'busy' || type === 'retry') &&
+      current[sessionId] === before[sessionId] &&
+      !(sessionId in listed) &&
+      include(sessionId)
+    );
+  });
+}
+
+/** The newest message is an assistant reply that completed or failed. */
+export function transcriptEndsFinished(
+  messages:
+    | readonly { info: { role: string; time?: { completed?: number }; error?: unknown } }[]
+    | undefined,
+): boolean {
+  const info = messages?.[messages.length - 1]?.info;
+  return info?.role === 'assistant' && (!!info.time?.completed || !!info.error);
+}

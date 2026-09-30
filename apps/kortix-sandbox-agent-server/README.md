@@ -119,23 +119,44 @@ import rules, and where new code goes; `bun run lint` enforces them.
 ```json
 {
   "daemon": "ok",
-  "opencode": "ok",
+  "capabilities": ["file.import", "file.append", "config.release.v1", "session.rewind", "session.compact", "…"],
+  "status": "ok",
+  "runtimeReady": true,
+  "boot_error": null,
   "uptime_s": 123,
-  "opencode_pid": 4567,
   "static_web_port": 3211,
   "repo": "https://github.com/owner/name.git",
   "branch": "main",
   "commit_sha": "abc123...",
   "compiled_boot_mode": "prefer",
   "compiled_checkout": true,
-  "compiled_runtime": true,
-  "compiled_runtime_format": "kortix.compiled-runtime.v1",
-  "compiled_runtime_source_sha": "abc123..."
+  "runtime": { "running": { "harness": "opencode", "harness_version": "1.18.23", "…": "…" } },
+  "harness": {
+    "id": "opencode",
+    "version": "1.18.23",
+    "state": "ok",
+    "ready": true,
+    "error": null,
+    "session": { "id": "ses_…", "required": true },
+    "turn": null,
+    "details": { "pid": 4567, "port": 4096, "compiled_runtime": true }
+  },
+  "opencode": "ok",
+  "opencode_pid": 4567,
+  "opencode_port": 4096,
+  "opencode_session_id": "ses_…"
 }
 ```
 
 - `daemon` is always `"ok"` if the route responds.
-- `opencode` is `"ok" | "starting" | "down"`. `"starting"` covers both
+- `harness` is the selected harness's closed block (E19). `runtimeReady` is
+  computed once in `routes/kortix/health.ts` from the host's repo checks and
+  `harness.ready`. `capabilities` lists the session features the runtime
+  serves (E1): all nine on OpenCode, `session.subagents` on pi.
+- `opencode`, `opencode_pid`, `opencode_port`, `opencode_session_id` and
+  `opencode_session_required` are the pre-W3 flat names of the block's fields
+  (`routes/kortix/legacy-names.ts`), kept for an API built before W3.
+- `harness.state` (flat: `opencode`) is `"ok" | "starting" | "down"`. `"starting"` covers both
   pre-bind and between-restart states. The supervisor sends OpenCode nothing —
   no readiness probe, no root list, no `/event` subscribe — until the process
   has printed `opencode server listening on http://…` on its (piped, forwarded)

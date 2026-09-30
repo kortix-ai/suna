@@ -28,7 +28,7 @@ export type { ModelKey };
 // Types
 // ============================================================================
 
-export interface UseOpenCodeLocalOptions {
+export interface UseRuntimeLocalOptions {
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
@@ -62,7 +62,7 @@ export interface UseOpenCodeLocalOptions {
   resolveServerDefault?: (agentName: string | undefined) => ModelKey | undefined;
 }
 
-export interface OpenCodeLocalAgent {
+export interface RuntimeLocalAgent {
   /** Currently selected agent (or first available) */
   current: Agent | undefined;
   /** List of visible (non-hidden) agents, including subagents */
@@ -73,7 +73,7 @@ export interface OpenCodeLocalAgent {
   move: (direction: 1 | -1) => void;
 }
 
-export interface OpenCodeLocalModel {
+export interface RuntimeLocalModel {
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
   /** Current model as ModelKey — for DISPLAY in the picker (the resolved default). */
@@ -105,9 +105,9 @@ export interface OpenCodeLocalModel {
   };
 }
 
-export interface OpenCodeLocal {
-  agent: OpenCodeLocalAgent;
-  model: OpenCodeLocalModel;
+export interface RuntimeLocal {
+  agent: RuntimeLocalAgent;
+  model: RuntimeLocalModel;
 }
 
 // ============================================================================
@@ -268,7 +268,7 @@ export function resolveCurrentAgentName(input: {
 // Hook
 // ============================================================================
 
-export function useOpenCodeLocal({
+export function useRuntimeLocal({
   agents: rawAgents,
   providers,
   config,
@@ -276,7 +276,7 @@ export function useOpenCodeLocal({
   boundAgentName,
   defaultAgentName,
   resolveServerDefault,
-}: UseOpenCodeLocalOptions): OpenCodeLocal {
+}: UseRuntimeLocalOptions): RuntimeLocal {
   // ---- Flatten models from providers (shared with the chat input). The
   // filter follows the provider MODE: gateway mode keeps the kortix-only
   // allowlist (native bypass providers never leak in); native mode
@@ -669,3 +669,15 @@ export function useOpenCodeLocal({
     },
   };
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `UseRuntimeLocalOptions`. Removed in the next major. */
+export type UseOpenCodeLocalOptions = UseRuntimeLocalOptions;
+/** @deprecated Renamed to `RuntimeLocalAgent`. Removed in the next major. */
+export type OpenCodeLocalAgent = RuntimeLocalAgent;
+/** @deprecated Renamed to `RuntimeLocalModel`. Removed in the next major. */
+export type OpenCodeLocalModel = RuntimeLocalModel;
+/** @deprecated Renamed to `RuntimeLocal`. Removed in the next major. */
+export type OpenCodeLocal = RuntimeLocal;
+/** @deprecated Renamed to `useRuntimeLocal`. Removed in the next major. */
+export const useOpenCodeLocal = useRuntimeLocal;

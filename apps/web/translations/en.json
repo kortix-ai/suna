@@ -188,11 +188,7 @@
       "label": "Account",
       "createIn": "Create in {account}",
       "choose": "Choose an account",
-      "loggedInAs": "Logged in as",
-      "nameLabel": "Account name",
-      "nameHint": "Your team sees this in the sidebar and in invites. You can change it later.",
-      "nameRequired": "Account name is required",
-      "renameFailed": "Could not save the account name. Try again."
+      "loggedInAs": "Logged in as"
     },
     "name": {
       "label": "Project name",
@@ -1553,7 +1549,8 @@
         "restricted": "Specific people",
         "project": "Whole project"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Labels"
     },
     "loadingMore": "Loading…",
     "loadMoreSessions": "Load more sessions",
@@ -1565,7 +1562,21 @@
       "others": "Shared",
       "automated": "Automated"
     },
-    "reminders": "Reminders"
+    "reminders": "Reminders",
+    "labels": {
+      "menu": "Edit labels",
+      "title": "Labels",
+      "description": "Labels classify this session. Filter the session list by them. Agents, the CLI and the API can set them too.",
+      "placeholder": "Add a label and press Enter",
+      "empty": "No labels yet.",
+      "remove": "Remove {label}",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saved": "Labels saved",
+      "failed": "Could not save the labels",
+      "tooLong": "A label has at most 64 characters.",
+      "tooMany": "A session has at most 20 labels."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -5170,7 +5181,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "The sandbox for this session was stopped. Open a new session to continue.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode runtime is not ready",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Session runtime is not ready",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "The sandbox booted, but the project runtime did not become usable.",
       "line395JsxTextRestartSession": "Restart session",
       "line424JsxTextRestartSession": "Restart session"
@@ -12498,7 +12509,7 @@
       "text5a0cac0326d5": "Download Kortix",
       "text5a219a418ec7": "This entry couldn't be read from the archive.",
       "text5a23444828db": "Manage",
-      "text5a26f4425c82": "OpenCode session",
+      "text92fbc8484002": "Runtime session",
       "text5a32374d30b4": "Daily platform activity and credit burn. Every bucket is a UTC day.",
       "text5a37d20f1235": "Channel agent updated",
       "text5a41803b2dd1": "Deny all",
@@ -19076,7 +19087,24 @@
       "mismatch": "This install was started from another Kortix account or for another project. Sign in with that account, or start the install again from the project.",
       "expired": "This install link is invalid or has expired. Start the install again from the project.",
       "failed": "The install could not be finished. Start it again from the project.",
-      "backToProject": "Back to the project"
+      "backToProject": "Back to the project",
+      "finishingTitle": "Finishing the {service} install",
+      "finishingDescription": "Kortix is being added to {service} for this project. You go back to the project when it is done.",
+      "installingAs": "Installing as",
+      "recording": "Recording the install…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Opening preview",
+      "openingDescription": "You are being signed in to the app your session is running.",
+      "preview": "Preview",
+      "address": "Address",
+      "signingIn": "Signing you in. The preview opens by itself.",
+      "signInAgain": "Sign in again",
+      "notServed": "That address is not a preview this deployment serves. Open the preview from your session instead.",
+      "sessionExpired": "Your session expired. Sign in again and reopen the preview."
+    },
+    "approvalPage": {
+      "title": "Approve this {connector} action"
     },
     "secretIntakeWithheld": {
       "title": "Saved, but {agent} can't read it yet",
@@ -19951,9 +19979,6 @@
   },
   "projectSelector": {
     "welcome": "Welcome to Kortix",
-    "nameAccountTitle": "Name your account",
-    "nameAccountBody": "Your projects, agents and teammates live here.",
-    "nameAccountContinue": "Continue",
     "welcomeBack": "Welcome back",
     "descriptionNew": "Create your first project, or join one your team shared.",
     "descriptionReturning": "Open a project, or create a new one.",
@@ -20180,6 +20205,7 @@
     "commandCopied": "Command copied",
     "copyFailed": "Copy failed",
     "copyCommand": "Copy command",
+    "copyCliCommand": "Copy install command",
     "authorizeCodeHint": "Check that this code matches the one shown on your computer.",
     "whoCanUse": "Who can use this computer",
     "onlyYouDescription": "Only you, in every project, in your private sessions.",

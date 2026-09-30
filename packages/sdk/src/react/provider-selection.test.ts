@@ -17,7 +17,7 @@ import {
 import { flattenModels } from './model-flatten';
 
 describe('LLM_PROVIDER_CREDENTIALS — built without the full catalog snapshot', () => {
-  // Every browser route imports this module (useOpenCodeProviders). Reading
+  // Every browser route imports this module (useRuntimeProviders). Reading
   // `CATALOG` here shipped the ~7.6 MB models.dev snapshot to every page.
   test('provider-selection.ts does not import CATALOG', () => {
     const source = readFileSync(new URL('./provider-selection.ts', import.meta.url), 'utf8');

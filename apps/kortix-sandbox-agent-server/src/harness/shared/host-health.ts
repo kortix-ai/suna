@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { HarnessDiagnosticsContext } from '../contract/diagnostics'
-import { normalizeHarnessId } from '@/lib/config/config'
+import type { CatalogSnapshot, HarnessDiagnosticsContext } from '../contract/diagnostics'
 import { readRepoInfo } from '@/lib/git/git'
 import { runtimeConvergenceReport } from '@/services/runtime-assets/runtime-assets'
 import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
@@ -40,13 +39,10 @@ function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   }
 }
 
-/** A harness's live model-catalog signal for `runtime` (see `runtimeConvergenceReport`). */
-export type CatalogSnapshot = () => { ids: string[] | null; fallbackReason: string | null }
-
 /**
  * The `/kortix/health` fields the host owns. Every harness reports them with
- * the same meaning; the adapter adds its runtime state and computes
- * `runtimeReady` from `repo_ready` plus its own readiness.
+ * the same meaning; `routes/kortix/health.ts` adds the harness block and
+ * computes `runtimeReady` from `repo_ready` plus the harness's own readiness.
  */
 export async function readHostHealth(context: HarnessDiagnosticsContext, catalogSnapshot?: CatalogSnapshot) {
   const { cfg, bootState } = context
@@ -62,8 +58,6 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
   const wantBranch = repoRequired ? wantedSessionBranch() : ''
   const repoReady = !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
   return {
-    // The harness answering on this box.
-    harness: normalizeHarnessId(cfg.harness),
     // Which boot path this daemon took. An agent binary that predates
     // monitor mode omits the field entirely, which is exactly what the
     // monitor-box reconciler uses to detect a stale-agent box and recreate

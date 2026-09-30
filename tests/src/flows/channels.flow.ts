@@ -1379,6 +1379,9 @@ flow(
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
+    // Another project with a channel in the same workspace: a thread there is
+    // not this project's to bind.
+    const other = await ctx.fixtures.sharedProject();
     const own = randomUUID();
     const sibling = randomUUID();
     const foreign = randomUUID();
@@ -1417,6 +1420,16 @@ flow(
           "UPDATE kortix.account_tokens SET account_id = $2, user_id = $3, project_id = $4, session_id = $5 WHERE token_id = $1",
           [tokenId, accountId, ownerUserId, p.id, own],
         );
+        // The workspace the project's Slack install proved (the install paths
+        // write this row), and the other project's channel in it.
+        await db.query(
+          "INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('slack', $1, $2), ('slack', $1, $3) ON CONFLICT DO NOTHING",
+          [team, p.id, other.id],
+        );
+        await db.query(
+          "INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id) VALUES ('slack', $1, 'CKE2EOTHER', $2)",
+          [team, other.id],
+        );
       });
     });
 
@@ -1434,6 +1447,39 @@ flow(
           (await db.query("SELECT 1 FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [team])).rowCount,
         );
         if (rows) throw new Error("CHN-30: a thread was bound to another session");
+      });
+
+      await ctx.step("a workspace the project's install never proved → 400 SLACK_WORKSPACE_NOT_CONNECTED, and no mapping is written", async () => {
+        const foreignTeam = `${team}X`;
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000250", workspace_id: foreignTeam },
+          { params: { projectId: p.id } },
+        );
+        r.status(400).body().has("$.code", "SLACK_WORKSPACE_NOT_CONNECTED");
+        const rows = await withDb(ctx, async (db) =>
+          (await db.query("SELECT 1 FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [foreignTeam]))
+            .rowCount,
+        );
+        if (rows) throw new Error("CHN-30: a thread was bound in a workspace the project never installed");
+      });
+
+      await ctx.step("a thread in another project's channel → 403 CONVERSATION_NOT_IN_PROJECT, and no mapping is written", async () => {
+        const r = await agent.post(
+          "/v1/projects/:projectId/channels/slack/bind-thread",
+          { session_id: own, channel: "CKE2EOTHER", thread_ts: "1700000000.000260", workspace_id: team },
+          { params: { projectId: p.id } },
+        );
+        r.status(403).body().has("$.code", "CONVERSATION_NOT_IN_PROJECT");
+        const rows = await withDb(ctx, async (db) =>
+          (
+            await db.query(
+              "SELECT 1 FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1 AND thread_id = $2",
+              [team, "1700000000.000260"],
+            )
+          ).rowCount,
+        );
+        if (rows) throw new Error("CHN-30: a thread in another project's channel was bound");
       });
 
       await ctx.step("the session token binds a thread to ITS OWN session → 200, and the mapping names that session", async () => {
@@ -1533,6 +1579,8 @@ flow(
     } finally {
       await withDb(ctx, async (db) => {
         await db.query("DELETE FROM kortix.chat_threads WHERE platform = 'slack' AND workspace_id = $1", [team]);
+        await db.query("DELETE FROM kortix.chat_channel_bindings WHERE platform = 'slack' AND workspace_id = $1", [team]);
+        await db.query("DELETE FROM kortix.chat_installs WHERE platform = 'slack' AND workspace_id = $1", [team]);
         if (tokenId) await db.query("DELETE FROM kortix.account_tokens WHERE token_id = $1", [tokenId]);
         await db.query("DELETE FROM kortix.session_sandboxes WHERE session_id = ANY($1)", [[own, sibling, foreign]]);
         await db.query("DELETE FROM kortix.project_sessions WHERE session_id = ANY($1)", [[own, sibling, foreign]]);

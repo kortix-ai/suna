@@ -40,6 +40,7 @@ function makeProject(): { project: GitBackedProject; sha: string; source: string
   git(['add', '-A'], source);
   git(['commit', '-m', 'first'], source);
   writeFileSync(join(source, 'README.md'), 'second\n');
+  writeFileSync(join(source, 'kortix.yaml'), 'project:\n  name: example\n');
   mkdirSync(join(source, '.kortix', 'memory'), { recursive: true });
   writeFileSync(join(source, '.kortix', 'memory', 'MEMORY.md'), 'Remember the customer context.\n');
   writeFileSync(join(source, 'run.sh'), '#!/bin/sh\necho ok\n', { mode: 0o755 });
@@ -100,6 +101,13 @@ describe('buildCompiledCheckoutArtifact', () => {
     expect(git(['config', '--get', 'remote.origin.url'], extracted)).toBe(
       `https://api.kortix.test/v1/git/${project.projectId}.git`,
     );
+    // The runtime reads its compiled artifact elsewhere; the checkout remains the CR source.
+    writeFileSync(join(extracted, 'kortix.yaml'), 'project:\n  name: revised\n');
+    expect(git(['diff', '--name-only'], extracted)).toBe('kortix.yaml');
+    git(['add', 'kortix.yaml'], extracted);
+    git(['commit', '-m', 'change project config'], extracted);
+    expect(git(['show', '--format=', '--name-only', 'HEAD'], extracted)).toBe('kortix.yaml');
+    expect(git(['show', 'HEAD:kortix.yaml'], extracted)).toBe('project:\n  name: revised');
     writeFileSync(join(extracted, 'agent-output.txt'), 'new work\n');
     git(['add', 'agent-output.txt'], extracted);
     git(['commit', '-m', 'agent work'], extracted);

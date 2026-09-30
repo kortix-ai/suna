@@ -6,7 +6,7 @@ import { config } from '../../config';
 import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
-import { waitForDaemonOpencodeReady } from './sandbox-daemon-ready';
+import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { decideEnvSyncAction } from './env-sync-skip-decision';
@@ -227,6 +227,10 @@ export async function postEnvToDaemon(args: {
     ...args.providerHeaders,
   };
 
+  const runtimeEnv = {
+    ...(args.opencodeEnv ?? {}),
+    [SECRET_CAPABILITIES_ENV_NAME]: args.snapshot.capabilitiesJson,
+  };
   const res = await fetch(`${args.previewUrl.replace(/\/$/, '')}/kortix/env`, {
     method: 'POST',
     headers,
@@ -235,10 +239,9 @@ export async function postEnvToDaemon(args: {
       names: args.snapshot.names,
       revision: args.snapshot.revision,
       refreshModels: args.refreshModels ?? false,
-      opencodeEnv: {
-        ...(args.opencodeEnv ?? {}),
-        [SECRET_CAPABILITIES_ENV_NAME]: args.snapshot.capabilitiesJson,
-      },
+      runtimeEnv,
+      // The same map under its pre-W3 name, for a daemon built before W3.
+      opencodeEnv: runtimeEnv,
       ...(typeof args.llmGatewayEnabled === 'boolean'
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
@@ -263,10 +266,17 @@ export async function postEnvToDaemon(args: {
     managed?: unknown;
     withheld?: unknown;
     agent_env_written?: unknown;
+    runtime?: unknown;
+    runtime_reload?: unknown;
+    runtime_turn_ended?: unknown;
+    /** Pre-W3 names of the three fields above; a daemon built before W3 sends only these. */
     opencode?: unknown;
     opencode_reload?: unknown;
     opencode_turn_ended?: unknown;
   } | null;
+  const runtimeState = body?.runtime ?? body?.opencode;
+  const runtimeReload = body?.runtime_reload ?? body?.opencode_reload;
+  const runtimeTurnEnded = body?.runtime_turn_ended ?? body?.opencode_turn_ended;
   const expectedExported = Object.keys(args.snapshot.env).length;
   if (args.requireAgentEnvProof) {
     if (!body || body.ok !== true) throw new Error('env sync proof missing ok=true');
@@ -281,17 +291,14 @@ export async function postEnvToDaemon(args: {
     }
   }
   return {
-    opencodeState: typeof body?.opencode === 'string' ? body.opencode : null,
+    opencodeState: typeof runtimeState === 'string' ? runtimeState : null,
     // How the daemon applied the config. 'kept-old' means the verified swap
     // declined: the new opencode never came up, so the running one still
     // serves and the change did NOT take. An older daemon omits the field
     // entirely — null, meaning "could not tell", never "it worked".
     opencodeReload:
-      typeof body?.opencode_reload === 'string'
-        ? (body.opencode_reload as 'disposed' | 'restarted' | 'kept-old')
-        : null,
-    opencodeTurnEnded:
-      typeof body?.opencode_turn_ended === 'boolean' ? body.opencode_turn_ended : null,
+      typeof runtimeReload === 'string' ? (runtimeReload as 'disposed' | 'restarted' | 'kept-old') : null,
+    opencodeTurnEnded: typeof runtimeTurnEnded === 'boolean' ? runtimeTurnEnded : null,
     revision: typeof body?.revision === 'string' ? body.revision : args.snapshot.revision,
     exported: typeof body?.exported === 'number' ? body.exported : expectedExported,
     managed: typeof body?.managed === 'number' ? body.managed : null,
@@ -583,7 +590,7 @@ export async function syncSandboxEnvForPrompt(args: {
   // dropping the session's first prompt (the user then has to resend).
   if (opencodeState && opencodeState !== 'ok') {
     const waitStartedAt = Date.now();
-    const ready = await waitForDaemonOpencodeReady({
+    const ready = await waitForDaemonRuntimeReady({
       previewUrl: args.previewUrl,
       providerHeaders: args.providerHeaders,
     });

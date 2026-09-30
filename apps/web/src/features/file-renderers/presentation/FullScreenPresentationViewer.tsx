@@ -15,7 +15,6 @@ import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
   CaretLeftIcon as ChevronLeft,
   CaretRightIcon as ChevronRight,
-  DownloadIcon as Download,
   PencilSimpleIcon as Edit,
   FileTextIcon as FileText,
   PresentationIcon as Presentation,
@@ -25,6 +24,7 @@ import {
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DownloadFormat, downloadPresentation } from './presentation-utils';
+import { Download } from '@/features/icon/icons/download';
 
 interface SlideMetadata {
   title: string;

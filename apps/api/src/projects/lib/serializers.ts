@@ -165,7 +165,7 @@ export function serializeSession(
   // snapshot above is [] when canAccess is false). It outranks the generated
   // auto title so list reads resolve the SAME string the session header shows
   // live, but never a user rename.
-  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -175,9 +175,11 @@ export function serializeSession(
     sandbox_provider: row.sandboxProvider,
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.runtimeSessionId,
+    opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
+    labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
@@ -189,6 +191,7 @@ export function serializeSession(
         ? trimSessionMetadataForList(row.metadata ?? {})
         : (row.metadata ?? {})
       : {},
+    runtime_sessions: opencodeSessions,
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,

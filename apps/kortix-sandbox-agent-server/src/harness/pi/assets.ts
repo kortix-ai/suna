@@ -11,6 +11,7 @@
  */
 import { logger } from '@/lib/log/logger'
 import type { HarnessAssetsService } from '@/services/runtime-assets/port'
+import { PI_HARNESS_VERSION } from './version'
 
 /** Reloads the live runtime's skills; registered by `createPiHarnessService`. */
 let reloadLiveSkills: (() => Promise<unknown>) | null = null
@@ -21,13 +22,15 @@ export function registerPiSkillReload(reload: () => Promise<unknown>): void {
 
 export function createPiAssetsService(): HarnessAssetsService {
   return {
+    harness: 'pi',
     componentNames: [],
+    bakedVersion: async () => PI_HARNESS_VERSION,
     resolveConfigDir: async (cfg) => cfg.projectTarget || cfg.workspace || '/workspace',
     injectSkills: async () => {
       await reloadLiveSkills?.().catch((err) =>
         logger.warn('[pi] skill reload after a managed-skill overlay update failed', { err: String(err) }),
       )
     },
-    reconcile: async () => ({ components: {}, reasons: {}, state: { pi: 'bundled' } }),
+    reconcile: async () => ({ components: {}, reasons: {}, state: { pi: 'bundled' }, version: PI_HARNESS_VERSION }),
   }
 }

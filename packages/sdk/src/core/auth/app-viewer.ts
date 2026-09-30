@@ -111,6 +111,15 @@ export async function fetchKortixAppViewer(
  */
 export function kortixAppViewerToken(
   options: KortixAppViewerOptions = {},
-): () => Promise<string | null> {
-  return async () => (await fetchKortixAppViewer(options))?.access_token ?? null;
+): (() => Promise<string | null>) & { invalidate: (rejectedToken: string) => void } {
+  const path = options.path ?? DEFAULT_PATH;
+  return Object.assign(async () => (await fetchKortixAppViewer(options))?.access_token ?? null, {
+    // The API refused this token: the gate revoked it (an access-policy save,
+    // a consent revoke). Drop it so the transport's replay re-reads the gate.
+    // Only when it is still the cached one — never drop a newer token.
+    invalidate: (rejectedToken: string) => {
+      const entry = cache.get(path);
+      if (entry && !entry.inflight && entry.session?.access_token === rejectedToken) cache.delete(path);
+    },
+  });
 }

@@ -188,11 +188,7 @@
       "label": "アカウント",
       "createIn": "{account} に作成",
       "choose": "アカウントを選択",
-      "loggedInAs": "ログイン中のアカウント",
-      "nameLabel": "アカウント名",
-      "nameHint": "チームにはサイドバーと招待で表示されます。後から変更できます。",
-      "nameRequired": "アカウント名は必須です",
-      "renameFailed": "アカウント名を保存できませんでした。もう一度お試しください。"
+      "loggedInAs": "ログイン中のアカウント"
     },
     "name": {
       "label": "プロジェクト名",
@@ -1553,7 +1549,8 @@
         "restricted": "特定のユーザー",
         "project": "プロジェクト全体"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "ラベル"
     },
     "loadingMore": "読み込み中…",
     "loadMoreSessions": "セッションをさらに読み込む",
@@ -1565,7 +1562,21 @@
       "others": "共有",
       "automated": "自動"
     },
-    "reminders": "リマインダー"
+    "reminders": "リマインダー",
+    "labels": {
+      "menu": "ラベルを編集",
+      "title": "ラベル",
+      "description": "ラベルでこのセッションを分類します。セッション一覧をラベルで絞り込めます。エージェント、CLI、API からも設定できます。",
+      "placeholder": "ラベルを入力して Enter",
+      "empty": "ラベルはまだありません。",
+      "remove": "{label} を削除",
+      "save": "保存",
+      "cancel": "キャンセル",
+      "saved": "ラベルを保存しました",
+      "failed": "ラベルを保存できませんでした",
+      "tooLong": "ラベルは 64 文字以内です。",
+      "tooMany": "1 つのセッションのラベルは 20 個までです。"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -5157,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "このセッションのサンドボックスは停止しました。続行するには新しいセッションを開いてください。",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode ランタイムの準備ができていません",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "セッションランタイムの準備ができていません",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "サンドボックスは起動しましたが、プロジェクトのランタイムは使用可能になりませんでした。",
       "line395JsxTextRestartSession": "セッションを再起動",
       "line424JsxTextRestartSession": "セッションを再起動"
@@ -12485,7 +12496,7 @@
       "text5a0cac0326d5": "Kortixをダウンロード",
       "text5a219a418ec7": "このエントリはアーカイブから読み込めませんでした。",
       "text5a23444828db": "管理",
-      "text5a26f4425c82": "OpenCodeセッション",
+      "text92fbc8484002": "ランタイムセッション",
       "text5a32374d30b4": "日々のプラットフォームアクティビティとクレジットバーン。すべてのバケットは UTC 日です。",
       "text5a37d20f1235": "チャンネルのエージェントを更新しました",
       "text5a41803b2dd1": "すべて拒否",
@@ -19063,7 +19074,24 @@
       "mismatch": "このインストールは別の Kortix アカウント、または別のプロジェクトから開始されました。そのアカウントでサインインするか、プロジェクトからインストールをやり直してください。",
       "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
       "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
-      "backToProject": "プロジェクトに戻る"
+      "backToProject": "プロジェクトに戻る",
+      "finishingTitle": "{service} のインストールを完了しています",
+      "finishingDescription": "このプロジェクト用に Kortix を {service} に追加しています。完了するとプロジェクトに戻ります。",
+      "installingAs": "インストールするアカウント",
+      "recording": "インストールを記録しています…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "プレビューを開いています",
+      "openingDescription": "セッションで実行中のアプリにサインインしています。",
+      "preview": "プレビュー",
+      "address": "アドレス",
+      "signingIn": "サインインしています。プレビューは自動的に開きます。",
+      "signInAgain": "もう一度サインイン",
+      "notServed": "このアドレスは、このデプロイが提供するプレビューではありません。セッションからプレビューを開いてください。",
+      "sessionExpired": "セッションの有効期限が切れました。もう一度サインインして、プレビューを開き直してください。"
+    },
+    "approvalPage": {
+      "title": "{connector} のアクションを承認"
     },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",
@@ -19938,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Kortix へようこそ",
-    "nameAccountTitle": "アカウントに名前を付ける",
-    "nameAccountBody": "プロジェクト、エージェント、チームメンバーはここにまとまります。",
-    "nameAccountContinue": "続ける",
     "welcomeBack": "おかえりなさい",
     "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
     "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",
@@ -20180,6 +20205,7 @@
     "commandCopied": "コマンドをコピーしました",
     "copyFailed": "コピーに失敗しました",
     "copyCommand": "コマンドをコピー",
+    "copyCliCommand": "インストールコマンドをコピー",
     "authorizeCodeHint": "このコードがコンピューターに表示されているコードと一致することを確認してください。",
     "whoCanUse": "このコンピューターを使える人",
     "onlyYouDescription": "あなただけ。すべてのプロジェクトの、あなたのプライベートセッションで使えます。",

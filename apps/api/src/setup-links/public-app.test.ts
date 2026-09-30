@@ -75,8 +75,14 @@ mock.module('../connectors/pipedream', () => ({
 }));
 
 let credentialAlreadySet = false;
+let credentialLandedSince = false;
+const landedLookups: Array<{ connectorId: string; memberId: string | null; since: Date }> = [];
 mock.module('../connectors/credentials', () => ({
   credentialExists: async () => credentialAlreadySet,
+  connectorAccountLandedSince: async (connectorId: string, memberId: string | null, since: Date) => {
+    landedLookups.push({ connectorId, memberId, since });
+    return credentialLandedSince;
+  },
 }));
 
 // The connector half of these routes delegates to the provider-neutral deps, so
@@ -186,6 +192,8 @@ beforeEach(() => {
   connectionRows = [];
   pipedreamOn = false;
   credentialAlreadySet = false;
+  credentialLandedSince = false;
+  landedLookups.length = 0;
   finalizeResult = { connected: false };
 });
 
@@ -285,6 +293,49 @@ describe('GET /connectors/:token', () => {
     }
   });
 
+  test('a link nobody has completed reports connected false', async () => {
+    connectorRows = [{ connectorId: CONNECTOR_ID, name: 'Smartlead', config: {} }];
+    const body = await (
+      await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`)
+    ).json();
+    expect(body.connected).toBe(false);
+  });
+
+  test('an account that landed after the link was minted reports connected, so a reloaded card stays settled', async () => {
+    connectorRows = [{ connectorId: CONNECTOR_ID, name: 'Smartlead', config: {} }];
+    credentialLandedSince = true;
+    const token = mintConnectorToken();
+    setSystemTime(new Date(T0.getTime() + 60 * 60_000));
+    const body = await (await setupLinksPublicApp.request(`/connectors/${token}`)).json();
+    expect(body.connected).toBe(true);
+    // Asked for the link's own connector and member, from the moment it was minted.
+    expect(landedLookups).toEqual([{ connectorId: CONNECTOR_ID, memberId: 'user-1', since: T0 }]);
+  });
+
+  test('a link minted before tokens carried a mint time omits connected, and asks nothing', async () => {
+    connectorRows = [{ connectorId: CONNECTOR_ID, name: 'Smartlead', config: {} }];
+    credentialLandedSince = true;
+    const envelope = realSecrets.encryptProjectSecret(
+      PROJECT_ID,
+      JSON.stringify({
+        exp: T0.getTime() + 60_000,
+        nonce: 'legacy',
+        pid: PROJECT_ID,
+        uid: 'user-1',
+        kind: 'connector',
+        slug: 'smartlead',
+        app: 'smartlead',
+        sid: SESSION_ID,
+        owner: 'me',
+      }),
+    );
+    const legacy = `ksl_${Buffer.from(`${PROJECT_ID}.${envelope}`, 'utf8').toString('base64url')}`;
+    const res = await setupLinksPublicApp.request(`/connectors/${legacy}`);
+    expect(res.status).toBe(200);
+    expect('connected' in (await res.json())).toBe(false);
+    expect(landedLookups).toEqual([]);
+  });
+
   test('a link whose connector row is gone still resolves, with null identity', async () => {
     connectorRows = [];
     const res = await setupLinksPublicApp.request(`/connectors/${mintConnectorToken()}`);
@@ -292,6 +343,7 @@ describe('GET /connectors/:token', () => {
     const body = await res.json();
     expect(body.name).toBeNull();
     expect(body.icon_url).toBeNull();
+    expect(body.connected).toBe(false);
   });
 });
 

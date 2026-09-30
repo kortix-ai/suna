@@ -133,6 +133,8 @@ export interface AgentBlockV2 {
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
+  /** Built-in tool availability; omitted names retain the runtime default. */
+  tools?: Record<string, boolean>;
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
   connectors?: GrantSetV2;
@@ -349,6 +351,7 @@ export type PiPackageEntryV2 = string | { source: string; extensions?: string[];
 export interface HarnessesV2 {
   /** `exclude` exists only on an agent: global packages that agent does not load. */
   pi?: { packages?: PiPackageEntryV2[]; exclude?: string[] };
+  opencode?: { plugins?: string[]; exclude?: string[] };
 }
 
 function validatePiPackageSource(source: unknown, where: string, issues: ManifestIssue[]): void {
@@ -375,13 +378,33 @@ export function validateHarnessesV2(node: unknown, path: string, issues: Manifes
   }
   for (const [harness, settings] of Object.entries(node)) {
     const where = `${path}.${harness}`;
-    if (harness !== 'pi') {
-      issues.push({ path: where, message: 'only the pi harness takes settings here.', severity: 'error' });
+    if (harness !== 'pi' && harness !== 'opencode') {
+      issues.push({ path: where, message: 'only pi and opencode take settings here.', severity: 'error' });
       continue;
     }
     if (settings === undefined || settings === null) continue;
     if (!isTable(settings)) {
       issues.push({ path: where, message: 'must be a map.', severity: 'error' });
+      continue;
+    }
+    if (harness === 'opencode') {
+      for (const key of Object.keys(settings)) {
+        if (key !== 'plugins' && !(scope === 'agent' && key === 'exclude')) {
+          issues.push({ path: `${where}.${key}`, message: 'unknown OpenCode setting; use plugins or agent-level exclude.', severity: 'error' });
+        }
+      }
+      for (const key of ['plugins', 'exclude'] as const) {
+        if (settings[key] === undefined) continue;
+        if (!Array.isArray(settings[key])) {
+          issues.push({ path: `${where}.${key}`, message: 'must be a list of plugin filenames.', severity: 'error' });
+          continue;
+        }
+        settings[key].forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]+\.[cm]?[jt]s$/.test(name)) {
+            issues.push({ path: `${where}.${key}[${index}]`, message: 'must name a plugins/ filename (for example, audit.ts).', severity: 'error' });
+          }
+        });
+      }
       continue;
     }
     const keys = scope === 'agent' ? ['packages', 'exclude'] : ['packages'];
@@ -638,6 +661,10 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   if (!isTable(entry)) {
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
+  }
+
+  if (entry.tools !== undefined && (!isTable(entry.tools) || Object.values(entry.tools).some((value) => typeof value !== 'boolean'))) {
+    issues.push({ path: `${where}.tools`, message: 'tools must map tool names to booleans.', severity: 'error' });
   }
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {

@@ -435,7 +435,7 @@ export async function buildOpencodeConfigContent(
   // native provider and is ignored.
   const nativeSessionModel = (() => {
     if (hasLlmGateway) return undefined
-    const raw = env.KORTIX_OPENCODE_MODEL?.trim()
+    const raw = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
     if (!raw) return undefined
     const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
     const slash = ref.indexOf('/')
@@ -589,7 +589,7 @@ export async function buildOpencodeConfigContent(
       kortix: kortixProvider,
     }
     normalizeGatewayModelRefs(out)
-    const resolvedSessionModel = env.KORTIX_OPENCODE_MODEL?.trim()
+    const resolvedSessionModel = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
     const availableGatewayModel = Object.keys(
       (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
     )[0]
@@ -1081,7 +1081,10 @@ function withManagedOverlay(
   if (live && Object.keys(live).length > 0) return { ...base, ...live }
   const out = { ...base }
   for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
-    if (!out[id]) out[id] = model
+    // Fill-only, except `limit`. The builder swaps a new daemon into an older
+    // image without re-baking its catalog, so this daemon's managed limit is
+    // the newer one. A stale limit puts compaction on the context wall.
+    out[id] = out[id] ? { ...out[id], limit: model.limit } : model
   }
   return out
 }
