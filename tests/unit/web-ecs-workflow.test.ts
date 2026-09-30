@@ -85,6 +85,17 @@ describe('web ECS migration', () => {
     expect(variables).not.toContain('manage_canonical_dns');
   });
 
+  it('redirects plain HTTP on the Dev web ALB without forwarding to the app', () => {
+    const terraform = read('infra/terraform/environments/dev-web/main.tf');
+    const module = read('infra/terraform/modules/ecs-api/main.tf');
+    const variables = read('infra/terraform/modules/ecs-api/variables.tf');
+
+    expect(terraform).toContain('enable_http_redirect   = true');
+    expect(module).toMatch(/resource "aws_lb_listener" "http"[\s\S]*?port\s*= 80[\s\S]*?type\s*= "redirect"[\s\S]*?protocol\s*= "HTTPS"[\s\S]*?status_code\s*= "HTTP_301"/);
+    expect(module).toMatch(/description = "HTTP redirect"[\s\S]*?from_port\s*= 80[\s\S]*?to_port\s*= 80/);
+    expect(variables).toContain('variable "enable_http_redirect"');
+  });
+
   it('defines isolated staging and production services with environment-specific capacity', () => {
     const staging = read('infra/terraform/environments/staging-web/main.tf');
     const stagingVariables = read('infra/terraform/environments/staging-web/variables.tf');
