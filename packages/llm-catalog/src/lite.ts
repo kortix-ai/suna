@@ -483,7 +483,10 @@ export interface ManagedModel {
   // Effort values the upstream accepts, probed live through the gateway. They
   // become the thinking control's variants. Wins over the models.dev record.
   reasoningOptions?: CatalogReasoningOption[];
-  // A conservative OpenCode output ceiling inside the upstream context window.
+  // What OpenCode sizes the conversation by. It compacts when a step used
+  // `context - min(output, 32_000)` tokens, so `context` sits below the
+  // smallest window a serving route accepts: enough for one more step to fit.
+  // managed.test.ts holds the measured windows and the margin.
   limit: { context: number; output: number };
   // OpenRouter provider routing: the allowed endpoint pool and privacy constraints.
   openrouterProvider?: Record<string, unknown>;
@@ -545,7 +548,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'openrouter/deepseek/deepseek-v4.1-flash',
     pricing: { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 },
     openrouterEndpointPricing: { 'coreweave/fp8': { inputPerMillion: 0.2, cachedInputPerMillion: 0.03, outputPerMillion: 0.65 } },
-    tier: 'balanced', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    tier: 'balanced', vision: true, limit: { context: 1_000_000, output: 16_384 },
     reasoningOptions: [{ type: 'effort', values: ['none', 'low', 'high', 'max'] }],
     openrouterProvider: {
       only: ['coreweave/fp8'],
@@ -563,7 +566,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
       'decart/fp4': { inputPerMillion: 0.1275, cachedInputPerMillion: 0.0255, outputPerMillion: 0.425 },
       'coreweave/nvfp4': { inputPerMillion: 0.15, cachedInputPerMillion: 0.05, outputPerMillion: 0.5 },
     },
-    tier: 'fast', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    tier: 'fast', vision: true, limit: { context: 1_000_000, output: 16_384 },
     // `none` returns 400 upstream, so GLM has no off switch.
     reasoningOptions: [{ type: 'effort', values: ['low', 'high', 'max'] }],
     openrouterProvider: {
@@ -579,7 +582,7 @@ export const MANAGED_MODELS: ManagedModel[] = [
     pricingRef: 'openrouter/moonshotai/kimi-k3',
     pricing: { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 },
     openrouterEndpointPricing: { 'fireworks/us': { inputPerMillion: 3.3, cachedInputPerMillion: 0.33, outputPerMillion: 16.5 } },
-    tier: 'flagship', vision: true, limit: { context: 1_048_576, output: 16_384 },
+    tier: 'flagship', vision: true, limit: { context: 1_000_000, output: 16_384 },
     openrouterProvider: {
       only: ['fireworks/us'],
       ...OPENROUTER_POOL_PRIVACY,
