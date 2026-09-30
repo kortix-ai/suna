@@ -99,13 +99,14 @@ const sessionRow = (overrides: Record<string, unknown> = {}) => ({
 
 /** The `loaded` shape routes hand to loadVisibleSession (hand-built, as the
  *  signature's own doc allows: the members.manage probe then declines). */
-const loaded = (overrides: Record<string, unknown> = {}) => ({
-  row: projectRow,
-  userId: USER_ID,
-  effectiveRole: 'member',
-  actor: null,
-  ...overrides,
-});
+const loaded = (overrides: Record<string, unknown> = {}) =>
+  ({
+    row: projectRow,
+    userId: USER_ID,
+    effectiveRole: 'member',
+    actor: null,
+    ...overrides,
+  }) as unknown as Parameters<typeof loadVisibleSession>[0];
 
 describe('access split characterization — visibility decisions', () => {
   test('a private session is visible to its owner (user decision)', async () => {
@@ -179,7 +180,8 @@ describe('access split characterization — capability denial', () => {
     expect(caught).toBeInstanceOf(HTTPException);
     const denial = caught as HTTPException;
     expect(denial.status).toBe(403);
-    expect(await denial.res.json()).toEqual({
+    const body = denial.res ? ((await denial.res.json()) as Record<string, unknown>) : null;
+    expect(body).toEqual({
       error: true,
       message: 'You do not have access to this project',
       status: 403,
