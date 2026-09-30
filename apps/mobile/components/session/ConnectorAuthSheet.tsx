@@ -32,13 +32,10 @@ import * as WebBrowser from 'expo-web-browser';
 import { useColorScheme } from 'nativewind';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { KortixLogo } from '@/components/kortix/KortixLogo';
-import { Sheet, SheetBody, type SheetRef } from '@/components/kortix/sheet';
+import { Sheet, type SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { Text } from '@/components/ui/text';
-import { ArrowUpRightIcon, PlugIcon } from '@/lib/icons';
+import { PlugIcon } from '@/lib/icons';
 import { projectKeys } from '@/lib/projects/hooks';
 import { listConnectors, pipedreamConnect, pipedreamFinalize } from '@/lib/projects/projects-client';
 import { openBrowserUntilClosed } from '@/lib/utils/open-browser';
@@ -47,10 +44,9 @@ import {
   connectorHandoffToast,
   isConnectorConnected,
 } from '@/lib/session/connector-handoff';
-import { useHandoffDismiss } from './handoff-sheet';
+import { HandoffShell, TILE_SIZE, useHandoffDismiss } from './handoff-sheet';
 import type { ConnectorHandoffRequest } from './tool/shared/connector-handoff-context';
 
-const TILE_SIZE = 56;
 
 // App deep links so the connect browser auto-dismisses back to the app
 // (`openAuthSessionAsync` returns when it sees this scheme) instead of
@@ -144,9 +140,8 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
 
     return (
       <Sheet ref={sheetRef} enablePanDownToClose onDismiss={handleDismiss}>
-        <SheetBody className="items-center pt-2">
-          <View className="flex-row items-center">
-            <View
+        <HandoffShell
+          leadingTile={<View
               className="items-center justify-center overflow-hidden rounded-2xl bg-secondary"
               style={{ width: TILE_SIZE, height: TILE_SIZE }}>
               {showLogo ? (
@@ -159,39 +154,14 @@ export const ConnectorAuthSheet = React.forwardRef<SheetRef, ConnectorAuthSheetP
               ) : (
                 <Icon as={PlugIcon} size={24} className="text-foreground" />
               )}
-            </View>
-            <View className="mx-3 w-6 border-t border-dashed border-border" />
-            <View
-              className="items-center justify-center rounded-2xl bg-foreground"
-              style={{ width: TILE_SIZE, height: TILE_SIZE }}>
-              {/* Same inverted-fill rule as `ConnectProviderSheet`'s tile. */}
-              <KortixLogo size={24} color={isDark ? 'light' : 'dark'} />
-            </View>
-          </View>
-          <Text variant="large" className="mt-5 text-center">
-            {copy?.title ?? 'Connect'}
-          </Text>
-          <Text variant="muted" className="mt-2 text-center">
-            {copy?.body ?? "Sign in on kortix.com. You come back to this chat when it's done."}
-          </Text>
-          <View className="mt-6 w-full" style={{ gap: 10 }}>
-            <Button size="lg" className="rounded-full" onPress={handleContinue}>
-              {/* Label left, arrow right: the spread lives on a wrapper, never
-                  as a class on the Button (Button takes rounded-full only). */}
-              <View className="flex-1 flex-row items-center justify-between">
-                <Text>Continue</Text>
-                <Icon as={ArrowUpRightIcon} size={18} />
-              </View>
-            </Button>
-            <Button
-              variant="ghost"
-              size="lg"
-              className="rounded-full"
-              onPress={() => sheetRef.current?.close()}>
-              <Text>Not now</Text>
-            </Button>
-          </View>
-        </SheetBody>
+            </View>}
+          title={copy?.title ?? 'Connect'}
+          body={copy?.body ?? "Sign in on kortix.com. You come back to this chat when it's done."}
+          onContinue={handleContinue}
+          onClose={() => sheetRef.current?.close()}
+          notNowVariant="ghost"
+          isDark={isDark}
+        />
       </Sheet>
     );
   },
