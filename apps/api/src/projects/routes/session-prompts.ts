@@ -11,6 +11,8 @@ import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-sco
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { projectsApp } from '../lib/app';
+import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
+import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -187,6 +189,26 @@ projectsApp.openapi(
     const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
     if (typeof metadata.deletedAt === 'string') {
       return c.json({ error: 'Session is deleted' }, 409);
+    }
+    // Shared local DB (projects/instance-scope.ts). The drain never claims a
+    // command for a sandbox another API instance provisioned, so a prompt
+    // accepted here would stay `queued` for ever when that instance is down.
+    // Refuse it while the sender can still read why. The lookup runs only when
+    // `KORTIX_INSTANCE_ID` is set.
+    const thisInstance = currentInstanceId();
+    if (thisInstance) {
+      const box = (await loadSandboxMetadataForSessions([sessionId])).get(sessionId);
+      if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
+        const owner = sandboxInstanceId(box);
+        const message =
+          `This session's computer belongs to the local API instance "${owner}". ` +
+          `This instance ("${thisInstance}") cannot deliver prompts to it. ` +
+          'Send from that stack, or start a new session.';
+        return c.json(
+          { error: message, message, code: 'SESSION_OWNED_BY_OTHER_INSTANCE', owner_instance: owner },
+          409,
+        );
+      }
     }
 
     const body = await readJsonObject(c);
