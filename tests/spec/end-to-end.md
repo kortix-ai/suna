@@ -1165,7 +1165,9 @@ author's. The viewer's own role is the ceiling: as a project `member` with no
 agent grant, the token's `POST /projects/:projectId/sessions` → **403**
 `no_agent_access`. An access-policy save revokes the token
 (**401** on `GET /projects/:projectId`); the next sign-in yields a different
-token that answers **200**. `identity` scope yields `profile email` only, and
+token that answers **200**. The real CLI process `kortix apps access <app>
+--viewer identity` switches the scope and keeps `restricted` and the members;
+`--viewer everything` exits non-zero. `identity` scope yields `profile email` only, and
 that token gets **403** on a project route. `off` → `/_kortix/viewer` **404**
 `viewer_disabled`. The cross-replica case (a replica whose cache still holds a
 token revoked elsewhere) is proven in

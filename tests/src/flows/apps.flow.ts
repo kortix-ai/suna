@@ -4,6 +4,7 @@
  * section 28 (APP-1..6).
  */
 import { flow } from "../core/flow";
+import { CliSandbox } from "../fixtures/cli";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
@@ -835,10 +836,29 @@ flow(
         (await asToken(next.access_token).get("/v1/projects/:projectId", { params: projectParams })).status(200);
       });
 
+      await ctx.step("kortix apps access --viewer identity switches the scope and keeps mode and members", async () => {
+        const cli = new CliSandbox("app6");
+        try {
+          const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app6") });
+          const login = await cli.login(pat, { noProject: true, account: project.accountId });
+          if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
+          const bad = await cli.run(["apps", "access", appId, "--viewer", "everything", "--project", project.id, "--json"]);
+          if (bad.exitCode === 0 || !/--viewer must be off, identity, or api/.test(bad.stderr + bad.stdout)) {
+            throw new Error(`an invalid --viewer was accepted: ${bad.exitCode} ${bad.stderr}`);
+          }
+          const set = await cli.run(["apps", "access", appId, "--viewer", "identity", "--project", project.id, "--json"]);
+          if (set.exitCode !== 0) throw new Error(`kortix apps access --viewer: ${set.exitCode} ${set.stderr}`);
+          const access = JSON.parse(set.stdout).access;
+          if (access.viewer_token_scope !== "identity" || access.mode !== "restricted"
+            || JSON.stringify(access.member_ids) !== JSON.stringify([viewerPrincipal.userId])) {
+            throw new Error(`unexpected access after --viewer identity: ${JSON.stringify(access)}`);
+          }
+        } finally {
+          cli.dispose();
+        }
+      });
+
       await ctx.step("an identity-scoped App's token names the viewer but opens no project route (403)", async () => {
-        (await owner.patch("/v1/projects/:projectId/apps/:appId/access",
-          { mode: "restricted", member_ids: [viewerPrincipal.userId], viewer_token_scope: "identity" },
-          { params: { ...projectParams, appId } })).status(200);
         const session = await viewerToken(await signIn());
         if (JSON.stringify(session.scopes) !== JSON.stringify(["profile", "email"]) || !session.access_token) {
           throw new Error(`identity scope returned ${JSON.stringify(session.scopes)}`);

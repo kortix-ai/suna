@@ -196,8 +196,9 @@ made with a secret derived per App.
 
 ### How much your App is told
 
-One setting on the App's access policy — **Settings → Access** in Kortix, or
-`viewer_token_scope` on `PATCH /projects/:id/apps/:appId/access`:
+One setting on the App's access policy — **Settings → Access** in Kortix,
+`kortix apps access <app> --viewer off|identity|api`, or `viewer_token_scope`
+on `PATCH /projects/:id/apps/:appId/access`:
 
 | Scope | Your App receives |
 |---|---|
