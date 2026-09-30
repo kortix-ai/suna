@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyTurnError, parseBalance } from '../channels/slack/errors';
+import { classifyTurnError, parseBalance, TEAMS_TURN_ERROR_COMMANDS } from '../channels/slack/errors';
 
 describe('classifyTurnError', () => {
   test('out of credits — 402 status', () => {
@@ -116,6 +116,31 @@ describe('classifyTurnError', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
     expect(r.title).toBe('Model unavailable');
     expect(r.text.toLowerCase()).toContain('model');
+  });
+
+  // Prod 2026-09-30: OpenCode's own wording. "The selected model" sent people
+  // to the web picker, which showed a different, working model.
+  test('OpenCode`s "Model not found" names the model and the Slack command', () => {
+    const r = classifyTurnError({
+      name: 'UnknownError',
+      message: 'Model not found: codex/gpt-6-sol. Did you mean: gpt-6-sol-mini?',
+    });
+    expect(r.title).toBe('Model unavailable');
+    expect(r.text).toBe(
+      ":warning: *The model `codex/gpt-6-sol` isn't available.* Pick another model with `/kortix models`, then start a new thread.",
+    );
+  });
+
+  test('Teams gets its own model command', () => {
+    const r = classifyTurnError({ message: 'Model not found: codex/gpt-6-sol.' }, TEAMS_TURN_ERROR_COMMANDS);
+    expect(r.text).toBe(
+      ":warning: *The model `codex/gpt-6-sol` isn't available.* Pick another model with `/models`, then send your message again.",
+    );
+  });
+
+  test('a model error that names no ref keeps the generic subject', () => {
+    const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
+    expect(r.text).toStartWith(":warning: *The selected model isn't available.*");
   });
 
   test('agent-not-found → "Agent unavailable" routing to /kortix agents', () => {
