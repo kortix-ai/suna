@@ -11,5 +11,5 @@ export {
   toWorkspaceSearchEntry,
   workspaceEntryMatchesQuery,
   workspaceQueryLooksPathLike,
-} from '@kortix/sdk';
-export type { WorkspaceSearchEntry, WorkspaceSearchOptions } from '@kortix/sdk';
+} from '@kortix/sdk/workspace-search';
+export type { WorkspaceSearchEntry, WorkspaceSearchOptions } from '@kortix/sdk/workspace-search';
