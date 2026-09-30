@@ -269,6 +269,7 @@ export class PiRuntime {
   private readonly completedTurns = new Map<string, 'idle' | 'error'>()
   /** The retry state of the root turn in flight (transient-retry.ts). */
   private turnRetry: TransientRetry | null = null
+  private resetProgressWatchdog: (() => void) | null = null
   private workspaceReady = true
 
   constructor(opts: PiRuntimeOptions) {
@@ -601,6 +602,18 @@ export class PiRuntime {
       now: this.now,
     })
     this.turnRetry = retry
+    let timedOut = false
+    let watchdog: ReturnType<typeof setTimeout> | undefined
+    const armWatchdog = () => {
+      clearTimeout(watchdog)
+      if (this.runningTools || !this.active || timedOut) return
+      watchdog = setTimeout(() => {
+        timedOut = true
+        retry.abort()
+        agent.abort()
+      }, this.cfg.piNoProgressMs)
+    }
+    this.resetProgressWatchdog = armWatchdog
     try {
       agent.state.model = this.selected!.model
       agent.state.thinkingLevel = this.thinkingLevel(turn.input.variant ?? this.compiledAgent()?.variant)
@@ -608,28 +621,38 @@ export class PiRuntime {
       // pi's prompt path: `input` and `before_agent_start` handlers, extension commands, `/skill:` and templates.
       const images = this.images(turn.input)
       // A transient model error continues the turn instead of ending it (transient-retry.ts).
+      armWatchdog()
       await retry.run(agent, () => this.pi!.session.prompt(turn.input.text || '(attachment)', { source: 'rpc', ...(images.length ? { images } : {}) }))
       for (const frame of this.adapter!.settleRetry()) this.publish(frame)
+      if (timedOut) {
+        outcome = 'error'
+        error = { name: 'TimeoutError', message: 'The session made no progress. Please try again.' }
+        this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message: error.message } } } })
+        this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
+        this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
+      }
       // Only this turn's messages: an extension command answers without a model call.
       const last = agent.state.messages.slice(before).reverse().find((m) => m.role === 'assistant') as
         | { stopReason?: string; errorMessage?: string }
         | undefined
-      if (last?.stopReason === 'aborted' || retry.wasAborted) outcome = 'aborted'
-      else if (last && (last.stopReason === 'error' || last.stopReason === 'length')) {
+      if (!timedOut && (last?.stopReason === 'aborted' || retry.wasAborted)) outcome = 'aborted'
+      else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
         error = wire ? { name: wire.name, message: (wire.data as { message?: string }).message } : undefined
       }
     } catch (err) {
       outcome = 'error'
-      const message = err instanceof Error ? err.message : String(err)
-      error = { name: 'UnknownError', message }
+      const message = timedOut ? 'The session made no progress. Please try again.' : err instanceof Error ? err.message : String(err)
+      error = { name: timedOut ? 'TimeoutError' : 'UnknownError', message }
       this.adapter?.settleRetry()
       logger.error('[pi] turn failed', { messageId: turn.messageId, err: message })
-      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
+      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message } } } })
       this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
+      clearTimeout(watchdog)
+      this.resetProgressWatchdog = null
       this.turnRetry = null
       this.turnSystem = null
       this.permissions.rejectAll()
@@ -648,6 +671,7 @@ export class PiRuntime {
   private onAgentEvent(event: AgentEvent): void {
     if (event.type === 'tool_execution_start') this.runningTools += 1
     if (event.type === 'tool_execution_end') this.runningTools = Math.max(0, this.runningTools - 1)
+    if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end' || event.type === 'message_update') this.resetProgressWatchdog?.()
     this.translateAndPublish(event)
     // After the frames: the finished tool part is on the transcript before the turn is cut.
     if (event.type === 'tool_execution_end') this.checkAbortAfterTool()

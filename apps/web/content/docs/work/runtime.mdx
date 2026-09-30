@@ -193,7 +193,7 @@ Kortix injects these variables at boot. Only a project secret explicitly configu
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
-| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to create the OpenCode root on cold boot. |
+| `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to resolve the OpenCode root on cold boot: the box's pin file first, then the session's pinned root from the API, then the most recently active root. It creates a root when OpenCode answers with none, or when neither pin exists and OpenCode does not answer within 20 s. |
 | `KORTIX_LLM_BASE_URL` | Kortix LLM-gateway base URL. The gateway resolves provider credentials server-side. |
 | `KORTIX_TOKEN` | The session-bound Kortix credential. See below. |
 
