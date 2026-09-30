@@ -1,6 +1,6 @@
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
-import { markTurnStopRequested } from '../../projects/sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
@@ -16,6 +16,7 @@ import {
   agentLaunchableInProject,
   remintGrantForAgentSwitch,
 } from '../../projects/lib/session-token-grant';
+import { bindSessionTurnIdentity } from '../../projects/lib/on-behalf-of';
 import { dropUndeclaredPromptAgent } from '../undeclared-prompt-agent';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
@@ -95,8 +96,8 @@ import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   beginSandboxTurn,
-  extractTurnIdentity,
 } from '../../projects/sandbox-turn-lifecycle';
+import { extractTurnIdentity } from '../../projects/session-turn-ledger';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -284,13 +285,14 @@ function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: stri
 
 // The REAL collaborators for the pre-prompt turn-start block. Built HERE, not in
 // ../pre-prompt-env-sync.ts: this file is re-evaluated by every proxy suite
-// under its own `mock.module` stubs, so binding the four modules here is what
+// under its own `mock.module` stubs, so binding the five modules here is what
 // keeps those stubs effective. Binding them in the extracted module instead
 // would cache the real ones for the whole process the first time any test
 // touched it.
 const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
   syncEnv: syncSandboxEnvForPrompt,
   remintGrant: remintGrantForAgentSwitch,
+  bindTurnIdentity: bindSessionTurnIdentity,
   scheduleSnapshot: scheduleOpencodeSnapshotSync,
   generateTitle: generateSessionTitleFromFirstPrompt,
 };
@@ -322,6 +324,11 @@ export type PreviewProxyAccess =
        *  design exists to delete. REQUIRED, same reasoning as callerSessionId:
        *  a new entry point must not be able to omit it and fail open. */
       sandboxAuthored: boolean;
+      /** `userId` is a person starting turns directly through this proxy: a
+       *  turn start binds the session token to them (`bindSessionTurnIdentity`).
+       *  Set only by the direct client routes. Absent = keep the token's
+       *  identity (server-side delivery binds in `continueSession`). */
+      bindTurnIdentity?: boolean;
     }
   | { kind: 'public_share' };
 
@@ -1039,6 +1046,7 @@ export async function forwardToSandbox(
             providerHeaders: ingress.headers,
             serviceKey,
             requestedAgent,
+            bindTurnIdentity: access.kind === 'principal' && access.bindTurnIdentity === true,
             body: requestBody,
             incomingHeaders,
           },
@@ -1931,6 +1939,9 @@ preview.all('/:sandboxId/:port/*', async (c) => {
       // sandbox-authored: no turn-start extend, no preview-use extend, and no
       // auto-resume of a parked box from the UI.
       sandboxAuthored: isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c)),
+      // A person (JWT or personal token) starting a turn here: neither the
+      // sandbox key nor a credential bound to an agent session.
+      bindTurnIdentity: !isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c)),
     },
     method,
     remainingPath,

@@ -244,8 +244,13 @@ export async function loadProjectSessionInventory(input: {
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q
-        ? JSON.stringify([filter.parent ?? null, filter.startedBy ?? null, filter.q ?? null])
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length
+        ? JSON.stringify([
+            filter.parent ?? null,
+            filter.startedBy ?? null,
+            filter.q ?? null,
+            ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
+          ])
         : undefined,
   };
   const sortAt = input.orderByActivity
@@ -450,8 +455,11 @@ export async function loadProjectSessionInventory(input: {
   // page can serve one again; clients de-duplicate by `session_id`.
   const served = new Set(items.map((item) => item.row.sessionId));
   // A `parent`-filtered read is already a tree level: roots have no parent to
-  // append, and children are read under the parent the client expanded.
-  for (let depth = 0; !filter.parent && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
+  // append, and children are read under the parent the client expanded. A
+  // label filter promises only rows carrying every label, so it gets no
+  // unlabeled ancestors either.
+  const appendAncestors = !filter.parent && !filter.labels?.length;
+  for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
         items

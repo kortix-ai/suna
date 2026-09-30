@@ -40,6 +40,14 @@ import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile } from './types';
 
 const source = readFileSync(fileURLToPath(new URL('./composer.tsx', import.meta.url)), 'utf8');
+// KRTX-373 phase 1 moved the card's JSX subtree into `ComposerCard.tsx`, so the
+// JSX-wiring assertions below read both files. The code assertions (`code()`,
+// the `between` slices) still read `composer.tsx` only: the latch and the
+// dispatch closure did not move.
+const cardSource = readFileSync(
+  fileURLToPath(new URL('./ComposerCard.tsx', import.meta.url)),
+  'utf8',
+);
 
 /** The file with comments removed, for assertions about what CODE references. */
 function code(): string {
@@ -405,7 +413,13 @@ describe('the composer submits through the latch', () => {
     // Exactly three: the definition, the `useRef(dispatchSubmission)` seed, and
     // the ref-mirror assignment. A fourth means something calls it unlatched.
     expect(refs).toHaveLength(3);
-    expect(source).toContain('onSubmit={handleSubmit}');
+    // The editor JSX now lives in `ComposerCard.tsx`; the latched handler it
+    // receives is still created and held in `composer.tsx` (the tests above
+    // pin that). Both ends of the wire must hold for the entry points to be
+    // guarded: ComposerImpl hands `handleSubmit` into the card, and the card
+    // wires it as the editor's `onSubmit`.
+    expect(cardSource).toContain('onSubmit={handleSubmit}');
+    expect(source).toContain('handleSubmit,');
   });
 
   test('Send captures, resets, clears the stored draft, then runs one runComposerSend', () => {
@@ -448,7 +462,9 @@ describe('the composer submits through the latch', () => {
   });
 
   test('the button and Enter refuse only a failed attachment', () => {
-    const normalized = source.replace(/\s+/g, ' ');
+    // The `attachmentFailed` const stays in `composer.tsx`; the two JSX pins
+    // (the disabled-expression and the toolbar prop) moved into the card.
+    const normalized = (source + cardSource).replace(/\s+/g, ' ');
     expect(normalized).toContain('const attachmentFailed = attachmentsBlockSend(promptAttachmentItems);');
     expect(normalized).toContain('submitDisabled || attachmentFailed ||');
     expect(normalized).toContain('attachmentFailed={attachmentFailed}');

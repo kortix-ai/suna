@@ -784,7 +784,7 @@ flow(
         await expectReach(trigger, false, 'trigger session');
       });
 
-      await ctx.step('an admin prompts the private session (202); on_behalf_of is cleared and the personal account is gone', async () => {
+      await ctx.step("an admin prompts the private session (202) while its delivery waits; the token still acts for the human", async () => {
         // Hold delivery: a claimed command keeps the queued prompts away from
         // a runtime this flow never provisions (same device as SESS-29).
         await world.db.query(
@@ -801,20 +801,11 @@ flow(
           parts: [{ type: 'text', text: 'status please' }],
         }, { params: { projectId: project.id, sessionId: privateRun.sessionId } });
         r.status([200, 202]);
+        // The session token changes hands when the admin's TURN starts
+        // (SESS-39), not when the prompt is queued behind the human's turn.
         const onBehalfOf = await world.readOnBehalfOf(privateRun.sessionId);
-        if (onBehalfOf !== null) throw new Error(`on_behalf_of still ${onBehalfOf} after an admin prompt`);
-        await expectReach(privateRun, false, 'private session after admin prompt');
-      });
-
-      await ctx.step('the human prompting again does not restore it (cleared permanently for the session)', async () => {
-        const r = await ctx.client.as(human).post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
-          client_message_id: 'agp8-human',
-          message_id: 'msg_0123456789abAgPeIgHtHuMnXy',
-          parts: [{ type: 'text', text: 'continue' }],
-        }, { params: { projectId: project.id, sessionId: privateRun.sessionId } });
-        r.status([200, 202]);
-        if ((await world.readOnBehalfOf(privateRun.sessionId)) !== null) throw new Error('on_behalf_of was restored');
-        await expectReach(privateRun, false, 'private session after the human re-prompts');
+        if (onBehalfOf !== human.userId) throw new Error(`on_behalf_of = ${onBehalfOf} while the admin's prompt waits`);
+        await expectReach(privateRun, true, 'private session while the admin prompt waits');
       });
     } finally {
       await world.db.query('DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2', [project.id, slug]).catch(() => {});

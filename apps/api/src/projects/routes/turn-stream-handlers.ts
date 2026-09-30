@@ -23,13 +23,15 @@ import {
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
-  recordUnidentifiedTurnCause,
-  turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import {
+  recordUnidentifiedTurnCause,
+  turnCompletionAllowsQueuePromotion,
+} from '../session-turn-ledger';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = {

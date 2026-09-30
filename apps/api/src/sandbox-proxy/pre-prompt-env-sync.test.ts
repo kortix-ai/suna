@@ -42,13 +42,17 @@ function baseInput(overrides: Partial<Parameters<typeof runPrePromptEnvSync>[0]>
     providerHeaders: {},
     serviceKey: 'svc-key',
     requestedAgent: null,
+    bindTurnIdentity: false,
     body: undefined,
     incomingHeaders: new Headers(),
     ...overrides,
   };
 }
 
-function recordingDeps(log: string[], opts: { syncEnvThrows?: Error } = {}): PrePromptEnvSyncDeps {
+function recordingDeps(
+  log: string[],
+  opts: { syncEnvThrows?: Error; bindThrows?: Error } = {},
+): PrePromptEnvSyncDeps {
   return {
     syncEnv: (async () => {
       log.push('syncEnv:called');
@@ -58,6 +62,11 @@ function recordingDeps(log: string[], opts: { syncEnvThrows?: Error } = {}): Pre
       log.push('remintGrant:called');
       return { action: 'skip' } as never;
     }) as PrePromptEnvSyncDeps['remintGrant'],
+    bindTurnIdentity: (async (input) => {
+      log.push(`bindTurnIdentity:${input.sessionId}:${input.prompterUserId}`);
+      if (opts.bindThrows) throw opts.bindThrows;
+      return true;
+    }) as PrePromptEnvSyncDeps['bindTurnIdentity'],
     scheduleSnapshot: (() => {
       log.push('scheduleSnapshot:called');
     }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
@@ -134,5 +143,31 @@ describe('runPrePromptEnvSync — title generation and snapshot scheduling are n
     // sequential syncEnv/remintGrant pair, resolves in well under a
     // deliberately-blocking generateTitle's would-be delay.
     expect(elapsedMs).toBeLessThan(50);
+  });
+});
+
+describe('runPrePromptEnvSync — a person starting a turn binds the session token to them', () => {
+  test('bindTurnIdentity true: the prompter is bound for this session before the turn is forwarded', async () => {
+    const log: string[] = [];
+    const result = await runPrePromptEnvSync(baseInput({ bindTurnIdentity: true }), recordingDeps(log));
+    expect(result).toBeNull();
+    expect(log).toContain('bindTurnIdentity:sess-1:user-1');
+  });
+
+  test('bindTurnIdentity false (sandbox-authored or server delivery): identity is left alone', async () => {
+    const log: string[] = [];
+    await runPrePromptEnvSync(baseInput(), recordingDeps(log));
+    expect(log.some((e) => e.startsWith('bindTurnIdentity'))).toBe(false);
+  });
+
+  test('a failed bind refuses the turn: it never runs as the previous prompter', async () => {
+    const log: string[] = [];
+    const result = await runPrePromptEnvSync(
+      baseInput({ bindTurnIdentity: true }),
+      recordingDeps(log, { bindThrows: new Error('db down') }),
+    );
+    expect(result?.status).toBe(502);
+    expect(await result?.json()).toEqual({ error: 'could not bind the session to the person starting this turn' });
+    expect(log).not.toContain('remintGrant:called');
   });
 });
