@@ -8,6 +8,7 @@ import {
 } from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
 import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
+import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
@@ -208,6 +209,13 @@ export interface GatewayDeps {
    * Absent = unconfined: production always wires it (db-deps.ts).
    */
   gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
+  /**
+   * Keeps a Slack write (post, edit, delete, reaction, join) out of other
+   * projects' channels and threads (channel-write-scope.ts): refused before
+   * the call, and a post that landed elsewhere is taken back after it.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -657,19 +665,21 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   // Before any credential, approval or provider call: a read of another
-  // project's conversation never leaves the API.
+  // project's conversation, or a write into it, never leaves the API.
+  const channelInput: ChannelReadInput = {
+    projectId: input.projectId,
+    platform: connector.platform ?? null,
+    actionPath: input.actionPath,
+    args: input.args ?? {},
+    risk: action.risk,
+  };
   const channelGate =
-    connector.provider === 'channel' && deps.gateChannelRead
-      ? await deps.gateChannelRead({
-          projectId: input.projectId,
-          platform: connector.platform ?? null,
-          actionPath: input.actionPath,
-          args: input.args ?? {},
-          risk: action.risk,
-        })
-      : null;
-  if (channelGate?.refusal) {
-    const { reason, message } = channelGate.refusal;
+    connector.provider === 'channel' && deps.gateChannelRead ? await deps.gateChannelRead(channelInput) : null;
+  const channelWrite =
+    connector.provider === 'channel' && deps.gateChannelWrite ? await deps.gateChannelWrite(channelInput) : null;
+  const channelRefusal = channelGate?.refusal ?? channelWrite?.refusal ?? null;
+  if (channelRefusal) {
+    const { reason, message } = channelRefusal;
     await audit(deps, input, connector, 'denied', action.risk, { reason, message });
     return { status: 'denied', reason, message };
   }
@@ -1081,6 +1091,28 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         return { status: 'denied', reason, message };
       }
       if (scoped) result = { ...result, data: scoped.data };
+      // A post that Slack delivered somewhere other than the conversation that
+      // was checked (it resolved a name) is taken back, then refused.
+      const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
+      if (misfire) {
+        const undone = misfire.undo
+          ? await executeCall({
+              binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
+              baseUrl: connector.baseUrl,
+              auth: connector.auth,
+              headers: connector.headers,
+              secret: executionSecret,
+              args: misfire.undo.args,
+              fetchImpl: deps.fetchImpl,
+            })
+              .then((undo) => mapChannelEnvelope(undo).ok)
+              .catch(() => false)
+          : false;
+        const { reason } = misfire.refusal;
+        const message = `${misfire.refusal.message} ${undone ? 'Kortix removed it.' : 'Kortix could not remove it: delete it in Slack.'}`;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message, removed: undone });
+        return { status: 'denied', reason, message };
+      }
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {

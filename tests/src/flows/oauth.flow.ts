@@ -321,6 +321,7 @@ flow(
   "OAU-7",
   {
     domain: "oauth",
+    timeoutMs: 180_000,
     routes: [
       "GET /v1/oauth/authorize",
       "GET /v1/oauth/authorize/consent/:requestId",
@@ -464,8 +465,9 @@ flow(
     });
 
     await ctx.step("replaying a rotated refresh token after the grace window → invalid_grant AND the whole family for that client+user is revoked", async () => {
-      // The API test profile runs with KORTIX_OAUTH_REFRESH_GRACE_MS=2000.
-      await new Promise((r) => setTimeout(r, 2500));
+      // The local profile sets KORTIX_OAUTH_REFRESH_GRACE_MS=2000. A deployed API keeps the
+      // 30 s default (the flow cannot set server env), so wait past that.
+      await new Promise((r) => setTimeout(r, ctx.env.target === "local" ? 2_500 : 31_000));
       const live = await refresh(refreshToken); // still live, not yet rotated
       live.status(200);
       const liveNext = live.json<any>();
