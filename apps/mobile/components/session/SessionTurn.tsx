@@ -311,7 +311,7 @@ function SessionTurnImpl({
     return (
       <View className="px-4">
         {view.kind === 'marker' ? (
-          // No `onOpenSummary`: mobile has no side panel, so the summary expands inline.
+          // Mobile has no side panel, so the summary expands inline.
           <CompactionMarker running={view.running} summary={response} />
         ) : (
           <CompactionFailedRow error={view.error} isAbort={view.isAbort} />
