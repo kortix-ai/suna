@@ -872,6 +872,12 @@ export class PlatinumProvider implements SandboxProvider {
    * still on.
    */
   async stop(externalId: string): Promise<void> {
+    // Auto-resume off BEFORE the stop: Platinum resumed a box on a stray request
+    // 1.3 s after `stop.done`, with its row already stopped and its token dead.
+    await disableAutoResume(
+      externalId,
+      await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(() => null),
+    );
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
     const deadlineMs = stopConfirmDeadlineMs();
     const pollMs = stopConfirmPollMs();
