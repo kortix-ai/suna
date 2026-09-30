@@ -9,6 +9,6 @@ const names = [
 ] as const;
 
 test('the web gateway shim preserves every SDK hook identity', async () => {
-  const sdk = await import('@kortix/sdk/react');
+  const sdk = await import('../../../../../packages/sdk/src/react/use-project-gateway');
   for (const name of names) expect(web[name]).toBe(sdk[name]);
 });
