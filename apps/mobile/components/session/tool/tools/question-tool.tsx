@@ -24,7 +24,7 @@
 
 import { useMemo } from 'react';
 import { View } from 'react-native';
-import type { ParsedQuestion } from '@kortix/sdk';
+import { toToolView, type ParsedQuestion } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
@@ -44,7 +44,6 @@ import {
   ToolEmptyState,
   ToolMarkdown,
   partInput,
-  partMetadata,
   partOutput,
   useToolRowVariant,
 } from '../shared/infrastructure';
@@ -102,7 +101,6 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
   const primary = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { chain } = useToolRowVariant();
   const input = partInput(part);
-  const metadata = partMetadata(part);
   const output = partOutput(part);
   const pendingForCall = useSyncStore((s) =>
     hasActiveQuestion === undefined && sessionId
@@ -113,8 +111,8 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
 
   const questions = useMemo(() => parseQuestionsInput(input.questions), [input.questions]);
   const answers = useMemo(
-    () => resolveQuestionAnswers(metadata.answers, output, questions.length),
-    [metadata.answers, output, questions.length],
+    () => resolveQuestionAnswers(toToolView(part).answers, output, questions.length),
+    [part, output, questions.length],
   );
   const trigger = questionTrigger({ total: questions.length, answers, hasActiveQuestion: active });
   const type = chain ? TURN_TYPE.rowSm : TURN_TYPE.xs;

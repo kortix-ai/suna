@@ -204,16 +204,29 @@ function toolFiles(kind: ToolKind, input: Record<string, unknown>, metadata: Rec
   // over 4 KB, so the replaced block in the input is the fallback. pi sends a
   // unified patch.
   const filediff = record(metadata.filediff);
+  const patch = filediff ? undefined : text(metadata.patch);
+  const counts = patch ? patchLineCounts(patch) : undefined;
   return [
     defined<ToolFile>({
       path,
       before: text(filediff?.before) ?? text(input.oldString),
       after: text(filediff?.after) ?? text(input.newString),
-      patch: filediff ? undefined : text(metadata.patch),
-      additions: count(filediff?.additions),
-      deletions: count(filediff?.deletions),
+      patch,
+      additions: count(filediff?.additions) ?? counts?.additions,
+      deletions: count(filediff?.deletions) ?? counts?.deletions,
     }),
   ];
+}
+
+/** `+`/`-` lines of a unified patch, not its `+++`/`---` file headers. */
+function patchLineCounts(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions++;
+    else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
+  }
+  return { additions, deletions };
 }
 
 function toolAnswers(metadata: Record<string, unknown>): string[][] | undefined {

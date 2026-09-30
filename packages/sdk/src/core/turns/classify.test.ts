@@ -719,7 +719,7 @@ describe('toToolView — harness-neutral tool fields', () => {
       ),
     );
     expect(view.files).toEqual([
-      { path: 'src/a.ts', patch: '--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b' },
+      { path: 'src/a.ts', patch: '--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b', additions: 1, deletions: 1 },
     ]);
     expect(view.diff).toBe('--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b');
   });

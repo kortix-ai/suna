@@ -29,17 +29,6 @@ import { diffLines } from 'diff';
 import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useContext, useMemo } from 'react';
 
-/** Line counts of a unified patch: `+`/`-` lines, not the `+++`/`---` file headers. */
-export function patchStat(patch: string): { additions: number; deletions: number } {
-  let additions = 0;
-  let deletions = 0;
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+') && !line.startsWith('+++')) additions++;
-    else if (line.startsWith('-') && !line.startsWith('---')) deletions++;
-  }
-  return { additions, deletions };
-}
-
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const running = useContext(ToolRunningContext);
@@ -66,8 +55,10 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
-  const before = file?.before ?? (streamingInput.oldString as string) ?? '';
-  const after = file?.after ?? (streamingInput.newString as string) ?? '';
+  const before =
+    file?.before ?? (input.oldString as string) ?? (streamingInput.oldString as string) ?? '';
+  const after =
+    file?.after ?? (input.newString as string) ?? (streamingInput.newString as string) ?? '';
   const patch = file?.patch ?? '';
   const codeEdit = (input.code_edit as string) || (streamingInput.code_edit as string) || '';
   const morphInstructions =
@@ -97,7 +88,12 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // still shows everything.
   const diffCounts = useMemo(() => {
     if (status !== 'completed') return undefined;
-    if (!hasDiff) return patch ? patchStat(patch) : undefined;
+    if (!hasDiff) {
+      // pi: the SDK counted the unified patch.
+      return patch && file?.additions !== undefined
+        ? { additions: file.additions, deletions: file.deletions ?? 0 }
+        : undefined;
+    }
     const changes = diffLines(before, after, { maxEditLength: 1000 });
     if (!changes) return undefined;
     let additions = 0;
@@ -107,7 +103,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       else if (change.removed) deletions += change.count;
     }
     return { additions, deletions };
-  }, [status, hasDiff, before, after, patch]);
+  }, [status, hasDiff, before, after, patch, file]);
   // Selector, not the whole store: an unselected `useFilePreviewStore()` makes
   // every edit row a subscriber of `isOpen` / `filePath` / `lineNumber`, so
   // opening ONE preview re-rendered every edit row in the session.

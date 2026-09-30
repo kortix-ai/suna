@@ -53,6 +53,7 @@ import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
+import { directSubsessions } from '@kortix/sdk';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
@@ -96,7 +97,6 @@ import type { ProjectSession } from '@/lib/projects/projects-client';
 import type { SessionStarter } from '@/lib/session/session-tree';
 import {
   SESSION_STATUS_FILTERS,
-  directSubsessions,
   showSubsessionCountBadge,
   filterSessionsByStatus,
   groupSessionsByActivity,
