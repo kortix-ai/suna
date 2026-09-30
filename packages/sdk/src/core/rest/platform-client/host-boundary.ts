@@ -221,6 +221,13 @@ export interface ConnectorSetupLinkInfo {
   name?: string | null;
   /** The app's logo. `null` when the catalog has none; absent on older servers. */
   icon_url?: string | null;
+  /**
+   * An account landed on this connector after the link was minted: the ask is
+   * settled, and a card that reloads shows it as done. `false` for a link
+   * nobody has completed, even when the connector already had an account.
+   * Absent on older servers and for links minted before they recorded when.
+   */
+  connected?: boolean;
   expires_at: string;
 }
 
