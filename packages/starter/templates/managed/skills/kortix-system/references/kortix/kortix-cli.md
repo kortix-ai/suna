@@ -351,7 +351,7 @@ enable reminders` turns it on (the user's decision).
 
 Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
 parked session. A fire never starts a new session; if the session is
-deleted or failed the reminder pauses itself. Max 20 active per session.
+deleted or failed the reminder pauses itself. Max 20 active per session, 200 per project; schedules reach at most 366 days ahead.
 
 ### Channels (Slack)
 

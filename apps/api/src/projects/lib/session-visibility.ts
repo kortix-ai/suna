@@ -305,6 +305,17 @@ async function sessionReadAccess(
       });
     }
   }
+  // An agent session always opens itself and the sessions it spawned. A trigger
+  // run's `created_by` is the agent's service account, never the token's user, so
+  // the ownership rule above refuses it its own row (404 on `kortix reminders`).
+  if (
+    !visible &&
+    loaded.actor &&
+    isAgentPrincipalActor(loaded.actor) &&
+    agentSessionStanding(boundCredentialSessionId, row, false).isOwner
+  ) {
+    visible = true;
+  }
   if (!visible) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be
