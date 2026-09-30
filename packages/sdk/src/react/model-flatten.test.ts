@@ -18,6 +18,22 @@ function gatewayProviderList(
   } as unknown as ProviderListResponse;
 }
 
+describe('flattenModels — free catalog flag', () => {
+  test('normalizes true, false, and absent free flags without changing other fields', () => {
+    const models = gatewayProviderList({
+      paid: { name: 'Paid' },
+      free: { name: 'Free', free: true },
+      disabled: { name: 'Disabled', free: false },
+    });
+    const flat = flattenModels(models);
+    expect(flat.map(({ modelID, free, capabilities }) => ({ modelID, free, capabilities }))).toEqual([
+      { modelID: 'paid', free: false, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+      { modelID: 'free', free: true, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+      { modelID: 'disabled', free: false, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+    ]);
+  });
+});
+
 describe('flattenModels — gateway `provider` + `reasoning_options` pass-through', () => {
   test('carries the explicit `provider` field for a BYOK model registered under the kortix provider', () => {
     const [flat] = flattenModels(
