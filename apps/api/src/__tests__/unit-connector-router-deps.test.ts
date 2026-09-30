@@ -24,6 +24,9 @@ const REQUIRED_DEP_KEYS = [
   'listPipedreamApps',
   'getProjectPolicies',
   'setProjectPolicies',
+  // Optional on GatewayDeps; without it Slack/Teams reads reach every
+  // conversation of the shared workspace token (channel-read-scope.ts).
+  'gateChannelRead',
 ];
 
 describe('dbConnectorRouterDeps wiring', () => {

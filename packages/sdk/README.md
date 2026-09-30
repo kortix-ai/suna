@@ -786,6 +786,7 @@ code imports the root.
 interface KortixPlatformConfig {
   backendUrl: string;
   getToken: () => Promise<string | null>;
+  /** @deprecated Inert: the SDK sends no client label. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   getUserId?: () => Promise<string | null>;
   billingEnabled?: boolean;
@@ -797,9 +798,10 @@ interface KortixPlatformConfig {
 }
 ```
 
-Set `clientSource` when a non-web host needs its requests separated in the
-centralized audit log. The SDK sends the validated value as request metadata.
-Actor identity and permissions still come from the bearer token.
+`clientSource` is deprecated and inert. The audit log records what the API
+authenticated (`credential_kind`: browser session, personal access token,
+connected app, agent session, API key, service account), never a label the
+client reports about itself.
 
 The SDK is host-agnostic: no Next.js / web coupling in the core. The host injects
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven

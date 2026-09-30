@@ -1016,7 +1016,10 @@ export interface ListAuditFilter {
   project_id?: string;
   session_id?: string;
   actor_type?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
+  /** Trusted execution source (`authoritative_source`). */
   source?: string;
+  /** Credential class the API authenticated, e.g. `oauth_app`. */
+  credential_kind?: string;
   phase?: string;
   outcome?: 'success' | 'failure' | 'denied' | 'pending';
   request_id?: string;
@@ -1043,6 +1046,7 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
   if (filter.session_id) params.set('session_id', filter.session_id);
   if (filter.actor_type) params.set('actor_type', filter.actor_type);
   if (filter.source) params.set('source', filter.source);
+  if (filter.credential_kind) params.set('credential_kind', filter.credential_kind);
   if (filter.phase) params.set('phase', filter.phase);
   if (filter.outcome) params.set('outcome', filter.outcome);
   if (filter.request_id) params.set('request_id', filter.request_id);

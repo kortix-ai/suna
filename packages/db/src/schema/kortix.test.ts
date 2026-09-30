@@ -181,6 +181,8 @@ describe('canonical audit ledger', () => {
         'delegation_depth',
         'authoritative_source',
         'client_reported_source',
+        'credential_kind',
+        'credential_id',
         'phase',
         'causation_id',
         'source_ledger',

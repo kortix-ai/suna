@@ -405,6 +405,10 @@ slack history --channel "$SLACK_CHANNEL_ID" --thread "$SLACK_THREAD_TS"
 slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
 ```
 
+### Reads stay inside this project
+
+Every Kortix project in a Slack workspace shares one bot, so reads reach only this project's conversations: the channels and DMs connected to it, and the threads its sessions started or joined. `slack history`, `slack thread`, `slack channel-info`, `slack file-info` and `slack search` refuse anything else with `conversation_not_in_project`, and `slack channels` lists public channels plus this project's private ones. On that error, do not retry with another id. Tell the user what the error message says: the conversation belongs to another project, or they can connect it by running `/kortix switch` in it.
+
 ### React to a message
 
 ```sh

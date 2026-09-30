@@ -124,6 +124,25 @@ function PACKAGE_JSON(pin: string, extra = ''): string {
   return `{\n  "dependencies": {\n    "@opencode-ai/plugin": "${pin}"${extra}\n  }\n}\n`;
 }
 
+/**
+ * `@kortix/starter`'s `base` template — the scaffold every managed project
+ * gets by default on provisioning (`managed-repo-seed.ts`: "seeding is the
+ * default, not an opt-in") — ships the harness-agnostic layout PR #7681
+ * introduced: `harnesses/opencode/opencode.jsonc`, root `agents/`, root
+ * `skills/kortix-cli/`, root `memory/`. This flow deliberately drives the
+ * LEGACY `.kortix/opencode` layout with a fixed, hand-authored config
+ * (`CONFIG_FILES` below), so every managed project it creates clears that
+ * scaffold in the SAME commit that lays down `CONFIG_FILES`. Without this,
+ * `harnesses/opencode` (checked before the legacy dir,
+ * `opencodeConfigDirCandidates`) and the starter's root `skills/kortix-cli`
+ * (always composing the release, `rootSkillRecords`) win over this flow's own
+ * config on a managed (non-`local`) target, and every assertion below that
+ * names a config tree, a release ID, or an archive URL is comparing against
+ * the wrong tree. The `local` target never seeds a starter template
+ * (`createLocalGitRepository`), so this is a no-op there.
+ */
+const STARTER_SCAFFOLD_PATHS = ['harnesses', 'skills', 'agents', 'memory'];
+
 const CONFIG_FILES: Record<string, string> = {
   'kortix.yaml': MANIFEST,
   '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json" }\n',
@@ -213,14 +232,26 @@ async function extract(archive: Buffer): Promise<Map<string, Buffer>> {
   }
 }
 
-/** Clone `repo`, write `files`, commit, and push to its base branch. Returns the new tip. */
-async function commitTo(repo: ProjectRepo, files: Record<string, string>, message: string): Promise<string> {
+/**
+ * Clone `repo`, remove `removePaths` (repo-relative; a missing path is a
+ * no-op — see `STARTER_SCAFFOLD_PATHS`), write `files`, commit, and push to
+ * its base branch. Returns the new tip.
+ */
+async function commitTo(
+  repo: ProjectRepo,
+  files: Record<string, string>,
+  message: string,
+  removePaths: string[] = [],
+): Promise<string> {
   const { mkdtemp, mkdir, rm, writeFile } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { dirname, join } = await import('node:path');
   const work = await mkdtemp(join(tmpdir(), 'ke2e-cfg-commit-'));
   try {
     await run('git', [...repo.auth, 'clone', '-q', '--branch', repo.branch, repo.url, '.'], work);
+    for (const path of removePaths) {
+      await rm(join(work, path), { recursive: true, force: true });
+    }
     for (const [path, body] of Object.entries(files)) {
       await mkdir(dirname(join(work, path)), { recursive: true });
       await writeFile(join(work, path), body);
@@ -430,8 +461,9 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     },
   };
 
-  // The same config dir on every target, so every step asserts known bytes.
-  await commitTo(repo, CONFIG_FILES, 'config dir');
+  // The same config dir on every target, so every step asserts known bytes:
+  // clear the starter's scaffold (STARTER_SCAFFOLD_PATHS) in the same commit.
+  await commitTo(repo, CONFIG_FILES, 'config dir', STARTER_SCAFFOLD_PATHS);
   return fixture;
 }
 
@@ -961,6 +993,7 @@ flow(
           otherRepo,
           { ...CONFIG_FILES, '.kortix/opencode/agents/kortix.md': '---\ndescription: main agent\nmode: primary\n---\nNEW REPOSITORY.\n' },
           'new repository',
+          STARTER_SCAFFOLD_PATHS,
         );
         const { rows } = await fixture.db.query(
           `SELECT p.repo_url, p.default_branch, p.metadata,
