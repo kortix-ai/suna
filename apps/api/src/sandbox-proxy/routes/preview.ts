@@ -241,7 +241,7 @@ export function stripFrameAncestors(csp: string): string | null {
 // cross-site gate in preview-origin.ts (reads are governed by the CORS
 // allowlist, writes and WebSocket upgrades require a same-site Sec-Fetch-Site),
 // not a framing restriction.
-function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
+export function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');
   for (const key of ['content-security-policy', 'content-security-policy-report-only']) {
@@ -437,7 +437,7 @@ export function longTurnTimeoutResponse(origin: string): Response {
 // kept on the preview. Genuinely external redirects (OAuth, CDNs, …) pass
 // through unchanged so the browser can follow them — we never hard-block, since
 // blocking turned ordinary app redirects into 502s.
-function sanitizeRedirectLocation(
+export function sanitizeRedirectLocation(
   previewUrl: string,
   location: string | null,
   redirectPrefix: string,
@@ -464,7 +464,7 @@ function sanitizeRedirectLocation(
 // error — timeout, abort, connection reset mid-flight — is ambiguous: the
 // sandbox may already have received and accepted the prompt, so a re-send would
 // duplicate it. Used to gate the one safe prompt-delivery retry in the catch.
-function isConnectionRefusedError(err: unknown): boolean {
+export function isConnectionRefusedError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
   const e = err as {
     code?: unknown;
