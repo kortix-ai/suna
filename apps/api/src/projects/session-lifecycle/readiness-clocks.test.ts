@@ -4,9 +4,12 @@ import {
   RUNTIME_READINESS_CLOCK_KEYS,
   STALE_OPENCODE_BOOT_HARD_MS,
   opencodeReadyWaitPatch,
+  RUNTIME_PROVEN_AT_KEY,
   runtimeBootEpochMs,
+  servesThroughProbeMiss,
   staleOpencodeReadyReason,
 } from './readiness-clocks';
+import { STOPPED_SANDBOX_CLEARED_KEYS } from './status-transitions';
 
 describe('readiness clocks', () => {
   test('tracks unreachable and not-ready deadlines independently across reason changes', () => {
@@ -215,5 +218,44 @@ describe('who resets the retry accounting', () => {
     for (const key of RUNTIME_READINESS_CLOCK_KEYS) {
       expect(RUNTIME_WAKE_CLAIM_CLEARED_KEYS).toContain(key);
     }
+  });
+});
+
+describe('servesThroughProbeMiss — a box proven this boot is never parked by its ingress', () => {
+  const booted = { providerRunningConfirmedAt: '2026-09-29T21:19:31.000Z' };
+  const proven = { ...booted, [RUNTIME_PROVEN_AT_KEY]: '2026-09-29T21:19:52.000Z' };
+  const now = Date.parse('2026-09-29T21:48:27.000Z');
+
+  test('an ingress timeout, 502 or bare edge 503 on a proven box keeps serving', () => {
+    expect(servesThroughProbeMiss(proven, { reason: 'unreachable' }, now)).toBe(true);
+    expect(servesThroughProbeMiss(proven, { reason: 'not_ready' }, now)).toBe(true);
+  });
+
+  test('a daemon that answers is believed', () => {
+    expect(servesThroughProbeMiss(proven, { reason: 'unchanged' }, now)).toBe(false);
+    expect(servesThroughProbeMiss(proven, { reason: 'healed' }, now)).toBe(false);
+    // The daemon names its boot phase: OpenCode really is restarting.
+    expect(servesThroughProbeMiss(proven, { reason: 'not_ready', bootPhase: 'opencode' }, now)).toBe(false);
+    // The daemon listed zero sessions: it answered.
+    expect(servesThroughProbeMiss(proven, { reason: 'not_ready', sessions: [] }, now)).toBe(false);
+  });
+
+  test('a box never proven this boot keeps the boot budgets', () => {
+    expect(servesThroughProbeMiss(booted, { reason: 'unreachable' }, now)).toBe(false);
+    // Proven before a wake: the wake moved the boot epoch past the proof.
+    const woken = { ...proven, runtimeWakeStartedAt: '2026-09-29T21:30:00.000Z' };
+    expect(servesThroughProbeMiss(woken, { reason: 'unreachable' }, now)).toBe(false);
+  });
+
+  test('a repair in flight is a real relaunch, not an ingress blip', () => {
+    const repairing = {
+      ...proven,
+      legacyRuntimeBootstrap: { state: 'running', lastAttemptAt: '2026-09-29T21:47:00.000Z' },
+    };
+    expect(servesThroughProbeMiss(repairing, { reason: 'unreachable' }, now)).toBe(false);
+  });
+
+  test('a stopped row cannot keep the proof', () => {
+    expect(STOPPED_SANDBOX_CLEARED_KEYS).toContain(RUNTIME_PROVEN_AT_KEY);
   });
 });
