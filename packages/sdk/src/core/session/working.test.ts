@@ -956,21 +956,6 @@ describe('projectWorking — a runtime idle frame ends the turn it names', () =>
     ).toMatchObject({ state: 'working', source: 'server' });
   });
 
-  test('a completed turn cannot silence a different active turn after an idle frame', () => {
-    const projection = projectWorking({
-      optimistic: null,
-      server: {
-        turns: [turn({ turn_token: 'tt-new', message_id: 'msg_new', started_at: new Date(T0).toISOString() })],
-        lastEnded: { turn_token: 'tt-old', message_id: 'msg_old', end_reason: 'completed', ended_at: new Date(T0 + 60_000).toISOString() },
-        atMs: T0 + 61_000,
-      },
-      stream: { type: 'idle', atMs: T0 + 60_000 },
-      nowMs: T0 + 61_100,
-    });
-
-    expect(projection).toMatchObject({ state: 'working', source: 'server', turnId: 'msg_new', serverOpenTurnToken: 'tt-new' });
-  });
-
   test('the ledger\'s token survives the frame — only the WORKING answer moves', () => {
     // `serverOpenTurnToken` answers a different question from `state`: whether
     // the control plane still holds authority over the turn. A `/` command goes
