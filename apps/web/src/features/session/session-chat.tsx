@@ -65,6 +65,7 @@ import {
   queuedBubbleTone,
   type QueuedPromptState,
   QueuedPromptFailure,
+  QueuedPromptProgress,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
 import { ShowGroupRenderer } from './tool/show-group-renderer';
@@ -1723,6 +1724,8 @@ function SessionTurnImpl({
                       : undefined
                   }
                 />
+              ) : queuedStatus === 'sending' || queuedStatus === 'queued' || queuedStatus === 'interrupted' ? (
+                <QueuedPromptProgress state={queuedStatus} />
               ) : undefined
             }
           />
@@ -2461,10 +2464,6 @@ export function SessionChat({
     boundAgentName,
     defaultAgentName: projectConfig?.open_code_default_agent,
   });
-  // The agent picker defaults to the session's agent (seeded via useRuntimeLocal's
-  // boundAgentName) but stays switchable: sends use the current pick. Switching
-  // mid-session is allowed everywhere — the grant re-mint re-resolves the
-  // connector tokens for the newly picked agent on every turn.
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -6267,7 +6266,8 @@ export function SessionChat({
                 escCount={escCount}
                 agents={local.agent.list}
                 selectedAgent={composerAgentName}
-                onAgentChange={handleAgentChange}
+                onAgentChange={boundAgentName ? undefined : handleAgentChange}
+                agentSelectorLocked={!!boundAgentName}
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}

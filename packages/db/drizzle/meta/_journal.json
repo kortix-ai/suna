@@ -670,6 +670,13 @@
     {
       "idx": 95,
       "version": "7",
+      "when": 1790681787809,
+      "tag": "20260929113627_session_presence_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
       "when": 1790686483090,
       "tag": "20260929125443_session_initiator",
       "breakpoints": true

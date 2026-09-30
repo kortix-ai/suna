@@ -54,11 +54,6 @@ export interface ProjectListResult {
   isError: boolean;
 }
 
-/** Owners and admins hold `ACCOUNT_ACTIONS.PROJECT_CREATE`; members get `403`. */
-export function canCreateInAccount(account: Pick<KortixAccount, 'account_role'>): boolean {
-  return account.account_role === 'owner' || account.account_role === 'admin';
-}
-
 function openedAt(project: KortixProject): number {
   return project.last_opened_at ? new Date(project.last_opened_at).getTime() : 0;
 }
@@ -88,6 +83,7 @@ const STATE_ORDER: Record<AccountSectionState, number> = {
 export function buildAccountSections(input: {
   accounts: KortixAccount[];
   lists: ProjectListResult[];
+  creatableAccountIds?: ReadonlySet<string>;
 }): AccountSection[] {
   const listByAccount = new Map(input.lists.map((list) => [list.accountId, list]));
   const projectsByAccount = new Map<string, KortixProject[]>();
@@ -101,7 +97,7 @@ export function buildAccountSections(input: {
   }
 
   const sections: AccountSection[] = input.accounts.map((account) => {
-    const canCreate = canCreateInAccount(account);
+    const canCreate = input.creatableAccountIds?.has(account.account_id) === true;
     const projects = sortByRecent(projectsByAccount.get(account.account_id) ?? []);
     projectsByAccount.delete(account.account_id);
     const list = listByAccount.get(account.account_id);

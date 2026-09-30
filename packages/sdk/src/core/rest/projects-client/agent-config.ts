@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import { canonicalizeRequiredConnectors } from './agent-connectors';
 import { unwrap } from './shared';
 
 // ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2,
@@ -137,39 +138,6 @@ function canonicalizeAgentBlock(block: AgentConfigBlock, writing = false): Agent
   }
   next.repository_access ??= legacyAccess;
   delete next.workspace;
-  return next;
-}
-
-function normalizeConnectorList(values: string[]): string[] {
-  const normalized: string[] = [];
-  for (const value of values) {
-    const slug = value.trim();
-    if (slug && !normalized.includes(slug)) normalized.push(slug);
-  }
-  return normalized;
-}
-
-function equalConnectorSets(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) return false;
-  const rightSet = new Set(right);
-  return left.every((slug) => rightSet.has(slug));
-}
-
-function canonicalizeRequiredConnectors(block: AgentConfigBlock): AgentConfigBlock {
-  const canonical = block.connectors_required
-    ? normalizeConnectorList(block.connectors_required)
-    : undefined;
-  const legacy = block.connectors_personal
-    ? normalizeConnectorList(block.connectors_personal)
-    : undefined;
-  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
-    throw new Error('connectors_personal must match connectors_required when both fields are present');
-  }
-  const next = { ...block };
-  delete next.connectors_personal;
-  if (canonical !== undefined || legacy !== undefined) {
-    next.connectors_required = canonical ?? legacy;
-  }
   return next;
 }
 

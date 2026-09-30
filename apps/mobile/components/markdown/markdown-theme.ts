@@ -33,12 +33,10 @@ export function markdownPalette(isDark: boolean) {
     /** Code block frame: `bg-card dark:bg-muted`; body: `bg-popover`. */
     codeFrame: isDark ? t.muted : t.card,
     codeBody: t.popover,
-    /**
-     * Inline code chip fill: web `bg-inherit dark:bg-card`. `bg-inherit` takes
-     * the parent's background, which is transparent in a message, so light
-     * has no fill. The border is `border` (`border-border`).
-     */
-    inlineCodeBg: isDark ? t.card : 'transparent',
+    /** Inline code chip fill: web `bg-card`. */
+    inlineCodeBg: t.card,
+    /** Lighter than web's `border-border`: 60% of it over the card fill (Jay, 2026-09-30). */
+    inlineCodeBorder: withAlpha(t.border, 0.6),
     /** Hex swatch: checkerboard `text-muted-foreground/30`, ring `ring-foreground/15`. */
     swatchChecker: withAlpha(t.mutedForeground, 0.3),
     swatchRing: withAlpha(t.foreground, 0.15),

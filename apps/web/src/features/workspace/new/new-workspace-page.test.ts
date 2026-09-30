@@ -198,8 +198,8 @@ describe('/new page: uses the shared form model, not local rules', () => {
   });
 
   test('computes creatableAccounts via the shared filterCreatableAccounts helper, matching create-account-selection.ts', () => {
-    expect(code).toContain('const creatableAccounts = filterCreatableAccounts(accounts)');
-    expect(code).toContain("from '@/features/workspace/new/new-workspace-form'");
+    expect(code).toContain('const creatableAccounts = useCreatableAccounts(accounts)');
+    expect(code).toContain("from '@/features/workspace/new/use-creatable-accounts'");
     // Paired negative: the filter is not re-implemented inline on the page —
     // there is exactly one place (`new-workspace-form.ts`) that decides who
     // can create, so it can never drift from `create-account-selection.ts`.

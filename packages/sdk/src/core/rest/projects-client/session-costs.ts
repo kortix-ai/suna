@@ -334,9 +334,10 @@ export async function getCostSummary(
 // published.
 
 /** Options accepted by `costExportUrl('projects', …)` / `fetchCostExportCsv('projects', …)`.
- *  No `projectId`/`ownerId` — `/cost-by-project` has no such query param. */
+ *  `projectId` narrows a project-scoped export; `ownerId` belongs to sessions. */
 export interface ProjectCostExportOptions extends CostWindowOptions {
   accountId?: string;
+  projectId?: string;
   sort?: ProjectCostSort;
 }
 
@@ -370,9 +371,9 @@ export function costExportUrl(
 ): string {
   const query = new URLSearchParams();
   if (options.accountId) query.set('account_id', options.accountId);
+  if (options.projectId) query.set('project_id', options.projectId);
   if (kind === 'sessions') {
     const sessionOptions = options as SessionCostExportOptions;
-    if (sessionOptions.projectId) query.set('project_id', sessionOptions.projectId);
     if (sessionOptions.ownerId) query.set('owner_id', sessionOptions.ownerId);
   }
   appendWindow(query, options);

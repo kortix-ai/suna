@@ -13,7 +13,7 @@ import {
 } from '@/features/workspace/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
-import { LEGACY_SETTINGS_TAB_MAP } from './command-palette';
+import { LEGACY_SETTINGS_TAB_MAP, sessionMatchesPaletteQuery } from './command-palette';
 import {
   PALETTE_ACCOUNT_SCOPED_TABS,
   PALETTE_NO_PROJECT_DEFAULT_TAB,
@@ -543,5 +543,19 @@ describe('command palette — model list chrome', () => {
 
   test('the raw model ID is gated on saying something the name does not', () => {
     expect(modelsPage).toContain('modelIdAddsInformation(model.modelName, model.modelID)');
+  });
+});
+
+describe('palette session search', () => {
+  const session = {
+    session_id: 'ses_abc123456',
+    name: 'Quarterly review',
+  } as Parameters<typeof sessionMatchesPaletteQuery>[0];
+
+  test('matches full session ID and its prefix, not arbitrary ID substrings', () => {
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc123456')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'abc123')).toBe(false);
+    expect(sessionMatchesPaletteQuery(session, 'quarterly')).toBe(true);
   });
 });

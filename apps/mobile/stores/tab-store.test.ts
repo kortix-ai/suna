@@ -23,6 +23,144 @@ function resetStore() {
   });
 }
 
+describe('tab store: goBack and goForward restore history entries', () => {
+  beforeEach(() => {
+    storage.clear();
+    resetStore();
+  });
+
+  /** ses_1 → page:files → dashboard → ses_2, ending on ses_2. */
+  function navigateForward() {
+    useTabStore.getState().navigateToSession('ses_1');
+    useTabStore.getState().navigateToPage('page:files');
+    useTabStore.getState().navigateToSession(null);
+    useTabStore.getState().navigateToSession('ses_2');
+  }
+
+  test('goBack restores the dashboard, a page, and a session behind the current entry', () => {
+    navigateForward();
+    expect(useTabStore.getState().openTabOrder).toEqual(['ses_1', 'page:files', 'ses_2']);
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().activeSessionId).toBeNull();
+    expect(useTabStore.getState().activePageId).toBeNull();
+    expect(useTabStore.getState().historyIndex).toBe(2);
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().activePageId).toBe('page:files');
+    expect(useTabStore.getState().activeSessionId).toBeNull();
+    expect(useTabStore.getState().openPageIds).toEqual(['page:files']);
+    expect(useTabStore.getState().openTabOrder).toEqual(['ses_1', 'page:files', 'ses_2']);
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().activeSessionId).toBe('ses_1');
+    expect(useTabStore.getState().activePageId).toBeNull();
+    expect(useTabStore.getState().openTabIds).toEqual(['ses_1', 'ses_2']);
+    expect(useTabStore.getState().historyIndex).toBe(0);
+  });
+
+  test('goForward replays the dashboard, a page, and a session ahead of the current entry', () => {
+    navigateForward();
+    useTabStore.getState().goBack();
+    useTabStore.getState().goBack();
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().historyIndex).toBe(0);
+
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().activeSessionId).toBeNull();
+    expect(useTabStore.getState().activePageId).toBe('page:files');
+    expect(useTabStore.getState().openPageIds).toEqual(['page:files']);
+    expect(useTabStore.getState().historyIndex).toBe(1);
+
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().activeSessionId).toBeNull();
+    expect(useTabStore.getState().activePageId).toBeNull();
+    expect(useTabStore.getState().historyIndex).toBe(2);
+
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().activeSessionId).toBe('ses_2');
+    expect(useTabStore.getState().activePageId).toBeNull();
+    expect(useTabStore.getState().openTabIds).toEqual(['ses_1', 'ses_2']);
+    expect(useTabStore.getState().historyIndex).toBe(3);
+  });
+
+  test('goBack and goForward at the edges do not change state', () => {
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().historyIndex).toBe(-1);
+    expect(useTabStore.getState().sessionHistory).toEqual([]);
+    expect(useTabStore.getState().activeSessionId).toBeNull();
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().historyIndex).toBe(-1);
+
+    useTabStore.getState().navigateToSession('ses_1');
+    expect(useTabStore.getState().historyIndex).toBe(0);
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().historyIndex).toBe(0);
+    expect(useTabStore.getState().activeSessionId).toBe('ses_1');
+
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().historyIndex).toBe(0);
+  });
+
+  test('navigating back or forward to a closed tab reopens it at the end of the open order', () => {
+    navigateForward();
+    useTabStore.getState().closeTab('page:files');
+    useTabStore.getState().closeTab('ses_1');
+    expect(useTabStore.getState().openTabOrder).toEqual(['ses_2']);
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().activeSessionId).toBeNull();
+    expect(useTabStore.getState().activePageId).toBeNull();
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().activePageId).toBe('page:files');
+    expect(useTabStore.getState().openPageIds).toEqual(['page:files']);
+    expect(useTabStore.getState().openTabOrder).toEqual(['ses_2', 'page:files']);
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().activeSessionId).toBe('ses_1');
+    expect(useTabStore.getState().openTabIds).toEqual(['ses_2', 'ses_1']);
+    expect(useTabStore.getState().openTabOrder).toEqual(['ses_2', 'page:files', 'ses_1']);
+
+    useTabStore.getState().goForward();
+    useTabStore.getState().goForward();
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().activeSessionId).toBe('ses_2');
+    expect(useTabStore.getState().openTabIds).toEqual(['ses_2', 'ses_1']);
+    expect(useTabStore.getState().openTabOrder).toEqual(['ses_2', 'page:files', 'ses_1']);
+  });
+
+  test('a missing history entry aborts the navigation without moving the index', () => {
+    // A history hole is unreachable through the public API; setState builds one
+    // to pin the defensive `!entry` abort in both directions.
+    const withHoleAhead = new Array<string>(2);
+    withHoleAhead[0] = 'ses_1';
+    useTabStore.setState({
+      sessionHistory: withHoleAhead,
+      historyIndex: 0,
+      activeSessionId: 'ses_1',
+    });
+
+    useTabStore.getState().goForward();
+    expect(useTabStore.getState().historyIndex).toBe(0);
+    expect(useTabStore.getState().activeSessionId).toBe('ses_1');
+
+    const withHoleBehind = new Array<string>(2);
+    withHoleBehind[1] = 'ses_2';
+    useTabStore.setState({
+      sessionHistory: withHoleBehind,
+      historyIndex: 1,
+      activeSessionId: 'ses_2',
+    });
+
+    useTabStore.getState().goBack();
+    expect(useTabStore.getState().historyIndex).toBe(1);
+    expect(useTabStore.getState().activeSessionId).toBe('ses_2');
+  });
+});
+
 describe('tab store: a project always opens on its home', () => {
   beforeEach(() => {
     storage.clear();

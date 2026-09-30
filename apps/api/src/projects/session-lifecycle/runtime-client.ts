@@ -548,13 +548,7 @@ export async function postPrompt(
       })
     : parts;
   const overrides = prompt?.overrides;
-  // THE AGENT THE RUNTIME CAN ACTUALLY RUN — see `agent-availability.ts`.
-  //
-  // `prompt_async` answers 204 for an agent it does not have and then never
-  // runs the turn, so forwarding an unknown name is the delivery loop reading
-  // "delivered", retiring the inbox row, and the user's message ceasing to
-  // exist. Dropping the name instead runs the prompt under the runtime's own
-  // default, exactly as a send with no pick always has.
+  // The runtime must confirm the selected agent before a prompt is forwarded.
   const deliverableAgent = resolveDeliverableAgent(
     overrides?.agent ?? null,
     overrides?.agent
@@ -568,12 +562,6 @@ export async function postPrompt(
         )
       : { names: null },
   );
-  if (deliverableAgent.dropped) {
-    logger.warn('[session-lifecycle] dropped an agent the runtime does not have', {
-      session_id: callerSessionId,
-      requested_agent: overrides?.agent,
-    });
-  }
   const body = new TextEncoder().encode(
     JSON.stringify({
       ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),

@@ -89,6 +89,7 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
+import { ComposerDictation } from './composer-dictation';
 import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
@@ -1271,6 +1272,7 @@ function ComposerImpl({
     // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
     // highlights, offers "Use", and does nothing is worse than no row.
     const available = localizedSlashActions(tI18nComplete).filter((action) => {
+      if (action.id === 'switch-agent') return !agentSelectorLocked;
       if (action.id === 'compact-session') return Boolean(onCompactClick);
       if (action.id === 'show-context') return Boolean(onContextClick);
       return true;
@@ -1286,7 +1288,7 @@ function ComposerImpl({
       }
       return action;
     });
-  }, [selectedAgent, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
+  }, [selectedAgent, agentSelectorLocked, onCompactClick, onContextClick, contextUsage, tI18nComplete]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
@@ -1961,7 +1963,9 @@ function ComposerImpl({
             />
             <ComposerToolbar
               leading={
-                inlineUnderbar ? (
+                <>
+                  <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
+                  {inlineUnderbar ? (
                   <ComposerUnderbar
                     variant="inline"
                     onAttachClick={handleAttachClick}
@@ -1975,7 +1979,8 @@ function ComposerImpl({
                     selectedModel={availableSelectedModel}
                     onContextClick={onContextClick}
                   />
-                ) : null
+                  ) : null}
+                </>
               }
               modelsLoading={modelsLoading}
               models={models}
