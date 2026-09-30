@@ -30,7 +30,6 @@ import {
   FloppyDiskIcon as Save,
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense } from 'react';
-import { getFileCategory } from './preview-policy';
 // Direct module import, not the feature barrel: the barrel re-exports THIS file.
 import { HtmlPreview } from './html-preview';
 import { JsonTreeView } from './json-tree-view';
