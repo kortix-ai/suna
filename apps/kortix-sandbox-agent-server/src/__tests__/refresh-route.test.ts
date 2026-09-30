@@ -84,6 +84,8 @@ function clonedRepo(): { root: string; remote: string; seed: string; worktree: s
 interface FakeLifecycle {
   opencode: Opencode
   reloads: Array<{ forceFail?: boolean }>
+  /** `reloadConfig` calls (dispose-first config reloads). */
+  configReloads: number[]
 }
 
 function fakeOpencode(
@@ -93,6 +95,7 @@ function fakeOpencode(
   } = {},
 ): FakeLifecycle {
   const reloads: FakeLifecycle['reloads'] = []
+  const configReloads: number[] = []
   const opencode = {
     // 'starting' by default: a serving runtime schedules a detached
     // runtime-assets pass after each refresh, which would outlive its row.
@@ -106,8 +109,12 @@ function fakeOpencode(
         ? opts.reload(reloadOpts.forceFail)
         : { outcome: 'swapped' as const, port: 4097, pid: 2, turnEnded: false, orphanedMessageId: null }
     },
+    reloadConfig: async () => {
+      configReloads.push(Date.now())
+      return { how: 'disposed' as const, turnEnded: false }
+    },
   } as unknown as Opencode
-  return { opencode, reloads }
+  return { opencode, reloads, configReloads }
 }
 
 function app(cfg: Partial<Config>, lifecycle: FakeLifecycle = fakeOpencode()) {
@@ -358,19 +365,21 @@ describe('base_config=1 brings the base branch agent config into the checkout', 
     ).request(`/kortix/refresh?${query}`, { method: 'POST', headers: SERVICE })
   }
 
-  it('updates the agent file and reloads OpenCode even with restart=0', async () => {
+  it('updates the agent file and reloads the OpenCode config even with restart=0', async () => {
     const repo = await sessionBehindBase()
     const lifecycle = fakeOpencode()
 
     const res = await refresh(repo, lifecycle, 'restart=0&repo=0&base_config=1')
 
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { config_dir: unknown; reload: { outcome: string } }
-    expect(body.config_dir).toEqual({ synced: true })
+    const body = (await res.json()) as { config_dir: unknown; reload?: unknown }
+    // OpenCode reads agent files only when it loads its config: one
+    // dispose-first reload, not a verified swap.
+    expect(body.config_dir).toEqual({ synced: true, reload: 'disposed', turn_ended: false })
     expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: kortix/codex/gpt-6-sol\n')
-    // OpenCode reads agent files only when it loads its config.
-    expect(lifecycle.reloads).toHaveLength(1)
-    expect(body.reload.outcome).toBe('swapped')
+    expect(lifecycle.configReloads).toHaveLength(1)
+    expect(lifecycle.reloads).toHaveLength(0)
+    expect(body.reload).toBeUndefined()
     // The session branch did not move.
     expect(git(['rev-parse', '--abbrev-ref', 'HEAD'], repo.worktree)).toBe('ses-1')
   })
@@ -384,6 +393,7 @@ describe('base_config=1 brings the base branch agent config into the checkout', 
 
     const body = (await res.json()) as { config_dir: unknown; reload?: unknown }
     expect(body.config_dir).toEqual({ synced: false, skipped: 'already matches base' })
+    expect(lifecycle.configReloads).toHaveLength(0)
     expect(lifecycle.reloads).toHaveLength(0)
     expect(body.reload).toBeUndefined()
   })
@@ -395,9 +405,13 @@ describe('base_config=1 brings the base branch agent config into the checkout', 
 
     const res = await refresh(repo, lifecycle, 'restart=0&repo=0&base_config=1')
 
-    expect(((await res.json()) as { config_dir: unknown }).config_dir).toEqual({ synced: false, skipped: 'local changes' })
+    expect(((await res.json()) as { config_dir: unknown }).config_dir).toEqual({
+      synced: false,
+      skipped: 'local changes',
+      kept: [AGENT],
+    })
     expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: my-own-model\n')
-    expect(lifecycle.reloads).toHaveLength(0)
+    expect(lifecycle.configReloads).toHaveLength(0)
   })
 
   it('writes nothing when OpenCode does not read a config dir from the checkout', async () => {
@@ -414,7 +428,7 @@ describe('base_config=1 brings the base branch agent config into the checkout', 
       skipped: 'no tracked config dir',
     })
     expect(readFileSync(join(repo.worktree, AGENT), 'utf8')).toBe('model: codex/gpt-6-sol\n')
-    expect(lifecycle.reloads).toHaveLength(0)
+    expect(lifecycle.configReloads).toHaveLength(0)
   })
 
   it('without the flag the checkout keeps its agent file and the answer has no config_dir', async () => {
