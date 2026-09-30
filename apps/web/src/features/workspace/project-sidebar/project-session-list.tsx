@@ -30,7 +30,12 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
+import {
+  SessionStarterMark,
+  useSessionStarter,
+} from '@/features/workspace/project-sessions/session-starter-mark';
 import { SessionsEmptyState } from '@/features/workspace/project-sessions/sessions-empty-state';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
@@ -53,20 +58,17 @@ import {
   groupSessions,
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
-import {
-  SessionStarterMark,
-  useSessionStarter,
-} from '@/features/workspace/project-sessions/session-starter-mark';
+import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { SessionStatusMark } from '@/features/workspace/project-sidebar/session-status-mark';
 import { SessionTitle } from '@/features/workspace/project-sidebar/session-title';
-import { useSessionOpenIntent } from '@/features/workspace/project-sidebar/session-open-intent';
 import { useMediaQuery } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
-import { firstChatHref, isFirstChatRequested, useFirstChatPending } from '@/stores/first-chat-store';
 import {
-  selectExpandedIds,
-  useSessionExpandedStore,
-} from '@/stores/session-expanded-store';
+  firstChatHref,
+  isFirstChatRequested,
+  useFirstChatPending,
+} from '@/stores/first-chat-store';
+import { selectExpandedIds, useSessionExpandedStore } from '@/stores/session-expanded-store';
 import {
   selectCollapsedSections,
   selectGroupMode,
@@ -80,17 +82,12 @@ import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/sessio
 import {
   listChangeRequests,
   restartProjectSession,
-  stopProjectSession,
   sessionParentId,
+  stopProjectSession,
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import {
-  qk,
-  useProjectSession,
-  useProjectSessions,
-  useSessionChildren,
-} from '@kortix/sdk/react';
+import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -105,7 +102,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { useAuth } from '@/features/providers/auth-provider';
 import {
   childSessionHref,
   readRuntimeSessionParam,
@@ -144,10 +140,10 @@ const SESSION_MENU_TRIGGER_CLASS = cn(
   // punched a translucent hole in it and the title bled through: the washed-out
   // grey square in the bug report, with a muted `⋯` floating in it.
   //
-  // `sidebar-accent` is surface-2, one opaque step above the row's own
-  // surface-1 (`--card`) on hover. The square reads as lifted, stays a solid
+  // `sidebar-row-control` is one opaque step above the row's own fill
+  // (`--sidebar-row`) on hover, in both themes. The square reads as lifted, stays a solid
   // mask, and needs no pseudo-element to stack a tint above a fill.
-  'hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent',
+  'hover:bg-sidebar-row-control data-[state=open]:bg-sidebar-row-control',
   // Full contrast once the pointer is on it — the glyph is a control now, not a
   // marker.
   'hover:text-foreground data-[state=open]:text-foreground',
@@ -419,8 +415,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
           onRename={(id, name) => setSessionToRename({ id, name })}
           onRestart={(id, label) => restartMutation.mutate({ sessionId: id, label })}
           isRestarting={
-            restartMutation.isPending &&
-            restartMutation.variables?.sessionId === session.session_id
+            restartMutation.isPending && restartMutation.variables?.sessionId === session.session_id
           }
           onStop={(id, label) => stopMutation.mutate({ sessionId: id, label })}
           isStopping={
@@ -481,7 +476,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       </div>
     );
   };
-
 
   // Everything below the header — skeleton, error, empty, or the grouped list.
   // Kept as one function so the header stays mounted across all four states
@@ -611,12 +605,15 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         />
         {/* The first chat never leaves. It is the oldest conversation, so it
             sits at the very bottom — after the last page, never mid-list. */}
-        {firstChatPending && !hasNextPage && !sharedQuery.hasNextPage && !automatedQuery.hasNextPage && (
-          <FirstChatRow
-          projectId={projectId}
-          isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
-        />
-        )}
+        {firstChatPending &&
+          !hasNextPage &&
+          !sharedQuery.hasNextPage &&
+          !automatedQuery.hasNextPage && (
+            <FirstChatRow
+              projectId={projectId}
+              isActive={pathname === `/projects/${projectId}` && isFirstChatRequested(searchParams)}
+            />
+          )}
       </FadedScrollArea>
     );
   }
@@ -903,7 +900,10 @@ function SpawnedToggle({
         clearOfMenu && 'mr-6',
       )}
     >
-      <CaretRightIcon aria-hidden className={cn('size-3 transition-transform', open && 'rotate-90')} />
+      <CaretRightIcon
+        aria-hidden
+        className={cn('size-3 transition-transform', open && 'rotate-90')}
+      />
       {count}
     </span>
   );
@@ -1169,7 +1169,7 @@ function ProjectSessionRow({
         <Badge
           variant="transparent"
           size="tabular"
-          className="bg-sidebar-accent/60 text-muted-foreground"
+          className="bg-sidebar-row-control/60 text-muted-foreground"
         >
           {childCount}
         </Badge>
@@ -1225,10 +1225,7 @@ function ProjectSessionRow({
               data-session-source="true"
               data-session-starter={starter.type}
             >
-              <Hint
-                side="top"
-                label={t('startedByLabel', { name: starter.label })}
-              >
+              <Hint side="top" label={t('startedByLabel', { name: starter.label })}>
                 <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
                   <SessionStarterMark
                     session={session}
@@ -1260,8 +1257,8 @@ function ProjectSessionRow({
           '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
           '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
           isActive
-            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--card)]'
-            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--card)]',
+            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--sidebar-row)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--sidebar-row)]',
         )}
       >
         {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
@@ -1411,8 +1408,8 @@ function FirstChatRow({ projectId, isActive }: { projectId: string; isActive: bo
         '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',
         'focus-visible:ring-kortix-base focus-visible:ring-[0.6px] focus-visible:outline-none',
         isActive
-          ? 'bg-card text-sidebar-foreground'
-          : 'text-muted-foreground hover:bg-card hover:text-sidebar-foreground',
+          ? 'bg-sidebar-row text-sidebar-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-row hover:text-sidebar-foreground',
       )}
     >
       <span className="text-muted-foreground flex size-4 shrink-0 items-center justify-center">

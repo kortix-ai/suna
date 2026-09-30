@@ -19063,7 +19063,24 @@
       "mismatch": "此安装是从另一个 Kortix 账户或为另一个项目发起的。请使用该账户登录，或从项目中重新开始安装。",
       "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
       "failed": "无法完成安装。请从项目中重新开始。",
-      "backToProject": "返回项目"
+      "backToProject": "返回项目",
+      "finishingTitle": "正在完成 {service} 安装",
+      "finishingDescription": "正在为此项目将 Kortix 添加到 {service}。完成后将返回项目。",
+      "installingAs": "安装身份",
+      "recording": "正在记录安装…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "正在打开预览",
+      "openingDescription": "正在让你登录到会话所运行的应用。",
+      "preview": "预览",
+      "address": "地址",
+      "signingIn": "正在登录。预览会自动打开。",
+      "signInAgain": "重新登录",
+      "notServed": "该地址不是此部署提供的预览。请改为从会话中打开预览。",
+      "sessionExpired": "会话已过期。请重新登录并再次打开预览。"
+    },
+    "approvalPage": {
+      "title": "批准 {connector} 操作"
     },
     "secretIntakeWithheld": {
       "title": "已保存，但 {agent} 暂时无法读取",

@@ -552,6 +552,16 @@ describe('one probe never flips a connected session (KRTX-606)', () => {
 });
 
 describe('a poller remount for the same runtime keeps what it knows (KRTX-606)', () => {
+  test('a first poller mount after a ready session switch does not disconnect the stream', () => {
+    const url = 'https://api.test/v1/p/box-ready/8000';
+    // The session switches before the route mounts the reconnect poller.
+    resetForServerSwitch(url);
+    setSandboxStatus('connected');
+    setOpenCodeHealth(true);
+    resetForServerSwitch(url);
+    expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
+  });
+
   test('resetting for the URL already probed leaves a connected store alone', () => {
     resetForServerSwitch('https://api.test/v1/p/box-a/8000');
     setSandboxStatus('connected');

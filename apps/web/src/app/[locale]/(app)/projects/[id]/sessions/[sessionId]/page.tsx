@@ -35,6 +35,7 @@ import {
 import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
 import { useSessionAudit } from '@/features/session/session-audit-shared';
 import { SessionChat } from '@/features/session/session-chat';
+import '@/features/session/tool/tools/register';
 import { SessionLayout } from '@/features/session/session-layout';
 import {
   canMountSessionChat,
@@ -237,6 +238,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
   const session = useSession(projectId, sessionId, {
+    browserPresence: !!user,
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialOpenCodeSessionId,

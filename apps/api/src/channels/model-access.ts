@@ -341,6 +341,8 @@ export async function sessionModelScope(
 export interface ChannelSessionStart {
   /** The model to pin; null leaves it to the server's default. */
   model: string | null;
+  /** Explicit selection that cannot run and has no usable replacement. */
+  unavailableModel?: string;
   /** The key selection the session starts with (`provider_secret_pools`). */
   pools?: Record<string, string[]>;
 }
@@ -411,10 +413,14 @@ export async function planChannelSessionStart(input: {
     ...(pools ? { providerSecretPools: pools } : {}),
   });
   const model = replaced ?? base;
+  // Only reject an explicit selection; an unresolved default belongs to the
+  // session lifecycle, which may resolve a different agent-level default.
+  const unavailableModel = chosen && !replaced && !keys && !(await checkChannelModel(scope, chosen, { agentGrantEnv })).ok
+    ? chosen : undefined;
   // The keys belong to the model they were selected for. A replacement on
   // another provider runs as that provider normally does.
   const keep = keys && model && keyProviderOf(model)?.providerId === keys.providerId;
-  return { model, ...(keep ? { pools } : {}) };
+  return { model, ...(keep ? { pools } : {}), ...(unavailableModel ? { unavailableModel } : {}) };
 }
 
 /**

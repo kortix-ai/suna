@@ -20,6 +20,7 @@ import * as F from '../files/client';
 import { createPromptAttachmentController } from '../attachments/prompt-attachments';
 import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
+import { backendApi } from '../http/api-client';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
 import * as A from '../rest/platform-client/auth';
@@ -1149,6 +1150,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     return {
       // ── lifecycle (Kortix REST) ──────────────────────────────────────────
       get: (opts?: { showErrors?: boolean }) => P.getProjectSession(projectId, sessionId, opts),
+      presence: (input: { tab_id: string; active: boolean }) =>
+        backendApi.put<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}/presence`, input, { showErrors: false }),
       /** Unified finalized LLM and compute cost for this session. */
       cost: () => P.getSessionCostRecord(sessionId, { projectId }),
       update: (input: Parameters<typeof P.updateProjectSession>[2]) =>

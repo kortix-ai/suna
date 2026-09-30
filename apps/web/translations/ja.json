@@ -19063,7 +19063,24 @@
       "mismatch": "このインストールは別の Kortix アカウント、または別のプロジェクトから開始されました。そのアカウントでサインインするか、プロジェクトからインストールをやり直してください。",
       "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
       "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
-      "backToProject": "プロジェクトに戻る"
+      "backToProject": "プロジェクトに戻る",
+      "finishingTitle": "{service} のインストールを完了しています",
+      "finishingDescription": "このプロジェクト用に Kortix を {service} に追加しています。完了するとプロジェクトに戻ります。",
+      "installingAs": "インストールするアカウント",
+      "recording": "インストールを記録しています…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "プレビューを開いています",
+      "openingDescription": "セッションで実行中のアプリにサインインしています。",
+      "preview": "プレビュー",
+      "address": "アドレス",
+      "signingIn": "サインインしています。プレビューは自動的に開きます。",
+      "signInAgain": "もう一度サインイン",
+      "notServed": "このアドレスは、このデプロイが提供するプレビューではありません。セッションからプレビューを開いてください。",
+      "sessionExpired": "セッションの有効期限が切れました。もう一度サインインして、プレビューを開き直してください。"
+    },
+    "approvalPage": {
+      "title": "{connector} のアクションを承認"
     },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",

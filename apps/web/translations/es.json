@@ -19063,7 +19063,24 @@
       "mismatch": "Esta instalación se inició desde otra cuenta de Kortix o para otro proyecto. Inicia sesión con esa cuenta o vuelve a iniciar la instalación desde el proyecto.",
       "expired": "Este enlace de instalación no es válido o ha caducado. Vuelve a iniciar la instalación desde el proyecto.",
       "failed": "No se pudo completar la instalación. Vuelve a iniciarla desde el proyecto.",
-      "backToProject": "Volver al proyecto"
+      "backToProject": "Volver al proyecto",
+      "finishingTitle": "Finalizando la instalación de {service}",
+      "finishingDescription": "Kortix se está añadiendo a {service} para este proyecto. Volverás al proyecto cuando termine.",
+      "installingAs": "Instalando como",
+      "recording": "Registrando la instalación…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Abriendo la vista previa",
+      "openingDescription": "Se está iniciando tu sesión en la app que ejecuta tu sesión.",
+      "preview": "Vista previa",
+      "address": "Dirección",
+      "signingIn": "Iniciando sesión. La vista previa se abre sola.",
+      "signInAgain": "Iniciar sesión de nuevo",
+      "notServed": "Esa dirección no es una vista previa que sirva este despliegue. Abre la vista previa desde tu sesión.",
+      "sessionExpired": "Tu sesión ha caducado. Inicia sesión de nuevo y vuelve a abrir la vista previa."
+    },
+    "approvalPage": {
+      "title": "Aprobar una acción de {connector}"
     },
     "secretIntakeWithheld": {
       "title": "Guardado, pero {agent} aún no puede leerlo",

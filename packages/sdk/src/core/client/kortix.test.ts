@@ -133,6 +133,16 @@ test('session(projectId, sessionId) binds both ids', async () => {
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
 });
 
+test('session presence writes a tab-scoped lease through the authenticated backend', async () => {
+  const tabId = '00000000-0000-4000-8000-000000000001';
+  await kortix.session('PID123', 'SID456').presence({ tab_id: tabId, active: true });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/PID123/sessions/SID456/presence',
+    method: 'PUT',
+    body: { tab_id: tabId, active: true },
+  });
+});
+
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
   await kortix.session('PID123', 'SID456').cost();
 

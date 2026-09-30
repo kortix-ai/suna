@@ -7,6 +7,8 @@
  * and response knowledge inside the SDK.
  */
 
+import { platformApiBase } from './shared';
+
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
   backendUrl: string;
@@ -27,12 +29,6 @@ export class HostBoundaryError extends Error {
     super(message);
     this.name = 'HostBoundaryError';
   }
-}
-
-function apiBase(backendUrl: string): string {
-  let trimmed = backendUrl;
-  while (trimmed.endsWith('/')) trimmed = trimmed.slice(0, -1);
-  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
 }
 
 function requestHeaders(options: HostRequestOptions, json: boolean): Headers {
@@ -72,7 +68,7 @@ async function requestJson<T>(
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
   const json = init?.body !== undefined;
-  const response = await fetch(`${apiBase(options.backendUrl)}${path}`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}${path}`, {
     method: init?.method ?? 'GET',
     headers: requestHeaders(options, json),
     ...(json ? { body: JSON.stringify(init.body) } : {}),
@@ -455,7 +451,7 @@ export async function downloadAccountAudit(
   if (query.cursor) params.set('cursor', query.cursor);
   if (query.limit != null) params.set('limit', String(query.limit));
   const response = await fetch(
-    `${apiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
+    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${params}`,
     {
       headers: requestHeaders(options, false),
       ...(options.signal ? { signal: options.signal } : {}),
@@ -479,7 +475,7 @@ export async function openStressTestStream(
   input: Record<string, unknown>,
   options: HostRequestOptions,
 ): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${apiBase(options.backendUrl)}/admin/stress-test/run`, {
+  const response = await fetch(`${platformApiBase(options.backendUrl)}/admin/stress-test/run`, {
     method: 'POST',
     headers: requestHeaders(options, true),
     body: JSON.stringify(input),
@@ -499,7 +495,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 export function buildPublicTemplateUrl(backendUrl: string, shareId: string): URL | null {
   if (!UUID_PATTERN.test(shareId)) return null;
-  return new URL(`templates/public/${shareId.toLowerCase()}`, `${apiBase(backendUrl)}/`);
+  return new URL(`templates/public/${shareId.toLowerCase()}`, `${platformApiBase(backendUrl)}/`);
 }
 
 export async function getPublicTemplate<T>(

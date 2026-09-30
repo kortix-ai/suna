@@ -232,8 +232,6 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
     .map((entry) => entry.turn);
   const failures = await readRecentTurnFailures(sessionId);
   const recentFailures = failures.length > 0 ? { recent_failures: failures } : {};
-  if (live.length > 0) return { turns: live, ...recentFailures };
-
   const [ended] = await db
     .select({
       turnToken: sessionTurns.turnToken,
@@ -252,13 +250,10 @@ export async function readSessionTurnState(sessionId: string): Promise<SessionTu
     // one session's history.
     .orderBy(desc(sessionTurns.endedAt), desc(sessionTurns.startedAt))
     .limit(1);
-  // `last_ended` is OMITTED, never null: its absence is the only thing that
-  // separates "this session has never run a turn" from "the last one ended".
-  // It is HISTORY, and history is what the swallowed ledger write costs: a
-  // lost settle leaves the previous terminal row as the newest one. Liveness
-  // above does not depend on it.
+  // An ended turn can overlap an older live turn. Its identity lets the
+  // client distinguish that idle frame from the turn still running.
   return {
-    turns: [],
+    turns: live,
     ...(ended
       ? {
           last_ended: {

@@ -570,22 +570,16 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     ]);
   });
 
-  test('does not run the terminal read while a turn is live', async () => {
-    // `last_ended` is omitted while a turn is running, so its read — the one
-    // ordered by `ended_at` — would buy nothing and must not run.
-    //
-    // CHANGED 2026-09-19 (session ad02e053): this used to pin exactly two reads,
-    // on the premise that every settled row is irrelevant while a turn runs. A
-    // memory-guard abort disproved it: the queued prompt started 5 s later, and
-    // the reason the previous turn failed was unreadable from then on. One
-    // BOUNDED read of named failures (newest 50 turns, by `started_at`) now runs
-    // in both states. The original guard — no `ended_at` scan while live — stands.
+  test('identifies a completed turn alongside an overlapping live turn', async () => {
     sandboxTable = [runningBox(authorityTurn({ token: 't-live' }))];
-    await getTurn();
-    expect(queries.map((q) => q.table)).toEqual(['sandboxes', 'turns', 'turns']);
-    expect(queries[1].where).toContain('col:turn_token in');
-    expect(queries.some((q) => q.orderBy.some((term) => term.includes('ended_at')))).toBe(false);
-    expect(queries[2].orderBy.some((term) => term.includes('started_at'))).toBe(true);
+    turnTable = [ledgerRow({
+      turn_token: 't-done', state: 'ended', end_reason: 'completed',
+      ended_at: new Date('2026-08-17T00:01:00.000Z'),
+    })];
+    const body = await (await getTurn()).json();
+    expect(body.turns).toHaveLength(1);
+    expect(body.last_ended.turn_token).toBe('t-done');
+    expect(queries.map((q) => q.table)).toEqual(['sandboxes', 'turns', 'turns', 'turns']);
   });
 
   test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {

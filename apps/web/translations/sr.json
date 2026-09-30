@@ -19063,7 +19063,24 @@
       "mismatch": "Ova instalacija je pokrenuta sa drugog Kortix naloga ili za drugi projekat. Prijavite se tim nalogom ili ponovo pokrenite instalaciju iz projekta.",
       "expired": "Ovaj link za instalaciju je nevažeći ili je istekao. Ponovo pokrenite instalaciju iz projekta.",
       "failed": "Instalacija nije mogla da se završi. Ponovo je pokrenite iz projekta.",
-      "backToProject": "Nazad na projekat"
+      "backToProject": "Nazad na projekat",
+      "finishingTitle": "Završavanje instalacije za {service}",
+      "finishingDescription": "Kortix se dodaje u {service} za ovaj projekat. Vraćate se na projekat kada se završi.",
+      "installingAs": "Instalira se kao",
+      "recording": "Beleženje instalacije…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Otvaranje pregleda",
+      "openingDescription": "Prijavljujete se u aplikaciju koju pokreće vaša sesija.",
+      "preview": "Pregled",
+      "address": "Adresa",
+      "signingIn": "Prijavljivanje. Pregled se otvara sam.",
+      "signInAgain": "Prijavi se ponovo",
+      "notServed": "Ta adresa nije pregled koji ova instalacija služi. Otvorite pregled iz svoje sesije.",
+      "sessionExpired": "Vaša sesija je istekla. Prijavite se ponovo i ponovo otvorite pregled."
+    },
+    "approvalPage": {
+      "title": "Odobrite {connector} akciju"
     },
     "secretIntakeWithheld": {
       "title": "Сачувано, али {agent} још не може да га прочита",

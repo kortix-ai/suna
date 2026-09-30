@@ -257,6 +257,10 @@ export interface WorkingStreamInput {
  * The pull path is what answers when the wire itself is the thing that died
  * (sampleco, 2026-08-26: stream black-holed mid-turn, stale idle frame vetoing
  * the open turn row, transcript minutes behind).
+ *
+ * Closing frames (a user message update, a completed or errored assistant
+ * message, a finished part) do not stamp, because the runtime writes them
+ * after its idle frame.
  */
 export interface WorkingActivityInput {
   atMs: number;
@@ -502,7 +506,18 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     // new one the frame knows nothing about.
     const startedAt = instant(candidate.started_at);
     if (startedAt === null || startedAt >= idleFrame.atMs) return false;
-    // And that is the whole rule. It used to expire after
+    // Another turn may have remained active while this one finished. The
+    // control plane names the completed turn even when others are still live.
+    const lastEnded = server?.lastEnded;
+    const endedAt = instant(lastEnded?.ended_at);
+    if (
+      lastEnded &&
+      endedAt !== null &&
+      Math.abs(endedAt - idleFrame.atMs) <= 1_000 &&
+      lastEnded.turn_token !== candidate.turn_token
+    ) return false;
+    // Otherwise the frame ends the only turn we can identify.
+    // It used to expire after
     // `TURN_END_LEDGER_LAG_MS`, on the theory that a row still open past the
     // relay's lag must mean the frame was a retry's `session.error` rather than
     // the end of anything. But time is not evidence: when the `kind:"end"`

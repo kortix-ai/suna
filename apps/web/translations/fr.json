@@ -19063,7 +19063,24 @@
       "mismatch": "Cette installation a été lancée depuis un autre compte Kortix ou pour un autre projet. Connectez-vous avec ce compte, ou relancez l’installation depuis le projet.",
       "expired": "Ce lien d’installation est invalide ou a expiré. Relancez l’installation depuis le projet.",
       "failed": "L’installation n’a pas pu être terminée. Relancez-la depuis le projet.",
-      "backToProject": "Retour au projet"
+      "backToProject": "Retour au projet",
+      "finishingTitle": "Finalisation de l’installation de {service}",
+      "finishingDescription": "Kortix est en cours d’ajout à {service} pour ce projet. Vous revenez au projet une fois l’opération terminée.",
+      "installingAs": "Installation en tant que",
+      "recording": "Enregistrement de l’installation…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Ouverture de l’aperçu",
+      "openingDescription": "Vous êtes en cours de connexion à l’application exécutée par votre session.",
+      "preview": "Aperçu",
+      "address": "Adresse",
+      "signingIn": "Connexion en cours. L’aperçu s’ouvre tout seul.",
+      "signInAgain": "Se reconnecter",
+      "notServed": "Cette adresse n’est pas un aperçu servi par ce déploiement. Ouvrez plutôt l’aperçu depuis votre session.",
+      "sessionExpired": "Votre session a expiré. Reconnectez-vous et rouvrez l’aperçu."
+    },
+    "approvalPage": {
+      "title": "Approuver une action {connector}"
     },
     "secretIntakeWithheld": {
       "title": "Enregistré, mais {agent} ne peut pas encore le lire",

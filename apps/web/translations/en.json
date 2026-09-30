@@ -19076,7 +19076,24 @@
       "mismatch": "This install was started from another Kortix account or for another project. Sign in with that account, or start the install again from the project.",
       "expired": "This install link is invalid or has expired. Start the install again from the project.",
       "failed": "The install could not be finished. Start it again from the project.",
-      "backToProject": "Back to the project"
+      "backToProject": "Back to the project",
+      "finishingTitle": "Finishing the {service} install",
+      "finishingDescription": "Kortix is being added to {service} for this project. You go back to the project when it is done.",
+      "installingAs": "Installing as",
+      "recording": "Recording the install…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Opening preview",
+      "openingDescription": "You are being signed in to the app your session is running.",
+      "preview": "Preview",
+      "address": "Address",
+      "signingIn": "Signing you in. The preview opens by itself.",
+      "signInAgain": "Sign in again",
+      "notServed": "That address is not a preview this deployment serves. Open the preview from your session instead.",
+      "sessionExpired": "Your session expired. Sign in again and reopen the preview."
+    },
+    "approvalPage": {
+      "title": "Approve this {connector} action"
     },
     "secretIntakeWithheld": {
       "title": "Saved, but {agent} can't read it yet",

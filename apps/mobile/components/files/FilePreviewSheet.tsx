@@ -29,7 +29,7 @@ import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
 import { CopyContentButton, KortixBottomSheetModal, type SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { showFileTypeIcon } from '@/components/session/tool/shared/show-helpers';
+import { showFileTypeIcon } from '@/components/session/tool/shared/tool-icons';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';

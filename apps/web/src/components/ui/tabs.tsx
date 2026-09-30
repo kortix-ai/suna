@@ -93,11 +93,16 @@ type TabsListType = 'default' | 'underline' | 'segmented';
 
 /**
  * Segmented track + chip. Radii are concentric: the track is `rounded-md` (8px)
- * with `p-0.5` (~2px), so the chip is `rounded-sm` (6px). The chip lifts with a
+ * with 2px of padding, so the chip is `rounded-sm` (6px). The chip lifts with a
  * hairline ring plus `shadow-xs` — raised, not bordered, so it reads as the
  * selected thing in both themes.
+ *
+ * The padding is `p-[2px]`, not `p-0.5`: `--spacing` is 0.23rem, so `p-0.5` is
+ * 1.84px. The chip's 1px ring leaves 0.84px of track showing, and a fraction of
+ * a pixel rounds differently on each side — 1px of track on one end and none on
+ * the other at 1x. A whole 2px leaves exactly 1px on every side.
  */
-const tabsSegmentedTrackClasses = 'bg-muted rounded-md p-0.5';
+const tabsSegmentedTrackClasses = 'bg-muted rounded-md p-[2px]';
 const tabsSegmentedChipClasses = 'bg-popover ring-border rounded-sm shadow-xs ring-1';
 
 function resolveTabsTriggerSize(

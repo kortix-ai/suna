@@ -69,6 +69,11 @@ describe('pickerGroupId', () => {
 });
 
 describe('pickerGroupLabel — THE actual display-name bug fix', () => {
+  test('labels an OpenCode Go gateway model with its connected provider, not Kortix or Zen', () => {
+    const m = model({ providerID: 'kortix', modelID: 'opencode-go/glm-4.7', provider: 'opencode-go' });
+    expect(pickerGroupId(m)).toBe('opencode-go');
+    expect(pickerGroupLabel(pickerGroupId(m), m)).toBe('OpenCode Go');
+  });
   test('labels an Anthropic BYOK group "Anthropic", never the raw (always-"Kortix") providerName', () => {
     const m = model({
       providerID: 'kortix',
