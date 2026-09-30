@@ -356,7 +356,10 @@ export interface RunningRuntimeAssets {
   agent_path: string | null
   /** Verified and waiting for the supervisor; the box is NOT running it yet. */
   staged_agent_sha256: string | null
-  opencode_version: string | null
+  /** The harness `harness_version` describes. Null before a pass or bake recorded one. */
+  harness: string | null
+  /** That harness's release on disk. `routes/kortix/health.ts` adds the pre-W3 alias. */
+  harness_version: string | null
   /** Highest manifest epoch this box has converged to, from DISK. */
   build: number | null
   /**
@@ -385,7 +388,8 @@ const NO_RUNNING_ASSETS: RunningRuntimeAssets = {
   agent_sha256: null,
   agent_path: null,
   staged_agent_sha256: null,
-  opencode_version: null,
+  harness: null,
+  harness_version: null,
   build: null,
   managed_model_ids: null,
   managed_catalog_fallback_reason: null,
@@ -411,7 +415,8 @@ export async function runningRuntimeAssets(
     agent_sha256: str(state.agent_sha256),
     agent_path: str(state.agent_path),
     staged_agent_sha256: str(state.staged_agent_sha256),
-    opencode_version: str(state.opencode_version),
+    harness: str(state.harness),
+    harness_version: str(state.harness_version),
     build: typeof state.build === 'number' && Number.isFinite(state.build) ? state.build : null,
     // Never on disk — overlaid live by `runtimeConvergenceReport`'s
     // `catalogSnapshot` hook. A direct caller of this function alone (there is
@@ -438,9 +443,7 @@ export function noteRuntimeConvergence(result: RuntimeAssetsResult): void {
     skills: result.skills,
   }
   if (result.agent) components.agent = result.agent
-  const assets = swapConfig?.assets ?? harnessAssets()
-  for (const name of assets.componentNames) {
-    const outcome = (result as unknown as Record<string, ReconcileOutcome | undefined>)[name]
+  for (const [name, outcome] of Object.entries(result.harness ?? {})) {
     if (outcome) components[name] = outcome
   }
   lastConvergence = {
