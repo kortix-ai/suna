@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
+import { timeField } from './session-transcript-capture';
+
+test('transcript capture rejects timestamps outside the Date range', () => {
+  expect(timeField({ time: { created: Number.MAX_VALUE } }, 'created')).toBeNull();
+  expect(timeField({ time: { created: 1_700_000_000_000 } }, 'created')?.getTime()).toBe(1_700_000_000_000);
+});
+
 import {
   capturedMessageIndex,
   capturedPageGate,
