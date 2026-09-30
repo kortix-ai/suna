@@ -19,6 +19,7 @@ import { createPiQueryService } from './queries'
 import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
+import { createPiTurnService } from './turns'
 
 export interface PiHarnessService extends HarnessService {
   readonly id: 'pi'
@@ -94,6 +95,7 @@ export function createPiHarnessService(
     control: createPiControlService(live, () => pushProjection('kortix-env-applied')),
     diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError),
     queries: createPiQueryService(live),
+    turns: createPiTurnService(live),
     background: { start: (currentCfg) => startPiBackground(live, currentCfg) },
     assets: createPiAssetsService(),
   }

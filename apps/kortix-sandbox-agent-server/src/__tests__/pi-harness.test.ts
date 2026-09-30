@@ -486,6 +486,52 @@ describe('pi harness', () => {
     expect(newest.headers.get('x-next-cursor')).toBe(ids[1]!)
   })
 
+  test('the Kortix turn verbs start, read, refuse to remove and stop a turn, and list the agents (W5 E4)', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'printf kortix > note.txt' } }, { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'unreachable' }],
+      env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { description: 'Writes code', mode: 'primary' }, reviewer: { mode: 'subagent' } } }) },
+    })
+    const root = r.service.runtime()!.rootId
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('runtime.turns.v1')
+
+    const post = (path: string, body: unknown) =>
+      r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect((await post(`/kortix/runtime/sessions/${root}/prompt`, { parts: [] })).status).toBe(400)
+    expect((await post(`/kortix/runtime/sessions/${root}/prompt`, { parts: [{ type: 'text', text: 'x' }], model: 'no-slash' })).status).toBe(400)
+    expect((await post('/kortix/runtime/sessions/ses_unknown/prompt', { parts: [{ type: 'text', text: 'x' }] })).status).toBe(404)
+
+    const messageId = 'msg_0198e2a4b0c3ABCDEFGHIJKLMN'
+    const accepted = await post(`/kortix/runtime/sessions/${root}/prompt`, {
+      message_id: messageId,
+      parts: [{ type: 'text', text: 'write a note, then wait' }],
+      model: `kortix/${MODEL_ID}`,
+    })
+    expect(accepted.status).toBe(202)
+    expect(await accepted.json()).toEqual({ message_id: messageId })
+    // The same id again is a duplicate, not a second turn.
+    const again = await post(`/kortix/runtime/sessions/${root}/prompt`, { message_id: messageId, parts: [{ type: 'text', text: 'again' }] })
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual({ deduplicated: true })
+
+    await waitForRunningTool(r, root)
+    expect(readFileSync(join(r.workspace, 'note.txt'), 'utf8')).toBe('kortix')
+    const message = (await r.user(`/kortix/runtime/messages/${root}/${messageId}`).then((res) => res.json())) as { info: { id: string; role: string } }
+    expect(message.info).toMatchObject({ id: messageId, role: 'user' })
+    expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`)).status).toBe(404)
+    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`, { method: 'DELETE' })).status).toBe(409)
+    expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`, { method: 'DELETE' })).status).toBe(404)
+
+    const agents = (await r.user('/kortix/runtime/agents').then((res) => res.json())) as { agents: Array<{ name: string }> }
+    expect(agents.agents.map((agent) => agent.name)).toEqual(['coder', 'reviewer'])
+
+    expect((await post(`/kortix/runtime/sessions/${root}/abort`, {})).status).toBe(200)
+    await waitFor(() => !r.service.runtime()!.busy())
+    // Both mounts serve the verbs; an unauthenticated call is refused.
+    expect((await r.app.request(`/kortix/runtime/sessions/${root}/abort`, { method: 'POST' })).status).toBe(401)
+    expect((await post(`/kortix/opencode/sessions/${root}/abort`, {})).status).toBe(200)
+  })
+
   test('the catalogs are the project\'s: pi serves no config, agent, provider or command document', async () => {
     // Pickers read the API (`/detail`, `/model-picker`); slash commands are
     // an OpenCode capability pi does not advertise. The routes 404 instead of

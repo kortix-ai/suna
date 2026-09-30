@@ -3,7 +3,7 @@ import { findSessionAttachments, type MessageWithParts, type Part } from '@korti
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
-import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
@@ -762,6 +762,45 @@ function messageToJson(msg: MessageWithParts): Record<string, unknown> {
   };
 }
 
+type AssistantReply = MessageWithParts & { info: Extract<MessageWithParts['info'], { role: 'assistant' }> };
+
+/**
+ * Put `text` in the session's prompt inbox (`handle.send`), then wait for the
+ * reply: the last assistant message answering the new user message, once the
+ * root is idle again. The inbox may place the prompt under a new id, so the
+ * prompt is the user message the transcript did not hold before the send.
+ */
+export async function sendAndWaitForReply(
+  target: Pick<SessionRuntime, 'auth' | 'handle' | 'opencodeSessionId'>,
+  text: string,
+  extra?: { agent?: string },
+  timeoutMs = 10 * 60_000,
+): Promise<AssistantReply> {
+  const tip = () =>
+    withKortixScope(target.auth, async () =>
+      (await target.handle.messages({ conversationId: target.opencodeSessionId, limit: 20 })).messages,
+    );
+  const before = new Set((await tip()).map((message) => message.info.id));
+  await withKortixScope(target.auth, () => target.handle.send(text, extra));
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const messages = await tip();
+    const prompt = messages.find((message) => message.info.role === 'user' && !before.has(message.info.id));
+    if (!prompt) continue;
+    const reply = [...messages]
+      .reverse()
+      .find((message) => message.info.role === 'assistant' && message.info.parentID === prompt.info.id) as
+      | AssistantReply
+      | undefined;
+    if (!reply || (reply.info.time.completed == null && !reply.info.error)) continue;
+    const { statuses } = await withKortixScope(target.auth, () => target.handle.pending());
+    const status = statuses[target.opencodeSessionId];
+    if (!status || status.type === 'idle') return reply;
+  }
+  throw new Error('Timed out waiting for the reply.');
+}
+
 /** Send one prompt, print the assistant reply (and any error). */
 async function sendAndPrint(
   resolved: ResolvedSession,
@@ -772,9 +811,7 @@ async function sendAndPrint(
   // In --json mode keep stdout pure JSON (no "…thinking" spinner).
   if (!json) process.stdout.write(`${C.dim}…thinking${C.reset}\r`);
   try {
-    const reply = await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(await resolved.handle.send(text, extra)),
-    );
+    const reply = await sendAndWaitForReply(resolved, text, extra);
     if (json) {
       emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
       return reply.info.error ? 1 : 0;

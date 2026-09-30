@@ -220,6 +220,12 @@ await s.send('One-off task', { model, agent }); // overrides for this call only
 await s.abort(); // stop the current run
 ```
 
+`send()` puts the prompt in the session's durable prompt inbox
+(`POST .../prompts`), the path the web composer and the CLI use. It resolves
+when the prompt is stored, with the inbox row (`prompt_id`, `state`,
+`message_id`), not when the turn ends. Read the reply from `s.stream()` or the
+transcript.
+
 For OpenCode REST sessions, the first `send()` on a handle reads the model and
 agent persisted on the Kortix session. This prevents a snapshot-inherited
 OpenCode session from reusing stale snapshot defaults.

@@ -26,10 +26,8 @@
  * `routes/preview.ts` re-exports the public names, so every existing import
  * path keeps working.
  */
-import {
-  isTurnStartRequest,
-  stripInBoxProxyPrefix,
-} from '../projects/turn-start-request';
+import { isTurnStartRequest } from '../projects/turn-start-request';
+import { classifyRuntimeRequest } from './runtime-request';
 import type { ProviderName } from '../platform/providers';
 import type { bindSessionTurnIdentity } from '../projects/lib/on-behalf-of';
 import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
@@ -141,7 +139,8 @@ function isRetryableEnvSyncFailure(message: string): boolean {
  */
 export function isTurnStartEnvSync(port: number, method: string, path: string): boolean {
   if (!isTurnStartRequest(port, method, path)) return false;
-  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(stripInBoxProxyPrefix(path));
+  const request = classifyRuntimeRequest(method, path);
+  return request.kind === 'turn-start' && request.verb !== 'summarize';
 }
 
 /** The body's `agent` field, or null. Pure + exported so it is unit-tested

@@ -1,5 +1,6 @@
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
+import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../runtime-request';
 import { markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { stripInlineAttachmentBytes } from '../inline-attachments';
 import { timeUpstream } from '../../middleware/upstream-timing';
@@ -444,7 +445,7 @@ export function isProxiedBaseReset(
   if (!carriesSessionData(upstreamPort)) return false;
   // Strip the in-box `/proxy/{port}` prefix, as the connector gate does — a
   // request that reaches the daemon that way is the same request.
-  const path = remainingPath.replace(/^\/proxy\/\d+(?=\/)/, '');
+  const path = stripInBoxProxyPrefix(remainingPath);
   if (!/^\/kortix\/refresh(?:$|[/?#])/.test(path)) return false;
   return new URLSearchParams(queryString).get('base') === '1';
 }
@@ -1547,15 +1548,12 @@ export async function forwardToSandbox(
       // forever) was on exactly such a box. Idempotent by construction: a
       // reference is not a `data:` url, so a list the daemon already stripped
       // passes through with zero work.
-      const listMatch =
-        method === 'GET' && upstream.ok
-          ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
-          : null;
+      const listRequest = upstream.ok ? classifyRuntimeRequest(method, remainingPath) : null;
       if (
-        listMatch &&
+        listRequest?.kind === 'message-list' &&
         (upstream.headers.get('content-type') ?? '').includes('application/json')
       ) {
-        const sessionID = decodeURIComponent(listMatch[1] ?? '');
+        const sessionID = listRequest.runtimeSessionId;
         const text = await upstream.text();
         let body = text;
         try {
