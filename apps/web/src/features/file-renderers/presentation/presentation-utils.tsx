@@ -1,99 +1,10 @@
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
-import { getEnv } from '@/lib/env-config';
-import {
-  buildPresentationTemplateImageUrl,
-  buildPresentationTemplatePdfUrl,
-  convertRuntimePresentation,
-} from '@kortix/sdk';
+import { convertRuntimePresentation } from '@kortix/sdk';
 
 export enum DownloadFormat {
   PDF = 'pdf',
   PPTX = 'pptx',
-}
-
-/**
- * Utility functions for handling presentation slide file paths
- */
-
-/**
- * Gets the PDF URL for a presentation template
- * @param templateId - The template ID
- * @returns The full PDF URL with parameters
- */
-export const getPdfUrl = (templateId: string): string => {
-  return buildPresentationTemplatePdfUrl(getEnv().BACKEND_URL, templateId);
-};
-
-/**
- * Gets the image URL for a presentation template
- * @param templateId - The template ID
- * @param hasImage - Whether the template has an image
- * @returns The full image URL
- */
-export const getImageUrl = (templateId: string, hasImage: boolean): string => {
-  return buildPresentationTemplateImageUrl(getEnv().BACKEND_URL, templateId);
-};
-
-/**
- * Validates and extracts presentation info from a file path in a single operation
- * @param filePath - The file path to validate and extract information from
- * @returns Object containing validation result and extracted data
- */
-export function parsePresentationSlidePath(filePath: string | null): {
-  isValid: boolean;
-  presentationName: string | null;
-  slideNumber: number | null;
-} {
-  if (!filePath) {
-    return { isValid: false, presentationName: null, slideNumber: null };
-  }
-
-  // Match patterns like:
-  // - presentations/[name]/slide_01.html
-  // - /workspace/presentations/[name]/slide_01.html
-  // - ./presentations/[name]/slide_01.html
-  // - any/path/presentations/[name]/slide_01.html
-  const match = filePath.match(/presentations\/([^\/]+)\/slide_(\d+)\.html$/i);
-  if (match) {
-    return {
-      isValid: true,
-      presentationName: match[1],
-      slideNumber: parseInt(match[2], 10),
-    };
-  }
-
-  return { isValid: false, presentationName: null, slideNumber: null };
-}
-
-/**
- * Creates modified tool content for PresentationViewer from presentation slide data
- * @param presentationName - Name of the presentation
- * @param filePath - Path to the slide file
- * @param slideNumber - Slide number
- * @returns JSON stringified tool content that matches expected structure for PresentationViewer
- */
-export function createPresentationViewerToolContent(
-  presentationName: string,
-  filePath: string,
-  slideNumber: number,
-  tI18nComplete: UiTranslator,
-): string {
-  // PresentationViewer expects presentation_path to be the directory, not the file
-  // e.g., "presentations/mypresentation" not "presentations/mypresentation/slide_01.html"
-  const presentationPath = `presentations/${presentationName}`;
-
-  // Return a flat structure that PresentationViewer can directly parse
-  const toolOutput = {
-    presentation_name: presentationName,
-    presentation_path: presentationPath,
-    slide_number: slideNumber,
-    slide_file: filePath,
-    presentation_title: presentationName,
-    message: tI18nComplete('text854a397472d0', { value0: slideNumber }),
-  };
-
-  return JSON.stringify(toolOutput);
 }
 
 /** Trigger a browser "save as" for a generated blob. */
