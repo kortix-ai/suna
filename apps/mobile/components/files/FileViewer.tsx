@@ -10,6 +10,7 @@ import {
   Pressable,
   Platform,
   TextInput,
+  Keyboard,
   KeyboardAvoidingView,
   Alert,
 } from 'react-native';
@@ -174,6 +175,12 @@ export function FileViewer({
     setEditing(visible && !!initialEditing);
     setDraft('');
   }, [file?.path, visible, initialEditing]);
+
+  // A native modal does not take the focus from the field behind it, so the
+  // keyboard would stay up over the viewer. Same rule as the sheets.
+  useEffect(() => {
+    if (visible) Keyboard.dismiss();
+  }, [visible]);
 
   const handleStartEdit = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

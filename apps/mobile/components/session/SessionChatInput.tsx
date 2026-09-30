@@ -205,10 +205,7 @@ function SessionChatInputImpl({
     [agents, agent?.name, onAgentChange, onCreateAgent],
   );
   const openModelSheet = useCallback(() => {
-    Keyboard.dismiss();
-    requestAnimationFrame(() => {
-      modelSheetRef.current?.open();
-    });
+    modelSheetRef.current?.open();
   }, []);
 
   // ── Slash commands ───────────────────────────────────────────────────────
@@ -512,7 +509,6 @@ function SessionChatInputImpl({
     [hasAutoContinue, auto.mode, auto.current],
   );
   const handleAddPress = useCallback(() => {
-    Keyboard.dismiss();
     attachSheetRef.current?.open();
   }, []);
 

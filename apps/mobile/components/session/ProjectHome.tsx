@@ -256,7 +256,6 @@ export function ProjectHome({
         modelName: activeModel ? pickerModelName(activeModel) : null,
       });
   const openConnectSheet = React.useCallback(() => {
-    Keyboard.dismiss();
     connectSheetRef.current?.open();
   }, []);
 
@@ -382,16 +381,10 @@ export function ProjectHome({
               sending={isSending}
               attachments={files}
               attachmentUploads={attachments.uploads}
-              onAttach={() => {
-                Keyboard.dismiss();
-                attachSheetRef.current?.open();
-              }}
+              onAttach={() => attachSheetRef.current?.open()}
               onRemoveAttachment={attachments.remove}
               chip={chip}
-              onChipPress={() => {
-                Keyboard.dismiss();
-                modelSheetRef.current?.open();
-              }}
+              onChipPress={() => modelSheetRef.current?.open()}
             />
           </Reanimated.View>
         </View>
