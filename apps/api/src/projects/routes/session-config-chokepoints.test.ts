@@ -25,7 +25,7 @@ const RELOAD = handlerSource('post', '/{projectId}/sessions/{sessionId}/reload')
 
 describe('GET /config authorizes before it reads session state', () => {
   test('it asserts the session-read leaf, not only the coarse access level', () => {
-    const load = CONFIG.indexOf("loadProjectForUser(c, projectId, 'session')");
+    const load = CONFIG.indexOf("resolveSessionBinding(c, projectId, sessionId, 'session')");
     const leaf = CONFIG.indexOf('PROJECT_ACTIONS.PROJECT_SESSION_READ');
     const read = CONFIG.indexOf('readSandboxConfigState(');
     expect(load).toBeGreaterThan(-1);

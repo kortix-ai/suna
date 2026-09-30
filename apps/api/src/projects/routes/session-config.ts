@@ -5,13 +5,13 @@
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, or } from 'drizzle-orm';
 import { config } from '../../config';
-import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
-import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { assertAgentScope } from '../../iam/agent-scope';
@@ -63,10 +63,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     // `loadProjectForUser(..., 'session')` is the coarse access level, not a
     // read grant. Without this an agent-scoped or read-restricted token could
     // read a session's commit sha and config hash — small, but it is session
@@ -213,10 +212,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -299,10 +297,9 @@ projectsApp.openapi(
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
-
-    const loaded = await loadProjectForUser(c, projectId, 'session');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'session');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     await assertProjectCapability(
       c,
       loaded.userId,
