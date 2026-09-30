@@ -621,6 +621,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Updated secret delivery strategy': 'text78992a9b4a8f',
   'Updated session': 'text8bfaeec7acfe',
   'Updated session policy': 'textce582f2663e8',
+  'Updated session presence': 'textf164e4b031dc',
   'Updated session provider secret pool': 'text8f7236dd6450',
   'Updated session scope': 'texta051aa9c5b88',
   'Updated session sharing': 'text759bdc80c971',

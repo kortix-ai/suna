@@ -19045,7 +19045,16 @@
       "text2bbd1ec2197d": "Application connectée",
       "textda3d3fb8f598": "Session d'agent",
       "text4dcb7e3b10a9": "Jeton SCIM",
-      "text36fe0f55b7f5": "Toute information d'identification"
+      "text36fe0f55b7f5": "Toute information d'identification",
+      "textbfda026e6c59": "Associé",
+      "text72ea4fa7caf9": "Dictée arrêtée : {value0}",
+      "text557b623f9a33": "Impossible de démarrer la dictée. Vérifiez l'accès au microphone.",
+      "textb43c4884c3be": "Commandes de dictée",
+      "textd31d065a762c": "Annuler la dictée",
+      "textbbb4106e8144": "Écoute en cours…",
+      "text7458028e0d1d": "Terminer la dictée",
+      "text9c84d6622566": "Dicter un message",
+      "textf164e4b031dc": "Présence dans la session mise à jour"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

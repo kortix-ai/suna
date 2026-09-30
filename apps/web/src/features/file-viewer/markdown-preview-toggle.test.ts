@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 const source = readFileSync(
-  fileURLToPath(new URL('./file-content-renderer.tsx', import.meta.url)),
+  fileURLToPath(new URL('./use-file-content-state.ts', import.meta.url)),
   'utf8',
 );
 
