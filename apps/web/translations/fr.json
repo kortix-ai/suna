@@ -188,11 +188,7 @@
       "label": "Compte",
       "createIn": "Créer dans {account}",
       "choose": "Choisir un compte",
-      "loggedInAs": "Connecté en tant que",
-      "nameLabel": "Nom du compte",
-      "nameHint": "Votre équipe le voit dans la barre latérale et dans les invitations. Vous pourrez le modifier plus tard.",
-      "nameRequired": "Le nom du compte est obligatoire",
-      "renameFailed": "Impossible d'enregistrer le nom du compte. Réessayez."
+      "loggedInAs": "Connecté en tant que"
     },
     "name": {
       "label": "Nom de le projet",
@@ -1553,7 +1549,8 @@
         "restricted": "Personnes choisies",
         "project": "Tout le projet"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Libellés"
     },
     "loadingMore": "Chargement…",
     "loadMoreSessions": "Charger plus de sessions",
@@ -1565,7 +1562,21 @@
       "others": "Partagées",
       "automated": "Automatisées"
     },
-    "reminders": "Rappels"
+    "reminders": "Rappels",
+    "labels": {
+      "menu": "Modifier les libellés",
+      "title": "Libellés",
+      "description": "Les libellés classent cette session. Filtrez la liste des sessions avec eux. Les agents, la CLI et l’API peuvent aussi les définir.",
+      "placeholder": "Saisissez un libellé puis Entrée",
+      "empty": "Aucun libellé pour l’instant.",
+      "remove": "Retirer {label}",
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "saved": "Libellés enregistrés",
+      "failed": "Impossible d’enregistrer les libellés",
+      "tooLong": "Un libellé compte au plus 64 caractères.",
+      "tooMany": "Une session a au plus 20 libellés."
+    }
   },
   "dashboard": {
     "title": "Tableau de bord",
@@ -19955,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Bienvenue sur Kortix",
-    "nameAccountTitle": "Nommez votre compte",
-    "nameAccountBody": "Vos projets, agents et coéquipiers se trouvent ici.",
-    "nameAccountContinue": "Continuer",
     "welcomeBack": "Bon retour",
     "descriptionNew": "Créez votre premier projet ou rejoignez un projet partagé par votre équipe.",
     "descriptionReturning": "Ouvrez un projet ou créez-en un nouveau.",

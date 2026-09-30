@@ -938,6 +938,25 @@ export const PendingSessionPromptSchema = z
   });
 export type PendingSessionPrompt = z.infer<typeof PendingSessionPromptSchema>;
 
+/**
+ * Free-form session labels, for classifying and filtering sessions. Each label
+ * is trimmed and 1..64 characters; at most 20; duplicates drop in first-seen
+ * order. Matching (`?label=`) is exact and case-sensitive.
+ */
+export const SessionLabelsSchema = z
+  .array(z.string().trim().min(1).max(64))
+  .max(20)
+  .transform((labels) => [...new Set(labels)]);
+
+/** JSON characters one session-metadata write may carry (create or PATCH). */
+export const SESSION_METADATA_MAX_CHARS = 16_384;
+
+/** Client metadata on create / PATCH: a free-form object, bounded in size. */
+export const SessionMetadataInputSchema = JsonObjectSchema.refine(
+  (metadata) => JSON.stringify(metadata).length <= SESSION_METADATA_MAX_CHARS,
+  { message: `metadata must be at most ${SESSION_METADATA_MAX_CHARS} characters of JSON` },
+);
+
 /** Authoritative public body for POST /v1/projects/:projectId/sessions. */
 export const SessionCreateInputSchema = z
   .object({
@@ -956,6 +975,7 @@ export const SessionCreateInputSchema = z
     title_source: z.string().optional(),
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
+    labels: SessionLabelsSchema.optional(),
     session_id: z
       .string()
       .regex(
@@ -965,7 +985,7 @@ export const SessionCreateInputSchema = z
       .optional(),
     provider: SandboxProviderSchema.optional(),
     branch_already_created: z.boolean().optional(),
-    metadata: JsonObjectSchema.optional(),
+    metadata: SessionMetadataInputSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
     connector_bindings: SessionConnectorBindingsInputSchema.optional(),
     // When `connector_bindings` is set, unbound aliases fail closed.
@@ -1005,6 +1025,18 @@ export const SessionCreateInputSchema = z
   .strict();
 export type SessionCreateInput = z.infer<typeof SessionCreateInputSchema>;
 
+/**
+ * Public body for PATCH /v1/projects/:projectId/sessions/:sessionId.
+ * `labels` replaces the list. `metadata` merges top-level keys; a `null`
+ * value removes that key. `name` "" or null clears the rename.
+ */
+export const SessionUpdateInputSchema = z.object({
+  name: z.string().nullable().optional(),
+  labels: SessionLabelsSchema.optional(),
+  metadata: SessionMetadataInputSchema.optional(),
+});
+export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
+
 /** A project session as serialized by `serializeSession`. */
 export const ProjectSessionSchema = z.object({
   session_id: z.string(),
@@ -1020,6 +1052,7 @@ export const ProjectSessionSchema = z.object({
   name: z.string().nullable(),
   /** The user-set override alone, so clients can tell it apart from the auto title. */
   custom_name: z.string().nullable(),
+  labels: z.array(z.string()),
   agent_name: z.string(),
   status: SessionStatusSchema,
   error: z.string().nullable(),

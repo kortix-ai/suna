@@ -188,11 +188,7 @@
       "label": "Налог",
       "createIn": "Направи у налогу {account}",
       "choose": "Изаберите налог",
-      "loggedInAs": "Пријављени сте као",
-      "nameLabel": "Назив налога",
-      "nameHint": "Ваш тим га види на бочној траци и у позивницама. Можете га касније променити.",
-      "nameRequired": "Назив налога је обавезан",
-      "renameFailed": "Назив налога није сачуван. Покушајте поново."
+      "loggedInAs": "Пријављени сте као"
     },
     "name": {
       "label": "Назив пројекта",
@@ -1553,7 +1549,8 @@
         "restricted": "Одређене особе",
         "project": "Цео пројекат"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Oznake"
     },
     "loadingMore": "Учитавање…",
     "loadMoreSessions": "Учитајте још сесија",
@@ -1565,7 +1562,21 @@
       "others": "Deljene",
       "automated": "Automatizovane"
     },
-    "reminders": "Подсетници"
+    "reminders": "Подсетници",
+    "labels": {
+      "menu": "Uredi oznake",
+      "title": "Oznake",
+      "description": "Oznake klasifikuju ovu sesiju. Filtrirajte listu sesija po njima. Agenti, CLI i API takođe mogu da ih postave.",
+      "placeholder": "Unesite oznaku i pritisnite Enter",
+      "empty": "Još nema oznaka.",
+      "remove": "Ukloni {label}",
+      "save": "Sačuvaj",
+      "cancel": "Otkaži",
+      "saved": "Oznake su sačuvane",
+      "failed": "Oznake nije moguće sačuvati",
+      "tooLong": "Oznaka ima najviše 64 znaka.",
+      "tooMany": "Sesija ima najviše 20 oznaka."
+    }
   },
   "dashboard": {
     "title": "Контролна табла",
@@ -19955,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Dobro došli u Kortix",
-    "nameAccountTitle": "Дајте назив налогу",
-    "nameAccountBody": "Овде се налазе ваши пројекти, агенти и чланови тима.",
-    "nameAccountContinue": "Настави",
     "welcomeBack": "Dobro došli nazad",
     "descriptionNew": "Napravite svoj prvi projekat ili se pridružite onom koji je vaš tim podelio.",
     "descriptionReturning": "Otvorite projekat ili napravite novi.",
