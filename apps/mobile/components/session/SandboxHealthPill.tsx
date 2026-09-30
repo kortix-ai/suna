@@ -65,8 +65,6 @@ export function SandboxHealthPill({ onSwitch, onHealth, whenReachable }: Sandbox
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });
 
-  // The composer card, exactly (components/kortix/composer.tsx) — drawn by
-  // `ComposerStatusPill` (Jay, 2026-09-23).
   return (
     <ComposerStatusPill
       dotColor={dotColor}
