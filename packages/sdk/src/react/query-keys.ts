@@ -382,6 +382,9 @@ export const qk = {
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,
+    /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
+    sessionMessageAuthors: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

@@ -38,6 +38,9 @@ import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bin
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { sessionMessagePromptText } from '@kortix/shared';
+import { resolveSessionParticipants, sessionMessageSender } from '../lib/session-participants';
+import { notifySessionEvent } from '../../notifications/session-push';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -170,9 +173,39 @@ projectsApp.openapi(
       400,
     );
   }
+  // A conversation with people: the first message goes to them, not to the
+  // agent. See lib/session-participants.ts.
+  let participantMetadata: Record<string, unknown> | undefined;
+  if (body.participants !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
+    if (gate) return gate;
+    const pending = body.pending_prompt as Record<string, unknown> | undefined;
+    const question = normalizeString(body.initial_prompt) ?? normalizeString(pending?.text);
+    if (!question) {
+      return c.json({ error: 'participants needs initial_prompt: the message to send them', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const resolved = await resolveSessionParticipants(loaded.row.accountId, projectId, body.participants);
+    if ('error' in resolved) return c.json({ error: resolved.error, code: resolved.code }, resolved.status);
+    const sender = await sessionMessageSender(loaded.userId, callerKortixSessionId(c), projectId);
+    body.pending_prompt = {
+      ...(pending ?? {}),
+      text: sessionMessagePromptText({
+        type: 'ask',
+        sender,
+        to: resolved.people.map(({ name, email }) => ({ name, email })),
+        prompt: question,
+      }),
+    };
+    delete body.initial_prompt;
+    delete body.participants;
+    // The question names the conversation; the header never becomes a title.
+    body.name ??= question.split('\n')[0]!.slice(0, 80);
+    participantMetadata = { participants: resolved.people.map((p) => p.userId), awaiting_reply: true };
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
+    ...(participantMetadata ? { metadata: participantMetadata, visibility: 'restricted' as const } : {}),
     userId: loaded.userId,
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
@@ -190,6 +223,15 @@ projectsApp.openapi(
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (participantMetadata && result.sessionId && !result.deduped) {
+    void notifySessionEvent({
+      type: 'question',
+      sessionId: result.sessionId,
+      projectId,
+      question: String(body.name ?? ''),
+      recipients: participantMetadata.participants as string[],
+    });
+  }
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
@@ -265,6 +307,8 @@ projectsApp.openapi(
           label: z
             .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
             .optional(),
+          // `me` = conversations the viewer was asked into, at any depth.
+          participant: z.enum(['me']).optional(),
         }),
       },
     responses: {
@@ -298,6 +342,7 @@ projectsApp.openapi(
       startedBy: query.started_by ?? null,
       q: query.q ?? null,
       labels: query.label === undefined ? null : [query.label].flat(),
+      participant: query.participant ?? null,
     },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,

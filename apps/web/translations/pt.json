@@ -1179,6 +1179,10 @@
           "name": "Servidor MCP",
           "description": "Conecte Claude, ChatGPT, Cursor, Codex ou qualquer cliente MCP a este projeto via OAuth. O cliente entra como você e chama o Kortix com as suas permissões. A URL fica em Conectar MCP, no menu do espaço de trabalho."
         },
+        "human_messaging": {
+          "name": "Mensagens para pessoas",
+          "description": "Permite que agentes enviem mensagens a pessoas e a outras sessões. `kortix send alice@example.com` abre uma conversa que começa com a mensagem do agente e aparece em Perguntaram a você, na barra lateral do destinatário. Vários endereços abrem um chat em grupo."
+        },
         "reminders": {
           "name": "Lembretes",
           "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona a página Lembretes, o indicador de lembretes da sessão e `kortix remind`."

@@ -38,6 +38,12 @@ import {
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
+import { projectSessions } from '@kortix/db';
+import { parseSessionMessagePrompt, sessionMessagePromptText } from '@kortix/shared';
+import { eq, sql } from 'drizzle-orm';
+import { db } from '../../shared/db';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { sessionMayMessage, sessionMessageSender } from '../lib/session-participants';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -181,7 +187,16 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    // The session whose agent sends this, when it is not the target itself.
+    // From the credential, never the body: it becomes the message's author.
+    const callerSessionId = callerKortixSessionId(c);
+    const authorSessionId =
+      isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
+    const visible =
+      (await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId)) ??
+      (authorSessionId
+        ? await sessionMayMessage(authorSessionId, sessionId, projectId).then((row) => (row ? { row } : null))
+        : null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -228,12 +243,27 @@ projectsApp.openapi(
     }
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
-    const parts = sanitized.parts;
+    let parts = sanitized.parts;
     for (const part of parts) {
       const attachment = parseSessionAttachmentRef(part.url);
       if (attachment && (attachment.projectId !== projectId || attachment.sessionId !== sessionId)) {
         return c.json({ error: 'Attachment belongs to another session' }, 400);
       }
+    }
+    // Say who is speaking when it is not the session's own person: another
+    // session's agent, or one of several people in a conversation.
+    const participants = Array.isArray(metadata.participants) ? (metadata.participants as unknown[]) : [];
+    if (resolveFeatureFlag(loaded.row.metadata, 'human_messaging') && (authorSessionId || participants.length > 0)) {
+      const sender = await sessionMessageSender(loaded.userId, authorSessionId, projectId);
+      const firstText = parts.findIndex((part) => part.type === 'text');
+      const typed = firstText >= 0 ? String(parts[firstText]!.text ?? '') : '';
+      // A header already on the text (an undo re-sending a stored prompt, or
+      // one typed to impersonate) is replaced, never stacked.
+      const body = parseSessionMessagePrompt(typed)?.prompt ?? typed;
+      const header = sessionMessagePromptText({ type: 'message', sender, to: [], prompt: body });
+      parts = firstText >= 0
+        ? parts.map((part, i) => (i === firstText ? { ...part, text: header } : part))
+        : [{ type: 'text', text: header }, ...parts];
     }
     const text = flattenPromptText(parts);
 
@@ -334,6 +364,7 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
+      authorSessionId,
     };
     const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
       enqueueContinueSessionCommand({ ...send, ...hold }),
@@ -357,6 +388,13 @@ projectsApp.openapi(
       observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
+    // A participant answered: the conversation leaves their "Asked you" list.
+    if (!authorSessionId && metadata.awaiting_reply === true && participants.includes(loaded.userId)) {
+      await db
+        .update(projectSessions)
+        .set({ metadata: sql`${projectSessions.metadata} || '{"awaiting_reply": false}'::jsonb` })
+        .where(eq(projectSessions.sessionId, sessionId));
+    }
 
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain

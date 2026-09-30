@@ -1179,6 +1179,10 @@
           "name": "MCP 服务器",
           "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
         },
+        "human_messaging": {
+          "name": "向人发消息",
+          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。"
+        },
         "reminders": {
           "name": "提醒",
           "description": "让代理和用户在会话上安排一次性或重复的检查。每次触发都会重新提示该会话。新增提醒页面、会话提醒标记和 `kortix remind`。"

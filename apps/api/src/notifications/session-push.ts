@@ -19,6 +19,9 @@ export interface SessionPushEvent {
   projectId: string;
   /** First question text, for `question` events. */
   question?: string;
+  /** Notify these users instead of the session creator: the people a
+   *  conversation was opened with (`POST /sessions` `participants`). */
+  recipients?: string[];
 }
 
 export interface SessionPushTarget {
@@ -132,10 +135,15 @@ export function createSessionNotifier(deps: SessionPushDeps) {
       if (!deps.enabled) return { sent: 0, reason: 'disabled' };
       const session = await deps.loadSession(event.sessionId, event.projectId);
       if (!session) return { sent: 0, reason: 'no_session' };
-      if (!session.createdBy) return { sent: 0, reason: 'no_recipient' };
-      if (await deps.isPresent?.(session.createdBy, event.sessionId)) return { sent: 0, reason: 'present' };
-      const rows = await deps.store.listByUser(session.createdBy);
-      const messages = buildSessionPushMessages(event, session.title, rows);
+      const recipients = event.recipients ?? (session.createdBy ? [session.createdBy] : []);
+      if (recipients.length === 0) return { sent: 0, reason: 'no_recipient' };
+      const messages: ExpoPushMessage[] = [];
+      let present = 0;
+      for (const userId of recipients) {
+        if (await deps.isPresent?.(userId, event.sessionId)) { present += 1; continue; }
+        messages.push(...buildSessionPushMessages(event, session.title, await deps.store.listByUser(userId)));
+      }
+      if (present === recipients.length) return { sent: 0, reason: 'present' };
       if (messages.length === 0) return { sent: 0, reason: 'no_devices' };
       const result = await deps.send(messages, deps.store);
       return { sent: messages.length, reason: 'sent', result };

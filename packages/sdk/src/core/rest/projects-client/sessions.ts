@@ -228,6 +228,13 @@ export interface CreateProjectSessionInput {
   name?: string;
   /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
   labels?: string[];
+  /**
+   * Email addresses of project members to open a conversation with (project
+   * feature flag `human_messaging`). `initial_prompt` is posted to them from
+   * the caller, no turn runs, and the session is shared with them. The agent
+   * runs when one of them replies. 1..20 addresses.
+   */
+  participants?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
@@ -340,6 +347,9 @@ export interface ListProjectSessionsOptions {
   q?: string;
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
+  /** `'me'` = conversations the viewer was asked into (`participants`), at
+   *  any depth. */
+  participant?: 'me';
 }
 
 /** One keyset page of a project's sessions. */
@@ -359,6 +369,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const q = options?.q?.trim();
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
+  if (options?.participant) params.set('participant', options.participant);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -1862,6 +1873,33 @@ export async function setProjectSessionModel(
     await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { opencode_model: opencodeModel },
+    ),
+  );
+}
+
+/** Who wrote one message: a project member, or another session's agent. */
+export type SessionMessageAuthor =
+  | { kind: 'member'; user_id: string; name: string; email: string | null }
+  | { kind: 'session'; session_id: string; name: string };
+
+export interface SessionMessageAuthors {
+  /** Keyed by runtime message id. Messages with no known sender are absent. */
+  authors: Record<string, SessionMessageAuthor>;
+  /** A spawned session's first message came from its parent's agent. Null
+   *  when the session was not spawned with a first prompt. */
+  initial_author: SessionMessageAuthor | null;
+}
+
+/** Who wrote each message of a session, from the server's authenticated
+ *  prompt record. The runtime transcript itself carries no author. */
+export async function getSessionMessageAuthors(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionMessageAuthors> {
+  return unwrap(
+    await backendApi.get<SessionMessageAuthors>(
+      `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      { showErrors: false },
     ),
   );
 }

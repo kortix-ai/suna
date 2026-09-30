@@ -60,7 +60,8 @@ export type FeatureFlagKey =
   | 'pi_harness'
   | 'config_releases'
   | 'agent_principal'
-  | 'us_region';
+  | 'us_region'
+  | 'human_messaging';
 
 /**
  * Every {@link FeatureFlagKey} the API serves, at runtime. Kept in the same
@@ -85,6 +86,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'config_releases',
   'agent_principal',
   'us_region',
+  'human_messaging',
 ] as const;
 
 /**

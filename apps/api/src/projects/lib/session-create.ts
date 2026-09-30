@@ -290,6 +290,15 @@ export async function createProjectSession(input: {
     input.visibility,
     parentSharing,
   );
+  // A conversation with people (`POST /sessions` `participants`, set only by
+  // the server): each participant is a member grant, and the first message is
+  // posted without a turn — the people answer it, not the agent.
+  const participantIds = Array.isArray(input.metadata?.participants)
+    ? (input.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const sessionGrants: SecretGrant[] = participantIds.length > 0
+    ? participantIds.map((principalId) => ({ principalType: 'member' as const, principalId }))
+    : inheritedGrants;
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -905,6 +914,8 @@ export async function createProjectSession(input: {
         accountId,
         sessionId,
         actorUserId: userId,
+        authorSessionId: input.callerSessionId ?? null,
+        noReply: participantIds.length > 0,
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -1139,9 +1150,9 @@ export async function createProjectSession(input: {
           )
           .returning({ sessionId: projectSessionConnectorBindings.sessionId });
       }
-      if (inheritedGrants.length > 0) {
+      if (sessionGrants.length > 0) {
         await tx.insert(projectSessionGrants).values(
-          inheritedGrants.map((g) => ({
+          sessionGrants.map((g) => ({
             sessionId,
             principalType: g.principalType,
             principalId: g.principalId,
