@@ -108,6 +108,27 @@ describe('createWarmSessionPool', () => {
     expect(calls.ensure).toHaveLength(3);
   });
 
+  // KRTX-700 phase 1: the one-retry exclude contract, asserted explicitly —
+  // the retry excludes the ECHOED taken id, and the loop is bounded at one
+  // retry (never a fourth call) even when the server ignores exclusions.
+  test('an ensure that echoes a taken id retries exactly once, excluding the echoed id', async () => {
+    const { client, calls } = fakeClient({
+      // The server ignores exclusions and keeps handing warm-1 back.
+      ensure: async (_p, exclude) => {
+        calls.ensure.push(exclude);
+        return { sessionId: 'warm-1', agentName: 'build' };
+      },
+    });
+    const pool = createWarmSessionPool(client);
+    await pool.ensure('p1'); // files warm-1
+    pool.take('p1', PLAIN_SEND, { replenish: false }); // taken = { warm-1 }
+    await pool.ensure('p1'); // the server echoes the taken id
+
+    // The first ensure, the refused echo, and its ONE retry — never a fourth.
+    expect(calls.ensure).toEqual([undefined, undefined, 'warm-1']);
+    expect(pool.held('p1')).toBeNull();
+  });
+
   test('dropBySessionId releases a held session opened another way', async () => {
     const { client } = fakeClient();
     const pool = createWarmSessionPool(client);
@@ -143,6 +164,36 @@ describe('createWarmSessionPool', () => {
     await pool.ensure('p1');
     pool.reset();
     expect(pool.held('p1')).toBeNull();
+  });
+
+  // KRTX-700 phase 1: the generation gate. An ensure that started before a
+  // reset must never file its session after the reset lands.
+  test('an ensure started before reset never settles', async () => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let n = 0;
+    const { client, calls } = fakeClient({
+      // The first create is still in flight when sign-out resets the pool.
+      ensure: async (_p, exclude) => {
+        calls.ensure.push(exclude);
+        n += 1;
+        if (n === 1) await gate;
+        return { sessionId: `warm-${n}`, agentName: 'build' };
+      },
+    });
+    const pool = createWarmSessionPool(client);
+    const inFlight = pool.ensure('p1');
+    pool.reset();
+    release();
+    await inFlight;
+
+    expect(pool.held('p1')).toBeNull();
+    // The slot is usable again: a fresh ensure creates and files normally.
+    await pool.ensure('p1');
+    expect(pool.held('p1')?.sessionId).toBe('warm-2');
+    expect(calls.ensure).toHaveLength(2);
   });
 });
 

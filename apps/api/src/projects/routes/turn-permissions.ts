@@ -6,7 +6,8 @@ import { isSessionSandboxCredential } from '../../middleware/session-sandbox-cre
 import { permissionPushGate } from '../../notifications/permission-push';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { AnyObject, projectsApp } from '../lib/app';
+import { TurnPermissionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
+import { projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 
 // POST /v1/projects/:projectId/turn-permission
@@ -30,7 +31,10 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // The daemon's body (`@kortix/api-contract/runtime-relay`). The handler
+      // reads `session_id` and `request_id`; `permission` and `patterns` name
+      // what waits for approval.
+      body: { content: { 'application/json': { schema: TurnPermissionRelayBodySchema } }, required: true },
     },
     responses: {
       200: json(z.object({ ok: z.literal(true), notified: z.boolean() }), 'OK'),

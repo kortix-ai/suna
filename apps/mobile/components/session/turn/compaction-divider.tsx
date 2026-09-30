@@ -4,9 +4,8 @@
  * Mirrors apps/web `features/session/turn/compaction-card.tsx`:
  * 1. running → rule ── [spinner "Compacting context…" shimmer] ── rule;
  * 2. landed → rule ── [stack "Context automatically compacted" caret] ── rule.
- *    With a summary the pill is a button: `onOpenSummary` opens it elsewhere
- *    (right caret); without that handler the summary expands inline under the
- *    pill (down caret that turns 180°), collapsed until asked for;
+ *    With a summary the pill is a button: the summary expands inline under
+ *    the pill (down caret that turns 180°), collapsed until asked for;
  * 3. failed → `CompactionFailedRow`, one slim checkpoint row that replaces the
  *    turn's whole render, including its error card.
  *
@@ -36,7 +35,7 @@ import { Text } from '@/components/ui/text';
 import { usePressScale } from '@/components/session/use-press-scale';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import { TextPartBlock } from '@/components/session/turn/text-part';
-import { CaretDownIcon, CaretRightIcon, StackIcon } from '@/lib/icons';
+import { CaretDownIcon, StackIcon } from '@/lib/icons';
 import {
   COMPACTION_LABEL_DONE,
   COMPACTION_LABEL_LOADING,
@@ -61,21 +60,18 @@ const PILL_BOX = {
   paddingVertical: webSpace(1.5),
 } as const;
 
-export interface CompactionMarkerProps {
+interface CompactionMarkerProps {
   /** The summarize is still producing (`working || compactionTurnInfo(turn).inFlight`). */
   running: boolean;
   /** The landed summary markdown, if any. */
   summary?: string;
-  /** Open the summary elsewhere. Absent → the pill expands the summary inline. */
-  onOpenSummary?: () => void;
 }
 
-function CompactionMarkerImpl({ running, summary, onOpenSummary }: CompactionMarkerProps) {
+function CompactionMarkerImpl({ running, summary }: CompactionMarkerProps) {
   const palette = useTurnPalette();
   const { colorScheme } = useColorScheme();
   const [open, setOpen] = useState(false);
   const hasSummary = !running && Boolean(summary?.trim());
-  const opensDetail = hasSummary && Boolean(onOpenSummary);
   const pillBackground = withAlpha(palette.muted, 0.8);
 
   const rule = <Separator style={RULE_STYLE} />;
@@ -109,15 +105,8 @@ function CompactionMarkerImpl({ running, summary, onOpenSummary }: CompactionMar
           <SummaryPill
             background={pillBackground}
             pressedBackground={(colorScheme === 'dark' ? THEME.dark : THEME.light).accent}
-            opensDetail={opensDetail}
             open={open}
-            onPress={() => {
-              if (onOpenSummary) {
-                onOpenSummary();
-                return;
-              }
-              setOpen((value) => !value);
-            }}
+            onPress={() => setOpen((value) => !value)}
           >
             {glyph}
             {label}
@@ -130,7 +119,7 @@ function CompactionMarkerImpl({ running, summary, onOpenSummary }: CompactionMar
         )}
         {rule}
       </View>
-      {open && hasSummary && !opensDetail ? (
+      {open && hasSummary ? (
         <View style={{ paddingBottom: webSpace(2) }}>
           <CompactionSummaryBody summary={summary!} />
         </View>
@@ -142,7 +131,6 @@ function CompactionMarkerImpl({ running, summary, onOpenSummary }: CompactionMar
 function SummaryPill({
   background,
   pressedBackground,
-  opensDetail,
   open,
   onPress,
   children,
@@ -150,7 +138,6 @@ function SummaryPill({
   background: string;
   /** Web `hover:bg-accent`; touch has no hover, so it shows while pressed. */
   pressedBackground: string;
-  opensDetail: boolean;
   open: boolean;
   onPress: () => void;
   children: React.ReactNode;
@@ -171,10 +158,8 @@ function SummaryPill({
     <Animated.View style={animatedStyle}>
       <PressableSurface
         accessibilityRole="button"
-        accessibilityLabel={
-          opensDetail ? 'Open compaction summary' : open ? 'Hide compaction summary' : 'Show compaction summary'
-        }
-        accessibilityState={opensDetail ? undefined : { expanded: open }}
+        accessibilityLabel={open ? 'Hide compaction summary' : 'Show compaction summary'}
+        accessibilityState={{ expanded: open }}
         onPress={onPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
@@ -182,14 +167,9 @@ function SummaryPill({
         style={({ pressed }) => [PILL_BOX, { backgroundColor: pressed ? pressedBackground : background }]}
       >
         {children}
-        {opensDetail ? (
-          // A right caret: the summary opens ELSEWHERE, like a row that navigates.
-          <CaretRightIcon size={webSpace(3)} color={palette.muted70} />
-        ) : (
-          <Animated.View style={caretStyle}>
-            <CaretDownIcon size={webSpace(3)} color={palette.muted70} />
-          </Animated.View>
-        )}
+        <Animated.View style={caretStyle}>
+          <CaretDownIcon size={webSpace(3)} color={palette.muted70} />
+        </Animated.View>
       </PressableSurface>
     </Animated.View>
   );
@@ -209,7 +189,7 @@ export function CompactionSummaryBody({ summary }: { summary: string }) {
   );
 }
 
-export interface CompactionFailedRowProps {
+interface CompactionFailedRowProps {
   /** The turn's error text (`getTurnError`, else `unwrapError(compactionTurnInfo(turn).error)`). */
   error?: string | null;
   /** The attempt was stopped rather than failed. */

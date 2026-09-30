@@ -323,6 +323,7 @@ projectsApp.openapi(
       () => refreshMirror(repo, true),
       {},
       c.req.query('commit') ?? null,
+      c.req.query('agent') ?? null,
     );
   },
 );

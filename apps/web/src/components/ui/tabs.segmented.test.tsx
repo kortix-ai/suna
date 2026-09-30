@@ -10,7 +10,7 @@ const render = (list: ReactNode) =>
 const triggerClasses = (out: string, label: string): string =>
   out.match(new RegExp(`<button[^>]*class="([^"]*)"[^>]*>${label}</button>`))?.[1] ?? '';
 
-const TRACK = ['bg-muted', 'rounded-md', 'p-0.5'];
+const TRACK = ['bg-muted', 'rounded-md', 'p-[2px]'];
 const CHIP = [
   'data-[state=active]:bg-popover',
   'data-[state=active]:ring-1',

@@ -186,75 +186,82 @@ projectsApp.openapi(
   },
 );
 
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/connections/{connectionId}/label',
-    tags: ['connectors'],
-    summary: 'Rename connection',
-    description:
-      'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
-    },
-    responses: {
-      200: json(ConnectionViewSchema, 'Renamed connection'),
-      ...errors(400, 403, 404, 409),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const connectionId = c.req.param('connectionId');
-    const body = await readJsonObject(c);
-    const validated = validateConnectionLabel(body.label);
-    if (!validated.ok) return c.json({ error: validated.error }, 400);
-    const mutable = await loadMutableConnection(c, projectId, connectionId);
-    if (!mutable) return c.json({ error: 'Not found' }, 404);
-    const { connection } = mutable;
-    const label = validated.label;
-    if (label === connection.label) {
-      return c.json(serializeConnection(connection), 200);
-    }
-    // `--account <label>` matches case-insensitively, so two accounts of one
-    // owner that differ only by case could not be told apart. The unique
-    // index is case-sensitive, so this check is the one that refuses them.
-    const [clash] = await db
-      .select({ connectionId: connectorConnections.connectionId })
-      .from(connectorConnections)
-      .where(
-        and(
-          eq(connectorConnections.connectorId, connection.connectorId),
-          eq(connectorConnections.ownerType, connection.ownerType),
-          connection.ownerId === null
-            ? isNull(connectorConnections.ownerId)
-            : eq(connectorConnections.ownerId, connection.ownerId),
-          ne(connectorConnections.connectionId, connectionId),
-          sql`lower(btrim(${connectorConnections.label})) = ${label.toLowerCase()}`,
-        ),
-      )
-      .limit(1);
-    if (clash) {
+async function renameConnectionHandler(c: any) {
+  const projectId = c.req.param('projectId');
+  const connectionId = c.req.param('connectionId');
+  const body = await readJsonObject(c);
+  const validated = validateConnectionLabel(body.label);
+  if (!validated.ok) return c.json({ error: validated.error }, 400);
+  const mutable = await loadMutableConnection(c, projectId, connectionId);
+  if (!mutable) return c.json({ error: 'Not found' }, 404);
+  const { connection } = mutable;
+  const label = validated.label;
+  if (label === connection.label) {
+    return c.json(serializeConnection(connection), 200);
+  }
+  // `--account <label>` matches case-insensitively, so two accounts of one
+  // owner that differ only by case could not be told apart. The unique
+  // index is case-sensitive, so this check is the one that refuses them.
+  const [clash] = await db
+    .select({ connectionId: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(
+      and(
+        eq(connectorConnections.connectorId, connection.connectorId),
+        eq(connectorConnections.ownerType, connection.ownerType),
+        connection.ownerId === null
+          ? isNull(connectorConnections.ownerId)
+          : eq(connectorConnections.ownerId, connection.ownerId),
+        ne(connectorConnections.connectionId, connectionId),
+        sql`lower(btrim(${connectorConnections.label})) = ${label.toLowerCase()}`,
+      ),
+    )
+    .limit(1);
+  if (clash) {
+    return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+  }
+  try {
+    // `updatedAt` stays as it is on purpose. Composio finalize picks the
+    // most recently updated row of an owner as the one a connect just
+    // started, so bumping it here could redirect an in-flight authorization.
+    await db
+      .update(connectorConnections)
+      .set({ label })
+      .where(eq(connectorConnections.connectionId, connectionId));
+  } catch (error) {
+    if (isUniqueViolation(error)) {
       return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
     }
-    try {
-      // `updatedAt` stays as it is on purpose. Composio finalize picks the
-      // most recently updated row of an owner as the one a connect just
-      // started, so bumping it here could redirect an in-flight authorization.
-      await db
-        .update(connectorConnections)
-        .set({ label })
-        .where(eq(connectorConnections.connectionId, connectionId));
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
-      }
-      throw error;
-    }
-    return c.json(serializeConnection({ ...connection, label }), 200);
-  },
-);
+    throw error;
+  }
+  return c.json(serializeConnection({ ...connection, label }), 200);
+}
+
+for (const [method, path] of [
+  ['put', '/{projectId}/connections/{connectionId}/label'],
+  ['patch', '/{projectId}/connections/{connectionId}'],
+] as const) {
+  projectsApp.openapi(
+    createRoute({
+      method,
+      path,
+      tags: ['connectors'],
+      summary: 'Rename connection',
+      description:
+        'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
+      },
+      responses: {
+        200: json(ConnectionViewSchema, 'Renamed connection'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    renameConnectionHandler,
+  );
+}
 
 for (const operation of ['credential', 'revoke', 'activate', 'default'] as const) {
   projectsApp.openapi(

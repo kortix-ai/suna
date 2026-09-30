@@ -188,11 +188,7 @@
       "label": "Account",
       "createIn": "Crea in {account}",
       "choose": "Scegli un account",
-      "loggedInAs": "Accesso effettuato come",
-      "nameLabel": "Nome dell'account",
-      "nameHint": "Il tuo team lo vede nella barra laterale e negli inviti. Puoi cambiarlo in seguito.",
-      "nameRequired": "Il nome dell'account è obbligatorio",
-      "renameFailed": "Impossibile salvare il nome dell'account. Riprova."
+      "loggedInAs": "Accesso effettuato come"
     },
     "name": {
       "label": "Nome dello progetto",
@@ -1553,7 +1549,8 @@
         "restricted": "Persone specifiche",
         "project": "Tutto il progetto"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Etichette"
     },
     "loadingMore": "Caricamento…",
     "loadMoreSessions": "Carica altre sessioni",
@@ -1565,7 +1562,21 @@
       "others": "Condivise",
       "automated": "Automatizzate"
     },
-    "reminders": "Promemoria"
+    "reminders": "Promemoria",
+    "labels": {
+      "menu": "Modifica etichette",
+      "title": "Etichette",
+      "description": "Le etichette classificano questa sessione. Filtra l’elenco delle sessioni in base a esse. Anche gli agenti, la CLI e l’API possono impostarle.",
+      "placeholder": "Scrivi un’etichetta e premi Invio",
+      "empty": "Ancora nessuna etichetta.",
+      "remove": "Rimuovi {label}",
+      "save": "Salva",
+      "cancel": "Annulla",
+      "saved": "Etichette salvate",
+      "failed": "Impossibile salvare le etichette",
+      "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
+      "tooMany": "Una sessione ha al massimo 20 etichette."
+    }
   },
   "dashboard": {
     "title": "Dashboard",
@@ -5157,7 +5168,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "La sandbox di questa sessione è stata arrestata. Apri una nuova sessione per continuare.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Il runtime di OpenCode non è pronto",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "Il runtime della sessione non è pronto",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "La sandbox si è avviata, ma il runtime del progetto non è diventato utilizzabile.",
       "line395JsxTextRestartSession": "Riavvia sessione",
       "line424JsxTextRestartSession": "Riavvia sessione"
@@ -12485,7 +12496,7 @@
       "text5a0cac0326d5": "Scarica Kortix",
       "text5a219a418ec7": "Non è stato possibile leggere questa voce dall’archivio.",
       "text5a23444828db": "Gestisci",
-      "text5a26f4425c82": "Sessione OpenCode",
+      "text92fbc8484002": "Sessione del runtime",
       "text5a32374d30b4": "Attività quotidiana della piattaforma e consumo di credito. Ogni bucket è un giorno UTC.",
       "text5a37d20f1235": "Agente del canale aggiornato",
       "text5a41803b2dd1": "Nega tutto",
@@ -19063,7 +19074,24 @@
       "mismatch": "Questa installazione è stata avviata da un altro account Kortix o per un altro progetto. Accedi con quell’account oppure riavvia l’installazione dal progetto.",
       "expired": "Questo link di installazione non è valido o è scaduto. Riavvia l’installazione dal progetto.",
       "failed": "Non è stato possibile completare l’installazione. Riavviala dal progetto.",
-      "backToProject": "Torna al progetto"
+      "backToProject": "Torna al progetto",
+      "finishingTitle": "Completamento dell’installazione di {service}",
+      "finishingDescription": "Kortix viene aggiunto a {service} per questo progetto. Tornerai al progetto al termine.",
+      "installingAs": "Installazione come",
+      "recording": "Registrazione dell’installazione…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Apertura dell’anteprima",
+      "openingDescription": "Stai per accedere all’app in esecuzione nella tua sessione.",
+      "preview": "Anteprima",
+      "address": "Indirizzo",
+      "signingIn": "Accesso in corso. L’anteprima si apre da sola.",
+      "signInAgain": "Accedi di nuovo",
+      "notServed": "Questo indirizzo non è un’anteprima servita da questa distribuzione. Apri l’anteprima dalla tua sessione.",
+      "sessionExpired": "La sessione è scaduta. Accedi di nuovo e riapri l’anteprima."
+    },
+    "approvalPage": {
+      "title": "Approva un’azione di {connector}"
     },
     "secretIntakeWithheld": {
       "title": "Salvato, ma {agent} non può ancora leggerlo",
@@ -19938,9 +19966,6 @@
   },
   "projectSelector": {
     "welcome": "Benvenuto in Kortix",
-    "nameAccountTitle": "Dai un nome al tuo account",
-    "nameAccountBody": "Qui vivono i tuoi progetti, agenti e membri del team.",
-    "nameAccountContinue": "Continua",
     "welcomeBack": "Bentornato",
     "descriptionNew": "Crea il tuo primo progetto o unisciti a uno condiviso dal tuo team.",
     "descriptionReturning": "Apri un progetto o creane uno nuovo.",

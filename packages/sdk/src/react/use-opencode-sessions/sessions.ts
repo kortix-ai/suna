@@ -2,13 +2,13 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import { isOpenCodeConfigInvalidError } from '../../core/http/opencode-errors';
+import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import type { Session } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryOpenCodeSession } from './shared';
+import { runtimeKeys, useRuntimeReady } from './keys';
+import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryRuntimeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 
@@ -16,14 +16,14 @@ import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-con
 // Session Hooks
 // ============================================================================
 
-export function useOpenCodeSessions(enabled = true) {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeSessions(enabled = true) {
+  const runtimeReady = useRuntimeReady();
   // Subscribe to the active runtime sandbox so the query key recomputes the
   // instant the sandbox switches — returning to a warm session hits its cached
   // list rather than refetching from scratch.
   const serverId = useCurrentRuntime((s) => s.sandboxId) ?? undefined;
   return useQuery<Session[]>({
-    queryKey: opencodeKeys.sessions(serverId),
+    queryKey: runtimeKeys.sessions(serverId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.list({ limit: 10000 });
@@ -45,18 +45,18 @@ export function useOpenCodeSessions(enabled = true) {
     // the first success in <300ms instead of mid-400ms-window; exponential tail
     // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
     // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
-    retry: (failureCount, error) => !isOpenCodeConfigInvalidError(error) && failureCount < 16,
+    retry: (failureCount, error) => !isRuntimeConfigInvalidError(error) && failureCount < 16,
     retryDelay: (attempt) =>
       attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
   });
 }
 
-export function useOpenCodeSession(sessionId: string) {
+export function useRuntimeSession(sessionId: string) {
   const queryClient = useQueryClient();
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const canQuerySession = canQueryOpenCodeSession(sessionId);
+  const runtimeReady = useRuntimeReady();
+  const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery<Session>({
-    queryKey: opencodeKeys.runtimeSession(sessionId),
+    queryKey: runtimeKeys.runtimeSession(sessionId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.get({ sessionID: sessionId });
@@ -67,16 +67,16 @@ export function useOpenCodeSession(sessionId: string) {
     // Retry transient failures (sandbox still warming, brief network blip) so a
     // single failed lookup doesn't settle as "not found" and flash the
     // not-accessible error. The query stays in its loading state across retries.
-    retry: (failureCount, error) => !isOpenCodeConfigInvalidError(error) && failureCount < 3,
+    retry: (failureCount, error) => !isRuntimeConfigInvalidError(error) && failureCount < 3,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
     placeholderData: () => {
-      const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
+      const sessions = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
       return sessions?.find((s) => s.id === sessionId);
     },
   });
 }
 
-export function useCreateOpenCodeSession() {
+export function useCreateRuntimeSession() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -113,7 +113,7 @@ export function useCreateOpenCodeSession() {
       // so it's reliably set before the create-then-navigate hop. Every create
       // path flows through this hook; resumes don't.
       markSessionFresh(session.id);
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
         if (!old) return [session];
         const idx = old.findIndex((s) => s.id === session.id);
         if (idx >= 0) {
@@ -123,7 +123,7 @@ export function useCreateOpenCodeSession() {
         }
         return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
       });
-      queryClient.setQueryData(opencodeKeys.runtimeSession(session.id), session);
+      queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
     },
   });
 }
@@ -141,21 +141,21 @@ export function useDeleteOpenCodeSession() {
     },
     onSuccess: (sessionId) => {
       // Surgically remove from cache — SSE session.deleted will also fire
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
         if (!old) return old;
         return old.filter((s) => s.id !== sessionId);
       });
       queryClient.removeQueries({
-        queryKey: opencodeKeys.runtimeSession(sessionId),
+        queryKey: runtimeKeys.runtimeSession(sessionId),
       });
       queryClient.removeQueries({
-        queryKey: opencodeKeys.runtimeMessages(sessionId),
+        queryKey: runtimeKeys.runtimeMessages(sessionId),
       });
     },
   });
 }
 
-export function useUpdateOpenCodeSession() {
+export function useUpdateRuntimeSession() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -181,7 +181,7 @@ export function useUpdateOpenCodeSession() {
     onSuccess: (updatedSession) => {
       // Surgically update cache — SSE session.updated will also fire
       const session = updatedSession as Session;
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
         if (!old) return old;
         const idx = old.findIndex((s) => s.id === session.id);
         if (idx < 0) return old;
@@ -189,14 +189,14 @@ export function useUpdateOpenCodeSession() {
         next[idx] = session;
         return next.sort((a, b) => b.time.updated - a.time.updated);
       });
-      queryClient.setQueryData(opencodeKeys.runtimeSession(session.id), session);
+      queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
     },
   });
 }
 
-export function useOpenCodeSessionDiff(sessionId: string) {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const canQuerySession = canQueryOpenCodeSession(sessionId);
+export function useRuntimeSessionDiff(sessionId: string) {
+  const runtimeReady = useRuntimeReady();
+  const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery({
     queryKey: ['opencode', 'session-diff', sessionId],
     queryFn: async () => {
@@ -209,9 +209,9 @@ export function useOpenCodeSessionDiff(sessionId: string) {
   });
 }
 
-export function useOpenCodeSessionTodo(sessionId: string) {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const canQuerySession = canQueryOpenCodeSession(sessionId);
+export function useRuntimeSessionTodo(sessionId: string) {
+  const runtimeReady = useRuntimeReady();
+  const canQuerySession = canQueryRuntimeSession(sessionId);
   return useQuery({
     queryKey: ['opencode', 'session-todo', sessionId],
     queryFn: async () => {
@@ -229,7 +229,7 @@ export function useOpenCodeSessionTodo(sessionId: string) {
 // Summarize Hook
 // ============================================================================
 
-export function useSummarizeOpenCodeSession() {
+export function useSummarizeRuntimeSession() {
   const queryClient = useQueryClient();
   const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
@@ -382,13 +382,29 @@ export function useInitSession() {
       // SSE events handle session updates. Just refetch messages for this session
       // since /init creates new messages.
       queryClient.refetchQueries({
-        queryKey: opencodeKeys.runtimeMessages(sessionId),
+        queryKey: runtimeKeys.runtimeMessages(sessionId),
       });
     },
     // Suppress global error handler — caller handles errors via onError callback
     onError: () => {},
-    // Same rationale as useExecuteOpenCodeCommand — /command blocks until done,
+    // Same rationale as useExecuteRuntimeCommand — /command blocks until done,
     // retrying on timeout would duplicate execution.
     retry: false,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeSessions`. Removed in the next major. */
+export const useOpenCodeSessions = useRuntimeSessions;
+/** @deprecated Renamed to `useRuntimeSession`. Removed in the next major. */
+export const useOpenCodeSession = useRuntimeSession;
+/** @deprecated Renamed to `useCreateRuntimeSession`. Removed in the next major. */
+export const useCreateOpenCodeSession = useCreateRuntimeSession;
+/** @deprecated Renamed to `useUpdateRuntimeSession`. Removed in the next major. */
+export const useUpdateOpenCodeSession = useUpdateRuntimeSession;
+/** @deprecated Renamed to `useRuntimeSessionDiff`. Removed in the next major. */
+export const useOpenCodeSessionDiff = useRuntimeSessionDiff;
+/** @deprecated Renamed to `useRuntimeSessionTodo`. Removed in the next major. */
+export const useOpenCodeSessionTodo = useRuntimeSessionTodo;
+/** @deprecated Renamed to `useSummarizeRuntimeSession`. Removed in the next major. */
+export const useSummarizeOpenCodeSession = useSummarizeRuntimeSession;

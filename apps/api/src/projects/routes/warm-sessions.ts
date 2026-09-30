@@ -7,9 +7,10 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser } from '../lib/access';
 import { canUseAnyAgent } from '../lib/agent-access';
@@ -18,6 +19,7 @@ import { normalizeString, requestAuditContext, serializeSession } from '../lib/s
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { createProjectSession } from '../lib/sessions';
+import { currentInstanceId } from '../instance-scope';
 import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
@@ -64,6 +66,11 @@ const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_MET
  * (`recordSessionActivity`), seconds after the client already consumed the
  * session client-side, so without this exclusion a replenish racing that gap
  * finds the just-taken row and hands it straight back as `reused: true`.
+ *
+ * Skips a session whose sandbox ANOTHER API instance provisioned (shared local
+ * DB, projects/instance-scope.ts). The first prompt becomes a lifecycle command,
+ * and `claimDueLifecycleCommands` refuses that sandbox with the same predicate,
+ * so the prompt would stay queued for ever. No-op when no instance id is set.
  */
 export async function findWarmProjectSession(scope: {
   accountId: string;
@@ -71,6 +78,7 @@ export async function findWarmProjectSession(scope: {
   userId: string;
   excludeSessionId?: string | null;
 }) {
+  const instanceId = currentInstanceId();
   const [row] = await db
     .select()
     .from(projectSessions)
@@ -82,6 +90,13 @@ export async function findWarmProjectSession(scope: {
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         WARM_SESSION_MARKER,
         sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+        instanceId
+          ? sql`NOT EXISTS (
+              SELECT 1 FROM ${sessionSandboxes} AS box
+              WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+                AND COALESCE(box.metadata->>'instanceId', '') NOT IN ('', ${instanceId})
+            )`
+          : undefined,
         ...(scope.excludeSessionId ? [ne(projectSessions.sessionId, scope.excludeSessionId)] : []),
       ),
     )

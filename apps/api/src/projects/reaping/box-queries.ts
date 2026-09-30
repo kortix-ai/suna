@@ -48,12 +48,7 @@ export function reapCandidatePredicate(sandboxIds?: readonly string[], activeTur
 
 /** Durable turn authority that must receive provider-native renewal service. */
 export function activeTurnAuthorityPredicate() {
-  return sql`(
-    (
-      coalesce(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurn'->>'token', '') <> ''
-      AND coalesce(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurn'->>'state', '') IN ('delivering', 'active')
-    )
-    OR EXISTS (
+  return sql`EXISTS (
       SELECT 1
         FROM jsonb_each(CASE
           WHEN jsonb_typeof(${qualifiedColumn(sessionSandboxes.metadata)}->'activeTurns') = 'object'
@@ -61,8 +56,7 @@ export function activeTurnAuthorityPredicate() {
           ELSE '{}'::jsonb
         END) entry
        WHERE entry.key = entry.value->>'token'
-         AND entry.value->>'state' IN ('delivering', 'active'))
-  )`;
+         AND entry.value->>'state' IN ('delivering', 'active'))`;
 }
 
 /**
@@ -178,9 +172,6 @@ export async function claimExpiredSandboxStop(
         eq(sessionSandboxes.status, 'active'),
         lte(sessionSandboxes.deadlineAt, now),
         noLiveStopClaim(now),
-        sql`NOT (
-          coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'token', '') <> ''
-          AND coalesce(${sessionSandboxes.metadata}->'activeTurn'->>'state', '') IN ('delivering', 'active'))`,
         sql`NOT EXISTS (
               SELECT 1
                 FROM jsonb_each(CASE

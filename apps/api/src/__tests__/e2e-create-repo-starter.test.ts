@@ -104,6 +104,12 @@ const MANAGED_GIT_ENV_KEYS = [
 ] as const;
 for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
 
+// Characterization: every `assertAuthorized` a route performs is recorded
+// here, and `deniedIamAction` turns one action into a 403, so a test can pin
+// two routes to the same account authorization gate.
+const assertedIamActions: string[] = [];
+let deniedIamAction: string | null = null;
+
 function resetState() {
   setTestAuth();
   for (const k of MANAGED_GIT_ENV_KEYS) delete process.env[k];
@@ -120,6 +126,8 @@ function resetState() {
   installationRepoListCalls = [];
   platformAdmin = false;
   selfHostOperator = false;
+  assertedIamActions.length = 0;
+  deniedIamAction = null;
   installationRows = [
     {
       installationRowId: '00000000-0000-4000-a000-000000000041',
@@ -136,7 +144,12 @@ function resetState() {
   ];
 }
 
-mockIamEngineAllowAll();
+mockIamEngineAllowAll((action) => {
+  assertedIamActions.push(action);
+  if (action === deniedIamAction) {
+    throw new HTTPException(403, { message: `Denied ${action}` });
+  }
+});
 
 // The hermetic db shim models the legacy tables; the read models project from
 // those rows rather than from `role_assignments`. See mockIamReadModels.
@@ -656,6 +669,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { projectsApp } = await import('../projects/index');
+const { ACCOUNT_ACTIONS } = await import('../iam');
 const { buildStarterFiles } = await import('../projects/starter');
 
 function createApp() {
@@ -834,6 +848,54 @@ describe('create-repo starter scaffold contract', () => {
       requires_installation: true,
       install_url: 'https://github.com/apps/kortix-test/installations/new',
     });
+  });
+
+  test('both account installation GET routes serve the same metadata behind the same authorization', async () => {
+    const app = createApp();
+
+    let mark = assertedIamActions.length;
+    const singular = await app.request(
+      `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+    );
+    const singularActions = assertedIamActions.slice(mark);
+    mark = assertedIamActions.length;
+    const plural = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
+    const pluralActions = assertedIamActions.slice(mark);
+
+    expect(singular.status).toBe(200);
+    expect(plural.status).toBe(200);
+    const singularBody = await singular.json();
+    expect(singularBody).toMatchObject({
+      account_id: ACCOUNT_ID,
+      installed: true,
+      configured: true,
+      installation_id: '42',
+      owner_login: 'kortix-org',
+      install_url: 'https://github.com/apps/kortix-test/installations/new',
+    });
+    // One account-scoped payload, identical from both paths.
+    expect(await plural.json()).toEqual(singularBody);
+    // Both routes assert the same account action, exactly once each.
+    expect(singularActions).toEqual([ACCOUNT_ACTIONS.PROJECT_CREATE]);
+    expect(pluralActions).toEqual(singularActions);
+
+    // Refusing that action refuses both paths the same way.
+    deniedIamAction = ACCOUNT_ACTIONS.PROJECT_CREATE;
+    try {
+      const deniedSingular = await app.request(
+        `/v1/projects/github/installation?account_id=${ACCOUNT_ID}`,
+      );
+      const deniedPlural = await app.request(
+        `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+      );
+      expect(deniedSingular.status).toBe(403);
+      expect(deniedPlural.status).toBe(403);
+      expect(await deniedPlural.json()).toEqual(await deniedSingular.json());
+    } finally {
+      deniedIamAction = null;
+    }
   });
 
   test('lists multiple GitHub installations and imports from the selected one', async () => {

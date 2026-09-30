@@ -27,6 +27,7 @@ import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { resolvePreviewWsUpstream } from './routes/preview';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
+import { healthRuntimePort } from '@kortix/api-contract/runtime-relay';
 import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
 
@@ -65,12 +66,11 @@ async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
       signal: AbortSignal.timeout(2_000),
     });
     if (!res.ok) return OPENCODE_FALLBACK_PORT;
-    const body = (await res.json().catch(() => null)) as { opencode_port?: unknown } | null;
-    const port = body?.opencode_port;
+    const port = healthRuntimePort((await res.json().catch(() => null)) as Record<string, unknown> | null);
     // Must be one of the pair. A daemon reporting anything else is either
     // misconfigured or not the daemon, and following it blindly would let a
     // response body redirect the PTY at an arbitrary port inside the sandbox.
-    return typeof port === 'number' && Number.isInteger(port) && isOpencodePort(port)
+    return port !== null && isOpencodePort(port)
       ? port
       : OPENCODE_FALLBACK_PORT;
   } catch {

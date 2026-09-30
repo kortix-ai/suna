@@ -82,6 +82,9 @@ export interface SessionTranscriptDigest {
   complete: boolean;
   /** When the mirror was last written. Null for a live read. */
   captured_at: string | null;
+  /** The runtime session this transcript belongs to. */
+  runtime_session_id: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   message_count: number;
   messages: CompactMessage[];
@@ -97,6 +100,9 @@ export interface SessionTranscriptSyncEnvelope {
   source: SessionTranscriptSource;
   complete: boolean;
   captured_at: string | null;
+  /** The runtime session this transcript belongs to. */
+  runtime_session_id: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: string | null;
   /** Messages in THIS window. */
   message_count: number;
@@ -120,6 +126,11 @@ export interface SessionTranscriptDeps {
     /** A sub-agent's OpenCode session; null reads the root. */
     opencodeSessionId?: string | null,
   ) => Promise<MirrorSnapshot | null>;
+}
+
+/** The runtime session id under its neutral name and its pre-W4 name. */
+function runtimeSessionPin(id: string | null) {
+  return { runtime_session_id: id, opencode_session_id: id };
 }
 
 export async function buildSessionTranscriptDigest(
@@ -173,7 +184,7 @@ export async function buildSessionTranscriptDigest(
         source: 'mirror',
         complete: mirrorIsComplete(mirror),
         captured_at: mirror.captured_at,
-        opencode_session_id: mirror.opencode_session_id ?? opencodeSessionId,
+        ...runtimeSessionPin(mirror.opencode_session_id ?? opencodeSessionId),
         message_count: mirror.messages.length,
         messages: mirror.messages.map((m) =>
           compactMessage({ info: m.info as never, parts: m.parts as never }, maxChars, full),
@@ -186,7 +197,7 @@ export async function buildSessionTranscriptDigest(
       source: 'none',
       complete: false,
       captured_at: null,
-      opencode_session_id: opencodeSessionId,
+      ...runtimeSessionPin(opencodeSessionId),
       message_count: 0,
       messages: [],
     };
@@ -195,13 +206,13 @@ export async function buildSessionTranscriptDigest(
   if (session.status !== 'running') {
     return degrade(
       `session is ${session.status}; live transcript requires a running sandbox`,
-      session.opencodeSessionId,
+      session.runtimeSessionId,
     );
   }
 
   const externalId = await resolveSessionExternalId({ session, projectId, accountId });
   if (!externalId) {
-    return degrade('session has no reachable sandbox external id yet', session.opencodeSessionId);
+    return degrade('session has no reachable sandbox external id yet', session.runtimeSessionId);
   }
 
   // ONE endpoint resolution serves the pin check and the message fetch — it
@@ -225,10 +236,10 @@ export async function buildSessionTranscriptDigest(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return degrade(`could not reach sandbox: ${message}`, session.opencodeSessionId);
+    return degrade(`could not reach sandbox: ${message}`, session.runtimeSessionId);
   }
   if (!endpoint) {
-    return degrade('sandbox service key unavailable', session.opencodeSessionId);
+    return degrade('sandbox service key unavailable', session.runtimeSessionId);
   }
 
   const ensured = await ensureOpencodeSessionPin({
@@ -237,7 +248,7 @@ export async function buildSessionTranscriptDigest(
     accountId,
     externalId,
     userId,
-    currentPin: session.opencodeSessionId,
+    currentPin: session.runtimeSessionId,
     endpoint,
   });
   const opencodeSessionId = ensured.pin;
@@ -268,7 +279,7 @@ export async function buildSessionTranscriptDigest(
       // Fewer than the window asked for means the box had nothing older.
       complete: rawMessages.length < limit,
       captured_at: null,
-      opencode_session_id: opencodeSessionId,
+      ...runtimeSessionPin(opencodeSessionId),
       message_count: rawMessages.length,
       messages: rawMessages.map((m) => compactMessage(m, maxChars, full)),
     };
@@ -307,7 +318,7 @@ export async function buildSessionTranscriptSyncEnvelope(
   const mirror = read ? boundMirrorWindow(read, MIRROR_WINDOW_MAX_CHARS) : null;
   const mirrorRoot = mirror?.root_opencode_session_id ?? mirror?.opencode_session_id;
   const rootMismatch = input.requireCurrentRoot && (
-    !input.session.opencodeSessionId || mirrorRoot !== input.session.opencodeSessionId
+    !input.session.runtimeSessionId || mirrorRoot !== input.session.runtimeSessionId
   );
   if (!mirror || rootMismatch) {
     return {
@@ -316,7 +327,7 @@ export async function buildSessionTranscriptSyncEnvelope(
       source: 'none',
       complete: false,
       captured_at: null,
-      opencode_session_id: input.child ?? input.session.opencodeSessionId,
+      ...runtimeSessionPin(input.child ?? input.session.runtimeSessionId),
       message_count: 0,
       total: 0,
       next_cursor: null,
@@ -329,7 +340,7 @@ export async function buildSessionTranscriptSyncEnvelope(
     source: 'mirror',
     complete: mirrorIsComplete(mirror),
     captured_at: mirror.captured_at,
-    opencode_session_id: mirror.opencode_session_id ?? input.session.opencodeSessionId,
+    ...runtimeSessionPin(mirror.opencode_session_id ?? input.session.runtimeSessionId),
     message_count: mirror.messages.length,
     total: mirror.total,
     next_cursor: mirror.next_cursor,

@@ -10,7 +10,7 @@
  * the gateway relays through the shared tunnel RPC core
  * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
-import { connectorActions, connectorConnections, connectors } from '@kortix/db';
+import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
@@ -361,6 +361,11 @@ export function uniqueComputerLabel(name: string, taken: ReadonlySet<string>): s
  *
  * Attaches to one connector serialize on its row lock, so two concurrent
  * approvals for the same owner cannot both pin a default or pick one label.
+ *
+ * Null when the machine is gone: unpaired before this attach, or while it
+ * waited. The key-share lock makes a concurrent unpair wait for this
+ * transaction; without it the unpair commits first and the account's
+ * `tunnel_id` fails its foreign key (Postgres 23503, a 500 on every caller).
  */
 export async function attachComputerConnection(
   tx: Tx,
@@ -375,7 +380,7 @@ export async function attachComputerConnection(
     name: string;
     createdBy: string;
   },
-): Promise<{ connection: ConnectionRow; created: boolean }> {
+): Promise<{ connection: ConnectionRow; created: boolean } | null> {
   const owner = and(
     eq(connectorConnections.connectorId, input.connectorId),
     eq(connectorConnections.ownerType, input.ownerType),
@@ -388,6 +393,12 @@ export async function attachComputerConnection(
     .from(connectors)
     .where(eq(connectors.connectorId, input.connectorId))
     .for('update');
+  const [machine] = await tx
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, input.tunnelId))
+    .for('key share');
+  if (!machine) return null;
   const rows = await tx.select().from(connectorConnections).where(owner);
   const hasDefault = rows.some((row) => row.isDefault);
   const reactivate = async (row: ConnectionRow) => {

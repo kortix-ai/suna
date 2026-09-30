@@ -62,7 +62,7 @@ export function writePublicCatalogs() {
  * The hashed files above are fixed for the life of the process — the hashes
  * are inlined into the client bundle once, when next.config.ts loads. A key
  * added while `next dev` ran therefore rendered as its raw path
- * (`projectSelector.nameAccountTitle`) until the server restarted, and every
+ * (`projectSelector.createTitle`) until the server restarted, and every
  * i18n change paid for a restart. Returning no versions makes `catalogHref`
  * request the unhashed URL; a browser reload then fetches the current file.
  * Dev serves `public/` with `max-age=0` — the immutable header is prod-only.

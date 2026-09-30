@@ -119,8 +119,6 @@ export async function buildSessionSandboxEnvVars(input: {
   gitDeltaParentCommitBase64?: string;
   /** The delta exceeds the env cap; the daemon downloads it with one GET. */
   gitDeltaBundleRemote?: boolean;
-  /** OpenCode config dir at `baseSha`; lets the daemon spawn OpenCode pre-checkout. */
-  opencodeConfigDir?: string | null;
   /** S3 config provider mode + prepared-archive pin — see session-runtime-env.ts. */
   projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
   projectSnapshotPin?: string | null;
@@ -418,7 +416,6 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentSha: input.gitDeltaParentSha,
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
-      opencodeConfigDir: input.opencodeConfigDir,
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
       projectSnapshotDescriptor: input.projectSnapshotDescriptor,

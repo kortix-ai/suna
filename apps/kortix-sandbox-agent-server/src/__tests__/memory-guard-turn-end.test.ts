@@ -185,7 +185,7 @@ describe('memory guard turn end', () => {
       session_id: 'sess-1',
       kind: 'end',
       status: 'error',
-      opencode_session_id: ROOT,
+      runtime_session_id: ROOT,
       error_name: 'SandboxMemoryGuard',
     })
     expect(String(end.error_message)).toContain('sandbox memory at 97%')

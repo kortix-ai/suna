@@ -69,12 +69,12 @@ Four neutral steps. Pick by depth, not by taste.
 
 | Role | Token | Light | Dark | Use |
 | --- | --- | --- | --- | --- |
-| canvas | `bg-background` | `#ffffff` | `#090909` | The page itself |
+| canvas | `bg-background` | `#ffffff` | `#0b0b0b` | The page itself |
 | surface | `bg-surface` | `#fcfcfc` | `#141414` | Full-bleed shell pane — a full-screen modal or settings shell that replaces the page |
 | surface-1 | `bg-card` / `bg-accent` / `bg-sidebar` | `#f4f4f4` | `#141414` | Lifted region, sidebar, hover surface |
-| surface-2 | `bg-secondary` / `bg-muted` / `bg-input` | `#ececec` | `#1c1c1c` | Inset controls, input wells, chips |
+| surface-2 | `bg-secondary` / `bg-muted` / `bg-input` | `#ededed` | `#1c1c1c` | Inset controls, input wells, chips |
 | top surface | `bg-popover` | `#ffffff` | `#141414` | **Panels, rows, overlays** — the default panel fill |
-| ink | `text-foreground` | `#000000` | `#ffffff` | Primary text |
+| ink | `text-foreground` | `#1f1f1f` | `#ffffff` | Primary text |
 | ink-muted | `text-muted-foreground` | `#666666` | `#999999` | Descriptions, meta, idle state |
 | hairline | `border-border` | `#e2e2e2` | `#262626` | Every border. There is one border color. |
 

@@ -78,6 +78,8 @@ export interface SessionListFilter {
   startedBy?: SessionStartedByFilter | null;
   /** Trimmed, 1..200 chars. Case-insensitive substring. */
   q?: string | null;
+  /** The session carries every one of these labels (exact match). */
+  labels?: string[] | null;
 }
 
 type SessionTable = typeof projectSessions;
@@ -107,6 +109,7 @@ function searchMatchSql(t: SessionTable, q: string): SQL {
               or owner_users.raw_user_meta_data->>'name' ilike ${pattern})
     )
     or ${t.sessionId} ilike ${`${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`}
+    or exists (select 1 from jsonb_array_elements_text(${t.labels}) as l(label) where l.label ilike ${pattern})
     or exists (
       select 1 from jsonb_array_elements(
         case when jsonb_typeof(${t.metadata}->'opencode_sessions') = 'array'
@@ -138,6 +141,19 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
+  if (filter.labels?.length) {
+    const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
+    conditions.push(
+      filter.parent === 'root'
+        ? sql`(${has(t)} or exists (
+            select 1 from ${projectSessions} as child_sessions
+             where ${childSessions.parentSessionId} = ${t.sessionId}
+               and ${childSessions.projectId} = ${t.projectId}
+               and ${has(childSessions as unknown as SessionTable)}
+          ))`
+        : has(t),
+    );
+  }
   if (filter.q) {
     conditions.push(
       filter.parent === 'root'
@@ -162,6 +178,7 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
   if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
+  if ((row.labels ?? []).some(hit)) return true;
   const snapshot = Array.isArray(meta.opencode_sessions) ? meta.opencode_sessions : [];
   return snapshot.some((entry) => hit((entry as Record<string, unknown> | null)?.title));
 }
@@ -227,8 +244,13 @@ export async function loadProjectSessionInventory(input: {
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q
-        ? JSON.stringify([filter.parent ?? null, filter.startedBy ?? null, filter.q ?? null])
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length
+        ? JSON.stringify([
+            filter.parent ?? null,
+            filter.startedBy ?? null,
+            filter.q ?? null,
+            ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
+          ])
         : undefined,
   };
   const sortAt = input.orderByActivity
@@ -433,8 +455,11 @@ export async function loadProjectSessionInventory(input: {
   // page can serve one again; clients de-duplicate by `session_id`.
   const served = new Set(items.map((item) => item.row.sessionId));
   // A `parent`-filtered read is already a tree level: roots have no parent to
-  // append, and children are read under the parent the client expanded.
-  for (let depth = 0; !filter.parent && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
+  // append, and children are read under the parent the client expanded. A
+  // label filter promises only rows carrying every label, so it gets no
+  // unlabeled ancestors either.
+  const appendAncestors = !filter.parent && !filter.labels?.length;
+  for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
         items
