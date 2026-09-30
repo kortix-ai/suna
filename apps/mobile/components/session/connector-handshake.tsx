@@ -119,12 +119,13 @@ export function ConnectorHandshake({ name, iconUrl }: Pick<ConnectorAppMarkProps
       style={{ gap: 12 }}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants">
+      {/* The app's own surface with the mark in ink, edged like the app tile
+          beside it (Jay, 2026-09-30: not the inverted black tile).
+          `KortixLogo color` names the theme it is drawn for. */}
       <View
-        className="items-center justify-center bg-foreground"
+        className="items-center justify-center border border-border bg-background"
         style={{ width: TILE, height: TILE, borderRadius: TILE_RADIUS }}>
-        {/* Inverted-fill tile: `foreground` swaps per theme, so the symbol
-            swaps the other way. `KortixLogo` has no token colour. */}
-        <KortixLogo size={24} color={isDark ? 'light' : 'dark'} />
+        <KortixLogo size={24} color={isDark ? 'dark' : 'light'} />
       </View>
       {/* One SVG, as on web: five dots on one centre line at any scale. */}
       <Svg width={36} height={9} viewBox="0 0 24 6">

@@ -66,7 +66,8 @@ const MONO = { unitsPerEm: 1000, ascent: 1018, descent: 246, advance: 630 } as c
 const CHIP_FONT_SIZE = 12.8;
 const CHIP_LINE_HEIGHT = 15;
 const CHIP_PADDING_Y = 1;
-const CHIP_BORDER = 1;
+/** Half of web's 1px `border`: one device pixel at 2x (Jay, 2026-09-30). */
+const CHIP_BORDER = 0.5;
 /** Glyph content box of the code font at the chip size: 16.18px (taller than the 15px line). */
 const CHIP_CONTENT = ((MONO.ascent + MONO.descent) / MONO.unitsPerEm) * CHIP_FONT_SIZE;
 /** Chip text baseline above the bottom of its 15px line: half-leading (-0.59) + descent (3.15) = 2.56px. */
@@ -88,11 +89,11 @@ export const INLINE_CODE = {
   /** `py-[0.08rem]` = 1.28px, rounded to 1 to keep the chip inside a 20px table line. */
   paddingY: CHIP_PADDING_Y,
   borderWidth: CHIP_BORDER,
-  /** 15 + 2 × 1 + 2 × 1 = 19px. */
+  /** 15 + 2 × 1 + 2 × 0.5 = 18px. */
   height: CHIP_LINE_HEIGHT + 2 * CHIP_PADDING_Y + 2 * CHIP_BORDER,
   /** Chip text baseline above the bottom of the chip's 15px text line: 2.56px. */
   textBaselineFromBottom: CHIP_TEXT_BASELINE,
-  /** Chip text baseline above the chip's bottom border edge: 2.56 + 1 + 1 = 4.56px. */
+  /** Chip text baseline above the chip's bottom border edge: 2.56 + 1 + 0.5 = 4.06px. */
   chipBaselineFromBottom: CHIP_TEXT_BASELINE + CHIP_PADDING_Y + CHIP_BORDER,
   /** One code character, px: Roobert Mono advance 8.06 + tracking -0.32 = 7.74. */
   charWidth: (MONO.advance / MONO.unitsPerEm) * CHIP_FONT_SIZE - 0.32,
@@ -113,7 +114,7 @@ const IOS_ATTACHMENT_DESCENDER = 2.76;
 /**
  * Where the inline code view goes in its line.
  *
- * The inline view is the WHOLE chip (`height`, 19px at 1x text size). An
+ * The inline view is the WHOLE chip (`height`, 18px at 1x text size). An
  * earlier version made the view only the part above the chip's text baseline
  * and let the rest hang out of its bottom; Android clips children to their
  * parent's bounds, so the bottom 5.07px (Menlo metrics) disappeared (about 70% of the chip
@@ -123,14 +124,14 @@ const IOS_ATTACHMENT_DESCENDER = 2.76;
  * baseline. Where each platform puts the view's bottom edge:
  * - Android: on the line baseline (`TextLayoutManager.kt`:
  *   `getLineBaseline(line) - placeholderHeight`). Shift down by the chip's own
- *   baseline offset (4.56px). The paragraph's fixed line height leaves room
+ *   baseline offset (4.06px). The paragraph's fixed line height leaves room
  *   below the baseline (body: 24.38px line, about 5.9px below the baseline).
  * - iOS: `RCTTextLayoutManager.mm` sets the bottom to the line fragment's
  *   bottom plus the fragment font's descender. The glyph rect of an
  *   attachment is the whole line fragment, and the font is Helvetica 12.
  *   That bottom sits `Roobert descent + half-leading - 2.76` above the line
  *   baseline, so the shift is the chip baseline offset minus that drop:
- *   +0.50px in body text, +2.72px in table cells.
+ *   0.00px in body text, +2.22px in table cells.
  */
 export function inlineCodeAnchor(
   os: string,
