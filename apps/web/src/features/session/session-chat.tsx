@@ -65,6 +65,7 @@ import {
   queuedBubbleTone,
   type QueuedPromptState,
   QueuedPromptFailure,
+  QueuedPromptProgress,
   type QueuedPromptStatusState,
 } from './turn/queued-prompt-bubbles';
 import { ShowGroupRenderer } from './tool/show-group-renderer';
@@ -1723,6 +1724,8 @@ function SessionTurnImpl({
                       : undefined
                   }
                 />
+              ) : queuedStatus === 'sending' || queuedStatus === 'queued' || queuedStatus === 'interrupted' ? (
+                <QueuedPromptProgress state={queuedStatus} />
               ) : undefined
             }
           />
