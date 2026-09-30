@@ -49,7 +49,6 @@ import {
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { SessionParticipantStack } from '@/components/session/SessionParticipantStack';
-import { otherSender } from '@/lib/session/participants';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
 import { useComposerModels, useProjectDetail, useSessionParticipants } from '@/lib/projects/hooks';
@@ -76,6 +75,7 @@ import {
   retrySessionPrompt,
   type SessionPrompt,
   resolveWorkingTurn,
+  sessionMessageSender,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
 import { promptParts } from '@/lib/session/prompt-parts';
@@ -1726,7 +1726,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
-            sender={otherSender(participants, id)}
+            sender={sessionMessageSender(participants, id)}
           />
           )}
         </View>

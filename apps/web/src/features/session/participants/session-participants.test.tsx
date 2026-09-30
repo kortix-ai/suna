@@ -9,7 +9,6 @@ import enMessages from '../../../../translations/en.json';
 import {
   MessageSenderBeside,
   SessionParticipantStack,
-  otherSender,
   participantLabel,
 } from './session-participants';
 
@@ -42,33 +41,23 @@ const render = (node: React.ReactNode) =>
   );
 
 describe('participantLabel', () => {
-  test('the viewer is "You"; others are their name, else the email local part', () => {
-    expect(participantLabel(OWNER, 'You')).toBe('You');
-    expect(participantLabel(person('a', { name: 'Ada Lovelace' }), 'You')).toBe('Ada Lovelace');
-    expect(participantLabel(MEMBER, 'You')).toBe('member');
-    expect(participantLabel(person('b', { email: null }), 'You')).toBe('');
-  });
-});
-
-describe('otherSender', () => {
-  const shared = view({ senders: { mine: 'owner', theirs: 'member' }, sender_profiles: [OWNER, MEMBER] });
-
-  test("another person's message resolves to them; the viewer's own resolves to nobody", () => {
-    expect(otherSender(shared, 'theirs')).toEqual(MEMBER);
-    expect(otherSender(shared, 'mine')).toBeNull();
-    expect(otherSender(shared, 'unknown')).toBeNull();
-    expect(otherSender({ ...shared, multi_user: false }, 'theirs')).toBeNull();
+  test('the display name, else the email local part, the viewer included', () => {
+    expect(participantLabel(OWNER)).toBe('Owner Name');
+    expect(participantLabel(person('a', { name: 'Ada Lovelace' }))).toBe('Ada Lovelace');
+    expect(participantLabel(MEMBER)).toBe('member');
+    expect(participantLabel(person('b', { email: null }))).toBe('');
   });
 });
 
 describe('MessageSenderBeside', () => {
-  test('puts a round avatar beside the message, with no visible name', () => {
+  test('puts the sender avatar beside the message, with no visible name', () => {
     const markup = render(
       <MessageSenderBeside sender={MEMBER}>
         <p>hello</p>
       </MessageSenderBeside>,
     );
-    expect(markup).toContain('rounded-full');
+    expect(markup).toContain('rounded-sm');
+    expect(markup).not.toContain('rounded-full');
     expect(markup.indexOf('data-slot="avatar"')).toBeGreaterThan(markup.indexOf('hello'));
     // The name is for screen readers only.
     expect(markup).toContain('<span class="sr-only">Sent by member</span>');
@@ -91,14 +80,14 @@ describe('SessionParticipantStack', () => {
     expect(stack(view({ total: 1, participants: [OWNER] }))).toBe('');
   });
 
-  test('two people: two round avatars, no count, and a name for the button', () => {
+  test('two people: two avatars, no count, and a label for the stack', () => {
     const markup = stack(view());
     expect(avatars(markup)).toBe(2);
-    expect(markup).toContain('rounded-full');
+    expect(markup).not.toContain('rounded-full');
     expect(markup).not.toContain('data-slot="avatar-group-count"');
     // A hover card only: no button, nothing to click.
     expect(markup).not.toContain('<button');
-    expect(markup).toContain('aria-label="People in this session: You, member"');
+    expect(markup).toContain('aria-label="People in this session: Owner Name, member"');
   });
 
   test('more than three people: three avatars and the rest as a count', () => {
@@ -106,6 +95,6 @@ describe('SessionParticipantStack', () => {
     const markup = stack(view({ participants, total: 7 }));
     expect(avatars(markup)).toBe(3);
     expect(markup).toContain('+4');
-    expect(markup).toContain('aria-label="People in this session: You, member, c and 4 more"');
+    expect(markup).toContain('aria-label="People in this session: Owner Name, member, c and 4 more"');
   });
 });

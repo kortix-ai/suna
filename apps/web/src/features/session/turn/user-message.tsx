@@ -1123,8 +1123,8 @@ export function UserMessage({
   /** See `UserMessageActions.leadingStatus`. */
   leadingStatus?: React.ReactNode;
   /**
-   * Another person who sent this message, in a shared session. Drawn as their
-   * avatar beside the bubble. Null for the viewer's own messages.
+   * Who sent this message, in a shared session, the viewer included. Drawn
+   * as their avatar beside the bubble. Null when no sender is recorded.
    */
   sender?: SessionParticipant | null;
   /**

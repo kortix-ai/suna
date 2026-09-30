@@ -95,6 +95,8 @@ export interface ComposerToolbarProps {
   rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void };
   /** Rendered FIRST in the left cluster, before the model selector. */
   leading?: React.ReactNode;
+  /** Rendered directly before send/stop, after `toolbarSlot`. */
+  beforeSend?: React.ReactNode;
 
   isSending: boolean;
   isBusy: boolean;
@@ -137,6 +139,7 @@ export function ComposerToolbar({
   toolbarSlot,
   rewind,
   leading,
+  beforeSend,
   isSending,
   isBusy,
   onStop,
@@ -222,6 +225,8 @@ export function ComposerToolbar({
         )}
 
         {toolbarSlot}
+
+        {beforeSend}
 
         <SendStopControl
           isSending={isSending}

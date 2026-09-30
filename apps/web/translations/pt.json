@@ -20282,7 +20282,6 @@
   },
   "sessionParticipants": {
     "title": "Pessoas",
-    "you": "Você",
     "sentBy": "Enviado por {name}",
     "people": "Pessoas nesta sessão: {names}",
     "peopleMore": "Pessoas nesta sessão: {names} e mais {count}"

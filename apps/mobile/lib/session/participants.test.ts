@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { SessionParticipant, SessionParticipants } from '@kortix/sdk';
 
-import { otherSender, participantAvatarText, participantName, participantStack } from './participants';
+import {
+  participantAvatarText,
+  participantInitials,
+  participantName,
+  participantStack,
+} from './participants';
 
 const person = (id: string, overrides: Partial<SessionParticipant> = {}): SessionParticipant => ({
   user_id: id,
@@ -25,8 +30,8 @@ const view = (overrides: Partial<SessionParticipants> = {}): SessionParticipants
 });
 
 describe('participantName', () => {
-  test('the viewer is "You"; others are their name, else the email local part', () => {
-    expect(participantName(OWNER)).toBe('You');
+  test('the display name, else the email local part, the viewer included', () => {
+    expect(participantName(OWNER)).toBe('Owner Name');
     expect(participantName(person('a', { name: ' Ada Lovelace ' }))).toBe('Ada Lovelace');
     expect(participantName(MEMBER)).toBe('member');
     expect(participantName(person('b', { email: null }))).toBe('');
@@ -38,18 +43,6 @@ describe('participantAvatarText', () => {
     expect(participantAvatarText(OWNER)).toBe('Owner Name');
     expect(participantAvatarText(MEMBER)).toBe('member@example.test');
     expect(participantAvatarText(person('b', { email: null }))).toBeUndefined();
-  });
-});
-
-describe('otherSender', () => {
-  const shared = view({ senders: { mine: 'owner', theirs: 'member' }, sender_profiles: [OWNER, MEMBER] });
-
-  test("another person's message resolves to them; the viewer's own to nobody", () => {
-    expect(otherSender(shared, 'theirs')).toEqual(MEMBER);
-    expect(otherSender(shared, 'mine')).toBeNull();
-    expect(otherSender(shared, 'unknown')).toBeNull();
-    expect(otherSender({ ...shared, multi_user: false }, 'theirs')).toBeNull();
-    expect(otherSender(undefined, 'theirs')).toBeNull();
   });
 });
 
@@ -65,7 +58,7 @@ describe('participantStack', () => {
     expect(participantStack(view(), 2)).toEqual({
       shown: [OWNER, MEMBER],
       more: 0,
-      label: 'People in this session: You, member',
+      label: 'People in this session: Owner Name, member',
     });
   });
 
@@ -73,6 +66,23 @@ describe('participantStack', () => {
     const stack = participantStack(view({ participants: [OWNER, MEMBER, person('c')], total: 7 }), 2);
     expect(stack?.shown).toEqual([OWNER, MEMBER]);
     expect(stack?.more).toBe(5);
-    expect(stack?.label).toBe('People in this session: You, member and 5 more');
+    expect(stack?.label).toBe('People in this session: Owner Name, member and 5 more');
+  });
+});
+
+describe('participantInitials', () => {
+  test('first and last word of the name, like web UserAvatar', () => {
+    expect(participantInitials(person('a', { name: 'Maya Chen' }))).toBe('MC');
+    expect(participantInitials(person('a', { name: ' ada  de la lovelace ' }))).toBe('AL');
+    expect(participantInitials(person('a', { name: 'Maya' }))).toBe('M');
+  });
+
+  test('without a name, the email local part split on . _ -', () => {
+    expect(participantInitials(person('a', { email: 'maya.chen@example.test' }))).toBe('MC');
+    expect(participantInitials(person('a', { email: 'maya@example.test' }))).toBe('M');
+  });
+
+  test('nothing to read gives ?', () => {
+    expect(participantInitials(person('a', { email: null }))).toBe('?');
   });
 });

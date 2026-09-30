@@ -33,6 +33,7 @@ function render(
   toolbarSlot?: React.ReactNode,
   rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void },
   send?: { agentUnavailable?: boolean; canSubmit?: boolean; submitDisabled?: boolean },
+  beforeSend?: React.ReactNode,
 ): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
@@ -48,6 +49,7 @@ function render(
             selectedVariant={null}
             projectId={undefined}
             toolbarSlot={toolbarSlot}
+            beforeSend={beforeSend}
             rewind={rewind}
             isSending={false}
             isBusy={false}
@@ -78,6 +80,18 @@ describe('ComposerToolbar toolbarSlot', () => {
   test('renders nothing extra without a slot', () => {
     const html = render(undefined);
     expect(html).not.toContain('slot-sentinel-content');
+  });
+});
+
+describe('ComposerToolbar beforeSend', () => {
+  test('renders between the slot and the send button', () => {
+    const html = render(<span>slot-sentinel</span>, undefined, undefined, <span>mic-sentinel</span>);
+    const slot = html.indexOf('slot-sentinel');
+    const mic = html.indexOf('mic-sentinel');
+    const send = html.indexOf('Send message');
+    expect(slot).toBeGreaterThan(-1);
+    expect(mic).toBeGreaterThan(slot);
+    expect(send).toBeGreaterThan(mic);
   });
 });
 

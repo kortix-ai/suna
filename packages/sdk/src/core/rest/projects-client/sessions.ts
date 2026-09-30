@@ -111,6 +111,8 @@ export interface ProjectSession {
   search_match?: 'self' | 'child';
   owner_email?: string | null;
   owner_name?: string | null;
+  /** The owner's profile photo URL, or null. */
+  owner_avatar_url?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
   /** How the session was started — a policy class derived from the caller's

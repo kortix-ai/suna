@@ -1070,6 +1070,7 @@ export const ProjectSessionSchema = z.object({
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
+  owner_avatar_url: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */

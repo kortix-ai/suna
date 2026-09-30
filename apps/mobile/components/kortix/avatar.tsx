@@ -1,4 +1,4 @@
-import { Avatar as AvatarRoot, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar as AvatarRoot, AvatarFallback } from '@/components/ui/avatar';
 import { Icon } from '@/components/ui/icon';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { getIconFromName } from '@/lib/utils/icon-mapping';
@@ -45,12 +45,6 @@ interface AvatarProps extends ViewProps {
    * `EntityAvatar` gives the same name. Draws a 1px border, like web.
    */
   chalk?: boolean;
-
-  /**
-   * A person's profile picture. Drawn over the fallback once it loads; the
-   * fallback letter stays while it loads or when it fails.
-   */
-  imageUrl?: string | null;
 }
 
 /**
@@ -63,9 +57,10 @@ interface AvatarProps extends ViewProps {
  * - Triggers (automation)
  * - Custom use cases
  *
- * Built on the RNR `Avatar` / `AvatarFallback` / `AvatarImage` primitives from
- * `@/components/ui/avatar`. It renders an icon, the Kortix symbol, or a
- * fallback letter; `imageUrl` adds a person's photo over the fallback.
+ * Built on the RNR `Avatar` / `AvatarFallback` primitives from
+ * `@/components/ui/avatar` (no `AvatarImage` — this component has no image
+ * source prop; it only ever renders an icon, the Kortix symbol, or a
+ * fallback letter).
  *
  * Design Specifications:
  * - Default size: 48px × 48px
@@ -99,7 +94,6 @@ export function Avatar({
   useKortixSymbol = false,
   fallbackText,
   chalk = false,
-  imageUrl,
   style,
   ...props
 }: AvatarProps) {
@@ -181,7 +175,6 @@ export function Avatar({
       ]}
       {...props}
     >
-      {imageUrl ? <AvatarImage source={{ uri: imageUrl }} /> : null}
       <AvatarFallback className="bg-transparent">
         {useKortixSymbol ? (
           <KortixLogo size={symbolSize} variant="symbol" color="dark" />

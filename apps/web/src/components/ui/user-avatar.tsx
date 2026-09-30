@@ -39,8 +39,6 @@ export interface UserAvatarProps {
   className?: string;
   ring?: boolean;
   variant?: 'default' | 'primary';
-  /** `circle` for a person shown beside chat content. */
-  shape?: 'square' | 'circle';
   /** How many letters the fallback shows. One fits the `xs` size. */
   initials?: 1 | 2;
 }
@@ -53,7 +51,6 @@ export function UserAvatar({
   variant = 'default',
   className,
   ring = false,
-  shape = 'square',
   initials: letters = 2,
 }: UserAvatarProps) {
   const initials = React.useMemo(
@@ -68,7 +65,6 @@ export function UserAvatar({
       className={cn(
         SIZE_MAP[size] ?? 'size-8',
         'shrink-0 overflow-hidden rounded-sm p-0 font-medium tracking-tight',
-        shape === 'circle' && 'rounded-full',
         ring && 'ring-background ring-2',
         variant === 'primary' && 'bg-primary text-primary-foreground',
         className,
@@ -78,7 +74,6 @@ export function UserAvatar({
       <AvatarFallback
         className={cn(
           'border-border text-foreground border bg-transparent font-semibold',
-          shape === 'circle' && 'rounded-full',
           // variant === 'primary' && 'bg-primary text-primary-foreground',
         )}
         style={{

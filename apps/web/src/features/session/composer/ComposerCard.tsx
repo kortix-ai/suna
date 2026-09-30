@@ -336,9 +336,11 @@ export function ComposerCard({
             onChange={handleFileSelect}
           />
           <ComposerToolbar
+            beforeSend={
+              <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
+            }
             leading={
               <>
-                <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
                 {inlineUnderbar ? (
                 <ComposerUnderbar
                   variant="inline"

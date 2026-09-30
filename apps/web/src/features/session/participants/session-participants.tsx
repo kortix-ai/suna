@@ -1,6 +1,6 @@
 'use client';
 
-import { sessionMessageSender, type SessionParticipant, type SessionParticipants } from '@kortix/sdk';
+import type { SessionParticipant, SessionParticipants } from '@kortix/sdk';
 import { useState, type ReactNode } from 'react';
 
 import { AvatarGroup, AvatarGroupCount } from '@/components/ui/avatar';
@@ -13,29 +13,15 @@ import { useTranslations } from '@/i18n/use-translations';
 /** Faces shown in the header before the rest collapse into a count. */
 const STACK_LIMIT = 3;
 
-/** "You" for the viewer, else the display name, else the email local part. */
-export function participantLabel(person: SessionParticipant, you: string): string {
-  if (person.is_viewer) return you;
+/** The display name, else the email local part. The viewer too: every row names a person. */
+export function participantLabel(person: SessionParticipant): string {
   return person.name?.trim() || person.email?.split('@')[0] || '';
-}
-
-/**
- * The person to show beside a message: its sender, unless that is the viewer.
- * Your own messages carry no avatar, in a shared session as in a private one.
- */
-export function otherSender(
-  participants: SessionParticipants | undefined,
-  messageId: string,
-): SessionParticipant | null {
-  const sender = sessionMessageSender(participants, messageId);
-  return sender?.is_viewer ? null : sender;
 }
 
 function ParticipantAvatar({ person, size }: { person: SessionParticipant; size: 'sm' | 'md' }) {
   return (
     <UserAvatar
       size={size}
-      shape="circle"
       name={person.name}
       email={person.email ?? ''}
       avatarUrl={person.avatar_url}
@@ -45,9 +31,9 @@ function ParticipantAvatar({ person, size }: { person: SessionParticipant; size:
 }
 
 /**
- * Another person's message, in a shared session: their avatar beside the
- * bubble, level with its last line. The viewer's own messages pass no
- * sender and render unchanged.
+ * A message in a shared session: its sender's avatar beside the bubble, your
+ * own included, bottom edges aligned (`items-end`). A message with no
+ * recorded sender, or any message in a single-user session, renders alone.
  */
 export function MessageSenderBeside({
   sender,
@@ -58,13 +44,14 @@ export function MessageSenderBeside({
 }) {
   const t = useTranslations('sessionParticipants');
   if (!sender) return children;
-  const name = participantLabel(sender, t('you'));
+  const name = participantLabel(sender);
   return (
     <div className="flex max-w-full items-end gap-2">
-      <div className="min-w-0">{children}</div>
+      {/* `flex`, not a block: no inline line box to pad the bottom edge. */}
+      <div className="flex min-w-0">{children}</div>
       <span className="sr-only">{t('sentBy', { name })}</span>
       <Hint label={sender.email ?? name} side="top" delayDuration={300}>
-        <span aria-hidden className="flex shrink-0">
+        <span aria-hidden className="flex shrink-0 mb-px">
           <ParticipantAvatar person={sender} size="sm" />
         </span>
       </Hint>
@@ -89,7 +76,7 @@ export function SessionParticipantStack({
   const shown = participants.participants.slice(0, STACK_LIMIT);
   const more = participants.total - shown.length;
   const names = shown
-    .map((person) => participantLabel(person, t('you')))
+    .map((person) => participantLabel(person))
     .filter(Boolean)
     .join(', ');
   const label = more > 0 ? t('peopleMore', { names, count: more }) : t('people', { names });
@@ -97,13 +84,13 @@ export function SessionParticipantStack({
   return (
     <HoverCard open={open} onOpenChange={setOpen} openDelay={300} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <span role="img" aria-label={label} className="flex h-7 items-center px-1">
+        <span role="img" aria-label={label} className="hover:bg-secondary flex h-7 cursor-pointer items-center rounded-md p-0.5">
           <AvatarGroup className="-space-x-1.5">
             {shown.map((person) => (
               <ParticipantAvatar key={person.user_id} person={person} size="sm" />
             ))}
             {more > 0 && (
-              <AvatarGroupCount className="size-6 rounded-full text-xs tabular-nums">
+              <AvatarGroupCount className="size-6 text-xs tabular-nums">
                 +{more}
               </AvatarGroupCount>
             )}
@@ -133,7 +120,7 @@ export function SessionParticipantStack({
                   <ParticipantAvatar person={person} size="md" />
                   {/* Name and email read as one block: tight leading, no gap. */}
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate leading-tight">{participantLabel(person, t('you'))}</span>
+                    <span className="truncate leading-tight">{participantLabel(person)}</span>
                     {person.email ? (
                       <span className="text-muted-foreground truncate text-xs leading-tight">
                         {person.email}

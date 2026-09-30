@@ -20,7 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { Avatar } from '@/components/kortix/avatar';
+import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   CaretDownIcon,
@@ -41,7 +41,7 @@ import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
-import { participantAvatarText, participantName } from '@/lib/session/participants';
+import { participantName } from '@/lib/session/participants';
 import {
   isPreviewableImage,
   localOrResolvedSource,
@@ -100,13 +100,9 @@ function paletteFor(isDark: boolean) {
   return THEME[isDark ? 'dark' : 'light'];
 }
 
-/** Web `size-6`: the round avatar beside another person's bubble. */
-const SENDER_AVATAR_SIZE = Math.round(webSpace(6));
-
 /**
- * Another person's message, in a shared session: their round avatar beside
- * the bubble, level with its last line (web `MessageSenderBeside`). The
- * viewer's own messages pass no sender and render unchanged.
+ * A message in a shared session: its sender's avatar beside the bubble,
+ * your own included, bottom edges aligned (web `MessageSenderBeside`).
  */
 function MessageSenderBeside({
   sender,
@@ -122,13 +118,7 @@ function MessageSenderBeside({
       style={{ gap: webSpace(2) }}
       accessibilityLabel={`Sent by ${participantName(sender)}`}>
       <View className="shrink">{children}</View>
-      <Avatar
-        chalk
-        size={SENDER_AVATAR_SIZE}
-        fallbackText={participantAvatarText(sender)}
-        imageUrl={sender.avatar_url}
-        style={{ borderRadius: SENDER_AVATAR_SIZE / 2 }}
-      />
+      <ParticipantAvatar person={sender} />
     </View>
   );
 }
@@ -212,8 +202,8 @@ export function UserMessage({
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
   /**
-   * Another person who sent this message, in a shared session. Drawn as their
-   * avatar beside the bubble. Null for the viewer's own messages.
+   * Who sent this message, in a shared session, the viewer included. Drawn
+   * as their avatar beside the bubble. Null when no sender is recorded.
    */
   sender?: SessionParticipant | null;
 }) {

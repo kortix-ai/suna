@@ -4,25 +4,28 @@
  * sub-agent chip and the `···`. Renders nothing unless two or more people can
  * open the session, so a single-user thread's header is unchanged.
  *
- * Two faces, then a count: the centred title keeps the width (the same ruling
- * as `SubAgentHeaderChip`). Display only: it opens nothing (Jay, 2026-09-30).
+ * Two faces, then a `+N` tile: the centred title keeps the width (the same
+ * ruling as `SubAgentHeaderChip`). Each face is `ParticipantAvatar`, web's
+ * `UserAvatar`. Display only: it opens nothing (Jay, 2026-09-30).
  * Screen readers read the names from its label.
  */
 import * as React from 'react';
 import { View } from 'react-native';
 import type { SessionParticipants } from '@kortix/sdk';
 
-import { Avatar } from '@/components/kortix/avatar';
+import { ParticipantAvatar, PARTICIPANT_AVATAR_SIZE } from '@/components/session/ParticipantAvatar';
 import { Text } from '@/components/ui/text';
-import { participantAvatarText, participantStack } from '@/lib/session/participants';
-import { THEME } from '@/lib/utils/theme';
-import { useColorScheme } from 'nativewind';
+import { participantStack } from '@/lib/session/participants';
+import { webSpace } from '@/lib/session/user-message';
 
 /** Faces shown before the rest collapse into a count. */
 const STACK_LIMIT = 2;
-const FACE_SIZE = 24;
-/** How far each face slides under the one before it. */
-const FACE_OVERLAP = 8;
+/** Web `ring-1 ring-background`: a surface-coloured cut around each face. */
+const RING = 1;
+/** Web `-space-x-1.5`, measured between faces; the ring sits outside it. */
+const FACE_OVERLAP = webSpace(1.5) + 2 * RING;
+/** Web `rounded-sm` plus the ring. */
+const RING_RADIUS = 6 + RING;
 /** Pill height, the sub-agent chip's. */
 const STACK_HEIGHT = 32;
 
@@ -31,42 +34,46 @@ interface SessionParticipantStackProps {
 }
 
 export function SessionParticipantStack({ participants }: SessionParticipantStackProps) {
-  const { colorScheme } = useColorScheme();
   const stack = participantStack(participants, STACK_LIMIT);
   if (!stack) return null;
 
-  // Each face is ringed in the surface colour, so the overlap reads as a cut.
-  const ring = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  const faces = [
+    ...stack.shown.map((person) => (
+      <ParticipantAvatar key={person.user_id} person={person} />
+    )),
+    ...(stack.more > 0
+      ? [
+          // Web `AvatarGroupCount`: a muted tile the size of a face.
+          <View
+            key="more"
+            className="items-center justify-center bg-muted"
+            style={{ width: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, borderRadius: 6 }}>
+            <Text
+              className="text-muted-foreground"
+              style={{ fontFamily: 'Roobert-Medium', fontSize: 10, fontVariant: ['tabular-nums'] }}
+              allowFontScaling={false}>
+              +{stack.more}
+            </Text>
+          </View>,
+        ]
+      : []),
+  ];
 
   return (
     <View
       accessible
       accessibilityRole="image"
       accessibilityLabel={stack.label}
-      className="rounded-full bg-background"
+      className="flex-row items-center rounded-full bg-background"
       style={{ height: STACK_HEIGHT, paddingHorizontal: 4 }}>
-      <View className="flex-1 flex-row items-center">
-        {stack.shown.map((person, index) => (
-          <Avatar
-            key={person.user_id}
-            chalk
-            size={FACE_SIZE}
-            fallbackText={participantAvatarText(person)}
-            imageUrl={person.avatar_url}
-            style={{
-              marginLeft: index === 0 ? 0 : -FACE_OVERLAP,
-              borderRadius: FACE_SIZE / 2,
-              borderWidth: 2,
-              borderColor: ring,
-            }}
-          />
-        ))}
-        {stack.more > 0 ? (
-          <Text variant="small" className="ml-1 leading-5">
-            +{stack.more}
-          </Text>
-        ) : null}
-      </View>
+      {faces.map((face, index) => (
+        <View
+          key={face.key}
+          className="bg-background"
+          style={{ padding: RING, borderRadius: RING_RADIUS, marginLeft: index === 0 ? 0 : -FACE_OVERLAP }}>
+          {face}
+        </View>
+      ))}
     </View>
   );
 }

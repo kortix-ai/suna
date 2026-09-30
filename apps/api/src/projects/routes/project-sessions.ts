@@ -327,6 +327,7 @@ projectsApp.openapi(
       ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
       ownerEmail: owner?.email ?? null,
       ownerName: owner?.name ?? null,
+      ownerAvatarUrl: owner?.avatarUrl ?? null,
       ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
       canAccess: item.canAccess,
       runtimeStatus: item.runtimeStatus,
@@ -415,6 +416,7 @@ projectsApp.openapi(
     ownerIsMachine: visible.ownerIsMachine,
     ownerEmail: owner?.email ?? null,
     ownerName: owner?.name ?? null,
+    ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
   }));
 },

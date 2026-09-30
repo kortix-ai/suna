@@ -26,13 +26,15 @@ export interface SessionOwnerIdentity {
   type: 'user' | 'service_account' | 'unknown';
   name: string | null;
   email: string | null;
+  /** The person's profile photo (http(s) only); null for a machine or stale owner. */
+  avatarUrl: string | null;
 }
 
 export function mergeSessionOwnerIdentities(input: {
   ownerIds: string[];
   users: Map<
     string,
-    { exists: boolean; email: string | null; displayName?: string | null }
+    { exists: boolean; email: string | null; displayName?: string | null; avatarUrl?: string | null }
   >;
   serviceAccounts: Array<{
     serviceAccountId: string;
@@ -55,6 +57,7 @@ export function mergeSessionOwnerIdentities(input: {
         type: 'user',
         name: user.displayName || user.email,
         email: user.email,
+        avatarUrl: user.avatarUrl ?? null,
       });
       continue;
     }
@@ -65,11 +68,12 @@ export function mergeSessionOwnerIdentities(input: {
         type: 'service_account',
         name: serviceAccount.agentName || serviceAccount.name,
         email: null,
+        avatarUrl: null,
       });
       continue;
     }
 
-    result.set(ownerId, { type: 'unknown', name: null, email: null });
+    result.set(ownerId, { type: 'unknown', name: null, email: null, avatarUrl: null });
   }
 
   return result;

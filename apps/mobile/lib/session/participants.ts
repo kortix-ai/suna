@@ -4,29 +4,31 @@
  * (`components/session/SessionParticipantStack.tsx`). Same rules as web's
  * `features/session/participants/session-participants.tsx`.
  */
-import { sessionMessageSender, type SessionParticipant, type SessionParticipants } from '@kortix/sdk';
+import type { SessionParticipant, SessionParticipants } from '@kortix/sdk';
 
-/**
- * The person to show beside a message: its sender, unless that is the viewer.
- * Your own messages carry no avatar, in a shared session as in a private one.
- */
-export function otherSender(
-  participants: SessionParticipants | undefined,
-  messageId: string,
-): SessionParticipant | null {
-  const sender = sessionMessageSender(participants, messageId);
-  return sender?.is_viewer ? null : sender;
-}
-
-/** "You" for the viewer, else the display name, else the email local part. */
+/** The display name, else the email local part. The viewer too. */
 export function participantName(person: SessionParticipant): string {
-  if (person.is_viewer) return 'You';
   return person.name?.trim() || person.email?.split('@')[0] || '';
 }
 
 /** What an avatar's initial and colour derive from: the name, else the email. */
 export function participantAvatarText(person: SessionParticipant): string | undefined {
   return person.name?.trim() || person.email || undefined;
+}
+
+/**
+ * Up to two letters, web `UserAvatar`'s rule: the first and last word of the
+ * name, else the email local part split on `.`, `_` and `-`.
+ */
+export function participantInitials(person: SessionParticipant): string {
+  const words = person.name?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (words.length > 0) {
+    const last = words.length > 1 ? words[words.length - 1][0] : '';
+    return (words[0][0] + last).toUpperCase();
+  }
+  const local = person.email?.split('@')[0] ?? '';
+  const segments = local.split(/[._-]+/).filter(Boolean);
+  return ((segments[0]?.[0] ?? '') + (segments[1]?.[0] ?? '')).toUpperCase() || '?';
 }
 
 export interface ParticipantStack {

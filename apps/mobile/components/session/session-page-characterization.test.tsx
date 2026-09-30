@@ -1174,7 +1174,7 @@ describe('SessionPage shared-session sender', () => {
     expect(turnProps.at(-1).sender).toBeNull();
   });
 
-  test("the viewer's own prompt passes no sender, even in a multi-user session", async () => {
+  test("the viewer's own prompt passes the viewer as its sender in a multi-user session", async () => {
     seedTurns(['one']);
     const ME = { ...MEMBER, user_id: 'me', is_viewer: true };
     sessionParticipants = {
@@ -1185,7 +1185,7 @@ describe('SessionPage shared-session sender', () => {
       sender_profiles: [ME],
     };
     await renderPage();
-    expect(turnProps.at(-1).sender).toBeNull();
+    expect(turnProps.at(-1).sender).toEqual(ME);
   });
 
   test('a multi-user session passes a turn the other person who sent its prompt', async () => {
@@ -1252,6 +1252,32 @@ describe('SessionConnecting saved thread', () => {
     expect(scroller).toBeTruthy();
     scroller.onContentSizeChange?.(320, 400);
     expect(scrollToEndCalls).toEqual([[{ animated: false }]]);
+  });
+
+  test('a shared session labels the saved prompts while the computer wakes, not only once it runs', async () => {
+    const MEMBER = { user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null, is_viewer: false };
+    const messages = [...makeTurn('one'), ...makeTurn('two')];
+    const firstPrompt = messages.find((m) => m.info.role === 'user')!.info.id;
+    sessionParticipants = {
+      participants: [MEMBER],
+      total: 2,
+      multi_user: true,
+      senders: { [firstPrompt]: 'member' },
+      sender_profiles: [MEMBER],
+    };
+    await act(async () => {
+      tree = create(
+        React.createElement(SessionConnecting, {
+          messages,
+          statusLabel: 'Waking the computer',
+          sessionId: SID,
+          onCancel: () => {},
+          projectId: 'project',
+          projectSessionId: 'project-session',
+        } as any),
+      );
+    });
+    expect(turnProps.map((props) => props.sender)).toEqual([MEMBER, null]);
   });
 
   test('the waking composer takes a message and hands it to onSend', async () => {

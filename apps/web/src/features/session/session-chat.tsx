@@ -21,9 +21,9 @@ import {
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
+  sessionMessageSender,
 } from '@kortix/sdk';
 import { useProjectSession, useSessionParticipants } from '@kortix/sdk/react';
-import { otherSender } from '@/features/session/participants/session-participants';
 import {
   WarningIcon as AlertTriangle,
   ArrowBendUpLeftIcon,
@@ -6018,7 +6018,7 @@ export function SessionChat({
                               // hover state survives, nothing jumps).
                               key={turnRenderKeys.get(turn.userMessage.info.id)}
                               turnId={turn.userMessage.info.id}
-                              sender={otherSender(sessionParticipants, turn.userMessage.info.id)}
+                              sender={sessionMessageSender(sessionParticipants, turn.userMessage.info.id)}
                               suppressed={suppressedFailedCompaction}
                               showBusyRow={
                                 showFallbackBusyRow &&

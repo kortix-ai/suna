@@ -20282,7 +20282,6 @@
   },
   "sessionParticipants": {
     "title": "成员",
-    "you": "你",
     "sentBy": "发送者：{name}",
     "people": "此会话中的成员：{names}",
     "peopleMore": "此会话中的成员：{names}，另有 {count} 人"
