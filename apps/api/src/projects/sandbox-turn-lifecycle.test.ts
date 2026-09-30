@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { renderSql as render } from './reaping/test-support/render-sql';
 import { WIRE_MESSAGE_ID } from './wire-message-id';
 
 let executed: string[] = [];
@@ -10,16 +11,7 @@ let executeError: Error | null = null;
 // expressible per statement, not with the global `executeError`.
 let executeErrorByIndex: Record<number, Error> = {};
 
-function render(query: unknown): string {
-  if (query === null || query === undefined) return '';
-  if (typeof query !== 'object') return String(query);
-  const node = query as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
-  if (Array.isArray(node.queryChunks)) return node.queryChunks.map(render).join(' ');
-  if (Array.isArray(node.value)) return node.value.join('');
-  if (node.value !== undefined) return String(node.value);
-  if (node.name !== undefined) return String(node.name);
-  return '';
-}
+
 
 mock.module('../config', () => mockConfigModule());
 mock.module('../shared/db', () => ({
