@@ -43,7 +43,7 @@ function row(over: Partial<ProjectSessionRow> = {}): ProjectSessionRow {
 function knownLeg(sessions: unknown[], root: string | null = 'ses_root'): RuntimeLeg {
   return {
     known: true,
-    identity: { opencode_session_id: root },
+    identity: { runtime_session_id: root, opencode_session_id: root },
     state: { sessions: { known: true, value: sessions } },
   } as unknown as RuntimeLeg;
 }
