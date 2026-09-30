@@ -421,7 +421,9 @@ interface RunningAssets {
   managed_skills_hash: string | null;
   agent_sha256: string | null;
   staged_agent_sha256: string | null;
-  opencode_version: string | null;
+  /** The harness `harness_version` belongs to (W3 E17). */
+  harness: string | null;
+  harness_version: string | null;
 }
 
 /**
@@ -439,8 +441,8 @@ interface RunningAssets {
  * only the typed identity fields.
  */
 function identityOf(running: RunningAssets): RunningAssets {
-  const { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, opencode_version } = running;
-  return { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, opencode_version };
+  const { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, harness, harness_version } = running;
+  return { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, harness, harness_version };
 }
 
 interface BootedBox {
@@ -518,7 +520,8 @@ async function assertBoxIsCurrent(ctx: FlowContext, running: RunningAssets): Pro
     ['managed-skills', m.components['managed-skills'].hash, running.managed_skills_hash],
     ['cli', m.components.cli?.sha256, running.cli_sha256],
     ['agent', m.components.agent?.sha256, running.agent_sha256],
-    ['opencode', m.components.opencode.version, running.opencode_version],
+    // The manifest's OpenCode release applies to an OpenCode box only.
+    ['opencode', m.components.opencode.version, running.harness === 'opencode' ? running.harness_version : null],
   ];
   for (const [name, want, have] of pairs) {
     if (!want || !have) continue; // this deploy or this box states nothing to compare

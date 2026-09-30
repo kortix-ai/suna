@@ -9,7 +9,7 @@ import type {
 import { requireOpenCodeConfig } from './config'
 import { OPENCODE_HOME } from './paths'
 import { projectOpenCodeResourceSnapshot } from './resource-diagnostics'
-import { readHostHealth } from '../shared/host-health'
+import { RUNTIME_CAPABILITIES } from '@kortix/api-contract/runtime-relay'
 import { daemonLogFilePath } from '@/lib/log/logger'
 import { tailFile } from '@/lib/log/log-tail'
 
@@ -92,10 +92,8 @@ export function resolveTurnObservationIdentity(
 }
 
 /**
- * OpenCode health: the host facts (`readHostHealth`) plus OpenCode's runtime
- * state and the compatibility fields the API reads.
- *
- * Native readiness is separate from the controller's daemon liveness status.
+ * OpenCode's health block. `routes/kortix/health.ts` adds the host facts and
+ * computes `runtimeReady`.
  */
 async function readOpenCodeHealth(
   context: HarnessDiagnosticsContext,
@@ -103,12 +101,10 @@ async function readOpenCodeHealth(
   query: HarnessHealthQuery,
 ): Promise<HarnessHealthReport> {
   const bootState: OpenCodeBootState = context.bootState
-  const host = await readHostHealth(context, catalogSnapshotForHealth)
   const opencodeState = opencode.getState()
   const initialSessionReady =
     !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-  const initialSessionError = bootState.initialOpenCodeSessionError ?? null
-  const auditRelayError = bootState.auditRelayError ?? null
+  const error = bootState.initialOpenCodeSessionError ?? bootState.auditRelayError ?? null
   // PLAN-one-boot-path C3: a box is never reportable as ready unless it runs a
   // PROVEN config. `opencodeState === 'ok'` is not that proof — its liveness
   // probe only asks whether the session API answers, so a config whose tools or
@@ -117,88 +113,72 @@ async function readOpenCodeHealth(
   // verdict here before it opens the gate. Off the release path (config
   // releases disabled) the boot path states `proven: true` for the checkout it
   // pointed OpenCode at, so this term is inert there.
+  //
+  // The SAME read the `config` block reports, so no health sample can show
+  // `runtimeReady: true` beside a `config` block that disagrees.
   const configReport = configReleaseReport()
   const configProven = configReport.proven
-  const runtimeReady =
-    host.repo_ready &&
-    !bootState.repoMaterializationError &&
-    !initialSessionError &&
-    !auditRelayError &&
-    opencodeState === 'ok' &&
-    configProven &&
-    initialSessionReady
-  const status = runtimeReady
-    ? 'ok'
-    : bootState.repoMaterializationError || initialSessionError || auditRelayError
-      ? 'error'
-      : opencodeState
+  // The harness half of `runtimeReady`; the route adds the host's workspace checks.
+  const runtimeReady = !error && opencodeState === 'ok' && configProven && initialSessionReady
 
-  const observedTurn = resolveTurnObservationIdentity(
-    query.turn?.sessionId,
-    query.turn?.messageId,
-    readOpenCodeSessionPin(),
-  )
+  // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
+  // polled as a liveness check every few seconds on every idle box. Two
+  // callers ask: the reload gate, which must not restart the runtime out from
+  // under a running turn, and the control plane's reaper, which repairs turn
+  // authority a lost relay left behind.
   const turn =
     query.turn !== undefined
       ? await observeRequestedTurn(
           opencode.getInternalUrl(),
           process.env.KORTIX_WORKSPACE || '/workspace',
-          observedTurn,
+          resolveTurnObservationIdentity(query.turn.sessionId, query.turn.messageId, readOpenCodeSessionPin()),
         )
       : undefined
 
   return {
-    ...host,
-    daemon: 'ok',
-    status,
-    runtimeReady,
-    opencode: opencodeState,
-    opencode_pid: opencode.getPid(),
-    // The port opencode is listening on right now. It ALTERNATES: a verified
-    // reload boots the replacement on the idle half of the port pair and
-    // promotes it. The API's PTY proxy has to reach opencode directly (the
-    // daemon cannot carry a WebSocket) and previously hardcoded 4096, which
-    // becomes the dead half after one reload.
-    opencode_port: opencode.getActivePort(),
-    // Only the OpenCode lifecycle consumes the compiled runtime.
-    compiled_runtime:
-      process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
-    compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
-    compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
-    // Which config release OpenCode runs, which one the API wants, and why they
-    // differ.
-    // The SAME read `runtimeReady` was computed from, so no health sample can
-    // ever show `runtimeReady: true` beside a `config` block that disagrees.
+    harness: {
+      id: 'opencode',
+      // The runtime-assets record states the OpenCode release on disk.
+      version: null,
+      state: opencodeState,
+      ready: runtimeReady,
+      error,
+      session: {
+        id: bootState.initialOpenCodeSessionId ?? null,
+        required: !!bootState.initialOpenCodeSessionRequired,
+      },
+      turn: turn
+        ? {
+            in_flight: turn.inFlight,
+            // WHY it is not in flight, when the message list proves it:
+            // 'completed' | 'failed' | 'abandoned', else null. The control
+            // plane writes this straight into session_turns.end_reason.
+            end: turn.end,
+            // "A prompt is on record with nothing answering it": evidence about
+            // the PROMPT, which the control plane redelivers on.
+            orphaned_prompt: turn.orphanedPrompt ?? false,
+          }
+        : null,
+      details: {
+        pid: opencode.getPid(),
+        // The port opencode listens on right now. It ALTERNATES: a verified
+        // reload boots the replacement on the idle half of the port pair. The
+        // API's PTY proxy reaches opencode directly (the daemon cannot carry a
+        // WebSocket), so it must not assume 4096.
+        port: opencode.getActivePort(),
+        // Only the OpenCode lifecycle consumes the compiled runtime.
+        compiled_runtime: process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
+        compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
+        compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
+        // How often the periodic reconcile floor runs, so "why hasn't this
+        // healed yet" has an answer bound to a number.
+        runtime_truth_tick_interval_ms: runtimeTruthTickIntervalMs(),
+      },
+    },
     config: configReport,
     // The running release's source commit, for API readers that predate
-    // `config`; null off the release path. Remove one release after every API
-    // reads `config`.
-    config_dir_sha: runningSourceCommit(),
-    // How often the periodic reconcile floor runs — visible so "why hasn't
-    // this healed yet" has an answer bound to a number, not a guess.
-    runtime_truth_tick_interval_ms: runtimeTruthTickIntervalMs(),
-    // Opt-in (`?turn=1`) because it costs a call into opencode, and health is
-    // polled as a liveness check every few seconds on every idle box. Two
-    // callers ask: the reload gate, which must not restart the runtime out
-    // from under a running turn, and the control plane's reaper, which
-    // repairs turn authority a lost relay left behind.
-    ...(turn
-      ? {
-          turn_in_flight: turn.inFlight,
-          // WHY it is not in flight, when the message list proves it:
-          // 'completed' | 'failed' | 'abandoned', else null. The control
-          // plane writes this straight into session_turns.end_reason — it
-          // cannot derive it, because only this process holds the messages.
-          turn_end: turn.end,
-          // "A prompt is on record with nothing answering it." Reported
-          // separately from `turn_end` because it is evidence about the
-          // PROMPT, not about the turn: the control plane redelivers on it.
-          turn_orphaned_prompt: turn.orphanedPrompt ?? false,
-        }
-      : {}),
-    boot_error: bootState.repoMaterializationError ?? initialSessionError ?? auditRelayError,
-    opencode_session_id: bootState.initialOpenCodeSessionId ?? null,
-    opencode_session_required: !!bootState.initialOpenCodeSessionRequired,
+    // `config`; null off the release path.
+    configDirSha: runningSourceCommit(),
   }
 }
 
@@ -261,6 +241,9 @@ export function createOpenCodeDiagnosticsService(
   home: string = OPENCODE_HOME,
 ): HarnessDiagnosticsService {
   return {
+    // Every session feature the pi harness answers 501 for is native here.
+    capabilities: [...RUNTIME_CAPABILITIES],
+    catalogSnapshot: catalogSnapshotForHealth,
     health: (context, query) => readOpenCodeHealth(context, opencode, query),
     report: (context, tail) => readOpenCodeDiagnosticReport(opencode, home, context, tail),
     logSources: () => ['daemon', 'opencode'],

@@ -116,6 +116,7 @@ import {
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
 import { revertSession } from '@/lib/opencode/session-rewind';
+import { FeatureNotSupportedError, featureNotSupportedError, useRuntimeSupports } from '@/lib/opencode/runtime-capabilities';
 import { useToast } from '@/components/kortix/toast-provider';
 import {
   hasRunningQuestionTool as findRunningQuestionTool,
@@ -848,7 +849,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [projectId, requestConnectorConnect],
   );
   const { data: config } = useOpenCodeConfig(sandboxUrl);
-  const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
+  // A runtime without slash commands (pi) gets no list: no "/" or "#"
+  // suggestions and no AutoContinue, so nothing dispatches to /command (E1).
+  const canRunCommands = useRuntimeSupports(sandboxUrl, 'session.commands');
+  const canRewind = useRuntimeSupports(sandboxUrl, 'session.rewind');
+  const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(canRunCommands ? sandboxUrl : undefined);
 
   const resolved = useResolvedConfig({
     agents: rawAgents,
@@ -960,7 +965,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       } catch (err: any) {
         // The editor stays open with the draft, so Send can be tried again.
         log.error('[SessionPage] Rewind failed:', err?.message || err);
-        toast.error("Couldn't edit the message. Try again.");
+        toast.error(err instanceof FeatureNotSupportedError ? err.message : "Couldn't edit the message. Try again.");
         editPendingRef.current = false;
         setEditPending(false);
         return;
@@ -1001,7 +1006,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
   const interruptedIds = useMemo(() => interruptedTurnIds(turns, isBusy), [turns, isBusy]);
   // Web refuses a rewind while the runtime is busy or prompts are still queued.
-  const rewindDisabled = isBusy || queuedMessages.length > 0 || editPending || !sandboxUrl;
+  // A runtime without rewind (pi) never offers Edit.
+  const rewindDisabled = !canRewind || isBusy || queuedMessages.length > 0 || editPending || !sandboxUrl;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
 
@@ -1672,13 +1678,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           const errorText = await res.text().catch(() => '');
           log.error('[SessionPage] Command failed:', res.status, errorText);
           useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          const unsupported = featureNotSupportedError(res.status, errorText);
+          if (unsupported) toast.error(unsupported.message);
         }
       } catch (err: any) {
         log.error('[SessionPage] Command error:', err?.message || err);
         useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
       }
     },
-    [sandboxUrl, sessionId, stickToEnd],
+    [sandboxUrl, sessionId, stickToEnd, toast],
   );
 
   // Only the working turn (web `resolveWorkingTurn`) receives status and busy;

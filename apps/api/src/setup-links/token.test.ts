@@ -55,6 +55,14 @@ describe('setup-link TTLs', () => {
 });
 
 describe('resolveSetupLink', () => {
+  test('a link carries when it was minted, so a read can tell what landed since', () => {
+    setSystemTime(T0);
+    const { token } = mintSetupLink(PROJECT_ID, { kind: 'connector', slug: 'smartlead' });
+    setSystemTime(new Date(T0.getTime() + 3 * DAY_MINUTES * MINUTE_MS));
+    const resolved = resolveSetupLink(token);
+    expect(resolved.ok && resolved.payload.iat).toBe(T0.getTime());
+  });
+
   test('a live token resolves with its sealed payload', () => {
     setSystemTime(T0);
     const { token } = mintSecret();

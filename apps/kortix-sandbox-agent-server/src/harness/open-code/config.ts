@@ -71,6 +71,15 @@ const EnvironmentSchema = z.object({
     .default('/ephemeral/kortix-master/opencode'),
 })
 
+/**
+ * Does apps/api ask this box to create the session's root? `KORTIX_BOOTSTRAP_RUNTIME_SESSION`
+ * is the harness-neutral name (D3); `KORTIX_BOOTSTRAP_OPENCODE_SESSION` is what an
+ * older API sets, and the API sets both for one release.
+ */
+export function bootstrapRuntimeSessionRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+}
+
 export interface OpenCodeEnvironment {
   opencodeInternalPort: number
   /** Idle half of the opencode port pair; see KORTIX_OPENCODE_STANDBY_PORT. */

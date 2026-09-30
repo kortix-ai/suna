@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, test } from "bun:test";
 
 import {
 	requestRuntimeReconnect,
+	resetForServerSwitch,
 	setOpenCodeHealth,
+	setRuntimeCapabilities,
 	setSandboxStatus,
 	useSandboxConnectionStore,
 } from "./sandbox-connection-store";
@@ -93,5 +95,21 @@ describe("sandbox connection store: parked", () => {
 		setSandboxStatus("connected");
 		setOpenCodeHealth(false, "1.2.3", null, { parked: true });
 		expect(useSandboxConnectionStore.getState().status).toBe("connected");
+	});
+});
+
+describe("runtime capabilities (E1)", () => {
+	beforeEach(resetStore);
+
+	test("the health probe records what the runtime serves; a server switch forgets it", () => {
+		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBeNull();
+		setRuntimeCapabilities(["file.import", "session.subagents"]);
+		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toEqual(["file.import", "session.subagents"]);
+		// The same list again is not a change: no new array, no re-render.
+		const before = useSandboxConnectionStore.getState().runtimeCapabilities;
+		setRuntimeCapabilities(["file.import", "session.subagents"]);
+		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBe(before);
+		resetForServerSwitch("http://another-runtime.test");
+		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBeNull();
 	});
 });

@@ -736,14 +736,14 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
 
   // Both sides of one contract in two packages: the daemon's health payload
   // must publish the field the lookup reads.
-  test('the daemon health payload publishes opencode_port', async () => {
+  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
     const health = await Bun.file(
       new URL(
         '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
         import.meta.url,
       ).pathname,
     ).text();
-    expect(health).toContain('opencode_port:');
+    expect(health).toContain('port: opencode.getActivePort()');
   });
 });
 
@@ -921,6 +921,8 @@ describe('Preview proxy: forwarding', () => {
       },
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
+      runtimeEnv: {},
       opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',

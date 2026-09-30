@@ -277,7 +277,8 @@ export async function pushSessionModelToSandbox(input: {
       providerHeaders: headers,
       serviceKey,
       snapshot,
-      opencodeEnv: { KORTIX_OPENCODE_MODEL: input.model },
+      // `KORTIX_MODEL` for a W3 daemon; its pre-W3 name for an older one.
+      opencodeEnv: { KORTIX_MODEL: input.model, KORTIX_OPENCODE_MODEL: input.model },
       // Restarts opencode so it rebuilds its config against the new model.
       refreshModels: true,
     });

@@ -14,6 +14,7 @@ import { createPartRouter } from './part'
 import { createLogsRouter } from './logs'
 import { createDiagRouter } from './diag'
 import { createRuntimeRouter } from './runtime'
+import { LEGACY_RUNTIME_MOUNT } from './legacy-names'
 
 export interface HarnessRouteContext {
   cfg: Config
@@ -45,7 +46,9 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))
   mount('/diag', createDiagRouter(context, harness.diagnostics))
   if (context.projectEnv) mount('/env', createEnvRouter(context.cfg, control))
-  // Preserve the existing URL. It is a compatibility contract, not selection.
-  mount('/opencode', createRuntimeRouter(context.cfg, queries))
+  // The Runtime API, and its pre-W3 mount that an older API still calls.
+  const runtimeRouter = createRuntimeRouter(context.cfg, queries)
+  mount('/runtime', runtimeRouter)
+  mount(LEGACY_RUNTIME_MOUNT, runtimeRouter)
   return router
 }

@@ -10,12 +10,14 @@ import {
   MAX_RELAY_BATCH_SIZE,
   MAX_RETRY_MS_DEFAULT,
   auditRelayConfigFromEnv,
-  type OpenCodeAuditEvent,
+  type RuntimeAuditEvent,
   computeRetryDelay,
   createAuditRelay,
+  createRuntimeAuditRelay,
   retryAfterMs,
-  sanitizeOpenCodeEvent,
-} from '@/harness/open-code/opencode-audit-relay';
+  sanitizeRuntimeEvent,
+} from '@/harness/shared/audit-relay';
+import { migratePreW3AuditSpool } from '@/harness/open-code/runtime-state';
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   noteControlPlaneResponse,
@@ -36,8 +38,8 @@ describe('OpenCode canonical audit relay', () => {
         output: 'sk-super-secret raw tool output',
       },
     };
-    const first = sanitizeOpenCodeEvent(raw, new Date('2026-08-07T12:00:00Z'));
-    const second = sanitizeOpenCodeEvent(raw, new Date('2026-08-07T13:00:00Z'));
+    const first = sanitizeRuntimeEvent(raw, new Date('2026-08-07T12:00:00Z'));
+    const second = sanitizeRuntimeEvent(raw, new Date('2026-08-07T13:00:00Z'));
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
     if (!first || !second) throw new Error('expected sanitizable OpenCode event');
@@ -58,7 +60,7 @@ describe('OpenCode canonical audit relay', () => {
   });
 
   test('fingerprints provider errors without persisting the raw error message', () => {
-    const event = sanitizeOpenCodeEvent({
+    const event = sanitizeRuntimeEvent({
       type: 'session.error',
       properties: {
         sessionID: 'ses_error',
@@ -78,7 +80,7 @@ describe('OpenCode canonical audit relay', () => {
   });
 
   test('drops primitive structural wrappers before writing or sending an event', () => {
-    const event = sanitizeOpenCodeEvent({
+    const event = sanitizeRuntimeEvent({
       type: 'message.updated',
       properties: {
         sessionID: 'ses_wrappers',
@@ -99,7 +101,7 @@ describe('OpenCode canonical audit relay', () => {
   });
 
   test('classifies the real OpenCode message.part.updated tool lifecycle shape', () => {
-    const event = sanitizeOpenCodeEvent({
+    const event = sanitizeRuntimeEvent({
       type: 'message.part.updated',
       properties: {
         sessionID: 'ses_root',
@@ -125,7 +127,7 @@ describe('OpenCode canonical audit relay', () => {
     expect(event).not.toBeNull();
     if (!event) throw new Error('expected sanitizable OpenCode event');
     expect(event).toMatchObject({
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       turn_id: 'msg_assistant',
       message_id: 'msg_assistant',
       tool_call_id: 'call_1',
@@ -153,7 +155,7 @@ describe('OpenCode canonical audit relay', () => {
   });
 
   test('extracts message identity and agent attribution from OpenCode info', () => {
-    const event = sanitizeOpenCodeEvent({
+    const event = sanitizeRuntimeEvent({
       type: 'message.updated',
       properties: {
         sessionID: 'ses_child',
@@ -168,7 +170,7 @@ describe('OpenCode canonical audit relay', () => {
       },
     });
     expect(event).toMatchObject({
-      opencode_session_id: 'ses_child',
+      runtime_session_id: 'ses_child',
       turn_id: 'msg_child',
       message_id: 'msg_child',
       agent_id: 'researcher',
@@ -207,7 +209,7 @@ describe('OpenCode canonical audit relay', () => {
   });
 
   test('attributes nested sub-agent events to the root and immediate parent', async () => {
-    const delivered: OpenCodeAuditEvent[][] = [];
+    const delivered: RuntimeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {
         delivered.push(events);
@@ -250,7 +252,7 @@ describe('OpenCode canonical audit relay', () => {
     await Bun.sleep(5);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]?.[3]).toMatchObject({
-      opencode_session_id: 'ses_grandchild',
+      runtime_session_id: 'ses_grandchild',
       correlation_id: 'ses_root',
       causation_id: 'ses_child',
       delegation_depth: 2,
@@ -304,7 +306,7 @@ describe('OpenCode canonical audit relay', () => {
       expect(persisted).not.toContain('private prompt');
       expect(persisted).not.toContain('private-credential');
 
-      const delivered: OpenCodeAuditEvent[][] = [];
+      const delivered: RuntimeAuditEvent[][] = [];
       const recovered = createAuditRelay(
         async (events) => {
           delivered.push(events);
@@ -313,7 +315,7 @@ describe('OpenCode canonical audit relay', () => {
       );
       await Bun.sleep(20);
       expect(delivered).toHaveLength(1);
-      expect(delivered[0]?.[0]?.opencode_session_id).toBe('ses_spool');
+      expect(delivered[0]?.[0]?.runtime_session_id).toBe('ses_spool');
       expect(JSON.parse(readFileSync(spoolPath, 'utf8'))).toMatchObject({
         version: 2,
         queue: [],
@@ -342,7 +344,7 @@ describe('OpenCode canonical audit relay', () => {
       const { correlation_id: _c, causation_id: _k, ...v1 } = event!;
       writeFileSync(spoolPath, JSON.stringify([v1]));
 
-      const delivered: OpenCodeAuditEvent[][] = [];
+      const delivered: RuntimeAuditEvent[][] = [];
       const upgraded = createAuditRelay(
         async (events) => {
           delivered.push(events);
@@ -352,7 +354,7 @@ describe('OpenCode canonical audit relay', () => {
       await Bun.sleep(20);
       expect(delivered.flat()).toHaveLength(1);
       expect(delivered[0]![0]).toMatchObject({
-        opencode_session_id: 'ses_v1',
+        runtime_session_id: 'ses_v1',
         correlation_id: null,
         causation_id: null,
       });
@@ -404,7 +406,7 @@ describe('OpenCode canonical audit relay', () => {
       queued.prompt = 'raw prompt must not be relayed';
       writeFileSync(spoolPath, JSON.stringify(spool), 'utf8');
       expect(() => createAuditRelay(async () => {}, { spoolPath })).toThrow(
-        'invalid OpenCode audit spool',
+        'invalid audit spool',
       );
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -430,7 +432,7 @@ describe('OpenCode canonical audit relay', () => {
       await Bun.sleep(5);
       await first.stop();
 
-      const delivered: OpenCodeAuditEvent[][] = [];
+      const delivered: RuntimeAuditEvent[][] = [];
       const recovered = createAuditRelay(
         async (events) => {
           delivered.push(events);
@@ -561,7 +563,7 @@ describe('audit relay emission volume', () => {
     const dir = mkdtempSync(join(tmpdir(), 'audit-drop-'));
     const spoolPath = join(dir, 'spool.json');
     try {
-      const sent: OpenCodeAuditEvent[][] = [];
+      const sent: RuntimeAuditEvent[][] = [];
       const relay = createAuditRelay(
         async (events) => {
           sent.push(events);
@@ -576,7 +578,7 @@ describe('audit relay emission volume', () => {
         relay.enqueue({ type: 'server.heartbeat', properties: { sessionID: 'ses_a' } });
       }
       relay.enqueue({ type: 'session.idle', properties: { sessionID: 'ses_a' } });
-      const spool = JSON.parse(readFileSync(spoolPath, 'utf8')) as { queue: OpenCodeAuditEvent[] };
+      const spool = JSON.parse(readFileSync(spoolPath, 'utf8')) as { queue: RuntimeAuditEvent[] };
       expect(spool.queue.map((event) => event.type)).toEqual(['session.idle']);
       await relay.stop();
       expect(sent.flat().map((event) => event.type)).toEqual(['session.idle']);
@@ -587,7 +589,7 @@ describe('audit relay emission volume', () => {
   });
 
   test('collapses repeated streaming states but never a transition', async () => {
-    const sent: OpenCodeAuditEvent[][] = [];
+    const sent: RuntimeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {
         sent.push(events);
@@ -624,7 +626,7 @@ describe('audit relay emission volume', () => {
     }
     await relay.flush();
     const flat = sent.flat();
-    const partType = (event: OpenCodeAuditEvent): unknown =>
+    const partType = (event: RuntimeAuditEvent): unknown =>
       (event.input_summary.part as Record<string, unknown> | undefined)?.type;
     expect(flat.filter((event) => partType(event) === 'text')).toHaveLength(1);
     expect(
@@ -634,7 +636,7 @@ describe('audit relay emission volume', () => {
   });
 
   test('coalescing keeps the newest state and preserves relative order', async () => {
-    const sent: OpenCodeAuditEvent[][] = [];
+    const sent: RuntimeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {
         sent.push(events);
@@ -664,7 +666,7 @@ describe('audit relay emission volume', () => {
   });
 
   test('a forensic class is never coalesced', async () => {
-    const sent: OpenCodeAuditEvent[][] = [];
+    const sent: RuntimeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {
         sent.push(events);
@@ -762,7 +764,7 @@ describe('audit relay emission volume', () => {
   test('replays a measured live-session event mix into one POST', async () => {
     // Ratios measured on kortix.audit_events for one session (117,437 relayed
     // events in 64 min). 20 turns of 500 tokens each: 30,060 raw events.
-    const sent: OpenCodeAuditEvent[][] = [];
+    const sent: RuntimeAuditEvent[][] = [];
     const relay = createAuditRelay(
       async (events) => {
         sent.push(events);
@@ -826,7 +828,7 @@ describe('audit relay emission volume', () => {
         noteControlPlaneResponse(401, 'PAT not found or revoked');
       }
       noteControlPlaneResponse(200, null);
-      const sent: OpenCodeAuditEvent[][] = [];
+      const sent: RuntimeAuditEvent[][] = [];
       const relay = createAuditRelay(
         async (events) => {
           sent.push(events);
@@ -838,5 +840,74 @@ describe('audit relay emission volume', () => {
       expect(sent).toHaveLength(1);
       await relay.stop();
     });
+  });
+});
+
+describe('the runtime audit relay every harness runs (E12)', () => {
+  const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL'] as const;
+  const saved = new Map<string, string | undefined>();
+  const originalFetch = globalThis.fetch;
+  let dir: string;
+  beforeEach(() => {
+    for (const key of KEYS) saved.set(key, process.env[key]);
+    Object.assign(process.env, {
+      KORTIX_PROJECT_ID: 'proj-1',
+      KORTIX_SESSION_ID: 'sess-1',
+      KORTIX_TOKEN: 'sandbox-token',
+      KORTIX_API_URL: 'https://api.kortix.test',
+    });
+    dir = mkdtempSync(join(tmpdir(), 'kortix-audit-harness-'));
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    for (const key of KEYS) {
+      const value = saved.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a batch names its source and harness, and its events carry the runtime session', async () => {
+    const posted: Array<{ url: string; auth: string | null; body: any }> = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      posted.push({
+        url: String(url),
+        auth: new Headers(init.headers).get('authorization'),
+        body: JSON.parse(String(init.body)),
+      });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const relay = createRuntimeAuditRelay('pi', join(dir, 'spool.json'));
+    relay.enqueue({ type: 'tool.execute.after', properties: { sessionID: 'ses_pi', callID: 'call_1', tool: 'bash' } });
+    await relay.flush();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]!.url).toBe('https://api.kortix.test/v1/projects/proj-1/sessions/sess-1/audit/events');
+    expect(posted[0]!.auth).toBe('Bearer sandbox-token');
+    expect(posted[0]!.body).toMatchObject({ source: 'runtime', harness: 'pi' });
+    expect(posted[0]!.body.events[0]).toMatchObject({ runtime_session_id: 'ses_pi', tool_call_id: 'call_1' });
+    expect(posted[0]!.body.events[0]).not.toHaveProperty('opencode_session_id');
+    await relay.stop({ flush: false });
+  });
+
+  test('a spool a pre-W3 daemon left behind loads after the migration renames its field', async () => {
+    const event = sanitizeRuntimeEvent({ type: 'tool.execute.after', properties: { sessionID: 'ses_old', callID: 'call_1' } })!;
+    const { runtime_session_id: id, ...rest } = event;
+    const spoolPath = join(dir, 'opencode-audit-spool.json');
+    // What a pre-W3 daemon wrote: a V2 spool whose events name `opencode_session_id`.
+    writeFileSync(spoolPath, JSON.stringify({ version: 2, queue: [{ ...rest, opencode_session_id: id }], lineage: [] }));
+    expect(() => createAuditRelay(async () => {}, { spoolPath })).toThrow('invalid audit spool');
+
+    migratePreW3AuditSpool(spoolPath);
+
+    const sent: RuntimeAuditEvent[] = [];
+    const relay = createAuditRelay(async (events) => { sent.push(...events); }, { spoolPath });
+    await relay.flush();
+    expect(sent).toEqual([event]);
+    // A spool without the old field is left byte-for-byte alone.
+    const before = readFileSync(spoolPath, 'utf8');
+    migratePreW3AuditSpool(spoolPath);
+    expect(readFileSync(spoolPath, 'utf8')).toBe(before);
+    await relay.stop({ flush: false });
   });
 });

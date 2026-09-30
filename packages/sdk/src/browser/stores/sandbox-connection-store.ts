@@ -24,6 +24,11 @@ interface SandboxConnectionStore {
 	healthy: boolean | null;
 	/** Last runtime boot/readiness error reported by /kortix/health */
 	runtimeError: string | null;
+	/**
+	 * The `capabilities` the last /kortix/health answer listed; null before one
+	 * answered. Read a feature with `runtimeSupports` (core/session/health).
+	 */
+	runtimeCapabilities: readonly string[] | null;
 	manualRetryNonce: number;
 	/**
 	 * When the last live SSE event from the active runtime arrived. Proof of
@@ -117,11 +122,24 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	openCodeVersion: null,
 	healthy: null,
 	runtimeError: null,
+	runtimeCapabilities: null,
 	manualRetryNonce: 0,
 	lastRuntimeEvidenceAt: null,
 	bootingSinceAt: null,
 	parked: false,
 }));
+
+/** Record the health probe's `capabilities`; an unchanged list keeps the same array. */
+export function setRuntimeCapabilities(capabilities: readonly string[] | null) {
+	const current = useSandboxConnectionStore.getState().runtimeCapabilities;
+	const same =
+		current === capabilities ||
+		(current !== null &&
+			capabilities !== null &&
+			current.length === capabilities.length &&
+			current.every((entry, index) => entry === capabilities[index]));
+	if (!same) useSandboxConnectionStore.setState({ runtimeCapabilities: capabilities });
+}
 
 export function requestRuntimeReconnect() {
 	useSandboxConnectionStore.setState((state) => ({
@@ -247,6 +265,8 @@ export function resetForServerSwitch(serverUrl?: string) {
 			openCodeVersion: null,
 			healthy: true,
 			runtimeError: null,
+			// A different runtime: its features are unknown until it answers.
+			runtimeCapabilities: null,
 			manualRetryNonce: 0,
 			lastRuntimeEvidenceAt: null,
 			bootingSinceAt: null,
@@ -266,6 +286,7 @@ export function resetForServerSwitch(serverUrl?: string) {
 		openCodeVersion: null,
 		healthy: null,
 		runtimeError: null,
+		runtimeCapabilities: null,
 		manualRetryNonce: 0,
 		lastRuntimeEvidenceAt: null,
 		bootingSinceAt: Date.now(),

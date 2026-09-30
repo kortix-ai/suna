@@ -19,6 +19,6 @@ function sessionOf(payload: unknown): string | undefined {
   }
 
 export const OPENCODE_EVENT_RECOVERY = [
-  "GET /kortix/opencode/state",
-  "GET /kortix/opencode/messages/:sessionId?limit=20",
+  "GET /kortix/runtime/state",
+  "GET /kortix/runtime/messages/:sessionId?limit=20",
 ] as const
