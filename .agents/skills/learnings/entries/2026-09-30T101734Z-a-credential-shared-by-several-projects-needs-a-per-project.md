@@ -19,8 +19,8 @@ one credential out to several projects.
 **Incident:** 2026-09-29, a near-miss found after the Teams/Slack permissions
 audit (PR #8302). An agent in one project could read, through `kortix_slack`
 and `kortix_teams`, the channels, DMs and threads of every other project in the
-same Slack workspace or Teams tenant. No exploitation found. Fixed on branch
-`claude/suspicious-agnesi-c6cd16` by `connectors/channel-read-scope.ts`.
+same Slack workspace or Teams tenant. No exploitation found. Fixed in PR #8345
+by `connectors/channel-read-scope.ts`.
 
 **Enforcement:** `connectors/channel-read-scope.test.ts` fails when a Slack or
 Teams catalog action has no read scope; `integration-channel-read-scope.test.ts`
