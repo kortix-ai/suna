@@ -62,14 +62,15 @@ describe('deriveSessionFiles', () => {
     expect(deriveSessionFiles([msg('user', [{ type: 'text', text: '<file filename="missing.pdf">x</file>' }])])).toEqual([]);
   });
 
-  test('lists path-backed file-only uploads and skips pathless attachments', () => {
+  test('lists file-only uploads with sandbox URLs and skips remote or device-only attachments', () => {
     const files = deriveSessionFiles([
       msg('user', [
-        { type: 'file', id: 'upload-1', filename: 'brief.pdf', mime: 'application/pdf', path: '/workspace/uploads/brief.pdf' },
+        { type: 'file', id: 'upload-1', filename: 'notes.pdf', mime: 'application/pdf', url: 'file:///workspace/uploads/notes.pdf' },
         { type: 'file', id: 'upload-2', filename: 'remote.pdf', mime: 'application/pdf', url: 'https://example.test/remote.pdf' },
+        { type: 'file', id: 'upload-3', filename: 'device.pdf', mime: 'application/pdf', localUri: 'file:///device/cache/device.pdf' },
       ]),
     ]);
-    expect(files).toMatchObject([{ name: 'brief.pdf', path: '/workspace/uploads/brief.pdf', shown: true, fresh: 'new' }]);
+    expect(files).toMatchObject([{ name: 'notes.pdf', path: '/workspace/uploads/notes.pdf', shown: true, fresh: 'new' }]);
     expect(files).toHaveLength(1);
   });
 

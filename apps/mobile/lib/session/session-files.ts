@@ -229,8 +229,11 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
   messages.forEach((message, messageIndex) => {
     const isLatest = messageIndex >= latestStart;
     for (const part of message.parts ?? []) {
-      if (message.info.role === 'user' && part.type === 'file' && 'path' in part && typeof part.path === 'string') {
-        const item = candidate(part.id, part.path, { shown: true, kind: kindOfName(part.filename || part.path) });
+      if (message.info.role === 'user' && part.type === 'file') {
+        const path = 'path' in part && typeof part.path === 'string'
+          ? part.path
+          : part.url?.startsWith('file:///workspace/') ? part.url.slice('file://'.length) : '';
+        const item = candidate(part.id, path, { shown: true, kind: kindOfName(part.filename || path) });
         if (item) {
           const key = pathKey(item.path);
           if (!indexByKey.has(key)) {
