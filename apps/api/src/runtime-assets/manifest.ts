@@ -27,8 +27,9 @@ import { fileURLToPath } from 'node:url';
 import { buildFileSha256 } from '@kortix/shared/sandbox-runtime-artifact';
 import { OPENCODE_VERSION } from '@kortix/shared/runtime-versions';
 import {
-  managedSkillOverlayFor,
-  normalizeRunningSkillsHash,
+  managedSkillOverlayFiles,
+  managedSkillOverlayHash,
+  type ManagedSkillOverlayFile,
 } from './managed-skills';
 import { RUNTIME_MANAGED_MODELS } from '../llm-gateway/models/managed-models';
 
@@ -265,9 +266,15 @@ export interface RuntimeAssetsManifest {
 type RuntimeAssetsDigests = Omit<RuntimeAssetsManifest, 'policy'>;
 
 let manifestPromise: Promise<RuntimeAssetsDigests> | null = null;
+let overlayCache: { files: ManagedSkillOverlayFile[]; hash: string } | null = null;
 
-/** The overlay for the project flags that are ON; default = every flag off. */
-export const managedSkillOverlay = managedSkillOverlayFor;
+export function managedSkillOverlay(): { files: ManagedSkillOverlayFile[]; hash: string } {
+  if (!overlayCache) {
+    const files = managedSkillOverlayFiles();
+    overlayCache = { files, hash: managedSkillOverlayHash(files) };
+  }
+  return overlayCache;
+}
 
 /**
  * Digest + size + mtime of one baked binary, or null when the image carries
@@ -369,26 +376,11 @@ function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
   return manifestPromise;
 }
 
-export async function runtimeAssetsManifest(
-  flags: readonly string[] = [],
-): Promise<RuntimeAssetsManifest> {
+export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
   // Assembled per call so `policy` is read live: the kill switch must never
   // cost an extra deploy. Everything expensive comes from the memo, so the
   // marginal cost of a call is one object spread.
-  const digests = await runtimeAssetsDigests();
-  // `flags` = the caller project's ON flags: the skill overlay differs per flag
-  // set, and so does the hash the box must converge on.
-  const overlay = managedSkillOverlayFor(flags);
-  return {
-    ...digests,
-    managed_skills_hash: overlay.hash,
-    managed_skills_count: overlay.files.length,
-    components: {
-      ...digests.components,
-      'managed-skills': { hash: overlay.hash, count: overlay.files.length },
-    },
-    policy: { agent_self_update: agentSelfUpdateEnabled() },
-  };
+  return { ...(await runtimeAssetsDigests()), policy: { agent_self_update: agentSelfUpdateEnabled() } };
 }
 
 // ---------------------------------------------------------------------------
@@ -584,6 +576,7 @@ export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> 
 /** Test-only: drop both memos so a case can recompute against a mutated fixture. */
 export function _resetRuntimeAssetsCache(): void {
   manifestPromise = null;
+  overlayCache = null;
   chunkIndexPromise = null;
 }
 
@@ -738,7 +731,7 @@ export async function runningAssetsVerdict(
   })();
   const checks = [
     differs(components.cli?.sha256, running.cli_sha256),
-    differs(components['managed-skills'].hash, normalizeRunningSkillsHash(running.managed_skills_hash)),
+    differs(components['managed-skills'].hash, running.managed_skills_hash),
     differs(components.opencode.version, running.opencode_version),
     agentSelfUpdateEnabled() ? differs(components.agent?.sha256, running.agent_sha256) : null,
     managedCatalogDiffers,

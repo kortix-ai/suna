@@ -402,7 +402,7 @@ export function legacySectionRedirect(
     // project-specific destination, so this stays a narrow special case rather
     // than a second parameter every entry pays for.
     return accountPanelUrl(
-      `/projects/${projectId}`,
+      projectId ? `/projects/${projectId}` : '/projects',
       hubTarget(accountId, {
         tab: ACCOUNT_GRADUATED[rawSection],
         project: rawSection === 'members' ? projectId : undefined,

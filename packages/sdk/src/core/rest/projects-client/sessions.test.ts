@@ -1574,18 +1574,6 @@ test('sessionParentId falls back to metadata when parent_session_id is null or s
   expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
 });
 
-test('listProjectSessions sends participant=me for the "Asked you" list', async () => {
-  nextResponse = { status: 200, body: [] };
-  await listProjectSessions('P1', { participant: 'me' });
-  expect(new URL(last().url).searchParams.get('participant')).toBe('me');
-});
-
-test('createProjectSession sends participants for a conversation with people', async () => {
-  nextResponse = { status: 201, body: { session_id: 'ASK-1' } };
-  await createProjectSession('P1', { participants: ['avery@example.com'], initial_prompt: 'Which region?' });
-  expect(last().body).toEqual({ participants: ['avery@example.com'], initial_prompt: 'Which region?' });
-});
-
 test('getSessionMessageAuthors reads members and sessions keyed by message id', async () => {
   const body = {
     authors: {

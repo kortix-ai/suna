@@ -65,6 +65,17 @@ Dev and staging use the same `WEB_PROTECTION_USERNAME` and
 plaintext. It lives in dotenvx-encrypted environment files, GitHub Actions
 secrets, and AWS Secrets Manager.
 
+### Sandbox compute placement
+
+When available, a project's `us_region` flag places newly provisioned Platinum
+sandboxes in `KORTIX_PLATINUM_US_REGION`. API, database, and S3 archive regions
+do not override that compute preference. Disabling the flag uses the provider's
+home region; existing sandboxes retain their placement, including on restart.
+
+Warm-session adoption requires provider-reported placement matching the current
+project flag. Server-owned placement intent only deduplicates in-flight warming;
+it is not proof that a sandbox is ready or in the requested region.
+
 ## Rollback
 
 `rollback-prod.yml` validates that each requested release image exists. It then

@@ -395,17 +395,12 @@ every given label, and `useProjectSessions(projectId, { labels })` does the same
 React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
 most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
 
-### Ask people, and who wrote each message
+### Who wrote each message
 
-With the project flag `human_messaging` on, `createProjectSession(projectId, { participants, initial_prompt })`
-opens a conversation with project members (1–20 emails; `initial_prompt` is required). The prompt posts
-from the caller with no agent turn; the agent runs when a participant replies.
-`listProjectSessions(projectId, { participant: 'me' })` lists the conversations you were asked into.
 `kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
 `{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
-`{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name }`.
+`{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name, agent? }`.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
-Authorship works without the flag. See `apps/web/content/docs/connect/messaging.mdx`.
 
 ### React runtime
 

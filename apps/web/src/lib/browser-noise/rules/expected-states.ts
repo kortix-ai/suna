@@ -54,8 +54,8 @@ const BILLING_GATE_EXPECTED_MESSAGES = [
 // `useSummarizeRuntimeSession` mutation
 // (`packages/sdk/src/react/use-opencode-sessions/sessions.ts`) throws a
 // sentinel-marked `NoCompactionModelError`
-// (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`,
-// mirrored locally by `apps/mobile/lib/opencode/hooks/use-compact-session.ts`)
+// (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`;
+// `apps/mobile` uses the same mutation)
 // when every model-resolution fallback tier fails (no config default, no
 // assistant message in the thread, no connected provider/model). It is an
 // EXPECTED, user-facing configuration outcome — the host already surfaces it

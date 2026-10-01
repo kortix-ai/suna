@@ -171,6 +171,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+  invalidateSandbox: () => {},
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},

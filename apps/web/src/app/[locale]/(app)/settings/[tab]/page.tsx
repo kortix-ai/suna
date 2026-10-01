@@ -19,13 +19,26 @@
  * directly again, with the blank page fixed properly instead of avoided. The
  * reasoning lives in one place: `standalone-settings-route.tsx`'s header.
  *
- * An unparseable segment opens the panel on the account-scoped default rather
- * than 404ing, matching how the project-scoped sibling treats one.
+ * Retired account tabs open their replacement in the account hub. Unknown
+ * segments still open the account-scoped default rather than 404ing.
  */
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-import { parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
+import { RouteLoadingFallback } from '@/components/common/route-loading';
+import { Button } from '@/components/ui/button';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
+import { useTranslations } from '@/i18n/use-translations';
+
+import {
+  isAccountGraduatedSection,
+  legacySectionRedirect,
+  parseSettingsTab,
+} from '@/features/workspace/settings/settings-tabs';
 import {
   STANDALONE_DEFAULT_SETTINGS_TAB,
   StandaloneSettingsRoute,
@@ -33,7 +46,34 @@ import {
 
 export default function SettingsTabPage() {
   const params = useParams<{ tab: string }>();
-  const tab = parseSettingsTab(params?.tab) ?? STANDALONE_DEFAULT_SETTINGS_TAB;
+  const tab = parseSettingsTab(params?.tab);
+  const router = useRouter();
+  useEnsureSelectedAccount();
+  const accounts = useAccountsList();
+  const t = useTranslations('common');
+  const graduated = isAccountGraduatedSection(params?.tab);
+  const selectedAccountId = useSettingsAccountId();
+  // Validate persisted selection against this identity's accounts.
+  const accountId = (
+    accounts.data?.find((account) => account.account_id === selectedAccountId) ?? accounts.data?.[0]
+  )?.account_id;
+  const href =
+    graduated && accountId && !accounts.isError
+      ? legacySectionRedirect('', params?.tab, accountId)
+      : null;
 
-  return <StandaloneSettingsRoute tab={tab} />;
+  useEffect(() => {
+    if (href) router.replace(href);
+  }, [href, router]);
+
+  if (graduated) {
+    if (href || accounts.isPending) return <RouteLoadingFallback />;
+    return (
+      <ErrorState
+        title={t('error')}
+        action={<Button onClick={() => accounts.refetch()}>{t('retry')}</Button>}
+      />
+    );
+  }
+  return <StandaloneSettingsRoute tab={tab ?? STANDALONE_DEFAULT_SETTINGS_TAB} />;
 }
