@@ -671,16 +671,29 @@ export function ProjectScreen() {
   );
 
   // Project home — Kortix symbol, composer.
-  const homeContent = (
-    <View className="flex-1 bg-background">
-      <ProjectHome
-        projectId={projectId}
-        sending={isDashboardSending}
-        onSubmitNewSession={handleDashboardSend}
-        onOpenDrawer={openDrawer}
-        takeInitialDraft={takeInitialDraft}
-      />
-    </View>
+  // Memoized: `projectRoute` is a new object each render, so a stable element
+  // is what lets React skip home when only `drawerOpen` or a poll changed.
+  // `handleDashboardSend` changes with the create mutation and toast objects,
+  // so home gets a stable wrapper that calls the latest one.
+  const dashboardSendRef = useRef(handleDashboardSend);
+  dashboardSendRef.current = handleDashboardSend;
+  const submitNewSession = useCallback<typeof handleDashboardSend>(
+    (submit) => dashboardSendRef.current(submit),
+    []
+  );
+  const homeContent = useMemo(
+    () => (
+      <View className="flex-1 bg-background">
+        <ProjectHome
+          projectId={projectId}
+          sending={isDashboardSending}
+          onSubmitNewSession={submitNewSession}
+          onOpenDrawer={openDrawer}
+          takeInitialDraft={takeInitialDraft}
+        />
+      </View>
+    ),
+    [projectId, isDashboardSending, submitNewSession, openDrawer, takeInitialDraft]
   );
 
   const projectRoute: ProjectRouteValue = {

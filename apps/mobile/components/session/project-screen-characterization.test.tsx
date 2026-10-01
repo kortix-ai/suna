@@ -18,6 +18,7 @@ let routes: any[];
 let tab: any;
 let response: () => Promise<any>;
 let health: () => Promise<any>;
+let homeRenders = 0;
 let tree: ReactTestRenderer | undefined;
 let ProjectScreen: typeof import('./ProjectScreen').ProjectScreen;
 
@@ -30,7 +31,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
     StackActions: { push: (...args: any[]) => ({ type: 'push', args }), replace: (...args: any[]) => ({ type: 'replace', args }), popTo: (...args: any[]) => ({ type: 'popTo', args }) },
     CommonActions: { reset: (value: any) => ({ type: 'reset', value }) } },
   '@/components/session/ProjectRoutes': { PROJECT_HOME_ROUTE: 'index', PROJECT_VIEW_ROUTE: 'view', PROJECT_PAGE_ROUTE: 'page', PROJECT_SESSIONS_ROUTE: 'sessions', PROJECT_FILES_ROUTE: 'files', PROJECT_ACCOUNT_ROUTE: 'account', ProjectRouteProvider: ({ value, children }: any) => { route = value; return React.createElement(React.Fragment, null, value.home, value.view, children); }, backFromSubPage: spy('backSubPage') },
-  '@/components/session/ProjectHome': { ProjectHome: (props: any) => { home = props; return null; } },
+  '@/components/session/ProjectHome': { ProjectHome: (props: any) => { homeRenders++; home = props; return null; } },
   '@/components/session/SessionConnecting': { SessionConnecting: (props: any) => { connecting = props; return null; } },
   '@/components/session/SessionPage': { SessionPage: Empty },
   '@/components/session/ProjectLeftDrawer': { ProjectLeftDrawer: (props: any) => { drawer = props; return null; } },
@@ -87,6 +88,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   calls.length = 0;
+  homeRenders = 0;
   route = drawer = home = connecting = back = stackListener = undefined;
   tab = { activeSessionId: null, activePageId: null, setScope: spy('scope'), navigateToSession: spy('navigateSession') };
   routes = [{ key: 'home-key', name: 'index', params: { id: 'project-1' } }];
@@ -180,5 +182,13 @@ describe('ProjectScreen connect and stack', () => {
     expect(seen('dispatch').at(-1)?.args[0].type).toBe('popTo');
     await focus(['index']);
     expect(back?.()).toBe(false);
+  });
+
+  test('opening the drawer does not re-render project home', async () => {
+    await renderHook();
+    const before = homeRenders;
+    await act(async () => route.openDrawer());
+    expect(route.isDrawerOpen).toBe(true);
+    expect(homeRenders).toBe(before);
   });
 });
