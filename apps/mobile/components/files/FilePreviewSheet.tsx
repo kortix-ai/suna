@@ -274,7 +274,7 @@ export function FilePreviewBody({
           <FilePreview
             content={attachment ? storedContent?.text ?? null : preview.textContent || null}
             fileName={sandboxFile.name}
-            previewType={preview.previewType}
+            previewType={attachment ? getFilePreviewType(file.name) : preview.previewType}
             blobUrl={attachment ? storedContent?.url : preview.blobUrl}
             filePath={sandboxFile.path}
             sandboxUrl={attachment ? undefined : sandboxUrl}
