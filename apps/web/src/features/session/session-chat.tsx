@@ -3,7 +3,6 @@
 
 import { isQuestionTool } from './session-activity-groups';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
-import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
@@ -18,14 +17,17 @@ import {
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { useProjectSession } from '@kortix/sdk/react';
+import { useProjectSession, useSessionMessageAuthors } from '@kortix/sdk/react';
 import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { awaitsAgent, isUnansweredAsk, resolveTranscriptAuthors, showAuthorName } from './turn/message-author';
+import { useAuth } from '@/features/providers/auth-provider';
 import { QueuedPromptList } from './composer/queued-prompt-list';
+import { runtimePermissionLocksComposer } from './composer/send-blockers';
 import { SessionPrintHeader } from './print/session-print-header';
 import { useSessionPrint } from './print/use-session-print';
 import {
@@ -585,18 +587,36 @@ export function SessionChat({
   const syncMessages = sessionState ? liveSessionMessages : hookMessages;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
+  // Who wrote each user message. A one-person session stays unlabelled.
+  const { user: viewer } = useAuth();
+  // Only a user message adds an author, so only user messages key the refetch.
+  const userMessageIds = useMemo(
+    () => (messages ?? []).filter((m) => m.info.role === 'user').map((m) => m.info.id),
+    [messages],
+  );
+  const newestUserMessageId = userMessageIds.at(-1) ?? '';
+  const { data: messageAuthors, refetch: refetchMessageAuthors } = useSessionMessageAuthors(
+    projectId,
+    projectSessionId,
+    newestUserMessageId,
+  );
+  // The ledger records a message's delivered id a moment after the runtime
+  // shows it: ask once more when the newest message is still unattributed.
+  const authorsRetriedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!messageAuthors || !newestUserMessageId || messageAuthors.authors[newestUserMessageId]) return;
+    if (authorsRetriedFor.current === newestUserMessageId) return;
+    authorsRetriedFor.current = newestUserMessageId;
+    const timer = setTimeout(() => void refetchMessageAuthors(), 2000);
+    return () => clearTimeout(timer);
+  }, [messageAuthors, newestUserMessageId, refetchMessageAuthors]);
+  const transcriptAuthors = useMemo(
+    () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
+    [userMessageIds, messageAuthors],
+  );
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
-  // Pending connector-approvals for this session pause the run — lock the
-  // composer (like a question) until they're resolved. Shares the query key with
-  // SessionApprovalPrompt, so it's one request.
-  const approvalRouteParams = useParams<{ id?: string; sessionId?: string }>();
-  const { data: approvalAudit } = useSessionAudit(
-    projectId ?? approvalRouteParams.id,
-    approvalRouteParams.sessionId,
-  );
-  const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useRuntimeCommands();
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: allSessions } = useRuntimeSessions();
@@ -610,6 +630,21 @@ export function SessionChat({
   // crash cannot lose it, and the server — not this component — decides whether
   // it runs now or waits for the turn in flight.
   const promptInbox = useSessionPrompts(projectId, projectSessionId);
+  // A `no_reply` prompt (an ask's first message) is delivered to people, not
+  // queued for the agent: it draws no Sending/Queued chip and no Thinking row.
+  // Its bubble still comes from `queuedSyntheticMessages`.
+  const agentPrompts = useMemo(() => promptInbox.prompts.filter(awaitsAgent), [promptInbox.prompts]);
+  // Ids a server `no_reply` ask prompt shows under: its header is the server's.
+  const askMessageIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const prompt of promptInbox.prompts) {
+      if (!prompt.no_reply) continue;
+      if (prompt.message_id) ids.add(prompt.message_id);
+      if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
+      ids.add(`queued-${prompt.prompt_id}`);
+    }
+    return ids;
+  }, [promptInbox.prompts]);
   /**
    * What the first prompt's attachment strip should say before runtime delivery.
    *
@@ -992,8 +1027,18 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
+  // An ask nobody answered yet went to people, not to the agent: the runtime
+  // reads busy for a moment after delivering it, but nothing is working. Folded
+  // in HERE so Stop and Thinking still read one value.
+  const askAwaitsPeople = useMemo(() => {
+    const list = messages ?? [];
+    const last = list[list.length - 1];
+    if (!last || last.info.role !== 'user') return false;
+    if (list.filter((m) => m.info.role === 'user').length !== 1) return false;
+    return isUnansweredAsk({ userMessage: last, assistantMessages: [] });
+  }, [messages]);
   const effectiveBusy = resolveEffectiveBusy({
-    isServerBusy,
+    isServerBusy: isServerBusy && !askAwaitsPeople,
     isOptimisticCompacting,
     hasRetryingAssistant,
   });
@@ -1663,7 +1708,7 @@ export function SessionChat({
   }, [promptInbox.prompts, transcriptClaimedIds, sessionId]);
   const pendingDisplayIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const prompt of promptInbox.prompts) {
+    for (const prompt of agentPrompts) {
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
       ids.add(`queued-${prompt.prompt_id}`);
@@ -1675,7 +1720,7 @@ export function SessionChat({
       }
     }
     return ids;
-  }, [promptInbox.prompts, messages]);
+  }, [agentPrompts, messages]);
   const rawTurns = useMemo(
     () =>
       messages || queuedSyntheticMessages.length > 0
@@ -1883,27 +1928,27 @@ export function SessionChat({
   // the drain re-mints `message_id` while the tab still paints `wire_message_id`.
   const pendingPromptsByMessageId = useMemo(() => {
     const byId = new Map<string, SessionPrompt>();
-    for (const prompt of promptInbox.prompts) {
+    for (const prompt of agentPrompts) {
       if (prompt.message_id) byId.set(prompt.message_id, prompt);
       if (prompt.wire_message_id) byId.set(prompt.wire_message_id, prompt);
     }
     return byId;
-  }, [promptInbox.prompts]);
+  }, [agentPrompts]);
   // Every id a prompt the inbox is delivering right now can render under,
   // including the synthetic `queued-` id a bubble with no message id uses.
   const deliveringPromptIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const prompt of promptInbox.prompts) {
+    for (const prompt of agentPrompts) {
       if (prompt.state !== 'delivering') continue;
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
       ids.add(`queued-${prompt.prompt_id}`);
     }
     return ids;
-  }, [promptInbox.prompts]);
+  }, [agentPrompts]);
   const unrunTurnIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const prompt of promptInbox.prompts) {
+    for (const prompt of agentPrompts) {
       if (prompt.message_id) ids.add(prompt.message_id);
       if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
     }
@@ -1911,7 +1956,7 @@ export function SessionChat({
     // bubble would read as running while the server still holds the prompt.
     if (firstTurnClaim) ids.add(firstTurnClaim.messageId);
     return ids;
-  }, [promptInbox.prompts, firstTurnClaim]);
+  }, [agentPrompts, firstTurnClaim]);
   // The idle send this tab made last (`handleSend`), scoped to its session.
   // While its turn is unanswered it is the working turn even where the
   // projection names none — see `freshSendHint` for the double jump it removes.
@@ -4226,6 +4271,14 @@ export function SessionChat({
                                     : 'mt-12'
                               }
                               turn={turn}
+                              author={transcriptAuthors.byMessage.get(turn.userMessage.info.id)}
+                              showAuthor={showAuthorName(
+                                transcriptAuthors.byMessage.get(turn.userMessage.info.id),
+                                transcriptAuthors.multiAuthor,
+                                viewer?.id,
+                              )}
+                              headerTrusted={askMessageIds.has(turn.userMessage.info.id)}
+                              viewerEmail={viewer?.email}
                               turnOutcome={turnOutcome}
                               isLast={turn.userMessage.info.id === lastUserMessageId}
                               ownsPlan={turn.userMessage.info.id === planAnchorId}
@@ -4498,7 +4551,7 @@ export function SessionChat({
                 // Same dead-prompt guard as questions: only lock while the agent is
                 // actually paused on the decision (isBusy), so a stale card can't
                 // swallow the composer on an idle session.
-                lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+                lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionCanAct={questionAction.canAct}

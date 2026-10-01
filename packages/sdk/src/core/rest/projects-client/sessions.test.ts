@@ -32,6 +32,7 @@ import {
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
+  getSessionMessageAuthors,
   listProjectSessions,
   listProjectSessionsPage,
   listSessionPrompts,
@@ -1531,4 +1532,29 @@ test('sessionParentId falls back to metadata when parent_session_id is null or s
   expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
   const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
   expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
+});
+
+test('listProjectSessions sends participant=me for the "Asked you" list', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { participant: 'me' });
+  expect(new URL(last().url).searchParams.get('participant')).toBe('me');
+});
+
+test('createProjectSession sends participants for a conversation with people', async () => {
+  nextResponse = { status: 201, body: { session_id: 'ASK-1' } };
+  await createProjectSession('P1', { participants: ['avery@example.com'], initial_prompt: 'Which region?' });
+  expect(last().body).toEqual({ participants: ['avery@example.com'], initial_prompt: 'Which region?' });
+});
+
+test('getSessionMessageAuthors reads members and sessions keyed by message id', async () => {
+  const body = {
+    authors: {
+      msg_a: { kind: 'member', user_id: 'U1', name: 'Avery', email: 'avery@example.com' },
+      msg_b: { kind: 'session', session_id: 'S0', name: 'Deploy pipeline' },
+    },
+    initial_author: null,
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
 });
