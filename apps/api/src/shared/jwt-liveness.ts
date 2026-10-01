@@ -82,6 +82,14 @@ function ttlMs(): number {
   return Number.isFinite(ttl) && ttl > 0 ? ttl : 0;
 }
 
+async function loadStableUser(token: string): Promise<LiveUser | null> {
+  for (;;) {
+    const version = invalidationVersion;
+    const user = await loader(token);
+    if (version === invalidationVersion) return user;
+  }
+}
+
 /**
  * The live user behind `token`, or null when GoTrue says the session is gone.
  * Throws when GoTrue cannot be reached. `expSeconds` is the verified `exp`
@@ -89,11 +97,7 @@ function ttlMs(): number {
  */
 export async function confirmJwtLive(token: string, expSeconds: number | undefined): Promise<LiveUser | null> {
   const ttl = ttlMs();
-  if (ttl === 0) {
-    const version = invalidationVersion;
-    const user = await loader(token);
-    return version === invalidationVersion ? user : loader(token);
-  }
+  if (ttl === 0) return loadStableUser(token);
 
   const key = keyFor(token);
   const now = Date.now();
@@ -106,11 +110,8 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const version = invalidationVersion;
-  const request = loader(token)
-    .then(async (user) => {
-      // Do not reuse a GoTrue answer that raced an auth-user deletion.
-      if (version !== invalidationVersion) return loader(token);
+  const request = loadStableUser(token)
+    .then((user) => {
       if (user) {
         const tokenExpiry = typeof expSeconds === 'number' ? expSeconds * 1000 : Number.POSITIVE_INFINITY;
         const expiresAt = Math.min(Date.now() + ttl, tokenExpiry);

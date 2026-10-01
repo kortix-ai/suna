@@ -415,3 +415,26 @@ test('a GoTrue confirmation racing deletion cannot restore cached liveness', asy
   expect(await pending).toBeNull();
   expect(liveness.jwtLivenessCacheSize()).toBe(0);
 });
+
+for (const ttl of [0, 30000]) {
+  test(`every GoTrue retry validates two deletion invalidations at TTL ${ttl}`, async () => {
+    config.SUPABASE_JWT_LIVENESS_TTL_MS = ttl;
+    let calls = 0;
+    liveness.__setJwtLivenessLoaderForTests(async () => {
+      calls++;
+      if (calls <= 2) {
+        liveness.forgetUserJwtLiveness('user-1');
+        return { id: 'user-1', email: '' };
+      }
+      return null;
+    });
+    try {
+      expect(await liveness.confirmJwtLive('twice-invalidated-token', Math.floor(Date.now() / 1000) + 3600)).toBeNull();
+      expect(calls).toBe(3);
+      expect(liveness.jwtLivenessCacheSize()).toBe(0);
+    } finally {
+      config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
+      liveness.__setJwtLivenessLoaderForTests(null);
+    }
+  });
+}
