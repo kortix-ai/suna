@@ -20378,7 +20378,7 @@
     "actionsFor": "Actions pour {name}",
     "older": {
       "title": "Anciennes connexions",
-      "hint": "Créées par une ancienne version de Kortix qui ne distinguait pas les ordinateurs. Aucune n’est en ligne.",
+      "hint": "Créées par une ancienne version de Kortix qui ne distinguait pas les ordinateurs. Aucune n’est en ligne. Kortix supprime chacune après 30 jours sans signe de vie.",
       "removeAll": "Tout supprimer",
       "confirmTitle": "Supprimer toutes les anciennes connexions ?",
       "confirmDescription": "Kortix les supprime avec leurs comptes de tous les projets. Un ordinateur qui en utilise encore une peut se reconnecter."

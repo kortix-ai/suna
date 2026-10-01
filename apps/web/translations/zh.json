@@ -20378,7 +20378,7 @@
     "actionsFor": "{name} 的操作",
     "older": {
       "title": "旧连接",
-      "hint": "由无法区分电脑的旧版 Kortix 创建。它们都不在线。",
+      "hint": "由无法区分电脑的旧版 Kortix 创建。它们都不在线。连续 30 天没有活动的连接会被 Kortix 自动移除。",
       "removeAll": "全部移除",
       "confirmTitle": "移除所有旧连接？",
       "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"

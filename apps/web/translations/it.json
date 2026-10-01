@@ -20378,7 +20378,7 @@
     "actionsFor": "Azioni per {name}",
     "older": {
       "title": "Connessioni precedenti",
-      "hint": "Create da una versione precedente di Kortix che non distingueva i computer. Nessuna è online.",
+      "hint": "Create da una versione precedente di Kortix che non distingueva i computer. Nessuna è online. Kortix rimuove ciascuna dopo 30 giorni senza segni di attività.",
       "removeAll": "Rimuovi tutte",
       "confirmTitle": "Rimuovere tutte le connessioni precedenti?",
       "confirmDescription": "Kortix le rimuove insieme ai loro account da tutti i progetti. Un computer che ne usa ancora una può riconnettersi."
