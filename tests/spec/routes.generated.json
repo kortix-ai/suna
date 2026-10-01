@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 700,
+  "count": 712,
   "routes": [
     {
       "method": "GET",
@@ -261,6 +261,34 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/branding/assets/:kind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/chunks/:chunkId/video"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/capture/data"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/settings"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/settings"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/timeline"
     },
     {
       "method": "GET",
@@ -973,6 +1001,26 @@
     {
       "method": "POST",
       "path": "/v1/billing/webhooks/stripe"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/agent/chunks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/agent/chunks/:chunkId/commit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/agent/config"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/devices"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/capture/devices/:deviceId"
     },
     {
       "method": "POST",

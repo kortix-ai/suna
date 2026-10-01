@@ -19105,7 +19105,21 @@
       "textdf757dbe33eb": "Tu catálogo de Teams tiene la versión {value0} de la app de Kortix. La versión {value1} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
       "textcd2c4b26eedd": "Kortix no tiene registro de la versión de la app en tu catálogo de Teams. La versión {value0} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
       "texte15f213fa506": "Publicar actualización de la app",
-      "textcafd830fcf85": "Identidades de agente del proyecto enumeradas"
+      "textcafd830fcf85": "Identidades de agente del proyecto enumeradas",
+      "text2283675ad723": "Datos de captura propios eliminados",
+      "text1ba9cde823f2": "Dispositivos de captura listados",
+      "textffbadd3c8c4f": "Vídeo de captura abierto",
+      "textfe0154873d1a": "El grabador confirmó un fragmento",
+      "text2f409eacc305": "El grabador leyó la configuración de captura",
+      "texte78447239c62": "El grabador registró un fragmento",
+      "textabe366440dc0": "Capturas buscadas",
+      "textde47e5716f92": "Dispositivo de captura actualizado",
+      "text00b79206c9c4": "Ajustes de captura actualizados",
+      "text177ca40772f2": "Fotograma de captura visto",
+      "text396a3d705dfe": "Ajustes de captura vistos",
+      "textd5c256691c77": "Cronología de captura vista",
+      "textea2f51bfe21c": "Participantes de la sesión vistos",
+      "text37e6441aa695": "Capturas de un miembro vistas"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

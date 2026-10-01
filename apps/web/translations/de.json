@@ -19105,7 +19105,21 @@
       "textdf757dbe33eb": "Dein Teams-Katalog hat Version {value0} der Kortix-App. Version {value1} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "texte15f213fa506": "App-Update veröffentlichen",
-      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet"
+      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet",
+      "text2283675ad723": "Eigene Aufnahmedaten gelöscht",
+      "text1ba9cde823f2": "Aufnahmegeräte aufgelistet",
+      "textffbadd3c8c4f": "Aufnahmevideo geöffnet",
+      "textfe0154873d1a": "Recorder hat einen Abschnitt bestätigt",
+      "text2f409eacc305": "Recorder hat die Aufnahmekonfiguration gelesen",
+      "texte78447239c62": "Recorder hat einen Abschnitt registriert",
+      "textabe366440dc0": "Aufnahmen durchsucht",
+      "textde47e5716f92": "Aufnahmegerät aktualisiert",
+      "text00b79206c9c4": "Aufnahmeeinstellungen aktualisiert",
+      "text177ca40772f2": "Aufnahmebild angesehen",
+      "text396a3d705dfe": "Aufnahmeeinstellungen angesehen",
+      "textd5c256691c77": "Aufnahme-Zeitleiste angesehen",
+      "textea2f51bfe21c": "Sitzungsteilnehmer angesehen",
+      "text37e6441aa695": "Aufnahmen eines Mitglieds angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

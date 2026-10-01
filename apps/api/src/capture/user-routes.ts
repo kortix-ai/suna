@@ -2,7 +2,7 @@
  * Kortix Capture user API (user JWT or PAT, `combinedAuth`).
  *
  *   GET/PUT /v1/accounts/:accountId/capture/settings
- *   GET     /v1/capture/devices            PUT /v1/capture/devices/:deviceId
+ *   GET     /v1/capture/devices            PUT /v1/capture/devices/:deviceId (enabled, paused_until, account_id)
  *   GET     /v1/accounts/:accountId/capture/{search,timeline}
  *   GET     /v1/accounts/:accountId/capture/chunks/:chunkId/video
  *   GET     /v1/accounts/:accountId/capture/frames/:frameId
@@ -199,14 +199,23 @@ export function createCaptureUserRouter() {
         set.pausedUntil = d;
       }
     }
-    if (Object.keys(set).length === 0) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'Send enabled and/or paused_until');
+    if ('account_id' in body) {
+      // Which account owns this device's recordings: any account the caller belongs to.
+      const accountId = body.account_id;
+      if (!isUuid(accountId)) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'account_id must be a UUID');
+      if (!(await accountRoleFor(accountId, c.get('userId') as string))) {
+        return err(c, 403, 'CAPTURE_NOT_A_MEMBER', 'Not a member of this account');
+      }
+      set.accountId = accountId;
+    }
+    if (Object.keys(set).length === 0) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'Send enabled, paused_until and/or account_id');
     const [row] = await db
       .update(captureDevices)
       .set(set)
       .where(and(eq(captureDevices.id, deviceId), eq(captureDevices.userId, c.get('userId') as string)))
       .returning();
     if (!row) return err(c, 404, 'CAPTURE_DEVICE_NOT_FOUND', 'Device not found');
-    return c.json({ id: row.id, enabled: row.enabled, paused_until: row.pausedUntil?.toISOString() ?? null });
+    return c.json({ id: row.id, account_id: row.accountId, enabled: row.enabled, paused_until: row.pausedUntil?.toISOString() ?? null });
   });
 
   // ── Search ────────────────────────────────────────────────────────────────

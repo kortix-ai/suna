@@ -19105,7 +19105,21 @@
       "textdf757dbe33eb": "Votre catalogue Teams contient la version {value0} de l'application Kortix. La version {value1} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
       "textcd2c4b26eedd": "Kortix ne connaît pas la version de l'application dans votre catalogue Teams. La version {value0} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
       "texte15f213fa506": "Publier la mise à jour de l'application",
-      "textcafd830fcf85": "Identités d’agent du projet répertoriées"
+      "textcafd830fcf85": "Identités d’agent du projet répertoriées",
+      "text2283675ad723": "Données de capture personnelles supprimées",
+      "text1ba9cde823f2": "Appareils de capture listés",
+      "textffbadd3c8c4f": "Vidéo de capture ouverte",
+      "textfe0154873d1a": "L'enregistreur a validé un segment",
+      "text2f409eacc305": "L'enregistreur a lu la configuration de capture",
+      "texte78447239c62": "L'enregistreur a enregistré un segment",
+      "textabe366440dc0": "Captures recherchées",
+      "textde47e5716f92": "Appareil de capture mis à jour",
+      "text00b79206c9c4": "Paramètres de capture mis à jour",
+      "text177ca40772f2": "Image de capture consultée",
+      "text396a3d705dfe": "Paramètres de capture consultés",
+      "textd5c256691c77": "Chronologie de capture consultée",
+      "textea2f51bfe21c": "Participants de la session consultés",
+      "text37e6441aa695": "Captures d'un membre consultées"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

@@ -57,14 +57,19 @@ async function deviceFor(machine: Machine & { ownerUserId: string }) {
   return device!;
 }
 
-/** What the recorder may do right now. The owner must still be a member of the account. */
+/**
+ * What the recorder may do right now. Settings come from the DEVICE's account:
+ * a private machine is paired into its owner's personal account, and the owner
+ * moves the device to a team account with `PUT /capture/devices/:id`. The owner
+ * must still be a member of that account.
+ */
 async function allowance(machine: Machine & { ownerUserId: string }) {
   const device = await deviceFor(machine);
   const [settings] = await db
     .select()
     .from(captureAccountSettings)
-    .where(eq(captureAccountSettings.accountId, machine.accountId));
-  const member = (await accountRoleFor(machine.accountId, machine.ownerUserId)) !== null;
+    .where(eq(captureAccountSettings.accountId, device.accountId));
+  const member = (await accountRoleFor(device.accountId, machine.ownerUserId)) !== null;
   const paused = device.pausedUntil !== null && device.pausedUntil.getTime() > Date.now();
   const accountEnabled = settings?.enabled ?? false;
   return {
@@ -130,7 +135,7 @@ export function createCaptureAgentRouter() {
       .insert(captureChunks)
       .values({
         id: chunkId,
-        accountId: m.machine.accountId,
+        accountId: device.accountId,
         userId: m.machine.ownerUserId,
         deviceId: device.id,
         clientUid,
@@ -140,7 +145,7 @@ export function createCaptureAgentRouter() {
         width,
         height,
         codec,
-        videoKey: captureVideoKey({ accountId: m.machine.accountId, userId: m.machine.ownerUserId, startedAt, chunkId }),
+        videoKey: captureVideoKey({ accountId: device.accountId, userId: m.machine.ownerUserId, startedAt, chunkId }),
         videoBytes,
         videoSha256: sha,
       })

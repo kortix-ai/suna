@@ -19105,7 +19105,21 @@
       "textdf757dbe33eb": "Seu catálogo do Teams tem a versão {value0} do app Kortix. A versão {value1} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "textcd2c4b26eedd": "O Kortix não tem registro da versão do app no seu catálogo do Teams. A versão {value0} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "texte15f213fa506": "Publicar atualização do app",
-      "textcafd830fcf85": "Identidades de agente do projeto listadas"
+      "textcafd830fcf85": "Identidades de agente do projeto listadas",
+      "text2283675ad723": "Dados de captura próprios excluídos",
+      "text1ba9cde823f2": "Dispositivos de captura listados",
+      "textffbadd3c8c4f": "Vídeo de captura aberto",
+      "textfe0154873d1a": "O gravador confirmou um trecho",
+      "text2f409eacc305": "O gravador leu a configuração de captura",
+      "texte78447239c62": "O gravador registrou um trecho",
+      "textabe366440dc0": "Capturas pesquisadas",
+      "textde47e5716f92": "Dispositivo de captura atualizado",
+      "text00b79206c9c4": "Configurações de captura atualizadas",
+      "text177ca40772f2": "Quadro de captura visualizado",
+      "text396a3d705dfe": "Configurações de captura visualizadas",
+      "textd5c256691c77": "Linha do tempo de captura visualizada",
+      "textea2f51bfe21c": "Participantes da sessão visualizados",
+      "text37e6441aa695": "Capturas de um membro visualizadas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
