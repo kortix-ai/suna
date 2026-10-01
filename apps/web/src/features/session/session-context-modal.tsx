@@ -69,9 +69,9 @@ export function estimateBreakdown(
     (acc, msg) => {
       if (msg.info.role === 'user') {
         const user = msg.parts.reduce((sum, part) => {
-          if (part.type === 'text') return sum + part.text.length;
-          if (part.type === 'file') return sum + (part.source?.text?.value?.length ?? 0);
-          if (part.type === 'agent') return sum + (part.source?.value?.length ?? 0);
+          if (part.type === 'text') return sum + (part as any).text.length;
+          if (part.type === 'file') return sum + ((part as any).source?.text?.value?.length ?? 0);
+          if (part.type === 'agent') return sum + ((part as any).source?.value?.length ?? 0);
           return sum;
         }, 0);
         return { ...acc, user: acc.user + user };
@@ -80,11 +80,11 @@ export function estimateBreakdown(
       const result = msg.parts.reduce(
         (sum, part) => {
           if (part.type === 'text')
-            return { assistant: sum.assistant + part.text.length, tool: sum.tool };
+            return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
           if (part.type === 'reasoning')
-            return { assistant: sum.assistant + part.text.length, tool: sum.tool };
+            return { assistant: sum.assistant + (part as any).text.length, tool: sum.tool };
           if (part.type === 'tool') {
-            const state = part.state;
+            const state = (part as any).state;
             const inputLen = Object.keys(state?.input ?? {}).length * 16;
             let toolLen = inputLen;
             if (state?.status === 'pending') toolLen += state.raw?.length ?? 0;
