@@ -170,8 +170,8 @@ describe('scrape_webpage', () => {
   })
 })
 
-describe('the web tools follow the websearch and webfetch capabilities', () => {
-  const rule = (policy: unknown, tool: string) => new PermissionBroker('ses_test', () => {}, compilePermissionPolicy(policy)).rule(tool, {})
+describe('the Kortix tools follow the capability of what they do', () => {
+  const rule = (policy: unknown, tool: string, args: unknown = {}) => new PermissionBroker('ses_test', () => {}, compilePermissionPolicy(policy)).rule(tool, args)
 
   test.each([
     ['web_search', { websearch: 'deny' }, 'deny'],
@@ -182,9 +182,38 @@ describe('the web tools follow the websearch and webfetch capabilities', () => {
     ['web_search', { webfetch: 'deny' }, 'allow'],
     // A rule for the tool itself outranks its capability.
     ['web_search', { websearch: 'deny', web_search: 'allow' }, 'allow'],
-    ['memory', { websearch: 'deny', webfetch: 'deny', edit: 'deny' }, 'allow'],
+    ['show', { websearch: 'deny', webfetch: 'deny', edit: 'deny' }, 'allow'],
   ])('%s under %j is %s', (tool, policy, expected) => {
     expect<string>(rule(policy, tool)).toBe(expected)
+  })
+
+  test.each([
+    // A memory write is a file write: `edit` governs it, as it governs `write`.
+    ['create', { edit: 'deny' }, 'deny'],
+    ['str_replace', { edit: 'ask' }, 'ask'],
+    ['delete', { edit: 'deny', read: 'allow' }, 'deny'],
+    ['rename', { edit: 'deny' }, 'deny'],
+    ['insert', { edit: 'deny' }, 'deny'],
+    // Reading memory is a read.
+    ['view', { edit: 'deny' }, 'allow'],
+    ['view', { read: 'deny' }, 'deny'],
+    // A path pattern reaches the memory path.
+    ['create', { edit: { 'memory/*': 'allow', '*': 'deny' } }, 'allow'],
+    // A rule for the tool itself outranks both.
+    ['create', { edit: 'deny', memory: 'allow' }, 'allow'],
+  ])('memory %s under %j is %s', (command, policy, expected) => {
+    expect<string>(rule(policy, 'memory', { command, path: 'memory/notes.md' })).toBe(expected)
+  })
+
+  test('an "always" reply to a memory write allows the edit capability, not memory reads elsewhere', async () => {
+    const broker = new PermissionBroker('ses_test', () => {}, compilePermissionPolicy({ edit: 'ask', read: 'ask' }))
+    const asked = broker.ask({ tool: 'memory', args: { command: 'create', path: 'memory/a.md' } })
+    const [request] = broker.list()
+    expect(request!.permission).toBe('edit')
+    broker.reply(request!.id, 'always')
+    await asked
+    expect<string>(broker.rule('write', { path: 'a.txt' })).toBe('allow')
+    expect<string>(broker.rule('memory', { command: 'view', path: 'memory/a.md' })).toBe('ask')
   })
 })
 

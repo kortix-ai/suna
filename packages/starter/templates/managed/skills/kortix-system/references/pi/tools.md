@@ -16,7 +16,7 @@ any of them. A pi extension or a pi package can add more (`extensions.md`).
 | `web_search` | Searches the web (Tavily). Batch queries with `|||`. | `websearch` |
 | `image_search` | Searches for images (Serper). Batch queries with `|||`. | `websearch` |
 | `scrape_webpage` | Fetches pages as markdown (Firecrawl). Comma-separated URLs. | `webfetch` |
-| `memory` | Reads and writes the project brain in `memory/`. | `memory` |
+| `memory` | Reads and writes the project brain in `memory/`. | `edit` (`read` for the `view` command) |
 | `show` | Shows a file, an image, a URL or inline content to the user. | `show` |
 
 `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` have the
@@ -56,8 +56,10 @@ bills each call to the project. No API key is necessary in the sandbox.
 
 The agent's `permission` block in its `.md` frontmatter governs the tools, on
 pi as on OpenCode. A rule names a permission key from the table above, not a
-tool: `edit: deny` stops `write` and `edit`, and `websearch: deny` stops
-`web_search` and `image_search`.
+tool: `edit: deny` stops `write`, `edit` and every `memory` command that
+changes a file, and `websearch: deny` stops `web_search` and `image_search`.
+A rule under the tool's own name (`memory: allow`) wins over its permission
+key.
 
 ```yaml
 permission:

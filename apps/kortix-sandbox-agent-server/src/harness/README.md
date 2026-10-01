@@ -171,9 +171,10 @@ Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`
 A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
 `@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
 one harness's tool. Each adapter maps its tools onto them: pi's `write` is
-`edit`, and its `web_search`/`image_search` and `scrape_webpage` follow
-`websearch` and `webfetch` (`pi/interactions.ts` `TOOL_CAPABILITY`); pi asks
-for them like any other tool. OpenCode's `pty_*` tools follow `bash`, and the
+`edit`, its `memory` is `edit` (`read` for the `view` command), and its
+`web_search`/`image_search` and `scrape_webpage` follow `websearch` and
+`webfetch` (`pi/interactions.ts` `toolCapability`); pi asks for them like any
+other tool. A rule under the tool's own name wins over its capability. OpenCode's `pty_*` tools follow `bash`, and the
 template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
