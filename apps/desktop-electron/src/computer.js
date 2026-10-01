@@ -31,6 +31,21 @@ function ensureDevAgentCli() {
   return cli;
 }
 
+const CAPTURE_BIN_NAME = process.platform === 'win32' ? 'kortix-capture.exe' : 'kortix-capture';
+const REPO_CAPTURE_DIR = path.join(__dirname, '..', '..', 'capture', 'target', 'release');
+
+/**
+ * The Kortix Capture recorder. Packaged: electron-builder extraResources.
+ * Unpackaged: KORTIX_CAPTURE_BIN, else the repo build. Null when the file is
+ * absent (a dev checkout that never built it): capture is then simply off.
+ */
+function captureBinPath({ isPackaged, resourcesPath, env = process.env }) {
+  const bin = isPackaged
+    ? path.join(resourcesPath, 'capture', CAPTURE_BIN_NAME)
+    : env.KORTIX_CAPTURE_BIN || path.join(REPO_CAPTURE_DIR, CAPTURE_BIN_NAME);
+  return fs.existsSync(bin) ? bin : null;
+}
+
 /** The only backend whose machines use the default ~/.agent-tunnel identity. */
 const CANONICAL_API_ORIGIN = 'https://api.kortix.com';
 
@@ -73,8 +88,11 @@ function effectiveHome(home) {
   return home || path.join(os.homedir(), '.agent-tunnel');
 }
 
-function agentEnv(home, base = process.env) {
+function agentEnv(home, base = process.env, captureBin = null) {
   const env = { ...base, ELECTRON_RUN_AS_NODE: '1', KORTIX_AGENT_TUNNEL_NO_BROWSER: '1' };
+  // The service supervises the recorder from this path (agent-tunnel capture-supervisor).
+  if (captureBin) env.KORTIX_CAPTURE_BIN = captureBin;
+  else delete env.KORTIX_CAPTURE_BIN;
   if (home) env.AGENT_TUNNEL_HOME = home;
   else delete env.AGENT_TUNNEL_HOME;
   return env;
@@ -399,12 +417,12 @@ function computerStatusFrom(serviceStatus, state) {
 }
 
 /** Runs one CLI command to completion. Never rejects. */
-function runAgent(args, { cli, home, execPath = process.execPath, timeoutMs = 30_000 }) {
+function runAgent(args, { cli, home, captureBin = null, execPath = process.execPath, timeoutMs = 30_000 }) {
   return new Promise((resolve) => {
     execFile(
       execPath,
       [cli, ...args],
-      { env: agentEnv(home), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+      { env: agentEnv(home, process.env, captureBin), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout, stderr });
       },
@@ -432,12 +450,12 @@ function unavailable(error) {
  * `{ ok: false, error }` otherwise. `onChallenge(url)` shows the approval page.
  * Aborting `signal` stops the agent and resolves `cancelled`.
  */
-function connectComputer({ cli, home, apiUrl, projectId, reauth, onChallenge, onApproved, signal, execPath = process.execPath }) {
+function connectComputer({ cli, home, captureBin = null, apiUrl, projectId, reauth, onChallenge, onApproved, signal, execPath = process.execPath }) {
   return new Promise((resolve) => {
     const args = [cli, 'connect', '--json', '--daemon', '--api-url', apiUrl];
     if (projectId) args.push('--project-id', projectId);
     if (reauth) args.push('--reauth');
-    const child = spawn(execPath, args, { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal });
+    const child = spawn(execPath, args, { env: agentEnv(home, process.env, captureBin), stdio: ['ignore', 'pipe', 'pipe'], signal });
     let settled = false;
     let approved = null;
     let stderr = '';
@@ -480,6 +498,79 @@ function connectComputer({ cli, home, apiUrl, projectId, reauth, onChallenge, on
   });
 }
 
+/* ─── Kortix Capture ────────────────────────────────────────────────────
+   The recorder (a child of the agent service) writes `recorder.json` and reads
+   `settings.json`, both in `<agent home>/capture`. The app only reads the
+   first and writes `paused_until_ms` in the second. */
+
+const captureDir = (home) => path.join(effectiveHome(home), 'capture');
+const MAX_PAUSE_MINUTES = 24 * 60;
+/** A recorder.json older than this has no live writer, whatever its pid says. */
+const RECORDER_STALE_MS = 60_000;
+const SCREEN_RECORDING_PANE = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
+
+const readJson = (file) => {
+  try {
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return value && typeof value === 'object' ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The `capture_status` answer. `state` is one of: recording, paused, off,
+ * needs_permission, error, or `blocked` (the recorder idles: locked screen,
+ * excluded app, Kortix on screen, low disk). `label` is the tray line.
+ */
+function captureStatus(home, now = Date.now(), platform = process.platform) {
+  const dir = captureDir(home);
+  const raw = readJson(path.join(dir, 'recorder.json'));
+  const settings = readJson(path.join(dir, 'settings.json')) || {};
+  const pausedUntilMs = Number(settings.paused_until_ms) > now ? Number(settings.paused_until_ms) : null;
+  const live = Boolean(raw) && isAlive(raw.pid) && now - Number(raw.updated_at_ms) < RECORDER_STALE_MS;
+  const rec = live ? raw : null;
+  const permissions = rec?.permissions || null;
+  const upload = rec?.upload || null;
+  const base = { pausedUntilMs, permissions, upload, lastCaptureMs: rec?.last_capture_ms ?? null, lastError: rec?.last_error ?? null };
+  const result = (state, label, reason = rec?.reason ?? null) => ({ state, label, reason, ...base });
+
+  if (!rec) return result('off', 'Capture: Off — not enabled', null);
+  if (rec.state === 'off' || rec.state === 'disabled' || rec.state === 'inactive' || rec.state === 'stopped') {
+    return result('off', 'Capture: Off — not enabled');
+  }
+  if (permissions?.screen === false) return result('needs_permission', 'Capture: Needs Screen Recording permission');
+  if (pausedUntilMs || rec.state === 'paused') {
+    return result('paused', pausedUntilMs ? `Capture: Paused until ${clock(new Date(pausedUntilMs).toISOString())}` : 'Capture: Paused');
+  }
+  if (rec.state === 'recording') return result('recording', 'Capture: Recording');
+  if (rec.state === 'error') return result('error', 'Capture: Error');
+  const why = {
+    locked: 'screen locked',
+    excluded: 'excluded app on screen',
+    self_on_screen: 'Kortix on screen',
+    low_disk: 'low disk space',
+  }[rec.state];
+  return why ? result('blocked', `Capture: Idle — ${why}`) : result('error', 'Capture: Error');
+}
+
+/** Merges `paused_until_ms` into settings.json and keeps every other key. `null` resumes. */
+function writeCapturePause(home, untilMs) {
+  const dir = captureDir(home);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, 'settings.json');
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify({ ...readJson(file), paused_until_ms: untilMs }, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+/** `capture_pause` input to a pause end time in epoch ms. Throws on bad input. */
+function capturePauseUntil(minutes, now = Date.now()) {
+  const value = Number(minutes);
+  if (!Number.isFinite(value) || value <= 0) throw new Error('minutes must be a positive number');
+  return now + Math.min(value, MAX_PAUSE_MINUTES) * 60_000;
+}
+
 /** Tray status line. */
 function statusLabel(status) {
   if (!status?.paired) return 'Computer not connected';
@@ -497,10 +588,28 @@ function clock(iso) {
 }
 
 /**
+ * The Capture block. Hidden while there is no recorder status at all (an old
+ * build). Pause is always available, so a person can always stop it.
+ */
+function captureItems(capture, actions) {
+  if (!capture) return [];
+  return [
+    { type: 'separator' },
+    { id: 'capture', label: capture.label, enabled: false },
+    ...(capture.state === 'needs_permission'
+      ? [{ id: 'capture-permission', label: 'Open Screen Recording settings…', click: actions.capturePermission }]
+      : []),
+    ...(capture.state === 'paused'
+      ? [{ id: 'capture-resume', label: 'Resume capture', click: actions.captureResume }]
+      : [{ id: 'capture-pause', label: 'Pause capture for 1 hour', click: actions.capturePause }]),
+  ];
+}
+
+/**
  * Tray menu (A5). `actions` are the click handlers; this stays a plain
  * template so the item list is tested without Electron.
  */
-function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, now = Date.now() }, actions) {
+function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, now = Date.now(), capture = null }, actions) {
   const paused = Boolean(status?.paired && status.paused);
   const granted = access.mode === 'ask' && access.grantedUntil && Date.parse(access.grantedUntil) > now;
   const mode = (id, label) => ({ label, type: 'radio', checked: access.mode === id, click: () => actions.setMode(id) });
@@ -530,6 +639,7 @@ function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, kee
       click: paused ? actions.resume : actions.pause,
     },
     { id: 'logs', label: 'Show logs', click: actions.logs },
+    ...captureItems(capture, actions),
     { type: 'separator' },
     ...(loginItemSupported
       ? [{ id: 'login', label: 'Open at login', type: 'checkbox', checked: openAtLogin, click: actions.toggleLogin }]
@@ -556,6 +666,12 @@ module.exports = {
   agentEnv,
   agentHome,
   answerAccess,
+  SCREEN_RECORDING_PANE,
+  captureBinPath,
+  captureDir,
+  capturePauseUntil,
+  captureStatus,
+  writeCapturePause,
   backendFromRuntimeConfig,
   checkPageApiUrl,
   accessWidens,

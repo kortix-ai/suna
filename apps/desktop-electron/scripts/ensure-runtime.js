@@ -30,3 +30,6 @@ if (!hasRuntime()) {
 // dev runs load it from the repo. Build it when missing; fail loudly when that
 // is impossible, so a package never ships without it.
 require('../src/computer').ensureDevAgentCli();
+
+// Kortix Capture (apps/capture) is optional: stage it when built, skip when not.
+require('./stage-capture').stageCapture();

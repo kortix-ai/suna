@@ -17,6 +17,7 @@ import {
   openBrowser,
   requestDeviceAuthorization,
 } from './device-auth';
+import { resolveCaptureBin, startCaptureSupervisor } from './capture-supervisor';
 import { collapseRepeatedLines, isShellStartupNoise } from './log-format';
 import { anyFlag, isInteractiveTerminal, isTruthyFlag, promptYesNo } from './prompts';
 import {
@@ -83,7 +84,7 @@ function shortenHomePath(path: string): string {
 
 // ── running the agent ────────────────────────────────────────────────────────
 
-function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): void {
+function startAgent(config: TunnelConfig, options: { service?: boolean; capture?: boolean } = {}): void {
   if (jsonMode) {
     // The agent logs to stdout. Keep stdout pure NDJSON for the caller.
     // ponytail: redirect by rebinding; give TunnelAgent a log sink if a second caller needs one.
@@ -124,8 +125,14 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
   );
   agent.connect();
 
+  // Kortix Capture runs as a child of the always-on service only. The recorder
+  // gates itself on the API, so supervising it is always safe.
+  const bin = options.capture ? resolveCaptureBin() : null;
+  const capture = bin ? startCaptureSupervisor({ bin, home: agentTunnelHome() }) : null;
+
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
+    capture?.stop();
     agent.disconnect();
     process.exit(0);
   };
@@ -369,13 +376,13 @@ function commandRun(flags: Flags): void {
       if (!next.token || !next.tunnelId) return;
       clearInterval(wait);
       rotateServiceLogs();
-      startAgent(next, { service: true });
+      startAgent(next, { service: true, capture: true });
     }, 60_000);
     return;
   }
 
   if (asService) rotateServiceLogs();
-  startAgent(config, { service: asService });
+  startAgent(config, { service: asService, capture: asService });
 }
 
 /** Last agent line in the service log, so status reports evidence not a guess. */
