@@ -30,7 +30,7 @@ Canonical files live in `apps/web/public/brandkit/` (D6). Verified to exist at t
 | bundle | `apps/web/public/brandkit/kortix-brand-assets.zip` | | Download for partners. No script regenerates it. It can drift from the loose files. |
 | symbol (app copy) | `apps/web/public/kortix-symbol.svg` | black | Provider branding, docs, tray source. **Off-master proportion**, see below. |
 | symbol (docs) | `apps/web/blume-public/kortix-symbol.svg`, `kortix-symbol-white.svg` | black / white | Docs site. Intentional copies. The white symbol exists nowhere else in `public/`. |
-| favicon | `apps/web/public/favicon.svg`, `favicon.png` | tile fill | Web tab icon. |
+| favicon (legacy) | `apps/web/public/favicon.svg`, `favicon.png` | dark mark on a light tile | **Off-master.** The tile color is no token. Still referenced by the JSON-LD `logo` in `[locale]/layout.tsx`, the blog and use-case pages and `lib/web-notifications.ts`. Use the files in the app-icon table below in new code (Q39). |
 | brandmark-bg | `apps/web/public/kortix-brandmark-bg.svg` | white outline, fading | Wallpaper `brandmark`. |
 | OG banner | `apps/web/public/banner.png` | | The one static share image. |
 | wordmark (mobile) | `apps/mobile/assets/brand/Logomark-Text-Black.svg`, `Logomark-Text-White.svg` | black / white | Mobile auth. Not in the brand kit. |
@@ -71,6 +71,8 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 
 **Rule.** Size the symbol by height with its real aspect ratio. A square box adds about 8% padding above and below. — *Why:* `KortixLogo` `icon` draws a 30 by 25 mark into a square box, and `provider-branding.tsx` adds a special-case inset for it. — *Where:* app. — *When silent:* pass `size` as the height and let the width follow.
 
+**Rule.** A page that cannot load a file (a CSP with `default-src 'none'`, a proxy page) inlines the path data of `Brandmark Black.svg` with `fill="currentColor"` and sizes it by height. Do not copy the inline path from a component. — *Why:* the master file is the one shape, and the components inline three different proportions (above). A CSS-drawn "K" is a bug (Q35). — *Where:* any HTML outside `apps/web`. — *When silent:* `cat` the file, copy its `d` attribute, set `height`, and let the width follow.
+
 ## Do not
 
 - Do not generate, redraw or restyle the mark.
@@ -83,7 +85,7 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 
 ## Clear space and minimum size
 
-**OPEN (D8b).** No document defines clear space around the symbol or the logo. No document defines a minimum size for web or print. The only recorded numbers are mobile: the hero symbol is 30% of the screen width, with a minimum of 88pt and a maximum of 150pt (`apps/mobile/design.md`). Do not invent numbers. When silent: reuse a size and a margin that already ships (the nav logo, the sidebar symbol, the deck cover), never go smaller than the smallest shipped use, and ask the design lead. Record the decision in `decisions.md` when it is made.
+**OPEN (D8b).** No document defines clear space around the symbol or the logo. No document defines a minimum size for web or print. The only recorded numbers are mobile: the hero symbol is 30% of the screen width, with a minimum of 88pt and a maximum of 150pt (`apps/mobile/design.md`). Do not invent numbers. Shipped sizes today: the marketing nav logo is `size={15}` and the nav symbol `size={14}` (`components/home/navbar.tsx`), the email logo is `--email-logo-height` in `tokens.css`, and the mobile hero is 88 to 150pt. When silent: reuse a size and a margin that already ships (the nav logo, the sidebar symbol, the deck cover), never go smaller than the smallest shipped use, and ask the design lead. Record the decision in `decisions.md` when it is made.
 
 ## Surface placement
 
@@ -91,13 +93,24 @@ Duplicate files to delete in a cleanup change (not an agent decision): `apps/web
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Mark | `KortixLogo` | symbol or logo in the nav; one hero mark at most | `KortixLogo`; hero symbol 88 to 150pt | symbol, top-left | one mark, composited | logo PNG, hosted | ASCII wordmark: OPEN |
 | Light | black file or `currentColor` | same | `color` prop picks the file | follow the theme | by background | black PNG | n/a |
-| Dark | white file or `currentColor` | same | same | same | white file | white PNG when a dark block is used | n/a |
+| Dark | white file or `currentColor` | same | same | same | white file | n/a: email ships light only (Q34) | n/a |
 
 The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a block-letter ASCII "KORTIX" with the tagline. It ignores `NO_COLOR` today, and the same art ships inside customer-site templates. Whether the ASCII wordmark is a sanctioned treatment is OPEN (`decisions.md`).
 
 ## App icons, favicons, share images
 
-These do not match each other today: the favicon is a dark mark on a light tile, the mobile icon is a black mark on a warm tile, the desktop icon is a white mark on a dark gradient squircle. The dark-scheme favicon points to the same light file, `apple-touch-icon` is an SVG, the manifest lists the same SVG twice, and missing static files return HTTP 500 in production. One icon spec is OPEN. Interim rule: regenerate icons from the master symbol; do not hand-edit a PNG.
+**Shipped on this branch (2026-10-01, measured with `sips` and pixel sampling).** A design lead confirms the tile and the scale: they are the shipped values, not a reviewed decision (Q39, OPEN).
+
+| File (`apps/web/public/`) | Size | Tile | Symbol | Symbol scale |
+| --- | --- | --- | --- | --- |
+| `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` (180) | 192, 512, 180 | `--background` (dark) | white file | about 58% of the width, 50% of the height |
+| `icon-maskable-512.png` | 512 | `--background` (dark) | white file | about 44% of the width, 38% of the height, inside the 80% safe zone |
+| `icon-dark-32.png` | 32 | `--background` (dark) | white file | about 72% of the width |
+| `icon-light-32.png`, `favicon.ico` (48) | 32, 48 | `--background` (light) | black file | about 71% of the width |
+
+Every file is opaque (no alpha) and keeps the master ratio of about 1.167. `[locale]/layout.tsx` links `favicon.ico` (any), `icon-light-32.png` and `icon-dark-32.png` by `prefers-color-scheme`, and `apple-touch-icon.png`. `manifest.json` lists the three large PNGs. — *Rule.* Regenerate an icon from the master symbol on the tile above. Do not hand-edit a PNG, and do not take the symbol from `favicon.svg`. — *Why:* the old icons mixed a dark mark on a light tile, a black mark on a warm tile and a white mark on a gradient squircle (Q39). — *Where:* app, marketing. — *When silent:* these files.
+
+**OPEN (Q39).** `manifest.json` `background_color` and `theme_color` are `#000000`, and the viewport `themeColor` pair is `white` and `black`. The dark canvas is the `--background` token (a near-black), so the splash and the browser chrome differ from the app by a few percent. A person confirms whether to align them to the token. The desktop and mobile icons keep their own artwork: one icon spec across all four is still OPEN.
 
 ## Rationalization table
 
@@ -106,3 +119,7 @@ These do not match each other today: the favicon is a dark mark on a light tile,
 | "I will redraw the symbol so it fits the layout" | Composite the file. A redrawn mark drifts from the master. |
 | "A corner logo and a large logo both help" | One mark per surface. |
 | "The white symbol is fine on this light card" | The mark has two states. Pick the file by the surface. |
+
+## Email
+
+**Rule.** Host the email logo at the URL in `visual-system.json` (`email.logo_url`), which `template.ts` reads as `EMAIL_LAYOUT.logoUrl`: `https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png`. Set `height` from `--email-logo-height` in `tokens.css`. Ship the black PNG only, on the light card. — *Why:* email clients cannot read CSS variables, and the logo is the lockup asset (symbol and wordmark in one PNG), so there is no separate wordmark file. Verified with `curl` on 2026-10-01: the URL returns 200 `image/png`, and so do `Logomark%20White.png` and `Brandmark%20Black.svg` at the same host. Email ships light only, so the earlier two-logo swap is superseded (Q34, Q10, Q27). — *Where:* email. — *When silent:* the URL above, one logo.

@@ -33,7 +33,7 @@ export const pillars = {
       title: 'A workforce, not one assistant',
       body: 'Specialist agents run in parallel, each session on its own cloud computer and its own branch, and they compound a shared memory.',
       href: '/agent-computer',
-      link: 'The agent computer',
+      link: 'Agent Computer',
     },
     {
       id: 'work',

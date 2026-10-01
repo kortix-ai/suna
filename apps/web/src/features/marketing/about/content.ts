@@ -35,7 +35,7 @@
 
 export const hero = {
   eyebrow: 'About Kortix',
-  title: 'We are building the open AGI platform.',
+  title: 'We are building the open-source AI Management System.',
   lead: 'Every company should own all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',

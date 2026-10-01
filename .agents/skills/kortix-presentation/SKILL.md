@@ -1,6 +1,6 @@
 ---
 name: kortix-presentation
-description: "Recipe: build, edit, present or record a Kortix deck or film (a Next.js route under /presentations in apps/web, never a file). Load kortix-brand first. This skill covers the slide engine, builds, presenter notes, films and QA. Load WHENEVER the user asks for a deck, slides, a presentation, a walkthrough, a talk track, a guided demo, presenter notes, or a product video; and whenever editing anything under apps/web/src/app/presentations."
+description: "Recipe: build, edit, present or record a Kortix deck or film (a Next.js route under /presentations in apps/web, never a file). Load kortix-brand first. This skill covers the slide engine, builds, presenter notes, films and QA. Load WHENEVER the user asks for a deck, slides, a presentation, a walkthrough, a talk track, a guided demo, presenter notes, or a product video; and whenever editing anything under apps/web/src/app/[locale]/presentations."
 ---
 
 # Kortix Presentations
@@ -21,7 +21,7 @@ do.
 ## Where everything is
 
 ```
-apps/web/src/app/presentations/
+apps/web/src/app/[locale]/presentations/
   layout.tsx        full-bleed shell, noindex
   page.tsx          the index — every deck, one card each
   index-client.tsx  the index UI (client: reads each deck's slides for counts)
@@ -255,8 +255,8 @@ empty bottom rather than letterboxing it.
 
 ```bash
 cd apps/web
-npx tsc --noEmit                    # must be clean in src/app/presentations
-npx eslint src/app/presentations    # 0 errors
+npx tsc --noEmit                    # must be clean in src/app/[locale]/presentations
+npx eslint src/app/[locale]/presentations    # 0 errors
 ```
 
 `tsc --noEmit` reports ~15 pre-existing `@types/bun` `test.each` errors elsewhere

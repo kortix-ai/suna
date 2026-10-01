@@ -109,7 +109,7 @@ export const openings = [
   {
     id: 'rnd',
     name: 'Product / R&D',
-    summary: 'Push what open AGI means: fully autonomous cognitive beings as digital coworkers.',
+    summary: 'Push what open AGI means: agents that do finished work, reviewed by people.',
     bullets: [
       'Where Product / Eng hardens the platform, R&D pushes what it becomes.',
       'Comfortable working a long way ahead of what ships.',

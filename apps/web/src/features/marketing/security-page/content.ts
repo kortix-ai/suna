@@ -237,7 +237,7 @@ export const identity = {
       },
       { k: 'Groups', v: 'Grant to a group once instead of to twenty people twenty times.' },
     ],
-    note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.',
+    note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise license. The built-in roles above are free on every plan.',
   },
   agents: {
     title: 'Service accounts',
@@ -396,7 +396,7 @@ export const posture = {
     {
       id: 'vpc',
       k: 'Your VPC or on-prem',
-      v: 'A single-tenant deployment inside your own network. Air-gapped and other isolated topologies are scoped with us rather than self-served.',
+      v: 'A single-tenant deployment inside your own network. Isolated topologies are scoped with us rather than self-served.',
     },
   ],
   compliance: {

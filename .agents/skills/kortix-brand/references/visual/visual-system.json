@@ -283,6 +283,13 @@
     },
     "weights": { "normal": "body, meta (default, do not write it)", "medium": "row title, label, active nav", "semibold": "detail title, with tracking-tight" },
     "tracking": { "normal": "0em", "tight": "-0.025em (Tailwind default) with text-2xl and up, and on mono" },
+    "portable_text": {
+      "note": "Tailwind stock values. The web app does not override them. Emitted to tokens.css only, for HTML outside apps/web that has no Tailwind utilities: use var(--tracking-tight) and var(--leading-*), never a literal.",
+      "tracking_tight": "-0.025em",
+      "leading_tight": "1.25",
+      "leading_snug": "1.375",
+      "leading_relaxed": "1.625"
+    },
     "mobile": "Mobile uses NativeWind's Tailwind 3 scale (text-xs = 12px) and Text variants in components/ui/text.tsx; not generated. Decision J-5.",
     "feature_settings_font_face": "'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on",
     "feature_settings_note": "Web sets the six-value list (adds 'palt') on html and body. @font-face carries the five stylistic sets, as next/font does.",
@@ -370,6 +377,17 @@
       "runtime_vars": "--duration-* and --ease-* stay on :root for JS and the /design-system page.",
       "bare_ease": "Bare `ease` is not a utility. Never prescribe it."
     }
+  },
+  "email": {
+    "note": "Whole pixels, because mail clients cannot read CSS variables and round fractional pixels. Copies the shipped shell (apps/api/src/lib/email/template.ts, which consumes the generated EMAIL_LAYOUT). Ships light only: see decisions Q34. Colors come from color.semantic (EMAIL_COLORS, tokens.css hex).",
+    "container_width_px": 520,
+    "side_padding_px": 32,
+    "card_radius": "xl",
+    "button_radius": "md",
+    "button_padding": "12px 28px",
+    "logo_height_px": 22,
+    "logo_url": "https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png",
+    "font_size_px": { "title": 22, "body": 14, "kicker": 13, "small": 12 }
   },
   "mobile": {
     "spacing_base": "0.25rem",

@@ -88,6 +88,8 @@ Art is a sanctioned layer of the system. It is the only layer where raw color, g
 
 **Rule.** Keep third-party marks in the same folder (`slack`, `github`, `gmail`, `notion` and the rest) with their own brand colors. Do not edit them. — *Why:* they are not Kortix's to recolor. The audit skips them by name (`LOGO_RE`). — *Where:* app. — *When silent:* draw a third-party mark on the white logo tile.
 
+**Rule.** In HTML outside `apps/web`, write an arrow as the text glyph "→", or inline the path data of the Phosphor glyph (the regular weight, from `@phosphor-icons/react`) with `fill="currentColor"`. Never draw an icon path by hand. — *Why:* a run hand-drew an inline SVG arrow, a second icon family inside one file (Q36). — *Where:* marketing | image | any standalone HTML. — *When silent:* the text glyph.
+
 **Rule.** Do not use emoji as UI iconography. Do not import lucide or react-icons. — *Why:* emoji render per platform. A second library breaks the family. — *Where:* app, mobile. Emoji is a user's choice in the emoji picker, and chat surfaces follow `verbal/voice-and-tone.md`. — *When silent:* Phosphor.
 
 ## Per surface

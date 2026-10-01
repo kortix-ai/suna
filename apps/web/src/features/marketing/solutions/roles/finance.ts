@@ -64,7 +64,7 @@ export const finance: RoleContent = {
     artifact: {
       kind: 'table',
       file: 'close/2026-07/variance-by-cost-centre.xlsx',
-      columns: ['Cost centre', 'Plan', 'Actual', 'Variance', 'Driver'],
+      columns: ['Cost center', 'Plan', 'Actual', 'Variance', 'Driver'],
       widths: ['26%', '16%', '16%', '16%', '26%'],
       rows: [
         {

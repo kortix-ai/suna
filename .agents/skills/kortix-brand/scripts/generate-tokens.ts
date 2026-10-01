@@ -5,7 +5,8 @@
 //   bun .agents/skills/kortix-brand/scripts/generate-tokens.ts --check   exit 1 on drift
 //
 // It rewrites ONLY marker-delimited regions in apps/web/src/app/globals.css and
-// apps/mobile/global.css, and whole-file outputs under references/visual/.
+// apps/mobile/global.css, whole-file outputs under references/visual/, and
+// apps/api/src/lib/email/brand-tokens.generated.ts.
 // Stdlib only.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
@@ -15,6 +16,7 @@ const VISUAL = join(ROOT, '.agents/skills/kortix-brand/references/visual');
 const JSON_PATH = join(VISUAL, 'visual-system.json');
 const WEB_CSS = join(ROOT, 'apps/web/src/app/globals.css');
 const MOBILE_CSS = join(ROOT, 'apps/mobile/global.css');
+const EMAIL_TS = join(ROOT, 'apps/api/src/lib/email/brand-tokens.generated.ts');
 
 const EDIT_HINT =
   'edit .agents/skills/kortix-brand/references/visual/visual-system.json, then run generate-tokens.ts';
@@ -258,6 +260,30 @@ function mobileBlock(theme: Theme): string {
 }
 
 // ───────────────────────── kit outputs ─────────────────────────
+/** A font stack without its Roobert entries (D8a: Roobert loads only on Kortix-owned surfaces). */
+function systemStack(stack: string): string {
+  return stack
+    .split(',')
+    .map((x) => x.trim())
+    .filter((x) => !/^'?Roobert/.test(x))
+    .join(', ');
+}
+
+/** Email layout in whole pixels. Radii come from the radius ladder so they cannot drift. */
+function emailLayout() {
+  const e = vs.email;
+  return {
+    containerWidth: e.container_width_px as number,
+    sidePadding: e.side_padding_px as number,
+    cardRadius: vs.radius.web[e.card_radius].px as number,
+    buttonRadius: vs.radius.web[e.button_radius].px as number,
+    buttonPadding: e.button_padding as string,
+    logoHeight: e.logo_height_px as number,
+    logoUrl: e.logo_url as string,
+    fontSize: e.font_size_px as { title: number; body: number; kicker: number; small: number },
+  };
+}
+
 function kitTokens(): string {
   const L: string[] = [];
   L.push(
@@ -278,6 +304,12 @@ function kitTokens(): string {
   const shared: string[] = [];
   shared.push(`  --font-sans: ${vs.typography.stacks.sans};`);
   shared.push(`  --font-mono: ${vs.typography.stacks.mono};`);
+  // The stack without Roobert: for email, OG cards and any host where D8a keeps Roobert out.
+  shared.push(`  --font-sans-system: ${systemStack(vs.typography.stacks.sans)};`);
+  shared.push(`  --font-mono-system: ${systemStack(vs.typography.stacks.mono)};`);
+  const pt = vs.typography.portable_text;
+  shared.push(`  --tracking-tight: ${pt.tracking_tight};`);
+  for (const k of ['tight', 'snug', 'relaxed']) shared.push(`  --leading-${k}: ${pt[`leading_${k}`]};`);
   shared.push(`  --radius: ${vs.radius.base};`);
   for (const k of ['sm', 'md', 'lg', 'xl', '2xl']) shared.push(`  --radius-${k}: ${vs.radius.web[k].value};`);
   shared.push(`  --spacing: ${vs.spacing.web_base};`);
@@ -285,6 +317,19 @@ function kitTokens(): string {
     shared.push(`  --text-${k}: ${v.size};`, `  --text-${k}-line-height: ${v.line_height};`);
   }
   for (const [k, v] of Object.entries<any>(vs.elevation.steps)) shared.push(`  --shadow-${k}: ${v.value};`);
+  const em = emailLayout();
+  shared.push(
+    `  --email-container-width: ${em.containerWidth}px;`,
+    `  --email-side-padding: ${em.sidePadding}px;`,
+    `  --email-card-radius: ${em.cardRadius}px;`,
+    `  --email-button-radius: ${em.buttonRadius}px;`,
+    `  --email-button-padding: ${em.buttonPadding};`,
+    `  --email-logo-height: ${em.logoHeight}px;`,
+    `  --email-title-size: ${em.fontSize.title}px;`,
+    `  --email-body-size: ${em.fontSize.body}px;`,
+    `  --email-kicker-size: ${em.fontSize.kicker}px;`,
+    `  --email-small-size: ${em.fontSize.small}px;`
+  );
   for (const [k, v] of Object.entries<any>(vs.motion.duration)) shared.push(`  --duration-${k}: ${v.ms}ms;`);
   for (const [k, v] of Object.entries<any>(vs.motion.easing))
     shared.push(`  --ease-${k}: cubic-bezier(${v.bezier.join(', ')});`);
@@ -329,6 +374,41 @@ function kitFonts(): string {
       );
     }
   }
+  return L.join('\n');
+}
+
+/** TS module for transactional email: opaque light-theme hex only (clients cannot read CSS variables). */
+function emailTokens(): string {
+  const hex = (name: string) => toHex(resolveColor(name, 'light'));
+  const roles: Array<[string, string]> = [
+    ['canvas', 'background'],
+    ['surface1', 'card'],
+    ['ink', 'foreground'],
+    ['inkMuted', 'muted-foreground'],
+    ['hairline', 'border'],
+    ['kortixBase', 'kortix-base'],
+    ['success', 'kortix-green'],
+    ['error', 'kortix-red'],
+    ['warning', 'kortix-orange'],
+    ['pending', 'kortix-yellow'],
+    ['info', 'kortix-blue'],
+  ];
+  const L: string[] = [
+    '// GENERATED from visual-system.json by .agents/skills/kortix-brand/scripts/generate-tokens.ts. Do not edit.',
+    '// Light-theme hex for transactional email. Email clients cannot read CSS variables.',
+    '',
+    'export const EMAIL_COLORS = {',
+    ...roles.map(([k, n]) => `  ${k}: '${hex(n)}', // --${n}`),
+    '} as const;',
+    '',
+    '// System stacks only: email clients cannot load Roobert (decisions D8a, Q27).',
+    `export const EMAIL_FONT_SANS = ${JSON.stringify(systemStack(vs.typography.stacks.sans))};`,
+    `export const EMAIL_FONT_MONO = ${JSON.stringify(systemStack(vs.typography.stacks.mono))};`,
+    '',
+    '// Whole pixels, from visual-system.json "email".',
+    `export const EMAIL_LAYOUT = ${JSON.stringify(emailLayout(), null, 2)} as const;`,
+    '',
+  ];
   return L.join('\n');
 }
 
@@ -383,6 +463,7 @@ const outputs: Record<string, string> = {
   }),
   [join(VISUAL, 'tokens.css')]: kitTokens(),
   [join(VISUAL, 'fonts.css')]: kitFonts(),
+  [EMAIL_TS]: emailTokens(),
 };
 
 const check = process.argv.includes('--check');

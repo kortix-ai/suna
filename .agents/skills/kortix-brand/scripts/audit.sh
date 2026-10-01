@@ -15,7 +15,10 @@
 #              Marketing keeps a 13px floor for text.
 #
 # What the audit skips (and nothing else):
-#   - globals.css and /design-system/: they define or display the system itself.
+#   - globals.css: it defines the system.
+#   - a line that carries `audit:allow <reason>`: a data row or a prose line that
+#     NAMES a banned token (the /design-system/ page), or the token block of a
+#     standalone page that cannot load tokens.css. Give the reason in the comment.
 #   - tests, stories, *.generated.*, lib/browser-noise.
 #   - named art modules (art layer, D4d) and third-party logo files (escape hatch).
 #
@@ -42,7 +45,7 @@ fi
 TARGETS=("${ARGS[@]}")
 FOUND=0
 
-EXCLUDE_RE='(globals\.css|/design-system/|\.test\.|\.stories\.|\.generated\.|/browser-noise/|/lib/blog-posts|node_modules|\.next)'
+EXCLUDE_RE='(globals\.css|\.test\.|\.stories\.|\.generated\.|/browser-noise/|/lib/blog-posts|node_modules|\.next)'
 
 # Art layer (D4d): raw hex, gradients and WebGL live here and only here.
 ART_RE='(/paper-wallpaper-shaders\.|/wallpaper-shaders\.|/wallpaper-background\.|/shader-wallpaper\.|/shader-safe\.|/pixel-kortix-mark\.|/dot-matrix/|/kortix-hyper-logo\.|/prismatic-burst\.|/animated-bg\.|/dotmatrix-loader\.|/kortix-logo\.tsx|/components/brand/brand-logos\.)'
@@ -73,7 +76,8 @@ scan() {
     | grep -avE "$EXCLUDE_RE" \
     | grep -avE "$ART_RE" \
     | grep -avE "$LOGO_RE" \
-    | grep -avE "$COMMENT_RE" || true)
+    | grep -avE "$COMMENT_RE" \
+    | grep -av 'audit:allow' || true)
   case "$scope" in
     app) hits=$(printf '%s\n' "$hits" | grep -avE "$MKT_RE" || true) ;;
     mkt) hits=$(printf '%s\n' "$hits" | grep -aE "$MKT_RE" || true) ;;
@@ -100,7 +104,8 @@ scan_files() {
   hits=$(grep -raEn --include='*.tsx' --include='*.ts' "$pattern" "${TARGETS[@]}" 2>/dev/null \
     | grep -aE "^[^:]*($files)[^/:]*:" \
     | grep -avE "$EXCLUDE_RE" \
-    | grep -avE "$COMMENT_RE" || true)
+    | grep -avE "$COMMENT_RE" \
+    | grep -av 'audit:allow' || true)
   [ -z "$hits" ] && return 0
   FOUND=1
   local count

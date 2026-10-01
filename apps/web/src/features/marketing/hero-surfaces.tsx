@@ -37,7 +37,7 @@ const SURFACES: Surface[] = [
   { id: 'web', label: 'Web', icon: Monitor },
   { id: 'cli', label: 'CLI', icon: Terminal },
   { id: 'slack', label: 'Slack', icon: Slack },
-  { id: 'teams', label: 'MS Teams', icon: MicrosoftTeams },
+  { id: 'teams', label: 'Microsoft Teams', icon: MicrosoftTeams },
   { id: 'email', label: 'Email', icon: EnvelopeIcon },
   { id: 'mobile', label: 'Mobile', icon: Smartphone },
   { id: 'sdk', label: 'API / SDK', icon: Code2 },
@@ -299,7 +299,7 @@ function EmailSurface() {
       </div>
 
       {/* The channel enum is closed: slack, teams, email. Slack is live,
-          Teams is behind an operator switch, and email is experimental.
+          Teams and email are experimental per-project flags.
 
           Hidden on phones. It wraps to three lines there and takes ~56px off a
           frame that could not already fit the Kortix reply — and a rollout

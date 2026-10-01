@@ -10,11 +10,11 @@ Values live in `visual-system.json` (keys `typography.*`). The rungs below are t
 
 **Rule.** Add no new font. Roobert and Roobert Mono are the entire type system. — *Why:* a third family breaks the one-product read. — *Where:* all surfaces except the exceptions below. — *When silent:* use Roobert.
 
-**Rule.** Use the stack in `typography.stacks`, never a lone family name. — *Why:* the web loader declares Roobert with no fallback option, and the stack ends in the system sans. Roobert does not fall back to Inter: Inter appears only on the docs site (Blume stock theme, OPEN in `decisions.md` D8d). — *Where:* app, marketing, email, any HTML outside `apps/web`. — *When silent:* paste `--font-sans` and `--font-mono` from `tokens.css`. Add `fonts.css` where Roobert should load.
+**Rule.** Use the stack in `typography.stacks`, never a lone family name. — *Why:* the web loader declares Roobert with no fallback option, and the stack ends in the system sans. Roobert does not fall back to Inter: Inter appears only on the docs site (Blume stock theme, OPEN in `decisions.md` D8d). — *Where:* app, marketing, email, any HTML outside `apps/web`. — *When silent:* paste `--font-sans` and `--font-mono` from `tokens.css`. Add `fonts.css` where Roobert should load. Where Roobert must not load (email, an OG card, a page under a CSP with no web fonts), paste `--font-sans-system` and `--font-mono-system` instead (Q35).
 
 **Rule.** Do not override the OpenType feature set. The web sets `ss03`, `ss04`, `ss09`, `ss10`, `ss14` and `palt` on `html` and `body` (`typography.feature_settings`). — *Why:* the stylistic sets define Roobert's Kortix letterforms. The reason for each set is not recorded; keep the set as shipped. — *Where:* app, marketing. `fonts.css` carries the five stylistic sets in `@font-face`. — *When silent:* inherit. Never write `font-feature-settings` on a component.
 
-**Rule.** Load Roobert only on Kortix-owned surfaces until the license is confirmed. — *Why:* the files are Displaay Type Foundry commercial fonts, committed to a public repo and served at a public URL. Redistribution scope is OPEN (`decisions.md` D8a). — *Where:* image, email, partner pages, any third-party host. — *When silent:* use the system fallback and say so in the PR.
+**Rule.** Load Roobert only on Kortix-owned surfaces until the license is confirmed. — *Why:* the files are Displaay Type Foundry commercial fonts, committed to a public repo and served at a public URL. Redistribution scope is OPEN (`decisions.md` D8a). — *Where:* image, email, partner pages, any third-party host. — *When silent:* use the system fallback (`--font-sans-system`) and say so in the PR.
 
 ## The scale. These rungs and no others.
 
@@ -34,9 +34,13 @@ Web redefines the small end. `text-xs` is 13px here, not 12px.
 
 **Rule.** Treat `text-md` as non-canonical. Add no use. — *Why:* it is 14.4px, sits between two rungs, and its line height divides by the wrong size (`decisions.md` J-6, OPEN). — *Where:* app. — *When silent:* `text-sm`.
 
+**Rule.** Use `text-xl font-medium` for the title of a project section page (Members, Secrets, Triggers). Use `text-2xl font-semibold tracking-tight` only for a detail-view title. — *Why:* `text-2xl` is the app ceiling, not the default. A section page that takes the ceiling outranks its own detail views (Q7). — *Where:* app. — *When silent:* `text-xl font-medium`.
+
 **Rule.** Keep display type inside the surface ceiling: `text-2xl` in app chrome, `text-7xl` in marketing. — *Why:* app chrome is dense and calm. Large type is a marketing budget. — *Where:* app, marketing. — *When silent:* name the surface, then follow its column below.
 
 **Rule.** Scale inline elements with their context in `em`. — *Why:* a fixed-size chip inside an `h1` "read as body text inside a title" (#7684: inline code is 0.9em inside `h1` to `h6`). — *Where:* app. — *When silent:* if the element lives inside a heading, size it in `em`.
+
+**Rule.** A page has one `h1`. A section of a page, and a standalone one-section file, takes `h2`. Pick the size from the type scale, not from the tag. — *Why:* a section file that opens with `h1` breaks the outline when the page embeds it, and the tag has no say in size here (Q36). — *Where:* marketing | any HTML outside `apps/web`. — *When silent:* `h2` for the section heading, `h3` below it.
 
 ## Weight and tracking
 
@@ -51,7 +55,7 @@ Web redefines the small end. `text-xs` is 13px here, not 12px.
 
 **Rule.** Pair `tracking-tight` with `text-2xl` and up. Never track body text. Do not loosen tracking anywhere. — *Why:* tight tracking tames large type. Loose tracking on small type reads as a label style the system rejects. — *Where:* app, marketing, deck. — *When silent:* default tracking.
 
-**Rule.** Use the line height that ships with the rung. Use `leading-snug`, `leading-tight` or `leading-relaxed` on multi-line titles and prose only. Write no `leading-[…]` or `tracking-[…]`. — *Why:* the rung already pairs size and line height (`typography.scale.*.line_height`). — *Where:* app, marketing. Targets: headings 1.15 to 1.25, body 1.5 to 1.6, captions 1.4. — *When silent:* inherit.
+**Rule.** Use the line height that ships with the rung. Use `leading-snug`, `leading-tight` or `leading-relaxed` on multi-line titles and prose only. Write no `leading-[…]` or `tracking-[…]`. — *Why:* the rung already pairs size and line height (`typography.scale.*.line_height`). — *Where:* app, marketing. Targets: headings 1.15 to 1.25, body 1.5 to 1.6, captions 1.4. — *When silent:* inherit. In HTML outside `apps/web` (no Tailwind utilities), write `var(--tracking-tight)` and `var(--leading-tight|snug|relaxed)` from `tokens.css`, never a literal such as `-0.025em` or `1.15` (Q35).
 
 **Rule.** Keep the body measure at 45 to 75 characters. Set text flush-left, ragged-right. Never justify body text. — *Why:* readability, and hierarchy stays visible. — *Where:* marketing, deck, email, docs prose. — *When silent:* cap the width, not the size.
 
@@ -75,14 +79,14 @@ Web redefines the small end. `text-xs` is 13px here, not 12px.
 
 **Rule.** Do not set uppercase or letter-spaced micro-headings in app chrome. The mono-uppercase `Badge` chip is the one exception (D4e, #6952). — *Why:* all-caps eyebrows are an LLM default. The chip is a deliberate Jay primitive: a tight mono label with an inset ring. Its colors must still come from tokens (the raw palette in `badge.tsx` is tracked debt). A command inside a badge keeps its own case: `font-mono tracking-normal normal-case` (#8421 `CopyCommandBadge`). — *Where:* app, mobile (never letter-spaced eyebrows). — *When silent:* write a sentence-case label in `text-xs text-muted-foreground`.
 
-**Rule.** Marketing and decks may set a mono-uppercase eyebrow: one per section, at `text-xs`. — *Why:* the homepage and the deck engine (`engine/parts.tsx`, `SectionHead`) ship it. D4e allows decks. The kit extends D4e to marketing for the same reason (K3 in `decisions.md`). — *Where:* marketing, deck. Not app, not mobile. — *When silent:* skip the eyebrow. The title can carry the section.
+**Rule.** Marketing and decks may set a mono-uppercase eyebrow: one per section, at `text-xs`. The `/design-system` route is a marketing-profile page: its `BrandSection` micro-label is that eyebrow, not app chrome (Q35). — *Why:* the homepage and the deck engine (`engine/parts.tsx`, `SectionHead`) ship it. D4e allows decks. The kit extends D4e to marketing for the same reason (K3 in `decisions.md`). — *Where:* marketing, deck. Not app, not mobile. — *When silent:* skip the eyebrow. The title can carry the section.
 
 ## Per surface
 
 | | app | marketing | mobile | deck | image | email | CLI |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Family | Roobert + Mono | same | Roobert static files; Mono Regular only | same | Roobert composited after generation | system stack (`--font-sans`) | the terminal font |
-| Scale | `xs` to `2xl` | up to `7xl` hero; floor `xs` | NativeWind Tailwind 3 scale: `text-xs` is 12px. `Text` variants in `components/ui/text.tsx` own size and weight | pt scale below | 1 to 5 words | 14px body, 22px title, 13px small text (the shell ships 14 and 22; its 11 and 12px kicker and footer fall under the floor) | none |
+| Family | Roobert + Mono | same | Roobert static files; Mono Regular only | same | Roobert composited after generation | `--font-sans-system` | the terminal font |
+| Scale | `xs` to `2xl` | up to `7xl` hero; floor `xs` | NativeWind Tailwind 3 scale: `text-xs` is 12px. `Text` variants in `components/ui/text.tsx` own size and weight | pt scale below | 1 to 5 words | `--email-*`: 22px title, 14px body, 13px kicker, 12px small | none |
 | Weights | 400, 500, 600 | same | regular, medium, semibold | same | 400, 500, 600 | 400, 500, 600 | none (bold only if the terminal needs it) |
 | Eyebrow | none (Badge chip only) | mono-uppercase allowed | none | mono-uppercase allowed | none | **sentence-case kicker** | none |
 | Inputs | 14px | 16px | 16pt, `INPUT_FONT_SIZE` | n/a | n/a | n/a | n/a |
@@ -101,11 +105,11 @@ A route deck (`/presentations/<slug>`) uses the web rungs: titles `text-3xl` to 
 
 **Marketing px scale.** Hero `text-6xl` to `text-7xl` (56 to 72px). Display `text-4xl` to `text-5xl` (36 to 48px). Heading `text-2xl` to `text-3xl` (24 to 28px). Body `text-base` (16px). Caption `text-xs` to `text-sm` (13 to 14px). Hero tracking is `tracking-tight`. H1 sizes differ by page today (48, 60, 36 and 44px measured); pick the rung from this scale and use it for every page of the same type.
 
-**Rule (email).** Use the system fallback stack, weights 400, 500 and 600, and a sentence-case kicker. Show the wordmark as an image, not as bold text. — *Why:* clients cannot load Roobert reliably, and the current shell sets the wordmark at weight 700 with 0.5px tracking and an uppercase kicker. — *Where:* email. — *When silent:* `--font-sans` from `tokens.css`, body 14px, title 22px.
+**Rule (email).** Use `--font-sans-system`, weights 400, 500 and 600, and a sentence-case kicker. Show the wordmark as an image, not as bold text. Take the sizes from `--email-*` in `tokens.css`: title, body, kicker, small. — *Why:* clients cannot load Roobert reliably, and the old shell set the wordmark at weight 700 with 0.5px tracking and an uppercase kicker. `EMAIL_FONT_SANS` in `brand-tokens.generated.ts` is the same stack, built by the generator with Roobert removed (Q27, Q34). — *Where:* email. — *When silent:* `--font-sans-system`, no Roobert and no `@font-face`.
 
 **Rule (CLI).** Do not style type. Use plain text, one accent color and dim for secondary text. Honor `NO_COLOR`. — *Why:* the terminal owns the font. — *Where:* CLI. — *When silent:* plain text.
 
-**Rule (image).** Do not render text with the image model. Reserve the space and composite real Roobert copy after, or use 1 to 5 user-supplied words. — *Why:* models corrupt text. — *Where:* image. — *When silent:* leave the space empty. See `art-direction.md`.
+**Rule (image).** Do not render text with the image model. Reserve the space and composite real copy after (in `--font-sans-system` until D8a closes), or use 1 to 5 user-supplied words. — *Why:* models corrupt text. — *Where:* image. — *When silent:* leave the space empty. See `art-direction.md`.
 
 ## Known drift (for the PR body, not for imitation)
 
@@ -113,6 +117,8 @@ A route deck (`/presentations/<slug>`) uses the web rungs: titles `text-3xl` to 
 - Off-ladder weights exist in `invites/[inviteId]/page.tsx`, `blog-cover.tsx`, `use-cases/covers.tsx`, `not-found-state.tsx`.
 - Mobile bundles Light, Bold and Heavy files with no class use. Markdown headings use Bold, which breaks the ladder. `apps/mobile/AGENTS.md` still says h1 is `font-extrabold`. Fix the doc.
 - The design-system page lists `text-xs` as 12px. It is 13px.
+- `badge.tsx` keeps `rounded-[5px] py-[0.1rem] text-[0.8rem]` in the chip base string. `audit.sh` flags three hits. D4e keeps the chip, but its geometry is debt: do not copy it and do not allowlist it. The nearest steps are `rounded-sm`, `py-0.5` and `text-xs`; a design lead confirms the swap (Q40).
+- `Input` is `text-sm` (14px) at every size except `xl` (`text-base`). iOS Safari zooms the page when a focused input is under 16px, and the viewport now allows pinch zoom. OPEN product debt (Q42): set 16px for inputs on touch widths. Do not set `maximum-scale` to hide it.
 
 ## Rationalization table
 

@@ -72,12 +72,12 @@ capitalized only at the start of a sentence or as a UI label.
 | agent | A markdown persona with a prompt and a scoped reach into tools and resources. | "an agent", "install an agent" | bot, assistant, worker, AI worker |
 | skill | Markdown plus scripts that encode how the company does one job. | "a skill" | plugin, prompt template |
 | connector | One-click reach into an app, an API or an MCP server. Noun "connector", verb "connect". | "Connect Gmail." | integration (as headline noun), plugin |
-| secret | An encrypted, per-project credential. It has an exposure: `environment`, `egress-enforced`, `none`. | "Environment is the default exposure." | key (generic), "delivery mode" |
+| secret | An encrypted, per-project credential. It has an exposure: `environment`, `egress-enforced`, `none`. In prose write "egress-enforced". As a CLI argument write `enforced` (the CLI also accepts `egress-enforced`). `none` means no sandbox presence: a Kortix service spends the value, or the secret is stored and disabled (`kortix secrets --help`). | "Environment is the default exposure." | key (generic), "delivery mode" |
 | Who can use it | The audience choice on a secret or connector account. | "Who can use it" (UI label, sentence case after the first word) | permissions (for this choice) |
 | channel | A chat surface where a bot starts sessions: Slack, Microsoft Teams, email. | "Add Kortix to Slack." | integration, "Telegram channel" |
 | trigger | A cron schedule or a signed webhook that starts sessions. | "A trigger starts a session." | automation (as the noun for one trigger) |
 | reminder | A prompt that re-prompts one existing session later, once or on repeat. Stored in the database, not in `kortix.yaml`. | "Set a reminder." | trigger (they differ) |
-| computer | A person's own machine (laptop, desktop, server) connected to Kortix. Not a sandbox. | "Connect your computer." | sandbox, "cloud computer" |
+| computer | A person's own machine connected to Kortix. Name no machine class (laptop, desktop, server) and no operating system (Q20). Not a sandbox. | "Connect your computer." | sandbox or "cloud computer" as a synonym |
 | memory | The living company brain. Plain files today. | "company memory" | vector database (external copy) |
 | `kortix-sandbox-agent-server` | The daemon a sandbox boots with: it clones the repo, cuts the branch, loads config into a live runtime, and exposes prompting, streaming, files and terminal. Internal: do not use it in customer copy. | `kortix-sandbox-agent-server` in mono, in engineering text only | "agent server", "runtime" |
 | LLM gateway | The server-side path that authenticates model-provider requests. | "the LLM gateway" | Kortix Gateway |
@@ -86,9 +86,13 @@ capitalized only at the start of a sentence or as a UI label.
 
 **Rule.** Use the canonical noun in the table, every time, in every surface. — *Why:* Live copy mixed "workspace" and "account", "thread" and "session", "PR" and "change request", "Kortix Gateway" and "LLM gateway" (`apps/web/translations/en.json:19993,20028,413,1689,10582,11732`). One term per concept is STE-100 and it keeps search and support consistent. — *Where:* every surface. — *When silent:* search the code for the name the code uses and write that. If two names exist, ask.
 
+**Rule.** Write "computer" for a person's own machine and "cloud computer" or "sandbox" for a session's machine. Never write one to define the other, and never contrast them in a sentence. — *Why:* the two rows name different machines. A sentence that says "a computer is not a sandbox" puts the other row's word into the first row's copy (Q13). — *Where:* every surface. — *When silent:* describe the computer by what it is (a person's own machine) and by what runs on it. Omit the contrast.
+
+**Rule.** Write "sandbox" or "cloud computer" for a session's computer. Write "machine" only inside a sanctioned row of [claims.md](claims.md), word for word. — *Why:* one noun per concept. A deck caption said "isolated machine" outside any row (Q25). — *Where:* every surface. — *When silent:* "sandbox".
+
 **Rule.** Write "session ID", "change request", "project" exactly as the code names them (`session_id`). — *Why:* CLAUDE.md: "match the codebase's existing names exactly". — *Where:* app | CLI | docs. — *When silent:* read the API field name and use its words.
 
-**Rule.** Write a Slack thread as "Slack thread" and a Kortix unit of work as "session". — *Why:* "Thread" is a Slack noun. A Kortix session started from a thread is still a session. — *Where:* Slack | docs. — *When silent:* "session" unless you mean Slack's own thread.
+**Rule.** Write a Slack thread as "Slack thread", a Teams chat as "Teams chat", and a Kortix unit of work as "session". Never write "conversation" for either. — *Why:* "thread" is a Slack noun and "chat" is a Teams noun. A Kortix session started from either is still a session (Q41). — *Where:* Slack | Teams | docs. — *When silent:* "session" unless you mean the platform's own object. A Teams command that picks a model says "Pick the model for this chat."
 
 **Rule.** Write "people" or "members", never "users". Write "principals" only in IAM docs. — *Why:* The permissions model treats humans and agents as principals. "Users" hides the agent. — *Where:* app | marketing | docs. — *When silent:* "people". The live `/enterprise` page says "Govern actions, not just users" (`en.json:3281`).
 
@@ -112,7 +116,8 @@ capitalized only at the start of a sentence or as a UI label.
 | Fully autonomous | "Opens a change request you approve" | A person approves. |
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
 | Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
-| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative | A concrete mechanism | Banned hype. |
+| more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). |
+| preview, beta (for Teams or email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 
 ### Capitalization and mechanics
 
@@ -185,6 +190,36 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Use the same word for the same action everywhere: "Revoke" revokes, "Delete" deletes, "Remove" removes a link but keeps the object, "Disconnect" removes a connection. — *Why:* A reader learns the meaning once. — *Where:* app | mobile | CLI. — *When silent:* pick the verb the API route uses.
 
+**Rule.** Write a start failure as "Could not start the {object}." Do not write "boot" or "provision" in UI copy. — *Why:* the API route is `/start`, and engine words belong in docs and `--json` (Q14). — *Where:* app | mobile. — *When silent:* use the verb of the API route.
+
+**Rule.** Write an expired connector as "The {app} connection expired." with the button "Reconnect {app}". Write "token" only inside the details fold. "Reconnect" re-authorizes. "Disconnect" removes. — *Why:* one noun per concept, and a person fixes a connection, not a token (Q14). — *Where:* app | mobile. — *When silent:* name the app and the object the person can fix.
+
+**Rule.** Write a refused action in two parts: the cause and who can fix it. Name the grant in mono once and write "Anyone who manages this project can grant it." Name the role as "people who manage this project", never "project admin". Branch the cause: "does not have the merge grant" and "cannot merge a change request it opened" are two messages, and only the first names a grant. — *Why:* a grant does not fix the second cause ([claims.md](claims.md) merge rule). The code and the permission example in section 5.3 use this wording (Q14). — *Where:* app | mobile | CLI. — *When silent:* the first message with `project.gitops.merge`. Never write `project.cr.merge`. Add no button unless the app has a screen where the viewer can fix the cause (Q25).
+
+**Rule.** Use one noun for one object inside one error, in the title and in the description. — *Why:* switching from "sandbox" to "session" reads as a second object (Q14). — *Where:* every surface. — *When silent:* the noun in the title.
+
+**Rule.** When a button is the next action, the title and the button are enough. Do not add a description that restates the title. — *Why:* one idea per sentence (Q14). — *Where:* app | mobile. — *When silent:* title plus button.
+
+**Rule.** Label the fold for raw error text "Show details". Label its rows "Message", "Code" and "Request ID". — *Why:* one label for one action across every state ([layout.md](../visual/layout.md) error rule) (Q14). — *Where:* app | mobile. — *When silent:* verb and object, sentence case.
+
+**Rule.** Write a confirmation for "Remove" as the effect and the way back: "{name} loses access to this project at once. To add them again, you invite them again." Use "This cannot be undone." only for "Delete". — *Why:* "Remove" keeps the object, so a claim of permanence is false (Q15). — *Where:* app | mobile. — *When silent:* effect plus the way back.
+
+**Rule.** End every mutation with a result. A mutation that closes its dialog reports with a success toast. A failure stays in the dialog, or shows a failure toast when the control has no inline place. — *Why:* the row or the list changes, and the person needs the result ([layout.md](../visual/layout.md) in-place copy rule). — *Where:* app | mobile. — *When silent:* "Invite sent", "Member removed": object first, past tense.
+
+**Rule.** Label the primary action of a page as verb plus object: "Invite people", "Create trigger". Keep the label that ships today. Do not rename a shipped label in a task that is not about the label. — *Why:* a rename is a separate change and breaks screenshots, docs and support macros (Q16). — *Where:* app. — *When silent:* keep the shipped label and list a mismatch under Guesses.
+
+**Rule.** Write a confirmation for removing an agent as: "{name} loses access to this project at once. To restore access, add the agent to the project again." — *Why:* an agent is not invited by email, so the person-copy way back is wrong (Q25). — *Where:* app | mobile. — *When silent:* effect plus the way back, naming adding the agent. Use "This cannot be undone." only for "Delete".
+
+**Rule.** Write the invite form as email-only with the role defaulting to the lowest-privilege role the list offers. An agent is not invited here. "Kortix emails an invite" is a true sentence (`apps/api/src/accounts/email.ts`). — *Why:* the invite route sends an email. The first role in the list is an accident of array order, not a policy (Q15). — *Where:* app. — *When silent:* email, lowest-privilege role. The host owns validation and role names (intentional freedom).
+
+**Rule.** Put a new web string through the catalog: add a key to the `en` catalog in `apps/web/translations/en.json` and read it with `useTranslations`. — *Why:* the shipped pages do. A hard-coded string skips every locale (Q17). — *Where:* app. — *When silent:* if the tree has no catalog, keep the string inline and list the key under Guesses. Name a new key `{surface}.{state}.{slot}` (for example `triggers.empty.title`). When silent: copy the nearest existing key in the same file (Q25).
+
+**Rule.** Write the empty-state hint as the product noun's one-line "Means" cell from the table in section 3. Write the exact line and the viewer variant freely, inside the pattern above. — *Why:* one definition per noun. The exact wording is intentional freedom (Q4). — *Where:* app. — *When silent:* copy the "Means" cell.
+
+**Rule.** Name a group or section by its object: "Notification types", not "Notify me about". — *Why:* chrome speaks about Kortix in the third person (section 1), and a first-person label puts a voice in the product that no person owns (Q38). — *Where:* app | mobile. — *When silent:* the plural noun, sentence case.
+
+**Rule.** Keep a feature status ("experimental") out of a tab, nav item or button label. Show it on the first body mention ([5.7](#57-docs)) or as a `Badge`. — *Why:* a narrow tab ("Microsoft Teams (preview)") has no room, and the label is the noun the person clicks (Q41). — *Where:* app | marketing. — *When silent:* the noun in the label, the status beside it.
+
 ## 5. Tone by context
 
 The voice stays fixed. The tone moves along two axes: how much the reader must decide, and how
@@ -200,6 +235,8 @@ Tone: declarative, concrete, calm. A headline states the mechanism or the offer.
 **Rule.** Follow a headline with one sentence of proof from `claims.md`. — *Why:* The hero sub names the pieces: "Your agents, their skills, your company memory and every connector". — *Where:* marketing. — *When silent:* name the three or four objects the reader gets.
 
 **Rule.** Write a call to action as a verb phrase of one to three words. Use "Get started" as the one primary CTA in the header and in the mobile menu. Use "Request demo" as the secondary. — *Why:* The desktop header says "Get started" and the mobile menu's bottom button says "Request demo" (`live-visual` audit). One primary label. — *Where:* marketing. — *When silent:* "Get started".
+
+**Rule.** Write a destination the request omits (a CTA link, a social link, a button URL) as a named placeholder for the object: `{{REQUEST_DEMO_URL}}`. Do not guess a path. — *Why:* a guessed path ships as a dead or wrong link, and two runs invented `/enterprise` and a GitHub URL (Q25, Q41). — *Where:* every surface. — *When silent:* the placeholder, listed under Guesses.
 
 - Approved headline: "Every session gets its own computer." (agent-computer hero, `agent-computer/content.ts:32`)
 - Approved body: "A trigger starts a session with no person present. A cron schedule fires it on the clock; a signed webhook fires it on an event." (`automations/content.ts:30`)
@@ -245,6 +282,18 @@ Tone: terse, technical, scannable. The reader is in a terminal and may pipe the 
 
 **Rule.** Start a CLI sentence with a capital letter and end it with a period. A list fragment does not end with one. — *Why:* The existing messages mix "removed x" and "Unknown delivery option: x" (`secrets.ts:1244,658`). One rule ends the drift. — *Where:* CLI. — *When silent:* sentence case, period.
 
+**Rule.** Write CLI help and errors from the real binary. Run `kortix <command> --help`, or read `apps/cli/src/commands/<command>.ts`, and quote its subcommands, flags and values. State under Guesses whether the text is "quoted" or "proposed". — *Why:* runs wrote `list` for `ls`, invented `--project` and `--exposure`, and wrote `egress` for the value the CLI prints as `enforced` (Q37). — *Where:* CLI. — *When silent:* if the binary and the source are absent, mark each subcommand, flag and value `{{PROPOSED}}` and list it under Guesses. Do not infer one from this kit.
+
+**Rule.** Prefix a message with the helper from `apps/cli/src/style.ts`: `✗` for an error (the command ends), `!` for a warning (the command goes on), `✓` for success, `▸` for a note. — *Why:* a run used `!` for an error and no prefix for another (Q37). — *Where:* CLI. — *When silent:* the `status` helper for the case.
+
+**Rule.** Report a missing required secret as a warning with a count, what happens and the fix. The shipped line is the `!` warning "{n} required secret(s) missing" in `kortix secrets ls`, and sessions still start. Name the fix by case: `kortix secrets set KEY=VALUE` when you hold the value, `kortix secrets request NAME` when a person must enter it. — *Why:* the code treats it as a warning because the session starts (`secrets.ts`). The shipped line uses a spaced em dash that section 1 bans in CLI text: that is debt, not a precedent (Q37). — *Where:* CLI. — *When silent:* "1 required secret is missing. Sessions still start, and a task that needs it may fail."
+
+**Rule.** List every flag the binary still accepts. Tag a deprecated flag "Deprecated." and say what replaces it. Name an accepted alias once, in the line of the value it aliases. — *Why:* help that drops a deprecated flag hides a flag a script still passes (Q37). — *Where:* CLI. — *When silent:* "Deprecated. Use `--allow-host`."
+
+**Rule.** Write a UI path with an arrow, "Settings → Feature flags", and a list continuation as "…" (`KEY=VALUE […]`). Do not write `>` or three dots. — *Why:* the shipped help does, and so do the docs (5.7) (Q37). — *Where:* CLI. — *When silent:* the arrow.
+
+**Rule.** Print the ASCII banner only on the landing screen (`kortix`, `kortix help`, `kortix --help`). A subcommand help block carries the styled title and rule from `formatHelp` and no banner. — *Why:* `printLanding` in `apps/cli/src/index.ts` is the one caller, and a banner above every help block would bury the usage line (Q37). — *Where:* CLI. — *When silent:* no banner.
+
 - Approved: `✗  Pass at least one KEY=VALUE pair.`
 - Approved: `kortix: unknown command \`deploy\`` then `Run kortix --help for the full list.`
 - Rejected: `Oops! Something went wrong 😕 Please try again later.`
@@ -260,14 +309,28 @@ Tone: calm, short, safe. The reader did not expect it and may be anxious (securi
 
 **Rule.** Name the inviter, the object and the role in an invite, and say what happens if the reader has no account. — *Why:* `apps/api/src/accounts/email.ts:85-130`: "You've been invited to {collaborate on "{project}" | join "{account}"} on Kortix" with "Review invite". — *Where:* email. — *When silent:* who, what, role, one button.
 
-**Rule.** End every email with the tagline footer "Kortix — The open-source AI Management System". Never the retired line. — *Why:* D1. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.ts:8`) and still says "The Autonomous Company Operating System". — *Where:* email. — *When silent:* the tagline.
+**Rule.** End every email with the tagline footer "Kortix — The open-source AI Management System". Never the retired line. — *Why:* D1. The shipped footer is `BRAND_FOOTER` (`apps/api/src/lib/email/template.ts`) and says the tagline since 2026-10-01. — *Where:* email. — *When silent:* the tagline.
 
 **Rule.** Do not write a kicker or a chip in uppercase. Write it in sentence case. — *Why:* Mono-uppercase is a Badge and deck exception (D4e), not an email style. — *Where:* email. — *When silent:* sentence case.
+
+**Rule.** Build an internal notification (a demo-request alert, a lead alert) in the same shell, with the same footer in the HTML and in the plain text. Write its kicker and title as a noun phrase that names the event: "New demo request". — *Why:* it is mail from Kortix that a person reads. The plain text used to end in "automated lead notification", which differed from the HTML (`demo-request-email.ts`, Q34). — *Where:* email. — *When silent:* `renderEmail` and `BRAND_FOOTER`. Every shipped caller's kicker is a sentence-case noun phrase of two or three words (checked 2026-10-01 in `templates.ts`, `accounts/email.ts` and `demo-request-email.ts`).
 
 - Approved subject: "Reset your Kortix password"
 - Approved note: "If you did not request a password reset, you can ignore this email."
 - Rejected: "Hey there! Let's get you back in 🚀" (chatty, emoji, exclamation)
 - Rejected: "ACTION REQUIRED: VERIFY NOW" (alarm, shouting)
+
+### 5.5b Launch email
+
+Tone: calm, specific, brief. The reader has an account and did not ask for this mail. Section 5.5 rules still apply: subject, footer, no uppercase kicker, no emoji, no exclamation mark.
+
+**Rule.** Build a launch email as: subject (verb plus object), kicker (a noun phrase of two or three words, no colon, the canonical noun), title (what the reader can do now), one lead sentence of 20 words or fewer, the artifact from [magic_trick.md](../magic_trick.md), one button, and one note on why the reader gets this mail. — *Why:* section 5.5 is written for security mail and the reader may be anxious. A launch has a different reader and a different note (Q18). — *Where:* email. — *When silent:* the anatomy above. A second paragraph is allowed only when it carries the artifact.
+
+**Rule.** Write the preheader as one sentence of 40 to 90 characters that states the result and does not repeat the subject or the title. Write the subject, the title and the button label as three different sentences. — *Why:* section 5.5 covers the subject only. A preheader that paraphrases the title wastes the second inbox line, and one idea repeated three times adds nothing (Q18, Q25). — *Where:* email. — *When silent:* the lead sentence, shortened.
+
+**Rule.** Write the closing note of a launch email as the reason the reader gets it: "You get this email because you have a Kortix account." — *Why:* "If you did not request this" does not apply to mail nobody requests (Q18). — *Where:* email. — *When silent:* one sentence on why.
+
+**OPEN (Q19).** Whether a launch email carries an unsubscribe link and merge tags. No code in this repo sends launch mail: the shell in `apps/api/src/lib/email/template.ts` is transactional. The sending tool decides the tag syntax. Do not invent a tag. Mark `{{UNSUBSCRIBE_URL}}` as a placeholder under Guesses until a person names the tool. A button destination and a hosted logo URL that the request does not supply are placeholders too, named for the object (`{{CONNECT_COMPUTER_URL}}`). A launch email that mentions the computer feature names no machine class and no operating system (Q20).
 
 ### 5.6 Slack and Teams messages
 
@@ -315,6 +378,8 @@ Tone: spoken, plain, paced. The presenter says it aloud.
 
 **Rule.** Take every claim on a slide from the marketing content modules and `claims.md`. — *Why:* Section 1. — *Where:* deck. — *When silent:* leave the claim out.
 
+**Rule.** Write a note about the merge as "a person approves", or "a person with the merge capability merges". Do not write "reads the diff and merges", "main is your live company" or any isolation sentence that is not the approved note below. — *Why:* an admin can grant the merge capability to an agent, and the other sentences trace to no row in [claims.md](claims.md) (Q28). — *Where:* deck. — *When silent:* the approved note, word for word.
+
 - Approved note: "Each session gets its own sandbox and its own branch. The agent works there. When it wants to keep something, it opens a change request."
 - Rejected: "Our revolutionary microVM-isolated agents autonomously deploy to production." (hype, blanket microVM, autonomy, "deploy")
 
@@ -324,7 +389,13 @@ Tone: plain and specific, a person talking. One hook, one idea, one action.
 
 **Rule.** Write every post as one hook, one idea and one action. The first line earns the second. — *Why:* `kortix-social`. — *Where:* social. — *When silent:* if you cannot state the idea in one sentence, split the post.
 
-**Rule.** Put links in the first comment or a reply, not in the post body. — *Why:* External links in the body suppress reach on the major platforms (`kortix-social`). — *Where:* social. — *When silent:* "Link in the comments."
+**Rule.** Write a post for a technical founder or operator, and name that audience under Guesses. Keep X to 280 characters. Make the first 210 characters of a LinkedIn post carry the hook. Limits for other platforms: `kortix-social/references/platform-limits.md`. — *Why:* the size table in `art-direction.md` holds image sizes only, and a run had no length rule (Q29). — *Where:* social. — *When silent:* one audience per post, X at most 280 characters, no thread unless asked.
+
+**Rule.** Deliver each post as plain text in its own file, `<platform>-post.md`, with no front matter. End with one action: a question the reader can answer in a reply, or "Link in the comments." Put no `TODO(idea)` comment inside the file ([magic_trick.md](../magic_trick.md)). — *Why:* a post is pasted into a platform, so the file needs no wrapper and no comment (Q29). — *Where:* social. — *When silent:* as stated.
+
+**Rule.** Post as the Kortix account. "We" is the team. Write no "I" unless the request names a person. Whether a post names Kortix is the author's choice (intentional freedom). — *Why:* a run wrote with no pronoun at all because the account was unknown, and the voice rule in section 1 already sets "we" for the team (Q44). — *Where:* social. — *When silent:* "we" for the team, third person for the product.
+
+**Rule.** Put links in the first comment or a reply, not in the post body. — *Why:* External links in the body suppress reach on the major platforms (`kortix-social`). — *Where:* social. — *When silent:* "Link in the comments." The target is `{{LINK}}` unless the request names one (section 5.1, Q41).
 
 **Rule.** Write social copy to the same claims and vocabulary as every other surface, with no emoji and no hashtag stack. — *Why:* A post is public and permanent. One voice. — *Where:* social. — *When silent:* zero or one hashtag, only where the platform needs it.
 

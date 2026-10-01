@@ -18,7 +18,7 @@ Animation exists to make the UI feel faster, or to show where a thing came from.
 | **Rarely**, first run or a moment worth marking | **300ms or less**, blur allowed on a state swap | Empty to first content, a completed deploy, a destructive confirm |
 | **Marketing and decks** | **up to 500ms**, one hero moment per viewport | Landing intro, feature illustration, deck build step |
 
-**Rule.** Never animate a keyboard-initiated action. — *Why:* a user drives them hundreds of times a day. Motion makes the interface feel laggy and disconnected from the key just pressed. — *Where:* app, mobile (hardware keyboard), deck engine navigation. — *When silent:* no exceptions.
+**Rule.** Never animate a keyboard-initiated action. — *Why:* a user drives them hundreds of times a day. Motion makes the interface feel laggy and disconnected from the key just pressed. — *Where:* app, mobile (hardware keyboard), deck engine slide navigation (a build-step opacity fade is not navigation: see the Deck paragraph). — *When silent:* no exceptions.
 
 ## Instant floating panels (D4a)
 
@@ -86,7 +86,13 @@ Animation exists to make the UI feel faster, or to show where a thing came from.
 
 ## Reduced motion
 
-**Rule.** Ship two variants of every animation. `prefers-reduced-motion: reduce` means remove the movement, not the feedback. Keep opacity and color. Drop `transform` and anything that translates or scales. — *Why:* accessibility is priority 1. — *Where:* app, marketing, mobile, deck. — *When silent:* ship both variants in the same change.
+**Rule.** An enter animation that changes opacity only needs no reduced-motion variant. Any `transform`, translate or scale needs `motion-reduce:` handling. — *Why:* reduce keeps opacity and color, so an opacity fade already is the reduced variant (Q4). — *Where:* app, marketing, mobile. — *When silent:* if the animation moves anything, add `motion-reduce:animate-none`.
+
+**Rule.** A static row has no transition class. Add `transition-colors` only when the row has a hover or selected state, and not in a dense list a key can drive (frequency ladder). — *Why:* a transition with no change to animate is dead code, and dense-list hover is `transition-none` (Q12). — *Where:* app. — *When silent:* no transition.
+
+**Rule.** Ship two variants of every animation that moves. `prefers-reduced-motion: reduce` means remove the movement, not the feedback. Keep opacity and color. Drop `transform` and anything that translates or scales. An opacity-only change (a deck build fade) needs no variant: with no transition class, no variant is needed either. — *Why:* accessibility is priority 1. The two rules read as unconditional until Q28 stated the exception. — *Where:* app, marketing, mobile, deck. — *When silent:* ship both variants in the same change when anything moves.
+
+**Rule.** A disclosure fold uses the `Disclosure` default transition. Do not pass `duration` 0. — *Why:* disclosure is an "often" case at 100 to 200ms (`duration-moderate`). A run switched it off without reading this file (Q24). — *Where:* app. — *When silent:* the default.
 
 ```tsx
 // Tailwind
@@ -107,7 +113,9 @@ Waiting-screen rules (one channel, progress follows the backend) live in [layout
 
 ## Busy and loading marks
 
-**Rule.** Use `Loading` as the spinner everywhere. Never spin an icon (`animate-spin` on a refresh glyph). — *Why:* one spinner reads as one product. — *Where:* app, marketing. — *When silent:* `Loading`. The refresh-icon spinners in `infrastructure-preview.tsx`, `sandbox-url-detector.tsx` and `tool-action-bar.tsx` are debt: replace them with `Loading`.
+**Rule.** Use `Loading` as the spinner everywhere on web. Never spin an icon (`animate-spin` on a refresh glyph). — *Why:* one spinner reads as one product. — *Where:* app, marketing. Mobile: `KortixLoader` or `Skeleton` (`apps/mobile/AGENTS.md`, Loading). — *When silent:* `Loading`. Swap the icon for `Loading` while it loads and back after; inside a plain muted icon button add `in-[button]:text-muted-foreground`, because the base class paints `text-background` there. `sandbox-url-detector.tsx` and `infrastructure-preview.tsx` already do this.
+
+**Rule.** When code that spins an icon has a test that pins the spin class, change the test in the same change. A test that asserts `animate-spinner-spin` or `animate-spin` on an icon is wrong. — *Why:* two tests keep the banned pattern alive and make the fix look like a regression (Q40). — *Where:* app. — *When silent:* assert `Loading` renders while `loading` is true. Remaining debt on 2026-10-01: `features/session/tool/shared/tool-action-bar.tsx` (lines 61 and 81, pinned by `tool-action-bar.test.tsx`), `features/session/action-panel/shared/sandbox-browser-chrome.tsx` (line 184, pinned by `sandbox-browser-chrome.test.tsx`), `features/file-browser/components/file-tree-item.tsx` (line 351), and an `animate-spin` class laid on a `Loading` in `demo-qualifier-modal.tsx`, `apply-modal.tsx` and `marketplace-paged-grid.tsx`.
 
 **Rule.** Use `SessionDotMatrix` as the busy mark for session-scoped work (D4f), for example an approve or deny button while a decision saves (#8421). — *Why:* it marks "this session is doing something" and is stable per `session_id`. — *Where:* app. — *When silent:* if the work is not tied to one session, use `Loading`.
 
@@ -125,7 +133,7 @@ Waiting-screen rules (one channel, progress follows the backend) live in [layout
 
 **Mobile.** Every stack uses expo-router's native `Stack` with the platform push and pop. Write no custom screen animation. The root `index` redirect has `animation: 'none'`. Feedback is a toast (`useToast()`), never `Alert.alert`.
 
-**Deck.** Never mount or unmount on a build step. Every element is in the DOM from the first frame, ghosted, and a step raises its opacity (`transition-opacity duration-slower`, ghost at the low-opacity step). Connector rails never fully fade. Only ghosted nodes drop further. A travelling packet (`Link fire`) is the one element that mounts for its step. Caption carries the sentence that changes per step. About 20 seconds of narration per build step. Films run at 60fps on a 120 BPM bar grid, one bar = 120 frames, and every frame is a pure function of the frame number (`kortix-presentation/references/films.md`).
+**Deck.** Never mount or unmount on a build step. Every element is in the DOM from the first frame, ghosted, and a step raises its opacity (`transition-opacity duration-slower`, ghost at the low-opacity step). The ghost opacity is the engine's value. Never write a local opacity class for a ghost: import the engine helper, and if the engine does not export it, flag it under Guesses and do not copy the value (Q28). Connector rails never fully fade. Only ghosted nodes drop further. A travelling packet (`Link fire`) is the one element that mounts for its step. Caption carries the sentence that changes per step. About 20 seconds of narration per build step. Films run at 60fps on a 120 BPM bar grid, one bar = 120 frames, and every frame is a pure function of the frame number (`kortix-presentation/references/films.md`).
 
 **Marketing.** An intro animation plays once per visit and must not replay on back-navigation. One hero moment per viewport.
 

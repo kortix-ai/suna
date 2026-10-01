@@ -22,7 +22,7 @@ import type { UiTranslator } from '@/i18n/translator';
  */
 export const hero = {
   title: 'The open-source AI Management System',
-  sub: 'Your agents, their skills, your company memory and every connector in one platform. Any model, your keys, self-hosted or managed cloud.',
+  sub: 'Your agents, their skills, your company memory and every connector in one git repo you own. Any model, your keys, self-hosted or managed cloud.',
   ctaPrimary: 'Get started',
   ctaSecondary: 'Request demo',
   trust: 'Open source · Any model, your keys · Self-host, VPC, or on-prem',
@@ -299,7 +299,7 @@ export const useCases = {
       href: '/solutions/marketing',
       role: 'Marketing',
       tag: 'Marketing',
-      headline: 'Runs the SEO programme week after week.',
+      headline: 'Runs the SEO program week after week.',
       body: 'It tracks the queries you care about, finds the pages losing ground, rewrites them against the brief, and opens each rewrite as a change request.',
       artifact: {
         kind: 'sheet',
@@ -328,7 +328,7 @@ export const useCases = {
       artifact: {
         kind: 'sheet',
         file: 'finance/fy26-budget.xlsx',
-        columns: ['Cost centre', 'H1 plan', 'Actual', 'Variance'],
+        columns: ['Cost center', 'H1 plan', 'Actual', 'Variance'],
         widths: ['36%', '22%', '22%', '20%'],
         aligns: ['left', 'right', 'right', 'right'],
         rows: [
@@ -338,7 +338,7 @@ export const useCases = {
           { cells: ['Brand & content', '240,000', '219,400', '+20,600'], tone: 'up' },
           { cells: ['Total', '2,455,000', '2,343,200', '+111,800'], total: true },
         ],
-        footer: '9 receipts chased and attached · 1 centre over plan',
+        footer: '9 receipts chased and attached · 1 center over plan',
       },
     },
     {
@@ -369,7 +369,7 @@ export const useCases = {
       href: '/solutions/product',
       role: 'Product',
       tag: 'Product',
-      headline: 'Turns what users say into what ships.',
+      headline: 'Turns what customers say into what ships.',
       body: 'It reads every piece of feedback that came in, groups it into themes you can act on, and takes the top one all the way to a change request.',
       artifact: {
         kind: 'checks',

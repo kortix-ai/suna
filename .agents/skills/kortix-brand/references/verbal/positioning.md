@@ -50,11 +50,12 @@ Kortix is the open-source AI Management System: your agents, their skills, your 
 | README, GitHub About | Tagline (README) and Short (About) | Already correct. |
 | CLI banner and `--help` | Tagline | Already correct. |
 | Auth screen subtitle | Tagline | Not "Your AI Command Center". |
-| Transactional email footer | "Kortix — The open-source AI Management System" | Today the footer ships the retired line. |
+| Transactional email footer | "Kortix — The open-source AI Management System" | Shipped since 2026-10-01 (`BRAND_FOOTER`). |
 | Slack and Teams app description | Standard, then one sentence on the channel | "Start a session from any Slack thread." |
 | Package descriptions (root, CLI, SDK) | Short (root, CLI); "the Kortix API" (SDK) | Not "agent platform". |
 | App Store and Play Store listing | Standard, the message house pillars, the three work modes | Commit the store text to the repo (open issue). |
-| Docs landing | Standard | Docs title is "Overview" or "Kortix docs", never "Kortix - Kortix". |
+| Docs landing | Meta description: Short. Body lead: Standard | Docs title is "Overview" or "Kortix docs", never "Kortix - Kortix". |
+| About page: hero and meta description, `llms.txt` About entry | Mission, word for word (section 3) | The one place the mission is a description. Do not repeat the tagline there (Q41). |
 
 **Rule.** Write each page's meta description as one sentence that names the mechanism or the offer, in 155 characters or fewer. — *Why:* The live home description is 277 characters. `/pricing` and `/enterprise` carry generic lines. A reader and a search crawler both need the concrete thing. — *Where:* marketing | docs. — *When silent:* "{Who} can {do what} with {mechanism}." Example: "Free to start, $40 per seat per month for teams, custom for Enterprise. Any model, your keys."
 

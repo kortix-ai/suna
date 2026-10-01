@@ -75,6 +75,22 @@ These are **mandatory** for their job. Import from the paths below; never reimpl
 
 Also reach for: `Button`, `ButtonGroup`, `Input`, `Select`, `Switch`, `Skeleton`, `Tabs` / `TabsListCompact`, `Table`, `InlineMeta`, `UserAvatar`, `EntityAvatar`.
 
+## Which component for which state
+
+Paths are relative to `apps/web/src/`. The values and the copy are in `kortix-brand` (`layout.md` sections Shells and States, `voice-and-tone.md` section 4).
+
+| Situation | Compose | Never |
+| --- | --- | --- |
+| The route has not mounted its shell (sign-in, project switch) | `ProjectPendingScreen` (`components/projects/project-pending-screen.tsx`) | A skeleton of a page you cannot draw |
+| A list loads inside a mounted shell and the row shape is known | `Skeleton` rows | A spinner for a list |
+| A page or list failed to load | `ErrorState size="sm"` (`features/layout/section/error-state.tsx`) inside the host panel, with a "Try again" action | `InfoBanner` for a load failure, or a wrapper box around it |
+| An inline alert in a view that did load (a connection, a warning) | `InfoBanner` with a `tone` | A hand-colored banner |
+| A list has no items | `EmptyState size="sm"` unmodified: one muted line and an optional hint. A first-run list adds `PixelKortixMark` (`components/ui/pixel-kortix-mark.tsx`) as a sibling above it | An icon tile, a card, a `className` override of its slots, a new prop |
+| People and agents with a role | `AccessRow` (`features/workspace/shared/access/access-row.tsx`), grouped "People" then "Agents" under a `Label` | A hand-built `li`, a kind badge, a `[&>div]:` selector |
+| Any form field, in a panel or in a `Modal` | `Field`, `FieldLabel`, `FieldGroup` (`components/ui/field.tsx`) | A raw `<label>` beside an `Input` |
+| A mutation finished | `successToast` or `errorToast` from `components/ui/toast.tsx` | An inline "Saved" line |
+| A new capability page | `CapabilityPageShell` | `CustomizeSectionWrapper` (legacy, `customize/sections/view/` only) |
+
 ## Reference implementations — customize section views
 
 **Read the closest match before building any new screen.** Paths below are
@@ -145,7 +161,7 @@ Rules:
 
 ## Card & panel patterns (no SectionCard)
 
-Every panel is a `bg-popover rounded-md border` surface. Two sanctioned ways to build one — never `SectionCard`:
+A panel inside another panel, a form panel in a settings section and a floating panel are `bg-popover rounded-md border` surfaces. A bordered list that sits directly on a page is `bg-background` plus `border-border`: the color rule wins over this recipe ([`color.md`](../kortix-brand/references/visual/color.md), in-flow section, Q11). Two sanctioned ways to build a panel — never `SectionCard`:
 
 - **`Card`** (`apps/web/src/components/ui/card.tsx`) — the codified panel. Use it when the surface has a title/description/action header, distinct content, or a footer. Slots carry the spacing (`px-4`, `pt-5`/`pb-5`, `gap-5` between slots — the panel `px-4 py-5` rhythm); the bordered element itself has **no padding**, so flush children (tables, lists, images) sit edge-to-edge.
 - **Hand-composed `div`** — for a one-off padded block inside a section, the one-div shorthand `bg-popover rounded-md border px-4 py-5` is fine (the `project-settings-page.tsx` pattern). The moment the panel needs a flush child or an internal seam, move the padding onto inner sections.
@@ -533,7 +549,7 @@ Standard content block (`agents-page.tsx` pattern):
 
 ## Dos & Don'ts
 
-- ✅ Section shell → `CustomizeSectionWrapper`. ❌ hand-rolled outer flex + header.
+- ✅ Page shell → `CapabilityPageShell` for a new page (`CustomizeSectionWrapper` only under `customize/sections/view/`). ❌ hand-rolled outer flex + header, ❌ `[&_header_h2]:` overrides of the shell header.
 - ✅ Panels → `Card` (`card.tsx`) or `bg-popover rounded-md border` with `px-4 py-5`. ❌ `SectionCard`, ❌ padding on a bordered element that hosts flush children.
 - ✅ Elevation → ladder step (`shadow-md` popovers, `shadow-lg` modals); in-flow panels stay flat with a border. ❌ `dark:shadow-*`, ❌ `shadow-[…]` when a step fits.
 - ✅ Lists → `<ul className="space-y-2">` + entity row classes. ❌ `List` / `ListRow`, ❌ `divide-y` Card lists.
@@ -547,7 +563,7 @@ Standard content block (`agents-page.tsx` pattern):
 - ✅ Color → `kortix-*` + semantic tokens. ❌ `text-emerald-600`, `bg-amber-500`.
 - ✅ Clickable elements → `cursor: pointer`; disabled keep `default`. ❌ `cursor-default` on an interactive element.
 - ✅ Meta separators → `InlineMeta` or `text-muted-foreground/40` bullet (`&bull;`). ❌ inconsistent separators.
-- ✅ Empty → `EmptyState`. ❌ centered `<p>` only.
+- ✅ Empty → `EmptyState size="sm"`, one muted line (D4g). ❌ centered `<p>` only, ❌ a forked or restyled `EmptyState` (Q23).
 - ✅ Alerts → `InfoBanner`. ❌ hand-rolled colored banners.
 - ✅ Pending spinners → `Loading` from `loading.tsx`. ❌ `CircleNotchIcon`, `SpinnerIcon`, or any `animate-spin` icon.
 - ✅ Motion → count the frequency first; `transition-colors duration-fast` on hover, `ease-out` on enter/exit, `active:scale-[0.96]` on press. ❌ `transition-all`, ❌ bare `transition`, ❌ `ease-in`, ❌ anything over 300ms in product UI.
@@ -561,7 +577,7 @@ Standard content block (`agents-page.tsx` pattern):
 1. **Load [`kortix-brand`](../kortix-brand/SKILL.md)** — the value allowlists and the motion budget. Then this file, then [`make-interfaces-feel-better`](../../../apps/web/.agents/skills/make-interfaces-feel-better/SKILL.md).
 2. **Read the closest reference view** from the table above. Copy structure, spacing, and primitives — don't invent a new layout dialect.
 3. Skim `/design-system` and `src/components/ui/` for anything not covered by the reference.
-4. Compose: `CustomizeSectionWrapper` → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
+4. Compose: the page shell (`CapabilityPageShell`) → search/panel/row/disclosure/table → `Badge` + `Hint` + `Modal` + `toast` + `Loading` + `EmptyState`. **Never** `SectionCard`, `List`, or `CircleNotchIcon`.
 5. Status → tinted icon tile. Color → `kortix-*`. Radius → `rounded-md` (panel), `rounded-none` (flush trigger). Elevation → overlays only; flat border for in-flow panels.
 6. **Motion last.** Count how often a user sees it. Constant → none. Otherwise ≤300ms, `ease-out`, named property, token duration, reduced-motion variant.
 7. New primitive? Tokens only, tiny API, add to `/design-system`.

@@ -67,9 +67,8 @@
  *     secret is a real env value any command in the session can read.
  *     This section claims nothing
  *     about secrets.
- * 10. "The open AGI platform" is aspiration, and `/about` is allowed to say it
- *     because that page is explicitly a vision page. It must never be dressed
- *     up as shipped capability here: training, RL and evals are NOT shipped, so
+ * 10. Never write "open AGI platform" (retired, D1). The about line is the
+ *     tagline. Do not dress direction up as shipped capability here: training, RL and evals are NOT shipped, so
  *     do not name them in this section at all.
  */
 
@@ -84,7 +83,7 @@ export const openSource = {
    * The whole note. Sentence one is `/about` → `hero.title` verbatim; sentence
    * two is the first clause of `hero.lead`. Keep the two files in step.
    */
-  title: 'We are building the open AGI platform. Every company should own all of it.',
+  title: 'We are building the open-source AI Management System. Every company should own all of it.',
 
   /** Primary way out: the rest of the reason. */
   aboutLabel: 'Why we are building it',

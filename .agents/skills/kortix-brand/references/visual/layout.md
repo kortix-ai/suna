@@ -62,23 +62,45 @@ Values live in `visual-system.json` (keys `spacing.*`, `radius.*`). This file co
 
 **Rule.** Inside a modal, a list has no bordered panel of its own. The modal is the container, and rows divide with `divide-y divide-border`. — *Why:* a box inside a box causes nested rounding (#8491, #8421). — *Where:* app. — *When silent:* drop the inner border.
 
+## Shells and shared components
+
+**Rule.** A new page uses `CapabilityPageShell` (`capabilities/shared/capability-page-shell.tsx`). `CustomizeSectionWrapper` stays only on the existing screens under `customize/sections/view/`. — *Why:* the older wrapper is legacy. A run picked it and patched its header with `[&_header_h2]:` selectors (Q23). — *Where:* app. — *When silent:* the current shell. Do not override its header classes.
+
+**Rule.** Compose a shared component through its props. Do not reach into its children with arbitrary child selectors (`[&>div:last-child]:`, `[&_header_*]:`, `data-slot` variants). Do not add a `className` override to a shared primitive's slots or padding (`EmptyState`, `AccessRow`, the shell header). — *Why:* a per-page override is a hidden fork that drifts from the next page (Q23). — *Where:* app. — *When silent:* render the component unmodified. If a prop is missing, raise it for the component owner and list the mismatch under Guesses. List every remaining `className` override of a shared component under Guesses.
+
+**Rule.** Use the `Button` size variants. Set no height or `min-h-*` on a `Button` to widen a touch target. A variable label (an app name) may wrap with `whitespace-normal`. — *Why:* the size variants carry the hit area. A fixed height on one button breaks the row (Q23). — *Where:* app. — *When silent:* the shipped variant. List a hit-area mismatch under Guesses.
+
 ## States
 
-**Rule.** An empty state has no icon tile and no card. A first-run list may lead with the pixel Kortix mark (`aria-hidden`, `currentColor`) and a one-time 300ms opacity fade. Loading and empty share the same padding (`py-8`) so the panel does not jump. — *Why:* nine icon-tile empties became one muted line (#7675). The pixel mark leads a first-run empty (#7337, D4g). Mobile has the same rule: no card, border, fill, icon or description. — *Where:* app, mobile. — *When silent:* one muted line, `py-8`. Copy: see [voice-and-tone.md](../verbal/voice-and-tone.md) section 4.
+**Rule.** An empty state has no icon tile and no card. A first-run list may lead with the pixel Kortix mark (`aria-hidden`, `currentColor`) and a one-time 300ms opacity fade. Loading and empty share the same padding (`py-8`) so the panel does not jump. "First-run" means zero unfiltered items on a successful load of a list this kit names first-run (triggers, agents, secrets). The page cannot see deletion history. A search or filter with no result shows one muted line and no mark (Q4, Q23). Compose `EmptyState size="sm"` unmodified and place the mark above it as a sibling. Do not fork the primitive, add a prop, or restyle its title or padding. Its title weight and ink are OPEN for the primitive owner (Q4): list the mismatch under Guesses. — *Why:* nine icon-tile empties became one muted line (#7675). The pixel mark leads a first-run empty (#7337, D4g). Mobile has the same rule: no card, border, fill, icon or description. — *Where:* app, mobile. — *When silent:* one muted line, `py-8`, no mark. Copy: see [voice-and-tone.md](../verbal/voice-and-tone.md) section 4.
 
-**Rule.** For page-level loading, show the Kortix mark (`ProjectPendingScreen`), not a skeleton. Use a skeleton only where the final shape is known (a field, a logo tile, a project tile and name). Never flash a fallback (a monogram, a caret) that the real content then replaces. — *Why:* a skeleton of a page this route never renders "flashed grey bars" in front of a transcript (#7179, #7263, D4h). — *Where:* app, mobile (`KortixLoader`). — *When silent:* if you cannot draw the final shape, show the mark.
+**Rule.** The call to action in an empty state is the page's header primary action: the same control, with the same menu and the same leading icon or none. A person who cannot perform the action sees the line and no button, and no explanation. — *Why:* two entry points to one action offer the same choices, and a hidden action needs no apology (Q4). — *Where:* app. — *When silent:* reuse the header control. Hide it when the viewer lacks the grant.
+
+**Rule.** For page-level loading (the route has not mounted its shell), show the Kortix mark (`ProjectPendingScreen`), not a skeleton. Inside a mounted page shell, a list may show skeleton rows when the row shape is known. A skeleton also fits a field, a logo tile, or a project tile and name. A failed page-level load shows `ErrorState size="sm"` with "Try again". `InfoBanner` is for an inline alert inside a loaded view (Q5). Never flash a fallback (a monogram, a caret) that the real content then replaces. — *Why:* a skeleton of a page this route never renders "flashed grey bars" in front of a transcript (#7179, #7263, D4h). — *Where:* app, mobile (`KortixLoader`). — *When silent:* if you cannot draw the final shape, show the mark.
 
 **Rule.** Keep one waiting channel. Progress moves only when the backend stage moves. — *Why:* four channels "read as noise on a screen whose job is to be calm". A rail that moves faster than the backend reads as progress we do not have (#7077). — *Where:* app. — *When silent:* hold still.
 
-**Rule.** Never claim a row, an action or a payoff that does not exist. — *Why:* a row that does nothing teaches the person to distrust the next row (#7079, #7069, #7158). — *Where:* app, mobile. — *When silent:* hide the affordance.
+**Rule.** Never claim a row, an action or a payoff that does not exist. — *Why:* a row that does nothing teaches the person to distrust the next row (#7079, #7069, #7158). — *Where:* app, mobile. — *When silent:* hide the affordance. This includes an action the viewer cannot perform: hide it, do not disable it. A row that depends on a master switch is hidden while the switch is off, and a permission-gated row follows the same rule. The shipped mobile screen `app/(settings)/notifications.tsx` does this (Q38).
 
-**Rule.** Show an error as one sentence that names the thing that failed. Fold the raw provider text, the code, the request id and the attempt chain behind a disclosure. A row with nothing to open has no caret. — *Why:* never raw JSON (#7671, #7096). — *Where:* app, mobile. — *When silent:* "The response from `<model>` could not be read."
+**Rule.** Show an error as one sentence that names the thing that failed. Fold the raw provider text, the code, the request id and the attempt chain behind a disclosure. A row with nothing to open has no caret. The fold shows only the rows that have a value ("Message", "Code", "Request ID", labels in [voice-and-tone.md](../verbal/voice-and-tone.md)), as mono text that wraps long values. It sits directly under the title row. When every row is empty, render no fold (Q24). — *Why:* never raw JSON (#7671, #7096). — *Where:* app, mobile. — *When silent:* "The response from `<model>` could not be read."
+
+**Rule.** Place `ErrorState` inside the host's existing panel or page shell, with no extra container of its own. — *Why:* the state reports one failure inside a page that already has a frame (Q24). — *Where:* app. — *When silent:* `ErrorState size="sm"`, no wrapper.
+
+**Rule.** While a state's action runs, disable its button, set `aria-busy`, and keep the label. Add no spinner icon. Hide the action when the viewer cannot perform it. — *Why:* "hide, do not disable" covers permission only. Progress is a different case, and the primitive set has no icon spinner (Q24). — *Where:* app. — *When silent:* as stated.
+
+**Rule.** After a confirmed destructive action removes a row, move focus to the list heading. — *Why:* the trigger no longer exists, so focus would fall to the page root (Q23). — *Where:* app. — *When silent:* the heading.
 
 **Rule.** Lead an outcome title with the words and put the mark at the trailing edge: `weight="fill"`, `size-6`, in `kortix-green`, `kortix-red` or `text-muted-foreground`. — *Why:* "the words carry the meaning; the mark and its colour repeat it" (#8421 `OutcomeTitle`). — *Where:* app. — *When silent:* copy `auth-consent.tsx`. Hue per status: the status table in [color.md](color.md).
 
 **Rule.** Confirm a copy action in place and do not let the label reflow. Use a toast only when the control cannot show the result (the palette closes, the badge has no glyph). — *Why:* the row must not move (#8491, #6952). — *Where:* app. — *When silent:* swap the glyph to a check and the label to "Copied".
 
-**Rule.** Build a `/debug/<surface>` page that renders every state, including the pre-fix bug, with a pass or fail verdict and a theme toggle. — *Why:* a state you cannot see is a state you did not check (#7671, #7213). — *Where:* app. — *When silent:* render it at 1280x800, 720x480, 700x900, 390x844 and 375x667.
+**Rule.** Build a `/debug/<surface>` page that renders every state, including the pre-fix bug, with a pass or fail verdict and a theme toggle. The toggle flips the `dark` class on `document.documentElement` (`@custom-variant dark` in `globals.css`). — *Why:* a state you cannot see is a state you did not check (#7671, #7213). — *Where:* app. — *When silent:* render it at 1280x800, 720x480, 700x900, 390x844 and 375x667.
+
+## Lists of principals
+
+**Rule.** Group a list of people and agents by kind: "People" first, "Agents" second, each under a `Label` heading, and hide an empty group. Show kind with the avatar (a person avatar for a person, the agent's own glyph for an agent). Add no kind badge. Show the role as a neutral label with no status hue. — *Why:* humans and agents are both principals ([voice-and-tone.md](../verbal/voice-and-tone.md) product nouns). One signal for kind avoids duplicate chrome, and a role is not a state ([color.md](color.md) status rule). — *Where:* app. — *When silent:* one grouped list, not tabs. Copy the closest row in `kortix-design-system` reference implementations. Data wiring, prop shapes and role names belong to the host (intentional freedom, Q9).
+
+**Rule.** Name a repeated row action with the bare verb when the row names the object ("Remove"). Set the accessible name to "{Verb} {name}". — *Why:* the row supplies the object for the eye. A screen reader has no row (Q6). — *Where:* app. — *When silent:* bare verb plus `aria-label="{Verb} {name}"`.
 
 ## Hierarchy as structure
 
@@ -92,8 +114,8 @@ Name the column before pass 3. Color, spacing and the ban on `ease-in` never for
 
 | | app | marketing | mobile | deck | image | email | CLI |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Type ceiling | `text-2xl` | `text-7xl` | `Text` variants | pt scale (`typography.md`) | 1 to 5 words | 22px title | none |
-| Radius | `rounded-md` | `rounded-2xl` allowed | 6/8/10 tokens; `rounded-xl` is 12 | `rounded-sm` panels | one family | 10px buttons shipped | none |
+| Type ceiling | `text-2xl` | `text-7xl` | `Text` variants | pt scale (`typography.md`) | 1 to 5 words | `--email-title-size` | none |
+| Radius | `rounded-md` | `rounded-2xl` allowed | 6/8/10 tokens; `rounded-xl` is 12 | `rounded-sm` panels | one family | `--email-button-radius` | none |
 | Shadow | overlays only | large previews may use `shadow-2xl` | `LIGHT_SHADOW` on sheets | none | soft, subtle | none | none |
 | Density | dense, `text-xs` workhorse | open, `text-base` prose | 16pt edges | one idea per slide | strong whitespace | single column | one line per fact |
 | Color | semantic + `kortix-*` | same. No exception | same roles | same + verdicts | neutral + one accent | `tokens.css` hex | ANSI |
@@ -103,6 +125,10 @@ Name the column before pass 3. Color, spacing and the ban on `ease-in` never for
 | Intro animation | never | once per visit; no replay on back-navigation | none | n/a | n/a | n/a | n/a |
 
 **Rule.** Do not lay a feature list out as a generic 3-up card grid. — *Why:* it is the default layout of every AI product page, so it says nothing about Kortix. — *Where:* marketing. — *When silent:* one idea per row, with the real artifact beside it ([magic_trick.md](../magic_trick.md)).
+
+### Marketing section
+
+**Rule.** A marketing section is `mx-auto max-w-7xl px-6` with vertical padding `py-24 md:py-30`. Keep body text to a measure of 45 to 75 characters. In HTML with no Tailwind, write the same values with the portable tokens: the container as `max-width: 80rem`, a gutter or gap as `calc(var(--spacing) * N)` with a step from the allowed list, and the stock breakpoints (`sm` 40rem, `md` 48rem, `lg` 64rem, `xl` 80rem). — *Why:* every shipped marketing section (`/security`, the hero) uses this container and gutter, and the app does not override the breakpoints. A run invented a 64rem container, 44rem and 38rem widths and its own breakpoints (Q36). — *Where:* marketing. — *When silent:* these values. The column ratio inside a section and the elements beyond heading, proof, artifact and call to action are the page's choice (intentional freedom).
 
 ### Mobile
 
@@ -120,12 +146,29 @@ Name the column before pass 3. Color, spacing and the ban on `ease-in` never for
 - Fixed-height controls (`Button` sizes, 44pt inputs) keep their size variants.
 - Mobile inputs have no border and sit on `bg-secondary`. D4j (bordered `bg-popover` field) is web only. This is an intentional platform difference.
 - Mobile shell rules (buttons, sheets, copy) stay in `apps/mobile/design.md` and `apps/mobile/AGENTS.md`.
+- A loader on mobile is `KortixLoader` or `Skeleton`, never `ActivityIndicator` or a spun icon (`apps/mobile/AGENTS.md`, Loading). The web rule "use `Loading`" is web only (Q38).
+- A `Switch` is 18pt tall. Give it a 44pt hit area with `hitSlop`. `apps/mobile/AGENTS.md` states the 44pt rule for icon buttons only: a rule for `Switch` is OPEN for the mobile owner (Q42).
+- Do not write a first-person label ("Notify me about"). Name the group by its object ("Notification types"). Web and mobile chrome speak about Kortix in the third person ([voice-and-tone.md](../verbal/voice-and-tone.md) section 1).
+
+### Styleguide page
+
+**Rule.** `audit.sh` covers the `/design-system` route. A data row or a prose line that names a banned token (`ease-in`, `duration-slower`, a palette class) carries `audit:allow <reason>` on the same line. — *Why:* the route used to be skipped, so its drift was invisible. Two data rows were the only false positives, and the marker removes them without a blind spot (Q35). — *Where:* app (the styleguide). — *When silent:* run the audit on the route and mark each row that only names a token.
+
+**Rule.** Show a token in light and dark side by side with the page-theme pane and a pane in a `dark` scope (the `dark` class is the only theme scope). On a dark page, show the page-theme pane and say so. — *Why:* a light scope inside a dark page does not exist (Q35). — *Where:* app (the styleguide). — *When silent:* the page-theme pane plus a `dark` pane.
+
+### Email layout
+
+**Rule.** Write email dimensions as whole pixels, in a table layout, from the `--email-*` variables in `tokens.css`: container width, side padding, card radius, button radius, button padding, logo height. The shell (`apps/api/src/lib/email/template.ts`) reads the same values from `EMAIL_LAYOUT`, generated from `visual-system.json` (key `email`). Draw a 1px border in `--border`. Never convert the web `rem` spacing scale into fractional pixels. — *Why:* clients round fractional pixels unpredictably, and a run with no shell needs the numbers in the file it reads. One source in the JSON means the shell and the guidance cannot drift (Q27, Q34). — *Where:* email. — *When silent:* the variables. Build the button as a table cell with a link, not as padding on the `a`.
 
 ### Deck
 
 **Rule.** A slide is one viewport and never scrolls. Cap screenshots in `vh`, with `object-top`. — *Why:* the top of the screen is where the product is. — *Where:* deck. — *When silent:* `max-h-[48vh] object-cover object-top`.
 
-**Rule.** Show one diagram per chapter and one supporting slide at most. — *Why:* a slide with two diagrams gives the reader two things to learn. — *Where:* deck. — *When silent:* split the slide. Part count: follow [concepts.md](../verbal/concepts.md) section 2, rule 2.
+**Rule.** Show one diagram per chapter and one supporting slide at most. A diagram has four parts at most, and a verdict row counts as parts. — *Why:* a slide with two diagrams gives the reader two things to learn. — *Where:* deck. — *When silent:* split the slide. Part count: [concepts.md](../verbal/concepts.md) section 2, rule 2 (Q28).
+
+**Rule.** Paint a deck verdict as a `bg-kortix-*/15` tint with the solid token on a glyph or dot. The word stays `text-foreground`. — *Why:* [color.md](color.md) status rules. `audit.sh` flags any other tint opacity (Q28). — *Where:* deck. — *When silent:* a neutral border plus a status dot.
+
+**Rule.** A slide title about the path to `main` names its scope ("session work"). — *Why:* a dashboard config edit can commit straight to the default branch ([claims.md](../verbal/claims.md) autonomy rule). — *Where:* deck. — *When silent:* the sanctioned "Path to `main`" row, word for word (Q28).
 
 ### Desktop (Electron)
 

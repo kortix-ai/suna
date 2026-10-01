@@ -26,7 +26,7 @@ How a Kortix image, cover, share card or screenshot is directed. The goal is one
 
 **Rule.** Composite the official mark after generation. Place one mark. — *Why:* never let the image model invent, redraw or restyle the mark (`brandmark.md`, D6). A small corner logo plus a large central logo is two marks, and it is retired. — *Where:* image. — *When silent:* the symbol, top-left, on a 16:9 image. A hero, blog, social, launch or cover image that needs a brand anchor uses one larger symbol or logo instead of the corner mark, not both. File: `apps/web/public/brandkit/`.
 
-**Rule.** Do not render text with the image model. Reserve the space and composite real Roobert copy afterward. If text must live in the image, use 1 to 5 user-supplied words. — *Why:* models corrupt text. — *Where:* image. — *When silent:* leave the space empty. Ideogram renders text best, but compositing is still the default.
+**Rule.** Do not render text with the image model. Reserve the space and composite real copy afterward (in `--font-sans-system`, or Roobert where [typography.md](typography.md) allows it). If text must live in the image, use 1 to 5 user-supplied words. — *Why:* models corrupt text. — *Where:* image. — *When silent:* leave the space empty. Ideogram renders text best, but compositing is still the default.
 
 **Rule.** Place copy on a calm area: whitespace or a one-tone field. Never over busy art. Set it flush-left, one headline, in the type ladder (`typography.md`): semibold at most. — *Why:* contrast is priority 1. — *Where:* image, deck, social. — *When silent:* move the copy, do not add a scrim.
 
@@ -43,7 +43,19 @@ How a Kortix image, cover, share card or screenshot is directed. The goal is one
 
 ## OG and share cards
 
-**Rule.** Make a share card from one template: the symbol, the page title in Roobert, black and white, 1200 x 630. — *Why:* every product page shares one generic `banner.png` today. The `/api/og/template` route is off-brand (indigo and slate colors, weight 700, no mark, no Roobert), and the docs share image is a generic blue tile with the old repo name. — *Where:* image, marketing, docs. — *When silent:* use `apps/web/public/banner.png` until a per-page template exists. Do not use `/api/og/template`. Rebuilding it from the tokens is an open cleanup (`decisions.md`).
+**Rule.** Make a share card from one template: the symbol, the page title, black and white, light theme only, 1200 x 630. Set the title in `--font-sans-system` from `tokens.css` until D8a closes (Q30). A share unfurl has no theme, so ship no dark variant. — *Why:* every product page shares one generic `banner.png` today. The `/api/og/template` route (still in the tree on 2026-10-01: `route.tsx` and `template-url.ts`) is off-brand (indigo and slate colors, weight 700, no mark, no Roobert), and the docs share image is a generic blue tile with the old repo name. — *Where:* image, marketing, docs. — *When silent:* use `apps/web/public/banner.png` until a per-page template exists. Do not use `/api/og/template`. Rebuilding it from the tokens is an open cleanup (`decisions.md`).
+
+**Rule.** Take the card title from the page's H1, or its nav label when the H1 is a sentence, in sentence case. Cite the source under Guesses. — *Why:* the card must match the page it shares, and the page source may be absent (Q30). — *Where:* image (OG). — *When silent:* the nav label.
+
+**Rule.** Set the OG title at the top rung of the marketing type ceiling in [typography.md](typography.md), and no higher. — *Why:* the image column names no rung, so the nearest column's ceiling holds (Q30). — *Where:* image (OG). — *When silent:* the marketing ceiling. Check that the title reads at 600 x 315.
+
+**Rule.** The OG symbol size and the edge margin are OPEN (D8b). Take the symbol height of the nav logo and a margin from `spacing.steps`. State both numbers under Guesses. — *Why:* D8b says do not invent numbers, and a per-card margin makes cards drift (Q30). — *Where:* image (OG). — *When silent:* the nav logo height, one margin step on all four sides.
+
+**Rule.** Keep the symbol and the title inside the tightest crop of the target set. An OG card targets 1.91:1 only. When a 1:1 crop would cut either, say so under Guesses. — *Why:* a card that shows at two ratios loses its edges (Q30). — *Where:* image (OG). — *When silent:* the full 1.91:1 frame is the target.
+
+**Rule.** An image-model prompt for a card asks for a plain plate only, and the card is composited in HTML. — *Why:* the template is flat, so the model adds nothing it allows (Q30). — *Where:* image (OG). — *When silent:* one short plate prompt, the reject list, and composite everything else.
+
+**Rule.** A card spec in Markdown cites token names, never a hex value. HTML for a card uses `var(--*)`. Only email HTML may hold hex ([color.md](color.md)). — *Why:* the V check greps every output file for hex (Q30). — *Where:* image (OG). — *When silent:* token names.
 
 **Rule.** Declare the real size in the tags. — *Why:* the careers share image is 295 x 171 while its tags claim 380 x 253. — *Where:* marketing. — *When silent:* measure the file.
 
@@ -66,7 +78,7 @@ How a Kortix image, cover, share card or screenshot is directed. The goal is one
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Imagery | generated art + composited mark | real screenshots in `Shot`, capped in `vh` | product screenshots, covers with grain | frame the real product | none, or the logo PNG | none; art only in panes | none |
 | Palette | neutral + one accent | neutral + `kortix-*` verdicts | neutral + one accent | neutral + one accent | `tokens.css` | tokens | ANSI |
-| Text | 1 to 5 composited words | web type rungs | Roobert | captions in the type ladder, one accent for the key word, no outline | system stack | tokens | plain |
+| Text | 1 to 5 composited words | web type rungs | Roobert | captions in the type ladder, one accent for the key word, no outline | `--font-sans-system` | tokens | plain |
 
 **Social video captions.** Use the type ladder (semibold at most) and one accent for the key word. Do not use a bold outlined sans-serif or a second color. — *Why:* a bold outlined sans-serif with a second highlight color breaks the one-accent and weight rules. (K3 in `decisions.md`.)
 

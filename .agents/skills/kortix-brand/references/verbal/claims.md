@@ -14,6 +14,8 @@ otherwise. Re-verify a row before you reuse it in a new launch.
 
 **Rule.** Make every claim trace to a row in section 2 or section 4, and use the exact words in the row. — *Why:* Marketing copy drifted from code in 40 source files. Each gate is a correction a security reviewer or a customer found. — *Where:* every surface. — *When silent:* do not make the claim. Write the narrower claim that the code proves, or ask.
 
+**Rule.** Use a row's sentence word for word, qualifiers included ("today", "per project", "plain files today"). Shorten by deletion only. Never merge two rows into one new sentence, and never drop a qualifier. — *Why:* runs merged "Roles, groups" and "audit trail" rows into a new sentence, dropped "today" from the memory row, and wrote "an agent is a markdown file" without its `kortix.yaml` block. Each is a claim no row makes (Q36). — *Where:* every surface. — *When silent:* the row's own sentence, or no claim.
+
 **Rule.** Import marketing copy from `apps/web/src/features/marketing/*/content.ts`. Never retype it into a deck, an email or a store listing. — *Why:* A retyped claim keeps saying the old thing after the product stops doing it (kortix-presentation, "Copy accuracy"). — *Where:* deck | email | store listing. — *When silent:* link to the page instead of copying the sentence.
 
 **Rule.** When code and a doc disagree, the code wins and you open an issue for the doc. — *Why:* Docs go stale. The secrets page and the registry disagreed on 2026-10-01 (section 5). — *Where:* every surface. — *When silent:* cite the file and line you read.
@@ -29,8 +31,9 @@ Use these words. Do not invent others.
 | Connectors | 3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP. | `apps/web/src/features/marketing/connectors/content.ts:43,63,70` | 2026-10-01 |
 | Connector credentials | Connector credentials are brokered server-side and never enter the machine. | `connectors/content.ts` gate; `apps/api/src/projects/secrets.ts` | gate cited 2026-07-31 |
 | One sandbox per session | One isolated sandbox per session. Each session has its own isolated machine and branch. | `security-page/content.ts` (UNIQUE constraint) | gate cited 2026-07-31 |
+| Agents edit themselves | An agent can edit its own configuration on its session branch and propose the change. A person approves it. | `concepts.md` section 2, beat 5. The code path was not re-read for this row. Re-verify before a launch. | carried over, 2026-10-01 |
 | Parallel work | Thousands of agents in parallel on one config, each on its own cloud computer. | founder-approved proof point, carried over from the pre-kit copy | carried over |
-| Path to `main` | Work reaches `main` through a change request. Merge is default-deny for agents. | `apps/api/src/projects/routes/change-request-actions.ts:61-101` | 2026-10-01 |
+| Path to `main` | Session work reaches `main` through a change request. Merge is default-deny for agents. | `apps/api/src/projects/routes/change-request-actions.ts:61-101` | 2026-10-01 |
 | Permissions | Per-resource permissions for people and agents. Roles, groups, and an audit trail. | `apps/web/content/docs/accounts.mdx` | 2026-10-01 |
 | SSO | SAML 2.0 single sign-on and SCIM 2.0. | `security-page/content.ts` gate item 7; `accounts.mdx:92` | 2026-10-01 |
 | Approval gates | Approval gates you set. Off until you set them. | `apps/web/content/docs/project/manifest.mdx:123` (`policy.default_mode` defaults to `allow_all`) | 2026-10-01 |
@@ -76,11 +79,15 @@ Each rule below is a correction the code forced. The *Why* cites the source.
 
 **Rule.** Do not write "air-gapped". — *Why:* `kortix self-host start` pulls images from docker.io. The default sandbox provider is remote. The instance must be reachable so the sandbox can call back (`self-hosted/content.ts` gate item 4). — *Where:* marketing | sales | docs. — *When silent:* "On-prem. We scope isolated topologies with you." Route to Enterprise.
 
+### Computers
+
+**OPEN (Q20).** No row states how a person connects their own computer: no command, no operating-system list, no scope of what the agent can reach on it. Do not write a mechanism line in a launch email until a person verifies one against code and adds a row here. — *When silent:* name only what the vocabulary row says ("a person's own machine connected to Kortix") and list the gap under Guesses.
+
 ### Merge, approval, autonomy
 
 **Rule.** Write that merge is default-deny for agents. Do not write "only a human can merge". — *Why:* An admin can grant `project.gitops.merge`. Today that is the capability name. `project.cr.merge` is the retired spelling and still resolves (`apps/web/content/docs/work/change-requests.mdx:120-130`; `change-request-actions.ts:73`). The pre-kit copy of this fact and `kortix-presentation` still name `project.cr.merge`. A session can never merge a change request it opened itself. — *Where:* every surface. — *When silent:* "Nothing merges itself: work reaches `main` through a change request a person approves, unless an admin granted the merge capability." Write `project.gitops.merge` in anything new.
 
-**Rule.** Write that approval gates are off until you set them. Do not write "gates are on", "it asks first" or "writes require approval by default". — *Why:* `policy.default_mode` falls back to `allow_all` (`manifest.mdx:123`). — *Where:* every surface. — *When silent:* "You set allow, ask or block."
+**Rule.** Write that approval gates are off until you set them. Do not write "gates are on", "it asks first" or "writes require approval by default". — *Why:* `policy.default_mode` falls back to `allow_all` (`manifest.mdx:123`). — *Where:* every surface. — *When silent:* "You set allow, ask or block." Write the key nested in a YAML excerpt (`policy:` then `default_mode:` under it, a top-level key per `manifest.mdx`). The dotted form is a docs path, not YAML (Q36).
 
 **Rule.** Do not write "fully autonomous company", "the agent deploys", "pushes to main" or "self-driving". — *Why:* Work lands through a change request. Config edits from the dashboard can commit straight to the default branch, so scope "reaches `main` only through a change request" to session work (`how-it-works-content.ts` gate). — *Where:* every surface. — *When silent:* "opens a change request you approve".
 
