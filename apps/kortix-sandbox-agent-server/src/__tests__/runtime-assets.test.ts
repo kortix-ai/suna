@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -382,7 +382,11 @@ describe('reconcileRuntimeAssets', () => {
   test('the digest cache is keyed on size and mtime: a stale mtime forces a real hash and a download', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
-    const stats = await stat(ws.cliPath)
+    // Stat through a handle, not the path: the code under test replaces this
+    // file before the read below, which a path stat-then-read reads as a race.
+    const handle = await open(ws.cliPath)
+    const stats = await handle.stat()
+    await handle.close()
     // The cache claims the on-disk binary IS the manifest build, but for an
     // mtime the file no longer has.
     await Bun.write(

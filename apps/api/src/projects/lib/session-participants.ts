@@ -1,115 +1,162 @@
-import type { SecretGrant, SessionVisibility } from '../../connectors/share';
-import type { UserIdentity } from './user-identity';
+/**
+ * Conversations with people: `POST /sessions` `participants`, addressed by
+ * email. A participant is an account member who may run sessions in the
+ * project, because answering is sending a prompt (`POST .../prompts` asks
+ * `project.session.start`). Anyone else is refused by name, so the sender
+ * learns who could not be reached instead of opening a conversation nobody
+ * can answer.
+ */
+import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import type { SessionMessageSender } from '@kortix/shared';
+import { and, eq, sql } from 'drizzle-orm';
+import { db } from '../../shared/db';
+import { resolveUserIdentities } from './user-identity';
 
-/** How many people `participants` lists; `total` carries the full count. */
-export const SESSION_PARTICIPANT_LIMIT = 20;
+export const MAX_SESSION_PARTICIPANTS = 20;
 
 export interface SessionParticipant {
-  user_id: string;
-  name: string | null;
-  email: string | null;
-  avatar_url: string | null;
-  is_viewer: boolean;
+  userId: string;
+  email: string;
+  name: string;
 }
 
-export interface SessionParticipantsView {
-  /** Who can open the session now, owner first. At most SESSION_PARTICIPANT_LIMIT. */
-  participants: SessionParticipant[];
-  /** How many people can open the session now. */
-  total: number;
-  /** Two or more distinct people can open the session or have prompted it. */
-  multi_user: boolean;
-  /** Transcript message id -> the user who sent it. */
-  senders: Record<string, string>;
-  /** One profile per sender, including people who can no longer open the session. */
-  sender_profiles: SessionParticipant[];
-}
+type ResolveResult =
+  | { people: SessionParticipant[] }
+  | { status: 400 | 404; error: string; code: string };
 
-/** The ids one inbox prompt travelled under (see `wireMessageIdMatches`). */
-export interface PromptSenderRow {
-  actorUserId: string | null;
-  submitted: string | null;
-  redelivered: string | null;
-  redeliveredAll: unknown;
-  forwarded: string | null;
-}
-
-export function promptSenderMap(rows: PromptSenderRow[]): Record<string, string> {
-  const senders: Record<string, string> = {};
-  for (const row of rows) {
-    if (!row.actorUserId) continue;
-    const ids = [
-      row.submitted,
-      row.redelivered,
-      row.forwarded,
-      ...(Array.isArray(row.redeliveredAll) ? row.redeliveredAll : []),
-    ];
-    for (const id of ids) {
-      if (typeof id === 'string' && id) senders[id] = row.actorUserId;
-    }
+export async function resolveSessionParticipants(
+  accountId: string,
+  projectId: string,
+  raw: unknown,
+  /** The agent that will answer them. Each person must be allowed to run it,
+   *  or their reply would be refused (`POST .../prompts` checks the agent). */
+  agent?: { name: string | null },
+): Promise<ResolveResult> {
+  const list = typeof raw === 'string' ? [raw] : raw;
+  if (!Array.isArray(list) || list.length === 0 || list.length > MAX_SESSION_PARTICIPANTS) {
+    return { status: 400, code: 'INVALID_PARTICIPANTS', error: `participants must be 1-${MAX_SESSION_PARTICIPANTS} email addresses` };
   }
-  return senders;
+  const emails = [...new Set(list.map((e) => (typeof e === 'string' ? e.trim().toLowerCase() : '')))];
+  const invalid = emails.filter((e) => !/^[^\s@,"{}\\]+@[^\s@,"{}\\]+$/.test(e));
+  if (invalid.length > 0) {
+    return { status: 400, code: 'INVALID_PARTICIPANTS', error: `Not an email address: ${invalid.join(', ') || '(empty)'}` };
+  }
+  const rows = (await db.execute(sql`
+    SELECT u.id::text AS id, lower(u.email) AS email,
+           coalesce(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name') AS name
+    FROM auth.users u
+    JOIN kortix.account_memberships m ON m.user_id = u.id AND m.account_id = ${accountId}::uuid
+    WHERE lower(u.email) = ANY(${`{${emails.join(',')}}`}::text[])
+  `)) as unknown as Array<{ id: string; email: string; name: string | null }>;
+  const byEmail = new Map(rows.map((row) => [row.email, row]));
+  const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }, { memberMayRunAgent }] = await Promise.all([
+    import('../../iam/actor'), import('../../iam/authorize'), import('../../iam/actions'), import('./agent-access'),
+  ]);
+  const people: SessionParticipant[] = [];
+  const unreachable: string[] = [];
+  const noAgent: string[] = [];
+  for (const email of emails) {
+    const row = byEmail.get(email);
+    const allowed = row
+      ? (await authorize(actorForUser(row.id, accountId), PROJECT_ACTIONS.PROJECT_SESSION_START, { type: 'project', id: projectId })).allowed
+      : false;
+    if (!row || !allowed) unreachable.push(email);
+    else if (agent && !(await memberMayRunAgent(row.id, accountId, projectId, agent.name))) noAgent.push(email);
+    else people.push({ userId: row.id, email, name: row.name?.trim() || email });
+  }
+  if (unreachable.length > 0) {
+    return {
+      status: 404,
+      code: 'PARTICIPANT_NOT_FOUND',
+      error: `No member of this project can be reached at ${unreachable.join(', ')}. Find members with \`kortix access ls\`.`,
+    };
+  }
+  if (noAgent.length > 0) {
+    const which = agent?.name ? `the ${agent.name} agent` : 'any agent';
+    return {
+      status: 404,
+      code: 'PARTICIPANT_NOT_FOUND',
+      error: `${noAgent.join(', ')} cannot use ${which} in this project, so they could not reply. Give them access first, or ask someone else.`,
+    };
+  }
+  return { people };
+}
+
+/** Who a message says it is from: the calling session, else the person. */
+export async function sessionMessageSender(
+  userId: string,
+  callerSessionId: string | null,
+  projectId: string,
+): Promise<SessionMessageSender> {
+  if (callerSessionId) {
+    const [row] = await db
+      .select({ metadata: projectSessions.metadata, agentName: projectSessions.agentName })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.sessionId, callerSessionId), eq(projectSessions.projectId, projectId)))
+      .limit(1);
+    const meta = (row?.metadata ?? {}) as Record<string, unknown>;
+    const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim());
+    return {
+      kind: 'session',
+      sessionId: callerSessionId,
+      title: title ?? 'Untitled session',
+      ...(namedAgent(row?.agentName) ? { agent: row!.agentName } : {}),
+    };
+  }
+  const identity = (await resolveUserIdentities([userId])).get(userId);
+  const email = identity?.email ?? '';
+  return { kind: 'person', name: identity?.displayName?.trim() || email || 'A member', email };
+}
+
+/** The agent a session runs, unless it is the column's `'default'` placeholder. */
+export function namedAgent(agentName: string | null | undefined): agentName is string {
+  return !!agentName && agentName !== 'default';
 }
 
 /**
- * Who can open the session now, owner first. `rosterIds` is everyone with
- * access to the project; a private session never reads it.
+ * A session's agent may message a session it cannot otherwise see in two
+ * cases: its own parent (a worker reporting back, an ask answering its
+ * asker), and a session that messaged it first (a reply). Only the prompt
+ * route asks this; reading the session stays behind ordinary visibility.
  */
-export function sessionAudienceIds(input: {
-  ownerId: string | null;
-  visibility: SessionVisibility;
-  grants: SecretGrant[];
-  rosterIds: string[];
-  groupMembers: Map<string, string[]>;
-}): string[] {
-  const { ownerId } = input;
-  if (input.visibility === 'private') return ownerId ? [ownerId] : [];
-  const granted = new Set<string>(ownerId ? [ownerId] : []);
-  for (const grant of input.grants) {
-    if (grant.principalType === 'member') granted.add(grant.principalId);
-    else for (const userId of input.groupMembers.get(grant.principalId) ?? []) granted.add(userId);
+export async function sessionMayMessage(
+  fromSessionId: string,
+  toSessionId: string,
+  projectId: string,
+): Promise<typeof projectSessions.$inferSelect | null> {
+  const [from] = await db
+    .select({ parentSessionId: projectSessions.parentSessionId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, fromSessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  if (!from) return null;
+  let allowed = from.parentSessionId === toSessionId;
+  if (!allowed) {
+    const [messaged] = await db
+      .select({ one: sql<number>`1` })
+      .from(sessionLifecycleCommands)
+      .where(and(
+        eq(sessionLifecycleCommands.sessionId, fromSessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        sql`${sessionLifecycleCommands.payload}->>'authorSessionId' = ${toSessionId}`,
+      ))
+      .limit(1);
+    allowed = !!messaged;
   }
-  const audience =
-    input.visibility === 'project' ? input.rosterIds : input.rosterIds.filter((id) => granted.has(id));
-  return [...audience].sort((a, b) => Number(b === ownerId) - Number(a === ownerId));
+  if (!allowed) return null;
+  const [to] = await db
+    .select()
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, toSessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  return to ?? null;
 }
 
-export function buildSessionParticipants(input: {
-  viewerId: string;
-  ownerId: string | null;
-  audienceIds: string[];
-  senders: Record<string, string>;
-  /** Resolved for the senders and the listed people. An id absent here came from the roster, which holds real users only. */
-  identities: Map<string, UserIdentity>;
-  /** False when the viewer may not read the project roster. */
-  canReadMembers: boolean;
-}): SessionParticipantsView {
-  const isRealUser = (id: string) => input.identities.get(id)?.exists !== false;
-  const profile = (id: string): SessionParticipant => {
-    const identity = input.identities.get(id);
-    return {
-      user_id: id,
-      name: identity?.displayName ?? null,
-      email: identity?.email ?? null,
-      avatar_url: identity?.avatarUrl ?? null,
-      is_viewer: id === input.viewerId,
-    };
-  };
-
-  const audience = input.audienceIds.filter(isRealUser);
-  const senders = Object.fromEntries(
-    Object.entries(input.senders).filter(([, userId]) => isRealUser(userId)),
-  );
-  const senderIds = new Set(Object.values(senders));
-  const listed = input.canReadMembers
-    ? audience
-    : audience.filter((id) => id === input.ownerId || id === input.viewerId || senderIds.has(id));
-
-  return {
-    participants: listed.slice(0, SESSION_PARTICIPANT_LIMIT).map(profile),
-    total: audience.length,
-    multi_user: new Set([...audience, ...senderIds]).size >= 2,
-    senders,
-    sender_profiles: [...senderIds].map(profile),
-  };
+/** A conversation is named by its question's first line, cut at a word. */
+export function conversationName(question: string, max = 80): string {
+  const line = question.split('\n')[0]!.trim();
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?-]+$/, '')}…`;
 }

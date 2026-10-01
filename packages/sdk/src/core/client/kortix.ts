@@ -608,6 +608,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
 
+      /** This project's agents as principals (service accounts), for a "Who
+       *  can use it" picker. Any project member may read it. */
+      agentIdentities: () => P.listProjectAgentIdentities(projectId),
+
       secrets: {
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
@@ -622,7 +626,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
         setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
           P.upsertProjectGitCredential(projectId, input),
-        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */
+        /** The provider logins saved on this project (ChatGPT, OpenCode Zen, OpenCode Go). */
+        listProviderOAuth: () => P.listProjectProviderOAuth(projectId),
+        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT, opencode-go). */
         startProviderOAuth: (...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>) =>
           P.startProjectProviderOAuth(projectId, ...a),
         pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
@@ -1227,6 +1233,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** Who wrote each message: a member, or another session's agent. */
+      messageAuthors: () => P.getSessionMessageAuthors(projectId, sessionId),
       /** The DURABLE server-side transcript mirror, in sync-store shape
        *  (OpenCode message envelopes verbatim, attachment bytes and tool
        *  inputs/outputs stripped). This is the read that answers while the

@@ -41,12 +41,14 @@ import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runReminders } from './commands/reminders.ts';
+import { runSend } from './commands/send.ts';
+import { visibleCommands } from './features.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
-import { type Command, TIERS } from './command-table.ts';
+import { TIERS } from './command-table.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
@@ -71,7 +73,6 @@ function tierBand(label: string): string {
 }
 
 function renderHelp(): string {
-  const visibleCommands = (commands: readonly Command[]) => commands;
   const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => visibleCommands(s.commands)));
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
@@ -321,6 +322,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'remind') {
     return runReminders(argv.slice(1), true);
   }
+  if (argv[0] === 'send') {
+    return runSend(argv.slice(1));
+  }
   if (argv[0] === 'channels') {
     return runChannels(argv.slice(1));
   }
@@ -419,6 +423,7 @@ const KNOWN_COMMANDS = [
   'triggers',
   'reminders',
   'remind',
+  'send',
   'connectors',
   'secrets',
   'providers',

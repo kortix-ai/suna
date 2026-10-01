@@ -31,7 +31,7 @@
 import React from 'react';
 import { ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { groupMessagesIntoTurns, sessionMessageSender, type SessionParticipants } from '@kortix/sdk';
+import { groupMessagesIntoTurns, type SessionMessageAuthors, type SessionParticipants } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -53,7 +53,8 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
-import { useSessionParticipants } from '@/lib/projects/hooks';
+import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
+import { messageAvatarPerson } from '@/lib/session/participants';
 
 export interface SessionConnectError {
   title: string;
@@ -118,6 +119,7 @@ export function SessionConnecting({
 }) {
   const { colorScheme } = useColorScheme();
   const participants = useSessionParticipants(projectId, projectSessionId).data;
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId).data;
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const files = firstFiles ?? [];
@@ -139,6 +141,7 @@ export function SessionConnecting({
         restarting={restarting}
         onSend={onSend}
         participants={participants}
+        messageAuthors={messageAuthors}
       />
     );
   }
@@ -275,9 +278,11 @@ function SavedThread({
   restarting,
   onSend,
   participants,
+  messageAuthors,
 }: {
   turns: Turn[];
   participants?: SessionParticipants;
+  messageAuthors?: SessionMessageAuthors;
   sessionId?: string;
   statusLabel: string | null;
   error?: SessionConnectError | null;
@@ -312,7 +317,12 @@ function SavedThread({
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
-                sender={sessionMessageSender(participants, turn.userMessage.info.id)}
+                sender={messageAvatarPerson(
+                  messageAuthors,
+                  participants,
+                  participants?.participants.find((person) => person.is_viewer)?.user_id,
+                  turn.userMessage.info.id,
+                )}
               />
             </View>
           );

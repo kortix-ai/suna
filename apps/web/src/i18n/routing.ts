@@ -53,8 +53,26 @@ const NON_PAGE_PREFIXES = [
   '/auth/mobile/callback',
 ];
 
+/**
+ * A chat sign-in link: `/slack/login/<token>` or `/teams/login/<token>`, whose
+ * token is `<payload>.<signature>` (apps/api/src/channels/core/signed-state.ts).
+ */
+const CHAT_LOGIN_PAGE = /^\/(?:slack|teams)\/login\/[^/]+$/;
+
+/**
+ * A request for a file or a dotted Route Handler. A dot marks one, except in a
+ * chat sign-in link. From #7566 (2026-09-24, every page moved under
+ * `app/[locale]`) to 2026-10-01 those links skipped the locale rewrite, and
+ * every Slack and Teams sign-in answered 404.
+ */
+function isFilePath(pathname: string): boolean {
+  if (!pathname.includes('.')) return false;
+  const [, first = '', ...rest] = pathname.split('/');
+  return !CHAT_LOGIN_PAGE.test(isRoutingLocale(first) ? `/${rest.join('/')}` : pathname);
+}
+
 export function isNonPagePath(pathname: string): boolean {
-  if (pathname.includes('.')) return true; // files and dotted Route Handlers
+  if (isFilePath(pathname)) return true; // files and dotted Route Handlers
   return NON_PAGE_PREFIXES.some((prefix) => {
     if (prefix.endsWith('/')) return pathname.startsWith(prefix);
     return pathname === prefix || pathname.startsWith(`${prefix}/`);

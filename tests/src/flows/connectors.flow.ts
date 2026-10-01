@@ -984,6 +984,7 @@ flow(
       'GET /v1/projects/:projectId/connections',
       'POST /v1/projects/:projectId/connections',
       'PUT /v1/projects/:projectId/connections/:connectionId/label',
+      'PATCH /v1/projects/:projectId/connections/:connectionId',
     ],
   },
   async (ctx) => {
@@ -1069,6 +1070,21 @@ flow(
       }
       (await rename(backupId, { label: 'Fine', extra: true })).status(400);
       (await rename(backupId, {})).status(400);
+    });
+
+    await ctx.step('PATCH on the connection renames it like PUT …/label → 200; an empty body → 400', async () => {
+      const patch = (body: unknown) =>
+        ctx.client.as(ctx.P.OWNER).patch('/v1/projects/:projectId/connections/:connectionId', body, {
+          params: { projectId: p.id, connectionId: backupId },
+        });
+      (await patch({ label: 'Backup patched' }))
+        .status(200)
+        .body()
+        .has('$.connection_id', backupId)
+        .has('$.label', 'Backup patched');
+      const row = (await listed()).find((item) => item.connection_id === backupId);
+      if (row?.label !== 'Backup patched') throw new Error(`list returned label ${JSON.stringify(row?.label)}`);
+      (await patch({})).status(400);
     });
 
     await ctx.step('an unknown connection → 404; a non-member → 403/404; anonymous → 401', async () => {

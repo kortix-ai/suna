@@ -27,7 +27,7 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import type { SessionParticipant } from '@kortix/sdk';
+import type { AvatarPerson } from '@/lib/session/participants';
 import {
   collectTurnParts,
   compactionTurnInfo,
@@ -132,7 +132,9 @@ interface SessionTurnProps {
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
   /** Who sent this turn's prompt. Set only in a session with two or more people. */
-  sender?: SessionParticipant | null;
+  sender?: AvatarPerson | null;
+  /** `human_messaging` is on for the project: ask / from-session cards may draw. */
+  messagingCards?: boolean;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -161,6 +163,7 @@ function SessionTurnImpl({
   queueState,
   uploadStatus,
   sender,
+  messagingCards,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -272,6 +275,7 @@ function SessionTurnImpl({
       queueState={queueState}
       uploadStatus={uploadStatus}
       sender={sender}
+      messagingCards={messagingCards}
     />
   );
 

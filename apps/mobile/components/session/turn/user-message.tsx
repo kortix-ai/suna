@@ -29,19 +29,20 @@ import {
   TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
+  QuestionIcon,
   SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
-import { messageCreatedAt, type MessageWithParts, type SessionParticipant } from '@kortix/sdk';
-import { parseTriggerEvent } from '@kortix/shared';
+import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
+import { parseSessionMessagePrompt, parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
-import { participantName } from '@/lib/session/participants';
+import { participantName, type AvatarPerson } from '@/lib/session/participants';
 import {
   isPreviewableImage,
   localOrResolvedSource,
@@ -108,7 +109,7 @@ function MessageSenderBeside({
   sender,
   children,
 }: {
-  sender: SessionParticipant | null | undefined;
+  sender: AvatarPerson | null | undefined;
   children: React.ReactNode;
 }) {
   if (!sender) return <>{children}</>;
@@ -162,6 +163,40 @@ function SystemMessageCard({ dimStyle, menuProps, openMenu, actions, children }:
   );
 }
 
+/**
+ * A message the viewer did not type: another session's agent, or an ask that
+ * opens a conversation with people. Left-aligned like an assistant turn. The
+ * sender comes from the platform header in the text: mobile has no
+ * message-authors data, so a typed header would show here as well.
+ */
+function IncomingMessageCard({ info, dimStyle }: {
+  info: NonNullable<ReturnType<typeof parseSessionMessagePrompt>>;
+  dimStyle: ReturnType<typeof useAnimatedStyle>;
+}) {
+  const isAsk = info.type === 'ask';
+  const sender = info.sender.kind === 'session'
+    ? info.sender.agent || info.sender.title || 'Untitled session'
+    : info.sender.name;
+  const label = isAsk
+    ? `${sender} asked ${info.to.map((p) => p.name || p.email).join(', ')}`
+    : `From ${sender}`;
+  return (
+    <Reanimated.View className="px-4" style={dimStyle}>
+      <View
+        className="border-border bg-popover self-start rounded-md border"
+        style={{ maxWidth: '90%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}>
+        <View className="flex-row items-center" style={{ gap: webSpace(1.5) }}>
+          <Icon as={isAsk ? QuestionIcon : PaperPlaneTiltIcon} size={webSpace(3.5)} className="text-muted-foreground" />
+          <Text variant="muted" numberOfLines={2} style={[META_TEXT_STYLE, { flexShrink: 1 }]}>
+            {label}
+          </Text>
+        </View>
+        {info.prompt ? <Text className="text-sm">{info.prompt}</Text> : null}
+      </View>
+    </Reanimated.View>
+  );
+}
+
 // ─── UserMessage ─────────────────────────────────────────────────────────────
 
 export function UserMessage({
@@ -180,6 +215,7 @@ export function UserMessage({
   queueState,
   uploadStatus,
   sender,
+  messagingCards = false,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -205,7 +241,9 @@ export function UserMessage({
    * Who sent this message, in a shared session, the viewer included. Drawn
    * as their avatar beside the bubble. Null when no sender is recorded.
    */
-  sender?: SessionParticipant | null;
+  sender?: AvatarPerson | null;
+  /** `human_messaging` is on. Off: a header never makes a card; the text draws as a plain bubble. */
+  messagingCards?: boolean;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -230,6 +268,11 @@ export function UserMessage({
   // text, and a regex version of each froze the JS thread on a crafted prompt.
   const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
+  const sessionMessage = useMemo(() => parseSessionMessagePrompt(rawText), [rawText]);
+  const incoming =
+    messagingCards && sessionMessage && (sessionMessage.sender.kind === 'session' || sessionMessage.type === 'ask')
+      ? sessionMessage
+      : undefined;
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -249,7 +292,7 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !incoming;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -296,6 +339,8 @@ export function UserMessage({
       </View>
     );
   }
+
+  if (incoming) return <IncomingMessageCard info={incoming} dimStyle={dimStyle} />;
 
   if (channelMessageInfo) {
     const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
@@ -355,6 +400,11 @@ export function UserMessage({
   return (
     <Reanimated.View className="px-4" style={dimStyle}>
       <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(2) }}>
+        {sessionMessage?.sender.kind === 'person' ? (
+          <Text variant="muted" numberOfLines={1} style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }]}>
+            {sessionMessage.sender.name}
+          </Text>
+        ) : null}
         {attachments.length > 0 || failed ? (
           <MessageAttachments attachments={attachments} status={failed} onOpenPath={onFileMention} />
         ) : null}

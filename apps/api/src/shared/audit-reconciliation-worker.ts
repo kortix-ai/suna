@@ -1,10 +1,18 @@
 import { sql } from 'drizzle-orm';
 import { recordAuditEvent } from './audit';
-import { type AuditReconciliationResult, reconcileAuditEvents } from './audit-reconciliation';
+import {
+  type AuditReconciliationResult,
+  FULL_RESCAN_DAYS,
+  reconcileAuditEvents,
+} from './audit-reconciliation';
 import { db } from './db';
 import { runWorkerTick } from './audit-scope';
 
 const PAGE_SIZE = 1_000;
+// An account is revisited at most this often. The visit is cheap (it reads
+// only rows newer than the account's high-water mark), but 45k accounts at a
+// 60s idle loop was ~750 visits/s across the fleet for no new data.
+const RECHECK_HOURS = 6;
 const ACTIVE_DELAY_MS = 100;
 const IDLE_DELAY_MS = 60_000;
 // Escalating retry delay for a page that keeps failing: 5s, 30s, 120s, then
@@ -38,6 +46,8 @@ export class AuditReconciliationPageError extends Error {
 
 interface PendingAccount extends Record<string, unknown> {
   accountId: string;
+  /** No mark yet, or the weekly full rescan is due: this pass reads all history. */
+  fullDue: boolean;
 }
 
 export interface AuditReconciliationPage {
@@ -94,24 +104,32 @@ export function nextAuditReconciliationFailureDecision(
 }
 
 /**
- * Reconcile the next account in UUID order.
+ * Reconcile the next DUE account in UUID order.
  *
- * `afterAccountId` is an in-memory scan cursor, not a durable completion flag.
- * Every replica therefore revisits every account once per cycle. This detects
- * source-ledger drift that occurs after the initial v2 backfill marker.
+ * `afterAccountId` is an in-memory scan cursor. Durable progress is the
+ * per-account high-water mark in `kortix.audit_reconciliation_state`
+ * (see `reconcileAuditEvents`): an account is due when it has no mark or its
+ * mark is older than `RECHECK_HOURS`. Late source-ledger drift is caught by
+ * the incremental window; old history is re-verified every `FULL_RESCAN_DAYS`.
  */
 export async function runAuditReconciliationPage(
   afterAccountId: string | null = null,
 ): Promise<AuditReconciliationPage> {
   const rows = await db.execute<PendingAccount>(sql`
-    SELECT account_id AS "accountId"
+    SELECT account.account_id AS "accountId",
+           (state.account_id IS NULL
+            OR state.full_scan_at < now() - ${sql.raw(`interval '${FULL_RESCAN_DAYS} days'`)}) AS "fullDue"
       FROM kortix.accounts account
+      LEFT JOIN kortix.audit_reconciliation_state state ON state.account_id = account.account_id
      WHERE (${afterAccountId}::uuid IS NULL OR account.account_id > ${afterAccountId}::uuid)
+       AND (state.checked_at IS NULL
+            OR state.checked_at < now() - ${sql.raw(`interval '${RECHECK_HOURS} hours'`)})
      ORDER BY account.account_id
      LIMIT 1
   `);
-  const accountId = Array.from(rows as unknown as PendingAccount[])[0]?.accountId ?? null;
-  if (!accountId) return { accountId: null, result: null };
+  const next = Array.from(rows as unknown as PendingAccount[])[0];
+  if (!next) return { accountId: null, result: null };
+  const { accountId, fullDue } = next;
 
   let result: AuditReconciliationResult;
   try {
@@ -119,7 +137,9 @@ export async function runAuditReconciliationPage(
   } catch (error) {
     throw new AuditReconciliationPageError(accountId, error);
   }
-  if (result.complete) {
+  // The completion marker is one row per account (v2): record it after a full
+  // pass only. An incremental pass would re-attempt the same insert every visit.
+  if (result.complete && fullDue) {
     await recordAuditEvent({
       accountId,
       actorType: 'system',

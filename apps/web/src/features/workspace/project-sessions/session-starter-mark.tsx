@@ -33,13 +33,12 @@ export function SessionStarterMark({
   session,
   starter,
   iconClassName,
-  compact = false,
+  avatarClassName,
 }: {
   session: ProjectSession;
   starter: SessionStarter;
   iconClassName?: string;
-  /** The sidebar row's 18px slot: the `xs` avatar with one initial. */
-  compact?: boolean;
+  avatarClassName?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
@@ -51,8 +50,8 @@ export function SessionStarterMark({
     const metadataAvatar = user?.user_metadata?.avatar_url;
     return (
       <UserAvatar
-        size={compact ? 'xs' : 'sm'}
-        initials={compact ? 1 : 2}
+        size="sm"
+        className={avatarClassName}
         name={starter.isViewer ? (typeof metadataName === 'string' ? metadataName : undefined) : starter.label}
         email={starter.isViewer ? (user?.email ?? '') : (session.owner_email ?? '')}
         avatarUrl={

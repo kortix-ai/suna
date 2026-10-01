@@ -44,7 +44,7 @@ Subcommands:
 Schedule (add):
   --in <duration>     First fire after this long: 30m, 24h, 2d.
   --at <iso>          First fire at this instant (ISO 8601).
-  --every <duration>  Repeat on this period (min 5m) until removed.
+  --every <duration>  Repeat on this period (min 5m, max 366d) until removed.
   --cron "<expr>"     Repeat on a cron expression (6-field, seconds first).
   --timezone <tz>     IANA timezone for --cron (default UTC).
   --in/--at alone fires once. Add --every to keep repeating after that.
@@ -78,11 +78,14 @@ function formatInstant(iso: string | null): string {
 }
 
 function writeReminder(r: SessionReminder, heading: string): void {
-  process.stdout.write(`\n${status.ok(`${heading} ${C.bold}${r.id}${C.reset}`)}\n`);
+  // A fired one-shot reminder stays done on resume; do not say it resumed.
+  const done = heading === 'Resumed' && r.state === 'done';
+  process.stdout.write(`\n${done ? status.warn(`${r.id} already fired and stays done. Create a new reminder to fire again.`) : status.ok(`${heading} ${C.bold}${r.id}${C.reset}`)}\n`);
   process.stdout.write(`  ${C.dim}session ${C.reset}${r.session_id ?? '—'}\n`);
   process.stdout.write(`  ${C.dim}repeat  ${C.reset}${describeSchedule(r)}\n`);
   process.stdout.write(`  ${C.dim}state   ${C.reset}${r.state}\n`);
   process.stdout.write(`  ${C.dim}next    ${C.reset}${formatInstant(r.next_fire_at)}\n`);
+  if (r.last_fired_at) process.stdout.write(`  ${C.dim}last    ${C.reset}${formatInstant(r.last_fired_at)}\n`);
   if (r.state !== 'done') {
     process.stdout.write(`  ${C.dim}remove  ${C.reset}kortix reminders rm ${r.id}\n`);
   }
@@ -160,11 +163,11 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
         return 0;
       }
       const idW = Math.max(...reminders.map((r) => r.id.length), 2);
-      process.stdout.write(`\n  ${C.dim}${pad('ID', idW)}   STATE    ${pad('REPEAT', 24)}  NEXT                  TEXT${C.reset}\n`);
+      process.stdout.write(`\n  ${C.dim}${pad('ID', idW)}   STATE    ${pad('REPEAT', 24)}  NEXT                  LAST FIRED            TEXT${C.reset}\n`);
       for (const r of reminders) {
         const text = (r.name ?? r.prompt).replace(/\s+/g, ' ');
         process.stdout.write(
-          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
+          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${pad(formatInstant(r.last_fired_at), 20)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
         );
         if (r.last_error) process.stdout.write(`  ${' '.repeat(idW)}   ${C.red}${r.last_error}${C.reset}\n`);
       }

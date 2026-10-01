@@ -17,8 +17,6 @@ import type {
 import {
   createProjectSession,
   sessionParentId,
-  sessionMessageSender,
-  withViewerMessageSender,
   createSessionPrompt,
   createSessionPublicShare,
   findActiveTranscriptShare,
@@ -36,6 +34,7 @@ import {
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
+  getSessionMessageAuthors,
   listProjectSessions,
   listProjectSessionsPage,
   listSessionPrompts,
@@ -191,8 +190,6 @@ const PARTICIPANTS: SessionParticipants = {
   participants: [OWNER, MEMBER],
   total: 2,
   multi_user: true,
-  senders: { msg_1: 'U2' },
-  sender_profiles: [MEMBER],
 };
 
 test('getSessionParticipants hits GET /participants without raising an error toast', async () => {
@@ -204,28 +201,6 @@ test('getSessionParticipants hits GET /participants without raising an error toa
   // A missing label is the fallback; a toast here is noise on every session open.
   nextResponse = { status: 500, body: { error: 'boom' } };
   await expect(getSessionParticipants('P1', 'S1')).rejects.toBeTruthy();
-});
-
-test('sessionMessageSender resolves a message to its sender profile only in a multi-user session', () => {
-  expect(sessionMessageSender(PARTICIPANTS, 'msg_1')).toEqual(MEMBER);
-  // No recorded sender: never guess.
-  expect(sessionMessageSender(PARTICIPANTS, 'msg_unknown')).toBeNull();
-  expect(sessionMessageSender(undefined, 'msg_1')).toBeNull();
-  // The gate: a single-user session labels nothing, even with a known sender.
-  expect(sessionMessageSender({ ...PARTICIPANTS, multi_user: false }, 'msg_1')).toBeNull();
-});
-
-test('withViewerMessageSender records a message the viewer just sent', () => {
-  const next = withViewerMessageSender(PARTICIPANTS, 'msg_2');
-  expect(next?.senders).toEqual({ msg_1: 'U2', msg_2: 'U1' });
-  expect(next?.sender_profiles).toEqual([MEMBER, OWNER]);
-  expect(sessionMessageSender(next, 'msg_2')).toEqual(OWNER);
-  // Already a sender: the profile is not listed twice.
-  expect(withViewerMessageSender(next, 'msg_3')?.sender_profiles).toEqual([MEMBER, OWNER]);
-  // Nothing cached, or the viewer is not among the listed people: unchanged.
-  expect(withViewerMessageSender(undefined, 'msg_2')).toBeUndefined();
-  const withoutViewer = { ...PARTICIPANTS, participants: [MEMBER] };
-  expect(withViewerMessageSender(withoutViewer, 'msg_2')).toBe(withoutViewer);
 });
 
 test('getSessionPreviewCandidates hits the previews endpoint', async () => {
@@ -1578,4 +1553,29 @@ test('sessionParentId falls back to metadata when parent_session_id is null or s
   expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
   const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
   expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
+});
+
+test('listProjectSessions sends participant=me for the "Asked you" list', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { participant: 'me' });
+  expect(new URL(last().url).searchParams.get('participant')).toBe('me');
+});
+
+test('createProjectSession sends participants for a conversation with people', async () => {
+  nextResponse = { status: 201, body: { session_id: 'ASK-1' } };
+  await createProjectSession('P1', { participants: ['avery@example.com'], initial_prompt: 'Which region?' });
+  expect(last().body).toEqual({ participants: ['avery@example.com'], initial_prompt: 'Which region?' });
+});
+
+test('getSessionMessageAuthors reads members and sessions keyed by message id', async () => {
+  const body = {
+    authors: {
+      msg_a: { kind: 'member', user_id: 'U1', name: 'Avery', email: 'avery@example.com' },
+      msg_b: { kind: 'session', session_id: 'S0', name: 'Deploy pipeline' },
+    },
+    initial_author: null,
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
 });

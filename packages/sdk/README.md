@@ -1,6 +1,6 @@
 # @kortix/sdk
 
-The **single, opinionated data layer** for the Kortix agent platform. One typed
+The **single, opinionated data layer** for the Kortix API. One typed
 client wraps both the **Kortix REST API** and the **agent runtime** so a
 host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
 `@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
@@ -273,6 +273,16 @@ await kortix.project(pid).secrets.upsert({
   strategy: "runtime",
   consumer: "sandbox",
 });
+// Who can use a value: [] = everyone (default), or people and groups. A
+// narrowed value reaches only them — directly, or in their own private
+// sessions; never a shared session or a trigger.
+await kortix.project(pid).secrets.upsert({
+  name: "DEEL_API_TOKEN",
+  value: deelToken,
+  strategy: "broker",
+  consumer: "connector",
+  shared_with: [{ principal_type: "user", principal_id: userId }],
+});
 await kortix.project(pid).secrets.upsert({
   identifier: "anthropic-primary",
   name: "ANTHROPIC_API_KEY",
@@ -314,7 +324,7 @@ await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
 await s.rewind(userMessageId); // stages a reversible rollback on this session
 await s.restoreRewind(); // restores the removed path before the next prompt
 await s.previews();
-await s.participants(); // who can open the session + who sent each prompt (sessionMessageSender)
+await s.participants(); // who can open the session
 await s.reloadConfig({ refresh_repo: false });
 await s.reloadConfigStream(
   { refresh_repo: false },
@@ -380,6 +390,18 @@ removes a key. `project.sessions.listPage({ labels })` returns only sessions tha
 every given label, and `useProjectSessions(projectId, { labels })` does the same in
 React. Each label is 1–64 characters, at most 20 per session; one metadata write is at
 most 16,384 characters of JSON. Example: `examples/12-session-labels.ts`.
+
+### Ask people, and who wrote each message
+
+With the project flag `human_messaging` on, `createProjectSession(projectId, { participants, initial_prompt })`
+opens a conversation with project members (1–20 emails; `initial_prompt` is required). The prompt posts
+from the caller with no agent turn; the agent runs when a participant replies.
+`listProjectSessions(projectId, { participant: 'me' })` lists the conversations you were asked into.
+`kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
+`{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
+`{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name }`.
+In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
+Authorship works without the flag. See `apps/web/content/docs/connect/messaging.mdx`.
 
 ### React runtime
 

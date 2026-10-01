@@ -51,6 +51,9 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // drift apart on a live update.
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
   'KORTIX_SECRET_CAPABILITIES',
+  // Enabled feature flags, read by the in-box CLI through agent-env.sh. A push
+  // only moves process.env and the shell file; it needs no reload.
+  'KORTIX_FEATURES',
 ])
 
 /**
@@ -604,14 +607,15 @@ export function createOpenCodeControlService(
         // daemon's own fetch-and-diff; the API decides WHETHER to call this at
         // all, this call decides HOW to repair). One attempt, idle-gated,
         // never ends a running turn — see `convergeManagedModelCatalog`.
-        async convergeCatalog() {
-          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true })
+        async convergeCatalog(options) {
+          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true, model: options?.model })
           return {
             ok: result.outcome !== 'no-gateway',
             outcome: result.outcome,
             missing: result.missing,
             managed: result.managed,
             reason: result.reason ?? null,
+            ...(result.modelPresent !== undefined ? { model_present: result.modelPresent } : {}),
           }
         },
         async abort() {

@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 /**
  * /connectors — the connectors page.
  *
- * The route and product noun are both `connector` (the `comms` skill, §7).
+ * The route and product noun are both `connector` (the `kortix-brand` skill (verbal/claims.md)).
  *
  * The arc, in order: every action is allowed, gated, or blocked → connect once →
  * the credential never reaches the agent → reach is scoped → everything is

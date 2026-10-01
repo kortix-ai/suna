@@ -136,7 +136,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
-      teams: false,
       llm_gateway: true,
       meta_agent: false,
       apps: false,
@@ -150,6 +149,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       config_releases: true,
       agent_principal: false,
       us_region: false,
+      human_messaging: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -716,7 +716,6 @@ describe('envelopes', () => {
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
-      'teams',
       'llm_gateway',
       'meta_agent',
       'apps',
@@ -730,6 +729,7 @@ describe('envelopes', () => {
       'config_releases',
       'agent_principal',
       'us_region',
+      'human_messaging',
     ]);
   });
 

@@ -12,10 +12,12 @@
  * Fully isolated: a fresh account, two projects, members and keys seeded here.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accountMembers, accountSecretGrants, accountSecretResources, projectMembers } from '@kortix/db';
+import { accountMembers, accountSecretGrants, accountSecretResources, accounts, projectMembers } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
-  encryptAccountSecret, listUsableGatewaySecrets, queryUsableGatewaySecrets, resolveProjectSharedProviderSecrets,
+  encryptAccountSecret, listUsableGatewaySecrets, memberMayReadProject, queryUsableGatewaySecrets,
+  resolveProjectSharedProviderSecrets,
 } from '../secrets/account-resource';
 import { mayUseProviderKeys, providerEnvVarOf } from '../secrets/provider-key-selection';
 import { insertIntoView } from './helpers/compat-views';
@@ -90,6 +92,71 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await removeSeeded([otherProject, project]);
+});
+
+/**
+ * An account that requires MFA. Account-wide MFA guards a person's own browser
+ * requests (authorize step 6). A key lookup asks about a member, not as them.
+ * Until 2026-10-01 it ran that gate with no MFA level, so every member except
+ * a super admin read as "no". A Teams channel session in such an account then
+ * never reached the ChatGPT login shared with the whole project: every turn
+ * failed with "Connect Codex to use this model".
+ */
+describe('an account that requires MFA', () => {
+  const MEMBER = crypto.randomUUID();
+  const NO_ROLE = crypto.randomUUID();
+  let mfa: SeededProject;
+  let sharedLogin: string;
+
+  beforeAll(async () => {
+    // A fresh account, set to require MFA before anything authorizes in it.
+    mfa = await seedProject('usable-gateway-secrets-mfa');
+    await db.update(accounts).set({ mfaRequired: true }).where(eq(accounts.accountId, mfa.account_id));
+    await insertIntoView(db, accountMembers, [
+      { userId: MEMBER, accountId: mfa.account_id, accountRole: 'member', isSuperAdmin: false },
+      { userId: NO_ROLE, accountId: mfa.account_id, accountRole: 'member', isSuperAdmin: false },
+    ]);
+    await insertIntoView(db, projectMembers, [
+      { accountId: mfa.account_id, projectId: mfa.project_id, userId: MEMBER, projectRole: 'member' },
+    ]);
+    const [row] = await db.insert(accountSecretResources).values({
+      accountId: mfa.account_id,
+      projectId: mfa.project_id,
+      label: 'shared with the project',
+      accessMode: 'project',
+      providerId: 'codex',
+      name: 'CODEX_AUTH_JSON',
+      valueEnc: encryptAccountSecret(mfa.account_id, JSON.stringify({ openai: { access: 'shared-token' } })),
+      consumer: 'llm_gateway',
+      strategy: 'runtime',
+      createdBy: NO_ROLE,
+    }).returning({ secretId: accountSecretResources.secretId });
+    sharedLogin = row!.secretId;
+  });
+
+  afterAll(async () => {
+    await removeSeeded([mfa]);
+  });
+
+  test('a member`s session still reaches the ChatGPT login shared with the project', async () => {
+    const result = await resolveProjectSharedProviderSecrets({
+      accountId: mfa.account_id, projectId: mfa.project_id, userId: MEMBER, grantUserId: null,
+      providerId: 'codex', name: 'CODEX_AUTH_JSON',
+    });
+    expect(result.secrets.map((s) => s.secretId)).toEqual([sharedLogin]);
+  });
+
+  test('the role still decides: a member with no project role gets nothing', async () => {
+    expect(await listUsableGatewaySecrets({
+      accountId: mfa.account_id, projectId: mfa.project_id, userId: NO_ROLE, grantUserId: null, providerId: 'codex',
+    })).toEqual([]);
+  });
+
+  test('a request about the caller themself keeps its MFA level: aal1 is refused, aal2 passes', async () => {
+    expect(await memberMayReadProject(mfa.account_id, mfa.project_id, MEMBER, { mfaAal: 'aal1' })).toBe(false);
+    expect(await memberMayReadProject(mfa.account_id, mfa.project_id, MEMBER, { mfaAal: undefined })).toBe(false);
+    expect(await memberMayReadProject(mfa.account_id, mfa.project_id, MEMBER, { mfaAal: 'aal2' })).toBe(true);
+  });
 });
 
 describe('queryUsableGatewaySecrets: keys only', () => {

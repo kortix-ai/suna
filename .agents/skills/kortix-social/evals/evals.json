@@ -4,10 +4,10 @@
     {
       "id": 1,
       "prompt": "Write me a LinkedIn post announcing that our AI agent platform now runs fully in your own repo.",
-      "expected_output": "Should read /product-marketing.md for context (and comms for voice/terminology) before writing, asking only for anything genuinely missing like the goal or target action. Should produce one LinkedIn post built as one hook + one idea + one action: a strong first line before the 'see more' fold, line breaks for readability, ~1,200-1,500 chars, no link in the body (link in first comment instead), and a single clear CTA. Should not pack multiple ideas into the post.",
+      "expected_output": "Should read the kortix-brand kit (voice-and-tone, positioning, claims) before writing, asking only for anything genuinely missing like the goal or target action. Should produce one LinkedIn post built as one hook + one idea + one action: a strong first line before the 'see more' fold, line breaks for readability, ~1,200-1,500 chars, no link in the body (link in first comment instead), and a single clear CTA. Should not pack multiple ideas into the post.",
       "assertions": [
-        "Reads /product-marketing.md (or fallbacks) first",
-        "References comms for voice/terminology",
+        "Reads the kortix-brand router and the social row files first",
+        "Uses the kortix-brand vocabulary and claims files for voice and terminology",
         "Leads with a hook before the fold",
         "One idea, one clear CTA",
         "Keeps links out of the post body"
@@ -43,12 +43,12 @@
     {
       "id": 4,
       "prompt": "what should I post this week? I'm out of ideas. We're a dev-tools startup.",
-      "expected_output": "Should enter Ideate/Plan mode rather than producing a blank-page brainstorm. Should generate ideas from content pillars (industry insight, behind-the-scenes/build-in-public, educational, personal/opinion, light promo), and for each idea name the pillar, platform, and hook. May offer a weekly grid and a batching plan. Should read existing product-marketing context first if available.",
+      "expected_output": "Should enter Ideate/Plan mode rather than producing a blank-page brainstorm. Should generate ideas from content pillars (industry insight, behind-the-scenes/build-in-public, educational, personal/opinion, light promo), and for each idea name the pillar, platform, and hook. May offer a weekly grid and a batching plan. Should read the kortix-brand positioning file first.",
       "assertions": [
         "Generates ideas from content pillars, not a blank page",
         "Names pillar, platform, and hook per idea",
         "Keeps promotional content light",
-        "Reads product-marketing context if available"
+        "Reads kortix-brand positioning for pillars and audience"
       ],
       "files": []
     }

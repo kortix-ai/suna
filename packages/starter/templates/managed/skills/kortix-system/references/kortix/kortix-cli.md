@@ -178,6 +178,7 @@ the exact HTTPS hosts the policy lists.
 | `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. In a session it lists only your agent's granted secrets; a declared key outside the grant shows `not granted` (set or not, you never receive it — ask the human to enable it under Customize → Agents → your agent → Secrets). |
 | `kortix secrets set NAME=VALUE … [--scope runtime\|connector]` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). **Use it whenever you HAVE the value** — including a key the human gave you in chat. `--scope connector` keeps it server-side for a connector. `403` = your agent lacks secret-write permission → use `request`. |
 | `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER value(s) you do NOT have.** Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
+| `kortix secrets share IDENTIFIER --user <email\|id\|me> --group <id> --agent <name> \| --everyone` | Set who can use a value. A person runs it; in a session it returns `403`. A value shared with specific people reaches only them, directly or in their own private sessions — never a shared session or a trigger (see credentials-and-setup-links.md). |
 | `kortix secrets unset NAME …` | Remove. |
 | `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | (Experimental network enforcement only.) Send one policy-bound HTTPS request. Kortix adds the secret server-side. Use it when a request cannot be relayed transparently. |
 
@@ -251,7 +252,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions ls` | Every session on the project (parents and children) with STARTED BY. `--mine \| --shared \| --automated` list top-level sessions with their child count; `--search <q>` matches every session you can see; `--children <id>` lists one session's sub-sessions. `--json` for machine-readable output. |
+| `kortix sessions ls` | Every session on the project (parents and children) with STARTED BY. `--mine \| --shared \| --automated` list top-level sessions with their child count; `--search <q>` matches every session you can see; `--children <id>` lists one session's sub-sessions; `--asked` lists the conversations people asked you into. `--json` for machine-readable output. |
 | `kortix sessions status [--all] [--json]` | **Mission control** — every session + what each agent is doing *right now* (live: current tool / thinking / idle + last activity). Built for when many run in parallel. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
@@ -351,7 +352,41 @@ enable reminders` turns it on (the user's decision).
 
 Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
 parked session. A fire never starts a new session; if the session is
-deleted or failed the reminder pauses itself. Max 20 active per session.
+deleted or failed the reminder pauses itself. Max 20 active per session, 200 per project; schedules reach at most 366 days ahead.
+
+<!-- flag:human_messaging -->
+### Send — message sessions and people
+
+Enabled for this project (per-project `human_messaging` feature flag). Emailing
+people answers `feature_disabled` if the flag is turned off. Sending to a
+session id needs no flag beyond normal session access.
+
+| Command | What it does |
+| --- | --- |
+| `kortix send <session-id> "<text>" [--json]` | Queue a message for that session's agent; wakes a stopped session. `--json`: `{"kind":"session","session_id","message_id","queued":true}`. |
+| `kortix send <email> "<text>" [--name <title>] [--project <id>] [--json]` | Open a new conversation with that project member. `--name` defaults to the first line of the text. `--json`: `{"kind":"people","session_id","project_id","to":[…],"url"}`. |
+| `kortix send <email> <email> "<text>"` | One group conversation with all of them. |
+| `kortix send <target>... -p "<text>"` | Same, with the text as a flag. |
+| `kortix sessions ls --asked` | Conversations you were asked into. |
+
+Mixing a session id with emails, or omitting the text, exits `2`. Inside a
+sandbox the sender is the current session (server-derived). The people and the
+new conversation's agent cannot read your session: the text must carry all
+context. Ask once per decision; the answer returns later as a
+`[MESSAGE from session <id> …]` prompt. Do not poll.
+
+Headers the receiving agent sees:
+
+| First line | Meaning | What to do |
+| --- | --- | --- |
+| `[ASK from session <id> …]` | You are the agent in a conversation with people. | Help them answer, then `kortix send <id> "…"`. |
+| `[MESSAGE from session <id> …]` | Another agent wrote to you. | Reply with `kortix send <id> "…"`. |
+| `[MESSAGE from Name <email>]` | A person in a group conversation. | Address them by name. |
+
+Errors: `feature_disabled` (403), `PARTICIPANT_NOT_FOUND` (404: not a member
+who may run sessions; the message names the addresses, see `kortix access
+ls`), `INVALID_PARTICIPANTS` (400).
+<!-- /flag:human_messaging -->
 
 ### Channels (Slack)
 

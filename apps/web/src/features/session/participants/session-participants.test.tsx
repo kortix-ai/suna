@@ -28,8 +28,6 @@ const view = (overrides: Partial<SessionParticipants> = {}): SessionParticipants
   participants: [OWNER, MEMBER],
   total: 2,
   multi_user: true,
-  senders: {},
-  sender_profiles: [],
   ...overrides,
 });
 

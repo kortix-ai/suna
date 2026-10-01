@@ -25,7 +25,6 @@ import {
   EMPTY_VARIANTS,
   type SessionChatInputProps,
 } from './composer';
-import { ComposerDictation } from './composer-dictation';
 import { shouldFocusEditorFromPadding } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
@@ -336,12 +335,8 @@ export function ComposerCard({
             onChange={handleFileSelect}
           />
           <ComposerToolbar
-            beforeSend={
-              <ComposerDictation getText={() => editorRef.current?.getContent().text ?? ''} setText={(text) => editorRef.current?.setContent(text)} />
-            }
             leading={
-              <>
-                {inlineUnderbar ? (
+              inlineUnderbar ? (
                 <ComposerUnderbar
                   variant="inline"
                   onAttachClick={handleAttachClick}
@@ -355,8 +350,7 @@ export function ComposerCard({
                   selectedModel={availableSelectedModel}
                   onContextClick={onContextClick}
                 />
-                ) : null}
-              </>
+              ) : null
             }
             modelsLoading={modelsLoading}
             models={models}

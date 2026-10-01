@@ -261,16 +261,6 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = var.alb_ingress_cidrs
   }
-  dynamic "ingress" {
-    for_each = var.enable_http_redirect ? [1] : []
-    content {
-      description = "HTTP redirect"
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = var.alb_ingress_cidrs
-    }
-  }
   tags = {
     ManagedBy   = "terraform"
     Name        = "${local.name}-alb"
@@ -487,22 +477,6 @@ resource "aws_lb_listener" "https" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.this.arn
-  }
-}
-
-resource "aws_lb_listener" "http" {
-  count             = var.enable_http_redirect ? 1 : 0
-  load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
   }
 }
 

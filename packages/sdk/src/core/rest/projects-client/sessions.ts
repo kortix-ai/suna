@@ -114,6 +114,11 @@ export interface ProjectSession {
   /** The owner's profile photo URL, or null. */
   owner_avatar_url?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
+  /**
+   * The people a conversation was opened with (`metadata.participants`),
+   * resolved to names. Served on the single-session read only; `[]` elsewhere.
+   */
+  participant_people?: { user_id: string; name: string | null; email: string | null }[];
   visibility?: 'private' | 'project' | 'restricted';
   /** How the session was started — a policy class derived from the caller's
    *  token kind, not the surface. A backend (PAT/service-account) create is
@@ -230,6 +235,13 @@ export interface CreateProjectSessionInput {
   name?: string;
   /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
   labels?: string[];
+  /**
+   * Email addresses of project members to open a conversation with (project
+   * feature flag `human_messaging`). `initial_prompt` is posted to them from
+   * the caller, no turn runs, and the session is shared with them. The agent
+   * runs when one of them replies. 1..20 addresses.
+   */
+  participants?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
@@ -342,6 +354,9 @@ export interface ListProjectSessionsOptions {
   q?: string;
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
+  /** `'me'` = conversations the viewer was asked into (`participants`), at
+   *  any depth. */
+  participant?: 'me';
 }
 
 /** One keyset page of a project's sessions. */
@@ -361,6 +376,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const q = options?.q?.trim();
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
+  if (options?.participant) params.set('participant', options.participant);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -427,7 +443,7 @@ export async function setProjectSessionSharing(
   );
 }
 
-/** One person on a session: someone who can open it, or who sent a prompt in it. */
+/** One person who can open a session. */
 export interface SessionParticipant {
   user_id: string;
   name: string | null;
@@ -442,18 +458,14 @@ export interface SessionParticipants {
   participants: SessionParticipant[];
   /** How many people can open the session now. */
   total: number;
-  /**
-   * Two or more distinct people can open the session or have sent a prompt in
-   * it. The gate for showing who sent what: false renders a session unlabelled.
-   */
+  /** Two or more distinct people can open the session. */
   multi_user: boolean;
-  /** Transcript message id -> the `user_id` that sent it. */
-  senders: Record<string, string>;
-  /** One profile per sender, including people who can no longer open the session. */
-  sender_profiles: SessionParticipant[];
 }
 
-/** Who can open a session, and who sent each prompt in it. */
+/**
+ * Who can open a session. Who wrote each message is
+ * `getSessionMessageAuthors`.
+ */
 export async function getSessionParticipants(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<SessionParticipants>(
@@ -461,39 +473,6 @@ export async function getSessionParticipants(projectId: string, sessionId: strin
       { showErrors: false },
     ),
   );
-}
-
-/**
- * The person who sent a transcript message, or null. Null when the session is
- * not `multi_user`, and for a message with no recorded sender (a slash command,
- * a trigger, a channel message): a label is never guessed.
- */
-export function sessionMessageSender(
-  participants: SessionParticipants | null | undefined,
-  messageId: string,
-): SessionParticipant | null {
-  if (!participants?.multi_user) return null;
-  const userId = participants.senders[messageId];
-  return participants.sender_profiles.find((profile) => profile.user_id === userId) ?? null;
-}
-
-/**
- * Record a message the viewer just sent, so its label does not wait for the
- * next read. Returns the input unchanged when the viewer is not among
- * `participants`.
- */
-export function withViewerMessageSender<T extends SessionParticipants | undefined>(
-  participants: T,
-  messageId: string,
-): T {
-  const viewer = participants?.participants.find((person) => person.is_viewer);
-  if (!participants || !viewer) return participants;
-  const known = participants.sender_profiles.some((profile) => profile.user_id === viewer.user_id);
-  return {
-    ...participants,
-    senders: { ...participants.senders, [messageId]: viewer.user_id },
-    sender_profiles: known ? participants.sender_profiles : [...participants.sender_profiles, viewer],
-  };
 }
 
 export interface SessionPreviewCandidate {
@@ -1231,6 +1210,10 @@ export interface SessionPrompt {
    *  cannot tell a stuck upload from a prompt that never had attachments.
    *  Absent from servers older than this field. */
   attachments?: Array<{ filename: string; mime: string }>;
+  /** Posted without a turn — the first message of a conversation with people
+   *  (`participants`). No agent answers it, so show no "thinking" state.
+   *  Absent from servers older than this field. */
+  no_reply?: boolean;
   created_at: string;
   available_at: string;
 }
@@ -1933,6 +1916,34 @@ export async function setProjectSessionModel(
     await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { opencode_model: opencodeModel },
+    ),
+  );
+}
+
+/** Who wrote one message: a project member, or another session's agent. */
+export type SessionMessageAuthor =
+  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url?: string | null }
+  /** `name` is the session title; `agent` is the agent that session runs. */
+  | { kind: 'session'; session_id: string; name: string; agent?: string };
+
+export interface SessionMessageAuthors {
+  /** Keyed by runtime message id. Messages with no known sender are absent. */
+  authors: Record<string, SessionMessageAuthor>;
+  /** A spawned session's first message came from its parent's agent. Null
+   *  when the session was not spawned with a first prompt. */
+  initial_author: SessionMessageAuthor | null;
+}
+
+/** Who wrote each message of a session, from the server's authenticated
+ *  prompt record. The runtime transcript itself carries no author. */
+export async function getSessionMessageAuthors(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionMessageAuthors> {
+  return unwrap(
+    await backendApi.get<SessionMessageAuthors>(
+      `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      { showErrors: false },
     ),
   );
 }

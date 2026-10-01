@@ -135,15 +135,12 @@ if (release?.fallback_reason) {
 never `!stale`. An older API omits `release`. See
 [Config convergence](/docs/work/runtime#config-convergence).
 
-`s.participants()` returns `{ participants, total, multi_user, senders, sender_profiles }`.
-`participants` lists the people who can open the session now, owner first, at
-most 20; `total` is the full count. `senders` maps a transcript message id to the
-`user_id` that sent it. `multi_user` is `true` when two or more people can open
-the session or have sent a prompt in it. `sessionMessageSender(data, messageId)`
-returns that person, or `null` for a single-user session and for a message with
-no recorded sender (a slash command, a trigger, a channel message). In React,
-`useSessionParticipants(projectId, sessionId, { newestUserMessageId })` reads the
-same data and asks again when that message has no sender yet.
+`s.participants()` returns `{ participants, total, multi_user }`. `participants`
+lists the people who can open the session now, owner first, at most 20, each
+`{ user_id, name, email, avatar_url, is_viewer }`; `total` is the full count.
+`multi_user` is `true` when two or more people can open the session. In React,
+`useSessionParticipants(projectId, sessionId)` reads the same data. Who wrote
+each message is `s.messageAuthors()`.
 
 Three more read methods round out the handle:
 
@@ -178,6 +175,52 @@ for (const file of findSessionAttachments(saved.messages)) {
 Each result is `{ url, attachment_id, filename, mime, message_id, role }`.
 `role` is `user` for an upload and `assistant` for a file the agent showed;
 `mime` is null for the latter, and the bytes carry their own type.
+
+## Who wrote each message
+
+With the project flag `human_messaging` on, a session can open a conversation with
+project members. List the addresses in `participants`. `initial_prompt` is required
+with them. The server posts it from the caller with no agent turn and shares the new
+session with only those people. The agent runs when one of them replies. The limit is
+1 to 20 addresses. A flag that is off answers `403` `feature_disabled`; an address
+that is not a member who may run sessions answers `404` `PARTICIPANT_NOT_FOUND`.
+
+```ts
+const asked = await kortix.project(projectId).sessions.create({
+  participants: ['avery@example.com'],
+  initial_prompt: 'Which region should I deploy to?',
+})
+
+// The conversations you were asked into, at any depth.
+const { items } = await kortix.project(projectId).sessions.listPage({ participant: 'me' })
+```
+
+`createProjectSession(projectId, { participants, initial_prompt })` and
+`listProjectSessions(projectId, { participant: 'me' })` are the same calls as functions. `participants` and `awaiting_reply` are server-managed `metadata` keys.
+
+Every message has an author, with or without the flag. The server reads it from the
+credential that sent the prompt. The runtime transcript does not carry it.
+
+```ts
+const { authors, initial_author } = await kortix.session(projectId, sessionId).messageAuthors()
+// getSessionMessageAuthors(projectId, sessionId) is the same call as a function.
+
+const author = authors[runtimeMessageId] // undefined when the sender is unknown
+```
+
+`authors` is keyed by runtime message id. `initial_author` is the parent session for
+the first message of a spawned session. It is `null` when the session had no first
+prompt. Each author is a `SessionMessageAuthor`:
+
+| `kind` | Fields |
+| --- | --- |
+| `'member'` | `user_id`, `name`, `email` (`string \| null`) |
+| `'session'` | `session_id`, `name` |
+
+In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the
+same data. Pass the transcript's message count. A new message is the only event that
+adds an author, so the query refetches when the count changes. See
+[Messaging people and sessions](/docs/connect/messaging).
 
 ## Readiness is a handshake
 

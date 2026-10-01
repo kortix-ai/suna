@@ -21,6 +21,11 @@ import {
 
 export const kortixSchema = pgSchema('kortix');
 
+export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'provisioning',
   'active',
@@ -1465,6 +1470,10 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // When the current streak of failed RUNS began; null once a run finishes.
+    // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
+    // owner is pushed only when it goes from null to set.
+    runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
     // Account-local sharing policy for sessions created by this trigger. The
     // portable manifest cannot contain member/group ids from one account.
     sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
@@ -6431,6 +6440,19 @@ export const sessionPresenceLeases = kortixSchema.table('session_presence_leases
   // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
   foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_presence_session_fk' }).onDelete('cascade'),
 ]);
+
+/**
+ * Audit reconciliation high-water mark, one row per account. `checked_at` is
+ * the start of the account's last COMPLETE pass: the next pass scans only
+ * source rows newer than it (minus a lookback). `full_scan_at` is the start of
+ * the last pass over the whole history, which re-verifies old rows weekly.
+ * Written only when a pass completes, so a crash resumes from the old mark.
+ */
+export const auditReconciliationState = kortixSchema.table('audit_reconciliation_state', {
+  accountId: uuid('account_id').primaryKey(),
+  checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  fullScanAt: timestamp('full_scan_at', { withTimezone: true }).notNull(),
+});
 
 /**
  * A user's Expo push device token plus that device's per-event notification

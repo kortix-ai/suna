@@ -13,33 +13,37 @@ import { useTranslations } from '@/i18n/use-translations';
 /** Faces shown in the header before the rest collapse into a count. */
 const STACK_LIMIT = 3;
 
+/** What an avatar needs: a participant, or a message's member author. */
+type AvatarPerson = Pick<SessionParticipant, 'name' | 'email'> & { avatar_url?: string | null };
+
 /** The display name, else the email local part. The viewer too: every row names a person. */
-export function participantLabel(person: SessionParticipant): string {
+export function participantLabel(person: AvatarPerson): string {
   return person.name?.trim() || person.email?.split('@')[0] || '';
 }
 
-function ParticipantAvatar({ person, size }: { person: SessionParticipant; size: 'sm' | 'md' }) {
+function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' | 'md' }) {
   return (
     <UserAvatar
       size={size}
       name={person.name}
       email={person.email ?? ''}
-      avatarUrl={person.avatar_url}
+      avatarUrl={person.avatar_url ?? null}
       className="rounded-sm"
     />
   );
 }
 
 /**
- * A message in a shared session: its sender's avatar beside the bubble, your
- * own included, bottom edges aligned (`items-end`). A message with no
- * recorded sender, or any message in a single-user session, renders alone.
+ * A message in a shared session: its member author's avatar beside the
+ * bubble, your own included, bottom edges aligned (`items-end`). A message
+ * with no recorded author, or any message in a single-user session, renders
+ * alone. The author comes from `.../message-authors`.
  */
 export function MessageSenderBeside({
   sender,
   children,
 }: {
-  sender: SessionParticipant | null | undefined;
+  sender: AvatarPerson | null | undefined;
   children: ReactNode;
 }) {
   const t = useTranslations('sessionParticipants');

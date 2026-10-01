@@ -15,13 +15,7 @@ import {
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { buildProjectAccessView } from '../lib/project-access-view';
-import {
-  SESSION_PARTICIPANT_LIMIT,
-  buildSessionParticipants,
-  promptSenderMap,
-  sessionAudienceIds,
-} from '../lib/session-participants';
-import { listInboxPromptSenders } from '../session-lifecycle/inbox-rows';
+import { SESSION_PARTICIPANT_LIMIT, buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 
 const ParticipantSchema = z.object({
   user_id: z.string(),
@@ -32,14 +26,14 @@ const ParticipantSchema = z.object({
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId/participants
-// Who can open the session, and who sent each prompt in it.
+// Who can open the session. Who wrote each message is `.../message-authors`.
 
 projectsApp.openapi(
   createRoute({
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/participants',
     tags: ['sessions'],
-    summary: 'List who can open a session and who sent each prompt',
+    summary: 'List who can open a session',
     ...auth,
     request: { params: z.object({ projectId: z.string().uuid(), sessionId: z.string() }) },
     responses: {
@@ -48,8 +42,6 @@ projectsApp.openapi(
           participants: z.array(ParticipantSchema),
           total: z.number(),
           multi_user: z.boolean(),
-          senders: z.record(z.string(), z.string()),
-          sender_profiles: z.array(ParticipantSchema),
         }),
         'Session participants',
       ),
@@ -68,8 +60,7 @@ projectsApp.openapi(
     const visibility = visible.row.visibility as 'private' | 'project' | 'restricted';
     const groupIds = visible.grants.filter((g) => g.principalType === 'group').map((g) => g.principalId);
     // A private session is its owner alone: no roster read.
-    const [senderRows, canReadMembers, access, groupRows] = await Promise.all([
-      listInboxPromptSenders(sessionId),
+    const [canReadMembers, access, groupRows] = await Promise.all([
       projectCapabilityAllowed(c, loaded.userId, accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_READ),
       visibility === 'private' ? null : buildProjectAccessView(loaded),
       visibility === 'restricted' && groupIds.length
@@ -92,16 +83,14 @@ projectsApp.openapi(
       rosterIds: (access?.members ?? []).filter((m) => m.effective_project_role).map((m) => m.user_id),
       groupMembers,
     });
-    const senders = promptSenderMap(senderRows);
     const identities = await resolveUserIdentities([
       ...(ownerId ? [ownerId] : []),
       loaded.userId,
-      ...Object.values(senders),
       ...audienceIds.slice(0, SESSION_PARTICIPANT_LIMIT),
     ]);
 
     return c.json(
-      buildSessionParticipants({ viewerId: loaded.userId, ownerId, audienceIds, senders, identities, canReadMembers }),
+      buildSessionParticipants({ viewerId: loaded.userId, ownerId, audienceIds, identities, canReadMembers }),
       200,
     );
   },

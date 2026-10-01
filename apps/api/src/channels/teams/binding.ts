@@ -1,7 +1,6 @@
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
 
@@ -11,11 +10,7 @@ export function teamsChannelCtx(tenantId: string, conversationId: string): Chann
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
 }
 
-/**
- * The tenant's installed projects that run Teams: the `teams` flag is on.
- * Every list Teams shows or picks from reads this, so a project with Teams
- * turned off is never offered, bound by `/use`, or picked for a new chat.
- */
+/** The tenant's installed projects: every list Teams shows or picks from. */
 export async function listTenantProjects(
   tenantId: string,
 ): Promise<Array<{ projectId: string; name: string; repoUrl: string | null }>> {
@@ -28,10 +23,10 @@ export async function listTenantProjects(
   // Only the installed projects. This read had no `where`, so every `/status`,
   // `/projects` and `/use` loaded the whole projects table to keep a handful.
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl, metadata: projects.metadata })
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
     .from(projects)
     .where(inArray(projects.projectId, ids));
-  const byId = new Map(rows.filter((r) => resolveFeatureFlag(r.metadata, 'teams')).map((r) => [r.projectId, r]));
+  const byId = new Map(rows.map((r) => [r.projectId, r]));
   return ids.flatMap((id) => {
     const row = byId.get(id);
     return row ? [{ projectId: id, name: row.name ?? id, repoUrl: row.repoUrl ?? null }] : [];

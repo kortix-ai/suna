@@ -17,6 +17,7 @@ import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
 import { callerKortixSessionId } from '../lib/caller-session';
+import { allowStaleMirrorReads } from '../git/mirror';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import { assertAgentScope } from '../../iam/agent-scope';
@@ -69,6 +70,11 @@ projectsApp.openapi(
     );
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // A page view: read the agent's grant from the warm git mirror and refresh
+    // it behind the response. Without this, every GET after the 60 s refresh
+    // interval blocked on `git fetch` (seconds under load) and, on a cold
+    // mirror, on the clone lock, until the 25 s request deadline.
+    allowStaleMirrorReads();
     let grant: Awaited<ReturnType<typeof resolveSessionAgentGrant>>;
     try {
       grant = await resolveSessionAgentGrant({

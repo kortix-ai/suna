@@ -91,6 +91,30 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
   });
 });
 
+// The API reports the last fire or run outcome; a host shows a failed trigger.
+test('listProjectTriggers keeps the last run outcome the API reports', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      triggers: [
+        {
+          ...MONITOR_WIRE_ENTRY,
+          last_status: 'failed',
+          last_error: 'Out of credits: Payment Required: Insufficient credits.',
+          last_attempt_at: '2026-10-01T06:00:00.000Z',
+        },
+      ],
+      errors: [],
+    },
+  };
+
+  const [trigger] = (await listProjectTriggers('P1')).triggers;
+
+  expect(trigger!.last_status).toBe('failed');
+  expect(trigger!.last_error).toBe('Out of credits: Payment Required: Insufficient credits.');
+  expect(trigger!.last_attempt_at).toBe('2026-10-01T06:00:00.000Z');
+});
+
 test('a cron entry still parses with the monitor fields serialized as null', async () => {
   nextResponse = {
     status: 200,

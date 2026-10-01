@@ -25,7 +25,7 @@ import {
   countActiveSessionReminders,
   deleteSessionReminder,
   getSessionReminder,
-  insertSessionReminder,
+  insertSessionReminderWithinCaps,
   listProjectReminders,
   listSessionReminders,
   reminderSpec,
@@ -187,6 +187,7 @@ projectsApp.openapi(
     // allowed to run it now, as with a prompt.
     await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
 
+    // Fast refusal before on_behalf_of is cleared; the locked insert below is the authoritative cap.
     if ((await countActiveSessionReminders(projectId, sessionId)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
       return c.json(
         { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` },
@@ -212,14 +213,15 @@ projectsApp.openapi(
       draft,
       now,
     });
-    const row = await insertSessionReminder({
+    const inserted = await insertSessionReminderWithinCaps({
       projectId,
       spec,
       createdBy: loaded.userId,
       firstFireAt: draft.firstFireAt,
       now,
     });
-    return c.json(serializeSessionReminder(row), 201);
+    if ('error' in inserted) return c.json({ error: inserted.error }, 409);
+    return c.json(serializeSessionReminder(inserted.row), 201);
   },
 );
 

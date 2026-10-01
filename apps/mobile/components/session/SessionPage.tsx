@@ -51,7 +51,9 @@ import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { SessionParticipantStack } from '@/components/session/SessionParticipantStack';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useComposerModels, useProjectDetail, useSessionParticipants } from '@/lib/projects/hooks';
+import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
+import { humanMessagingEnabled } from '@/lib/session/asked-you';
+import { messageAvatarPerson } from '@/lib/session/participants';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
@@ -75,7 +77,6 @@ import {
   retrySessionPrompt,
   type SessionPrompt,
   resolveWorkingTurn,
-  sessionMessageSender,
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
 import { promptParts } from '@/lib/session/prompt-parts';
@@ -786,6 +787,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // list, which adds the runtime's built-ins. Ready before the sandbox is.
   const projectDetailQuery = useProjectDetail(projectId ?? null);
   const projectConfig = projectDetailQuery.data?.config;
+  const messagingCards = humanMessagingEnabled(projectDetailQuery.data?.project);
   const rawAgents = useMemo(
     () => (projectConfig ? threadAgents(projectConfig) : undefined),
     [projectConfig],
@@ -980,13 +982,15 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
-  // Who can open this session and who sent each prompt. A new user message
-  // with no recorded sender is another person's prompt: the hook asks again.
-  const participants = useSessionParticipants(
+  // Who can open this session, and who wrote each prompt. A new prompt with
+  // no recorded author yet makes the authors hook ask once more.
+  const participants = useSessionParticipants(projectId, projectSessionId).data;
+  const messageAuthors = useSessionMessageAuthors(
     projectId,
     projectSessionId,
     turns[turns.length - 1]?.userMessage.info.id,
   ).data;
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
@@ -1726,13 +1730,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
-            sender={sessionMessageSender(participants, id)}
+            sender={messageAvatarPerson(messageAuthors, participants, viewerId, id)}
+            messagingCards={messagingCards}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, participants],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, messagingCards, participants, messageAuthors, viewerId],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);

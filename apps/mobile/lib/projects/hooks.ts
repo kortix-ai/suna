@@ -66,6 +66,7 @@ import {
   listPipedreamApps,
   listProjectAccess,
   getSessionParticipants,
+  getSessionMessageAuthors,
   listProjectBranches,
   listProjectFiles,
   listProjectPolicies,
@@ -145,6 +146,9 @@ export const projectKeys = {
   /** Under `projectSessions`, so a sharing save (which invalidates that key) refetches it. */
   sessionParticipants: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['project-sessions', projectId, 'participants', sessionId] as const,
+  /** Who wrote each message; under `projectSessions` like `sessionParticipants`. */
+  sessionMessageAuthors: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'message-authors', sessionId] as const,
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
@@ -397,32 +401,44 @@ export function useProjectAccess(projectId: string | null) {
 }
 
 /**
- * Who can open a session and who sent each prompt in it. No polling: when the
- * newest user message has no recorded sender (another person's prompt just
- * arrived), it asks again, once per message id. Mirrors the SDK's
- * `useSessionParticipants` (`@kortix/sdk/react`, which mobile does not import).
+ * Who can open a session. Mirrors the SDK's `useSessionParticipants`
+ * (`@kortix/sdk/react`, which mobile does not import).
  */
-export function useSessionParticipants(
-  projectId: string | null | undefined,
-  sessionId: string | null | undefined,
-  newestUserMessageId?: string,
-) {
-  const queryClient = useQueryClient();
-  const queryKey = projectKeys.sessionParticipants(projectId, sessionId);
-  const query = useQuery({
-    queryKey,
+export function useSessionParticipants(projectId: string | null | undefined, sessionId: string | null | undefined) {
+  return useQuery({
+    queryKey: projectKeys.sessionParticipants(projectId, sessionId),
     queryFn: () => getSessionParticipants(projectId!, sessionId!),
     enabled: !!projectId && !!sessionId,
     staleTime: 30_000,
   });
-  const data = query.data;
+}
+
+/**
+ * Who wrote each message of a session (`GET .../message-authors`). The ledger
+ * records a prompt's delivered id a moment after the runtime shows it, so when
+ * the newest user message has no author yet it asks once more, 2 s later, once
+ * per message id. Mirrors web's `session-chat.tsx`.
+ */
+export function useSessionMessageAuthors(
+  projectId: string | null | undefined,
+  sessionId: string | null | undefined,
+  newestUserMessageId?: string,
+) {
+  const query = useQuery({
+    queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
+    queryFn: () => getSessionMessageAuthors(projectId!, sessionId!),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 30_000,
+  });
+  const { data, refetch } = query;
+  const retriedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!newestUserMessageId || !data?.multi_user || data.senders[newestUserMessageId]) return;
-    void queryClient.invalidateQueries({ queryKey });
-    // Keyed on the message id, not on `senders`: a message that never gets a
-    // sender (a slash command) is asked about once, not after every refetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newestUserMessageId, data?.multi_user]);
+    if (!data || !newestUserMessageId || data.authors[newestUserMessageId]) return;
+    if (retriedFor.current === newestUserMessageId) return;
+    retriedFor.current = newestUserMessageId;
+    const timer = setTimeout(() => void refetch(), 2000);
+    return () => clearTimeout(timer);
+  }, [data, newestUserMessageId, refetch]);
   return query;
 }
 

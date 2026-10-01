@@ -67,6 +67,8 @@ export interface TeamFixture {
     seed?: boolean;
     managedGit?: boolean;
     allowAllSecrets?: boolean;
+    /** Seeded manifest grants the default agent every connector. */
+    allowAllConnectors?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
 }
@@ -86,6 +88,8 @@ export interface Fixtures {
     seed?: boolean;
     managedGit?: boolean;
     allowAllSecrets?: boolean;
+    /** Seeded manifest grants the default agent every connector. */
+    allowAllConnectors?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
   /**

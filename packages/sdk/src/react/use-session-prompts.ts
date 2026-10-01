@@ -6,7 +6,6 @@ import {
   type CreateSessionPromptInput,
   type CreateSessionPromptResult,
   type RemovedSessionPrompt,
-  type SessionParticipants,
   type SessionPrompt,
   type SessionPromptOverrides,
   type SessionPromptPart,
@@ -15,7 +14,6 @@ import {
   holdSessionPrompts,
   listSessionPrompts,
   retrySessionPrompt,
-  withViewerMessageSender,
 } from '../core/rest/projects-client/sessions';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
@@ -513,11 +511,6 @@ export function useSessionPrompts(
     onMutate: async (input: CreateSessionPromptInput) => {
       queryClient.setQueryData<SessionPrompt[]>(key, (prev) =>
         applyOptimisticPrompt(prev ?? [], input, Date.now()),
-      );
-      // The sender label paints with the bubble, not one read later.
-      queryClient.setQueryData<SessionParticipants>(
-        qk.project.sessionParticipants(projectId!, sessionId!),
-        (prev) => withViewerMessageSender(prev, input.messageId),
       );
       // The receipt-side floor: a `/turn` poll landing before the POST returns
       // must not swap Stop back to Send with the row already on screen.

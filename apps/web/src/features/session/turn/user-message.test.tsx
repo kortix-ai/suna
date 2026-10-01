@@ -1154,15 +1154,15 @@ describe('editablePromptText for a /command', () => {
   });
 });
 
-describe('UserMessage sender', () => {
+describe('UserMessage member author', () => {
   const MEMBER = {
+    kind: 'member' as const,
     user_id: 'member',
     name: 'Marko',
     email: 'member@example.test',
     avatar_url: null,
-    is_viewer: false,
   };
-  const renderWith = (sender: typeof MEMBER | null | undefined, msg: MessageWithParts = message) =>
+  const renderWith = (author: typeof MEMBER | undefined, showAuthor: boolean, msg: MessageWithParts = message) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
         <NextIntlClientProvider locale="en" timeZone="UTC" messages={enMessages}>
@@ -1172,27 +1172,29 @@ describe('UserMessage sender', () => {
               sessionId="session-1"
               ownsPlan={false}
               onRewind={() => {}}
-              sender={sender}
+              author={author}
+              showAuthor={showAuthor}
             />
           </TooltipProvider>
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
 
-  test("another person's message carries their round avatar beside the bubble, not a name", () => {
-    const markup = renderWith(MEMBER);
+  test('a shown member author is an avatar beside the bubble, not a name line', () => {
+    const markup = renderWith(MEMBER, true);
     const text = markup.indexOf('ship the thing');
     const avatar = markup.indexOf('data-slot="avatar"');
     expect(avatar).toBeGreaterThan(text);
     // Beside the bubble, before the actions row that holds Copy.
     expect(avatar).toBeLessThan(markup.indexOf('aria-label="Copy code"'));
     expect(markup).not.toContain('>Marko<');
+    expect(markup).not.toContain('data-testid="message-author"');
     expect(markup).toContain('Sent by Marko');
   });
 
-  test('no sender: the message is unchanged', () => {
-    expect(renderWith(null)).not.toContain('Sent by');
-    expect(renderWith(null)).not.toContain('data-slot="avatar"');
-    expect(renderWith(undefined)).toBe(renderWith(null));
+  test('an author that is not shown, or no author: the message is unchanged', () => {
+    expect(renderWith(MEMBER, false)).not.toContain('Sent by');
+    expect(renderWith(MEMBER, false)).not.toContain('data-slot="avatar"');
+    expect(renderWith(undefined, true)).toBe(renderWith(undefined, false));
   });
 });

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { SessionParticipant, SessionParticipants } from '@kortix/sdk';
+import type { SessionMessageAuthors, SessionParticipant, SessionParticipants } from '@kortix/sdk';
 
 import {
+  messageAvatarPerson,
   participantAvatarText,
   participantInitials,
   participantName,
@@ -24,8 +25,6 @@ const view = (overrides: Partial<SessionParticipants> = {}): SessionParticipants
   participants: [OWNER, MEMBER],
   total: 2,
   multi_user: true,
-  senders: {},
-  sender_profiles: [],
   ...overrides,
 });
 
@@ -84,5 +83,35 @@ describe('participantInitials', () => {
 
   test('nothing to read gives ?', () => {
     expect(participantInitials(person('a', { email: null }))).toBe('?');
+  });
+});
+
+describe('messageAvatarPerson', () => {
+  const ME = { kind: 'member' as const, user_id: 'owner', name: 'Owner Name', email: 'owner@example.test', avatar_url: 'https://img.example.test/o.png' };
+  const THEM = { kind: 'member' as const, user_id: 'member', name: 'member', email: 'member@example.test', avatar_url: null };
+  const BOT = { kind: 'session' as const, session_id: 'ses', name: 'Lead' };
+  const authors = (map: SessionMessageAuthors['authors']): SessionMessageAuthors => ({ authors: map, initial_author: null });
+
+  test('a shared session draws every member author, the viewer included, with their photo', () => {
+    const data = authors({ m1: ME, m2: THEM });
+    expect(messageAvatarPerson(data, view(), 'owner', 'm1')).toEqual({ name: 'Owner Name', email: 'owner@example.test', avatar_url: 'https://img.example.test/o.png' });
+    expect(messageAvatarPerson(data, view(), 'owner', 'm2')).toEqual({ name: 'member', email: 'member@example.test', avatar_url: null });
+  });
+
+  test('a one-person session draws nothing for the viewer, but still draws someone else', () => {
+    const solo = view({ participants: [OWNER], total: 1, multi_user: false });
+    expect(messageAvatarPerson(authors({ m1: ME }), solo, 'owner', 'm1')).toBeNull();
+    expect(messageAvatarPerson(authors({ m2: THEM }), solo, 'owner', 'm2')).not.toBeNull();
+  });
+
+  test('two distinct authors make a group chat even before participants load', () => {
+    expect(messageAvatarPerson(authors({ m1: ME, m2: THEM }), undefined, 'owner', 'm1')).not.toBeNull();
+  });
+
+  test("another session's agent, an unknown message, or no data draws no avatar", () => {
+    const data = authors({ m1: ME, m3: BOT });
+    expect(messageAvatarPerson(data, view(), 'owner', 'm3')).toBeNull();
+    expect(messageAvatarPerson(data, view(), 'owner', 'nope')).toBeNull();
+    expect(messageAvatarPerson(undefined, view(), 'owner', 'm1')).toBeNull();
   });
 });

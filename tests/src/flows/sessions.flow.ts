@@ -2307,19 +2307,18 @@ flow(
 );
 
 /**
- * SESS-41 — session participants. One read answers who can open a session
- * and who sent each prompt in it, so a client can label a shared transcript.
- * `multi_user` is the gate: a session with one person renders as before.
+ * SESS-44 — session participants. One read answers who can open a session,
+ * for the header's avatar stack. `multi_user` is the gate: a session with one
+ * person renders as before. Who wrote each message is SESS-42.
  */
 flow(
-  'SESS-41',
+  'SESS-44',
   {
     domain: 'sessions',
     requires: ['database'],
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/participants',
       'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     ],
   },
   async (ctx) => {
@@ -2343,13 +2342,7 @@ flow(
     const params = { projectId: project.id, sessionId };
     const path = '/v1/projects/:projectId/sessions/:sessionId/participants';
     type Person = { user_id: string; name: string | null; email: string | null; avatar_url: string | null; is_viewer: boolean };
-    type View = {
-      participants: Person[];
-      total: number;
-      multi_user: boolean;
-      senders: Record<string, string>;
-      sender_profiles: Person[];
-    };
+    type View = { participants: Person[]; total: number; multi_user: boolean };
     const read = async (as: typeof owner) => {
       const r = await as.get(path, { params });
       r.status(200);
@@ -2357,7 +2350,6 @@ flow(
     };
     const share = (body: unknown) =>
       owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', body, { params });
-    const OWNER_MESSAGE = 'msg_0123456789abSess39OwnerPmt';
 
     await db.connect();
     try {
@@ -2386,56 +2378,21 @@ flow(
       await ctx.step('each participant carries the name, email and profile picture from the auth profile', async () => {
         await db.query(
           `UPDATE auth.users SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)
-             || '{"full_name":"Sess39 Member","avatar_url":"https://img.example.test/sess39.png"}'::jsonb
+             || '{"full_name":"Sess44 Member","avatar_url":"https://img.example.test/sess44.png"}'::jsonb
            WHERE id = $1`,
           [member.userId],
         );
         const person = (await read(owner)).participants.find((p) => p.user_id === member.userId);
-        if (person?.name !== 'Sess39 Member' || person.avatar_url !== 'https://img.example.test/sess39.png')
+        if (person?.name !== 'Sess44 Member' || person.avatar_url !== 'https://img.example.test/sess44.png')
           throw new Error(`profile: ${JSON.stringify(person)}`);
         if (!person.email) throw new Error('email missing');
       });
 
-      await ctx.step('a prompt maps every wire id it travelled under to the person who sent it', async () => {
-        // The MEMBER's prompt, claimed and re-minted once. Its lease also holds
-        // the OWNER's prompt below away from a runtime this flow never provisions.
-        await db.query(
-          `INSERT INTO kortix.session_lifecycle_commands
-             (command_id, command_type, source, status, project_id, session_id, account_id,
-              actor_user_id, payload, locked_by, locked_until)
-           VALUES (gen_random_uuid(), 'continue_session', 'ui', 'running', $1, $2, $3, $4,
-             '{"text":"from the member","clientMessageId":"sess39-member","wireMessageId":"msg_member_first",
-               "redeliveredMessageId":"msg_member_second","redeliveredMessageIds":["msg_member_second"]}'::jsonb,
-             'SESS-41', now() + interval '1 hour')`,
-          [project.id, sessionId, team.id, member.userId],
-        );
-        await db.query(
-          `INSERT INTO kortix.credit_accounts
-             (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-           VALUES ($1, 1000, 1000, 1000, 1000, 'tier_2_20')
-           ON CONFLICT (account_id) DO UPDATE SET balance = 1000, balance_precise = 1000,
-             non_expiring_credits = 1000, non_expiring_credits_precise = 1000, tier = 'tier_2_20'`,
-          [team.id],
-        );
-        const accepted = await owner.post(
-          '/v1/projects/:projectId/sessions/:sessionId/prompts',
-          { client_message_id: 'sess39-owner', message_id: OWNER_MESSAGE, parts: [{ type: 'text', text: 'from the owner' }] },
-          { params },
-        );
-        accepted.status([200, 202]);
-        const { senders, sender_profiles } = await read(owner);
-        if (senders.msg_member_first !== member.userId || senders.msg_member_second !== member.userId)
-          throw new Error(`member ids: ${JSON.stringify(senders)}`);
-        if (senders[OWNER_MESSAGE] !== ctx.P.OWNER.userId) throw new Error(`owner id: ${JSON.stringify(senders)}`);
-        if (sender_profiles.length !== 2) throw new Error(`profiles: ${JSON.stringify(sender_profiles)}`);
-      });
-
-      await ctx.step('after unsharing, the MEMBER gets 404 and the OWNER still reads the MEMBER as a sender', async () => {
+      await ctx.step('after unsharing, the MEMBER gets 404 and the OWNER reads one person again', async () => {
         (await share({ mode: 'private' })).status(200);
         (await asMember.get(path, { params })).status(404);
         const view = await read(owner);
-        if (view.total !== 1 || !view.multi_user) throw new Error(`unshared: ${JSON.stringify(view)}`);
-        if (!view.sender_profiles.some((person) => person.user_id === member.userId)) throw new Error('sender profile lost');
+        if (view.total !== 1 || view.multi_user) throw new Error(`unshared: ${JSON.stringify(view)}`);
       });
 
       await ctx.step('unknown session → 404; NONMEMBER → 403; ANON → 401', async () => {
@@ -2444,7 +2401,6 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
       });
     } finally {
-      await db.query('DELETE FROM kortix.session_lifecycle_commands WHERE session_id = $1', [sessionId]).catch(() => {});
       await db.end();
     }
   },

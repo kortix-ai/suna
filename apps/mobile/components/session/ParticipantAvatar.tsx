@@ -6,11 +6,10 @@
  */
 import * as React from 'react';
 import { Text, type StyleProp, type ViewStyle } from 'react-native';
-import type { SessionParticipant } from '@kortix/sdk';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { entityChalk } from '@/lib/ui/entity-chalk';
-import { participantAvatarText, participantInitials } from '@/lib/session/participants';
+import { participantAvatarText, participantInitials, type AvatarPerson } from '@/lib/session/participants';
 import { webSpace } from '@/lib/session/user-message';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 
@@ -20,7 +19,7 @@ export const PARTICIPANT_AVATAR_SIZE = Math.round(webSpace(6));
 const RADIUS = 6;
 
 interface ParticipantAvatarProps {
-  person: SessionParticipant;
+  person: AvatarPerson;
   style?: StyleProp<ViewStyle>;
 }
 

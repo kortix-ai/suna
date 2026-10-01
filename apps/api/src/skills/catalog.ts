@@ -69,10 +69,10 @@ export interface ManagedSkillSummary {
  * skills by name. Pure (no I/O beyond @kortix/starter's own template read) and
  * exported for unit tests; production callers use the memoized `managedSkills()`.
  */
-export function buildManagedSkills(): Map<string, ManagedSkill> {
+export function buildManagedSkills(flags: readonly string[] = []): Map<string, ManagedSkill> {
   const files = [
-    ...getManagedSkillFiles(),
-    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker' }),
+    ...getManagedSkillFiles({ flags }),
+    ...getStarterFiles({ projectName: 'Kortix', template: 'general-knowledge-worker', flags }),
     ...getMarketplaceFiles(),
   ];
 
@@ -111,16 +111,22 @@ export function buildManagedSkills(): Map<string, ManagedSkill> {
 }
 
 // The template tree is immutable for the lifetime of a deploy, so build once.
-let cached: Map<string, ManagedSkill> | null = null;
+// One build per sorted ON-flag list (the skills differ per project flag set).
+const cached = new Map<string, Map<string, ManagedSkill>>();
 
-export function managedSkills(): Map<string, ManagedSkill> {
-  if (!cached) cached = buildManagedSkills();
-  return cached;
+export function managedSkills(flags: readonly string[] = []): Map<string, ManagedSkill> {
+  const key = [...flags].sort().join(',');
+  let hit = cached.get(key);
+  if (!hit) {
+    hit = buildManagedSkills(flags);
+    cached.set(key, hit);
+  }
+  return hit;
 }
 
 /** Test-only: drop the memo so a test can rebuild against a mutated fixture. */
 export function _resetManagedSkillsCache(): void {
-  cached = null;
+  cached.clear();
 }
 
 /**
@@ -129,8 +135,8 @@ export function _resetManagedSkillsCache(): void {
  * frontmatter `description`, which is written as the agent's routing signal and is
  * the one field it needs to pick correctly. The whole list is ~7 KB for 10 skills.
  */
-export function listManagedSkills(): ManagedSkillSummary[] {
-  return [...managedSkills().values()].map((skill) => ({
+export function listManagedSkills(flags: readonly string[] = []): ManagedSkillSummary[] {
+  return [...managedSkills(flags).values()].map((skill) => ({
     name: skill.name,
     description: skill.description,
     referenceCount: skill.references.length,
@@ -138,8 +144,8 @@ export function listManagedSkills(): ManagedSkillSummary[] {
   }));
 }
 
-export function getManagedSkill(name: string): ManagedSkill | null {
-  return managedSkills().get(name) ?? null;
+export function getManagedSkill(name: string, flags: readonly string[] = []): ManagedSkill | null {
+  return managedSkills(flags).get(name) ?? null;
 }
 
 /**
@@ -147,8 +153,12 @@ export function getManagedSkill(name: string): ManagedSkill | null {
  * the built index, so `../` and absolute paths simply miss — there is no filesystem
  * read here to traverse out of.
  */
-export function getManagedSkillFile(name: string, path: string): ManagedSkillFile | null {
-  const skill = managedSkills().get(name);
+export function getManagedSkillFile(
+  name: string,
+  path: string,
+  flags: readonly string[] = [],
+): ManagedSkillFile | null {
+  const skill = managedSkills(flags).get(name);
   if (!skill) return null;
   if (path === SKILL_ENTRYPOINT) return { path: SKILL_ENTRYPOINT, content: skill.body };
   return skill.references.find((f) => f.path === path) ?? null;

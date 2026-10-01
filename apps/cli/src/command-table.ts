@@ -2,6 +2,8 @@ export interface Command {
   name: string;
   args?: string;
   blurb: string;
+  /** Project feature flag that gates this command; hidden inside a sandbox while it is off. */
+  feature?: string;
 }
 
 export interface CommandSection {
@@ -129,6 +131,12 @@ export const TIERS: readonly CommandTier[] = [
             name: 'chat',
             args: '[session-id]',
             blurb: "Talk to a session's agent (REPL or --prompt)",
+          },
+          {
+            name: 'send',
+            args: '<session-id|email>... "<text>"',
+            blurb: 'Message a session\'s agent, or ask people by email (needs human_messaging)',
+            feature: 'human_messaging',
           },
           {
             name: 'tui',

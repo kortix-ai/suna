@@ -39,8 +39,6 @@ export interface UserAvatarProps {
   className?: string;
   ring?: boolean;
   variant?: 'default' | 'primary';
-  /** How many letters the fallback shows. One fits the `xs` size. */
-  initials?: 1 | 2;
 }
 
 export function UserAvatar({
@@ -51,11 +49,10 @@ export function UserAvatar({
   variant = 'default',
   className,
   ring = false,
-  initials: letters = 2,
 }: UserAvatarProps) {
   const initials = React.useMemo(
-    () => initialsFromIdentity(name ?? undefined, email || '').slice(0, letters),
-    [name, email, letters],
+    () => initialsFromIdentity(name ?? undefined, email || ''),
+    [name, email],
   );
   // Keyed on the email when there is no name, so nameless people still differ.
   const chalk = chalkColors(name || email);

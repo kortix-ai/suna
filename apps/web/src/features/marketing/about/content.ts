@@ -4,7 +4,7 @@
  * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  *
- * Voice rules: the `comms` skill. Long form: `MANIFESTO.md`.
+ * Voice rules: the `kortix-brand` skill. Long form: `MANIFESTO.md`.
  *
  * ACCURACY GATE for this page specifically:
  *  - This is a vision page, so forward-looking language is wanted. It must
@@ -35,7 +35,7 @@
 
 export const hero = {
   eyebrow: 'About Kortix',
-  title: 'We are building the open AGI platform.',
+  title: 'We are building the open-source AI Management System.',
   lead: 'Every company should own all of it — every agent, all of their data, every skill, every connector, the memory, the whole configuration.',
   ctaPrimary: 'We are hiring',
   ctaPrimaryHref: '/careers',

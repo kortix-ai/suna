@@ -18,6 +18,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
 import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, or, sql } from 'drizzle-orm';
@@ -35,9 +36,13 @@ import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { sessionMessagePromptText } from '@kortix/shared';
+import { conversationName, resolveSessionParticipants, sessionMessageSender } from '../lib/session-participants';
+import { notifySessionEvent } from '../../notifications/session-push';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -110,6 +115,26 @@ projectsApp.openapi(
           PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
         )
       : false;
+  // A conversation with people: refused up front when the flag is off, before
+  // any agent check can answer with an unrelated error.
+  if (body.participants !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
+    if (gate) return gate;
+    // An ask from a session runs the asking session's own agent. An agent may
+    // always start its own kind (agent_principal delegation), and a project
+    // whose manifest names no default agent left nothing to resolve: dev
+    // 2026-10-01, `kortix send <email>` → "An agent session must name the
+    // agent it starts".
+    const askingSessionId = callerKortixSessionId(c);
+    if (askingSessionId && !normalizeString(body.agent_name ?? body.agentName)) {
+      const [asking] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, askingSessionId), eq(projectSessions.projectId, projectId)))
+        .limit(1);
+      if (asking?.agentName) body.agent_name = asking.agentName;
+    }
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
@@ -170,9 +195,69 @@ projectsApp.openapi(
       400,
     );
   }
+  // A conversation with people: the first message goes to them, not to the
+  // agent. See lib/session-participants.ts.
+  let participantMetadata: Record<string, unknown> | undefined;
+  let askIdempotencyKey: string | null = null;
+  if (body.participants !== undefined) {
+    const pending = body.pending_prompt as Record<string, unknown> | undefined;
+    // The ask header lives in the text; parts (files) would replace it.
+    if (Array.isArray(pending?.parts) && pending.parts.length > 0) {
+      return c.json({ error: 'A message to people is text only: drop pending_prompt.parts', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const question =
+      normalizeString(body.initial_prompt) ?? normalizeString(body.initialPrompt) ?? normalizeString(pending?.text);
+    if (!question) {
+      return c.json({ error: 'participants needs initial_prompt: the message to send them', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const resolved = await resolveSessionParticipants(loaded.row.accountId, projectId, body.participants, {
+      name: normalizeString(body.agent_name) ?? agentAccess.agentName ?? null,
+    });
+    if ('error' in resolved) return c.json({ error: resolved.error, code: resolved.code }, resolved.status);
+    const sender = await sessionMessageSender(loaded.userId, callerKortixSessionId(c), projectId);
+    body.pending_prompt = {
+      ...(pending ?? {}),
+      text: sessionMessagePromptText({
+        type: 'ask',
+        sender,
+        to: resolved.people.map(({ name, email }) => ({ name, email })),
+        prompt: question,
+      }),
+    };
+    // Both spellings: either one would boot the sandbox with an agent turn.
+    delete body.initial_prompt;
+    delete body.initialPrompt;
+    delete body.participants;
+    // The question names the conversation; the header never becomes a title.
+    body.name ??= conversationName(question);
+    const participantIds = resolved.people.map((p) => p.userId);
+    participantMetadata = {
+      participants: participantIds,
+      awaiting_reply_from: participantIds,
+      awaiting_reply: true,
+      // Who asked, as the people see it: the asking agent for an agent's ask
+      // (its owner's name read as "a message from yourself"), else the person.
+      asked_by: sender.kind === 'session'
+        ? { kind: 'session', session_id: sender.sessionId, name: sender.title, ...(sender.agent ? { agent: sender.agent } : {}) }
+        : { kind: 'person', name: sender.name, email: sender.email },
+    };
+    // An agent that re-runs `kortix send` after a timeout must not open a
+    // second conversation and notify the same people twice. Without a
+    // caller key, the same sender + people + question within the hour is the
+    // same ask. A deliberate follow-up minutes later is a new one.
+    // ponytail: 2-minute bucket, a retry across the boundary duplicates.
+    askIdempotencyKey = `ask:${createHash('sha256').update(JSON.stringify([
+      callerKortixSessionId(c) ?? loaded.userId,
+      projectId,
+      [...(participantMetadata.participants as string[])].sort(),
+      question,
+      Math.floor(Date.now() / 120_000),
+    ])).digest('hex')}`;
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
+    ...(participantMetadata ? { metadata: participantMetadata, visibility: 'restricted' as const } : {}),
     userId: loaded.userId,
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
@@ -186,10 +271,19 @@ projectsApp.openapi(
     inSession: isProjectSessionPrincipal(c),
     callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
-    idempotencyKey,
+    idempotencyKey: idempotencyKey ?? askIdempotencyKey,
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (participantMetadata && result.sessionId && !result.deduped) {
+    void notifySessionEvent({
+      type: 'question',
+      sessionId: result.sessionId,
+      projectId,
+      question: String(body.name ?? ''),
+      recipients: participantMetadata.participants as string[],
+    });
+  }
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
@@ -222,6 +316,7 @@ projectsApp.openapi(
     runtime_context: 'INVALID_SESSION_RUNTIME_CONTEXT',
     connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
     secrets: 'INVALID_SESSION_SECRETS',
+    participants: 'INVALID_PARTICIPANTS',
   };
   const issues: Array<{ path?: Array<string | number>; message?: string }> =
     result.error?.issues ?? [];
@@ -229,7 +324,9 @@ projectsApp.openapi(
   if (coded.length === 0) return;
   return c.json(
     {
-      error: coded.map((issue) => issue.message).join('; '),
+      error: coded[0]!.path![0] === 'participants'
+        ? 'participants must be 1-20 email addresses'
+        : coded.map((issue) => issue.message).join('; '),
       code: codes[String(coded[0]!.path![0])],
     },
     400,
@@ -265,6 +362,8 @@ projectsApp.openapi(
           label: z
             .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
             .optional(),
+          // `me` = conversations the viewer was asked into, at any depth.
+          participant: z.enum(['me']).optional(),
         }),
       },
     responses: {
@@ -298,6 +397,7 @@ projectsApp.openapi(
       startedBy: query.started_by ?? null,
       q: query.q ?? null,
       labels: query.label === undefined ? null : [query.label].flat(),
+      participant: query.participant ?? null,
     },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
@@ -409,7 +509,17 @@ projectsApp.openapi(
   const owner = visible.row.createdBy
     ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
     : undefined;
+  // The people of a conversation, so the header can name who is in it.
+  const participantIds = Array.isArray(visible.row.metadata?.participants)
+    ? (visible.row.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const participantIdentities = await resolveSessionOwnerIdentities(participantIds, loaded.row.accountId);
   return c.json(serializeSession(visible.row, {
+    participants: participantIds.map((id) => ({
+      user_id: id,
+      name: participantIdentities.get(id)?.name ?? null,
+      email: participantIdentities.get(id)?.email ?? null,
+    })),
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
@@ -495,6 +605,27 @@ projectsApp.openapi(
       },
       409,
     );
+  }
+
+  // A value shared only with this session's person sits in the sandbox as
+  // plaintext; sharing the session would hand it to every new viewer, and an
+  // env var cannot be taken back out of a running box (secret-audience.ts).
+  if (intent.mode !== 'private') {
+    const held = await sessionPersonOnlyPlaintextSecrets({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+    });
+    if (held.length > 0) {
+      return c.json(
+        {
+          error: `This session holds ${held.join(', ')}, shared only with you. Sharing it would let others read ${held.length === 1 ? 'it' : 'them'}. Start a new session to share, or share ${held.length === 1 ? 'that secret' : 'those secrets'} with everyone first.`,
+          code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+          secrets: held,
+        },
+        409,
+      );
+    }
   }
 
   // Sharing takes the owner's personal keys away from the session (spec
