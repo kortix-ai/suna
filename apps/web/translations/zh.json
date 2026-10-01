@@ -19092,7 +19092,10 @@
       "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "texte15f213fa506": "发布应用更新",
       "textcafd830fcf85": "已列出项目代理身份",
-      "text7f755292bf51": "无法下载附件"
+      "text7f755292bf51": "无法下载附件",
+      "connectorSourceLabel": "连接器来源",
+      "connectorSourceManaged": "托管",
+      "connectorSourceDirect": "API / MCP"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

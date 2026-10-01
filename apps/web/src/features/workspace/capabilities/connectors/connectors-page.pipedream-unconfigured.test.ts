@@ -91,9 +91,9 @@ describe('connectors page without a Connect provider', () => {
     // is a different catalogue backend entirely, so a project with that flag on
     // keeps Discovery and All whatever Pipedream's status is — and with the flag
     // off, Pipedream is the only catalogue left, so its absence removes both.
-    expect(page).toContain('const connectStatus = useConnectProviderStatus(!discoverEnabled);');
+    expect(page).toContain('const connectStatus = useConnectProviderStatus(!directSelected);');
     expect(page).toContain(
-      "const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';",
+      "const catalogueAvailable = directSelected || connectStatus.state !== 'absent';",
     );
     // `!== 'absent'`, never `=== 'configured'`: `asking` must render the page
     // exactly as it always has. Almost every deployment does have Pipedream,
@@ -114,7 +114,7 @@ describe('connectors page without a Connect provider', () => {
     expect(page).toContain('visibleScopes.length > 1 ? (');
     expect(page).toContain(') : undefined');
     expect(page).toContain(
-      "const visibleScopes = catalogueAvailable\n    ? SCOPES\n    : SCOPES.filter((s) => s !== 'discover' && s !== 'all');",
+      "const visibleScopes =\n    catalogueAvailable\n      ? SCOPES\n      : SCOPES.filter((s) => s !== 'discover' && s !== 'all');",
     );
     expect(page).not.toContain('disabled={!catalogueAvailable}');
   });
