@@ -41,7 +41,12 @@ flow(
     const team = await ctx.fixtures.team({ enterprise: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const anon = ctx.client.as(ctx.P.ANON);
-    const memberP = await team.addMember("member");
+    // The recording member has a personal account (created at first sign-in),
+    // where a privately paired machine lives until the member moves it.
+    const memberP = await ctx.fixtures.user({ label: "CAP-MEMBER" });
+    (
+      await owner.post("/v1/accounts/:accountId/members", { email: memberP.email, role: "member" }, { params: { accountId: team.id } })
+    ).status(201);
     const otherP = await team.addMember("member");
     const adminP = await team.addMember("admin");
     const member = ctx.client.as(memberP);
@@ -55,6 +60,7 @@ flow(
     let deviceId = "";
     let chunkId = "";
     let frameId = 0;
+    let videoUrl = "";
 
     const audit = async (action: string) =>
       (
@@ -81,6 +87,31 @@ flow(
     });
 
     await ctx.step("a member pairs a machine; capture stays off until the member moves it to the team and turns it on", async () => {
+      // A team member who never had a personal account pairs a machine into an account
+      // that does not exist: no account holds its device row (409 CAPTURE_NO_ACCOUNT).
+      const bare = await startPairing(anon, { machineHostname: `${ctx.fixtures.name("bare")}.local` });
+      bare.status(201);
+      const bareApproved = await other.post(
+        "/v1/tunnel/device-auth/:code/approve",
+        { name: ctx.fixtures.name("bare"), capabilities: [] },
+        { params: { code: bare.json<any>().deviceCode } },
+      );
+      bareApproved.status(200);
+      ctx.track("tunnelConnection", bareApproved.json<any>().tunnelId);
+      const bareToken = (
+        await anon
+          .withBearer(bare.json<any>().deviceSecret)
+          .get("/v1/tunnel/device-auth/:code/status", { params: { code: bare.json<any>().deviceCode } })
+      ).json<any>().token;
+      (
+        await anon
+          .withBearer(bareToken)
+          .get("/v1/capture/agent/config", { headers: { "x-tunnel-id": bareApproved.json<any>().tunnelId } })
+      )
+        .status(409)
+        .body()
+        .has("$.code", "CAPTURE_NO_ACCOUNT");
+
       const created = await startPairing(anon, { machineHostname: `${ctx.fixtures.name("cap")}.local` });
       created.status(201);
       const { deviceCode, deviceSecret } = created.json<any>();
@@ -234,6 +265,7 @@ flow(
       const link = (await member.get("/v1/accounts/:accountId/capture/chunks/:chunkId/video", { params: { ...params, chunkId } }))
         .status(200)
         .json<any>();
+      videoUrl = link.url;
       const dl = await fetch(link.url);
       assert.equal(dl.status, 200);
       assert.deepEqual(new Uint8Array(await dl.arrayBuffer()), video);
@@ -286,6 +318,7 @@ flow(
       assert.equal((await admin.get(SEARCH, { params, query: { q: phrase, user_id: memberP.userId! } })).json<any>().items.length, 0);
       (await member.get("/v1/accounts/:accountId/capture/frames/:frameId", { params: { ...params, frameId } })).status(404);
       (await member.get("/v1/accounts/:accountId/capture/chunks/:chunkId/video", { params: { ...params, chunkId } })).status(404);
+      assert.ok(!(await fetch(videoUrl)).ok, "the object is deleted from storage: the earlier signed URL no longer serves it");
     });
   },
 );

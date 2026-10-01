@@ -243,7 +243,7 @@ export function createCaptureUserRouter() {
     if (app) where.push(sql`lower(${captureFrames.appName}) = lower(${app})`);
     const domain = c.req.query('domain');
     if (domain) where.push(sql`lower(${captureFrames.domain}) = lower(${domain})`);
-    if (cursor) where.push(sql`(${captureFrames.ts}, ${captureFrames.id}) < (${cursor.ts}, ${cursor.id})`);
+    if (cursor) where.push(sql`(${captureFrames.ts}, ${captureFrames.id}) < (${cursor.ts.toISOString()}::timestamptz, ${cursor.id}::bigint)`);
 
     const rows = await db
       .select({

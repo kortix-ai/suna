@@ -5,6 +5,7 @@
 // not matched. Recursive setTimeout keeps ticks serial per process.
 import { captureChunks, captureAccountSettings } from '@kortix/db';
 import { eq, or, and, lt, sql } from 'drizzle-orm';
+import type { ObjectStore } from '../object-store/s3';
 import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { deleteChunks } from './chunks';
@@ -16,8 +17,8 @@ const MAX_BATCHES = 20;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let stopped = false;
 
-export async function runCaptureRetentionOnce(): Promise<number> {
-  if (!captureStore.configured) return 0;
+export async function runCaptureRetentionOnce(store: ObjectStore = captureStore): Promise<number> {
+  if (!store.configured) return 0;
   let deleted = 0;
   for (let i = 0; i < MAX_BATCHES; i++) {
     const rows = await db
@@ -34,7 +35,7 @@ export async function runCaptureRetentionOnce(): Promise<number> {
         ),
       )
       .limit(BATCH);
-    deleted += await deleteChunks(rows);
+    deleted += await deleteChunks(rows, store);
     if (rows.length < BATCH) break;
   }
   return deleted;

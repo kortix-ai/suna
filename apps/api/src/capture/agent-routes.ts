@@ -9,7 +9,7 @@
  *
  * The owner is `tunnel_connections.owner_user_id`; a machine without one cannot capture.
  */
-import { captureAccountSettings, captureChunks, captureDevices, captureFrames } from '@kortix/db';
+import { accounts, captureAccountSettings, captureChunks, captureDevices, captureFrames } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -32,6 +32,9 @@ type Machine = { tunnelId: string; accountId: string; ownerUserId: string | null
 const fail = (c: any, status: 400 | 403 | 404 | 409 | 429 | 503, code: string, error: string) =>
   c.json({ error, code }, status);
 
+const noAccount = (c: any) =>
+  fail(c, 409, 'CAPTURE_NO_ACCOUNT', "The machine's account does not exist yet. Its owner must sign in to Kortix once.");
+
 /** Rate limit, verify the credential, and resolve the owner. Returns a Response to send, or the machine. */
 async function machineFor(c: any, bucket: 'captureConfig' | 'captureChunk' | 'captureCommit') {
   const limited = tunnelRateLimiter.check(bucket, `${requestClientKey(c)}:${c.req.header('x-tunnel-id') ?? ''}`);
@@ -43,18 +46,22 @@ async function machineFor(c: any, bucket: 'captureConfig' | 'captureChunk' | 'ca
   return { machine: { ...machine, ownerUserId: machine.ownerUserId } };
 }
 
-/** The device row of a machine, created off on first sight. */
+/**
+ * The device row of a machine, created off on first sight in the machine's
+ * account. Null when that account has no row yet (its owner never signed in).
+ */
 async function deviceFor(machine: Machine & { ownerUserId: string }) {
+  const touch = () =>
+    db.update(captureDevices).set({ lastSeenAt: new Date() }).where(eq(captureDevices.tunnelId, machine.tunnelId)).returning();
+  const [existing] = await touch();
+  if (existing) return existing;
+  const [account] = await db.select({ id: accounts.accountId }).from(accounts).where(eq(accounts.accountId, machine.accountId));
+  if (!account) return null;
   await db
     .insert(captureDevices)
     .values({ accountId: machine.accountId, userId: machine.ownerUserId, tunnelId: machine.tunnelId })
     .onConflictDoNothing({ target: captureDevices.tunnelId });
-  const [device] = await db
-    .update(captureDevices)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(captureDevices.tunnelId, machine.tunnelId))
-    .returning();
-  return device!;
+  return (await touch())[0]!;
 }
 
 /**
@@ -65,6 +72,7 @@ async function deviceFor(machine: Machine & { ownerUserId: string }) {
  */
 async function allowance(machine: Machine & { ownerUserId: string }) {
   const device = await deviceFor(machine);
+  if (!device) return null;
   const [settings] = await db
     .select()
     .from(captureAccountSettings)
@@ -97,6 +105,7 @@ export function createCaptureAgentRouter() {
     const m = await machineFor(c, 'captureConfig');
     if (!m.machine) return m.response;
     const a = await allowance(m.machine);
+    if (!a) return noAccount(c);
     return c.json({
       capture_allowed: a.allowed,
       account_enabled: a.accountEnabled,
@@ -112,6 +121,7 @@ export function createCaptureAgentRouter() {
     if (!m.machine) return m.response;
     if (!captureStore.configured) return fail(c, 503, 'CAPTURE_STORAGE_UNCONFIGURED', 'Capture storage is not configured');
     const a = await allowance(m.machine);
+    if (!a) return noAccount(c);
     if (!a.allowed) return fail(c, 403, 'CAPTURE_DISABLED', 'Capture is not enabled for this machine');
 
     const body = await c.req.json().catch(() => null);
