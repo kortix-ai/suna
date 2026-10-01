@@ -207,8 +207,13 @@ export interface MintWireMessageIdAboveInput {
    * so the id lands where OpenCode itself would mint it.
    */
   backdateMs?: number;
-  /** Source for the 14-char tail, in [0, 1). Default: `Math.random`. */
+  /** Source for the 14-char tail, in [0, 1). Default: `crypto.getRandomValues`. */
   random?: () => number;
+}
+
+/** A uniform value in [0, 1) from the platform CSPRNG (CodeQL js/insecure-randomness). */
+function cryptoRandom(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
 }
 
 /**
@@ -223,7 +228,7 @@ export interface MintWireMessageIdAboveInput {
  * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function mintWireMessageIdAbove(input: MintWireMessageIdAboveInput): MintedWireMessageId {
-  const random = input.random ?? Math.random;
+  const random = input.random ?? cryptoRandom;
   let time = wireIdClockAt(input.nowMs - (input.backdateMs ?? WIRE_ID_BACKDATE_MS));
   const floor = input.newestKnownTime ?? null;
   if (floor !== null) {
