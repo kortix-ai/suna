@@ -42,7 +42,7 @@ import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent } from '@/lib/session/runtime-data';
 import {
   agentDisplayName,
   nearestStop,

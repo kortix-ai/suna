@@ -8,7 +8,7 @@ import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 // ─── AutoContinue configuration (shared with frontend) ────────────────────────
 

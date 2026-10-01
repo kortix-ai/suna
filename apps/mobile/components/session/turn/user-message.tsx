@@ -33,8 +33,8 @@ import {
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import type { Turn } from '@/lib/opencode/types';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Turn } from '@/lib/session/types';
+import type { Command } from '@/lib/session/runtime-data';
 import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
 import { parseSessionMessagePrompt, parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';

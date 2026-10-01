@@ -8,7 +8,7 @@
  */
 
 import { formatCost, formatDuration, formatTokens } from '@kortix/sdk';
-import type { MessageWithParts, Turn } from '@/lib/opencode/types';
+import type { MessageWithParts, Turn } from '@/lib/session/types';
 
 /** The web popover's labels (apps/web translations/en.json). */
 export const TURN_META_LABELS = {

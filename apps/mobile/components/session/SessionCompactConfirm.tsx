@@ -2,21 +2,23 @@ import * as React from 'react';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
 import { haptics } from '@/lib/haptics';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { sessionStatus } from '@/lib/session/session-store';
 
 export function useSessionCompactConfirm() {
   const toast = useToast();
-  const compactSession = useCompactSession();
+  // The SDK picks the model (config default, the thread's last model, then the
+  // first connected one) and tracks the compaction it starts.
+  const compactSession = useSummarizeRuntimeSession();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
-  // The session and runtime a Compact tap was for, kept past the sheet's close.
-  const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
+  // The session a Compact tap was for, kept past the sheet's close.
+  const compactTargetRef = React.useRef<{ sessionId: string } | null>(null);
     const runCompact = React.useCallback(() => {
       const target = compactTargetRef.current;
       compactTargetRef.current = null;
       if (!target) return;
       // The session may have started working while the dialog was up.
-      const status = useSyncStore.getState().sessionStatus[target.sessionId];
+      const status = sessionStatus(target.sessionId);
       if (status?.type === 'busy' || status?.type === 'retry') {
         haptics.warning();
         toast.error('The session is working. Compact it when it stops.');
@@ -24,7 +26,8 @@ export function useSessionCompactConfirm() {
       }
       haptics.medium();
       // No progress or success toast: the thread's compaction divider mounts
-      // at once (`startCompaction`) and becomes the server's compaction turn.
+      // at once (the SDK marks the session compacting) and becomes the
+      // server's compaction turn.
       compactSession.mutate(target, {
         onError: (error) => {
           haptics.warning();

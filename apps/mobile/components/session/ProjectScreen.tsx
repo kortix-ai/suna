@@ -97,11 +97,11 @@ import {
   sessionConnectionLabel,
   sessionParentId,
 } from '@kortix/sdk';
+import { KortixProjectProvider } from '@kortix/sdk/react';
 import { queuePromptWhileWaking } from '@/lib/session/connecting-send';
-import { loadSavedCopy } from '@/lib/session/saved-copy';
+import { useSavedCopy } from '@/hooks/useSavedCopy';
 import * as Crypto from 'expo-crypto';
 import type { ProjectSession } from '@/lib/projects/projects-client';
-import { useSyncStore } from '@/lib/opencode/sync-store';
 import { getSandboxUrl } from '@/lib/platform/client';
 import type { SandboxProviderName } from '@/lib/platform/client';
 
@@ -371,7 +371,8 @@ export function ProjectScreen() {
       });
       if (move === 'open') {
         // A sub-session row: open its parent, then show the sub-session.
-        const focus = targetOpenCodeId && targetOpenCodeId !== ps.opencode_session_id ? targetOpenCodeId : undefined;
+        const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+        const focus = targetOpenCodeId && targetOpenCodeId !== rootId ? targetOpenCodeId : undefined;
         handleOpenProjectSession(ps, focus);
         return;
       }
@@ -385,7 +386,7 @@ export function ProjectScreen() {
     [handleOpenProjectSession, navigateToSession]
   );
   const openSessionFromDrawer = useCallback(
-    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.opencode_session_id ?? null),
+    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.runtime_session_id ?? ps.opencode_session_id ?? null),
     [openThreadFromDrawer]
   );
   const openSubsessionFromDrawer = useCallback(
@@ -475,8 +476,8 @@ export function ProjectScreen() {
   }, [renderedOpenedThread, keptOpenedThread]);
 
   // While the computer wakes, the connecting view shows the session's saved
-  // copy (lib/session/saved-copy.ts): the one this device kept, then the
-  // server's, painted into the sync store under the session's OpenCode root.
+  // copy (hooks/useSavedCopy.ts): the one this device kept, then the server's,
+  // painted into the SDK's session store under the session's runtime root.
   // `SessionPage` then opens on the same messages and its first runtime read
   // settles them. Only while the connecting view is on screen. A sub-agent's
   // thread reads its own saved window (`child`).
@@ -484,35 +485,29 @@ export function ProjectScreen() {
   const savedCopyTarget = !showingConnecting
     ? null
     : connectingProjectSessionId
-      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null, child: false }
+      ? {
+          sessionId: connectingProjectSessionId,
+          rootId: connectingRow?.runtime_session_id ?? connectingRow?.opencode_session_id ?? null,
+          child: false,
+        }
       : activeProjectSession && activeSessionId
         ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId, child: !!activeSubsession }
         : null;
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
   const savedCopyChild = savedCopyTarget?.child ?? false;
-  // The root a saved copy proved empty (`SavedCopyOutcome.empty`): the view
-  // opens on its composer instead of a loader.
-  const [emptyProvenFor, setEmptyProvenFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-    let current = true;
-    void loadSavedCopy({
-      projectId,
-      sessionId: savedCopySessionId,
-      rootId: savedCopyRootId,
-      child: savedCopyChild,
-    }).then((outcome) => {
-      if (current && outcome.empty) setEmptyProvenFor(savedCopyRootId);
-    });
-    return () => {
-      current = false;
-    };
-  }, [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]);
-  const savedCopyMessages = useSyncStore((state) =>
-    savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  // `empty`: the saved copy proved the root empty (`SavedCopyRead.empty`), so
+  // the view opens on its composer instead of a loader.
+  const savedCopyHookTarget = useMemo(
+    () =>
+      projectId && savedCopySessionId && savedCopyRootId
+        ? { projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId, child: savedCopyChild }
+        : null,
+    [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]
   );
-  const connectingEmpty = !!savedCopyRootId && emptyProvenFor === savedCopyRootId && !connectingFirstPrompt;
+  const savedCopy = useSavedCopy(savedCopyHookTarget);
+  const savedCopyMessages = savedCopy.messages;
+  const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
   // A message typed while the computer wakes queues through the prompt inbox
   // (lib/session/connecting-send.ts), as the web does: never to a sub-agent,
   // never over a failure, and only where the thread is on screen.
@@ -732,6 +727,9 @@ export function ProjectScreen() {
         openSpringConfig={DRAWER_OPEN}
         closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
+        {/* The SDK's project scope: its runtime hooks read this project's model
+            mode from it (`useRuntimeProviders`). */}
+        <KortixProjectProvider projectId={projectId}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the
               left edge belongs to the drawer on every project route, except
@@ -758,6 +756,7 @@ export function ProjectScreen() {
             <Stack.Screen name={PROJECT_PAGE_ROUTE} options={{ gestureEnabled: true }} />
           </Stack>
         </ProjectRouteProvider>
+        </KortixProjectProvider>
       </Drawer>
 
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the

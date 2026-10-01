@@ -96,7 +96,7 @@ import { formatCost, formatTokens } from '@kortix/sdk';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,
-} from '@/lib/opencode/hooks/use-project-session-stats';
+} from '@/hooks/useProjectSessionStats';
 import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -393,11 +393,7 @@ export function ProjectDetailPage({
     ));
   }, [sessions]);
   const sessionIds = useMemo(() => sessionList.map((s: any) => s.id), [sessionList]);
-  const { totals: sessionTotals, loading: statsLoading } = useProjectSessionStats(
-    sandboxUrl,
-    sessionIds,
-    tab === 'sessions',
-  );
+  const { totals: sessionTotals, loading: statsLoading } = useProjectSessionStats(sessionIds, tab === 'sessions');
   const taskList = tasks ?? [];
   const filteredTaskList = useMemo(() => {
     if (!taskSearch.trim()) return taskList;

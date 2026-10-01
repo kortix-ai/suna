@@ -1,5 +1,5 @@
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
-import type { Session } from '@/lib/platform/types';
+import type { Agent } from '@/lib/session/runtime-data';
+import type { Session } from '@/lib/session/types';
 import type { MentionItem, TrackedMention } from '@/components/session/useMentions';
 
 function timeAgo(ts: number): string {
@@ -34,7 +34,7 @@ export function mentionItems(mentionQuery: { query: string } | null, agents: Age
         if (title.includes(q)) return true;
         const diffs = s.summary?.diffs;
         if (Array.isArray(diffs)) {
-          return diffs.some((d) => d.path.toLowerCase().includes(q));
+          return diffs.some((d) => (d.file ?? '').toLowerCase().includes(q));
         }
         return false;
       })

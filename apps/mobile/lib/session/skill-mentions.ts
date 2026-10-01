@@ -30,7 +30,7 @@
  * way `serialize.ts`'s `commandSplit` does.
  */
 
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 export const SKILL_TRIGGER = '#';
 

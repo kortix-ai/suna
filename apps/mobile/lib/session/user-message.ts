@@ -8,7 +8,7 @@
 
 import { isAbortError, isTextPart, splitUserParts } from '@kortix/sdk';
 import { parseSessionMessagePrompt } from '@kortix/shared';
-import type { TextPart } from '@/lib/opencode/types';
+import type { TextPart } from '@/lib/session/types';
 import {
   fileTagBlocks,
   referenceHeaders,

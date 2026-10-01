@@ -47,7 +47,7 @@ import { AttachmentTile } from '@/components/session/attachment-tile';
 import { UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
-import type { MessageWithParts, Turn } from '@/lib/opencode/types';
+import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';

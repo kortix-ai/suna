@@ -26,9 +26,8 @@ import {
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
-// `sandboxRuntimeReload` and `/pty` stay mobile-native: the SDK's
-// `systemReload` targets the globally-active runtime URL, not an explicit
-// sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
+// `sandboxRuntimeReload` stays mobile-native: the SDK's `systemReload`
+// targets the globally-active runtime URL, not an explicit sandboxUrl.
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 

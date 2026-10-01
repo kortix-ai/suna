@@ -29,7 +29,7 @@ import {
   questionStepAnswer,
   questionStepLabel,
 } from '@/lib/session/question-prompt';
-import type { QuestionAnswer, QuestionRequest } from '@/lib/opencode/types';
+import type { QuestionAnswer, QuestionRequest } from '@/lib/session/types';
 
 /** About five option rows, then the list scrolls. */
 const MAX_OPTIONS_HEIGHT = 260;

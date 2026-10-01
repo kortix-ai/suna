@@ -61,7 +61,7 @@ import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { isModelUnavailable, opencodeModelRef, selectComposerModel } from '@/lib/session/composer-model';
 import { planComposerSend } from '@/lib/session/send-plan';
-import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import { useLocalConfigStore } from '@/lib/session/local-config';
 import { composerChip, homeAgentPick, threadAgents, type PickerOption } from '@/lib/session/composer-config';
 import {
   firstPromptPicks,
@@ -70,7 +70,7 @@ import {
   offeredModelCount,
   pickerModelName,
 } from '@/lib/session/model-picker';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent } from '@/lib/session/runtime-data';
 
 /** One identity while the project detail loads, so the sheet's agent memo does not churn. */
 const EMPTY_AGENTS: Agent[] = [];

@@ -13,7 +13,7 @@
  * pair. `incomplete` (older history could not be loaded) puts
  * `TRANSCRIPT_INCOMPLETE_LINE` right under the title.
  */
-import type { MessageWithParts, Part, TextPart } from '@/lib/opencode/types';
+import type { MessageWithParts, Part, TextPart } from '@/lib/session/types';
 import { parseUserMessageText } from '@/lib/session/user-message';
 
 /** The share sheet's practical ceiling: messaging apps choke far above this. */
@@ -77,7 +77,8 @@ export function buildTranscriptText(
 ): string | null {
   const blocks: { role: 'user' | 'assistant'; lines: string[] }[] = [];
   for (const message of messages) {
-    if (message.info.system) continue;
+    // A message that carries a system instruction is not the user's or the agent's words.
+    if ((message.info as { system?: unknown }).system) continue;
     const lines = messageLines(message);
     if (lines.length === 0) continue;
     const last = blocks[blocks.length - 1];

@@ -7,7 +7,7 @@
  * messages did not change.
  */
 
-import type { MessageWithParts, Turn } from '@/lib/opencode/types';
+import type { MessageWithParts, Turn } from '@/lib/session/types';
 
 function sameTurnContent(prev: Turn, next: Turn): boolean {
   if (prev.userMessage !== next.userMessage) return false;

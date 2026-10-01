@@ -72,9 +72,10 @@ import {
 } from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
-import { useRuntimeSupports } from '@/lib/opencode/runtime-capabilities';
-import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useRuntimeSupports } from '@/lib/session/runtime-capabilities';
+import { useSessionChanges } from '@/hooks/useSessionChanges';
+import { useSessionStatus } from '@/lib/session/session-store';
+import { useSessionRuntime } from '@/components/session/SessionRuntime';
 import {
   isOpenThreadSession,
   changeRequestBaseRef,
@@ -82,7 +83,6 @@ import {
   sessionActionRows,
   type ChangedFile,
 } from '@/lib/session/session-actions';
-import { useCompactionStore } from '@/stores/compaction-store';
 import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import {
   restartProjectSession,
@@ -176,16 +176,17 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
 
     // ── COR-148: Open change request · View changes · Compact ──
     const { sandboxUrl } = useSandboxContext();
-    // The thread on screen, keyed by its OpenCode id (SessionPage's `sessionId`).
+    // The thread on screen, keyed by its runtime session id (SessionPage's `sessionId`).
     const activeSessionId = useTabStore((s) => s.activeSessionId);
     const isOpenThread = !!menuSession && isOpenThreadSession(menuSession, activeSessionId);
     const liveSessionId = isOpenThread ? activeSessionId : null;
-    const changesQuery = useSessionChanges(sandboxUrl, isOpenThread);
-    const runtimeStatus = useSyncStore((s) => (liveSessionId ? s.sessionStatus[liveSessionId] : undefined));
+    // The bound session's runtime: the branch diff and the compaction state
+    // are read from it, so both wait for it.
+    const runtime = useSessionRuntime();
+    const changesQuery = useSessionChanges(isOpenThread && !!runtime?.switched);
+    const runtimeStatus = useSessionStatus(liveSessionId);
     const isBusy = runtimeStatus?.type === 'busy' || runtimeStatus?.type === 'retry';
-    const isCompacting = useCompactionStore((s) =>
-      liveSessionId ? Boolean(s.compactingBySession[liveSessionId]) : false
-    );
+    const isCompacting = !!liveSessionId && liveSessionId === runtime?.runtimeSessionId && runtime.isCompacting;
     const { compactTargetRef, confirm, confirmDialog, runCompact } = useSessionCompactConfirm();
     const canCompact = useRuntimeSupports(sandboxUrl, 'session.compact');
 
@@ -409,7 +410,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                           onPress={() => {
                             if (!liveSessionId || !sandboxUrl) return;
                             haptics.tap();
-                            compactTargetRef.current = { sessionId: liveSessionId, sandboxUrl };
+                            compactTargetRef.current = { sessionId: liveSessionId };
                             closeThen('compact');
                           }}
                         />
