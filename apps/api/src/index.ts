@@ -55,6 +55,7 @@ import { headlessAuthRouter } from './auth/headless';
 import { authEmailHookApp } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
 import { notificationsApp } from './notifications/routes';
+import { drivesApp } from './drives/routes';
 import {
   emailWebhookApp,
   slackIdentityApp,
@@ -968,6 +969,7 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route('/v1/drives', drivesApp); // personal, agent and company drives + their files and versions
 app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
 // Auth for the platform routes that need an identity. Scoped to these exact
 // paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
@@ -1663,6 +1665,9 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // Kortix Drive: conflict-copy scanner + the volume deletion queue.
+  const { startDriveWorkers } = await import('./drives/workers');
+  startDriveWorkers();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -1680,6 +1685,8 @@ async function stopSingletonWorkers() {
   await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
+  const { stopDriveWorkers } = await import('./drives/workers');
+  stopDriveWorkers();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

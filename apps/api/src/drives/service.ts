@@ -1,0 +1,1144 @@
+// Drive records (kortix.drives, kortix.drive_grants) and the volume each one
+// owns. A row is written first; its volume is created by name the first time
+// something writes to it, so listing or browsing a drive never creates storage.
+//
+// Every storage call addresses the volume by its deterministic name, never by
+// the stored id: the name means the same volume on whichever storage account
+// the API points at, and a name that does not exist there reads as an empty
+// drive instead of a broken one.
+
+import { accountMembers, driveConflicts, driveGrants, drives, projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
+import { db } from '../shared/db';
+import {
+  type AccountRole,
+  type DriveAccess,
+  type MountCandidate,
+  type MountRole,
+  type PlannedMount,
+  FROM_AGENTS_FOLDER,
+  FROM_AGENTS_MOUNT_PATH,
+  MAX_SESSION_DRIVES,
+  accessAtLeast,
+  driveAccess,
+  driveMountPath,
+  driveVolumeName,
+  planDriveMounts,
+} from './access';
+import {
+  DriveStorageError,
+  attachSandboxVolume,
+  detachSandboxVolume,
+  execInSandbox,
+  driveStorageAvailable,
+  getDriveVolume,
+  isMissingVolume,
+  openDriveVolume,
+  type VolumeInfo,
+} from './volumes';
+
+export type DriveRow = typeof drives.$inferSelect;
+
+export const DEFAULT_PERSONAL_DRIVE_NAME = 'My Drive';
+
+export interface DriveJson {
+  driveId: string;
+  accountId: string;
+  kind: string;
+  name: string;
+  ownerUserId: string | null;
+  projectId: string | null;
+  agentName: string | null;
+  isDefault: boolean;
+  sizeBytes: number | null;
+  sizeLimitBytes: number | null;
+  fileCount: number | null;
+  lastChangeAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  mountPath: string;
+  /** What the caller may do: `read`, `write` (files) or `manage` (also rename, delete, grant). */
+  access: Exclude<DriveAccess, 'none'>;
+  /** A personal drive someone else owns and shared with the caller. */
+  shared: boolean;
+  /** Who shared it, for a shared drive. */
+  ownerEmail?: string | null;
+  /** "(conflict ...)" copies on the drive nobody resolved or dismissed yet. */
+  openConflicts: number;
+  /** Company drives listed for a project: that project's grant, or null when it has none. */
+  projectAccess?: 'read' | 'write' | null;
+  /** Company drives listed for a project: the grants to that project's agents. */
+  agentGrants?: Array<{ agentName: string; access: 'read' | 'write' }>;
+}
+
+export function toDriveJson(
+  drive: DriveRow,
+  access: Exclude<DriveAccess, 'none'>,
+  stats?: VolumeInfo | null,
+  extra: {
+    viewerId?: string;
+    projectAccess?: 'read' | 'write' | null;
+    agentGrants?: Array<{ agentName: string; access: 'read' | 'write' }>;
+    openConflicts?: number;
+    ownerEmail?: string | null;
+  } = {},
+): DriveJson {
+  const role: MountRole =
+    drive.kind === 'agent'
+      ? 'agent'
+      : drive.kind === 'personal' && drive.isDefault && drive.ownerUserId === extra.viewerId
+        ? 'me'
+        : 'drive';
+  return {
+    driveId: drive.driveId,
+    accountId: drive.accountId,
+    kind: drive.kind,
+    name: drive.name,
+    ownerUserId: drive.ownerUserId,
+    projectId: drive.projectId,
+    agentName: drive.agentName,
+    isDefault: drive.isDefault,
+    sizeBytes: stats ? Number(stats.logical_bytes ?? 0) : null,
+    sizeLimitBytes: stats?.size_limit_bytes != null ? Number(stats.size_limit_bytes) : null,
+    fileCount: stats ? Number(stats.file_count ?? 0) : null,
+    lastChangeAt: stats?.last_commit_at ?? null,
+    createdAt: drive.createdAt.toISOString(),
+    updatedAt: drive.updatedAt.toISOString(),
+    mountPath: driveMountPath(drive, role),
+    access,
+    shared: drive.kind === 'personal' && !!extra.viewerId && drive.ownerUserId !== extra.viewerId,
+    openConflicts: extra.openConflicts ?? 0,
+    ...(extra.ownerEmail !== undefined ? { ownerEmail: extra.ownerEmail } : {}),
+    ...(extra.projectAccess !== undefined ? { projectAccess: extra.projectAccess } : {}),
+    ...(extra.agentGrants !== undefined ? { agentGrants: extra.agentGrants } : {}),
+  };
+}
+
+/** Account emails by user id, for naming drives people shared. */
+export async function userEmails(ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return out;
+  const rows = (await db.execute(
+    sql`SELECT id::text AS id, email FROM auth.users WHERE id = ANY(${`{${unique.join(',')}}`}::uuid[])`,
+  )) as unknown as Array<{ id: string; email: string | null }>;
+  for (const r of rows) if (r.email) out.set(r.id, r.email);
+  return out;
+}
+
+/** Open conflict copies per drive. */
+export async function openConflictCounts(driveIds: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!driveIds.length) return out;
+  const rows = await db
+    .select({ driveId: driveConflicts.driveId, n: count() })
+    .from(driveConflicts)
+    .where(
+      and(inArray(driveConflicts.driveId, driveIds), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)),
+    )
+    .groupBy(driveConflicts.driveId);
+  for (const r of rows) out.set(r.driveId, Number(r.n));
+  return out;
+}
+
+/** Volume stats per drive, best effort: a slow or failed lookup reads as null. */
+export async function driveStats(rows: DriveRow[]): Promise<Map<string, VolumeInfo | null>> {
+  const out = new Map<string, VolumeInfo | null>();
+  if (!driveStorageAvailable()) return out;
+  await Promise.all(
+    rows.map(async (d) => {
+      if (!d.platinumVolumeId) return;
+      out.set(d.driveId, await getDriveVolume(d.platinumVolumeName, AbortSignal.timeout(3_000)).catch(() => null));
+    }),
+  );
+  return out;
+}
+
+export async function getDrive(driveId: string): Promise<DriveRow | null> {
+  const [row] = await db.select().from(drives).where(eq(drives.driveId, driveId)).limit(1);
+  return row ?? null;
+}
+
+async function insertDrive(values: Omit<typeof drives.$inferInsert, 'driveId' | 'platinumVolumeName'>): Promise<DriveRow | null> {
+  const driveId = crypto.randomUUID();
+  const [row] = await db
+    .insert(drives)
+    .values({ ...values, driveId, platinumVolumeName: driveVolumeName(driveId) })
+    .onConflictDoNothing()
+    .returning();
+  return row ?? null;
+}
+
+export async function ensureDefaultPersonalDrive(accountId: string, userId: string): Promise<DriveRow> {
+  const find = () =>
+    db
+      .select()
+      .from(drives)
+      .where(
+        and(
+          eq(drives.accountId, accountId),
+          eq(drives.ownerUserId, userId),
+          eq(drives.kind, 'personal'),
+          eq(drives.isDefault, true),
+        ),
+      )
+      .limit(1);
+  const [existing] = await find();
+  if (existing) return existing;
+  const created = await insertDrive({
+    accountId,
+    kind: 'personal',
+    name: DEFAULT_PERSONAL_DRIVE_NAME,
+    ownerUserId: userId,
+    isDefault: true,
+  });
+  if (created) return created;
+  // Lost the insert race to a concurrent request: that row is ours too.
+  const [raced] = await find();
+  if (!raced) throw new Error('default personal drive vanished after a conflicting insert');
+  return raced;
+}
+
+export async function ensureAgentDrive(accountId: string, projectId: string, agentName: string): Promise<DriveRow> {
+  const find = () =>
+    db
+      .select()
+      .from(drives)
+      .where(and(eq(drives.projectId, projectId), eq(drives.agentName, agentName), eq(drives.kind, 'agent')))
+      .limit(1);
+  const [existing] = await find();
+  if (existing) return existing;
+  const created = await insertDrive({ accountId, kind: 'agent', name: agentName, projectId, agentName });
+  if (created) return created;
+  const [raced] = await find();
+  if (!raced) throw new Error('agent drive vanished after a conflicting insert');
+  return raced;
+}
+
+export async function createDrive(input: {
+  accountId: string;
+  userId: string;
+  kind: 'personal' | 'company';
+  name: string;
+}): Promise<DriveRow> {
+  const row = await insertDrive({
+    accountId: input.accountId,
+    kind: input.kind,
+    name: input.name,
+    ownerUserId: input.kind === 'personal' ? input.userId : null,
+    isDefault: false,
+  });
+  if (!row) throw new Error('drive insert returned no row');
+  return row;
+}
+
+/**
+ * Open (create when missing) the drive's volume and return the name every
+ * storage call uses. The id is kept only as a marker that the volume exists.
+ */
+export async function openVolumeFor(drive: DriveRow, signal?: AbortSignal): Promise<string> {
+  const vol = await openDriveVolume(drive.platinumVolumeName, signal);
+  if (drive.platinumVolumeId !== vol.id) {
+    await db
+      .update(drives)
+      .set({ platinumVolumeId: vol.id, updatedAt: new Date() })
+      .where(eq(drives.driveId, drive.driveId));
+    drive.platinumVolumeId = vol.id;
+  }
+  return drive.platinumVolumeName;
+}
+
+/** A read: a drive with no volume yet (or none on this storage account) answers `empty`. */
+export async function readDriveVolume<T>(drive: DriveRow, op: (volume: string) => Promise<T>, empty: () => T): Promise<T> {
+  if (!drive.platinumVolumeId) return empty();
+  try {
+    return await op(drive.platinumVolumeName);
+  } catch (err) {
+    if (isMissingVolume(err)) return empty();
+    throw err;
+  }
+}
+
+/** A write: creates the volume on first use, and again if storage lost it. */
+export async function writeDriveVolume<T>(drive: DriveRow, op: (volume: string) => Promise<T>): Promise<T> {
+  if (!drive.platinumVolumeId) return op(await openVolumeFor(drive));
+  try {
+    return await op(drive.platinumVolumeName);
+  } catch (err) {
+    if (!isMissingVolume(err)) throw err;
+    return op(await openVolumeFor(drive));
+  }
+}
+
+export interface ListedDrive {
+  drive: DriveRow;
+  /** The caller's share of someone else's personal drive. */
+  sharedAccess?: 'read' | 'write';
+  projectAccess?: 'read' | 'write' | null;
+  agentGrants?: Array<{ agentName: string; access: 'read' | 'write' }>;
+}
+
+const asAccess = (a: string): 'read' | 'write' => (a === 'read' ? 'read' : 'write');
+
+/**
+ * What one user sees in one account: their own personal drives, personal
+ * drives shared with them, and every company drive; with a project, also its
+ * agent drives, and each company drive's grants to that project and its agents.
+ */
+export async function listDrivesFor(input: {
+  accountId: string;
+  userId: string;
+  projectId?: string;
+}): Promise<ListedDrive[]> {
+  const { accountId, userId, projectId } = input;
+  const sharedRows = await db
+    .select({ driveId: driveGrants.driveId, access: driveGrants.access })
+    .from(driveGrants)
+    .innerJoin(drives, eq(drives.driveId, driveGrants.driveId))
+    .where(
+      and(
+        eq(driveGrants.subjectType, 'user'),
+        eq(driveGrants.userId, userId),
+        eq(drives.accountId, accountId),
+        eq(drives.kind, 'personal'),
+        ne(drives.ownerUserId, userId),
+      ),
+    );
+  const shared = new Map(sharedRows.map((r) => [r.driveId, asAccess(r.access)]));
+  const visible = or(
+    and(eq(drives.kind, 'personal'), eq(drives.ownerUserId, userId)),
+    shared.size ? inArray(drives.driveId, [...shared.keys()]) : undefined,
+    eq(drives.kind, 'company'),
+    projectId ? and(eq(drives.kind, 'agent'), eq(drives.projectId, projectId)) : undefined,
+  );
+  const rows = await db
+    .select()
+    .from(drives)
+    .where(and(eq(drives.accountId, accountId), visible))
+    .orderBy(drives.createdAt);
+  const companyIds = rows.filter((r) => r.kind === 'company').map((r) => r.driveId);
+  const grants =
+    projectId && companyIds.length
+      ? await db
+          .select()
+          .from(driveGrants)
+          .where(and(eq(driveGrants.projectId, projectId), inArray(driveGrants.driveId, companyIds)))
+      : [];
+  return rows.map((drive) => {
+    const out: ListedDrive = { drive };
+    const share = shared.get(drive.driveId);
+    if (share) out.sharedAccess = share;
+    if (projectId && drive.kind === 'company') {
+      const mine = grants.filter((g) => g.driveId === drive.driveId);
+      const project = mine.find((g) => g.subjectType === 'project');
+      out.projectAccess = project ? asAccess(project.access) : null;
+      out.agentGrants = mine
+        .filter((g) => g.subjectType === 'agent' && g.agentName)
+        .map((g) => ({ agentName: g.agentName!, access: asAccess(g.access) }));
+    }
+    return out;
+  });
+}
+
+// ─── Grants ────────────────────────────────────────────────────────────────
+
+export type GrantSubject =
+  | { type: 'project'; projectId: string }
+  | { type: 'user'; userId: string }
+  | { type: 'agent'; projectId: string; agentName: string };
+
+export type DriveGrantRow = typeof driveGrants.$inferSelect;
+
+function subjectWhere(driveId: string, subject: GrantSubject) {
+  const base = and(eq(driveGrants.driveId, driveId), eq(driveGrants.subjectType, subject.type));
+  if (subject.type === 'project') return and(base, eq(driveGrants.projectId, subject.projectId));
+  if (subject.type === 'user') return and(base, eq(driveGrants.userId, subject.userId));
+  return and(base, eq(driveGrants.projectId, subject.projectId), eq(driveGrants.agentName, subject.agentName));
+}
+
+/** Upsert by subject: one grant per (drive, subject); a second call changes its access. */
+export async function setDriveGrant(
+  driveId: string,
+  subject: GrantSubject,
+  access: 'read' | 'write',
+  createdBy: string | null,
+): Promise<DriveGrantRow> {
+  const update = () => db.update(driveGrants).set({ access }).where(subjectWhere(driveId, subject)).returning();
+  const [updated] = await update();
+  if (updated) return updated;
+  const [inserted] = await db
+    .insert(driveGrants)
+    .values({
+      driveId,
+      subjectType: subject.type,
+      projectId: subject.type === 'user' ? null : subject.projectId,
+      userId: subject.type === 'user' ? subject.userId : null,
+      agentName: subject.type === 'agent' ? subject.agentName : null,
+      access,
+      createdBy,
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted) return inserted;
+  // A concurrent insert of the same subject won: change that row instead.
+  const [raced] = await update();
+  if (!raced) throw new Error('drive grant vanished after a conflicting insert');
+  return raced;
+}
+
+export async function removeDriveGrant(driveId: string, subject: GrantSubject): Promise<boolean> {
+  const rows = await db.delete(driveGrants).where(subjectWhere(driveId, subject)).returning({ id: driveGrants.grantId });
+  return rows.length > 0;
+}
+
+export async function listDriveGrants(driveId: string): Promise<DriveGrantRow[]> {
+  return db.select().from(driveGrants).where(eq(driveGrants.driveId, driveId)).orderBy(driveGrants.createdAt);
+}
+
+/** The caller's `user` grant on a drive (a share of someone's personal drive), or null. */
+export async function userGrantAccess(driveId: string, userId: string): Promise<'read' | 'write' | null> {
+  const [row] = await db
+    .select({ access: driveGrants.access })
+    .from(driveGrants)
+    .where(subjectWhere(driveId, { type: 'user', userId }))
+    .limit(1);
+  return row ? asAccess(row.access) : null;
+}
+
+/** The caller's access to a drive, from their role in its account and any share. */
+export async function accessFor(drive: DriveRow, userId: string, accountRole: AccountRole | null): Promise<DriveAccess> {
+  const sharedAccess =
+    drive.kind === 'personal' && drive.ownerUserId !== userId ? await userGrantAccess(drive.driveId, userId) : null;
+  return driveAccess(drive, { userId, accountRole, sharedAccess });
+}
+
+// ─── Session mounts ────────────────────────────────────────────────────────
+
+/** One drive mount as a session's sandbox has it, recorded at boot and on every attach/detach. */
+export interface RecordedDriveMount {
+  driveId: string;
+  kind: 'personal' | 'agent' | 'company';
+  mountPath: string;
+  readOnly: boolean;
+  /** Only this folder of the drive is mounted (the "From agents" mount). */
+  subdir?: string;
+  /** The writable "From agents" folder of the session owner's drive. */
+  fromAgents?: boolean;
+  role?: MountRole;
+}
+
+export interface SessionDriveMounts {
+  /** The Platinum create body's `volumes`, keyed by mount path. */
+  volumes: Record<string, { volume: string; read_only?: boolean; subdir?: string }>;
+  mounts: RecordedDriveMount[];
+}
+
+/** The sandbox metadata key the boot writes the actual mounts to. */
+export const DRIVE_MOUNTS_METADATA_KEY = 'driveMounts';
+/** The project_sessions metadata key for what people changed about a session's drives. */
+export const SESSION_DRIVE_PREFS_KEY = 'drives';
+
+/**
+ * A drive the session must mount could not be mounted. The session never
+ * starts without its drives: provisioning fails with this message instead.
+ */
+export class DriveMountError extends Error {
+  constructor(
+    readonly userMessage: string,
+    readonly driveNames: string[],
+  ) {
+    super(`[drives] ${userMessage}`);
+    this.name = 'DriveMountError';
+  }
+}
+
+/**
+ * What people changed about one session's drives, kept on the session so
+ * every new sandbox of it (a restart, an ephemeral wake) mounts the same set:
+ *
+ * - `attached`: drives someone attached by hand, and who did;
+ * - `detached`: drives the rules mount that someone took out;
+ * - `modes`: a read or write override, and who set it (full write on the
+ *   session owner's drive is a `write` override).
+ */
+export interface SessionDrivePrefs {
+  attached: Array<{ driveId: string; by: string }>;
+  detached: string[];
+  modes: Record<string, { access: 'read' | 'write'; by: string }>;
+}
+
+export function sessionDrivePrefs(metadata: unknown): SessionDrivePrefs {
+  const raw = (metadata as Record<string, unknown> | null | undefined)?.[SESSION_DRIVE_PREFS_KEY] as
+    | Partial<SessionDrivePrefs>
+    | undefined;
+  return {
+    attached: Array.isArray(raw?.attached)
+      ? raw!.attached.filter((a) => a && typeof a.driveId === 'string' && typeof a.by === 'string')
+      : [],
+    detached: Array.isArray(raw?.detached) ? raw!.detached.filter((d) => typeof d === 'string') : [],
+    modes: raw?.modes && typeof raw.modes === 'object' ? (raw.modes as SessionDrivePrefs['modes']) : {},
+  };
+}
+
+async function updateSessionDrivePrefs(sessionId: string, change: (prefs: SessionDrivePrefs) => void): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .for('update')
+      .limit(1);
+    if (!row) return;
+    const prefs = sessionDrivePrefs(row.metadata);
+    change(prefs);
+    await tx
+      .update(projectSessions)
+      .set({
+        metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({ [SESSION_DRIVE_PREFS_KEY]: prefs })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSessions.sessionId, sessionId));
+  });
+}
+
+interface SessionFacts {
+  createdBy: string | null;
+  visibility: string;
+  origin: string;
+  agentName: string;
+  metadata: unknown;
+}
+
+async function sessionFacts(sessionId: string): Promise<SessionFacts | null> {
+  const [row] = await db
+    .select({
+      createdBy: projectSessions.createdBy,
+      visibility: projectSessions.visibility,
+      origin: projectSessions.origin,
+      agentName: projectSessions.agentName,
+      metadata: projectSessions.metadata,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row ?? null;
+}
+
+const CHAT_SOURCES = new Set(['slack', 'teams']);
+
+/**
+ * A session a person started for themselves: started by a user (not a
+ * trigger, schedule, backend or chat channel), still private, and booted by
+ * that same person. Only such a session mounts that person's drives.
+ */
+export function isPersonalSession(session: SessionFacts | null, bootingUserId: string | null): boolean {
+  if (!session || !session.createdBy) return false;
+  if (session.origin !== 'user' || session.visibility !== 'private') return false;
+  const source = (session.metadata as Record<string, unknown> | null)?.source;
+  if (typeof source === 'string' && CHAT_SOURCES.has(source)) return false;
+  return session.createdBy === bootingUserId;
+}
+
+async function roleOf(userId: string, accountId: string): Promise<AccountRole | null> {
+  const [m] = await db
+    .select({ role: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .limit(1);
+  return (m?.role as AccountRole | undefined) ?? null;
+}
+
+/**
+ * The drives a new sandbox of this session mounts, by rule:
+ *
+ * - in a personal session (see {@link isPersonalSession}): the owner's
+ *   default drive, read-only with its "From agents" folder writable beside it
+ *   (full write when the owner opted in for this session or this agent), and
+ *   every drive shared with or granted to the owner;
+ * - always: the session agent's drive, and the company drives granted to the
+ *   project or to the session agent;
+ * - then the session's own changes: drives attached by hand (while whoever
+ *   attached them can still use them), minus drives taken out.
+ */
+export async function planSessionDrives(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  bootingUserId: string | null;
+  agentName: string;
+}): Promise<Array<PlannedMount<DriveRow>>> {
+  const { accountId, projectId, sessionId, agentName } = input;
+  const session = await sessionFacts(sessionId);
+  const personal = isPersonalSession(session, input.bootingUserId);
+  const owner = personal ? session!.createdBy! : null;
+  const prefs = sessionDrivePrefs(session?.metadata);
+  const candidates: MountCandidate<DriveRow>[] = [];
+
+  if (owner) {
+    const mine = await ensureDefaultPersonalDrive(accountId, owner);
+    const agentOptIn = await db
+      .select({ access: driveGrants.access })
+      .from(driveGrants)
+      .where(subjectWhere(mine.driveId, { type: 'agent', projectId, agentName }))
+      .limit(1);
+    candidates.push({ drive: mine, readOnly: agentOptIn[0]?.access !== 'write', role: 'me' });
+  }
+  candidates.push({ drive: await ensureAgentDrive(accountId, projectId, agentName), readOnly: false, role: 'agent' });
+
+  const subjects = [
+    and(eq(driveGrants.subjectType, 'project'), eq(driveGrants.projectId, projectId)),
+    and(eq(driveGrants.subjectType, 'agent'), eq(driveGrants.projectId, projectId), eq(driveGrants.agentName, agentName)),
+    owner ? and(eq(driveGrants.subjectType, 'user'), eq(driveGrants.userId, owner)) : undefined,
+  ];
+  const granted = await db
+    .select({ drive: drives, access: driveGrants.access, subjectType: driveGrants.subjectType })
+    .from(driveGrants)
+    .innerJoin(drives, eq(drives.driveId, driveGrants.driveId))
+    .where(and(eq(drives.accountId, accountId), or(...subjects)))
+    .orderBy(driveGrants.createdAt);
+  const sharers = await userEmails(
+    granted.filter((g) => g.drive.kind === 'personal').map((g) => g.drive.ownerUserId ?? ''),
+  );
+  for (const g of granted) {
+    // A personal drive reaches a session only through its owner's share
+    // with the session owner; a project or agent grant never carries one.
+    if (g.drive.kind === 'personal' && (g.subjectType !== 'user' || g.drive.ownerUserId === owner)) continue;
+    if (g.drive.kind === 'agent') continue;
+    candidates.push({ drive: sharedNamed(g.drive, sharers), readOnly: g.access === 'read', role: 'drive' });
+  }
+
+  if (prefs.attached.length) {
+    const rows = await db
+      .select()
+      .from(drives)
+      .where(and(eq(drives.accountId, accountId), inArray(drives.driveId, prefs.attached.map((a) => a.driveId))));
+    for (const a of prefs.attached) {
+      const drive = rows.find((r) => r.driveId === a.driveId);
+      if (!drive) continue;
+      // A personal drive (own or shared) only ever mounts in its holder's personal session.
+      if (drive.kind === 'personal' && a.by !== owner) continue;
+      const access = await accessFor(drive, a.by, await roleOf(a.by, accountId));
+      if (!accessAtLeast(access, 'read')) continue;
+      const role: MountRole = drive.kind === 'personal' && drive.isDefault && drive.ownerUserId === owner ? 'me' : 'drive';
+      const named =
+        drive.kind === 'personal' && drive.ownerUserId !== owner
+          ? sharedNamed(drive, await userEmails([drive.ownerUserId ?? '']))
+          : drive;
+      candidates.push({ drive: named, readOnly: !accessAtLeast(access, 'write') || role === 'me', role });
+    }
+  }
+
+  const detached = new Set(prefs.detached);
+  const kept: MountCandidate<DriveRow>[] = [];
+  for (const c of candidates) {
+    if (detached.has(c.drive.driveId)) continue;
+    const mode = prefs.modes[c.drive.driveId];
+    if (mode?.access === 'read') {
+      kept.push({ ...c, readOnly: true });
+    } else if (mode?.access === 'write') {
+      const access = await accessFor(c.drive, mode.by, await roleOf(mode.by, accountId));
+      const ownDrive = c.role !== 'me' || mode.by === owner;
+      kept.push({ ...c, readOnly: c.readOnly && !(ownDrive && accessAtLeast(access, 'write')) });
+    } else {
+      kept.push(c);
+    }
+  }
+  return planDriveMounts(kept);
+}
+
+/** A personal drive shared by someone else mounts under its owner's handle: /drives/ana-my-drive. */
+function sharedNamed(drive: DriveRow, emails: Map<string, string>): DriveRow {
+  if (drive.kind !== 'personal') return drive;
+  const handle = (emails.get(drive.ownerUserId ?? '') ?? '').split('@')[0];
+  return handle ? { ...drive, name: `${handle} ${drive.name}` } : drive;
+}
+
+const OPEN_TIMEOUT_MS = 8_000;
+
+function toRecorded(p: PlannedMount<DriveRow>): RecordedDriveMount {
+  return {
+    driveId: p.drive.driveId,
+    kind: p.drive.kind as RecordedDriveMount['kind'],
+    mountPath: p.mountPath,
+    readOnly: p.readOnly,
+    role: p.role,
+    ...(p.subdir ? { subdir: p.subdir } : {}),
+    ...(p.fromAgents ? { fromAgents: true } : {}),
+  };
+}
+
+/**
+ * The drives a new sandbox of this session mounts (see
+ * {@link planSessionDrives}), with their volumes opened, or undefined when
+ * the project has no drives. Strict: a drive whose volume does not open
+ * fails the boot with a {@link DriveMountError}; a session never starts
+ * without its drives.
+ */
+export async function sessionVolumeMounts(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  bootingUserId: string | null;
+  agentName: string;
+}): Promise<SessionDriveMounts | undefined> {
+  if (!(await sessionDrivesEnabled(input.projectId))) return undefined;
+  const planned = await planSessionDrives(input);
+  const failed: Array<{ name: string; code?: string }> = [];
+  // Three tries over ~10 s ride out a storage blip; then the boot fails, loudly.
+  const openWithRetry = async (drive: DriveRow): Promise<string> => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await openVolumeFor(drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
+      } catch (err) {
+        if (attempt >= 3 || (err instanceof DriveStorageError && err.code === 'quota_exceeded')) throw err;
+        await new Promise((r) => setTimeout(r, attempt * 2_000));
+      }
+    }
+  };
+  const opened = await Promise.all(
+    planned.map((p) =>
+      openWithRetry(p.drive).catch((err) => {
+        console.warn(
+          `[drives] volume for drive ${p.drive.driveId} did not open:`,
+          err instanceof Error ? err.message : err,
+        );
+        failed.push({ name: p.drive.name, code: err instanceof DriveStorageError ? err.code : undefined });
+        return null;
+      }),
+    ),
+  );
+  if (failed.length) {
+    const names = [...new Set(failed.map((f) => f.name))];
+    const quota = failed.find((f) => f.code === 'quota_exceeded');
+    throw new DriveMountError(
+      quota
+        ? `This session’s drives could not be mounted (${names.join(', ')}): the workspace reached its drive storage limit. ` +
+            'The session did not start without them. Delete a drive you no longer need, or ask Kortix for more.'
+        : `This session’s drives could not be mounted (${names.join(', ')}): drive storage is not reachable right now. ` +
+            'The session did not start without them. Try again in a minute.',
+      names,
+    );
+  }
+  const out: SessionDriveMounts = { volumes: {}, mounts: [] };
+  planned.forEach((p, i) => {
+    out.volumes[p.mountPath] = {
+      volume: opened[i]!,
+      ...(p.readOnly ? { read_only: true } : {}),
+      ...(p.subdir ? { subdir: p.subdir } : {}),
+    };
+    out.mounts.push(toRecorded(p));
+  });
+  return out.mounts.length ? out : undefined;
+}
+
+/** Drives mount in this project's sessions: storage configured, the operator switch on, the project flag on. */
+export async function sessionDrivesEnabled(projectId: string): Promise<boolean> {
+  if (!sessionDriveMountEnabled()) return false;
+  return projectFeatureFlagEnabled(projectId, 'drives');
+}
+
+/** Operator kill switch: KORTIX_DRIVES_SESSION_MOUNT=off boots every session without drives. */
+export function sessionDriveMountEnabled(): boolean {
+  if (!driveStorageAvailable()) return false;
+  const raw = (process.env.KORTIX_DRIVES_SESSION_MOUNT ?? '').trim().toLowerCase();
+  return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
+}
+
+export function recordedDriveMounts(metadata: unknown): RecordedDriveMount[] {
+  const raw = (metadata as Record<string, unknown> | null | undefined)?.[DRIVE_MOUNTS_METADATA_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (m): m is RecordedDriveMount =>
+      !!m && typeof m === 'object' && typeof m.driveId === 'string' && typeof m.mountPath === 'string',
+  );
+}
+
+async function sessionSandboxRow(sessionId: string) {
+  const [row] = await db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      provider: sessionSandboxes.provider,
+      externalId: sessionSandboxes.externalId,
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  return row ?? null;
+}
+
+async function writeRecordedMounts(sandboxId: string, mounts: RecordedDriveMount[]): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ [DRIVE_MOUNTS_METADATA_KEY]: mounts })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
+
+export interface SessionDriveView extends RecordedDriveMount {
+  name: string;
+  openConflicts: number;
+  /** Set for a personal drive someone shared into the session. */
+  ownerEmail?: string;
+}
+
+/** The drives the session's current sandbox mounts, with their current names and open conflicts. */
+export async function readSessionDriveMounts(sessionId: string): Promise<SessionDriveView[]> {
+  const row = await sessionSandboxRow(sessionId);
+  const mounts = recordedDriveMounts(row?.metadata);
+  if (!mounts.length) return [];
+  const ids = [...new Set(mounts.map((m) => m.driveId))];
+  const rows = await db
+    .select({ driveId: drives.driveId, name: drives.name, ownerUserId: drives.ownerUserId })
+    .from(drives)
+    .where(inArray(drives.driveId, ids));
+  const byId = new Map(rows.map((d) => [d.driveId, d]));
+  const shared = mounts.filter((m) => m.kind === 'personal' && m.role === 'drive');
+  const emails = await userEmails(shared.map((m) => byId.get(m.driveId)?.ownerUserId ?? ''));
+  const conflicts = await openConflictCounts(ids);
+  return mounts.flatMap((m) => {
+    const row = byId.get(m.driveId);
+    if (!row) return [];
+    const ownerEmail = m.kind === 'personal' && m.role === 'drive' ? emails.get(row.ownerUserId ?? '') : undefined;
+    return [{ ...m, name: row.name, openConflicts: conflicts.get(m.driveId) ?? 0, ...(ownerEmail ? { ownerEmail } : {}) }];
+  });
+}
+
+/** The live Platinum sandbox of a session, when it has one that runs. */
+async function liveSandbox(sessionId: string) {
+  const row = await sessionSandboxRow(sessionId);
+  if (!row || row.provider !== 'platinum' || !row.externalId || row.status !== 'active') return null;
+  return { ...row, externalId: row.externalId };
+}
+
+function freeMountPath(base: string, used: Set<string>): string {
+  let path = base;
+  for (let n = 2; used.has(path); n++) path = `${base}-${n}`;
+  return path;
+}
+
+/**
+ * Bring the running sandbox's mounts of one drive in line with what the
+ * session's plan says now: detach what the plan no longer has, attach what it
+ * gained. Other drives' mounts are left alone. A session that is not running
+ * only records the change; its next sandbox mounts the plan.
+ */
+async function applyDriveToRunningSandbox(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  driveId: string;
+  bootingUserId: string | null;
+  agentName: string;
+}): Promise<{ live: boolean }> {
+  const box = await liveSandbox(input.sessionId);
+  if (!box) return { live: false };
+  const current = recordedDriveMounts(box.metadata);
+  const plan = await planSessionDrives(input);
+  const want = plan.filter((p) => p.drive.driveId === input.driveId);
+  const have = current.filter((m) => m.driveId === input.driveId);
+  const same =
+    want.length === have.length &&
+    want.every((w) => have.some((h) => h.readOnly === w.readOnly && (h.subdir ?? '') === (w.subdir ?? '') && !!h.fromAgents === !!w.fromAgents));
+  if (same) return { live: true };
+
+  let kept = current.filter((m) => m.driveId !== input.driveId);
+  for (const m of have) {
+    await detachSandboxVolume(box.externalId, m.mountPath);
+  }
+  await writeRecordedMounts(box.sandboxId, kept);
+  if (want.length) {
+    if (kept.length + want.length > MAX_SESSION_DRIVES) {
+      throw new DriveStorageError(409, 'This session already has the most drives a session can mount (8)', 'quota_exceeded');
+    }
+    const volume = await openVolumeFor(want[0]!.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
+    const used = new Set(kept.map((m) => m.mountPath));
+    for (const w of want) {
+      const mountPath = w.fromAgents ? FROM_AGENTS_MOUNT_PATH : freeMountPath(driveMountPath(w.drive, w.role), used);
+      used.add(mountPath);
+      await attachSandboxVolume(box.externalId, mountPath, { volume, readOnly: w.readOnly, subdir: w.subdir });
+      kept = [...kept, toRecorded({ ...w, mountPath })];
+      await writeRecordedMounts(box.sandboxId, kept);
+    }
+  }
+  // Awaited: the ownership pass inside makes a newly writable mount writable
+  // for the agent by the time the caller hears back.
+  await refreshDriveNotes(input.sessionId);
+  return { live: true };
+}
+
+export type SessionDriveChange =
+  | { type: 'attach'; driveId: string; by: string; access: 'read' | 'write' }
+  | { type: 'detach'; driveId: string }
+  | { type: 'mode'; driveId: string; access: 'read' | 'write'; by: string };
+
+/**
+ * Attach a drive to a session, take one out, or change one's access, now and
+ * for every later sandbox of the session. The caller checked who may.
+ */
+export async function changeSessionDrive(input: {
+  accountId: string;
+  projectId: string;
+  sessionId: string;
+  agentName: string;
+  sessionOwner: string | null;
+  change: SessionDriveChange;
+}): Promise<{ live: boolean }> {
+  const { change } = input;
+  await updateSessionDrivePrefs(input.sessionId, (prefs) => {
+    if (change.type === 'attach') {
+      prefs.detached = prefs.detached.filter((d) => d !== change.driveId);
+      if (!prefs.attached.some((a) => a.driveId === change.driveId)) {
+        prefs.attached.push({ driveId: change.driveId, by: change.by });
+      }
+      prefs.modes[change.driveId] = { access: change.access, by: change.by };
+    } else if (change.type === 'detach') {
+      prefs.attached = prefs.attached.filter((a) => a.driveId !== change.driveId);
+      if (!prefs.detached.includes(change.driveId)) prefs.detached.push(change.driveId);
+      delete prefs.modes[change.driveId];
+    } else {
+      prefs.modes[change.driveId] = { access: change.access, by: change.by };
+    }
+  });
+  return applyDriveToRunningSandbox({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    sessionId: input.sessionId,
+    driveId: change.driveId,
+    // Hot changes keep the boot's notion of whose session it is.
+    bootingUserId: input.sessionOwner,
+    agentName: input.agentName,
+  });
+}
+
+/**
+ * After a sandbox came back (a resume of the same VM keeps the mounts it had
+ * at its stop): bring its mounts in line with the session's plan, which may
+ * have changed while it slept (a drive attached, detached or granted). Best effort.
+ */
+export async function reconcileSessionDrives(sessionId: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({
+        accountId: projectSessions.accountId,
+        projectId: projectSessions.projectId,
+        createdBy: projectSessions.createdBy,
+        agentName: projectSessions.agentName,
+      })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    if (!row || !(await sessionDrivesEnabled(row.projectId))) return;
+    const box = await liveSandbox(sessionId);
+    if (!box) return;
+    const base = {
+      accountId: row.accountId,
+      projectId: row.projectId,
+      sessionId,
+      bootingUserId: row.createdBy,
+      agentName: row.agentName,
+    };
+    const plan = await planSessionDrives(base);
+    const ids = new Set([...plan.map((p) => p.drive.driveId), ...recordedDriveMounts(box.metadata).map((m) => m.driveId)]);
+    for (const driveId of ids) {
+      await applyDriveToRunningSandbox({ ...base, driveId }).catch((err) =>
+        console.warn(`[drives] reconciling drive ${driveId} in session ${sessionId} failed:`, err instanceof Error ? err.message : err),
+      );
+    }
+    await refreshDriveNotes(sessionId);
+  } catch (err) {
+    console.warn(`[drives] reconciling the drives of session ${sessionId} failed:`, err instanceof Error ? err.message : err);
+  }
+}
+
+// ─── The notes file agents read ────────────────────────────────────────────
+
+/** Where a session's agent reads which drives it has and what needs attention. */
+export const DRIVE_NOTES_PATH = '/drives/README.md';
+
+export function renderDriveNotes(mounts: SessionDriveView[], conflicts: Array<{ mountPath: string; path: string }>): string {
+  const lines = [
+    '# Drives in this session',
+    '',
+    'Kortix Drive folders, synced both ways within seconds with the Kortix web app and every other session that mounts them.',
+    'Files here outlive this sandbox. Generated by Kortix; do not edit.',
+    '',
+    '| Path | Drive | Access |',
+    '| --- | --- | --- |',
+    ...mounts.map(
+      (m) =>
+        `| ${m.mountPath} | ${m.fromAgents ? `${m.name}, "From agents" folder` : m.ownerEmail ? `${m.name}, shared by ${m.ownerEmail}` : m.name} | ${m.readOnly ? 'read-only' : 'read-write'} |`,
+    ),
+    '',
+  ];
+  const me = mounts.find((m) => m.role === 'me' && !m.fromAgents);
+  if (me?.readOnly && mounts.some((m) => m.fromAgents)) {
+    lines.push(
+      `${me.mountPath} is the user's own drive and is read-only. Save files for the user in ${FROM_AGENTS_MOUNT_PATH}: it is the "From agents" folder of that drive.`,
+      '',
+    );
+  }
+  lines.push(
+    'When two writers change the same file at the same time, both versions are kept: the other one is saved beside it as',
+    '"<name> (conflict <date> <time>)<ext>". Nothing is lost. Tell the user about a conflict copy you see; do not delete it on your own.',
+    '',
+  );
+  if (conflicts.length) {
+    lines.push('## Open conflicts', '', ...conflicts.map((c) => `- ${c.mountPath}${c.path}`), '');
+  }
+  return lines.join('\n');
+}
+
+/** Rewrite the session's notes file; best effort. */
+export async function refreshDriveNotes(sessionId: string): Promise<void> {
+  try {
+    const box = await liveSandbox(sessionId);
+    if (!box) return;
+    const mounts = await readSessionDriveMounts(sessionId);
+    const ids = [...new Set(mounts.map((m) => m.driveId))];
+    const open = ids.length
+      ? await db
+          .select({ driveId: driveConflicts.driveId, path: driveConflicts.path })
+          .from(driveConflicts)
+          .where(
+            and(inArray(driveConflicts.driveId, ids), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)),
+          )
+          .limit(50)
+      : [];
+    const conflicts = open.flatMap((c) => {
+      const m = mounts.find((x) => x.driveId === c.driveId && !x.subdir);
+      return m ? [{ mountPath: m.mountPath, path: c.path }] : [];
+    });
+    const body = Buffer.from(renderDriveNotes(mounts, conflicts)).toString('base64');
+    // Writable mounts belong to the runtime user. The image's drive-owner
+    // helper keeps them so; this one-shot pass covers images built before it.
+    const writable = mounts.filter((m) => !m.readOnly).map((m) => `'${m.mountPath.replace(/'/g, '')}'`);
+    const ownership = writable.length
+      ? `id kortix >/dev/null 2>&1 && for m in ${writable.join(' ')}; do find "$m" -xdev \\( ! -user kortix -o ! -group kortix \\) ! -path "$m/lost+found*" -print0 2>/dev/null | xargs -0 -r chown -h kortix:kortix; done; `
+      : '';
+    await execInSandbox(
+      box.externalId,
+      `${ownership}mkdir -p /drives && echo ${body} | base64 -d > ${DRIVE_NOTES_PATH}.tmp && chmod 0644 ${DRIVE_NOTES_PATH}.tmp && mv ${DRIVE_NOTES_PATH}.tmp ${DRIVE_NOTES_PATH}`,
+      60_000,
+    );
+  } catch (err) {
+    console.warn(`[drives] notes for session ${sessionId} not written:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * A drive is going away: take it out of every session sandbox that mounts it,
+ * running or stopped (Platinum ends a stopped sandbox's mount at once), so
+ * nothing holds its volume and no sandbox comes back with it.
+ */
+export async function detachDriveEverywhere(driveId: string): Promise<void> {
+  const rows = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId, provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId, metadata: sessionSandboxes.metadata })
+    .from(sessionSandboxes)
+    .where(sql`${sessionSandboxes.metadata} -> ${DRIVE_MOUNTS_METADATA_KEY} @> ${JSON.stringify([{ driveId }])}::jsonb`);
+  for (const row of rows) {
+    const mounts = recordedDriveMounts(row.metadata);
+    if (row.provider === 'platinum' && row.externalId) {
+      for (const m of mounts.filter((x) => x.driveId === driveId)) {
+        await detachSandboxVolume(row.externalId, m.mountPath).catch((err) =>
+          console.warn(`[drives] detaching drive ${driveId} from ${row.externalId} failed:`, err instanceof Error ? err.message : err),
+        );
+      }
+    }
+    await writeRecordedMounts(row.sandboxId, mounts.filter((m) => m.driveId !== driveId));
+    void refreshDriveNotes(row.sessionId);
+  }
+}
+
+/**
+ * Before a private session is shared: take every person-scoped drive (the
+ * owner's own and anything shared with or attached by them) out of the running
+ * sandbox. False when one is still attached, so the caller keeps the session
+ * private rather than share it with the drive in it. Once shared, the session
+ * is no longer personal and its next sandbox mounts none of them.
+ */
+export async function detachPersonalDrives(sessionId: string): Promise<boolean> {
+  const row = await sessionSandboxRow(sessionId);
+  const mounts = recordedDriveMounts(row?.metadata);
+  const ids = [...new Set(mounts.map((m) => m.driveId))];
+  const kinds = ids.length
+    ? new Map(
+        (await db.select({ driveId: drives.driveId, kind: drives.kind }).from(drives).where(inArray(drives.driveId, ids))).map(
+          (d) => [d.driveId, d.kind],
+        ),
+      )
+    : new Map<string, string>();
+  const personal = mounts.filter((m) => m.kind === 'personal' || kinds.get(m.driveId) === 'personal');
+  if (!row || personal.length === 0) return true;
+  if (row.provider === 'platinum' && row.externalId) {
+    try {
+      for (const m of personal) await detachSandboxVolume(row.externalId, m.mountPath);
+    } catch (err) {
+      console.warn(
+        `[drives] detaching the personal drive from session ${sessionId} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      return false;
+    }
+  }
+  await writeRecordedMounts(row.sandboxId, mounts.filter((m) => !personal.includes(m)));
+  void refreshDriveNotes(sessionId);
+  return true;
+}
+
+/**
+ * A member left or was removed: their personal drives in that account move to
+ * an account owner, so the files stay reachable (and deletable) instead of
+ * belonging to nobody. Best effort; never blocks the removal.
+ */
+export async function releaseMemberDrives(accountId: string, userId: string): Promise<void> {
+  try {
+    // What was shared with them in this account goes with their membership.
+    const accountDrives = db.select({ id: drives.driveId }).from(drives).where(eq(drives.accountId, accountId));
+    await db
+      .delete(driveGrants)
+      .where(
+        and(eq(driveGrants.subjectType, 'user'), eq(driveGrants.userId, userId), inArray(driveGrants.driveId, accountDrives)),
+      );
+    const owned = await db
+      .select()
+      .from(drives)
+      .where(and(eq(drives.accountId, accountId), eq(drives.ownerUserId, userId), eq(drives.kind, 'personal')));
+    if (!owned.length) return;
+    const [owner] = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner'), ne(accountMembers.userId, userId)),
+      )
+      .orderBy(asc(accountMembers.joinedAt))
+      .limit(1);
+    if (!owner) {
+      console.warn(`[drives] no owner in account ${accountId} to take over ${owned.length} drive(s) of a removed member`);
+      return;
+    }
+    const rows = (await db.execute(sql`SELECT email FROM auth.users WHERE id = ${userId}::uuid LIMIT 1`)) as unknown as Array<{
+      email: string | null;
+    }>;
+    const from = rows?.[0]?.email?.trim() || 'former member';
+    // Their shares and agent opt-ins were theirs to give; the new holder starts clean.
+    await db.delete(driveGrants).where(inArray(driveGrants.driveId, owned.map((d) => d.driveId)));
+    for (const drive of owned) {
+      await db
+        .update(drives)
+        .set({
+          ownerUserId: owner.userId,
+          isDefault: false,
+          name: `${drive.name} (${from})`.slice(0, 80),
+          updatedAt: new Date(),
+        })
+        .where(eq(drives.driveId, drive.driveId));
+    }
+  } catch (err) {
+    console.error(`[drives] handing over the drives of a removed member of ${accountId} failed:`, err);
+  }
+}
