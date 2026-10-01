@@ -19102,7 +19102,11 @@
       "text1aff73a5df45": "{why} Utilisez {instead}.",
       "text81b004dc7e0b": "Slack et Teams sont disponibles · l’e-mail arrive · ou démarrez des sessions depuis l’API",
       "text7d7b98240405": "Deux sont disponibles. Un est expérimental. Nous vous disons lequel.",
-      "textb60c863bbacb": "Actif pour chaque projet, sans flag. Un administrateur du tenant donne son consentement une fois, ou un projet apporte sa propre app de bot. Les mêmes sessions, les mêmes règles d’identité que Slack."
+      "textb60c863bbacb": "Actif pour chaque projet, sans flag. Un administrateur du tenant donne son consentement une fois, ou un projet apporte sa propre app de bot. Les mêmes sessions, les mêmes règles d’identité que Slack.",
+      "text80043b03898d": "Mettre à jour l'application Kortix dans Teams",
+      "textdf757dbe33eb": "Votre catalogue Teams contient la version {value0} de l'application Kortix. La version {value1} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
+      "textcd2c4b26eedd": "Kortix ne connaît pas la version de l'application dans votre catalogue Teams. La version {value0} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
+      "texte15f213fa506": "Publier la mise à jour de l'application"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
