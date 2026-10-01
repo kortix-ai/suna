@@ -138,5 +138,8 @@ describe('ProjectSelectorView', () => {
   test('the account menu (which holds Log out) is always present', () => {
     expect(render({})).toContain('Logged in as');
     expect(render({ loading: true })).toContain('Logged in as');
+    expect(render({ name: 'Sample Tester' })).toContain('>Sample Tester</span>');
+    expect(render({ name: 'Sample Tester' })).toContain('Logged in as Sample Tester');
+    expect(render({ name: '  ' })).toContain('>user@example.com</span>');
   });
 });
