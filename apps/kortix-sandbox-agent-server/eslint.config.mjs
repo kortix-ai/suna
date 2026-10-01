@@ -55,9 +55,10 @@ export const SERVICES = {
 // (see tsconfig.json). An aliased file outside the plugin root arrives as an
 // absolute path, one inside it (pnpm layout) as a root-relative path.
 const apiContract = resolve(import.meta.dirname, '../../packages/api-contract/src').split(sep).join('/')
+const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/**')]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
-  'egress-shim': [...pkg('node-forge'), `${apiContract}/**`, at('../../packages/api-contract/src/**')],
+  'egress-shim': [...pkg('node-forge'), ...API_CONTRACT],
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
@@ -118,7 +119,7 @@ const independentModules = createIndependentModules({
         `harness-${name}`,
         at(`src/harness/${name}/**`),
         [at(`src/harness/${name}/**`), ...harnessCore, ...services, SHARED],
-        [...RUNTIME, ...externals],
+        [...RUNTIME, ...externals, ...API_CONTRACT],
         `The ${name} adapter imports its own folder, the harness contract and shared code, services and the shared layer. Never another adapter, routes/ or app/.`,
       ),
     ),
@@ -126,7 +127,8 @@ const independentModules = createIndependentModules({
       'harness-core',
       harnessCore,
       [...harnessCore, ...services, SHARED],
-      RUNTIME,
+      // The daemon-to-API wire (`@kortix/api-contract/runtime-relay`) the shared relays post.
+      [...RUNTIME, ...API_CONTRACT],
       'Harness contract and shared code never import an adapter; only harness.ts does.',
     ),
     ...Object.entries(SERVICES).map(([name, deps]) =>
@@ -142,7 +144,7 @@ const independentModules = createIndependentModules({
       'routes',
       at('src/routes/**'),
       [at('src/routes/**'), ...harnessCore, ...services, SHARED],
-      [...RUNTIME, ...pkg('hono')],
+      [...RUNTIME, ...pkg('hono'), ...API_CONTRACT],
       'Routes import routes/, the harness contract, services and the shared layer. Never app/ or an adapter.',
     ),
     layer(
@@ -231,17 +233,9 @@ const OPENCODE_WORD = /[A-Za-z0-9_.$-]*open.?code[A-Za-z0-9_.$-]*/gi
 const OPENCODE_SCOPE = /^(?:(?:lib|types|services|routes|app|harness\/contract|harness\/shared)\/.*|main\.ts)$/
 /** Allowed OpenCode words per file, package-relative. Delete entries; never add. @type {Record<string, string[]>} */
 export const OPENCODE_NAMES_ALLOWED = {
-  'src/harness/contract/control.ts': ['opencode', 'opencodeSessionId', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_reload', 'opencode_session_id', 'opencode_turn_ended'],
-  'src/harness/shared/memory-guard-relay.ts': ['opencodeRssMb', 'opencodeSessionId', 'opencode_session_id'],
-  'src/lib/config/config.ts': ['opencode'],
-  'src/routes/kortix/abort.ts': ['opencodeSessionId', 'opencode_session_id'],
-  'src/routes/kortix/env.ts': ['opencodeEnv'],
-  'src/routes/kortix/harness-control.ts': ['opencode'],
-  'src/services/config-release/notice.ts': ['opencode'],
-  'src/services/resources/resources.ts': ['opencode', 'opencode-kortix', 'opencode.exe'],
-  'src/services/runtime-assets/port.ts': ['opencode'],
-  'src/services/runtime-assets/runtime-assets.ts': ['DEFAULT_OPENCODE_CURRENT_LINK', 'bakedOpencodeVersion', 'opencode', 'opencode.current', 'opencodeVersion', 'opencode_version'],
-  'src/services/runtime-assets/runtime-truth.ts': ['opencode'],
+  // W3 exit: the pre-W3 wire names an older API still reads and sends. Only
+  // this compatibility module spells them; delete it with its callers.
+  'src/routes/kortix/legacy-names.ts': ['opencode', 'opencodeEnv', 'opencode_env_changed', 'opencode_env_names', 'opencode_pid', 'opencode_port', 'opencode_reload', 'opencode_session_id', 'opencode_session_required', 'opencode_turn_ended', 'opencode_version'],
 }
 /** @type {import('eslint').Rule.RuleModule} */
 const opencodeNames = {

@@ -23,15 +23,21 @@ export interface KortixFeatureFlagOverrides {
 export interface KortixPlatformConfig {
   /** Absolute backend base URL incl. version prefix, e.g. `http://localhost:8008/v1`. */
   backendUrl: string;
-  /** Returns the current bearer (Supabase JWT, PAT, or API key) — or null if unauthenticated. */
-  getToken: () => Promise<string | null>;
+  /**
+   * Returns the current bearer (Supabase JWT, PAT, or API key) — or null if unauthenticated.
+   *
+   * A getter that caches may carry `invalidate(rejectedToken)`. The transport
+   * calls it when the API answers 401, before its one replay, so the replay
+   * asks for a fresh token instead of re-sending the dead one.
+   */
+  getToken: (() => Promise<string | null>) & { invalidate?: (rejectedToken: string) => void };
   /** Optional fetch implementation for tests, edge runtimes, and compatibility adapters.
    *  Any fetch-shaped function is accepted (the global `fetch` type also carries
    *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  /** Identifies the host surface in centralized audit events. `'tui'` is
-   *  `apps/tui` — a terminal UI that authenticates with the CLI's host config
-   *  but is a distinct surface in `client_reported_source`. */
+  /** @deprecated Inert. The SDK no longer sends `X-Kortix-Client`: the audit
+   *  trail records the authenticated credential (`credential_kind`), not a
+   *  self-reported surface. Accepted so existing hosts keep compiling. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;

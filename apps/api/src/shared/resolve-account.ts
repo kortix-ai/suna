@@ -2,6 +2,7 @@ import { accountMembers } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { profileNameFromMetadata } from "../accounts/core/account-name";
 import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
 import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
@@ -184,20 +185,22 @@ export async function resolveAccountId(userId: string): Promise<string> {
   // genuine new-user signup working while never minting a self-membership for an
   // account that already exists.
   try {
-    // Resolve the signup email so the account gets a real name
-    // ("<email>'s Account") instead of the bare "Account" placeholder. A
+    // Resolve the signup email and profile name so the account gets a real,
+    // suggested name ("Ada's workspace" — never the email, KRTX-638). A
     // token-authed caller reaches here with userId == an existing account_id,
     // which is not an auth user — the lookup misses and the placeholder
     // fallback inside bootstrapPersonalAccount still applies (the insert is a
     // conflict no-op for those anyway).
     let email: string | null = null;
+    let fullName: string | null = null;
     try {
       const { data } = await getSupabase().auth.admin.getUserById(userId);
       email = data?.user?.email ?? null;
+      fullName = profileNameFromMetadata(data?.user?.user_metadata);
     } catch {
-      /* name falls back to the placeholder */
+      /* name falls back to the email-derived suggestion */
     }
-    await bootstrapPersonalAccount(userId, email);
+    await bootstrapPersonalAccount(userId, email, fullName);
   } catch (err) {
     console.warn("[resolve-account] Failed to initialize first account:", err);
   }

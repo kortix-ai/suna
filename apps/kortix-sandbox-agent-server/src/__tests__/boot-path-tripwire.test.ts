@@ -134,6 +134,10 @@ describe('the one boot path is enforced, not merely intended', () => {
     expect(runningWriteLeaks(sources)).toEqual([])
   })
 
+  test('T4 on pi — its running config has exactly one writer too, and it is setCurrent', () => {
+    expect(runningWriters(file('harness/pi/config-release.ts').source, 'current')).toEqual(['setCurrent:current'])
+  })
+
   test('T4 negative — a field patch outside the setter is caught', () => {
     const probe = parse(
       'function setRunningConfig(n){ running = { ...running, ...n } }\n' +
@@ -193,7 +197,7 @@ describe('the one boot path is enforced, not merely intended', () => {
     ])
     // And the candidates are built in exactly one function.
     expect([...callers(sources, 'bootCandidates').keys()]).toEqual([BOOT_PATH_FILE])
-    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts'])
+    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts', 'harness/open-code/warm-seed.ts'])
   })
 
   test('the five rules pass as one verdict list, which is what the proof script prints', () => {

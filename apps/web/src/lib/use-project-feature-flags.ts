@@ -30,7 +30,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const marketplace = useFeatureFlag(projectId, 'marketplace');
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
-  const teams = useFeatureFlag(projectId, 'teams');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
@@ -43,13 +42,14 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const configReleases = useFeatureFlag(projectId, 'config_releases');
   const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
+  const usRegion = useFeatureFlag(projectId, 'us_region');
+  const humanMessaging = useFeatureFlag(projectId, 'human_messaging');
 
   return {
     flags: {
       marketplace: marketplace.enabled,
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
-      teams: teams.enabled,
       llm_gateway: llmGateway.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
@@ -62,8 +62,10 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pi_harness: piHarness.enabled,
       config_releases: configReleases.enabled,
       agent_principal: agentPrincipal.enabled,
+      us_region: usRegion.enabled,
+      human_messaging: humanMessaging.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: agentPrincipal.isLoading,
+    isLoading: humanMessaging.isLoading,
   };
 }

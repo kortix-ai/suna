@@ -75,6 +75,7 @@ import { SessionRetryDisplay, useRetrySecondsLeft } from './session-retry-displa
 import { TurnErrorDisplay } from './SessionErrorBanner';
 import { TurnLiveContext } from './tool/shared/infrastructure';
 import { ToolPartRenderer, type PermissionReply } from './tool/tool-part-renderer';
+import './tool/tools/register';
 import { ActivityBurst } from './turn/activity-burst';
 import { CommandOutputCard } from './turn/command-output';
 import { CompactionFailedRow, CompactionMarker } from './turn/compaction-divider';
@@ -129,6 +130,8 @@ interface SessionTurnProps {
   rewindDisabled?: boolean;
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /** `human_messaging` is on for the project: ask / from-session cards may draw. */
+  messagingCards?: boolean;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -156,6 +159,7 @@ function SessionTurnImpl({
   rewindDisabled,
   queueState,
   uploadStatus,
+  messagingCards,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -266,6 +270,7 @@ function SessionTurnImpl({
       rewindDisabled={rewindDisabled}
       queueState={queueState}
       uploadStatus={uploadStatus}
+      messagingCards={messagingCards}
     />
   );
 
@@ -310,7 +315,7 @@ function SessionTurnImpl({
     return (
       <View className="px-4">
         {view.kind === 'marker' ? (
-          // No `onOpenSummary`: mobile has no side panel, so the summary expands inline.
+          // Mobile has no side panel, so the summary expands inline.
           <CompactionMarker running={view.running} summary={response} />
         ) : (
           <CompactionFailedRow error={view.error} isAbort={view.isAbort} />

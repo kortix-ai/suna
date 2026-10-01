@@ -5,13 +5,11 @@ import {
   sessionDisplayStatus,
   sessionSource,
   type SessionDisplayStatus,
-  type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,9 +18,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
 import { TypedTitle } from '@/components/ui/typed-title';
-import { Slack } from '@/features/icon/icons/slack';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
-import { Telegram } from '@/features/icon/icons/telegram';
 import {
   getSessionDisplayTitle,
   shortRelative,
@@ -37,22 +32,25 @@ import {
 } from '@kortix/sdk';
 import {
   ArrowCounterClockwiseIcon,
-  CalendarDotsIcon,
+  CaretRightIcon,
   ChatTeardropTextIcon,
   DotsThreeIcon,
-  EnvelopeIcon,
   PencilSimpleIcon,
+  TagIcon,
   ShareNetworkIcon,
   SquareIcon,
   TrashIcon,
-  WebhooksLogoIcon,
 } from '@phosphor-icons/react';
-import { memo, useState, type ComponentType, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 
 import { SESSION_ACCESS_ICONS } from '@/features/workspace/project-sidebar/session-filter-menu';
 
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
+
 import { sessionAccessMeta } from './project-sessions-helpers';
-import { sessionAccessKind, sessionOwnerKey, UNKNOWN_OWNER_KEY } from './session-owner-filters';
+import { SessionLabelBadges } from './session-label-badges';
+import { sessionAccessKind, sessionOwnerKey } from './session-owner-filters';
+import { SessionStarterMark, useSessionStarter } from './session-starter-mark';
 
 /**
  * Whose session this is, and who else can open it — on every row of the
@@ -65,18 +63,12 @@ import { sessionAccessKind, sessionOwnerKey, UNKNOWN_OWNER_KEY } from './session
  */
 function SessionOwnerChip({ session }: { session: ProjectSession }) {
   const t = useTranslations('sidebar.filter');
+  const starter = useSessionStarter(session);
   const isViewer = session.is_owner !== false;
-  const ownerLabel = isViewer
-    ? t('ownerValue.you')
-    : sessionOwnerKey(session) === UNKNOWN_OWNER_KEY &&
-        !session.owner_name &&
-        !session.owner_email
-      ? t('ownerValue.unknown')
-      : (session.owner_name ?? session.owner_email ?? t('ownerValue.unknown'));
   const access = sessionAccessKind(session);
   const AccessIcon = SESSION_ACCESS_ICONS[access];
   const accessLabel = t(`accessValue.${access}`);
-  const label = t('ownerAccess', { owner: ownerLabel, access: accessLabel });
+  const label = t('ownerAccess', { owner: starter.label, access: accessLabel });
 
   return (
     <Hint label={label} side="top" sideOffset={6}>
@@ -84,17 +76,46 @@ function SessionOwnerChip({ session }: { session: ProjectSession }) {
         className="text-muted-foreground flex max-w-48 shrink-0 items-center gap-1.5 text-xs"
         aria-label={label}
         data-session-owner={sessionOwnerKey(session)}
+        data-session-starter={starter.type}
         data-session-shared={isViewer ? undefined : 'true'}
       >
-        <UserAvatar
-          size="sm"
-          name={isViewer ? undefined : (session.owner_name ?? undefined)}
-          email={session.owner_email ?? ''}
-        />
-        <span className="hidden min-w-0 truncate sm:inline">{ownerLabel}</span>
+        <SessionStarterMark session={session} starter={starter} />
+        <span className="hidden min-w-0 truncate sm:inline">{starter.label}</span>
         <AccessIcon className="size-3.5 shrink-0" />
       </span>
     </Hint>
+  );
+}
+
+/** Chevron + count of the sessions this one spawned. Sits inside the row's own
+ *  toggle, so it stops the event before it opens the detail panel. */
+function SessionChildrenToggle({
+  count,
+  open,
+  onToggle,
+}: {
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const t = useTranslations('sidebar.sessionList');
+  const label = open ? t('collapseChildren') : t('expandChildren', { count });
+  return (
+    <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        aria-expanded={open}
+        aria-label={label}
+        data-session-children-toggle="true"
+        className="text-muted-foreground gap-1 tabular-nums"
+        onClick={onToggle}
+      >
+        <CaretRightIcon aria-hidden className={cn('size-3 transition-transform', open && 'rotate-90')} />
+        {count}
+      </Button>
+    </span>
   );
 }
 
@@ -102,16 +123,6 @@ function SessionOwnerChip({ session }: { session: ProjectSession }) {
  *  the sidebar session list so the row never reflows on hover. */
 const SESSION_RELATIVE_TIME_CLASS =
   'text-muted-foreground block w-10 min-w-10 max-w-10 shrink-0 truncate text-right text-xs tabular-nums';
-
-const SOURCE_ICONS: Record<SessionSourceKind, ComponentType<{ className?: string }>> = {
-  chat: ChatTeardropTextIcon,
-  slack: Slack,
-  telegram: Telegram,
-  teams: MicrosoftTeams,
-  email: EnvelopeIcon,
-  schedule: CalendarDotsIcon,
-  webhook: WebhooksLogoIcon,
-};
 
 interface StatusTile {
   label: string;
@@ -164,6 +175,7 @@ function sessionStatusTile(
 
 export interface SessionRowActions {
   onRename: (sessionId: string, currentName: string) => void;
+  onEditLabels: (session: ProjectSession) => void;
   onShare: (session: ProjectSession) => void;
   onDelete: (sessionId: string, label: string) => void;
   onRestart: (sessionId: string, label: string) => void;
@@ -186,6 +198,10 @@ export interface SessionRowProps {
   restarting: boolean;
   stopping: boolean;
   actions: SessionRowActions;
+  /** Spawned sessions under this one (`child_count`). 0 or absent: no toggle. */
+  childCount?: number;
+  childrenOpen?: boolean;
+  onToggleChildren?: (sessionId: string) => void;
   /** Detail panel — the container renders it only while expanded. */
   children: ReactNode;
 }
@@ -201,14 +217,18 @@ function SessionRowImpl({
   restarting,
   stopping,
   actions,
+  childCount = 0,
+  childrenOpen = false,
+  onToggleChildren,
   children,
 }: SessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tStatus = useTranslations('sidebar.sessionList.status');
+  const tLabels = useTranslations('sidebar.labels');
   const [menuOpen, setMenuOpen] = useState(false);
   const title = getSessionDisplayTitle(session);
   const source = sessionSource(session, tI18nComplete);
-  const SourceIcon = SOURCE_ICONS[source.kind];
+  const SourceIcon = source.kind === 'chat' ? ChatTeardropTextIcon : SOURCE_ICONS[source.kind];
   const access = sessionAccessMeta(session, tI18nComplete);
   const isDeleted = Boolean(session.deleted_at);
   // `can_manage_sharing` answers ONE question — may this viewer change who can
@@ -258,6 +278,14 @@ function SessionRowImpl({
             <span className="text-muted-foreground"> · {source.triggerSlug}</span>
           ) : null}
         </span>
+        {childCount > 0 && onToggleChildren ? (
+          <SessionChildrenToggle
+            count={childCount}
+            open={childrenOpen}
+            onToggle={() => onToggleChildren(session.session_id)}
+          />
+        ) : null}
+        <SessionLabelBadges session={session} className="max-sm:hidden" />
         <SessionOwnerChip session={session} />
       </span>
     </>
@@ -385,6 +413,15 @@ function SessionRowImpl({
                       >
                         <PencilSimpleIcon />
                         {tI18nComplete.raw('text3064d79a295c')}
+                      </DropdownMenuItem>
+                    ) : null}
+                    {hasLifecycleActions ? (
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onSelect={() => deferAfterClose(() => actions.onEditLabels(session))}
+                      >
+                        <TagIcon />
+                        {tLabels('menu')}
                       </DropdownMenuItem>
                     ) : null}
                     {showAccessEntry ? (

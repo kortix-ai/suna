@@ -10,6 +10,7 @@ export function teamsChannelCtx(tenantId: string, conversationId: string): Chann
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
 }
 
+/** The tenant's installed projects: every list Teams shows or picks from. */
 export async function listTenantProjects(
   tenantId: string,
 ): Promise<Array<{ projectId: string; name: string; repoUrl: string | null }>> {

@@ -8,8 +8,10 @@ const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
 
 let authType = 'supabase';
 let sandboxId: string | null = null;
+let tokenProjectId: string | null = null;
 let listInput: Record<string, unknown> | null = null;
 let resolveAccountDenied = false;
+let usageCapabilityDenied = false;
 
 interface TestContext {
   set(key: string, value: unknown): void;
@@ -38,6 +40,10 @@ mock.module('../../middleware/auth', () => ({
     c.set('userId', '00000000-0000-4000-a000-000000000004');
     c.set('authType', authType);
     if (sandboxId) c.set('sandboxId', sandboxId);
+    if (tokenProjectId) {
+      c.set('tokenProjectId', tokenProjectId);
+      c.set('accountId', ACCOUNT_ID);
+    }
     await next();
   },
 }));
@@ -64,8 +70,10 @@ mock.module('../../projects/lib/access', () => ({
   loadProjectForUser: async () => {
     throw new Error('loadProjectForUser should not be called from cost-by-project tests');
   },
-  assertProjectCapability: async () => {
-    throw new Error('assertProjectCapability should not be called from cost-by-project tests');
+  assertProjectCapability: async (_c: TestContext, _userId: string, _accountId: string, projectId: string, action: string) => {
+    expect(projectId).toBe(PROJECT_ID);
+    expect(action).toBe('project.usage.read');
+    if (usageCapabilityDenied) throw new HTTPException(403, { message: 'Forbidden' });
   },
 }));
 
@@ -118,8 +126,10 @@ function createTestApp() {
 beforeEach(() => {
   authType = 'supabase';
   sandboxId = null;
+  tokenProjectId = null;
   listInput = null;
   resolveAccountDenied = false;
+  usageCapabilityDenied = false;
   projectsToReturn = [project];
 });
 
@@ -202,6 +212,23 @@ describe('GET /v1/usage/cost-by-project', () => {
 
     expect(response.status).toBe(403);
     expect(listInput).toBeNull();
+  });
+
+  test('project token filters both JSON and CSV to its bound project', async () => {
+    tokenProjectId = PROJECT_ID;
+    const app = createTestApp();
+    for (const format of ['', '&format=csv']) {
+      const response = await app.request(`/v1/usage/cost-by-project?project_id=${PROJECT_ID}${format}`);
+      expect(response.status).toBe(200);
+      expect(listInput?.projectId).toBe(PROJECT_ID);
+    }
+    for (const query of ['', `?project_id=${ACCOUNT_ID}`, `?project_id=${PROJECT_ID}&account_id=${ACCOUNT_ID}`]) {
+      listInput = null;
+      expect((await app.request(`/v1/usage/cost-by-project${query}`)).status).toBe(403);
+      expect(listInput).toBeNull();
+    }
+    usageCapabilityDenied = true;
+    expect((await app.request(`/v1/usage/cost-by-project?project_id=${PROJECT_ID}`)).status).toBe(403);
   });
 
   // accountId resolves before window/sort/pagination are parsed (in that

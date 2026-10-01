@@ -6,6 +6,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `TeamsInstallation` gains optional `appVersion` (the Teams app version the
+  org catalog serves, or `null` when no publish recorded it),
+  `latestAppVersion` (the version the server publishes), and
+  `appUpdateAvailable` (the org catalog serves an older app, or one with no
+  recorded version, so a Teams admin should publish the update). Absent on
+  older servers.
 - Computers are connector accounts. `addComputerToProject(projectId,
   { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
   `project(id).connectors.connections.addComputer`, and
@@ -61,6 +67,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Deprecated
+- The `teams` member of `FeatureFlagKey`. Microsoft Teams graduated out of the
+  flag system: every project can connect Teams. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'teams')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'teams', …)` answers `400`. Removed in the next major.
 - The `session_transcript_history` member of `FeatureFlagKey`. Saved session
   history graduated out of the flag system: every session saves its transcript
   and shows it while its computer is off. It is absent from
@@ -119,6 +130,21 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     `useAdminSandboxAction`, `useAdminSandboxRepair`, `useDeleteAdminSandbox`
     and `fetchAdminSandboxProxyToken`; and `useAdminAccountSandboxes`.
     Retired queries never retry or poll.
+- The kortix-master client and its React hooks: every function exported from
+  `core/runtime/kortix-master.ts` (`listTasks`, `createTicket`, `listServices`,
+  …) and `react/use-kortix-master.ts` (`useKortixTasks`, …). The sandbox daemon
+  serves none of their `/kortix/tasks|tickets|projects|services` routes: every
+  call answers `404`. Behavior is unchanged. Removed in the next major.
+- 22 runtime exports that wrap an OpenCode-only route: the MCP hooks
+  (`useOpenCodeMcpStatus`, `useAddMcpServer`, `useConnectMcpServer`,
+  `useDisconnectMcpServer`, `useMcpAuthStart`, `useMcpAuthCallback`,
+  `useMcpAuthRemove`), `useShareSession`, `useUnshareSession`,
+  `useUpdatePart`, `useDeletePart`, `useOpenCodeSkills`, `useOpenCodeToolIds`,
+  `useOpenCodeProjects`, `useDeleteOpenCodeSession`,
+  `getRuntimeProviderAuthMethods`, `authorizeRuntimeProvider`,
+  `completeRuntimeProviderOAuth`, `setRuntimeProviderApiKey`,
+  `getRuntimeConfig`, `updateRuntimeConfig` and `refreshRuntimeConfiguration`.
+  Behavior is unchanged. Removed in the next major.
 
 ### Fixed
 - `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`

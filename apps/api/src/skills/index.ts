@@ -33,6 +33,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { callerOverlayFlags } from '../runtime-assets/caller-flags';
 import type { AppEnv } from '../types';
 import { getManagedSkill, getManagedSkillFile, listManagedSkills } from './catalog';
 
@@ -71,7 +72,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/',
     tags: ['skills'],
-    summary: 'GET /skills — list the Kortix system skills',
+    summary: 'List the Kortix system skills',
     description:
       'Name + description for every kortix-managed system skill. Bodies are not ' +
       'included; fetch one with GET /v1/skills/{name}.',
@@ -84,8 +85,8 @@ skillsApp.openapi(
       ...errors(401),
     },
   }),
-  (c) => {
-    const skills = listManagedSkills();
+  async (c) => {
+    const skills = listManagedSkills(await callerOverlayFlags(c));
     return c.json({ skills, count: skills.length });
   },
 );
@@ -95,7 +96,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/{name}/file',
     tags: ['skills'],
-    summary: "GET /skills/:name/file?path=… — one of a skill's reference files",
+    summary: 'Read a file of a Kortix system skill (?path=)',
     ...auth,
     request: {
       params: SkillNameParams,
@@ -109,11 +110,11 @@ skillsApp.openapi(
       ...errors(400, 401, 404),
     },
   }),
-  (c) => {
+  async (c) => {
     const name = c.req.param('name');
     const path = c.req.query('path');
     if (!path) return c.json({ error: true, message: 'path is required', status: 400 }, 400);
-    const file = getManagedSkillFile(name, path);
+    const file = getManagedSkillFile(name, path, await callerOverlayFlags(c));
     if (!file) {
       return c.json(
         { error: true, message: `No file "${path}" in Kortix skill "${name}"`, status: 404 },
@@ -129,7 +130,7 @@ skillsApp.openapi(
     method: 'get',
     path: '/{name}',
     tags: ['skills'],
-    summary: 'GET /skills/:name — the full SKILL.md body',
+    summary: 'Read a Kortix system skill (full SKILL.md)',
     description:
       'The complete markdown the agent is meant to follow. `?full=1` also inlines ' +
       'every reference file (large — kortix-system is ~230 KB with references).',
@@ -143,9 +144,9 @@ skillsApp.openapi(
       ...errors(401, 404),
     },
   }),
-  (c) => {
+  async (c) => {
     const name = c.req.param('name');
-    const skill = getManagedSkill(name);
+    const skill = getManagedSkill(name, await callerOverlayFlags(c));
     if (!skill) {
       return c.json(
         { error: true, message: `No Kortix system skill named "${name}"`, status: 404 },

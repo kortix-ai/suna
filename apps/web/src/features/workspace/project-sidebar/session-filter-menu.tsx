@@ -24,6 +24,8 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { resolveLabelFacetOptions } from '@/features/workspace/project-sidebar/session-label-facet';
+import { SOURCE_ICONS } from '@/features/workspace/project-sidebar/session-source-icons';
 import {
   matchesAccessFilters,
   matchesOwnerFilters,
@@ -33,14 +35,12 @@ import {
   UNKNOWN_OWNER_KEY,
   type SessionAccessFilter,
 } from '@/features/workspace/project-sessions/session-owner-filters';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
-import { Slack } from '@/features/icon/icons/slack';
-import { Telegram } from '@/features/icon/icons/telegram';
 import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import {
   selectAccessFilters,
+  selectLabelFilters,
   selectGroupMode,
   selectHiddenSections,
   selectOwnerFilters,
@@ -52,13 +52,10 @@ import {
 } from '@/stores/session-filter-store';
 import type { ProjectSession } from '@kortix/sdk';
 import {
-  CalendarDotsIcon as CalendarClock,
-  EnvelopeIcon as Mail,
   GlobeIcon,
   LockSimpleIcon,
-  ChatsIcon as MessagesSquare,
+  TagIcon,
   UsersIcon as UsersSolid,
-  WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 
 import {
@@ -215,14 +212,8 @@ export function resolveSourceFacetOptions(
 }
 
 const SOURCE_FILTER_ICONS: Record<SessionSourceFilter, ComponentType<{ className?: string }>> = {
-  mine: MessagesSquare,
   shared: UsersSolid,
-  slack: Slack,
-  telegram: Telegram,
-  teams: MicrosoftTeams,
-  email: Mail,
-  schedule: CalendarClock,
-  webhook: Webhook,
+  ...SOURCE_ICONS,
 };
 
 export const SESSION_ACCESS_ICONS: Record<
@@ -282,6 +273,8 @@ export function SessionFilterMenu({
   const accessFilters = useSessionFilterStore(selectAccessFilters(projectId, surface));
   const toggleOwnerFilter = useSessionFilterStore((s) => s.toggleOwnerFilter);
   const toggleAccessFilter = useSessionFilterStore((s) => s.toggleAccessFilter);
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId, surface));
+  const toggleLabelFilter = useSessionFilterStore((s) => s.toggleLabelFilter);
   // Owner and Access are the page's facets: the page lists every session the
   // viewer may open (for an account admin with session oversight, everyone's),
   // while the sidebar is the viewer's own working set.
@@ -331,7 +324,6 @@ export function SessionFilterMenu({
     legacy: t('statusValue.legacy'),
   };
   const sourceLabels: Record<SessionSourceFilter, string> = {
-    mine: t('sourceValue.mine'),
     shared: t('sourceValue.shared'),
     slack: t('section.slack'),
     telegram: t('section.telegram'),
@@ -395,11 +387,20 @@ export function SessionFilterMenu({
     : { owner: false, access: false };
   const showOwnerFacet = pageFacetVisibility.owner;
   const showAccessFacet = pageFacetVisibility.access;
+  // Server-side facet: `sessions` already carry every selected label, so the
+  // options are the labels that co-occur with the current selection.
+  const labelOptions = resolveLabelFacetOptions(sessions, labelFilters);
+  const labelFilterSet = new Set(labelFilters);
   const showFiltersSection =
-    statusOptions.length > 0 || sourceOptions.length > 0 || showOwnerFacet || showAccessFacet;
+    statusOptions.length > 0 ||
+    sourceOptions.length > 0 ||
+    labelOptions.length > 0 ||
+    showOwnerFacet ||
+    showAccessFacet;
   const hasActiveFacets =
     statusFilters.length > 0 ||
     sourceFilters.length > 0 ||
+    labelFilters.length > 0 ||
     activeOwners.length > 0 ||
     activeAccess.length > 0;
   const ownerFilterSet = new Set(activeOwners);
@@ -549,6 +550,31 @@ export function SessionFilterMenu({
                     </DropdownMenuCheckboxItem>
                   );
                 })}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+
+          {labelOptions.length > 0 && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="min-w-0 flex-1 truncate">{t('labels')}</span>
+                {labelFilters.length > 0 && <FacetActiveDot />}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-80 w-56 overflow-y-auto p-1">
+                {labelOptions.map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.value}
+                    checked={labelFilterSet.has(option.value)}
+                    onCheckedChange={() => toggleLabelFilter(projectId, option.value, surface)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    <TagIcon className="size-4" />
+                    <span className="min-w-0 flex-1 truncate">{option.value}</span>
+                    <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+                      {option.count}
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}

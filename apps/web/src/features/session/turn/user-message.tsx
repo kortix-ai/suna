@@ -1,8 +1,14 @@
 'use client';
 
+import { MessageAuthorLabel, SessionMessageCard } from './session-message-card';
 import { ReminderTurnCard } from './reminder-turn-card';
+import { isAskForViewer } from './message-author';
 import { toast } from 'sonner';
-import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import {
+  fetchSessionAttachment,
+  isSessionAttachmentRef,
+  type SessionMessageAuthor,
+} from '@kortix/sdk';
 
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
  *  user-message card. Full-width card, no reference chips. */
@@ -14,7 +20,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CaretDownIcon as ChevronDown,
   PencilSimpleIcon,
-  ScissorsIcon as Scissors,
   TimerIcon as Timer,
 } from '@phosphor-icons/react';
 
@@ -67,7 +72,6 @@ import {
 } from '../mention-segments';
 import { parseChannelMessage } from './channel-message';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
-import { type DCPNotification, parseDCPNotifications } from './dcp-notification';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -77,6 +81,7 @@ import {
   parseSessionReferences,
   parseSystemNotifications,
   parseReminderPrompt,
+  parseSessionMessagePrompt,
   parseTriggerEvent,
   QUOTE_MARKER_RE,
   quoteMarker,
@@ -91,23 +96,8 @@ import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
 
-// ============================================================================
-// Fixed channel brand colors + DCP (dynamic context pruning) notifications —
-// exclusive to UserMessage, moved verbatim from session-chat.tsx.
-// ============================================================================
-
 // Channel brand colors + marks live in ./channel-brand.tsx, shared with the
 // outgoing reply card the bash tool renders for `teams send` & co.
-
-// ============================================================================
-// DCP Notification Card — styled component for pruning/compress events
-// ============================================================================
-
-const DCP_REASON_LABELS: Record<string, string> = {
-  completion: 'Task Complete',
-  noise: 'Noise Removal',
-  extraction: 'Extraction',
-};
 
 /**
  * Stable content-derived React keys for immutable parsed lists whose items
@@ -126,149 +116,6 @@ function withContentKeys<T>(
     seen.set(content, n + 1);
     return { key: n === 0 ? content : `${content}~${n}`, item };
   });
-}
-
-function formatDCPTokens(tokens: number): string {
-  if (tokens >= 1000) {
-    const k = (tokens / 1000).toFixed(1).replace('.0', '');
-    return `${k}K`;
-  }
-  return tokens.toString();
-}
-
-function DCPNotificationCard({ notification }: { notification: DCPNotification }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [expanded, setExpanded] = useState(false);
-  const isPrune = notification.type === 'prune';
-  const hasItems = notification.items.length > 0;
-  const hasDetails = hasItems || notification.distilled || notification.summary;
-
-  return (
-    <div className="border-border/60 bg-card/50 overflow-hidden rounded-lg border">
-      {/* Header */}
-      <Button
-        type="button"
-        onClick={() => hasDetails && setExpanded(!expanded)}
-        variant="ghost"
-        // `pointer-events-none` only stops the mouse. Without these, a card with
-        // nothing to reveal was still a tab stop that announced itself as a
-        // collapsed control.
-        tabIndex={hasDetails ? undefined : -1}
-        aria-expanded={hasDetails ? expanded : undefined}
-        className={cn(
-          'border-border/40 bg-muted/30 flex h-auto w-full items-center justify-start gap-2 rounded-none border-b px-3 py-2',
-          !hasDetails && 'pointer-events-none',
-        )}
-      >
-        <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
-        <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-          {isPrune
-            ? tHardcodedUi.raw('i18nComplete.textec5c2f7304b1')
-            : tHardcodedUi.raw('i18nComplete.text01c88f6e4fdd')}
-        </span>
-
-        {/* Stats pills */}
-        <div className="ml-auto flex items-center gap-1.5">
-          {notification.reason && (
-            <Badge variant="muted" size="sm">
-              {DCP_REASON_LABELS[notification.reason] || notification.reason}
-            </Badge>
-          )}
-          {isPrune && notification.prunedCount > 0 && (
-            <Badge variant="warning" size="sm">
-              {notification.prunedCount} {tHardcodedUi.raw('i18nComplete.text0fedead8d392')}
-            </Badge>
-          )}
-          {!isPrune && notification.messagesCount && notification.messagesCount > 0 && (
-            <Badge variant="info" size="sm">
-              {notification.messagesCount} {tHardcodedUi.raw('i18nComplete.text8dc321b9135e')}
-            </Badge>
-          )}
-          {notification.batchSaved > 0 && (
-            <Badge variant="success" size="sm">
-              -{formatDCPTokens(notification.batchSaved)}{' '}
-              {tHardcodedUi.raw('i18nComplete.textc51e455b41df')}
-            </Badge>
-          )}
-          <Badge variant="muted" size="sm">
-            {formatDCPTokens(notification.tokensSaved)}{' '}
-            {tHardcodedUi.raw('i18nComplete.textd81c55f49c5b')}
-          </Badge>
-          {hasDetails && (
-            <ChevronDown
-              className={cn(
-                'text-muted-foreground/50 size-3 transition-transform',
-                expanded && 'rotate-180',
-              )}
-            />
-          )}
-        </div>
-      </Button>
-
-      {/* Expandable details */}
-      {expanded && hasDetails && (
-        <div className="space-y-2 px-3 py-2">
-          {/* Pruned items list */}
-          {hasItems && (
-            <div className="space-y-0.5">
-              {withContentKeys(notification.items, (it) => `${it.tool}:${it.description}`).map(
-                ({ key, item }) => (
-                  <div
-                    key={key}
-                    className="text-muted-foreground/80 flex items-center gap-2 text-xs"
-                  >
-                    <span className="text-muted-foreground/40">
-                      {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
-                    </span>
-                    <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
-                      {item.tool}
-                    </span>
-                    {item.description && (
-                      <span className="max-w-[300px] truncate">{item.description}</span>
-                    )}
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-
-          {/* Compress topic */}
-          {notification.topic && (
-            <div className="text-muted-foreground/80 text-xs">
-              <span className="text-muted-foreground/50">
-                {tHardcodedUi.raw('i18nComplete.textce46f520653b')}
-              </span>{' '}
-              <span>{notification.topic}</span>
-            </div>
-          )}
-
-          {/* Distilled content */}
-          {notification.distilled && (
-            <div className="border-border/30 mt-1.5 border-t pt-1.5">
-              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                {tHardcodedUi.raw('i18nComplete.text8e077406440b')}
-              </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
-                {notification.distilled}
-              </div>
-            </div>
-          )}
-
-          {/* Compress summary */}
-          {notification.summary && (
-            <div className="border-border/30 mt-1.5 border-t pt-1.5">
-              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                {tHardcodedUi.raw('i18nComplete.text8e76a94ac832')}
-              </div>
-              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
-                {notification.summary}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -1233,6 +1080,12 @@ export function UserMessageEditor({
 
 export function UserMessage({
   message,
+  author,
+  showAuthor,
+  headerTrusted,
+  messagingCards = true,
+  viewerEmail,
+  isLastMessage,
   agentNames,
   commandInfo,
   commands,
@@ -1250,6 +1103,22 @@ export function UserMessage({
   pendingText,
 }: {
   message: MessageWithParts;
+  /** Who wrote this message, from the server's prompt record. */
+  author?: SessionMessageAuthor;
+  /** Draw the author's name above the bubble (group chat). */
+  showAuthor?: boolean;
+  /** The server wrote this message's header without a ledger author (an ask's first, `no_reply` prompt). */
+  headerTrusted?: boolean;
+  /**
+   * `human_messaging` is on for the project. Off: no ask / from-session card and
+   * no reply hint, even for a message whose header the ledger confirmed; the
+   * header is stripped and the text draws as a plain bubble. Author labels stay.
+   */
+  messagingCards?: boolean;
+  /** The viewer's email, to tell whether an ask is addressed to them. */
+  viewerEmail?: string;
+  /** No user message came after this one. */
+  isLastMessage?: boolean;
   agentNames?: string[];
   commandInfo?: {
     name: string;
@@ -1299,10 +1168,7 @@ export function UserMessage({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
-  const { attachments, stickyParts } = useMemo(
-    () => splitUserParts(message.parts),
-    [message.parts],
-  );
+  const { stickyParts } = useMemo(() => splitUserParts(message.parts), [message.parts]);
 
   // Extract visible text and file references in original part order. This must
   // keep the source part index because a later native file cannot move ahead
@@ -1313,9 +1179,24 @@ export function UserMessage({
     quotes,
     uploads: uploadedFiles,
   } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
-  const { cleanText: textAfterProjects } = useMemo(
-    () => parseProjectReferences(textAfterFiles),
+  // A message from another session or in a group chat opens with a platform
+  // header for the agent. The card or the author label says it instead.
+  // Anyone can type a header. Only the server's ledger (`author`) or a server
+  // `no_reply` prompt makes it real; without either it stays plain text.
+  // The header line itself is always hidden: it is agent-facing text, and a
+  // typed one claims nothing once it is gone (names come from the ledger).
+  const headerConfirmed = messagingCards && (!!author || !!headerTrusted);
+  const sessionMessage = useMemo(
+    () => (headerConfirmed ? parseSessionMessagePrompt(rawText) : undefined),
+    [rawText, headerConfirmed],
+  );
+  const textWithoutHeader = useMemo(
+    () => parseSessionMessagePrompt(textAfterFiles)?.prompt ?? textAfterFiles,
     [textAfterFiles],
+  );
+  const { cleanText: textAfterProjects } = useMemo(
+    () => parseProjectReferences(textWithoutHeader),
+    [textWithoutHeader],
   );
   const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
     () => parseFileMentionReferences(textAfterProjects),
@@ -1406,7 +1287,8 @@ export function UserMessage({
       const stripped = stripSystemPtyText((p as TextPart).text);
       if (stripped.trim()) lines.push(stripped);
     }
-    return lines.join('\n').trim();
+    const joined = lines.join('\n').trim();
+    return parseSessionMessagePrompt(joined)?.prompt ?? joined;
   }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
@@ -1423,16 +1305,6 @@ export function UserMessage({
 
   // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
   const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
-
-  // Extract DCP notifications from ignored text parts (DCP plugin sends ignored user messages)
-  const ignoredTextParts = stickyParts.filter(
-    (p) => isTextPart(p) && (p as any).ignored && (p as TextPart).text?.trim(),
-  );
-  const ignoredRawText = ignoredTextParts.map((p) => (p as TextPart).text).join('\n');
-  const dcpNotifications = useMemo(() => {
-    if (!ignoredRawText) return [];
-    return parseDCPNotifications(ignoredRawText).notifications;
-  }, [ignoredRawText]);
 
   // Check if any text part was edited
   const isEdited = message.parts.some(
@@ -1676,32 +1548,6 @@ export function UserMessage({
     );
   }
 
-  // If the message is purely notifications (no real user content), render only the cards
-  const hasUserContent = !!(
-    text ||
-    effectiveCommandInfo ||
-    quotes.length > 0 ||
-    uploadedFiles.length > 0 ||
-    sessionRefs.length > 0 ||
-    systemNotifications.length > 0 ||
-    attachments.length > 0
-  );
-
-  if (!hasUserContent && (dcpNotifications.length > 0 || systemNotifications.length > 0)) {
-    return (
-      <div className="flex w-full flex-col gap-1.5">
-        {withContentKeys(systemNotifications, (n) => n.tag).map(({ key, item }) => (
-          <SystemNotificationCard key={key} notification={item} />
-        ))}
-        {withContentKeys(dcpNotifications, (n) => `${n.type}:${n.tokensSaved}`).map(
-          ({ key, item }) => (
-            <DCPNotificationCard key={key} notification={item} />
-          ),
-        )}
-      </div>
-    );
-  }
-
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
     const brandColor = CHANNEL_BRAND_COLOR[channelMessageInfo.platform];
@@ -1725,6 +1571,26 @@ export function UserMessage({
           )}
         </div>
         {actions}
+      </div>
+    );
+  }
+
+  // Another session's message, or an ask: an incoming card on the left.
+  // A session card needs a session author; an ask card any ledger author, or
+  // the server's own `no_reply` ask.
+  if (
+    sessionMessage &&
+    (sessionMessage.type === 'ask'
+      ? true
+      : author?.kind === 'session' || (headerTrusted && sessionMessage.sender.kind === 'session'))
+  ) {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <SessionMessageCard
+          info={sessionMessage}
+          author={author}
+          replyHint={isLastMessage && isAskForViewer(sessionMessage, viewerEmail)}
+        />
       </div>
     );
   }
@@ -1790,21 +1656,12 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
+      {showAuthor && author && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />
       )}
 
-      {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
-      {dcpNotifications.length > 0 && (
-        <div className="mt-1 flex w-full flex-col gap-1.5">
-          {withContentKeys(dcpNotifications, (n) => `${n.type}:${n.tokensSaved}`).map(
-            ({ key, item }) => (
-              <DCPNotificationCard key={key} notification={item} />
-            ),
-          )}
-        </div>
-      )}
       {systemNotifications.length > 0 && (
         <div className="mt-1 flex w-full flex-col gap-1.5">
           {withContentKeys(systemNotifications, (n) => `mixed-${n.tag}`).map(({ key, item }) => (

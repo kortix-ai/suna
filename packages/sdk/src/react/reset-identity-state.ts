@@ -1,5 +1,5 @@
 import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { resetSessionCacheOwnership } from '../browser/session-sync/session-cache-ownership';
@@ -10,7 +10,7 @@ import { resetSessionOpenPrefetches } from './prefetch-session-open';
 import './use-model-store';
 
 registerIdentityReset(() => useSyncStore.getState().reset());
-registerIdentityReset(() => useOpenCodePendingStore.getState().clear());
+registerIdentityReset(() => useRuntimePendingStore.getState().clear());
 registerIdentityReset(() => useSessionWorkingStore.getState().reset());
 registerIdentityReset(() => useDiagnosticsStore.getState().clearAll());
 registerIdentityReset(resetSessionSyncControllers);

@@ -22,6 +22,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
 import { CommitSchema, projectsApp } from '../lib/app';
+import { isGitRefNotFoundError } from '../git/mirror';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString } from '../lib/serializers';
 
@@ -37,7 +38,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files',
     tags: ['files'],
-    summary: 'GET /:projectId/files',
+    summary: 'List files in the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -57,7 +58,7 @@ projectsApp.openapi(
   const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'));
+    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'), { freshOnMiss: true });
   } catch (error) {
     console.warn('[projects] repo file listing unavailable', {
       projectId,
@@ -87,7 +88,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/archive',
     tags: ['files'],
-    summary: 'GET /:projectId/files/archive',
+    summary: 'Download the project repository as an archive',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -150,7 +151,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/search',
     tags: ['files'],
-    summary: 'GET /:projectId/files/search',
+    summary: 'Search files in the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -214,7 +215,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/content',
     tags: ['files'],
-    summary: 'GET /:projectId/files/content',
+    summary: 'Read a file from the project repository',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -253,9 +254,10 @@ projectsApp.openapi(
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   try {
-    const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
+    const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref, { freshOnMiss: true });
     return c.json({ path, ref, content });
   } catch (error) {
+    if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
     // `readRepoFile` converts a `git show` "path does not exist" failure into a
     // typed `RepoFileNotFoundError` (message: `file not found in repository at
     // '<ref>:<path>'`), which the `isMissingGitPathError` regex below does NOT
@@ -278,7 +280,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/files/history',
     tags: ['files'],
-    summary: 'GET /:projectId/files/history',
+    summary: 'List the commit history of a file',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -343,7 +345,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/branches',
     tags: ['files'],
-    summary: 'GET /:projectId/branches',
+    summary: 'List repository branches',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -402,7 +404,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/commits',
     tags: ['files'],
-    summary: 'GET /:projectId/commits',
+    summary: 'List repository commits',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -440,7 +442,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/commits/{sha}',
     tags: ['files'],
-    summary: 'GET /:projectId/commits/:sha',
+    summary: 'Get a repository commit',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sha: z.string() }),
@@ -475,7 +477,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/commits/{sha}/diff',
     tags: ['files'],
-    summary: 'GET /:projectId/commits/:sha/diff',
+    summary: 'Get the diff of a commit',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sha: z.string() }),
@@ -515,7 +517,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/version-diff',
     tags: ['files'],
-    summary: 'GET /:projectId/version-diff',
+    summary: 'Compare two repository versions',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),

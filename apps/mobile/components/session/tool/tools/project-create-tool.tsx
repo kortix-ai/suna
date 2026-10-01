@@ -45,7 +45,4 @@ export function ProjectCreateTool({ part, defaultOpen, forceOpen }: ToolProps) {
     />
   );
 }
-ToolRegistry.register('project_create', ProjectCreateTool);
 ToolRegistry.register('project-create', ProjectCreateTool);
-ToolRegistry.register('oc-project_create', ProjectCreateTool);
-ToolRegistry.register('oc-project-create', ProjectCreateTool);

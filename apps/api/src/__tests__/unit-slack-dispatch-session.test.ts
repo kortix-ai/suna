@@ -23,7 +23,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     sandboxProvider: 'daytona',
     sandboxId: null,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'queued',
     error: null,
@@ -31,10 +31,14 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     visibility: 'project',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -72,10 +76,11 @@ mock.module('../projects/git', () => ({
 // The model and key plan is pinned in unit-channel-model-access; here it only
 // must not touch the FIFO of query results the thread routing is tested with.
 const followUpPlans: Array<Record<string, unknown>> = [];
+let unavailableModel: string | undefined;
 mock.module('../channels/model-access', () => ({
   agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
-  planChannelSessionStart: async () => ({ model: null }),
+  planChannelSessionStart: async () => ({ model: null, unavailableModel }),
   planChannelFollowUp: async (input: Record<string, unknown>) => {
     followUpPlans.push(input);
     return null;
@@ -206,6 +211,7 @@ beforeEach(() => {
   ephemerals = [];
   messages = [];
   createSessionCalls = 0;
+  unavailableModel = undefined;
   createSessionInputs = [];
   deliverCalls = 0;
   setSlackSessionLifecycleForTest({
@@ -364,6 +370,37 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(ephemerals[0]?.user).toBe('Urequester');
     expect(ephemerals[0]?.text).toContain('approve access to this private thread');
   });
+
+  test('an authorized decision (approval, review) resumes a private session without the join gate', async () => {
+    // A manager who is not a participant approved from the card. The decision
+    // was authorized, so the thread's policy must not strand the agent.
+    config.SLACK_REQUIRE_USER_IDENTITY = true;
+    deliverOutcome = 'delivered';
+    dbResults = [
+      [project], // project account lookup
+      [{ userId: 'manager-user' }], // Slack identity exists
+      [{ userId: 'manager-user' }], // account membership hit
+      [{ sessionId: 'sess-private', createdBy: null, metadata: { slack: { conversation_policy: 'owner_approval' } } }],
+    ];
+
+    await spawnAgentTurn(
+      'proj-1',
+      envelope,
+      {
+        type: 'message',
+        channel: 'C1',
+        ts: '141.1',
+        thread_ts: '90.0',
+        user: 'Umanager',
+        text: 'The review "Ship it" was approved.',
+      } as any,
+      { authorizedResume: true },
+    );
+
+    expect(deliverCalls).toBe(1);
+    expect(createSessionCalls).toBe(0);
+    expect(ephemerals).toEqual([]);
+  });
 });
 
 describe('spawnAgentTurn — unauthenticated Slack prompt placement', () => {
@@ -509,6 +546,16 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
 // spin up a session. Exactly one handler wins the claim and creates; the rest
 // join that session as a follow-up.
 describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thread', () => {
+  test('unavailable selection replies once without starting a doomed session', async () => {
+    unavailableModel = 'synthetic/missing-model';
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0);
+    expect(finalizeCalls).toHaveLength(1);
+    expect(finalizeCalls[0]?.error).toContain('synthetic/missing-model');
+    expect(finalizeCalls[0]?.error).toContain('/kortix models');
+  });
+
   test('claim WON, no existing mapping → creates EXACTLY one session, no follow-up', async () => {
     dbResults = [
       [project], // spawnAgentTurn project lookup

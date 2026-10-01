@@ -7,6 +7,12 @@ import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
+// When set, provider.stop waits on it (a provider confirm slower than the budget).
+let stopGate: Promise<void> | null = null;
+let captureGate: Promise<void> | null = null;
+// Per-call errors consumed before the persistent `stopError`. Lets a test
+// script a fail-then-succeed stop without mocking the provider module again.
+let stopErrors: Array<Error | undefined> = [];
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
@@ -75,7 +81,10 @@ mock.module('../../../platform/providers', () => ({
     stop: async (externalId: string) => {
       callOrder.push('provider.stop');
       stopCalls.push(externalId);
-      if (stopError) throw stopError;
+      if (stopGate) await stopGate;
+      const queued = stopErrors.shift();
+      const thrown = queued ?? stopError;
+      if (thrown) throw thrown;
     },
   }),
 }));
@@ -122,6 +131,7 @@ mock.module('../../lib/session-transcript-capture', () => ({
   ) => {
     callOrder.push(`capture:${sessionId}`);
     captureOptions.push(options);
+    if (captureGate) await captureGate;
     return null;
   },
 }));
@@ -139,6 +149,10 @@ beforeEach(() => {
   sandboxRow = null;
   stopCalls = [];
   stopError = null;
+  stopGate = null;
+  captureGate = null;
+  process.env.STOP_SYNC_BUDGET_MS = '5000';
+  stopErrors = [];
   pausedCompute = [];
   cacheInvalidations = [];
   updateCalls = [];
@@ -264,6 +278,8 @@ describe('stopSession', () => {
     const result = await stopSession(baseInput);
 
     expect(result.status).toBe(200);
+    // A benign provider answer is the stop already settling: no retry.
+    expect(stopCalls).toEqual(['ext-1']);
     expect(pausedCompute).toEqual(['sess-1']);
     expect(
       updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
@@ -283,8 +299,117 @@ describe('stopSession', () => {
     const result = await stopSession(baseInput);
 
     expect(result.status).toBe(502);
+    expect(stopCalls).toEqual(['ext-1', 'ext-1']);
     expect(updateCalls).toEqual([]);
     expect(pausedCompute).toEqual([]);
+  });
+
+  // KRTX-520: a degraded platform edge intermittently answers the stop
+  // request with a 502/503/504, and a backlog can leave the box unprocessed
+  // past the 10s confirm window ("last state: running"). Both are transient:
+  // one bounded retry lands the stop instead of handing the user a 502.
+  test('retries a transient provider failure once and commits the stop when the retry lands', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: {},
+    };
+    stopErrors = [
+      new Error('platinum POST /v1/sandboxes/sbx_synth/stop -> 502 <html>edge error page'),
+    ];
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopped' });
+    expect(stopCalls).toEqual(['ext-1', 'ext-1']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+  });
+
+  test('502s when the retry fails too, with the last provider error', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: {},
+    };
+    const edge = new Error(
+      'platinum POST /v1/sandboxes/sbx_synth/stop -> 502 <html>edge error page',
+    );
+    stopErrors = [edge];
+    stopError = new Error(
+      'Platinum stop for sbx_synth did not reach stopped within 10000ms (last state: running)',
+    );
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(502);
+    expect(result.body).toMatchObject({
+      error:
+        'Platinum stop for sbx_synth did not reach stopped within 10000ms (last state: running)',
+    });
+    expect(stopCalls).toEqual(['ext-1', 'ext-1']);
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+  });
+
+  // A provider confirm slower than the request budget must not become the
+  // API's 25 s 503. The route answers `stopping` in time, leaves the row
+  // `active`, and commits the stop when the provider confirms.
+  test('answers `stopping` inside the budget when the provider confirm is slower, then converges', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: {},
+    };
+    process.env.STOP_SYNC_BUDGET_MS = '300';
+    let release!: () => void;
+    stopGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const startedAt = Date.now();
+    const result = await stopSession(baseInput);
+
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopping' });
+    // Nothing is claimed stopped while the provider has not confirmed.
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+
+    release();
+    await Bun.sleep(50);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+  });
+
+  test('a hung transcript tail does not hold the stop past its cap', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: {},
+    };
+    captureGate = new Promise<void>(() => {});
+
+    const startedAt = Date.now();
+    const result = await stopSession(baseInput);
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(result.body).toMatchObject({ status: 'stopped' });
+    expect(stopCalls).toEqual(['ext-1']);
   });
 
   // T11: close the turn before the box loses power.

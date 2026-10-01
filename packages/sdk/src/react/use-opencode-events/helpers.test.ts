@@ -114,6 +114,8 @@ describe('refetchKortixSessionMirrors', () => {
       // only at `'list'` never reached them: `session.created` and title events
       // waited for the next poll (up to 60 s) to show up in the sidebar.
       { queryKey: [...qk.project.sessionsScope('proj_1'), 'list-paged'], type: 'active' },
+      // Expanded parents' children (KRTX-639): a new child shows without a poll.
+      { queryKey: [...qk.project.sessionsScope('proj_1'), 'list-children'], type: 'active' },
     ]);
     const touched = JSON.stringify(calls);
     expect(touched).not.toContain('"turn"');
@@ -144,7 +146,7 @@ describe('refetchKortixSessionMirrors', () => {
 // recreated just because THIS session's runtime switched (`clientsByUrl` is
 // explicitly keyed per url so several session sandboxes can stay connected
 // at once — see `core/runtime/client.ts`'s doc comment on that cache).
-// `resolveClientEvictionUrl` is the pure decision `useOpenCodeEventStream`'s
+// `resolveClientEvictionUrl` is the pure decision `useRuntimeEventStream`'s
 // effect now drives its `dropClientForUrl` call from: WHICH single url (if
 // any) should be evicted, never "all of them".
 describe('resolveClientEvictionUrl', () => {

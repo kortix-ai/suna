@@ -52,8 +52,15 @@ export interface EnqueueContinueSessionCommandInput {
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
+  /** Enqueue HELD — see `enqueueReleasingHold`. Pass `availableAt` with it. */
+  held?: boolean;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
+  /** `actorUserId` is the person who sent this prompt — see
+   *  `QueuedContinueSessionPayload.bindTurnIdentity`. */
+  bindTurnIdentity?: boolean;
+  authorSessionId?: string | null;
+  noReply?: boolean;
 }
 
 /** Build one durable callback row. Exported for transaction-bound outbox writes. */
@@ -73,6 +80,9 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.parts ? { parts: input.parts } : {}),
     ...(input.placement ? { placement: input.placement } : {}),
     ...(input.overrides ? { overrides: input.overrides } : {}),
+    ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
+    ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
+    ...(input.noReply ? { noReply: true } : {}),
   };
   return {
     commandType: 'continue_session',
@@ -84,7 +94,7 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     sessionId: input.sessionId,
     idempotencyKey: input.idempotencyKey ?? null,
     payload: payload as unknown as Record<string, unknown>,
-    result: {},
+    result: input.held ? { held: true } : {},
     availableAt: input.availableAt ?? now,
     updatedAt: now,
   };

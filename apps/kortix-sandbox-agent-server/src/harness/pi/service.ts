@@ -9,14 +9,15 @@ import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
 import { isRepoMaterialized } from '@/lib/git/git'
 import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
-import { createPiAssetsService } from './assets'
+import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'
 import type { PiBootState } from './boot-state'
 import { loadPiEnvironment, requirePiConfig, resolvePiSkillDirectories, type PiConfig } from './config'
+import { createPiConfigReleases, type PiConfigReleases, type PiConfigReleasesOptions } from './config-release'
 import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
 import { createPiQueryService } from './queries'
-import { schedulePiProjectionPush } from './relay'
+import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
 
@@ -24,33 +25,46 @@ export interface PiHarnessService extends HarnessService {
   readonly id: 'pi'
   /** The live runtime; null until `lifecycle.start()` resolved. */
   readonly runtime: () => PiRuntime | null
+  /** What config the runtime reads: a config release, or the working tree while releases are off. */
+  readonly releases: PiConfigReleases
 }
 
 export function createPiHarnessService(
   cfg: PiConfig,
   projectEnv?: ProjectEnvStore,
-  options: HarnessStartupOptions & { hooks?: PiRuntimeHooks; sessionId?: string; env?: NodeJS.ProcessEnv } = {},
+  options: HarnessStartupOptions & {
+    hooks?: PiRuntimeHooks
+    sessionId?: string
+    env?: NodeJS.ProcessEnv
+    releases?: Omit<PiConfigReleasesOptions, 'cfg' | 'env'>
+  } = {},
 ): PiHarnessService {
   const env = options.env ?? process.env
   const sessionId = (options.sessionId ?? env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
-  const runtime = new PiRuntime({ cfg, sessionId, hooks: options.hooks, env })
+  const releases = createPiConfigReleases({ cfg, env, ...options.releases })
+  const runtime = new PiRuntime({ cfg, sessionId, hooks: options.hooks, env, releases })
   let started = false
   const live = () => (started ? runtime : null)
+  registerPiSkillReload(async () => live()?.reloadSkills())
   const surface = createPiSurface(live)
-  const pushProjection = (reason: string) =>
-    schedulePiProjectionPush(() => {
-      const rt = live()
-      if (!rt) return null
-      const doc = rt.stateDoc()
-      return { doc, etag: rt.stateEtag(doc) }
-    }, reason)
+  registerRuntimeStateReader(async () => {
+    const rt = live()
+    if (!rt) return null
+    const doc = rt.stateDoc()
+    return { doc, etag: rt.stateEtag(doc) }
+  })
+  const pushProjection = scheduleRuntimeProjectionPush
 
   return {
     id: 'pi',
     runtime: live,
+    releases,
     environment: { home: homedir() },
     lifecycle: {
       async start() {
+        // What the runtime reads is chosen before it starts. `runPi` begins this
+        // beside the repository checkout; here it is joined, or run.
+        await releases.boot(options.onStartupMark)
         await runtime.start()
         started = true
         options.onStartupMark?.('pi-ready')
@@ -80,19 +94,19 @@ export function createPiHarnessService(
         if (current.autoClone && !(await isRepoMaterialized(current.projectTarget))) return notReady('repo_not_materialized', { reason: 'repo_not_materialized' })
         if (state.workspaceReady === false) return notReady('workspace_not_ready', { reason: 'workspace_not_ready' })
         if (state.initialOpenCodeSessionError) {
-          return notReady('initial_session_failed', { reason: 'initial_opencode_session_failed', message: state.initialOpenCodeSessionError })
+          return notReady('initial_session_failed', { reason: 'initial_runtime_session_failed', message: state.initialOpenCodeSessionError })
         }
         if (state.initialOpenCodeSessionRequired && !state.initialOpenCodeSessionId) {
-          return notReady('initial_session_pending', { reason: 'initial_opencode_session_pending' })
+          return notReady('initial_session_pending', { reason: 'initial_runtime_session_pending' })
         }
         if (runtime.getState() !== 'ok' || !started) return notReady('pi_not_ready', { reason: 'pi_not_ready', opencode: runtime.getState() })
         return { ready: true }
       },
       forward: (input) => surface.handle(input),
     },
-    control: createPiControlService(live, () => pushProjection('kortix-env-applied')),
-    diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError),
-    queries: createPiQueryService(live, surface),
+    control: createPiControlService(live, releases, () => pushProjection('kortix-env-applied')),
+    diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError, releases),
+    queries: createPiQueryService(live),
     background: { start: (currentCfg) => startPiBackground(live, currentCfg) },
     assets: createPiAssetsService(),
   }
@@ -110,7 +124,7 @@ export const piDefinition: HarnessDefinition = {
   createBootState: (): PiBootState => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1',
+    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1',
     initialOpenCodeSessionId: null,
     initialOpenCodeSessionError: null,
   }),

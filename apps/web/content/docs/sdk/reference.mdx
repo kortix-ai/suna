@@ -141,6 +141,24 @@ caller with project-manager permissions. It adds accessible unavailable, warm, a
 ownership and runtime-state metadata. Both list scopes omit every session the
 caller cannot open.
 
+`sessions.list` and `sessions.listPage` also take the hierarchy and attribution
+filters. Without them the list stays flat and unchanged.
+
+| option | what |
+| --- | --- |
+| `parent: 'root'` | Top-level sessions only. Each row carries `child_count`. |
+| `parent: '<sessionId>'` | That session's children, newest first. |
+| `startedBy: 'me' \| 'others' \| 'automated'` | Filter by `initiator`, relative to the caller. |
+| `participant: 'me'` | Conversations the caller was asked into (`human_messaging`), at any depth. |
+| `q` | Case-insensitive search over title, starter label, trigger slug, and session id prefix, across every session the caller may open. With `parent: 'root'`, a root that matched through a child has `search_match: 'child'`. |
+
+Every session row has `parent_session_id` and `initiator`
+(`{ type: 'member' | 'trigger' | 'channel' | 'api' | 'system', id, label }`).
+`initiator` names who started the whole run; a child copies its parent's.
+`sessionParentId(session)` reads `parent_session_id`, then the legacy
+`metadata.spawned_by_session`. A cursor is valid only for the filter set that
+issued it.
+
 ### GitHub — `kortix.github`
 
 Account-scoped GitHub App install and repo linking, not project-scoped.
@@ -741,14 +759,14 @@ import {
   flattenModels,
   modelInDefaultView,
   pickerProviderList,
-  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
   resolveComposerAgent,
   resolveComposerModel,
   resolveModelDefault,
 } from '@kortix/sdk';
 
 // Agents: the roster, the picker list, and the agent the send carries.
-const roster = projectConfigAgentsToOpenCodeAgents(detail.config);
+const roster = projectConfigAgentsToRuntimeAgents(detail.config);
 const pickerAgents = composerSelectableAgents(roster, { enableProjects: false });
 const agent = resolveComposerAgent({
   agents: roster,

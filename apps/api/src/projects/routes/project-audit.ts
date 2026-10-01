@@ -3,6 +3,7 @@
  * endpoint, and the per-session reconstruction timeline.
  */
 
+import { auditCredentialNames } from '../../shared/audit-credential-names';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountTokens,
@@ -240,6 +241,7 @@ projectsApp.openapi(
         actor_type: AuditActorTypeSchema.optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
         outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
         request_id: z.string().optional(),
@@ -291,6 +293,7 @@ projectsApp.openapi(
       projectId,
       sessionId: c.req.query('session_id')?.trim() || null,
       source: c.req.query('source')?.trim() || null,
+      credentialKind: c.req.query('credential_kind')?.trim() || null,
       phase: c.req.query('phase')?.trim() || null,
       outcome: c.req.query('outcome')?.trim() || null,
       requestId: c.req.query('request_id')?.trim() || null,
@@ -317,8 +320,9 @@ projectsApp.openapi(
     const hasMore = fetched.length > limit;
     const rows = hasMore ? fetched.slice(0, limit) : fetched;
     const last = rows.at(-1);
+    const names = await auditCredentialNames(rows);
     return c.json({
-      events: rows.map(serializeAuditEvent),
+      events: rows.map((row) => serializeAuditEvent(row, names)),
       next_cursor: hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null,
     });
   },
@@ -360,7 +364,7 @@ projectsApp.openapi(
     const [scope] = await db
       .select({
         sessionId: sessionSandboxes.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
         agentName: projectSessions.agentName,
         createdBy: projectSessions.createdBy,
         origin: projectSessions.origin,
@@ -574,7 +578,7 @@ projectsApp.openapi(
             projectId,
             sessionId,
             remaining_ms: remainingIngestBudgetMs(c),
-            chunk_budget_ms: AUDIT_INGEST_CHUNK_BUDGET_MS,
+            chunk_budget_ms: remainingMs === null ? null : remainingMs - 1_000,
             accepted: parsed.accepted,
             attempted,
             inserted: insertedCount,
@@ -624,8 +628,14 @@ projectsApp.openapi(
         // at the top of the loop caps every further attempt the same way, so
         // the request still answers inside its deadline; past the floor, give
         // up as before.
-        if (chunkSize > AUDIT_INGEST_MIN_CHUNK) {
-          chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunkSize / 2));
+        // Halve the rows this statement actually carried, not the chunk
+        // ceiling. A 3-row batch under a 200-row ceiling used to re-send the
+        // same 3 rows at "100" and "50" — byte-identical statements that each
+        // held an audit-pool backend for the full statement timeout (prod
+        // 2026-10-01: ~20 s per 503, two of the pool's backends' worth of
+        // time, for rows no smaller statement could change).
+        if (chunk.length > AUDIT_INGEST_MIN_CHUNK) {
+          chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunk.length / 2));
           fallbacks += 1;
           continue;
         }
@@ -694,7 +704,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}/audit',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/audit',
+    summary: 'List audit events of a session',
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -810,6 +820,7 @@ projectsApp.openapi(
     // `approval_url` rule as before — now shared with the session-open
     // bundle's `audit` leg (`../lib/session-audit-read.ts`) so the two can
     // never disagree about what is pending.
+    const names = await auditCredentialNames(eventRows);
     const auditActions = await readSessionAuditActions({
       projectId,
       sessionId,
@@ -829,7 +840,7 @@ projectsApp.openapi(
       // entitled caller (0 whenever `include_events=false`, which is every
       // poll), the PENDING-ACTIONS count otherwise.
       count: audited ? eventRows.length : auditActions.count,
-      events: eventRows.map(serializeAuditEvent),
+      events: eventRows.map((row) => serializeAuditEvent(row, names)),
       next_cursor:
         hasMoreEvents && lastEvent?.sessionSequence != null
           ? `${lastEvent.sessionSequence}|${lastEvent.eventId}`

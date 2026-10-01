@@ -1,30 +1,16 @@
 /**
  * The `/kortix/opencode/*` namespace for a pi session: state, transcript pages,
- * the sequenced event stream, actions and attachment bytes. Same shapes as the
- * OpenCode adapter serves — the web client is not namespace-parameterized.
+ * the sequenced event stream and attachment bytes. Same shapes as the OpenCode
+ * adapter serves — the web client is not namespace-parameterized.
  */
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
-import type {
-  HarnessActionResult,
-  HarnessAttachmentService,
-  HarnessQueryFactory,
-  HarnessQueryService,
-  HarnessReadResult,
-} from '../contract/queries'
+import type { HarnessAttachmentService, HarnessQueryFactory, HarnessQueryService } from '../contract/queries'
 import type { PiRuntime } from './runtime'
-import type { PiSurface } from './surface'
 
-export const PI_EVENT_RECOVERY = ['GET /kortix/opencode/state', 'GET /kortix/opencode/messages/:sessionId?limit=20'] as const
+export const PI_EVENT_RECOVERY = ['GET /kortix/runtime/state', 'GET /kortix/runtime/messages/:sessionId?limit=20'] as const
 
 const TOOL_OUTPUT_MAX_BYTES = 64 * 1024
-
-/** Read one raw-surface route into the namespaced read shape. */
-async function readThrough(surface: PiSurface, path: string, search = ''): Promise<HarnessReadResult> {
-  const result = await surface.handle({ method: 'GET', path, search, headers: new Headers() })
-  const text = typeof result.body === 'string' ? result.body : result.body ? await new Response(result.body).text() : ''
-  return { ok: true, upstreamStatus: result.status, contentType: result.headers.get('content-type') ?? 'application/json', text }
-}
 
 function decodeDataUrl(url: string): { mime: string; bytes: Uint8Array } | null {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(url)
@@ -32,7 +18,7 @@ function decodeDataUrl(url: string): { mime: string; bytes: Uint8Array } | null 
   return { mime: match[1]!, bytes: new Uint8Array(Buffer.from(match[2]!, 'base64')) }
 }
 
-export function createPiQueryService(runtime: () => PiRuntime | null, surface: PiSurface): HarnessQueryFactory {
+export function createPiQueryService(runtime: () => PiRuntime | null): HarnessQueryFactory {
   const attachments: HarnessAttachmentService = {
     async read({ messageId, partId }) {
       const rt = runtime()
@@ -47,7 +33,6 @@ export function createPiQueryService(runtime: () => PiRuntime | null, surface: P
 
   return {
     bind(): HarnessQueryService {
-      const notReady = (): HarnessActionResult => ({ ok: false, reason: 'no-session', body: { ok: false, error: 'pi runtime is not started' } })
       return {
         async readState() {
           const rt = runtime()
@@ -114,61 +99,6 @@ export function createPiQueryService(runtime: () => PiRuntime | null, surface: P
               tool_outputs_truncated: truncated,
               messages,
             },
-          }
-        },
-        readVcsDiff: () => readThrough(surface, '/vcs/diff'),
-        readCurrentProject: () => readThrough(surface, '/project/current'),
-        readConfiguration: () => readThrough(surface, '/config'),
-        readSession: (sessionId) => readThrough(surface, `/session/${encodeURIComponent(sessionId)}`),
-        readTodo: (sessionId) => readThrough(surface, `/session/${encodeURIComponent(sessionId)}/todo`),
-        pinnedSessionId: () => runtime()?.rootId ?? null,
-        async replyPermission({ id, reply }) {
-          const rt = runtime()
-          if (!rt) return notReady()
-          return rt.permissions.reply(id, reply)
-            ? { ok: true, body: { ok: true } }
-            : { ok: false, reason: 'not-found', body: { ok: false, error: 'permission request not found' } }
-        },
-        async replyQuestion({ id, answers }) {
-          const rt = runtime()
-          if (!rt) return notReady()
-          return rt.questions.reply(id, answers as string[][])
-            ? { ok: true, body: { ok: true } }
-            : { ok: false, reason: 'not-found', body: { ok: false, error: 'question request not found' } }
-        },
-        async rejectQuestion({ id }) {
-          const rt = runtime()
-          if (!rt) return notReady()
-          return rt.questions.reject(id)
-            ? { ok: true, body: { ok: true } }
-            : { ok: false, reason: 'not-found', body: { ok: false, error: 'question request not found' } }
-        },
-        async stopSession() {
-          const rt = runtime()
-          if (!rt) return notReady()
-          await rt.abort()
-          return { ok: true, body: { ok: true, opencode_session_id: rt.rootId } }
-        },
-        async revertSession() {
-          return { ok: false, reason: 'upstream', body: { ok: false, error: 'session rewind is not supported by the pi harness', code: 'feature_not_supported' } }
-        },
-        async unrevertSession() {
-          return { ok: false, reason: 'upstream', body: { ok: false, error: 'session rewind is not supported by the pi harness', code: 'feature_not_supported' } }
-        },
-        async observeTurn({ messageId, sessionId }) {
-          const rt = runtime()
-          const t0 = performance.now()
-          const probe = rt && (!sessionId || sessionId === rt.rootId) ? rt.turnProbe(messageId) : null
-          return {
-            body: {
-              message_id: messageId,
-              opencode_session_id: rt?.rootId ?? sessionId ?? null,
-              in_flight: probe ? probe.inFlight : null,
-              end: probe ? probe.end : null,
-              orphaned_prompt: probe?.orphanedPrompt ?? false,
-              seq: kortixEventBus().headSeq,
-            },
-            readMs: performance.now() - t0,
           }
         },
         events: {

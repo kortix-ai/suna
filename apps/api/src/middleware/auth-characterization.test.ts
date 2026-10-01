@@ -39,7 +39,9 @@ mock.module('../oauth/access-token', () => ({
 mock.module('../shared/jwt-verify', () => ({
   verifySupabaseJwt: async (token: string) => token === 'jwt-valid'
     ? { ok: true, userId: 'user-1', email: 'user@example.test', payload: {} }
-    : { ok: false, reason: 'invalid-signature' },
+    : token === 'jwt-aal2'
+      ? { ok: true, userId: 'user-1', email: 'user@example.test', payload: { aal: 'aal2' } }
+      : { ok: false, reason: 'invalid-signature' },
   decodeSupabaseJwtPayload: () => null,
 }));
 mock.module('../shared/preview-ownership', () => ({ ...ownership, canAccessPreviewSandbox: async () => true }));
@@ -60,6 +62,7 @@ function appFor(auth: typeof supabaseAuth) {
     authType: c.get('authType' as never) ?? null,
     tokenProjectId: c.get('tokenProjectId' as never) ?? null,
   }));
+  app.get('/v1/mfa', (c) => c.json({ mfaAal: c.get('mfaAal' as never) ?? null }));
   app.get('/v1/p/sandbox-1/8000/view', (c) => c.json({
     userId: c.get('userId' as never) ?? null,
     accountId: c.get('accountId' as never) ?? null,
@@ -84,6 +87,15 @@ describe('auth principal characterization', () => {
         expect(await response.json()).toEqual(expected);
       });
     }
+    // MFA gates (`mfaGateBlocks`, the IAM actor) read the token's assurance
+    // level. combinedAuth dropped it on the local path, so an account that
+    // requires MFA refused an aal2 session there: Teams and Slack `/bind`
+    // asked for the code again after every step-up (2026-10-01).
+    test(`${name} records the verified token's MFA level`, async () => {
+      const response = await appFor(auth).request('/v1/mfa', { headers: { Authorization: 'Bearer jwt-aal2' } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ mfaAal: 'aal2' });
+    });
     test(`${name} rejects missing and malformed credentials`, async () => {
       for (const headers of [{}, { Authorization: 'Bearer ' }, { Authorization: 'Bearer kortix_pat_invalid' }, { Authorization: 'Bearer jwt-invalid' }] as Record<string, string>[]) {
         const response = await appFor(auth).request('/v1/projects/project-1', { headers });

@@ -1,3 +1,4 @@
+import '@/features/session/tool/tools/register';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ToolPart } from '@/ui';

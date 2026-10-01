@@ -7,21 +7,15 @@
  * - body: the paths → `InlineFileList` in a `ToolResultCard` (tap opens the
  *   file); a settled search with no paths → "No matching files found"; any
  *   other output → `ToolOutputFallback`.
- *
- * `GlobGrepExpandedContent` below is the previous mobile renderer, still
- * imported by `tool-part-renderer.tsx`'s legacy switch.
  */
 
 import { useCallback, useMemo } from 'react';
 import { View } from 'react-native';
-import { stripAnsi } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { MagnifyingGlassIcon } from '@/lib/icons';
-import type { ToolPart } from '@/lib/opencode/types';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { SEARCH_TEXT, globTrigger, searchBodyKind } from '@/lib/session/tools/files-search';
 import { toDisplayPath } from '@/lib/session/turn-body';
-import { THEME, withAlpha } from '@/lib/utils/theme';
 import { InlineFileList } from '../shared/file-list';
 import {
   BasicTool,
@@ -35,7 +29,6 @@ import {
   useToolNavigation,
   useToolRowVariant,
 } from '../shared/infrastructure';
-import { MonoBlock } from '../shared/output-block';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, fg, monoFont, muted, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
@@ -104,64 +97,3 @@ export function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('glob', GlobTool);
-
-// ─── Legacy (tool-part-renderer.tsx switch) ──────────────────────────────────
-
-export function GlobGrepExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const output = useMemo(() => {
-    if (tool.state.status === 'completed' && 'output' in tool.state && tool.state.output) {
-      return stripAnsi(tool.state.output).trim();
-    }
-    return undefined;
-  }, [tool.state]);
-
-  if (!output) return null;
-
-  const lines = output.split('\n').filter(Boolean);
-  const isPathList = lines.length > 0 && lines.slice(0, 5).every((l) => l.includes('/') || l.includes('.'));
-
-  if (isPathList) {
-    return (
-      <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}>
-        {lines.slice(0, 30).map((line, i) => {
-          const parts = line.split('/');
-          const filename = parts[parts.length - 1] || line;
-          const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
-          return (
-            <View
-              key={i}
-              style={{
-                flexDirection: 'row',
-                paddingVertical: 4,
-                borderBottomWidth: i < Math.min(lines.length, 30) - 1 ? 1 : 0,
-                borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02),
-              }}
-            >
-              <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: monoFont, color: fg(isDark) }}>
-                {filename}
-              </Text>
-              {!!dir && (
-                <Text numberOfLines={1} style={{ fontSize: 11, fontFamily: monoFont, color: muted(isDark), marginLeft: 6, flex: 1 }}>
-                  {dir}
-                </Text>
-              )}
-            </View>
-          );
-        })}
-        {lines.length > 30 && (
-          <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: muted(isDark), marginTop: 6 }}>
-            +{lines.length - 30} more
-          </Text>
-        )}
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 10, maxHeight: 250 }}>
-      <MonoBlock isDark={isDark} maxLines={30}>
-        {output.length > 3000 ? output.slice(0, 3000) + '\n...' : output}
-      </MonoBlock>
-    </View>
-  );
-}

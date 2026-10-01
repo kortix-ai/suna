@@ -14,14 +14,16 @@ import {
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isAgentPrincipalActor } from '../../iam/actor';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
 import { projectSessions } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { SessionUpdateInputSchema } from '@kortix/api-contract';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
-import { AnyObject, OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
+import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
   hasOwn,
   normalizeString,
@@ -37,6 +39,9 @@ import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bin
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { sessionMessagePromptText } from '@kortix/shared';
+import { conversationName, resolveSessionParticipants, sessionMessageSender } from '../lib/session-participants';
+import { notifySessionEvent } from '../../notifications/session-push';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -44,7 +49,7 @@ import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
-import { loadProjectSessionInventory } from '../lib/session-list';
+import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
 import {
   PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS,
@@ -69,7 +74,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions',
+    summary: 'Create a session (start an agent task)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -109,6 +114,26 @@ projectsApp.openapi(
           PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
         )
       : false;
+  // A conversation with people: refused up front when the flag is off, before
+  // any agent check can answer with an unrelated error.
+  if (body.participants !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
+    if (gate) return gate;
+    // An ask from a session runs the asking session's own agent. An agent may
+    // always start its own kind (agent_principal delegation), and a project
+    // whose manifest names no default agent left nothing to resolve: dev
+    // 2026-10-01, `kortix send <email>` → "An agent session must name the
+    // agent it starts".
+    const askingSessionId = callerKortixSessionId(c);
+    if (askingSessionId && !normalizeString(body.agent_name ?? body.agentName)) {
+      const [asking] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, askingSessionId), eq(projectSessions.projectId, projectId)))
+        .limit(1);
+      if (asking?.agentName) body.agent_name = asking.agentName;
+    }
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
@@ -169,9 +194,69 @@ projectsApp.openapi(
       400,
     );
   }
+  // A conversation with people: the first message goes to them, not to the
+  // agent. See lib/session-participants.ts.
+  let participantMetadata: Record<string, unknown> | undefined;
+  let askIdempotencyKey: string | null = null;
+  if (body.participants !== undefined) {
+    const pending = body.pending_prompt as Record<string, unknown> | undefined;
+    // The ask header lives in the text; parts (files) would replace it.
+    if (Array.isArray(pending?.parts) && pending.parts.length > 0) {
+      return c.json({ error: 'A message to people is text only: drop pending_prompt.parts', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const question =
+      normalizeString(body.initial_prompt) ?? normalizeString(body.initialPrompt) ?? normalizeString(pending?.text);
+    if (!question) {
+      return c.json({ error: 'participants needs initial_prompt: the message to send them', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const resolved = await resolveSessionParticipants(loaded.row.accountId, projectId, body.participants, {
+      name: normalizeString(body.agent_name) ?? agentAccess.agentName ?? null,
+    });
+    if ('error' in resolved) return c.json({ error: resolved.error, code: resolved.code }, resolved.status);
+    const sender = await sessionMessageSender(loaded.userId, callerKortixSessionId(c), projectId);
+    body.pending_prompt = {
+      ...(pending ?? {}),
+      text: sessionMessagePromptText({
+        type: 'ask',
+        sender,
+        to: resolved.people.map(({ name, email }) => ({ name, email })),
+        prompt: question,
+      }),
+    };
+    // Both spellings: either one would boot the sandbox with an agent turn.
+    delete body.initial_prompt;
+    delete body.initialPrompt;
+    delete body.participants;
+    // The question names the conversation; the header never becomes a title.
+    body.name ??= conversationName(question);
+    const participantIds = resolved.people.map((p) => p.userId);
+    participantMetadata = {
+      participants: participantIds,
+      awaiting_reply_from: participantIds,
+      awaiting_reply: true,
+      // Who asked, as the people see it: the asking session for an agent's
+      // ask (its owner's name read as "a message from yourself"), else the person.
+      asked_by: sender.kind === 'session'
+        ? { kind: 'session', session_id: sender.sessionId, name: sender.title }
+        : { kind: 'person', name: sender.name, email: sender.email },
+    };
+    // An agent that re-runs `kortix send` after a timeout must not open a
+    // second conversation and notify the same people twice. Without a
+    // caller key, the same sender + people + question within the hour is the
+    // same ask. A deliberate follow-up minutes later is a new one.
+    // ponytail: 2-minute bucket, a retry across the boundary duplicates.
+    askIdempotencyKey = `ask:${createHash('sha256').update(JSON.stringify([
+      callerKortixSessionId(c) ?? loaded.userId,
+      projectId,
+      [...(participantMetadata.participants as string[])].sort(),
+      question,
+      Math.floor(Date.now() / 120_000),
+    ])).digest('hex')}`;
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
+    ...(participantMetadata ? { metadata: participantMetadata, visibility: 'restricted' as const } : {}),
     userId: loaded.userId,
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
@@ -185,10 +270,19 @@ projectsApp.openapi(
     inSession: isProjectSessionPrincipal(c),
     callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
-    idempotencyKey,
+    idempotencyKey: idempotencyKey ?? askIdempotencyKey,
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (participantMetadata && result.sessionId && !result.deduped) {
+    void notifySessionEvent({
+      type: 'question',
+      sessionId: result.sessionId,
+      projectId,
+      question: String(body.name ?? ''),
+      recipients: participantMetadata.participants as string[],
+    });
+  }
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
@@ -221,6 +315,7 @@ projectsApp.openapi(
     runtime_context: 'INVALID_SESSION_RUNTIME_CONTEXT',
     connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
     secrets: 'INVALID_SESSION_SECRETS',
+    participants: 'INVALID_PARTICIPANTS',
   };
   const issues: Array<{ path?: Array<string | number>; message?: string }> =
     result.error?.issues ?? [];
@@ -228,7 +323,9 @@ projectsApp.openapi(
   if (coded.length === 0) return;
   return c.json(
     {
-      error: coded.map((issue) => issue.message).join('; '),
+      error: coded[0]!.path![0] === 'participants'
+        ? 'participants must be 1-20 email addresses'
+        : coded.map((issue) => issue.message).join('; '),
       code: codes[String(coded[0]!.path![0])],
     },
     400,
@@ -243,7 +340,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions',
+    summary: 'List sessions of a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -254,6 +351,18 @@ projectsApp.openapi(
           // how a caller walks it.
           limit: z.coerce.number().int().min(1).max(SESSION_PAGE_MAX_LIMIT).optional(),
           cursor: z.string().optional(),
+          // `root` = top-level sessions only (each row carries `child_count`);
+          // a session id = that session's children. Absent = the flat list.
+          parent: z.string().min(1).max(128).optional(),
+          started_by: z.enum(['me', 'others', 'automated']).optional(),
+          // Server-side search over every session the viewer may see.
+          q: z.string().trim().min(1).max(200).optional(),
+          // Repeatable; a session must carry every given label. Exact match.
+          label: z
+            .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
+            .optional(),
+          // `me` = conversations the viewer was asked into, at any depth.
+          participant: z.enum(['me']).optional(),
         }),
       },
     responses: {
@@ -282,6 +391,13 @@ projectsApp.openapi(
     orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
+    filter: {
+      parent: query.parent ?? null,
+      startedBy: query.started_by ?? null,
+      q: query.q ?? null,
+      labels: query.label === undefined ? null : [query.label].flat(),
+      participant: query.participant ?? null,
+    },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
@@ -300,7 +416,8 @@ projectsApp.openapi(
   const body = inventory.items.map((item) => {
     const row = item.row;
     const owner = row.createdBy ? inventory.ownerIdentities.get(row.createdBy) : null;
-    return serializeSession(row, {
+    const serialized = serializeSession(row, {
+      initiatorName: row.initiatorId ? (inventory.initiatorNames.get(row.initiatorId) ?? null) : null,
       grants: inventory.grantsBySession.get(row.sessionId) ?? [],
       viewerId: loaded.userId,
       canManageProject: inventory.canManageProject,
@@ -318,6 +435,12 @@ projectsApp.openapi(
       // single-session read below still returns metadata whole.
       trimListMetadata: true,
     });
+    if (query.parent !== 'root') return serialized;
+    return {
+      ...serialized,
+      child_count: inventory.childCounts.get(row.sessionId) ?? 0,
+      ...(query.q ? { search_match: sessionRowMatchesSearch(row, query.q, [owner?.email, owner?.name].filter((v): v is string => Boolean(v))) ? 'self' : 'child' } : {}),
+    };
   });
 
   // The sidebar re-fetches this list several times per session open (six in the
@@ -349,7 +472,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId',
+    summary: 'Get a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -384,7 +507,17 @@ projectsApp.openapi(
   const owner = visible.row.createdBy
     ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
     : undefined;
+  // The people of a conversation, so the header can name who is in it.
+  const participantIds = Array.isArray(visible.row.metadata?.participants)
+    ? (visible.row.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const participantIdentities = await resolveSessionOwnerIdentities(participantIds, loaded.row.accountId);
   return c.json(serializeSession(visible.row, {
+    participants: participantIds.map((id) => ({
+      user_id: id,
+      name: participantIdentities.get(id)?.name ?? null,
+      email: participantIdentities.get(id)?.email ?? null,
+    })),
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
@@ -401,11 +534,16 @@ projectsApp.openapi(
     method: 'put',
     path: '/{projectId}/sessions/{sessionId}/sharing',
     tags: ['sessions'],
-    summary: 'PUT /:projectId/sessions/:sessionId/sharing',
+    summary: 'Set who can see a session',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            mode: z.enum(['project,private,members']).openapi({ description: 'project: everyone in the project. private: owner only. members: the listed members and groups.' }),
+            ownerId: z.string().optional().openapi({ description: 'For mode private: the owner user id. Defaults to the caller.' }),
+            memberIds: z.array(z.string()).optional().openapi({ description: 'For mode members: user ids.' }),
+            groupIds: z.array(z.string()).optional().openapi({ description: 'For mode members: group ids.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'OK'),
@@ -534,11 +672,15 @@ projectsApp.openapi(
     method: 'patch',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'PATCH /:projectId/sessions/:sessionId',
+    summary: 'Rename a session or merge metadata into it',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
+            labels: z.array(z.string()).optional().openapi({ description: 'Replaces the session labels. Each is trimmed, 1..64 characters; at most 20; duplicates drop. [] clears them.' }),
+            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata; a null value removes that key. Server-managed keys are rejected. At most 16,384 characters of JSON.' }),
+          }) } } },
       },
     responses: {
         200: json(SessionSchema, 'The updated session'),
@@ -570,10 +712,15 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata'];
+  const allowedFields = ['name', 'labels', 'metadata'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
+  }
+  const parsed = SessionUpdateInputSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    return c.json({ error: `${issue.path.join('.') || 'body'}: ${issue.message}` }, 400);
   }
 
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
@@ -622,18 +769,24 @@ projectsApp.openapi(
   const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
 
+  if (parsed.data.labels) updates.labels = parsed.data.labels;
+
   if (hasNameField || metadata) {
     // Merge in SQL, never write back the whole object read above: the read and
     // this UPDATE are not atomic, and the first-prompt title generator commits
     // `metadata.name` between them. A read-modify-write here would drop that
     // committed title (or another writer's keys) for a session with no later
     // prompt to re-trigger titling. `||` evaluates after the row lock.
-    const patch: Record<string, unknown> = { ...(metadata ?? {}) };
-    // null (not a deleted key) is the clear signal every reader already treats
-    // as absent: `serializeSession` reads it as no override, `needsTitle` and
-    // the CAS read `metadata->>'custom_name'` as NULL.
+    // A null client value removes that key (JSON merge patch). custom_name
+    // keeps its explicit null: every reader already treats it as no override.
+    const patch: Record<string, unknown> = {};
+    const removed: string[] = [];
+    for (const [key, value] of Object.entries(metadata ?? {})) {
+      if (value === null) removed.push(key);
+      else patch[key] = value;
+    }
     if (hasNameField) patch.custom_name = name || null;
-    updates.metadata = projectSessionMetadataMerge(patch) as unknown as typeof updates.metadata;
+    updates.metadata = sql`(${projectSessionMetadataMerge(patch)}) - array(select jsonb_array_elements_text(${JSON.stringify(removed)}::jsonb))` as unknown as typeof updates.metadata;
   }
 
   const [row] = await db
@@ -669,7 +822,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/sessions/{sessionId}',
     tags: ['sessions'],
-    summary: 'DELETE /:projectId/sessions/:sessionId',
+    summary: 'Delete a session (soft delete; its branch is kept)',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),

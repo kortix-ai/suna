@@ -23,14 +23,18 @@ const { forwardsClientEncoding } = await import('./routes/preview');
 
 describe('forwardsClientEncoding', () => {
   test('the daemon runtime namespace on port 8000 forwards the client negotiation', () => {
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/state')).toBe(true);
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/messages/ses_abc')).toBe(true);
+    // The same namespace on a daemon built before W3.
     expect(forwardsClientEncoding(8000, '/kortix/opencode/state')).toBe(true);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/messages/ses_abc')).toBe(true);
-    expect(forwardsClientEncoding(8000, '/kortix/opencode/turn/msg_1')).toBe(true);
   });
 
   test('the SSE route is NEVER exempted, even inside the namespace', () => {
     // A gzip stream buffers until a deflate block fills. That is the same
     // defect as buffering the proxy itself, wearing a compression hat.
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/events')).toBe(false);
+    expect(forwardsClientEncoding(8000, '/kortix/runtime/events?since=41')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/events')).toBe(false);
     expect(forwardsClientEncoding(8000, '/kortix/opencode/events?since=41')).toBe(false);
   });

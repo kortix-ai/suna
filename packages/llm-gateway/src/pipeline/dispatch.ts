@@ -9,7 +9,7 @@ import { ClientAbortError, UpstreamHttpError, isUnknownParameterRejection } from
 import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
-import { clampRetryAfterSeconds } from './error-response';
+import { clampRetryAfterSeconds, providerClientErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
 import { publicUpstreamError, shownModel, shownProvider } from './public-identity';
 
@@ -148,7 +148,7 @@ export function withUpstreamHeadersTimeout(
 
 /** The provider's own error, relayed with its status and a `retry-after` when it sent one. */
 export function rawProviderError(error: UpstreamHttpError): Response {
-  return new Response(error.body || JSON.stringify({ error: { message: error.message } }), {
+  return new Response(providerClientErrorBody(error.status, error.body || JSON.stringify({ error: { message: error.message } })), {
     status: error.status,
     headers: {
       'content-type': 'application/json',

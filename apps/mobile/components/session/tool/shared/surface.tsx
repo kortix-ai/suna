@@ -3,7 +3,7 @@
  *
  * Mirrors apps/web `tool/shared/surface.tsx` + `ToolOutputCard` /
  * `ToolResultCard`:
- * - `ToolRowVariantContext` — a row inside a chain of thought (`activity-step`)
+ * - `ToolRowVariantContext` — a row inside a chain of thought
  *   uses `gap-3`, `text-sm leading-[1.5]`, and a 1.75rem card indent; every
  *   other surface keeps `gap-1.5` and 1.375rem. One context carries the gap
  *   and the indent together so they cannot drift apart (web `--tool-indent`).

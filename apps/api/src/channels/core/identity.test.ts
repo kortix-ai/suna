@@ -66,10 +66,12 @@ describe('resolveChatActor', () => {
     expect(await resolveChatActor(chatUser('slack', 'T1', 'U1'), project)).toEqual({ reason: 'not_member' });
   });
 
-  test('linked member with the action → the Kortix userId; the default action is project.write', async () => {
+  // The web's bar for starting and prompting a session. `project.write` (the
+  // old default) is manager-only, so plain members could not use chat at all.
+  test('linked member with the action → the Kortix userId; the default action is project.session.start', async () => {
     dbResults = [[{ userId: 'u1' }], [{ userId: 'u1' }]];
     expect(await resolveChatActor(chatUser('slack', 'T1', 'U1'), project)).toEqual({ userId: 'u1' });
-    expect(authorizeCalls).toEqual([{ action: PROJECT_ACTIONS.PROJECT_WRITE, projectId: 'proj1' }]);
+    expect(authorizeCalls).toEqual([{ action: PROJECT_ACTIONS.PROJECT_SESSION_START, projectId: 'proj1' }]);
   });
 
   test('a caller-named action is the one authorized', async () => {

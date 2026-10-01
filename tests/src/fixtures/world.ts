@@ -229,6 +229,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       seed?: boolean;
       managedGit?: boolean;
       allowAllSecrets?: boolean;
+      allowAllConnectors?: boolean;
       metadata?: Record<string, unknown>;
     },
     signal?: AbortSignal,
@@ -238,7 +239,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
     if (canCreateDatabaseProject && (env.target === 'local' || (!opts?.seed && !opts?.managedGit))) {
       const localRepository =
         env.target === 'local' && (opts?.seed || opts?.managedGit)
-          ? await createLocalGitRepository(name, { allowAllSecrets: opts?.allowAllSecrets })
+          ? await createLocalGitRepository(name, {
+              allowAllSecrets: opts?.allowAllSecrets,
+              allowAllConnectors: opts?.allowAllConnectors,
+            })
           : null;
       if (localRepository) {
         stack.push('local-git', localRepository.root, { dispose: localRepository.dispose });
@@ -435,6 +439,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         {
           initial_prompt: opts?.prompt ?? 'noop',
           ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
+          ...(opts?.agentName ? { agent_name: opts.agentName } : {}),
         },
         {
           params: { projectId: project.id },

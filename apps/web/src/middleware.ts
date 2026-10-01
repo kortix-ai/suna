@@ -315,13 +315,13 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
     pathname.startsWith('/supabase/') || // same-origin Supabase proxy (sandbox preview) — must reach the next.config rewrite, never the auth-gate
-    pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
     pathname.startsWith('/_betterstack') || // Better Stack browser telemetry proxy
-    // Route Handlers, next.config rewrite sources (/scim, /ingest), and the
-    // static /docs site: none is a page under app/[locale], so none may be
-    // rewritten onto a locale. See i18n/routing.ts.
+    // Files (a dotted path, except a chat sign-in link), Route Handlers,
+    // next.config rewrite sources (/scim, /ingest), and the static /docs
+    // site: none is a page under app/[locale], so none may be rewritten onto
+    // a locale. See i18n/routing.ts.
     isNonPagePath(pathname)
   ) {
     return finalizeEnvironmentAccess(NextResponse.next());
@@ -414,7 +414,10 @@ export async function middleware(request: NextRequest) {
   // docs/external links in the user's real browser.
   if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
     const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
+    // The site root passes: the identity-aware `/` redirects below send it into
+    // the remembered project, exactly as on web. The shell launches here.
     const isAllowed =
+      pathname === '/' ||
       isAuthPath ||
       DESKTOP_ALLOWED_ROUTES.some(
         (route) => pathname === route || pathname.startsWith(route + '/'),

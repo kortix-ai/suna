@@ -41,8 +41,9 @@ export interface ConnectorAccountsProps {
  *   then opens `SetCredentialModal` for it, wired inside `ConnectionsList`
  *   itself. Every row also gets a "Set credential" action to re-enter it.
  * - Computer — each account is one paired machine. "Add" opens
- *   `ComputerConnectModal` (desktop one-click, or download + npx) instead of
- *   credential entry, and each row shows the machine's online dot.
+ *   `ComputerConnectModal` (connect this machine, or download + npx) instead
+ *   of credential entry. Everything else — the row, Share, the menu — is the
+ *   same as every other connector.
  *
  * `ConnectionSection` (the transport config — slug/provider/spec/auth/
  * headers) is NOT mounted here any more. It moved to the Settings tab

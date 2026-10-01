@@ -188,6 +188,20 @@ if id kortix >/dev/null 2>&1; then
   # it needs to own that file (the image only chowns /opt/kortix).
   [ -f /usr/local/bin/kortix ] && chown kortix:kortix /usr/local/bin/kortix 2>/dev/null || true
 fi
+# Never relaunch under a live turn. The control plane checked OpenCode idle
+# before this exec, but the agent download above takes 10-20 s, and a prompt
+# that lands in that window was killed with "no reason reported" (dev
+# 2026-09-29: every first message on a box one build behind). Re-read the same
+# authority here, before the token swap and the kill. Unreachable proceeds:
+# the control plane already decided, and a dead daemon is what this repairs.
+if [ "$RELAUNCH" = "pt-app" ]; then
+  oc_status=$(curl -fsS --max-time 3 http://127.0.0.1:4096/session/status 2>/dev/null | tr -d ' \n\r' || true)
+  if [ -n "$oc_status" ] && [ "$oc_status" != "{}" ]; then
+    log "a turn is running; relaunch deferred to the next idle pass"
+    emit "{\"ok\":true,\"stage\":\"deferred_busy\",\"token_rotated\":false}"
+    exit 0
+  fi
+fi
 # 5. Token model. Current boxes carry one session PAT as KORTIX_TOKEN. Rewrite
 #    the persisted value (pt-init re-exports /etc/environment on a cold boot)
 #    and hand it to the relaunched chain; the daemon's inbound auth compares

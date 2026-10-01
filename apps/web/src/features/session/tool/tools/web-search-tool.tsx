@@ -135,4 +135,3 @@ export function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProp
 }
 ToolRegistry.register('websearch', WebSearchTool);
 ToolRegistry.register('web-search', WebSearchTool);
-ToolRegistry.register('web_search', WebSearchTool);

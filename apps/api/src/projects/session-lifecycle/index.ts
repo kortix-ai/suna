@@ -5,6 +5,7 @@ export { drainSessionLifecycleQueue } from './drain';
 export { buildContinueSessionCommandValues, enqueueContinueSessionCommand } from './store';
 export {
   deleteInboxPrompt,
+  enqueueReleasingHold,
   holdInboxPrompts,
   listInboxPrompts,
   releaseInboxHold,

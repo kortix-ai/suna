@@ -16,6 +16,7 @@
 
 import type { Context } from 'hono';
 import { recordAuditEvent } from './audit';
+import { credentialFromContext } from './audit-credential';
 import { requestClientIp } from './client-ip';
 
 function userAgent(c: Context): string | null {
@@ -46,6 +47,7 @@ export function auditLoginSuccess(args: {
       accountId: args.accountId ?? null,
       actorUserId: args.userId,
       action: 'auth.login.success',
+      ...credentialFromContext((key) => args.c.get(key)),
       resourceType: 'session',
       ip: requestClientIp(args.c),
       userAgent: userAgent(args.c),

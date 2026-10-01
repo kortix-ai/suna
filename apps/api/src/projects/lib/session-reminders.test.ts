@@ -64,6 +64,19 @@ describe('parseReminderDraft', () => {
   });
 });
 
+describe('parseReminderDraft horizon', () => {
+  test('rejects a first fire, an instant, or a period beyond 366 days, and accepts 366 days', () => {
+    const limit = 'must be at most 366d';
+    expect(parseError({ prompt: 'x', in: '99999999999d' })).toContain(limit);
+    expect(parseError({ prompt: 'x', in: 1e30 })).toContain(limit);
+    expect(parseError({ prompt: 'x', in: 86_400_000_000 })).toContain(limit);
+    expect(parseError({ prompt: 'x', at: '9999-12-31T00:00:00Z' })).toContain(limit);
+    expect(parseError({ prompt: 'x', in: '1h', every: '99999999999d' })).toContain(limit);
+    expect(draft({ prompt: 'x', in: '366d' }).firstFireAt.toISOString()).toBe('2027-09-29T12:00:00.000Z');
+    expect(draft({ prompt: 'x', every: '366d' }).everySeconds).toBe(366 * 86400);
+  });
+});
+
 describe('reminderSpec', () => {
   test('a one-shot reminder stores runAt; a recurring reminder stores its period', () => {
     const oneShot = reminderSpec({ id: 'reminder.abc', sessionId: SESSION, agent: 'kortix', draft: draft({ prompt: 'x', in: '2h' }), now: NOW });

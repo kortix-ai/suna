@@ -1950,6 +1950,29 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-uitextview (2.7.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-FabricComponents
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-view-shot (5.1.0):
     - hermes-engine
     - RCTRequired
@@ -2837,6 +2860,7 @@ DEPENDENCIES:
   - "react-native-safe-area-context (from `../../../node_modules/.pnpm/react-native-safe-area-context@5.7.0_react-native@0.85.3_react@19.2.3/node_modules/react-native-safe-area-context`)"
   - "react-native-skia (from `../../../node_modules/.pnpm/@shopify+react-native-skia@2.6.9_react-native-reanimated@4.3.1_react-native@0.85.3_react@19.2.3/node_modules/@shopify/react-native-skia`)"
   - "react-native-slider (from `../../../node_modules/.pnpm/@react-native-community+slider@5.2.0/node_modules/@react-native-community/slider`)"
+  - "react-native-uitextview (from `../../../node_modules/.pnpm/react-native-uitextview@2.7.1_react-native@0.85.3_react@19.2.3/node_modules/react-native-uitextview`)"
   - "react-native-view-shot (from `../../../node_modules/.pnpm/react-native-view-shot@5.1.0_react-native@0.85.3_react@19.2.3/node_modules/react-native-view-shot`)"
   - "react-native-webview (from `../../../node_modules/.pnpm/react-native-webview@13.16.1_react-native@0.85.3_react@19.2.3/node_modules/react-native-webview`)"
   - "React-NativeModulesApple (from `../../../node_modules/.pnpm/react-native@0.85.3_@babel+core@7.29.7_@react-native+metro-config@0.87.1_@types+react@19.2.18_react@19.2.3/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)"
@@ -3082,6 +3106,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/@shopify+react-native-skia@2.6.9_react-native-reanimated@4.3.1_react-native@0.85.3_react@19.2.3/node_modules/@shopify/react-native-skia"
   react-native-slider:
     :path: "../../../node_modules/.pnpm/@react-native-community+slider@5.2.0/node_modules/@react-native-community/slider"
+  react-native-uitextview:
+    :path: "../../../node_modules/.pnpm/react-native-uitextview@2.7.1_react-native@0.85.3_react@19.2.3/node_modules/react-native-uitextview"
   react-native-view-shot:
     :path: "../../../node_modules/.pnpm/react-native-view-shot@5.1.0_react-native@0.85.3_react@19.2.3/node_modules/react-native-view-shot"
   react-native-webview:
@@ -3278,6 +3304,7 @@ SPEC CHECKSUMS:
   react-native-safe-area-context: ba7283e541a5f57c6b27a7e33f2c40b8977888c0
   react-native-skia: b685cf397470d1cae3d62235d6223e26718e5e01
   react-native-slider: b15258ac3d287a5951f76b11497d659ed20c0def
+  react-native-uitextview: 5ac1491fc8911b3bb2d0b3714ffc05328ae79999
   react-native-view-shot: 6da2aaa0404b8d617ab1689550acdb251d759af9
   react-native-webview: 2a4da2e03d3ec2c731c4d1a389cb86aaa4902167
   React-NativeModulesApple: deba264b03bd79c6bd61014fa30e40321b5e443a

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
-import { codexModelIds } from './codex-models';
+import { CODEX_SEED_MODEL_IDS } from './codex-models';
 import { SERVED_MANAGED_MODELS } from './served-managed-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
@@ -37,7 +37,7 @@ describe('gatewayModelCatalog — served catalog', () => {
       attachment: true,
       tool_call: true,
       temperature: true,
-      limit: { context: 1_048_576, output: 16_384 },
+      limit: { context: 1_000_000, output: 65_536 },
       cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
     });
   });
@@ -148,7 +148,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 // served shape (PR #5010 review), and a `budget_tokens`-only reasoning entry
 // (mainline Claude) used to vanish.
 describe('served catalog field passthrough', () => {
-  const [codexId] = codexModelIds();
+  const [codexId] = CODEX_SEED_MODEL_IDS;
   const enriched = {
     released: '2026-01-02',
     family: 'synthetic',
@@ -189,6 +189,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/enriched']).toEqual({
       name: 'Enriched',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released,
       release_date: released,
       family,
@@ -200,6 +201,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released: undefined,
       release_date: undefined,
       family: undefined,

@@ -4,6 +4,7 @@ import { loadEnv } from '../../src/core/env';
 import {
   createDatabaseSession,
   setDatabaseEnterpriseDemo,
+  setDatabaseTriggerRunFailed,
 } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import { type ManifestProject, createManifestProject } from '../helpers/manifest-project';
@@ -113,6 +114,8 @@ test.describe('21 — Session access UI', () => {
         accountId,
         userId: crypto.randomUUID(),
         visibility: 'private',
+        // A trigger run: the sidebar lists it under Automated, not the viewer's own sessions.
+        initiator: { type: 'trigger', id: 'access-policy-ui' },
         metadata: {
           custom_name: 'Shared scheduled session',
           source: 'trigger:scheduler',
@@ -155,6 +158,8 @@ test.describe('21 — Session access UI', () => {
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
 
+      // Automated runs sit in their own section, closed until opened (KRTX-639).
+      await page.getByRole('button', { name: 'Automated', exact: true }).click();
       const ownSidebarLink = page.locator(`a[href$="/sessions/${ownSessionId}"]`);
       const sharedSidebarLink = page.locator(`a[href$="/sessions/${sharedTriggerSessionId}"]`);
       const ownSidebarRow = ownSidebarLink.locator('..');
@@ -180,7 +185,10 @@ test.describe('21 — Session access UI', () => {
       await expect(ownInventoryRow).toBeVisible();
       await expect(ownInventoryRow.locator('[data-session-shared="true"]')).toHaveCount(0);
       await expect(sharedInventoryRow).toBeVisible();
-      await expect(sharedInventoryRow.locator('[data-session-shared="true"] svg')).toHaveCount(1);
+      // The chip names the run's starter (the trigger's schedule icon) and its access icon.
+      const sharedChip = sharedInventoryRow.locator('[data-session-shared="true"][data-session-starter="trigger"]');
+      await expect(sharedChip).toHaveCount(1);
+      await expect(sharedChip.locator('svg')).toHaveCount(2);
       await expect(sharedInventoryRow.getByText('Shared', { exact: true })).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -267,6 +275,78 @@ test.describe('21 — Session access UI', () => {
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });
+  // Prod 2026-09-30: a trigger's runs failed for hours while the Schedule
+  // page showed an ordinary active schedule.
+  test('a trigger whose last run failed shows the reason on its row and in its panel', async ({
+    page,
+  }, testInfo) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
+    test.setTimeout(120_000);
+
+    const runId = Date.now().toString(36);
+    const email = `e2e-trigger-failed-${runId}@example.test`;
+    const user = await createAuthUser(email, authOptions);
+    const session = await signIn(email, authOptions);
+    const env = loadEnv();
+    let project: ManifestProject | null = null;
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    try {
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
+      const account = accounts.find(
+        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+      );
+      if (!account) throw new Error('the seeded user owns no account');
+      project = await createManifestProject({
+        api,
+        accessToken: session.access_token,
+        accountId: account.account_id,
+        userId: user.id,
+        name: `Trigger failure ${runId}`,
+        databaseUrl: databaseUrl!,
+      });
+      const projectId = project.id;
+      const created = await api<{ triggers: Array<{ slug: string; name: string }> }>(
+        session.access_token,
+        'POST',
+        `/projects/${projectId}/triggers`,
+        {
+          name: 'Inbox triage',
+          type: 'cron',
+          cron: '0 0 3 * * *',
+          timezone: 'UTC',
+          prompt_template: 'Triage the inbox.',
+        },
+        201,
+      );
+      const slug = created.triggers.find((trigger) => trigger.name === 'Inbox triage')!.slug;
+      const reason = 'Out of credits: Payment Required: Insufficient credits.';
+      await setDatabaseTriggerRunFailed(env, { projectId, slug, error: reason });
+
+      await installBrowserSessionDirect(page, session, `/projects/${projectId}`, authOptions);
+      await selectAccountForUi(page, account.account_id);
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme });
+        await page.goto(`/projects/${projectId}/customize/triggers`, { waitUntil: 'domcontentloaded' });
+        await dismissOnboarding(page);
+        const row = page.getByRole('row', { name: /Inbox triage/ });
+        await expect(row.getByText('Last run didn’t finish', { exact: true })).toBeVisible();
+        await row.getByRole('button', { name: 'Inbox triage', exact: true }).click();
+        const sheet = page.getByRole('dialog', { name: 'Inbox triage', exact: true });
+        await expect(sheet.getByText('Last run didn’t finish', { exact: true })).toBeVisible();
+        await expect(sheet.getByText(`${reason} The next run tries again.`)).toBeVisible();
+        await testInfo.attach(`failed-trigger-${colorScheme}.png`, {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        });
+      }
+      expect(pageErrors).toEqual([]);
+    } finally {
+      if (project) await project.dispose().catch(() => {});
+      await deleteAuthUser(user.id, authOptions).catch(() => {});
+    }
+  });
+
   test('an owner lets admins open every session; the admin then finds a member\'s private session', async ({
     page,
     browser,

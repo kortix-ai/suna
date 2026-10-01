@@ -67,6 +67,8 @@ export interface TeamFixture {
     seed?: boolean;
     managedGit?: boolean;
     allowAllSecrets?: boolean;
+    /** Seeded manifest grants the default agent every connector. */
+    allowAllConnectors?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
 }
@@ -86,6 +88,8 @@ export interface Fixtures {
     seed?: boolean;
     managedGit?: boolean;
     allowAllSecrets?: boolean;
+    /** Seeded manifest grants the default agent every connector. */
+    allowAllConnectors?: boolean;
     metadata?: Record<string, unknown>;
   }): Promise<CreatedProject>;
   /**
@@ -105,7 +109,7 @@ export interface Fixtures {
   /** Create a session in a project (provisions a real sandbox). */
   session(
     project: CreatedProject,
-    opts?: { prompt?: string; opencodeModel?: string },
+    opts?: { prompt?: string; opencodeModel?: string; agentName?: string },
   ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;

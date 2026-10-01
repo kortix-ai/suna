@@ -12,4 +12,6 @@ export interface PiBootState extends SandboxBootState {
   initialOpenCodeSessionId?: string | null
   /** Boot-time session setup failure. */
   initialOpenCodeSessionError?: string | null
+  /** The audit relay could not start or persist; the runtime reports unhealthy. */
+  auditRelayError?: string | null
 }

@@ -28,14 +28,15 @@ import {
   TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
+  QuestionIcon,
   SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
-import type { Turn, TextPart } from '@/lib/opencode/types';
+import type { Turn } from '@/lib/opencode/types';
 import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
-import { isTextPart, messageCreatedAt, splitUserParts, type MessageWithParts } from '@kortix/sdk';
-import { parseTriggerEvent } from '@kortix/shared';
+import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
+import { parseSessionMessagePrompt, parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
@@ -48,7 +49,8 @@ import {
 import {
   commandMessageText,
   isUserMessageEdited,
-  parseUserMessageText,
+  parseUserMessageParts,
+  type MessageAttachment,
   queuedPromptStatusLabel,
   quoteMarginBottom,
   userMessageSentLabel,
@@ -111,13 +113,61 @@ export interface UserMessageUploadStatus {
   onRetry?: () => void;
 }
 
-interface MessageAttachment {
-  key: string;
-  filename: string;
-  mime?: string;
-  src?: string;
-  /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
-  localUri?: string;
+function SystemMessageCard({ dimStyle, menuProps, openMenu, actions, children }: {
+  dimStyle: ReturnType<typeof useAnimatedStyle>;
+  menuProps: Omit<React.ComponentProps<typeof MessageMenu>, 'children'>;
+  openMenu: () => void;
+  actions: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Reanimated.View className="px-4" style={dimStyle}>
+      <View className="items-end" style={{ gap: webSpace(1) }}>
+        <MessageMenu {...menuProps}>
+          <Pressable
+            onLongPress={openMenu}
+            delayLongPress={350}
+            className="border-border/60 bg-muted/40 rounded-lg border"
+            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}>
+            {children}
+          </Pressable>
+        </MessageMenu>
+        {actions}
+      </View>
+    </Reanimated.View>
+  );
+}
+
+/**
+ * A message the viewer did not type: another session's agent, or an ask that
+ * opens a conversation with people. Left-aligned like an assistant turn. The
+ * sender comes from the platform header in the text: mobile has no
+ * message-authors data, so a typed header would show here as well.
+ */
+function IncomingMessageCard({ info, dimStyle }: {
+  info: NonNullable<ReturnType<typeof parseSessionMessagePrompt>>;
+  dimStyle: ReturnType<typeof useAnimatedStyle>;
+}) {
+  const isAsk = info.type === 'ask';
+  const sender = info.sender.kind === 'session' ? info.sender.title || 'Untitled session' : info.sender.name;
+  const label = isAsk
+    ? `${sender} asked ${info.to.map((p) => p.name || p.email).join(', ')}`
+    : `From ${sender}`;
+  return (
+    <Reanimated.View className="px-4" style={dimStyle}>
+      <View
+        className="border-border bg-popover self-start rounded-md border"
+        style={{ maxWidth: '90%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}>
+        <View className="flex-row items-center" style={{ gap: webSpace(1.5) }}>
+          <Icon as={isAsk ? QuestionIcon : PaperPlaneTiltIcon} size={webSpace(3.5)} className="text-muted-foreground" />
+          <Text variant="muted" numberOfLines={2} style={[META_TEXT_STYLE, { flexShrink: 1 }]}>
+            {label}
+          </Text>
+        </View>
+        {info.prompt ? <Text className="text-sm">{info.prompt}</Text> : null}
+      </View>
+    </Reanimated.View>
+  );
 }
 
 // ─── UserMessage ─────────────────────────────────────────────────────────────
@@ -137,6 +187,7 @@ export function UserMessage({
   rewindDisabled,
   queueState,
   uploadStatus,
+  messagingCards = false,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -158,37 +209,13 @@ export function UserMessage({
   /** Dims the column; `interrupted` also shows a status line. */
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /** `human_messaging` is on. Off: a header never makes a card; the text draws as a plain bubble. */
+  messagingCards?: boolean;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
 
-  const parsed = useMemo(() => {
-    const { attachments: fileParts, stickyParts } = splitUserParts(message.parts);
-    const rawText = stickyParts
-      .filter(
-        (p) =>
-          isTextPart(p) &&
-          !!(p as TextPart).text?.trim() &&
-          !(p as TextPart & { synthetic?: boolean }).synthetic &&
-          !(p as TextPart & { ignored?: boolean }).ignored,
-      )
-      .map((p) => (p as TextPart).text)
-      .join('\n');
-    const content = parseUserMessageText(rawText);
-    const attachments: MessageAttachment[] = [
-      ...content.files.map((f, i) => ({
-        key: `upload:${i}:${f.path}`,
-        filename: f.filename || f.path.split('/').pop() || 'File',
-        mime: f.mime,
-        src: f.path || undefined,
-      })),
-      ...fileParts.map((p) => {
-        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
-        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
-      }),
-    ];
-    return { rawText, content, attachments };
-  }, [message.parts]);
+  const parsed = useMemo(() => parseUserMessageParts(message.parts), [message.parts]);
 
   const { rawText, content, attachments } = parsed;
 
@@ -208,6 +235,11 @@ export function UserMessage({
   // text, and a regex version of each froze the JS thread on a crafted prompt.
   const channelMessageInfo = useMemo(() => parseLegacyChannelMessage(rawText), [rawText]);
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
+  const sessionMessage = useMemo(() => parseSessionMessagePrompt(rawText), [rawText]);
+  const incoming =
+    messagingCards && sessionMessage && (sessionMessage.sender.kind === 'session' || sessionMessage.type === 'ask')
+      ? sessionMessage
+      : undefined;
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -227,7 +259,7 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !incoming;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -272,79 +304,57 @@ export function UserMessage({
     );
   }
 
+  if (incoming) return <IncomingMessageCard info={incoming} dimStyle={dimStyle} />;
+
   if (channelMessageInfo) {
     const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
     return (
-      <Reanimated.View className="px-4" style={dimStyle}>
-        <View className="items-end" style={{ gap: webSpace(1) }}>
-          <MessageMenu {...menuProps}>
-          <Pressable
-            onLongPress={openMenu}
-            delayLongPress={350}
-            className="border-border/60 bg-muted/40 rounded-lg border"
-            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}
-          >
-            <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-              <Icon
-                as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
-                size={webSpace(3.5)}
-                color={brand}
-              />
-              <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
-                {channelMessageInfo.platform}
-              </Text>
-              <Text variant="muted" style={META_TEXT_STYLE}>
-                ·
-              </Text>
-              <Text variant="small" className="leading-5">
-                {channelMessageInfo.userName}
-              </Text>
-            </View>
-            {channelMessageInfo.messageText ? (
-              <Text className="text-sm">{channelMessageInfo.messageText}</Text>
-            ) : null}
-          </Pressable>
-          </MessageMenu>
-          {actions}
+      <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
+        <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
+          <Icon
+            as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
+            size={webSpace(3.5)}
+            color={brand}
+          />
+          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
+            {channelMessageInfo.platform}
+          </Text>
+          <Text variant="muted" style={META_TEXT_STYLE}>
+            ·
+          </Text>
+          <Text variant="small" className="leading-5">
+            {channelMessageInfo.userName}
+          </Text>
         </View>
-      </Reanimated.View>
+        {channelMessageInfo.messageText ? (
+          <Text className="text-sm">{channelMessageInfo.messageText}</Text>
+        ) : null}
+      </SystemMessageCard>
     );
   }
 
   if (triggerEventInfo) {
     return (
-      <Reanimated.View className="px-4" style={dimStyle}>
-        <View className="items-end" style={{ gap: webSpace(1) }}>
-          <MessageMenu {...menuProps}>
-          <Pressable
-            onLongPress={openMenu}
-            delayLongPress={350}
-            className="border-border/60 bg-muted/40 rounded-lg border"
-            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}
-          >
-            <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-              <Icon as={TimerIcon} size={webSpace(3.5)} className="text-muted-foreground" />
-              <Text className="text-sm" style={{ fontFamily: 'Roobert-Medium' }}>
-                {triggerEventInfo.data?.trigger || 'Scheduled Task'}
+      <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
+        <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
+          <Icon as={TimerIcon} size={webSpace(3.5)} className="text-muted-foreground" />
+          <Text className="text-sm" style={{ fontFamily: 'Roobert-Medium' }}>
+            {triggerEventInfo.data?.trigger || 'Scheduled Task'}
+          </Text>
+          {triggerEventInfo.data?.data?.manual ? (
+            <View className="bg-muted rounded-sm px-1.5">
+              <Text variant="muted" style={META_TEXT_STYLE}>
+                Manual
               </Text>
-              {triggerEventInfo.data?.data?.manual ? (
-                <View className="bg-muted rounded-sm px-1.5">
-                  <Text variant="muted" style={META_TEXT_STYLE}>
-                    Manual
-                  </Text>
-                </View>
-              ) : null}
             </View>
-            {triggerEventInfo.prompt ? (
-              <Text variant="muted" numberOfLines={3} style={[META_TEXT_STYLE, { paddingLeft: webSpace(5.5) }]}>
-                {triggerEventInfo.prompt}
-              </Text>
-            ) : null}
-          </Pressable>
-          </MessageMenu>
-          {actions}
+          ) : null}
         </View>
-      </Reanimated.View>
+        {triggerEventInfo.prompt ? (
+          <Text variant="muted" numberOfLines={3} style={[META_TEXT_STYLE, { paddingLeft: webSpace(5.5) }]}>
+            {triggerEventInfo.prompt}
+          </Text>
+        ) : null}
+      </SystemMessageCard>
     );
   }
 
@@ -354,6 +364,11 @@ export function UserMessage({
   return (
     <Reanimated.View className="px-4" style={dimStyle}>
       <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(2) }}>
+        {sessionMessage?.sender.kind === 'person' ? (
+          <Text variant="muted" numberOfLines={1} style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }]}>
+            {sessionMessage.sender.name}
+          </Text>
+        ) : null}
         {attachments.length > 0 || failed ? (
           <MessageAttachments attachments={attachments} status={failed} onOpenPath={onFileMention} />
         ) : null}

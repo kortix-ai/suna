@@ -1,8 +1,8 @@
 /**
  * The runtime compiler (redirected 2026-07-05 — "one home per concern"): turns a
  * `kortix_version: 2` manifest's `agents:` map (pure governance) plus each
- * agent's own native `.kortix/opencode/agents/<name>.md` (frontmatter +
- * body — the OpenCode behavior source of truth) into OpenCode-native config.
+ * agent's own `.md` (frontmatter + body — the behavior source of truth;
+ * `agents.<name>.file`, default `agents/<name>.md`) into OpenCode-native config.
  *
  * The 2026-07-05 redirect killed the earlier "nested `opencode:` block in
  * kortix.yaml + illegal-frontmatter gate" design: OpenCode behavior
@@ -10,12 +10,15 @@
  * now lives ENTIRELY in the agent's own `.md` frontmatter + body — a stock
  * OpenCode agent `.md` is valid input as-is, frontmatter included. The
  * manifest's `agents.<name>` block carries governance ONLY (connectors/
- * secrets/skills/kortix_permissions/repository_access/enabled); the agent's NAME is the join
- * between the two (map key ↔ `.md` filename).
+ * secrets/skills/kortix_permissions/repository_access/enabled) plus `file`, the path of the
+ * agent's `.md`; without `file` the agent's NAME is the join (map key ↔ `.md` filename).
+ *
+ * v3 compiles agent behavior directly from kortix.yaml, with optional prompt_file;
+ * v2 still loads native agent Markdown and v1 stays untouched.
  *
  * `compileAgentConfig` is pure — no I/O, no DB. For each declared agent it
  * parses that agent's `.md` content (supplied by the caller, keyed by the
- * conventional path — see `agentMarkdownPath`), copies every recognized
+ * candidate path — see `agentFileCandidates`), copies every recognized
  * OpenCode behavioral field straight through, and overlays governance on top:
  * `enabled: false` forces the runtime's `disable` on (governance always wins
  * on that one field); `skills` folds onto `permission.skill`. Every other
@@ -34,10 +37,14 @@
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import {
+  agentFileCandidates,
+  defaultAgentFile,
+  safeAgentFile,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
   validateAgentMdFrontmatter,
+  validateManifest,
   type AgentBlockV2,
   type GrantSetV2,
   type ManifestIssue,
@@ -67,6 +74,7 @@ export interface OpencodeAgentConfig {
   /** The agent's `.md` body (frontmatter stripped) — its system prompt. */
   prompt?: string;
   disable?: boolean;
+  tools?: Record<string, boolean>;
   hidden?: boolean;
   options?: Record<string, unknown>;
   color?: string;
@@ -86,6 +94,10 @@ export interface OpencodeConfig {
    *  is a no-op until one exists. Reserved so a future field has somewhere to
    *  land without another signature change. */
   small_model?: string;
+  /** The manifest's `default_agent`: the agent a session with no agent chosen
+   *  runs, on every runtime (OpenCode reads this key; so does pi). Omitted when
+   *  that agent is disabled or a subagent, which cannot run as the primary. */
+  default_agent?: string;
   agent: Record<string, OpencodeAgentConfig>;
 }
 
@@ -113,28 +125,47 @@ function manifestSchemaVersion(manifest: Record<string, unknown>): number {
   return Number.NaN;
 }
 
-/** The project's OpenCode config directory — the SAME top-level `[opencode]
- *  config_dir` v1 already reads (unrelated to per-agent behavior; this is
- *  just "where does `.kortix/opencode/...` live for this project"). Defaults
- *  to `.kortix/opencode`. */
-function resolveConfigDir(manifest: Record<string, unknown>): string {
-  const oc = manifest.opencode;
-  if (oc && typeof oc === 'object' && !Array.isArray(oc)) {
-    const dir = (oc as Record<string, unknown>).config_dir;
-    if (typeof dir === 'string' && dir.trim()) {
-      return dir.trim().replace(/\/+$/, '');
-    }
-  }
-  return '.kortix/opencode';
+/**
+ * Where a NEW or edited agent `.md` is written: its `agents.<name>.file`, else
+ * `agents/<name>.md`. Reading an existing agent goes through
+ * `agentFileCandidates` instead, which also finds the legacy
+ * `.kortix/opencode/agents/<name>.md`.
+ */
+export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: string): string {
+  return agentFileCandidates(manifest, agentName)[0] ?? defaultAgentFile(agentName);
+}
+
+/** The first candidate path the caller could read, so compile uses the file that exists. */
+function suppliedAgentMarkdown(
+  manifest: Record<string, unknown>,
+  agentName: string,
+  agentMdFiles: Record<string, string>,
+): { path: string; content: string | undefined } {
+  const path =
+    agentFileCandidates(manifest, agentName).find((candidate) => candidate in agentMdFiles) ??
+    agentMarkdownPath(manifest, agentName);
+  return { path, content: agentMdFiles[path] };
 }
 
 /**
- * The conventional path to an agent's native `.md` file — the agent's NAME is
- * the join between the manifest's `agents:` map key and this file (spec
- * §2.2, 2026-07-05 redirect). No manifest field ever spells this path out.
+ * Read an agent's `.md` at `ref`: the first candidate that exists. When none
+ * exists, `path` is where the file would be written and `content` is null.
+ * Only a missing file is tolerated; any other git error throws.
  */
-export function agentMarkdownPath(manifest: Record<string, unknown>, agentName: string): string {
-  return `${resolveConfigDir(manifest)}/agents/${agentName}.md`;
+export async function readAgentMarkdownFile(
+  project: GitBackedProject,
+  manifest: Record<string, unknown>,
+  agentName: string,
+  ref: string,
+): Promise<{ path: string; content: string | null }> {
+  for (const path of agentFileCandidates(manifest, agentName)) {
+    try {
+      return { path, content: await readRepoFile(project, path, ref) };
+    } catch (err) {
+      if (!isRepoFileNotFoundError(err)) throw err;
+    }
+  }
+  return { path: agentMarkdownPath(manifest, agentName), content: null };
 }
 
 /** Behavioral frontmatter keys copied straight through onto the compiled
@@ -202,13 +233,14 @@ export const OpencodeAgentConfigSchema = z
  * see `@kortix/manifest-schema`'s format layer), not necessarily typed as
  * `ManifestV2` by the caller: this function itself is the version gate.
  *
- * Returns `null` for anything that isn't a `kortix_version: 2` manifest — the
+ * Returns `null` for v1 or unknown versions; v2/v3 compile into the same
+ * harness-independent environment contract. The
  * compiler is a v1 NO-OP by design (spec §2.3: "v2-only feature"), so v1
  * projects keep depending on hand-authored `.md` frontmatter exactly as before
  * (v1 never had a manifest-side behavior representation to move out of).
  *
- * `agentMdFiles` maps an agent's conventional `.md` path (see
- * `agentMarkdownPath`) to that file's raw text content (as read from the
+ * `agentMdFiles` maps an agent's `.md` path (any of its
+ * `agentFileCandidates`; the first one present wins) to that file's raw text content (as read from the
  * project's repo). When an agent's file is present, its frontmatter is
  * validated (throws `CompileAgentConfigError` on a malformed field — bad
  * enum, non-numeric temperature, broken permission tree) and copied through;
@@ -223,7 +255,7 @@ export function compileAgentConfig(
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
 ): OpencodeConfig | null {
-  if (manifestSchemaVersion(manifest) !== 2) return null;
+  if (![2, 3].includes(manifestSchemaVersion(manifest))) return null;
 
   if (runtime !== 'opencode') {
     throw new CompileAgentConfigError(
@@ -237,15 +269,20 @@ export function compileAgentConfig(
 
   const agent: Record<string, OpencodeAgentConfig> = {};
   for (const [name, block] of Object.entries(rawAgents)) {
-    const mdPath = agentMarkdownPath(manifest, name);
-    agent[name] = compileAgentBlock(name, block, mdPath, agentMdFiles[mdPath]);
+    const md = manifestSchemaVersion(manifest) === 3 ? null : suppliedAgentMarkdown(manifest, name, agentMdFiles);
+    agent[name] = md
+      ? compileAgentBlock(name, block, md.path, md.content)
+      : compileYamlAgentBlock(name, block, agentMdFiles);
   }
 
   const defaultAgentName = typeof v2.default_agent === 'string' ? v2.default_agent : undefined;
-  const defaultModel = defaultAgentName ? agent[defaultAgentName]?.model : undefined;
+  const defaultAgent = defaultAgentName ? agent[defaultAgentName] : undefined;
+  const defaultModel = defaultAgent?.model;
+  const runnableDefault = defaultAgent && !defaultAgent.disable && defaultAgent.mode !== 'subagent';
 
   return {
     ...(defaultModel ? { model: defaultModel } : {}),
+    ...(runnableDefault ? { default_agent: defaultAgentName } : {}),
     agent,
   };
 }
@@ -257,8 +294,8 @@ export function compileSelectedAgentConfig(
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
 ): OpencodeConfig {
-  if (manifestSchemaVersion(manifest) !== 2) {
-    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2.');
+  if (![2, 3].includes(manifestSchemaVersion(manifest))) {
+    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2 or 3.');
   }
   if (runtime !== 'opencode') {
     throw new CompileAgentConfigError(
@@ -279,8 +316,13 @@ export function compileSelectedAgentConfig(
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
 
-  const mdPath = agentMarkdownPath(manifest, agentName);
-  const compiledAgent = compileAgentBlock(agentName, block, mdPath, agentMdFiles[mdPath]);
+  let compiledAgent: OpencodeAgentConfig;
+  if (manifestSchemaVersion(manifest) === 3) {
+    compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles);
+  } else {
+    const md = suppliedAgentMarkdown(manifest, agentName, agentMdFiles);
+    compiledAgent = compileAgentBlock(agentName, block, md.path, md.content);
+  }
   return {
     ...(compiledAgent.model ? { model: compiledAgent.model } : {}),
     agent: { [agentName]: compiledAgent },
@@ -296,6 +338,39 @@ export function compileSelectedAgentConfig(
  * `skills` folds onto `permission.skill`. Pure governance fields (connectors/
  * secrets/kortix_permissions/repository_access) are never copied: no runtime representation.
  */
+function compileYamlAgentBlock(
+  name: string,
+  block: AgentBlockV2,
+  files: Record<string, string>,
+): OpencodeAgentConfig {
+  const raw = block as Record<string, unknown>;
+  const issues: ManifestIssue[] = [];
+  validateAgentMdFrontmatter(raw, `agents.${name}`, issues);
+  if (raw.prompt !== undefined && typeof raw.prompt !== 'string') {
+    issues.push({ path: `agents.${name}.prompt`, message: 'must be a string.', severity: 'error' });
+  }
+  if (raw.file !== undefined || raw.opencode !== undefined || raw.disable !== undefined) {
+    issues.push({ path: `agents.${name}`, message: 'v3 does not accept native agent config fields.', severity: 'error' });
+  }
+  if (raw.prompt_file !== undefined &&
+      (!safeAgentFile(raw.prompt_file) || typeof raw.prompt_file !== 'string' || !(raw.prompt_file in files) || raw.prompt !== undefined)) {
+    issues.push({ path: `agents.${name}.prompt_file`, message: 'prompt file must be a safe, readable repo-relative .md file and cannot conflict with inline prompt.', severity: 'error' });
+  }
+  if (issues.some((issue) => issue.severity === 'error')) {
+    throw new CompileAgentConfigError(issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), name);
+  }
+  const compiled: OpencodeAgentConfig = {};
+  for (const key of BEHAVIOR_FRONTMATTER_KEYS) {
+    if (raw[key] !== undefined) (compiled as Record<string, unknown>)[key] = raw[key];
+  }
+  const prompt = typeof raw.prompt_file === 'string' ? files[raw.prompt_file] : raw.prompt;
+  if (typeof prompt === 'string') compiled.prompt = prompt;
+  if (block.enabled === false) compiled.disable = true;
+  if (block.skills !== undefined) compiled.permission = applySkillsGovernance(compiled.permission, block.skills);
+  if (compiled.permission !== undefined) compiled.permission = denyToolsBehindDeniedPermission(compiled.permission);
+  return compiled;
+}
+
 function compileAgentBlock(
   name: string,
   block: AgentBlockV2,
@@ -331,11 +406,42 @@ function compileAgentBlock(
   // `enabled` is omitted (the default, true), whatever the `.md` itself set
   // for `disable` (if anything) passes through untouched above.
   if (block.enabled === false) out.disable = true;
+  if (block.tools !== undefined) out.tools = block.tools;
 
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);
   }
+  if (out.permission !== undefined) out.permission = denyToolsBehindDeniedPermission(out.permission);
 
+  return out;
+}
+
+/** Every action of a rule is `deny`: the tool is off, not just filtered by pattern. */
+function isBlanketDeny(rule: unknown): boolean {
+  if (rule === 'deny') return true;
+  if (!rule || typeof rule !== 'object') return false;
+  const actions = Object.values(rule as Record<string, unknown>);
+  return actions.length > 0 && actions.every((action) => action === 'deny');
+}
+
+/**
+ * The starter's custom tools are not covered by the built-in permission keys:
+ * `pty_*` runs a shell and `memory` writes files, yet OpenCode matches them by
+ * their own name, so `bash: deny` / `edit: deny` left both callable (RUN-10).
+ * A blanket deny of `bash` or `edit` carries over to the tools that do the
+ * same thing. An explicit rule on the tool itself wins.
+ */
+const SHELL_TOOLS = ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list'];
+const FILE_WRITE_TOOLS = ['memory'];
+
+function denyToolsBehindDeniedPermission(permission: PermissionConfigV2 | undefined): PermissionConfigV2 | undefined {
+  if (!permission || typeof permission !== 'object') return permission;
+  const out: PermissionConfigObjectV2 = { ...permission };
+  const deny = (tools: string[]) => {
+    for (const tool of tools) if (out[tool] === undefined) out[tool] = 'deny';
+  };
+  if (isBlanketDeny(permission.bash)) deny(SHELL_TOOLS);
+  if (isBlanketDeny(permission.edit)) deny(FILE_WRITE_TOOLS);
   return out;
 }
 
@@ -457,18 +563,24 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
  * says) and the manifest's `runtime:` field (`pi` ⇒ pi, even with the flag
  * off). Everything else is OpenCode. `runtime: null` is "no readable v2
  * manifest", which counts as opencode.
+ *
+ * pi calls models only through the Kortix LLM gateway (kortixd
+ * `harness/pi/model.ts`). A project with the `llm_gateway` flag off gets no
+ * gateway URL, so it always boots OpenCode, which calls providers directly.
  */
 export function selectSessionHarness(input: {
   piHarnessFlag: boolean;
   runtime: RuntimeV2 | null;
+  llmGateway: boolean;
 }): 'opencode' | 'pi' {
+  if (!input.llmGateway) return 'opencode';
   if (input.piHarnessFlag) return 'pi';
   return input.runtime === 'pi' ? 'pi' : 'opencode';
 }
 
 /** The harness a parsed manifest selects. `runtime` is a v2 field; anything but `pi` is OpenCode. */
 export function manifestRuntime(raw: unknown): RuntimeV2 {
-  if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return 'opencode';
+  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return 'opencode';
   return (raw as Record<string, unknown>).runtime === 'pi' ? 'pi' : 'opencode';
 }
 
@@ -495,7 +607,7 @@ function piPackageKey(entry: unknown): string | null {
  * The manifest validator gated every entry at merge; anything else reads as none.
  */
 export function manifestPiPackages(raw: unknown, agentName?: string | null): unknown[] {
-  if (!raw || typeof raw !== 'object' || manifestSchemaVersion(raw as Record<string, unknown>) !== 2) return [];
+  if (!raw || typeof raw !== 'object' || ![2, 3].includes(manifestSchemaVersion(raw as Record<string, unknown>))) return [];
   const manifest = raw as Record<string, unknown>;
   const requested = agentName?.trim();
   // `default` is the session layer's "no agent chosen" (sessions.ts), like the runtime's.
@@ -535,7 +647,7 @@ async function readManifestV2(project: GitBackedProject, baseRef?: string | null
     const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    return manifestSchemaVersion(raw) === 2 ? raw : null;
+    return [2, 3].includes(manifestSchemaVersion(raw)) ? raw : null;
   } catch {
     return null;
   }
@@ -580,6 +692,7 @@ export async function resolveCompiledAgentConfigForSession(
   options: CompileReadOptions = {},
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
+  let manifestVersion: number | undefined;
   try {
     const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
     const found = await readManifestFromRepo(project, candidates, ref);
@@ -588,7 +701,12 @@ export async function resolveCompiledAgentConfigForSession(
     const format = manifestFormatForPath(found.path);
     const raw = parseManifestText(found.content, format);
     options.onManifest?.(raw as Record<string, unknown>);
-    if (manifestSchemaVersion(raw) !== 2) return null;
+    manifestVersion = manifestSchemaVersion(raw);
+    if (![2, 3].includes(manifestVersion)) return null;
+    if (manifestSchemaVersion(raw) === 3) {
+      const validation = validateManifest(raw, format);
+      if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
+    }
 
     const v2 = raw as unknown as ManifestV2;
     const agents =
@@ -597,26 +715,30 @@ export async function resolveCompiledAgentConfigForSession(
     const agentMdFiles: Record<string, string> = {};
     await Promise.all(
       Object.keys(agents).map(async (name) => {
-        const path = agentMarkdownPath(raw, name);
-        try {
-          agentMdFiles[path] = await readRepoFile(project, path, ref);
-        } catch (err) {
-          // A MISSING file is an expected client condition: the manifest may
-          // declare an agent that carries no behavior file, and that agent
-          // simply compiles without one.
-          //
-          // Anything else — a git operation error, a blip through the proxy — is
-          // not, and swallowing it silently compiles the agent with NO prompt,
-          // model, or permissions. That is a lobotomised agent reported as a
-          // successful reload, with a fresh etag saying it is current. Rethrow
-          // so the outer catch returns null: the session keeps the config it has
-          // and `stale` reads null ("could not tell") rather than a confident
-          // and wrong "up to date".
-          if (!isRepoFileNotFoundError(err)) throw err;
-          console.warn(
-            `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${path}"`,
-          );
+        if (manifestSchemaVersion(raw) === 3) {
+          const promptFile = (agents[name] as Record<string, unknown>).prompt_file;
+          if (typeof promptFile === 'string') agentMdFiles[promptFile] = await readRepoFile(project, promptFile, ref);
+          return;
         }
+        // A MISSING file is an expected client condition: the manifest may
+        // declare an agent that carries no behavior file, and that agent
+        // simply compiles without one.
+        //
+        // Anything else — a git operation error, a blip through the proxy — is
+        // not, and swallowing it silently compiles the agent with NO prompt,
+        // model, or permissions. That is a lobotomised agent reported as a
+        // successful reload, with a fresh etag saying it is current.
+        // `readAgentMarkdownFile` rethrows it, so the outer catch returns null:
+        // the session keeps the config it has and `stale` reads null ("could
+        // not tell") rather than a confident and wrong "up to date".
+        const md = await readAgentMarkdownFile(project, raw, name, ref);
+        if (md.content !== null) {
+          agentMdFiles[md.path] = md.content;
+          return;
+        }
+        console.warn(
+          `[compile-agent-config] project ${project.projectId}: agent "${name}" has no behavior file at "${md.path}"`,
+        );
       }),
     );
 
@@ -624,8 +746,9 @@ export async function resolveCompiledAgentConfigForSession(
     return compiled ? JSON.stringify(compiled) : null;
   } catch (err) {
     console.warn(
-      `[compile-agent-config] project ${project.projectId}: compile failed, session boots without a compiled agent config: ${(err as Error).message}`,
+      `[compile-agent-config] project ${project.projectId}: compile failed: ${(err as Error).message}`,
     );
+    if (manifestVersion === 3) throw err;
     return null;
   }
 }
@@ -652,19 +775,25 @@ export async function resolveSelectedAgentConfigForSession(
   const format = manifestFormatForPath(found.path);
   const raw = parseManifestText(found.content, format);
   options.onManifest?.(raw as Record<string, unknown>);
-  if (manifestSchemaVersion(raw) !== 2) {
+  if (manifestSchemaVersion(raw) === 3) {
+    const validation = validateManifest(raw, format);
+    if (!validation.valid) throw new CompileAgentConfigError(validation.issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`).join('; '));
+  }
+  if (![2, 3].includes(manifestSchemaVersion(raw))) {
     throw new CompileAgentConfigError(
-      `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,
+      `Project ${project.projectId} must use kortix_version 2 or 3 for selected-agent compilation.`,
       agentName,
     );
   }
 
-  const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
-  try {
-    agentMdFiles[path] = await readRepoFile(project, path, ref);
-  } catch (err) {
-    if (!isRepoFileNotFoundError(err)) throw err;
+  if (manifestSchemaVersion(raw) === 3) {
+    const agents = raw.agents as Record<string, Record<string, unknown>>;
+    const promptFile = agents?.[agentName]?.prompt_file;
+    if (typeof promptFile === 'string') agentMdFiles[promptFile] = await readRepoFile(project, promptFile, ref);
+  } else {
+    const md = await readAgentMarkdownFile(project, raw, agentName, ref);
+    if (md.content !== null) agentMdFiles[md.path] = md.content;
   }
 
   return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));

@@ -14,6 +14,14 @@ import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 export const AGENT_ENV_DIR = '/dev/shm/kortix'
 export const AGENT_ENV_SH = `${AGENT_ENV_DIR}/agent-env.sh`
 
+/**
+ * What every harness adds to its agent's shells. A non-interactive `bash -c`
+ * reads neither /etc/profile.d nor bash.bashrc; BASH_ENV makes it source
+ * AGENT_ENV_SH, which carries the live project secrets, the session creds and
+ * the egress shim's proxy + CA variables, rewritten on every env push.
+ */
+export const AGENT_SHELL_ENV: Readonly<{ BASH_ENV: string }> = { BASH_ENV: AGENT_ENV_SH }
+
 const SECRET_NAME_RE = /^[A-Z_][A-Z0-9_]{0,63}$/
 const NUL = String.fromCharCode(0)
 const MAX_VALUE_BYTES = 128 * 1024
@@ -44,6 +52,7 @@ const SHELL_SESSION_CREDS = [
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
   'KORTIX_DEFAULT_BRANCH',
+  'KORTIX_FEATURES',
 ] as const
 
 function isUnsafeName(name: string): boolean {

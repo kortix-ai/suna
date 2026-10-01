@@ -88,7 +88,7 @@ function PanelToolRow({
         <PanelRowTitle trigger={trigger} running={running} onSubtitleClick={onSubtitleClick} />
       ) : (
         // `truncate` here CLIPS rather than ellipsises — a node trigger's
-        // content is flex children (the DCP tools' label + chip rows), and
+        // content is flex children (a label + chip row), and
         // `text-overflow` only applies to inline text. Clipping is the intent:
         // the row is one line, and an over-long node has to stop at the badge
         // rather than push the chevron off the card.

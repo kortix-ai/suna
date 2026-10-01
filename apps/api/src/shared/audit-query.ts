@@ -78,14 +78,15 @@ export function parseAuditSessionCursor(
   return { sequence, eventId };
 }
 
-export function serializeAuditEvent(row: AuditEventRow) {
+export function serializeAuditEvent(row: AuditEventRow, names?: Map<string, string>) {
   return {
     event_id: row.eventId,
     occurred_at: row.occurredAt.toISOString(),
     account_id: row.accountId,
     project_id: row.projectId,
     session_id: row.sessionId,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.runtimeSessionId,
+    opencode_session_id: row.runtimeSessionId,
     turn_id: row.turnId,
     message_id: row.messageId,
     tool_call_id: row.toolCallId,
@@ -102,7 +103,11 @@ export function serializeAuditEvent(row: AuditEventRow) {
     delegation_depth: row.delegationDepth,
     source: row.source,
     authoritative_source: row.authoritativeSource,
+    /** @deprecated Self-reported and no longer written; NULL for new rows. Use `credential_kind`. */
     client_reported_source: row.clientReportedSource,
+    credential_kind: row.credentialKind,
+    credential_id: row.credentialId,
+    credential_name: names?.get(`${row.credentialKind}:${row.credentialId}`) ?? null,
     outcome: row.outcome,
     action: row.action,
     phase: row.phase,

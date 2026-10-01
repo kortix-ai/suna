@@ -16,14 +16,14 @@ import {
   projectResourcesFromConfig,
   loadConfigWithFiles,
 } from '../lib/project-resources';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroups, accountMembers, connectors } from '@kortix/db';
 import { and, eq, inArray, or } from 'drizzle-orm';
 import { config } from '../../config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
-import { AnyObject, projectsApp } from '../lib/app';
+import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -66,14 +66,17 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/resource-grants',
     tags: ['access'],
-    summary: 'GET /:projectId/resource-grants',
+    summary: 'List resource grants of a project',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'Resource grants + grantable resources'), ...errors(404) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
+    const started = performance.now();
+    const stages: Record<string, number> = {};
     const loaded = await loadProjectForUser(c, projectId, 'read');
+    stages.project = Math.round(performance.now() - started);
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
     // catalogue + granted-member emails, so it must NOT be readable by a scoped
@@ -86,6 +89,7 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
+    stages.capability = Math.round(performance.now() - started);
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
@@ -121,6 +125,7 @@ projectsApp.openapi(
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    stages.config = Math.round(performance.now() - started);
     // Grants key on the agent NAME / skill SLUG. A rename or delete of the
     // underlying resource leaves the grant ORPHANED — and since an unscoped
     // resource is project-wide, the restriction silently evaporates. Flag
@@ -148,6 +153,7 @@ projectsApp.openapi(
       (g) => g.resourceType === 'agent' || g.resourceType === 'skill',
     );
 
+    stages.grants = Math.round(performance.now() - started);
     // Resolve principal labels in two batched lookups.
     const memberIds = [
       ...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId)),
@@ -172,6 +178,16 @@ projectsApp.openapi(
       for (const g of groupRows) groupNameById.set(g.groupId, g.name);
     }
 
+    const elapsed = Math.round(performance.now() - started);
+    if (elapsed >= 3_000) {
+      console.warn('[resource-grants] slow read', {
+        project_ms: stages.project,
+        capability_ms: stages.capability - stages.project,
+        config_ms: stages.config - stages.capability,
+        grants_ms: stages.grants - stages.config,
+        labels_ms: elapsed - stages.grants,
+      });
+    }
     return c.json({
       resources,
       grants: grants.map((g) => ({
@@ -207,11 +223,17 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/resource-grants',
     tags: ['access'],
-    summary: 'POST /:projectId/resource-grants',
+    summary: 'Grant a member or group access to a project resource',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      body: { content: { 'application/json': { schema: lenientBody({
+          resource_type: z.enum(['agent']).openapi({ description: 'Only agent grants can be created.' }),
+          resource_id: z.string().openapi({ description: 'Agent name.' }),
+          principal_type: z.enum(['member,group']).openapi({ description: 'Who gets access.' }),
+          principal_id: z.string().openapi({ description: 'User id or group id (uuid).' }),
+          expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry.' }),
+        }) } } },
     },
     responses: { 201: json(z.any(), 'The created grant'), ...errors(400, 404) },
   }),
@@ -341,7 +363,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/resource-grants/{grantId}',
     tags: ['access'],
-    summary: 'DELETE /:projectId/resource-grants/:grantId',
+    summary: 'Remove a resource grant',
     ...auth,
     request: { params: z.object({ projectId: z.string(), grantId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },

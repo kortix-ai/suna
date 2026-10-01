@@ -3,9 +3,11 @@ import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 /**
  * Who may continue a Teams session — the Teams twin of the Slack join
- * policies. Slack whispers to the requester with an ephemeral; Teams has none,
- * so the verdict carries a `notice` for the requester's own live card and the
- * owner's Approve / Deny is a normal card.
+ * policies. Slack whispers to one person with an ephemeral; Teams does it with
+ * a targeted message. The verdict carries a `notice` for the requester alone
+ * (session.ts sends it), the owner's Approve / Deny goes to the owner alone,
+ * and so does the decision to the requester. When Teams refuses a targeted
+ * message, the card goes to the whole conversation.
  */
 
 const TENANT = '36009a52-46d2-44bc-ba56-57a87e485e0a';
@@ -17,6 +19,8 @@ let insertResult: unknown[] = [{ participantId: 'pp-1' }];
 const ops: string[] = [];
 const cards: unknown[] = [];
 let identity: { userId: string } | null = { userId: 'owner-1' };
+let updateResult: unknown[] = [{ participantId: 'pp-1' }];
+let deciderMayWork = true;
 
 function chain(result: unknown[]): any {
   const c: any = {};
@@ -39,20 +43,36 @@ mock.module('../shared/db', () => ({
     },
     update: () => {
       ops.push('update');
-      return chain([]);
+      return chain(updateResult);
     },
   },
 }));
 mock.module('../config', () => ({ SANDBOX_VERSION: 'test', config: { FRONTEND_URL: 'https://dev.kortix.com' } }));
 mock.module('../projects/lib/access', () => ({ lookupEmailsByUserIds: async () => new Map([['req-1', 'marko@example.com']]) }));
+// Where each card went: to one person (targeted), or to the whole conversation.
+const deliveries: Array<{ to: 'targeted' | 'public'; recipient?: string }> = [];
+let targetedAccepted = true;
+/** Teams user ids (`29:…`) by Entra object id, for the members Teams knows here. */
+let members: Record<string, string> = { 'aad-req': '29:req' };
 mock.module('../channels/teams-api', () => ({
   sendCard: async (_ref: unknown, card: unknown) => {
     cards.push(card);
+    deliveries.push({ to: 'public' });
     return 'card-1';
   },
+  sendTargetedCard: async (_ref: unknown, recipient: string, card: unknown) => {
+    if (!targetedAccepted) return null;
+    cards.push(card);
+    deliveries.push({ to: 'targeted', recipient });
+    return 'card-2';
+  },
+  conversationMemberId: async (_ref: unknown, aadObjectId: string) => members[aadObjectId] ?? null,
 }));
 mock.module('../channels/core/identity', () =>
-  chatIdentityStub({  lookupChatIdentity: async () => identity }),
+  chatIdentityStub({
+    lookupChatIdentity: async () => identity,
+    resolveProjectChatActor: async () => (deciderMayWork && identity ? { userId: identity.userId } : { reason: 'not_member' }),
+  }),
 );
 
 const { ensureTeamsThreadParticipant, decideTeamsThreadJoin, policyFromMetadata, normalizeConversationPolicy } = await import(
@@ -78,7 +98,12 @@ beforeEach(() => {
   insertResult = [{ participantId: 'pp-1' }];
   ops.length = 0;
   cards.length = 0;
+  deliveries.length = 0;
+  targetedAccepted = true;
+  members = { 'aad-req': '29:req' };
   identity = { userId: 'owner-1' };
+  updateResult = [{ participantId: 'pp-1' }];
+  deciderMayWork = true;
 });
 
 afterAll(() => mock.restore());
@@ -94,7 +119,7 @@ describe('ensureTeamsThreadParticipant', () => {
     expect(ops).toEqual(['insert']);
   });
 
-  test('owner_only: refused with a notice for the requester\'s card', async () => {
+  test('owner_only: refused with a notice for the requester', async () => {
     const v = await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_only' });
     expect(v.allowed).toBe(false);
     if (!v.allowed) expect(v.notice).toMatch(/owner-only/);
@@ -113,8 +138,26 @@ describe('ensureTeamsThreadParticipant', () => {
     expect(card.body[0].text).toContain('marko@example.com');
   });
 
+  test('the Approve / Deny card goes to the owner alone: the person who started the session', async () => {
+    selectQueue = [[]];
+    await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval', sessionMetadata: { teams: { user: '29:owner' } } });
+    expect(deliveries).toEqual([{ to: 'targeted', recipient: '29:owner' }]);
+  });
+
+  test('the Approve / Deny card goes to the whole conversation when the owner is unknown or Teams refuses', async () => {
+    selectQueue = [[]];
+    await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval' });
+    expect(deliveries).toEqual([{ to: 'public' }]);
+
+    deliveries.length = 0;
+    selectQueue = [[]];
+    targetedAccepted = false;
+    await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval', sessionMetadata: { teams: { user: '29:owner' } } });
+    expect(deliveries).toEqual([{ to: 'public' }]);
+  });
+
   test('owner_approval, asked again while pending: no second card, "still waiting"', async () => {
-    selectQueue = [[{ status: 'pending', userId: 'req-1' }]];
+    selectQueue = [[{ participantId: 'pp-1', status: 'pending', userId: 'req-1', sessionId: 's1' }]];
     const v = await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval' });
     expect(v.allowed).toBe(false);
     if (!v.allowed) expect(v.notice).toMatch(/still waiting/);
@@ -122,12 +165,12 @@ describe('ensureTeamsThreadParticipant', () => {
   });
 
   test('owner_approval, already approved: allowed and granted', async () => {
-    selectQueue = [[{ status: 'approved', userId: 'req-1' }]];
+    selectQueue = [[{ participantId: 'pp-1', status: 'approved', userId: 'req-1', sessionId: 's1' }]];
     expect(await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval' })).toEqual({ allowed: true });
   });
 
   test('owner_approval, denied earlier: refused with the declined notice', async () => {
-    selectQueue = [[{ status: 'denied', userId: 'req-1' }]];
+    selectQueue = [[{ participantId: 'pp-1', status: 'denied', userId: 'req-1', sessionId: 's1' }]];
     const v = await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval' });
     expect(v.allowed).toBe(false);
     if (!v.allowed) expect(v.notice).toMatch(/declined/);
@@ -148,36 +191,51 @@ describe('decideTeamsThreadJoin', () => {
     tenantId: TENANT,
     conversationId: CONV,
     deciderTeamsUserId: 'aad-owner',
-    projectId: 'p1',
-    sessionId: 's1',
-    requesterUserId: 'req-1',
     requesterTeamsUserId: 'aad-req',
     ref: REF,
   };
+  const thread = [{ sessionId: 's1' }];
+  const pending = [{ participantId: 'pp-1', status: 'pending', userId: 'req-1', sessionId: 's1' }];
+  const session = [{ createdBy: 'owner-1', projectId: 'p1' }];
 
   test('someone who is not the session owner cannot decide', async () => {
     identity = { userId: 'other-2' };
-    selectQueue = [[{ createdBy: 'owner-1' }]];
+    selectQueue = [thread, pending, session];
     const r = await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
     expect(r.ok).toBe(false);
     expect(r.text).toMatch(/Only the session owner/);
-    expect(ops.filter((o) => o === 'insert')).toHaveLength(0);
+    expect(ops.filter((o) => o === 'insert' || o === 'update')).toHaveLength(0);
   });
 
-  test('the owner approves: participant upserted, member grant added, requester told to send again', async () => {
-    selectQueue = [[{ createdBy: 'owner-1' }]];
+  test('the owner approves: the request is approved, the account that asked is granted, and told to send again', async () => {
+    selectQueue = [thread, pending, session];
     const r = await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
     expect(r).toEqual({ ok: true, text: 'Approved marko@example.com for this Kortix session.' });
-    expect(ops.filter((o) => o === 'insert')).toHaveLength(2);
+    expect(ops.filter((o) => o === 'update')).toHaveLength(1);
+    expect(ops.filter((o) => o === 'insert')).toHaveLength(1);
     expect(JSON.stringify(cards[0])).toContain('Send your message again');
   });
 
   test('the owner denies: no grant, requester told', async () => {
-    selectQueue = [[{ createdBy: 'owner-1' }]];
+    selectQueue = [thread, pending, session];
     const r = await decideTeamsThreadJoin({ ...decision, decision: 'denied' });
     expect(r.ok).toBe(true);
-    expect(ops.filter((o) => o === 'insert')).toHaveLength(1);
+    expect(ops.filter((o) => o === 'insert')).toHaveLength(0);
     expect(JSON.stringify(cards[0])).toContain('declined');
+  });
+
+  test('the decision goes to the requester alone, found by the Entra id their request stored', async () => {
+    selectQueue = [thread, pending, session];
+    await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
+    expect(deliveries).toEqual([{ to: 'targeted', recipient: '29:req' }]);
+  });
+
+  test('a requester Teams does not know here still hears the decision, in the conversation', async () => {
+    members = {};
+    selectQueue = [thread, pending, session];
+    await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
+    expect(deliveries).toEqual([{ to: 'public' }]);
+    expect(JSON.stringify(cards[0])).toContain('Send your message again');
   });
 
   test('an unlinked clicker is asked to /login first', async () => {
@@ -185,6 +243,49 @@ describe('decideTeamsThreadJoin', () => {
     const r = await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
     expect(r.ok).toBe(false);
     expect(r.text).toContain('/login');
+  });
+
+  // An agent can post any Adaptive Card. A look-alike Approve with no request
+  // behind it, or one from an earlier session here, must grant nothing.
+  test('a card with no pending request behind it changes nothing', async () => {
+    selectQueue = [thread, []];
+    expect(await decideTeamsThreadJoin({ ...decision, decision: 'approved' })).toEqual({ ok: false, text: 'This request is no longer open.' });
+    expect(ops.filter((o) => o === 'insert' || o === 'update')).toHaveLength(0);
+    expect(cards).toHaveLength(0);
+  });
+
+  test('a request raised for another session than the conversation\'s current one is not open', async () => {
+    selectQueue = [thread, [{ ...pending[0], sessionId: 's-old' }]];
+    expect((await decideTeamsThreadJoin({ ...decision, decision: 'approved' })).ok).toBe(false);
+    expect(ops.filter((o) => o === 'insert' || o === 'update')).toHaveLength(0);
+  });
+
+  test('a request someone already decided is not decided twice', async () => {
+    selectQueue = [thread, pending, session];
+    updateResult = [];
+    expect(await decideTeamsThreadJoin({ ...decision, decision: 'approved' })).toEqual({ ok: false, text: 'This request is no longer open.' });
+    expect(ops.filter((o) => o === 'insert')).toHaveLength(0);
+  });
+
+  test('an owner who lost access to the project cannot approve anyone', async () => {
+    deciderMayWork = false;
+    selectQueue = [thread, pending, session];
+    const r = await decideTeamsThreadJoin({ ...decision, decision: 'approved' });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('no longer has access');
+    expect(ops.filter((o) => o === 'insert' || o === 'update')).toHaveLength(0);
+  });
+});
+
+describe('ensureTeamsThreadParticipant: a decision belongs to one session', () => {
+  test('an approval from an earlier session here does not let the person into the current one', async () => {
+    selectQueue = [[{ participantId: 'pp-1', status: 'approved', userId: 'req-1', sessionId: 's-old' }]];
+    const v = await ensureTeamsThreadParticipant({ ...base, channelPolicy: 'owner_approval' });
+    expect(v.allowed).toBe(false);
+    if (!v.allowed) expect(v.notice).toMatch(/asked the session owner/);
+    // The old row is reset to a pending request for the current session.
+    expect(ops).toContain('update');
+    expect(cards).toHaveLength(1);
   });
 });
 

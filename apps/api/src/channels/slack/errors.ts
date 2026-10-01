@@ -33,6 +33,23 @@ export interface TurnErrorInfo {
   providerID?: string;
 }
 
+/** How the platform tells a user to fix a turn error, in its own markup. */
+export interface TurnErrorCommands {
+  /** Picks another model, and says where the pick takes effect. */
+  pickModel: string;
+}
+
+// A Slack thread keeps the model it started with: `/kortix models` sets the
+// channel's model for new threads (slack/session.ts `slackFollowUpModel`).
+export const SLACK_TURN_ERROR_COMMANDS: TurnErrorCommands = {
+  pickModel: 'Pick another model with `/kortix models`, then start a new thread.',
+};
+
+// A Teams conversation's `/models` choice reaches the live session per prompt.
+export const TEAMS_TURN_ERROR_COMMANDS: TurnErrorCommands = {
+  pickModel: 'Pick another model with `/models`, then send your message again.',
+};
+
 export interface ClassifiedTurnError {
   /** Plan-block title for the finalized turn ("Out of credits", "Run failed", …). */
   title: string;
@@ -87,10 +104,13 @@ function isUsageLimit(status: number | undefined, lower: string): boolean {
   );
 }
 
-// The conversation outgrew the model's context window. Common, distinct, and
-// user-actionable (start a fresh thread / summarize).
-function isContextWindow(lower: string): boolean {
+// The conversation outgrew the model's context window. OpenCode names it
+// `ContextOverflowError` ("Conversation history too large to compact - exceeds
+// model context limit" when its own compaction failed); a provider says it in
+// its own words.
+function isContextWindow(name: string, lower: string): boolean {
   return (
+    name === 'ContextOverflowError' ||
     lower.includes('context length') ||
     lower.includes('context window') ||
     lower.includes('maximum context') ||
@@ -177,6 +197,13 @@ function isModelNotFound(status: number | undefined, lower: string): boolean {
   return status === 404 && lower.includes('model');
 }
 
+// OpenCode names the ref it could not resolve: "Model not found:
+// codex/gpt-6-sol. Did you mean: …?" A model ref has no whitespace.
+function missingModelRef(message: string): string | null {
+  const ref = /model not found:\s*(\S+)/i.exec(message)?.[1]?.replace(/\.$/, '');
+  return ref || null;
+}
+
 // Transient provider/network trouble — a temporary upstream error or a dropped
 // connection. Prefer opencode's own isRetryable flag; fall back to the HTTP
 // status and, for socket errors (which carry no status), the message text.
@@ -221,7 +248,10 @@ function truncate(s: string, max: number): string {
  * usage limit) win first; content-policy and context-window are caught before
  * the provider-config / transient buckets so their distinct copy isn't shadowed.
  */
-export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
+export function classifyTurnError(
+  info?: TurnErrorInfo,
+  commands: TurnErrorCommands = SLACK_TURN_ERROR_COMMANDS,
+): ClassifiedTurnError {
   const name = (info?.name ?? '').trim();
   const message = (info?.message ?? '').trim();
   const status = info?.statusCode;
@@ -270,13 +300,15 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 5. Conversation outgrew the context window.
-  if (isContextWindow(lower)) {
+  // 5. Conversation outgrew the context window. OpenCode compacts a session
+  //    on overflow by itself, so this reaches a thread only when that failed.
+  //    A request to summarize needs the same full history and fails the same way.
+  if (isContextWindow(name, lower)) {
     return {
       title: 'Conversation too long',
       text:
         `:books: *This conversation got too long for the model's context window.*` +
-        ` Start a fresh thread (or ask me to summarize) and continue from there.`,
+        ` Start a new thread to continue.`,
       aborted: false,
     };
   }
@@ -293,13 +325,14 @@ export function classifyTurnError(info?: TurnErrorInfo): ClassifiedTurnError {
     };
   }
 
-  // 7. Model doesn't exist / isn't enabled — a config fix.
+  // 7. Model doesn't exist / isn't enabled — a config fix. Name the model:
+  //    "the selected model" sent people to the web picker, which showed a
+  //    different, working model than the one that failed.
   if (isModelNotFound(status, lower)) {
+    const ref = missingModelRef(message);
     return {
       title: 'Model unavailable',
-      text:
-        `:warning: *The selected model isn't available.*` +
-        ` Pick a different model in Kortix settings, then mention me again.`,
+      text: `:warning: *${ref ? `The model \`${ref}\`` : 'The selected model'} isn't available.* ${commands.pickModel}`,
       aborted: false,
     };
   }

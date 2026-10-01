@@ -25,7 +25,7 @@
  * does not sign. With no secret configured it returns `null` — an App never
  * trusts an unverified identity.
  */
-import { createScopedKortix } from './server';
+import { createScopedKortix } from './scoped-client';
 import type { Kortix } from '../core/client/kortix';
 
 export const APP_VIEWER_HEADER = 'x-kortix-app-viewer';
@@ -190,6 +190,5 @@ export async function createAppViewerKortix(
   return createScopedKortix({
     backendUrl: options.backendUrl,
     getToken: async () => token,
-    clientSource: 'web',
   });
 }

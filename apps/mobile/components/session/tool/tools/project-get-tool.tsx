@@ -45,11 +45,5 @@ export function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('project_get', ProjectGetTool);
 ToolRegistry.register('project-get', ProjectGetTool);
-ToolRegistry.register('oc-project_get', ProjectGetTool);
-ToolRegistry.register('oc-project-get', ProjectGetTool);
-ToolRegistry.register('project_update', ProjectGetTool);
 ToolRegistry.register('project-update', ProjectGetTool);
-ToolRegistry.register('oc-project_update', ProjectGetTool);
-ToolRegistry.register('oc-project-update', ProjectGetTool);

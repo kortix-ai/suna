@@ -265,11 +265,17 @@ describe('connectorApprovalState', () => {
 });
 
 describe('connectorHandoffCopy', () => {
-  test('names the provider in the title, and keeps the body provider-agnostic', () => {
+  test('names the provider in the title, the body, and the action', () => {
     expect(connectorHandoffCopy('Gmail')).toEqual({
       title: 'Connect Gmail',
-      body: "Sign in on kortix.com. You come back to this chat when it's done.",
+      body: 'You sign in on Gmail in the browser, then come back to this chat. Kortix never sees your password.',
+      action: 'Continue to Gmail',
     });
+  });
+
+  test('names the project when the link does', () => {
+    expect(connectorHandoffCopy('Gmail', 'Acme').title).toBe('Connect Gmail to Acme');
+    expect(connectorHandoffCopy('Gmail', null).title).toBe('Connect Gmail');
   });
 });
 

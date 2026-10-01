@@ -36,6 +36,9 @@ const TEAMS_INSTALLATION: {
   orgInstalled: boolean;
   publishState?: 'publishing' | 'published' | 'review' | 'failed' | null;
   publishError?: string | null;
+  appVersion?: string | null;
+  latestAppVersion?: string;
+  appUpdateAvailable?: boolean;
   installedAt: string;
 } = {
   tenantId: 'tid-1',
@@ -356,6 +359,56 @@ describe('kortix channels --platform teams', () => {
     const out = stripAnsi(stdout);
     expect(out).toContain('tid-1');
     expect(out).toContain('review');
+  });
+
+  // A catalog on an app version from before the read permissions refuses
+  // every thread read in a team; the fix is a publish plus an app update.
+  test('status: published app older than the latest → both versions + how to update', async () => {
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      publishState: 'published',
+      appVersion: '1.2.0',
+      latestAppVersion: '1.6.0',
+      appUpdateAvailable: true,
+    };
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('1.2.0');
+    expect(out).toContain('1.6.0');
+    expect(out).toContain('kortix channels connect --platform teams');
+    expect(out).toContain('team owner');
+  });
+
+  test('status: published before Kortix recorded the version or the publish state → asks for the update without a version', async () => {
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      publishState: null,
+      appVersion: null,
+      latestAppVersion: '1.6.0',
+      appUpdateAvailable: true,
+    };
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('1.6.0');
+    expect(out).toContain('kortix channels connect --platform teams');
+    expect(out).not.toContain('null');
+  });
+
+  test('status: published app on the latest version → names it, no update', async () => {
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      publishState: 'published',
+      appVersion: '1.6.0',
+      latestAppVersion: '1.6.0',
+      appUpdateAvailable: false,
+    };
+    const code = await runChannels(['status', '--platform', 'teams']);
+    expect(code).toBe(0);
+    const out = stripAnsi(stdout);
+    expect(out).toContain('app 1.6.0');
+    expect(out).not.toContain('team owner');
   });
 
   test('status --json exposes publishState and publishError verbatim', async () => {

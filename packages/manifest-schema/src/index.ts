@@ -60,6 +60,26 @@ import {
 } from './index.v2';
 
 export {
+  AGENTS_DIR,
+  AGENT_FILE_PATTERN,
+  HARNESSES_DIR,
+  LEGACY_MEMORY_DIR,
+  LEGACY_OPENCODE_CONFIG_DIR,
+  MEMORY_DIR,
+  OPENCODE_CONFIG_DIR,
+  SKILLS_DIR,
+  agentFileCandidates,
+  defaultAgentFile,
+  legacyConfigDir,
+  manifestOpencodeConfigDir,
+  opencodeConfigDirCandidates,
+  piConfigDirCandidates,
+  safeAgentFile,
+  safeRepoPath,
+  skillDirs,
+} from './layout';
+
+export {
   type ManifestFormat,
   type ManifestCandidate,
   MANIFEST_FILENAME_TOML,
@@ -185,13 +205,15 @@ export {
  *
  * v1 = `[[agents]]` array overlay, TOML or YAML, `[[channels]]` allowed.
  * v2 = `agents:` map — GOVERNANCE ONLY (connectors/secrets/skills/kortix_permissions/
- * workspace/enabled); OpenCode behavior (mode/model/temperature/top_p/steps/
- * variant/color/hidden/permission/prompt) lives entirely in the agent's own
- * native `.kortix/opencode/agents/<name>.md` frontmatter + body, never in
- * this manifest. YAML-only, `[[channels]]` removed, deny-by-default grant
- * sets. (decision 2026-07-05: "one home per concern").
+ * workspace/enabled) plus `file`, the path of the agent's `.md`; agent behavior
+ * (mode/model/temperature/top_p/steps/variant/color/hidden/permission/prompt)
+ * lives entirely in that `.md` frontmatter + body, never in this manifest.
+ * YAML-only, `[[channels]]` removed, deny-by-default grant sets. (decision
+ * 2026-07-05: "one home per concern").
+ * v3 = YAML-only agent behavior (model, prompt or prompt_file, permission)
+ * compiled into the existing harness config channel; v1/v2 stay unchanged.
  */
-const KNOWN_SCHEMA_VERSION = 2;
+const KNOWN_SCHEMA_VERSION = 3;
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -273,7 +295,7 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 2) {
+  if (version !== undefined && version >= 2) {
     validateManifestBodyV2(parsed, format, issues);
   } else {
     validateManifestBodyV1(parsed, format, issues);
@@ -323,7 +345,10 @@ function validateManifestBodyV2(
   validateImports(parsed.imports, 'imports', issues);
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
-  validateOpenCode(parsed.opencode, 'opencode', issues);
+  if (parsed.kortix_version === 3 && parsed.opencode !== undefined) {
+    issues.push({ path: 'opencode', message: 'v3 uses YAML-only agent configuration; remove the raw opencode config.', severity: 'error' });
+  } else validateOpenCode(parsed.opencode, 'opencode', issues);
+  validateOpenCode(parsed.pi, 'pi', issues);
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
@@ -332,7 +357,7 @@ function validateManifestBodyV2(
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
-  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
+  const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
@@ -621,11 +646,11 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version === 2 && format === 'toml') {
+  if (version >= 2 && format === 'toml') {
     issues.push({
       path: 'kortix_version',
       message:
-        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+        'kortix_version 2 and 3 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
       severity: 'error',
     });
     return version;
@@ -1801,9 +1826,11 @@ export {
   KORTIX_SCHEMA_BASE_URL,
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
+  KORTIX_V3_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,
+  buildManifestV3Schema,
   buildManifestSchema,
   manifestJsonSchema,
 } from './json-schema';

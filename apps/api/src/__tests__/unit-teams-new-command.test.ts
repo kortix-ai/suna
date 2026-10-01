@@ -52,12 +52,20 @@ mock.module('../channels/teams/identity', () => ({
 }));
 
 const posted: Array<Record<string, unknown>> = [];
+/** Replies only one person sees (a targeted message), by recipient. */
+const targeted: Array<{ recipient: string; card: Record<string, unknown> }> = [];
 mock.module('../channels/teams-api', () => ({
   openDirectConversation: async () => null,
   sendCard: async (_ref: unknown, card: Record<string, unknown>) => {
     posted.push(card);
     return 'card-1';
   },
+  sendTargetedCard: async (_ref: unknown, recipient: string, card: Record<string, unknown>) => {
+    targeted.push({ recipient, card });
+    return 'card-2';
+  },
+  updateCard: async () => true,
+  conversationMemberId: async () => null,
 }));
 
 type FreshOutcome = { reset: true; previousSessionId: string | null } | { reset: false; notice: string };
@@ -101,6 +109,7 @@ const cardText = (card: Record<string, unknown>) => JSON.stringify(card);
 
 beforeEach(() => {
   posted.length = 0;
+  targeted.length = 0;
   started.length = 0;
   freshCalls.length = 0;
   freshOutcome = { reset: true, previousSessionId: 'sess-old' };
@@ -166,5 +175,25 @@ describe('/new', () => {
     await run('/help');
 
     expect(cardText(posted[0]!)).toContain('/new');
+  });
+});
+
+// A command answers the person who typed it, as Slack's slash commands do.
+describe('command replies in a channel or group chat', () => {
+  test('go to the person who typed the command alone', async () => {
+    for (const type of ['groupChat', 'channel']) {
+      targeted.length = 0;
+      await run('/new', type);
+      await run('/help', type);
+      expect(targeted.map((t) => t.recipient)).toEqual(['29:abc', '29:abc']);
+      expect(cardText(targeted[0]!.card)).toContain('Your next message starts a new session.');
+    }
+    expect(posted).toEqual([]);
+  });
+
+  test('a 1:1 chat is private already: a plain reply', async () => {
+    await run('/help');
+    expect(posted).toHaveLength(1);
+    expect(targeted).toEqual([]);
   });
 });

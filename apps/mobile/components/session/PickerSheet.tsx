@@ -25,6 +25,7 @@ import { useColorScheme } from 'nativewind';
 import {
   type SheetRef,
   KortixBottomSheetModal,
+  useCloseThen,
   useSheetBackground,
 } from '@/components/kortix/sheet';
 import { SheetTextInput } from '@/components/kortix/SheetInput';
@@ -95,9 +96,9 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
     React.useEffect(() => setQuery(''), [activeTab]);
     // The empty state's action (e.g. `ConnectProviderSheet`) must not present
     // while this sheet is still animating closed — never two overlays at
-    // once (same `closeThen` shape as `AttachSheet`). `onDismiss` fires once
-    // the close animation actually finishes.
-    const afterCloseRef = React.useRef<(() => void) | null>(null);
+    // once (`useCloseThen`, the shared slot). `onDismiss` fires once the
+    // close animation actually finishes.
+    const { deferAfterClose, takeAfterClose } = useCloseThen();
 
     React.useImperativeHandle(ref, () => ({
       open: () => modalRef.current?.present(),
@@ -119,9 +120,7 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
         enablePanDownToClose
         onDismiss={() => {
           setQuery('');
-          const action = afterCloseRef.current;
-          afterCloseRef.current = null;
-          action?.();
+          takeAfterClose()?.();
         }}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore">
@@ -195,7 +194,7 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
                   haptics.tap();
                   // Defer to `onDismiss`: never present the next sheet while
                   // this one is still animating closed.
-                  afterCloseRef.current = empty.onAction;
+                  deferAfterClose(empty.onAction);
                   modalRef.current?.dismiss();
                 }}>
                 <Text>{empty.actionLabel}</Text>

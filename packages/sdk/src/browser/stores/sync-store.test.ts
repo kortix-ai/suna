@@ -8,6 +8,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client";
+import { projectWorking } from "../../core/session/working";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
@@ -225,6 +226,118 @@ describe("hydrate stamps runtime activity for a moved, still-open transcript", (
 			{ source: "cache" },
 		);
 		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+});
+
+/**
+ * The push half of the same rule: only OPEN frames stamp activity. A closing
+ * frame lands after the idle frame; see `isOpenMessage` / `isOpenPart`.
+ */
+describe("applyEvent stamps runtime activity only for open frames", () => {
+	const sid = "ses_act_push";
+	const STALE = 1;
+
+	function messageUpdated(info: unknown) {
+		useSyncStore.getState().applyEvent({
+			type: "message.updated",
+			properties: { info },
+		} as never);
+	}
+	function partUpdated(part: Record<string, unknown>) {
+		useSyncStore.getState().applyEvent({
+			type: "message.part.updated",
+			properties: { part: { sessionID: sid, messageID: "msg_a1", ...part } },
+		} as never);
+	}
+	/** A stamp old enough that the 1s quantizer lets the next frame through. */
+	function ageActivity() {
+		useSyncStore.setState({ sessionActivityAt: { [sid]: STALE } });
+	}
+	const activity = () => useSyncStore.getState().sessionActivityAt[sid];
+
+	beforeEach(() => {
+		useSyncStore.getState().upsertMessage(sid, userMessage("msg_u1", sid));
+		ageActivity();
+	});
+
+	test("an open assistant message stamps", () => {
+		messageUpdated(assistantMessage("msg_a1", sid));
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test("a completed assistant message does not stamp", () => {
+		const message = assistantMessage("msg_a1", sid);
+		messageUpdated({ ...message, time: { ...message.time, completed: 2 } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test("an errored assistant message does not stamp", () => {
+		messageUpdated({
+			...assistantMessage("msg_a1", sid),
+			error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+		});
+		expect(activity()).toBe(STALE);
+	});
+
+	test("a user message update does not stamp", () => {
+		messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test.each([
+		["a running tool", { id: "prt_1", type: "tool", state: { status: "running" } }],
+		["a pending tool", { id: "prt_1", type: "tool", state: { status: "pending" } }],
+		["streaming text", { id: "prt_1", type: "text", text: "hel", time: { start: 1 } }],
+		["a step start", { id: "prt_1", type: "step-start" }],
+	])("%s stamps", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test.each([
+		["a completed tool", { id: "prt_1", type: "tool", state: { status: "completed" } }],
+		["an errored tool", { id: "prt_1", type: "tool", state: { status: "error" } }],
+		["finished text", { id: "prt_1", type: "text", text: "done", time: { start: 1, end: 2 } }],
+		["finished reasoning", { id: "prt_1", type: "reasoning", text: "ok", time: { start: 1, end: 2 } }],
+		["a step finish", { id: "prt_1", type: "step-finish" }],
+		["a patch", { id: "prt_1", type: "patch", hash: "h", files: [] }],
+	])("%s does not stamp", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBe(STALE);
+	});
+
+	// The captured order, end to end: a finished turn must project idle.
+	test("closing frames after the idle frame leave the session idle", () => {
+		const realNow = Date.now;
+		let now = 1_000_000;
+		Date.now = () => now;
+		try {
+			useSyncStore.setState({ sessionActivityAt: { [sid]: now - 5_000 } });
+			const apply = useSyncStore.getState().applyEvent;
+			apply({ type: "session.idle", properties: { sessionID: sid } } as never);
+			now += 16;
+			messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+			partUpdated({ id: "prt_1", type: "tool", state: { status: "completed" } });
+			const message = assistantMessage("msg_a1", sid);
+			messageUpdated({
+				...message,
+				time: { ...message.time, completed: now },
+				error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+			});
+
+			const state = useSyncStore.getState();
+			expect(state.sessionStatusAt[sid]).toBe(1_000_000);
+			const projection = projectWorking({
+				optimistic: null,
+				server: null,
+				stream: { type: "idle", origin: "wire", atMs: state.sessionStatusAt[sid] },
+				activity: { atMs: state.sessionActivityAt[sid] },
+				nowMs: now + 100,
+			});
+			expect(projection.state).toBe("idle");
+		} finally {
+			Date.now = realNow;
+		}
 	});
 });
 
@@ -2386,7 +2499,7 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// branch that history was simply resident, so this is a regression in what
 	// the user sees, not a missed optimisation.
 	//
-	// Dropping those events instead would be worse: `useOpenCodeMessages` (the
+	// Dropping those events instead would be worse: `useRuntimeMessages` (the
 	// spawn-tool preview of a child session) has no reconcile of its own and is
 	// fed by SSE alone, so a child streaming before its preview mounts would
 	// lose the frames outright. The events stay; the repaint decision is what

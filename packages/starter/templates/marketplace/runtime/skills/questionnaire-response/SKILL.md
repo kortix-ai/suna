@@ -58,12 +58,12 @@ skills and memory until the team updates them:
 
 | Question topic | Vetted source | Typical confidence |
 |---|---|---|
-| Encryption at rest / in transit | `.kortix/memory/security-answers.md#encryption` | High — exact match |
-| SSO / access controls | `.kortix/memory/security-answers.md#access-controls` | High |
-| Incident response | `.kortix/memory/security-answers.md#incident-response` | High |
-| Data retention & deletion | `.kortix/memory/security-answers.md#data-retention` | High |
-| Subprocessors / sub-processing | `.kortix/memory/security-answers.md#subprocessors` | Medium — verify the list is current |
-| Compliance standards (SOC 2, ISO 27001, …) | `.kortix/memory/security-answers.md#standards` | High |
+| Encryption at rest / in transit | `memory/security-answers.md#encryption` | High — exact match |
+| SSO / access controls | `memory/security-answers.md#access-controls` | High |
+| Incident response | `memory/security-answers.md#incident-response` | High |
+| Data retention & deletion | `memory/security-answers.md#data-retention` | High |
+| Subprocessors / sub-processing | `memory/security-answers.md#subprocessors` | Medium — verify the list is current |
+| Compliance standards (SOC 2, ISO 27001, …) | `memory/security-answers.md#standards` | High |
 | Anything with no matching entry | — | Flag for a person |
 
 A "confident match" means the question maps clearly to one vetted entry. If a

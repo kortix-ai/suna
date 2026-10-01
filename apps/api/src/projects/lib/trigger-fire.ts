@@ -7,6 +7,8 @@ import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionComman
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';
 import { renderSessionKey } from './trigger-payload';
+import { keepRunFailure } from '../trigger-execution-store';
+import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 
@@ -100,8 +102,7 @@ export async function markGitTriggerFired(
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: {
         lastFiredAt: when,
-        lastStatus: status,
-        lastError: null,
+        ...keepRunFailure(status),
         lastAttemptAt: when,
         updatedAt: when,
       },
@@ -158,6 +159,9 @@ export async function findReusableTriggerSession(
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
         // Same soft-delete guard as the keyed lookup above.
         sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
+        // A session whose history no longer fits the model, even after
+        // compaction, fails every run. recordTriggerRunEnd retires it.
+        sql`${projectSessions.metadata} ->> ${TRIGGER_REUSE_RETIRED_AT} IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
@@ -195,6 +199,7 @@ export async function findKeyedTriggerSession(
         // resolving to the same session, every later message for that chat
         // would be swallowed silently rather than starting a new one.
         sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
+        sql`${projectSessions.metadata} ->> ${TRIGGER_REUSE_RETIRED_AT} IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))

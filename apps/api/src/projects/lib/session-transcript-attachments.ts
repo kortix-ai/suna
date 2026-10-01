@@ -128,7 +128,9 @@ async function saveRecovered(
       if (!filePath) return null;
       bytes = await input.readFile(filePath);
     }
-    if (!bytes) throw new Error('Original attachment is unavailable');
+    // A deleted workspace file is expected on later full-history captures.
+    // Keep the original reference so a later capture can still retry it.
+    if (!bytes) return null;
     if (bytes.byteLength > MAX_SESSION_ATTACHMENT_BYTES)
       throw new Error('Attachment exceeds 50 MiB');
     return (await input.saveFile({ ...scope, filename, mime, bytes })).url;

@@ -4,6 +4,7 @@ import type { GitBackedProject } from '../git';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   resolveGrantSet,
+  safeAgentFile,
   SLUG_RE,
   WORKSPACE_MODES_V2,
   type GrantSetV2,
@@ -56,7 +57,7 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
     return { specs: [], errors: [], defaultAgent: null };
   }
 
-  if (manifest.schemaVersion === 2) {
+  if (manifest.schemaVersion >= 2) {
     return extractAgentsV2(raw, manifest, filename);
   }
 
@@ -132,7 +133,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
 
   for (const [name, block] of Object.entries(raw as Record<string, unknown>)) {
     // With `imports:`, attribute the agent to the file that declares it.
-    const result = parseAgentEntryV2(name, block, manifest.imports?.origins.agents[name] ?? filename);
+    const result = parseAgentEntryV2(name, block, manifest.imports?.origins.agents[name] ?? filename, manifest.schemaVersion);
     if (!result.ok) {
       errors.push(result.error);
       continue;
@@ -282,7 +283,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
  * that reached this reader without going through the CR-merge gate (a raw git
  * push / out-of-band edit) can't smuggle an ungrantable action into a grant.
  */
-function parseAgentEntryV2(name: string, block: unknown, filename: string): ParseOk | ParseErr {
+function parseAgentEntryV2(name: string, block: unknown, filename: string, version: number): ParseOk | ParseErr {
   const err = (n: string, message: string): ParseErr => makeAgentError(n, message, filename);
 
   if (!SLUG_RE.test(name)) {
@@ -298,18 +299,21 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
 
   // v2's `enabled` is a top-level Kortix-governance boolean (validated
   // upstream by manifest-schema); only a literal `false` disables. Behavior
-  // (`file`/`model`) is NOT read from the manifest anymore (2026-07-05
+  // (`model` and the rest) is NOT read from the manifest (2026-07-05
   // redirect, spec §2.2: "one home per concern") — it lives entirely in the
-  // agent's own `.kortix/opencode/agents/<name>.md` frontmatter, which this
-  // GOVERNANCE-only parser has no reason to read (no I/O here). `file` stays
-  // `null`, which downstream callers already treat as "use the conventional
-  // `.md` by name" (see `AgentSpec.file`'s doc comment); `model` stays `null`,
-  // which the session model-resolution chain already treats as "fall through
-  // to account/platform" — the compiler (compile-agent-config.ts) is what
-  // actually resolves a per-agent model now, straight from that same `.md`.
+  // agent's own `.md` frontmatter, which this GOVERNANCE-only parser has no
+  // reason to read (no I/O here). `file` is the explicit `agents.<name>.file`
+  // or `null`, which downstream callers treat as "use the conventional `.md`
+  // by name" (`agentFileCandidates` in @kortix/manifest-schema); `model` stays
+  // `null`, which the session model-resolution chain already treats as "fall
+  // through to account/platform" — the compiler (compile-agent-config.ts) is
+  // what actually resolves a per-agent model now, straight from that `.md`.
   const enabled = normalizedRow.enabled !== false;
-  const file: string | null = null;
-  const model: string | null = null;
+  if (normalizedRow.file !== undefined && !safeAgentFile(normalizedRow.file)) {
+    return err(name, `agents.${name}.file must be a repo-relative path to a .md file`);
+  }
+  const file: string | null = safeAgentFile(normalizedRow.file);
+  const model: string | null = version === 3 && typeof normalizedRow.model === 'string' ? normalizedRow.model : null;
   const sandbox =
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()

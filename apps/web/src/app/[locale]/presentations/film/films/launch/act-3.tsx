@@ -269,8 +269,8 @@ export function Triggers() {
 const TERMINAL: { at: number; cmd?: string; out?: string }[] = [
   { at: 30, cmd: 'kortix init northwind' },
   { at: 76, out: '+ kortix.yaml' },
-  { at: 82, out: '+ .kortix/opencode/opencode.jsonc' },
-  { at: 88, out: '+ .kortix/memory/MEMORY.md' },
+  { at: 82, out: '+ agents/kortix.md' },
+  { at: 88, out: '+ memory/MEMORY.md' },
   { at: 104, cmd: 'cd northwind && kortix ship' },
   { at: 156, out: '✓ kortix.yaml verified' },
   { at: 170, out: '✓ Pushed main → origin/main' },

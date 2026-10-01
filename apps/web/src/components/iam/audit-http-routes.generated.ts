@@ -3,7 +3,9 @@
 
 const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|.well-known|oauth-authorization-server",
+  "GET|.well-known|oauth-protected-resource",
   "GET|.well-known|oauth-protected-resource|v1|mcp",
+  "GET|.well-known|openid-configuration",
   "GET|health",
   "GET|health|live",
   "GET|health|ready",
@@ -444,6 +446,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|connect-requests",
   "GET|v1|projects|:projectId|connections",
   "POST|v1|projects|:projectId|connections",
+  "PATCH|v1|projects|:projectId|connections|:connectionId",
   "PUT|v1|projects|:projectId|connections|:connectionId|activate",
   "POST|v1|projects|:projectId|connections|:connectionId|connect",
   "POST|v1|projects|:projectId|connections|:connectionId|connect|finalize",
@@ -564,8 +567,10 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|sessions|:sessionId|environment|ensure",
   "POST|v1|projects|:projectId|sessions|:sessionId|environment|stop",
   "GET|v1|projects|:projectId|sessions|:sessionId|events",
+  "GET|v1|projects|:projectId|sessions|:sessionId|message-authors",
   "PUT|v1|projects|:projectId|sessions|:sessionId|model",
   "GET|v1|projects|:projectId|sessions|:sessionId|open-bundle",
+  "PUT|v1|projects|:projectId|sessions|:sessionId|presence",
   "GET|v1|projects|:projectId|sessions|:sessionId|previews",
   "GET|v1|projects|:projectId|sessions|:sessionId|prompts",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts",

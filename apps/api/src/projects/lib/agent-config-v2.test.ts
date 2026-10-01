@@ -1,5 +1,42 @@
 import { describe, expect, test } from 'bun:test';
-import { applyAgentBlockV2, applyAgentScopeV2, grantSecretToAgentV2, readAgentBlockV2 } from './agent-config-v2';
+import {
+  applyAgentBlockV2,
+  applyAgentScopeV2,
+  grantSecretToAgentV2,
+  readAgentBlockV2,
+  resolveBehaviorDraft,
+} from './agent-config-v2';
+
+describe('resolveBehaviorDraft: `behavior` and its pre-W4 name `opencode`', () => {
+  const stored = { description: 'old', prompt: 'Be brief.' };
+  const edited = { description: 'new', prompt: 'Be brief.' };
+
+  test('one name alone is the draft', () => {
+    expect(resolveBehaviorDraft({ behavior: edited }, stored)).toEqual({ ok: true, draft: edited });
+    expect(resolveBehaviorDraft({ opencode: edited }, stored)).toEqual({ ok: true, draft: edited });
+    expect(resolveBehaviorDraft({}, stored)).toEqual({ ok: true, draft: undefined });
+  });
+
+  test('a round trip that edited only the pre-W4 name keeps that edit', () => {
+    // An older client echoes the GET block (both names) and edits `opencode`.
+    expect(resolveBehaviorDraft({ behavior: stored, opencode: edited }, stored)).toEqual({
+      ok: true,
+      draft: edited,
+    });
+  });
+
+  test('a round trip that edited only `behavior` keeps that edit', () => {
+    expect(resolveBehaviorDraft({ behavior: edited, opencode: stored }, stored)).toEqual({
+      ok: true,
+      draft: edited,
+    });
+  });
+
+  test('two different edits are refused, never guessed', () => {
+    const other = { description: 'other' };
+    expect(resolveBehaviorDraft({ behavior: edited, opencode: other }, stored).ok).toBe(false);
+  });
+});
 
 const manifest = (agents: Record<string, unknown>) => ({
   schemaVersion: 2,

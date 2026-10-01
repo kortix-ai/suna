@@ -59,6 +59,8 @@ import { sessionChannelEnvFromMetadata } from './session-channel-env';
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { sandboxFeaturesValue } from '../../feature-flags/sandbox-features';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
@@ -118,8 +120,6 @@ export async function buildSessionSandboxEnvVars(input: {
   gitDeltaParentCommitBase64?: string;
   /** The delta exceeds the env cap; the daemon downloads it with one GET. */
   gitDeltaBundleRemote?: boolean;
-  /** OpenCode config dir at `baseSha`; lets the daemon spawn OpenCode pre-checkout. */
-  opencodeConfigDir?: string | null;
   /** S3 config provider mode + prepared-archive pin — see session-runtime-env.ts. */
   projectSnapshotMode?: 'git' | 'prefer-s3' | 'require-s3';
   projectSnapshotPin?: string | null;
@@ -156,7 +156,8 @@ export async function buildSessionSandboxEnvVars(input: {
     ? buildPlatformMetaOpenCodeConfig()
     : null;
   // The harness the daemon boots — `selectSessionHarness`: the project's
-  // `pi_harness` flag (on ⇒ pi) OR the manifest's `runtime: pi`. The manifest
+  // `pi_harness` flag (on ⇒ pi) OR the manifest's `runtime: pi`, and only
+  // with the LLM gateway on (pi has no other model path). The manifest
   // is read off the SAME fetch that compiles the agent config, so selecting
   // pi costs no extra git round trip. Every provisioning path (create,
   // restart, resume, open/ensure) builds its env here, so a pi project stays
@@ -190,7 +191,7 @@ export async function buildSessionSandboxEnvVars(input: {
               gitProject,
               input.baseRef,
               { onManifest },
-            ).catch(() => null);
+            );
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -213,6 +214,7 @@ export async function buildSessionSandboxEnvVars(input: {
       sessionAgent: input.agentName,
     });
   }
+  let projectMetadata: unknown;
   if (!input.platformMetaAgent) {
     // One indexed read for the flag: the callers hold the project row in
     // different shapes (or not at all on the reload paths), and the flag must
@@ -222,9 +224,12 @@ export async function buildSessionSandboxEnvVars(input: {
       .from(projects)
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
+    projectMetadata = projectRow?.metadata;
     harness = selectSessionHarness({
       piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
       runtime: manifestHarness,
+      // The same decision provisionSessionSandbox makes for KORTIX_LLM_BASE_URL.
+      llmGateway: projectLlmGatewayEnabled(projectRow?.metadata),
     });
   }
   // The prebuilt bundle of the project's pi packages (one S3 HEAD + presign; none without npm packages).
@@ -368,6 +373,9 @@ export async function buildSessionSandboxEnvVars(input: {
     ...(config.CONNECTORS_MCP_ENABLED ? { KORTIX_CONNECTORS_MCP_ENABLED: '1' } : {}),
     ...channelEnv,
     ...sessionContextEnv,
+    // The CLI hides a command whose flag is off. The platform coordinator has
+    // no project row here, so it omits the variable and the CLI stays unfiltered.
+    ...(input.platformMetaAgent ? {} : { KORTIX_FEATURES: sandboxFeaturesValue(projectMetadata) }),
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
@@ -414,7 +422,6 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentSha: input.gitDeltaParentSha,
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
-      opencodeConfigDir: input.opencodeConfigDir,
       projectSnapshotMode: input.projectSnapshotMode,
       projectSnapshotPin: input.projectSnapshotPin,
       projectSnapshotDescriptor: input.projectSnapshotDescriptor,

@@ -18,7 +18,7 @@ const row = (over: Record<string, unknown> = {}) =>
     sandboxProvider: 'daytona',
     sandboxId: 's',
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'running',
     error: null,
@@ -63,6 +63,7 @@ describe('serializeSession redaction', () => {
     expect(out.name).toBeNull();
     expect(out.custom_name).toBeNull();
     expect(out.opencode_sessions).toEqual([]);
+    expect(out.runtime_sessions).toEqual([]);
   });
 
   test('an ACCESSIBLE row keeps its title and conversation tree', () => {
@@ -72,6 +73,15 @@ describe('serializeSession redaction', () => {
     ) as Record<string, unknown>;
     expect(out.name).toBe('Migrating the payroll database');
     expect(out.opencode_sessions).toEqual([{ id: 'oc1' }]);
+    expect(out.runtime_sessions).toEqual([{ id: 'oc1' }]);
+  });
+
+  test('the runtime session id is served under its neutral name too', () => {
+    const out = serializeSession(row({ runtimeSessionId: 'ses_root' }), {
+      canAccess: true,
+    }) as Record<string, unknown>;
+    expect(out.runtime_session_id).toBe('ses_root');
+    expect(out.opencode_session_id).toBe('ses_root');
   });
 
   test('defensive redaction preserves only non-content identity fields', () => {
@@ -94,5 +104,20 @@ describe('serializeSession redaction', () => {
     expect(out.can_access).toBe(true);
     expect(out).not.toHaveProperty('end_user_ref');
     expect(out).not.toHaveProperty('origin_ref');
+  });
+});
+
+describe('serializeSession participant_people', () => {
+  const people = [{ user_id: 'u1', name: 'Avery Example', email: 'avery@example.com' }];
+
+  test('carries the resolved participants of a conversation', () => {
+    const out = serializeSession(row(), { participants: people }) as Record<string, unknown>;
+    expect(out.participant_people).toEqual(people);
+  });
+
+  test('is empty when none were resolved, and for a row the caller cannot access', () => {
+    expect((serializeSession(row()) as Record<string, unknown>).participant_people).toEqual([]);
+    const hidden = serializeSession(row(), { participants: people, canAccess: false }) as Record<string, unknown>;
+    expect(hidden.participant_people).toEqual([]);
   });
 });

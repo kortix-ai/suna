@@ -14,7 +14,6 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -341,11 +340,6 @@ function ConnectorModalBody({
               onChanged={onChanged}
             />
             <ConnectorStatusBadge connector={connector} />
-            {isComputer ? (
-              <Badge variant="outline" size="xs">
-                {tI18nComplete.raw('text1f43948106d1')}
-              </Badge>
-            ) : null}
           </div>
           {appDescription ? (
             <p className="text-muted-foreground text-sm text-pretty">{appDescription}</p>

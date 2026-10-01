@@ -69,6 +69,7 @@ const OWNER = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const ALICE = crypto.randomUUID();
 const BOB = crypto.randomUUID();
+const CAROL = crypto.randomUUID();
 const UNATTENDED_SESSION = crypto.randomUUID();
 const SHARED_SESSION = crypto.randomUUID();
 const tokens: Record<string, string> = {};
@@ -94,13 +95,15 @@ beforeAll(async () => {
     { accountId: ACCOUNT, userId: MANAGER, accountRole: 'member' },
     { accountId: ACCOUNT, userId: ALICE, accountRole: 'member' },
     { accountId: ACCOUNT, userId: BOB, accountRole: 'member' },
+    { accountId: ACCOUNT, userId: CAROL, accountRole: 'member' },
   ]);
   await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: ALICE, projectRole: 'member' },
     { accountId: ACCOUNT, projectId: PROJECT, userId: BOB, projectRole: 'member' },
+    { accountId: ACCOUNT, projectId: PROJECT, userId: CAROL, projectRole: 'manager' },
   ]);
-  for (const [name, userId] of Object.entries({ OWNER, MANAGER, ALICE, BOB })) {
+  for (const [name, userId] of Object.entries({ OWNER, MANAGER, ALICE, BOB, CAROL })) {
     // A user-scoped PAT: project-scoped tokens cannot call /v1/tunnel/*.
     const token = await createAccountToken({
       accountId: ACCOUNT,
@@ -167,7 +170,7 @@ afterAll(async () => {
   await db
     .delete(tunnelConnections)
     // Private machines live in their owner's personal account (id = user id).
-    .where(inArray(tunnelConnections.accountId, [ACCOUNT, OTHER_ACCOUNT, OWNER, MANAGER, ALICE, BOB]));
+    .where(inArray(tunnelConnections.accountId, [ACCOUNT, OTHER_ACCOUNT, OWNER, MANAGER, ALICE, BOB, CAROL]));
   await deleteFromView(db, projectMembers, eq(projectMembers.projectId, PROJECT_TWO));
   await db.delete(projects).where(inArray(projects.projectId, [PROJECT, PROJECT_TWO]));
   await deleteFromView(db, accountMembers, eq(accountMembers.accountId, ACCOUNT));
@@ -820,22 +823,23 @@ describe('v2: access mode on the machine', () => {
   });
 
   test('the stored access shows on the connection view and in `status`', async () => {
+    const grantedUntil = new Date(Date.now() + 60_000).toISOString();
     const [laptop] = await db
       .select({ tunnelId: tunnelConnections.tunnelId })
       .from(tunnelConnections)
       .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Laptop')));
     await db
       .update(tunnelConnections)
-      .set({ machineInfo: { access: { mode: 'ask', grantedUntil: '2026-09-29T14:32:00.000Z' } } })
+      .set({ machineInfo: { access: { mode: 'ask', grantedUntil } } })
       .where(eq(tunnelConnections.tunnelId, laptop!.tunnelId));
     const listed = await listedConnections(ALICE);
     expect(listed.find((row) => row.tunnel_id === laptop!.tunnelId)?.machine).toMatchObject({
-      access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' },
+      access: { mode: 'ask', granted_until: grantedUntil },
     });
     const status = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Laptop' }), 'status');
     expect(status).toMatchObject({
       status: 'ok',
-      data: { access: { mode: 'ask', granted_until: '2026-09-29T14:32:00.000Z' } },
+      data: { access: { mode: 'ask', granted_until: grantedUntil } },
     });
   });
 
@@ -971,25 +975,35 @@ describe('contract v2 review fixes', () => {
     expect(own.map((row) => row.tunnelId)).toContain(sharedTunnel);
   });
 
-  test('the generic share route refuses a computer account', async () => {
-    const [account] = await db
-      .select({ connectionId: connectorConnections.connectionId })
-      .from(connectorConnections)
-      .where(
-        and(
-          eq(connectorConnections.projectId, PROJECT),
-          eq(connectorConnections.ownerId, ALICE),
-          eq(connectorConnections.label, 'Alice Laptop'),
-        ),
-      );
-    const response = await request(
-      'POST',
-      `/v1/projects/${PROJECT}/connections/${account!.connectionId}/share`,
-      tokens[ALICE]!,
-      { principals: [] },
-    );
-    expect(response.status).toBe(409);
-    expect((await computerConnection(account!.connectionId))?.ownerType).toBe('member');
+  test('the generic share route keeps a computer in its workspace and needs the manage right', async () => {
+    const account = async (label: string) => {
+      const [row] = await db
+        .select({ connectionId: connectorConnections.connectionId })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.projectId, PROJECT),
+            eq(connectorConnections.ownerId, ALICE),
+            eq(connectorConnections.label, label),
+          ),
+        );
+      return row!.connectionId;
+    };
+    const share = (connectionId: string) =>
+      request('POST', `/v1/projects/${PROJECT}/connections/${connectionId}/share`, tokens[ALICE]!, {
+        principals: [],
+      });
+    // A team machine of another workspace never becomes this project's account.
+    const elsewhere = await account('Alice Elsewhere');
+    const refused = await share(elsewhere);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: 'COMPUTER_ACCOUNT_MISMATCH' });
+    // Her machine in this workspace: sharing is the manager right, as for any account.
+    const laptop = await account('Alice Laptop');
+    expect((await share(laptop)).status).toBe(403);
+    for (const id of [elsewhere, laptop]) {
+      expect((await computerConnection(id))?.ownerType).toBe('member');
+    }
   });
 
   test('the built-in computer connector cannot be deleted', async () => {
@@ -1034,5 +1048,164 @@ describe('contract v2 review fixes', () => {
       mode: 'ask',
       granted_until: null,
     });
+  });
+});
+
+describe('one machine, one registration', () => {
+  const HARDWARE = 'a'.repeat(64);
+  let carolTunnel = '';
+  let carolConnection = '';
+
+  async function pairCarol(body: Record<string, unknown>, approval: Record<string, unknown> = {}) {
+    const pairing = await startPairing({ machineHostname: 'carol-mac.local', ...body });
+    const response = await approve(CAROL, pairing.deviceCode, {
+      name: 'Carol Mac',
+      capabilities: ['filesystem', 'shell'],
+      project_id: PROJECT,
+      ...approval,
+    });
+    expect(response.status).toBe(200);
+    return (await response.json()) as { tunnelId: string; connectionId: string };
+  }
+  const carolMachines = () =>
+    db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(eq(tunnelConnections.ownerUserId, CAROL));
+
+  test('re-pairing the same hardware reuses the machine and its account, with a new credential and grants', async () => {
+    const first = await pairCarol({ machine_id: HARDWARE });
+    carolTunnel = first.tunnelId;
+    carolConnection = first.connectionId;
+    const [before] = await db
+      .select()
+      .from(tunnelConnections)
+      .where(eq(tunnelConnections.tunnelId, carolTunnel));
+    expect(before!.machineInfo).toMatchObject({ machineId: HARDWARE });
+
+    const again = await pairCarol({ machine_id: HARDWARE }, { name: 'Carol MacBook', capabilities: ['filesystem'] });
+    expect(again).toMatchObject({ tunnelId: carolTunnel, connectionId: carolConnection });
+    const [after] = await db
+      .select()
+      .from(tunnelConnections)
+      .where(eq(tunnelConnections.tunnelId, carolTunnel));
+    expect(after!.name).toBe('Carol MacBook');
+    expect(after!.setupTokenHash).not.toBe(before!.setupTokenHash);
+    const grants = await db
+      .select({ capability: tunnelPermissions.capability })
+      .from(tunnelPermissions)
+      .where(eq(tunnelPermissions.tunnelId, carolTunnel));
+    expect(new Set(grants.map((grant) => grant.capability))).toEqual(new Set(['filesystem']));
+    expect(await carolMachines()).toHaveLength(1);
+    const rows = (await listedConnections(CAROL)).filter((row) => row.tunnel_id === carolTunnel);
+    expect(rows.map((row) => row.connection_id)).toEqual([carolConnection]);
+  });
+
+  test('a machine registered by a heartbeat (an agent paired before machine ids) is reused too', async () => {
+    const legacy = await pairCarol({}, { name: 'Carol Legacy' });
+    // What the relay merges from a new agent's tunnel.pong.
+    await db
+      .update(tunnelConnections)
+      .set({ machineInfo: sql`${tunnelConnections.machineInfo} || ${JSON.stringify({ machineId: 'b'.repeat(64) })}::jsonb` })
+      .where(eq(tunnelConnections.tunnelId, legacy.tunnelId));
+    const again = await pairCarol({ machine_id: 'b'.repeat(64) });
+    expect(again.tunnelId).toBe(legacy.tunnelId);
+  });
+
+  test('other hardware, no id, or a malformed id pairs a new machine', async () => {
+    const before = (await carolMachines()).length;
+    const other = await pairCarol({ machine_id: 'c'.repeat(64) });
+    const none = await pairCarol({});
+    const malformed = await pairCarol({ machine_id: 'not-a-hash' });
+    expect(new Set([other.tunnelId, none.tunnelId, malformed.tunnelId, carolTunnel]).size).toBe(4);
+    expect(await carolMachines()).toHaveLength(before + 3);
+  });
+
+  test("another person's pairing of the same hardware never takes over the owner's machine", async () => {
+    const pairing = await startPairing({ machineHostname: 'carol-mac.local', machine_id: HARDWARE });
+    const response = await approve(BOB, pairing.deviceCode, { name: 'Bob on Carol Mac', capabilities: ['shell'] });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { tunnelId: string };
+    expect(body.tunnelId).not.toBe(carolTunnel);
+    const [carol] = await db
+      .select({ ownerUserId: tunnelConnections.ownerUserId, name: tunnelConnections.name })
+      .from(tunnelConnections)
+      .where(eq(tunnelConnections.tunnelId, carolTunnel));
+    expect(carol).toEqual({ ownerUserId: CAROL, name: 'Carol MacBook' });
+  });
+
+  test('Share works like any account: the owner picks who, and the computer stays one account', async () => {
+    const response = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${carolConnection}/share`,
+      tokens[CAROL]!,
+      { principals: [{ principal_type: 'user', principal_id: CAROL }, { principal_type: 'user', principal_id: ALICE }] },
+    );
+    expect(response.status).toBe(200);
+    expect(await computerConnection(carolConnection)).toMatchObject({
+      ownerType: 'project',
+      ownerId: null,
+      tunnelId: carolTunnel,
+      status: 'active',
+    });
+    // Listing (which ensures every owner's private accounts) and re-pairing
+    // both keep the one shared account; no second private row appears.
+    const listed = (await listedConnections(CAROL)).filter((row) => row.tunnel_id === carolTunnel);
+    expect(listed.map((row) => row.connection_id)).toEqual([carolConnection]);
+    expect(listed[0]!.shared_with.map((share: { principal_id: string }) => share.principal_id).sort()).toEqual(
+      [ALICE, CAROL].sort(),
+    );
+    const again = await pairCarol({ machine_id: HARDWARE });
+    expect(again).toMatchObject({ tunnelId: carolTunnel, connectionId: carolConnection });
+    const rows = await db
+      .select({ connectionId: connectorConnections.connectionId })
+      .from(connectorConnections)
+      .where(eq(connectorConnections.tunnelId, carolTunnel));
+    expect(rows).toHaveLength(1);
+  });
+
+  test('disconnecting the shared computer in one project returns it to its owner alone', async () => {
+    const revoked = await request(
+      'PUT',
+      `/v1/projects/${PROJECT}/connections/${carolConnection}/revoke`,
+      tokens[CAROL]!,
+      {},
+    );
+    expect(revoked.status).toBe(200);
+    const active = (await listedConnections(CAROL)).filter(
+      (row) => row.tunnel_id === carolTunnel && row.status === 'active',
+    );
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({ owner_type: 'member' });
+    expect(active[0]!.connection_id).not.toBe(carolConnection);
+  });
+
+  test('only the owner, as a human, may share a computer', async () => {
+    const mine = await pairCarol({ machine_id: 'd'.repeat(64) });
+    const sessionToken = await createAccountToken({
+      accountId: ACCOUNT,
+      userId: CAROL,
+      name: 'computer-share-session',
+      projectId: PROJECT,
+      sessionId: SHARED_SESSION,
+      agentGrant: { agent: 'main', connectors: [], permissions: 'all' },
+    });
+    minted.push(sessionToken.tokenId);
+    const bySession = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${mine.connectionId}/share`,
+      sessionToken.secretKey,
+      { principals: [] },
+    );
+    expect(bySession.status).toBe(403);
+    // Another member does not even see the owner's private account.
+    const byOther = await request(
+      'POST',
+      `/v1/projects/${PROJECT}/connections/${mine.connectionId}/share`,
+      tokens[MANAGER]!,
+      { principals: [] },
+    );
+    expect(byOther.status).toBe(404);
+    expect(await computerConnection(mine.connectionId)).toMatchObject({ ownerType: 'member', ownerId: CAROL });
   });
 });

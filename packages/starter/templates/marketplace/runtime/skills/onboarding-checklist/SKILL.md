@@ -18,7 +18,7 @@ account creation, group membership — wait for a human.
 
 Which groups a role belongs to, which channels a team joins, and what a good
 first week looks like is the **onboarding standard**: a standing reference at
-`.kortix/memory/onboarding-standard.md`, read fresh every run. It isn't a
+`memory/onboarding-standard.md`, read fresh every run. It isn't a
 run-to-run ledger — it's policy, and it only changes when a human edits it.
 </overview>
 
@@ -55,7 +55,7 @@ follows — don't touch access or membership for anyone else.
 
 ## Step 2 — Read the onboarding standard
 
-Read `.kortix/memory/onboarding-standard.md` for this role and team:
+Read `memory/onboarding-standard.md` for this role and team:
 
 - the Google Workspace groups and aliases the role belongs to,
 - the Slack channels the team works in,
@@ -120,7 +120,7 @@ pending, not as done.
 - **One case per new hire, no cross-run memory beyond the standard.** Each run
   is independent — don't infer anything about today's new hire from a previous
   session's state beyond what's recorded on the person's own case, and never
-  treat `.kortix/memory/onboarding-standard.md` as anything but standing
+  treat `memory/onboarding-standard.md` as anything but standing
   policy. When a check finds several new hires at once, never let one case's
   failure or pending approval block another.
 - **Isolation.** Every new hire runs in its own sandbox; only the checklist

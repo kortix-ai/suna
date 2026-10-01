@@ -116,7 +116,7 @@ function walk(dir: string, out: string[] = []): string[] {
  * this map is a deliberate act — anything not listed must be floor-covered.
  */
 const PROJECT_CODE_EXEMPTIONS: Record<string, Set<string>> = {
-  'general-knowledge-worker/.kortix/opencode/skills/website-building/shared/llm-api': new Set([
+  'general-knowledge-worker/skills/website-building/shared/llm-api': new Set([
     'openai',
     'elevenlabs',
   ]),

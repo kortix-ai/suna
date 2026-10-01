@@ -16,13 +16,14 @@ import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantin
 import type { ConfigReleaseApi } from '@/services/config-release/api-client'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
 } from '@/lib/shutdown-state'
+import { ConvergeBusyError } from '@/services/config-release/release'
 import {
-  ConvergeBusyError,
   configReleaseReport,
   convergeConfigRelease,
   isConvergenceInFlight,
@@ -1034,7 +1035,7 @@ describe('the session is told which commit it runs', () => {
   const readNotice = () => (existsSync(noticePath) ? readFileSync(noticePath, 'utf8') : null)
   const noteFor = (descriptor: { source_commit: string | null; config_dir: string | null }) =>
     writeConfigReleaseNotice(
-      { sourceCommit: descriptor.source_commit, configDir: descriptor.config_dir, sessionId: 'ses-1' },
+      { sourceCommit: descriptor.source_commit, sourcePaths: releaseSourcePaths(descriptor.config_dir), sessionId: 'ses-1' },
       noticePath,
     )
 

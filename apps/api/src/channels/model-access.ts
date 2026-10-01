@@ -30,7 +30,7 @@ import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
 import { runtimeModelCatalog } from '../llm-gateway/models/runtime-catalog';
 import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway/resolution/default-model';
-import { toOpencodeModelRef, toWireModel } from '../llm-gateway/resolution/effective';
+import { toOpencodeModelRef } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
 import { channelModelContext, projectModelContext } from './slack/model-gate';
@@ -341,6 +341,8 @@ export async function sessionModelScope(
 export interface ChannelSessionStart {
   /** The model to pin; null leaves it to the server's default. */
   model: string | null;
+  /** Explicit selection that cannot run and has no usable replacement. */
+  unavailableModel?: string;
   /** The key selection the session starts with (`provider_secret_pools`). */
   pools?: Record<string, string[]>;
 }
@@ -411,15 +413,21 @@ export async function planChannelSessionStart(input: {
     ...(pools ? { providerSecretPools: pools } : {}),
   });
   const model = replaced ?? base;
+  // Only reject an explicit selection; an unresolved default belongs to the
+  // session lifecycle, which may resolve a different agent-level default.
+  const unavailableModel = chosen && !replaced && !keys && !(await checkChannelModel(scope, chosen, { agentGrantEnv })).ok
+    ? chosen : undefined;
   // The keys belong to the model they were selected for. A replacement on
   // another provider runs as that provider normally does.
   const keep = keys && model && keyProviderOf(model)?.providerId === keys.providerId;
-  return { model, ...(keep ? { pools } : {}) };
+  return { model, ...(keep ? { pools } : {}), ...(unavailableModel ? { unavailableModel } : {}) };
 }
 
 /**
- * The model a follow-up in a chat conversation must carry, or null to leave
- * the session's own.
+ * The model a follow-up in a chat conversation carries: the conversation's
+ * `/model` choice, else the session's pin. Every prompt carries it, so the
+ * runtime runs the model Kortix shows (`channelTurnModel`). Null only when
+ * there is nothing servable to send.
  *
  * The conversation's `/model` choice is the model: a Teams chat keeps one
  * session, so a choice that waited for the next session did nothing. A choice
@@ -464,7 +472,6 @@ export async function planChannelFollowUp(input: {
     agentGrantEnv,
     personalUserId: scope.personalUserId,
     sessionId: session.sessionId,
-    explicit: Boolean(chosen) && toWireModel(chosen!) !== (session.pinnedModel ? toWireModel(session.pinnedModel) : null),
   });
 }
 

@@ -13,6 +13,10 @@ import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { isFirstPromptRow, projectQueueRows } from '@/features/session/queue-projection';
 import { SESSION_TRANSCRIPT_CLASS, SessionBodyRow } from '@/features/session/session-body';
 import { SessionLayout } from '@/features/session/session-layout';
+import { SessionMessageCard } from '@/features/session/turn/session-message-card';
+import { isAskForViewer } from '@/features/session/turn/message-author';
+import { parseSessionMessagePrompt } from '@/features/session/message-parsing';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
@@ -27,6 +31,7 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { SessionPromptOverrides, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
+  useFeatureFlag,
   usePromptAttachments,
   useRuntimeAgents,
   useSessionPrompts,
@@ -124,6 +129,13 @@ export function InstantSessionShell({
   // written by a pre-deploy tab.
   const promptInbox = useSessionPrompts(projectId, sessionId, { enabled: hydrated });
   const firstPromptRow = promptInbox.prompts.find((p) => isFirstPromptRow(p));
+  // An ask's first message (`no_reply`) goes to people: show it as the ask card,
+  // with no Thinking row and no Stop button while the box boots.
+  const { user: viewer } = useAuth();
+  const { enabled: humanMessaging } = useFeatureFlag(projectId, 'human_messaging');
+  const askInfo = humanMessaging && firstPromptRow?.no_reply
+    ? parseSessionMessagePrompt(firstPromptRow.full_text ?? firstPromptRow.text)
+    : undefined;
   const send = useInstantSessionSend({
     projectId,
     sessionId,
@@ -214,11 +226,11 @@ export function InstantSessionShell({
       // normal (typeable) — only the send button flips to a stop button. The
       // stop is disabled because there's nothing running to stop yet; the real
       // chat's live stop takes over the instant it crossfades in.
-      isBusy={!!submitted}
+      isBusy={!!submitted && !askInfo}
       // The first message IS the turn as far as this shell is concerned, so a
       // `/` command submitted now is refused with the same message a command
       // typed mid-turn gets, rather than racing the boot.
-      sessionWorking={!!submitted}
+      sessionWorking={!!submitted && !askInfo}
       stopDisabled={!!submitted}
       // What was typed while the box boots — see `shellQueueRows`.
       inputSlot={
@@ -325,6 +337,12 @@ export function InstantSessionShell({
                   {/* The composer shows Stop from this send on, so the one
                       Thinking row sits here, above any queued bubbles. A failed
                       delivery shows its cause instead. */}
+                  {askInfo ? (
+                    <SessionMessageCard
+                      info={askInfo}
+                      replyHint={isAskForViewer(askInfo, viewer?.email)}
+                    />
+                  ) : (
                   <OptimisticTurn
                     text={buildOptimisticPromptTextWithUploads(
                       effectiveSubmission.text,
@@ -349,6 +367,7 @@ export function InstantSessionShell({
                       ) : undefined
                     }
                   />
+                  )}
                 </div>
               )}
               {!hasTranscript &&

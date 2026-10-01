@@ -7,6 +7,7 @@ import { insertCommandChip, insertMention } from '../editor/mention-node';
 import type { MenuController } from '../editor/suggestion';
 import { baseSuggestion } from '../editor/suggestion';
 import { MenuNavState } from './menu-nav-state';
+import { menuNavigation } from './menu-navigation';
 import { mountDockedMenu, mountSuggestionMenu } from './mount';
 import type { SlashAction } from './slash-actions';
 import type { SlashFile } from './slash-files';
@@ -156,33 +157,18 @@ export function createSlashSuggestion(
       latestCommand = props.command;
       renderer?.updateProps({ sections, selectedIndex: nav.getSelectedIndex(), onSelect, onHover });
     },
-    onKeyDown({ event }) {
-      if (!nav.getRows().length) return false;
-      if (event.key === 'ArrowDown') {
-        nav.move(1);
-        renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
-        return true;
-      }
-      if (event.key === 'ArrowUp') {
-        nav.move(-1);
-        renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() });
-        return true;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        const row = nav.getSelectedRow();
-        if (row) latestCommand?.(row);
-        return true;
-      }
-      return false;
-    },
-    onExit() {
-      nav.close();
-      unmount?.();
-      renderer?.destroy();
-      renderer = null;
-      unmount = null;
-      latestCommand = null;
-    },
+    ...menuNavigation(
+      nav,
+      () => renderer?.updateProps({ selectedIndex: nav.getSelectedIndex() }),
+      (row) => latestCommand?.(row),
+      () => {
+        unmount?.();
+        renderer?.destroy();
+        renderer = null;
+        unmount = null;
+        latestCommand = null;
+      },
+    ),
   };
 
   return {

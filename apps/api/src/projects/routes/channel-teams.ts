@@ -7,7 +7,7 @@ import {
   saveTeamsInstall,
 } from '../../channels/install-store';
 import { resolveBaseUrl } from '../../channels/slack-manifest';
-import { proveTeamsTenant, teamsChannelEnabled } from '../../channels/teams-auth';
+import { proveTeamsTenant } from '../../channels/teams-auth';
 import { buildTeamsManifest } from '../../channels/teams-manifest';
 import { teamsDeepLink, teamsMode } from '../../channels/teams-mode';
 import { INSTALL_STATE_INVALID, InstallCompletionBody } from '../../channels/core/install-completion';
@@ -16,7 +16,6 @@ import { downloadTeamsFile, initiateTeamsUpload } from '../../channels/teams/fil
 import { deleteTeamsMessage, editTeamsMessage, listTeamsPostTargets, postToTeamsConversation } from '../../channels/teams/post';
 import { config } from '../../config';
 import { reconcileChannelConnectors } from '../../connectors/sync';
-import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -35,7 +34,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/installation',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/installation',
+    summary: 'Get the Microsoft Teams installation',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },
@@ -54,7 +53,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/mode',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/mode',
+    summary: 'Get the Microsoft Teams connection mode',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },
@@ -66,10 +65,9 @@ projectsApp.openapi(
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const install = await loadTeamsInstall(projectId).catch(() => null);
-    const enabled = teamsChannelEnabled(loaded.row.metadata);
     return c.json({
-      ...teamsMode(baseUrl, { enabled, projectId, byoAppId }),
-      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl, enabled }),
+      ...teamsMode(baseUrl, { projectId, byoAppId }),
+      orgConsentUrl: byoAppId ? null : teamsOrgConsentUrl({ projectId, userId: loaded.userId, baseUrl }),
       orgInstalled: install?.orgInstalled ?? false,
       deepLinkUrl: install?.catalogAppId ? teamsDeepLink(install.catalogAppId) : null,
     });
@@ -86,7 +84,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/oauth/complete',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/oauth/complete',
+    summary: 'Complete the Microsoft Teams OAuth connection',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -132,7 +130,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/manifest',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/manifest',
+    summary: 'Download the Microsoft Teams app manifest',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404, 409) },
@@ -143,11 +141,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const byoAppId = await loadTeamsAppIdForProject(projectId);
     const baseUrl = resolveBaseUrl(new URL(c.req.url), teamsPublicBaseUrl());
-    const mode = teamsMode(baseUrl, {
-      enabled: teamsChannelEnabled(loaded.row.metadata),
-      projectId,
-      byoAppId,
-    });
+    const mode = teamsMode(baseUrl, { projectId, byoAppId });
     if (!mode.available || !mode.appId) {
       return c.json({ error: 'Teams is not configured on this server' }, 409);
     }
@@ -167,7 +161,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/connect',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/connect',
+    summary: 'Connect Microsoft Teams',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -182,8 +176,6 @@ projectsApp.openapi(
     // Connecting a Teams bot is a connector-write capability — a custom role can
     // withhold it and a scoped agent must hold it (central fold), mirroring the
     // Slack (channel-slack.ts slack/connect) and email connect twins.
-    // Authz before the feature-flag check so an unauthorized caller never gets a
-    // capability-independent answer (same order as the file-upload twin below).
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -191,9 +183,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) {
-      return c.json(featureDisabledBody('teams'), 403);
-    }
 
     let body: { tenant_id?: string; team_name?: string; app_id?: string; app_password?: string };
     try {
@@ -263,7 +252,7 @@ projectsApp.openapi(
     method: 'delete',
     path: '/{projectId}/channels/teams/installation',
     tags: ['channels'],
-    summary: 'DELETE /:projectId/channels/teams/installation',
+    summary: 'Disconnect Microsoft Teams',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: { 200: json(z.any(), 'OK'), ...errors(404) },
@@ -292,7 +281,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/file',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/file (download proxy)',
+    summary: 'Download a Microsoft Teams file',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -322,7 +311,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/channels/teams/conversations',
     tags: ['channels'],
-    summary: 'GET /:projectId/channels/teams/conversations (proactive-post targets)',
+    summary: 'List Microsoft Teams conversations the bot can post to',
     ...auth,
     request: { params: z.object({ projectId: z.string() }) },
     responses: {
@@ -337,7 +326,6 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
     return c.json({ conversations: await listTeamsPostTargets(projectId) });
   },
 );
@@ -347,7 +335,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/message',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/message (proactive post)',
+    summary: 'Post a Microsoft Teams message',
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
@@ -374,7 +362,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
     const body = await readJsonObject(c);
     const result = await postToTeamsConversation(projectId, {
       conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
@@ -395,7 +382,7 @@ for (const op of ['edit', 'delete'] as const) {
       method: 'post',
       path: `/{projectId}/channels/teams/message/${op}`,
       tags: ['channels'],
-      summary: `POST /:projectId/channels/teams/message/${op} (${op} a bot message)`,
+      summary: `${op === "edit" ? "Edit" : "Delete"} a Microsoft Teams bot message`,
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -411,7 +398,6 @@ for (const op of ['edit', 'delete'] as const) {
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
-      if (!teamsChannelEnabled(loaded.row.metadata)) return c.json(featureDisabledBody('teams'), 403);
       const body = await readJsonObject(c);
       const target = {
         conversationId: String(body.conversation_id ?? body.conversationId ?? ''),
@@ -435,7 +421,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/channels/teams/file/upload',
     tags: ['channels'],
-    summary: 'POST /:projectId/channels/teams/file/upload (consent-card upload)',
+    summary: 'Upload a file to Microsoft Teams',
     description:
       'Delivers a file into a Teams conversation bound to the project. The service URL and tenant come from the ' +
       "binding and the project's stored install, never from the request: `service_url` is accepted and ignored.",
@@ -460,8 +446,7 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Posting a consent card drives the project bot to SEND into the customer's
     // Teams channel — a send primitive gated on connector-write like the Slack
-    // (channel-slack.ts slack/file/upload) and meet/speak twins. Authz before the feature-flag
-    // check so an unauthorized caller never gets a capability-independent answer.
+    // (channel-slack.ts slack/file/upload) and meet/speak twins.
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -469,9 +454,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
-    if (!teamsChannelEnabled(loaded.row.metadata)) {
-      return c.json(featureDisabledBody('teams'), 403);
-    }
     const body = await readJsonObject(c);
     // `service_url` in the body is ignored: the server addresses the
     // conversation (teams/post.ts resolveTeamsProjectConversation).

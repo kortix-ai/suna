@@ -581,6 +581,12 @@ boot and drops to the login screen with this line; the fix is
   sandbox runs into `~/.kortix/opencode/<version>/` once, then reuses it. While
   opencode has the terminal the TUI is suspended and paints nothing; on exit it
   repaints on the same session.
+- **A pi session has no `/attach` and no project commands.** The TUI reads the
+  session runtime's `/kortix/health` capabilities once the runtime is up. A
+  runtime without `session.attach` drops `/attach` from the `/` palette, and
+  `Alt+O` or sidebar `a` shows a toast instead of attaching (`Alt+T` still
+  opens a shell). A runtime without `session.commands` lists no project
+  commands in the palette.
 - **Leaving opencode is `Ctrl+C` twice WITHIN one second.** The interval is the
   whole trick: measured, two presses 0.3 s apart exit it and the Kortix TUI
   repaints, while the same two spaced three seconds apart are two separate

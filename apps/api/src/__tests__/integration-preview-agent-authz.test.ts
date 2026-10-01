@@ -4,7 +4,7 @@
  *
  * This suite owns the authorization decision, with nothing about it mocked: a
  * member scoped OUT of an agent is refused before the re-mint, a member scoped IN
- * is not, the gate checks the REQUESTED agent (never the session's own), and an
+ * is not on the bound session agent, switches are rejected, and an
  * account owner keeps the implicit-Manager bypass. The sibling unit test
  * (sandbox-proxy/routes/preview-agent-authz.test.ts) keeps only the no-gate paths
  * and the undeclared-agent drop, with a stubbed `authorize`.
@@ -47,6 +47,8 @@ const SANDBOX = crypto.randomUUID();
 /** The provider external id the proxy addresses the box by. */
 const EXTERNAL_ID = `ext-${SANDBOX}`;
 
+/** The agent the proxy sees the session bound to. `default` is the legacy non-binding sentinel. */
+let boundAgent = SESSION_AGENT;
 let remintCalls: string[] = [];
 let envSyncCalls = 0;
 let upstreamCalls = 0;
@@ -94,7 +96,7 @@ mock.module('../sandbox-proxy/backend', () => ({
     accountId: ACCOUNT,
     externalId: EXTERNAL_ID,
     sandboxId: SANDBOX,
-    agentName: SESSION_AGENT,
+    agentName: boundAgent,
     provider: 'daytona',
   }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
@@ -220,8 +222,7 @@ beforeAll(async () => {
     grantedBy: owner,
   });
   // A third agent, scoped to `scopedOut` ONLY. `scopedIn` holds grants on both
-  // other agents, so a gate that checked the session's agent instead of the
-  // requested one would let `scopedIn` run this one.
+  // other agents. The running-session switch guard rejects this request.
   await upsertResourceGrant({
     accountId: ACCOUNT,
     projectId: PROJECT,
@@ -250,13 +251,18 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  boundAgent = SESSION_AGENT;
   remintCalls = [];
   envSyncCalls = 0;
   upstreamCalls = 0;
   __resetPromptDedupe();
 });
 
+// A session bound to a concrete agent refuses any other agent with 409 before
+// authorization (KRTX-805), so the IAM agent gate is reached only by a
+// `default`-bound session: the legacy client echoes its resolved default.
 test('a member scoped OUT of the agent cannot prompt as it, and never reaches the re-mint', async () => {
+  boundAgent = 'default';
   const response = await promptAs(scopedOut, SCOPED_AGENT);
 
   expect(response.status).toBe(403);
@@ -266,19 +272,8 @@ test('a member scoped OUT of the agent cannot prompt as it, and never reaches th
   expect(upstreamCalls).toBe(0);
 });
 
-test('the gate checks the REQUESTED agent: a grant on the session agent does not cover a switch', async () => {
-  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
-
-  expect(response.status).toBe(403);
-  expect(await response.json()).toMatchObject({
-    code: 'AGENT_NOT_AUTHORIZED',
-    requested_agent: OTHER_SCOPED_AGENT,
-  });
-  expect(remintCalls).toEqual([]);
-  expect(upstreamCalls).toBe(0);
-});
-
-test('the member the agent IS scoped to prompts as it normally', async () => {
+test('the member an agent IS scoped to passes the gate on a default-bound session and re-mints for it', async () => {
+  boundAgent = 'default';
   const response = await promptAs(scopedIn, SCOPED_AGENT);
 
   expect(response.status).toBe(200);
@@ -286,7 +281,35 @@ test('the member the agent IS scoped to prompts as it normally', async () => {
   expect(upstreamCalls).toBe(1);
 });
 
+test('a grant on another agent does not permit switching a running session', async () => {
+  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
+
+  expect(response.status).toBe(409);
+  expect(remintCalls).toEqual([]);
+  expect(upstreamCalls).toBe(0);
+});
+
+test('a member scoped OUT is refused a switch with 409 before any grant work', async () => {
+  const response = await promptAs(scopedOut, SCOPED_AGENT);
+
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+  expect(remintCalls).toEqual([]);
+  expect(upstreamCalls).toBe(0);
+});
+
+// Same-agent turns re-point the token's grant at the running agent, so a
+// manifest that narrowed it is enforced from the first call of the turn.
+test('the member the session agent IS scoped to prompts as it normally', async () => {
+  const response = await promptAs(scopedIn, SESSION_AGENT);
+
+  expect(response.status).toBe(200);
+  expect(remintCalls).toEqual([SESSION_AGENT]);
+  expect(upstreamCalls).toBe(1);
+});
+
 test('an account owner keeps the implicit-Manager bypass over resource scoping', async () => {
+  boundAgent = 'default';
   const response = await promptAs(owner, SCOPED_AGENT);
 
   expect(response.status).toBe(200);

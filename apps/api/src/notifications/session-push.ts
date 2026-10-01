@@ -3,10 +3,10 @@
 // the API detects the event (routes/turn-stream.ts, routes/turn-questions.ts)
 // and sends through Expo. Callers fire and forget: `notifySessionEvent` never
 // throws and never runs on the relay's response path.
-import { projectSessions } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { projectSessions, sessionPresenceLeases } from '@kortix/db';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import { config } from '../config';
-import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/sandbox-turn-lifecycle';
+import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
 import { db } from '../shared/db';
 import { pushDeviceTokenStore, type PushDeviceTokenRow, type PushDeviceTokenStore } from './device-tokens';
 import { sendExpoPushMessages, type ExpoPushMessage, type ExpoPushResult } from './expo-push';
@@ -19,16 +19,23 @@ export interface SessionPushEvent {
   projectId: string;
   /** First question text, for `question` events. */
   question?: string;
+  /** Notify these users instead of the session creator: the people a
+   *  conversation was opened with (`POST /sessions` `participants`). */
+  recipients?: string[];
 }
 
 export interface SessionPushTarget {
   createdBy: string | null;
   title: string | null;
+  /** The people a conversation was opened with: they, not the creator, are
+   *  the ones in it, so every push of that session goes to them. */
+  participants?: string[];
 }
 
 export interface SessionPushDeps {
   enabled: boolean;
   loadSession(sessionId: string, projectId: string): Promise<SessionPushTarget | null>;
+  isPresent?(userId: string, sessionId: string): Promise<boolean>;
   store: Pick<PushDeviceTokenStore, 'listByUser' | 'deleteTokens'>;
   send(messages: ExpoPushMessage[], store: Pick<PushDeviceTokenStore, 'deleteTokens'>): Promise<ExpoPushResult>;
   /** Receives failure warnings. Defaults to `console`. */
@@ -36,7 +43,7 @@ export interface SessionPushDeps {
 }
 
 export type SessionPushOutcome =
-  | { sent: 0; reason: 'disabled' | 'no_session' | 'no_recipient' | 'no_devices' | 'failed' }
+  | { sent: 0; reason: 'disabled' | 'no_session' | 'no_recipient' | 'no_devices' | 'present' | 'failed' }
   | { sent: number; reason: 'sent'; result: ExpoPushResult };
 
 export const DEFAULT_PUSH_TITLE = 'Kortix';
@@ -131,9 +138,16 @@ export function createSessionNotifier(deps: SessionPushDeps) {
       if (!deps.enabled) return { sent: 0, reason: 'disabled' };
       const session = await deps.loadSession(event.sessionId, event.projectId);
       if (!session) return { sent: 0, reason: 'no_session' };
-      if (!session.createdBy) return { sent: 0, reason: 'no_recipient' };
-      const rows = await deps.store.listByUser(session.createdBy);
-      const messages = buildSessionPushMessages(event, session.title, rows);
+      const recipients = event.recipients
+        ?? (session.participants?.length ? session.participants : session.createdBy ? [session.createdBy] : []);
+      if (recipients.length === 0) return { sent: 0, reason: 'no_recipient' };
+      const messages: ExpoPushMessage[] = [];
+      let present = 0;
+      for (const userId of recipients) {
+        if (await deps.isPresent?.(userId, event.sessionId)) { present += 1; continue; }
+        messages.push(...buildSessionPushMessages(event, session.title, await deps.store.listByUser(userId)));
+      }
+      if (present === recipients.length) return { sent: 0, reason: 'present' };
       if (messages.length === 0) return { sent: 0, reason: 'no_devices' };
       const result = await deps.send(messages, deps.store);
       return { sent: messages.length, reason: 'sent', result };
@@ -156,8 +170,12 @@ async function loadSessionTarget(sessionId: string, projectId: string): Promise<
     .limit(1);
   if (!row) return null;
   // `metadata.name` is the session title (owned by session-title-generate.ts).
-  const name = (row.metadata as Record<string, unknown> | null)?.name;
-  return { createdBy: row.createdBy, title: typeof name === 'string' ? name : null };
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string');
+  const participants = Array.isArray(meta.participants)
+    ? meta.participants.filter((id): id is string => typeof id === 'string')
+    : [];
+  return { createdBy: row.createdBy, title: title ?? null, participants };
 }
 
 let defaultNotifier: ReturnType<typeof createSessionNotifier> | null = null;
@@ -167,6 +185,11 @@ export function notifySessionEvent(event: SessionPushEvent): Promise<SessionPush
   defaultNotifier ??= createSessionNotifier({
     enabled: config.PUSH_NOTIFICATIONS_ENABLED,
     loadSession: loadSessionTarget,
+    isPresent: async (userId, sessionId) => {
+      const rows = await db.select({ tabId: sessionPresenceLeases.tabId }).from(sessionPresenceLeases)
+        .where(and(eq(sessionPresenceLeases.userId, userId), eq(sessionPresenceLeases.sessionId, sessionId), gt(sessionPresenceLeases.expiresAt, sql`now()`))).limit(1);
+      return rows.length > 0;
+    },
     store: pushDeviceTokenStore(),
     send: (messages, store) =>
       sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, store }),

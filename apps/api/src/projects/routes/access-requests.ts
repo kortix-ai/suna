@@ -2,7 +2,7 @@
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR } from '../../iam/roles';
-import { auth, errors, json } from '../../openapi';
+import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { isAccountManager } from '../access';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -15,8 +15,8 @@ import {
   assertProjectCapability,
 } from '../lib/access';
 import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
-import { AnyObject, projectsApp } from '../lib/app';
-import { getAccountMembership } from '../lib/git';
+import { projectsApp } from '../lib/app';
+import { getAccountMembership } from '../lib/user-identity';
 import { readJsonObject } from '../../shared/http-body';
 
 function serializeProjectAccessRequest(row: typeof projectAccessRequests.$inferSelect) {
@@ -45,11 +45,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/access-requests',
     tags: ['access'],
-    summary: 'POST /:projectId/access-requests',
+    summary: 'Request access to a project',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            message: z.string().optional().openapi({ description: 'Note to the project managers.' }),
+          }) } } },
       },
     responses: {
         200: json(z.any(), 'Existing access request or access state'),
@@ -134,7 +136,7 @@ projectsApp.openapi(
     method: 'get',
     path: '/{projectId}/access-requests',
     tags: ['access'],
-    summary: 'GET /:projectId/access-requests',
+    summary: 'List project access requests',
     ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
@@ -174,11 +176,13 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/access-requests/{requestId}/approve',
     tags: ['access'],
-    summary: 'POST /:projectId/access-requests/:requestId/approve',
+    summary: 'Approve a project access request',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), requestId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
+        body: { content: { 'application/json': { schema: lenientBody({
+            role: z.enum(['manager,member']).optional().openapi({ description: 'Role to grant. Default member.' }),
+          }) } } },
       },
     responses: {
       200: json(z.any(), 'Access request approved'),
@@ -260,7 +264,7 @@ projectsApp.openapi(
     method: 'post',
     path: '/{projectId}/access-requests/{requestId}/reject',
     tags: ['access'],
-    summary: 'POST /:projectId/access-requests/:requestId/reject',
+    summary: 'Reject a project access request',
     ...auth,
       request: {
         params: z.object({ projectId: z.string(), requestId: z.string() }),

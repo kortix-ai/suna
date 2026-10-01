@@ -1,4 +1,6 @@
 import { execFileSync, spawn } from 'child_process';
+import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
 import { hostname, platform } from 'os';
 import { isTunnelCapability } from '../shared/permissions';
 import type { TunnelCapability } from '../shared/types';
@@ -169,6 +171,44 @@ export function machineDisplayName({
 }
 
 /**
+ * This machine's identity: sha256 of its hardware id (macOS IOPlatformUUID,
+ * Linux /etc/machine-id, Windows MachineGuid), so the raw id never leaves the
+ * machine. It survives reinstalls, renames, and network changes; the relay
+ * reuses the owner's existing registration of it instead of pairing a new
+ * one. Null when the id cannot be read.
+ */
+export function machineId({
+  os = platform(),
+  run = (command: string, args: string[]) =>
+    execFileSync(command, args, { encoding: 'utf8', timeout: 2_000, stdio: ['ignore', 'pipe', 'ignore'] }),
+  read = (path: string) => readFileSync(path, 'utf8'),
+}: {
+  os?: string;
+  run?: (command: string, args: string[]) => string;
+  read?: (path: string) => string;
+} = {}): string | null {
+  const attempt = (source: () => string | undefined) => {
+    try {
+      return source()?.trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  const raw =
+    os === 'darwin'
+      ? attempt(() => /"IOPlatformUUID" = "([^"]+)"/.exec(run('ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice']))?.[1])
+      : os === 'win32'
+        ? attempt(
+            () =>
+              /MachineGuid\s+REG_SZ\s+(\S+)/.exec(
+                run('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid']),
+              )?.[1],
+          )
+        : (attempt(() => read('/etc/machine-id')) ?? attempt(() => read('/var/lib/dbus/machine-id')));
+  return raw ? createHash('sha256').update(`kortix-machine:${raw.toLowerCase()}`).digest('hex') : null;
+}
+
+/**
  * Starts pairing. `projectId` names the project the machine is being connected
  * to, so the approval page can skip its project picker. A relay that predates
  * the field ignores it.
@@ -177,12 +217,15 @@ export async function requestDeviceAuthorization(
   apiUrl: string,
   options: { projectId?: string } = {},
 ): Promise<DeviceAuthChallenge> {
+  const id = machineId();
   const response = await fetch(`${apiUrl}/device-auth`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       // The default machine name on the approval page.
       machineHostname: machineDisplayName(),
+      // One registration per machine: re-pairing reuses it.
+      ...(id ? { machine_id: id } : {}),
       ...(options.projectId ? { project_id: options.projectId } : {}),
     }),
   });

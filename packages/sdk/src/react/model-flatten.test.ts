@@ -18,6 +18,22 @@ function gatewayProviderList(
   } as unknown as ProviderListResponse;
 }
 
+describe('flattenModels — free catalog flag', () => {
+  test('normalizes true, false, and absent free flags without changing other fields', () => {
+    const models = gatewayProviderList({
+      paid: { name: 'Paid' },
+      free: { name: 'Free', free: true },
+      disabled: { name: 'Disabled', free: false },
+    });
+    const flat = flattenModels(models);
+    expect(flat.map(({ modelID, free, capabilities }) => ({ modelID, free, capabilities }))).toEqual([
+      { modelID: 'paid', free: false, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+      { modelID: 'free', free: true, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+      { modelID: 'disabled', free: false, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+    ]);
+  });
+});
+
 describe('flattenModels — gateway `provider` + `reasoning_options` pass-through', () => {
   test('carries the explicit `provider` field for a BYOK model registered under the kortix provider', () => {
     const [flat] = flattenModels(
@@ -33,6 +49,23 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
     expect(flat?.providerID).toBe('kortix');
     expect(flat?.provider).toBe('anthropic');
     expect(flat?.reasoningOptions).toEqual([{ type: 'effort', values: ['low', 'medium', 'high'] }]);
+  });
+
+  // A BYOK provider without a hand-written label (OpenCode Go) was named after
+  // the synthetic provider: "Kortix". The gateway serves the real name.
+  test('names a BYOK model after its real provider, keeping the kortix providerID', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'opencode-go/glm-5.3': { name: 'GLM-5.3', provider: 'opencode-go', provider_name: 'OpenCode Go' },
+      }),
+    );
+    expect(flat?.providerID).toBe('kortix');
+    expect(flat?.providerName).toBe('OpenCode Go');
+  });
+
+  test('a model without `provider_name` keeps the provider list name', () => {
+    const [flat] = flattenModels(gatewayProviderList({ 'glm-5.3-flash': { name: 'GLM', provider: 'kortix' } }));
+    expect(flat?.providerName).toBe('Kortix');
   });
 
   test('carries `provider: "kortix"` for a managed model, distinct from its providerID', () => {
@@ -263,5 +296,40 @@ describe('isOfferedModel', () => {
 
   test('refuses a key that is not in the catalog', () => {
     expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'gone/model' })).toBe(false);
+  });
+});
+
+// Characterization (KRTX-452, phase 1 of KRTX-451): the canonical SDK
+// flattener already diverges from the host copy
+// (apps/web/src/features/session/model-flatten.ts) on these behaviors. The
+// host test pins the same fixtures on the host side. Later phases reconcile
+// the host onto these SDK semantics; these assertions are the spec they
+// reconcile to.
+describe('flattenModels — SDK semantics the host copy still lacks (characterization)', () => {
+  const driftList = gatewayProviderList({
+    // Stale pre-removal entries a baked catalog can still carry.
+    auto: { name: 'Auto' },
+    'kortix/auto': { name: 'Kortix Auto' },
+    'custom/mystery': { name: 'Mystery' },
+    'custom/silent': { name: 'Silent', capabilities: { reasoning: true } },
+    // Zero-cost managed model: the gateway stamps `free`.
+    'kortix/free-tier': { name: 'Free Tier', free: true, cost: { input: 0, output: 0 } },
+    'kortix/paid-tier': { name: 'Paid Tier', cost: { input: 1, output: 2 } },
+  });
+
+  test('gateway mode drops stale pre-removal auto/kortix/auto entries', () => {
+    const flat = flattenModels(driftList);
+    expect(flat.map((m) => m.modelID).sort()).toEqual([
+      'custom/mystery',
+      'custom/silent',
+      'kortix/free-tier',
+      'kortix/paid-tier',
+    ]);
+  });
+
+  test('free is carried on the SDK FlatModel for both free and paid models', () => {
+    const flat = flattenModels(driftList);
+    expect(flat.find((m) => m.modelID === 'kortix/free-tier')?.free).toBe(true);
+    expect(flat.find((m) => m.modelID === 'kortix/paid-tier')?.free).toBe(false);
   });
 });
