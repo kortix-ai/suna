@@ -1,6 +1,15 @@
 'use client';
 
-import { CursorClickIcon, HandPalmIcon, PlusIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
+import {
+  CursorClickIcon,
+  FolderIcon,
+  HandPalmIcon,
+  MonitorIcon,
+  PlusIcon,
+  ScrollIcon,
+  WarningIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
@@ -23,6 +32,7 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   useDeleteTunnelConnection,
@@ -41,6 +51,7 @@ import {
   desktopComputerResume,
 } from '@/lib/desktop';
 import { relativeTime } from '@/lib/relative-time';
+import { cn } from '@/lib/utils';
 import {
   ComputerCapabilities,
   computerDisplayName,
@@ -122,6 +133,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
   const deleteMachine = useDeleteTunnelConnection();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const access = useComputerAccess();
+  const grants = useComputerGrants();
   const { user } = useAuth();
 
   // Any account of this machine in the project, shared or private, names the
@@ -243,7 +255,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         }
       />
       <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
-        {machine?.capabilities?.includes('desktop') ? <ComputerUseGrants /> : null}
+        <ComputerSetup />
         {access.current?.mode === 'ask' && access.current.pendingRequest ? (
           <AccessRequestBanner
             capability={access.current.pendingRequest.capability}
@@ -255,7 +267,10 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         ) : null}
         <section className="space-y-2">
           <Label>{t('capabilitiesTitle')}</Label>
-          <ComputerCapabilities granted={machine?.capabilities ?? []} />
+          <ComputerCapabilities
+            granted={machine?.capabilities ?? []}
+            needsSetup={capabilitiesNeedingSetup(grants.data?.missing)}
+          />
           <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
         </section>
         <SettingsRowGroup>
@@ -341,48 +356,109 @@ function StatusText({ state }: { state: ComputerState }) {
   );
 }
 
+type SetupStep = 'files' | 'accessibility' | 'screenRecording';
+const SETUP_STEPS: readonly { key: SetupStep; icon: Icon }[] = [
+  { key: 'files', icon: FolderIcon },
+  { key: 'accessibility', icon: CursorClickIcon },
+  { key: 'screenRecording', icon: MonitorIcon },
+];
+
+/** The capabilities whose macOS grant is still missing, for the capability list. */
+export function capabilitiesNeedingSetup(missing: readonly SetupStep[] | undefined): string[] {
+  const pending: string[] = [];
+  if (missing?.includes('files')) pending.push('filesystem');
+  if (missing?.includes('accessibility') || missing?.includes('screenRecording')) pending.push('desktop');
+  return pending;
+}
+
 /**
- * Computer Use needs Accessibility and Screen Recording on macOS. Both belong
- * to the Kortix app: the agent runs the bundled driver inside it. Shown until
- * both are granted; one button asks for every missing grant. The desktop app
- * restarts the agent once they land, because macOS applies a grant only to a
- * process launched after it.
+ * The macOS grants the Kortix app holds for this computer's approved access.
+ * Polls while one is missing: the person answers in macOS prompts and System
+ * Settings, outside this dialog. `null` off macOS or off desktop.
  */
-function ComputerUseGrants() {
-  const t = useTranslations('computers');
-  const grants = useQuery({
+function useComputerGrants() {
+  return useQuery({
     queryKey: DESKTOP_GRANTS_KEY,
     queryFn: async () => (await desktopComputerGrants()) ?? null,
-    // The person answers in System Settings, outside this dialog.
-    refetchInterval: (query) =>
-      query.state.data && !(query.state.data.accessibility && query.state.data.screenRecording)
-        ? 2_000
-        : false,
+    refetchInterval: (query) => ((query.state.data?.missing?.length ?? 0) > 0 ? 2_000 : false),
   });
+}
+
+/**
+ * Setup, right after connecting: every macOS permission the approved access
+ * needs, asked for on the spot with one button, so no prompt interrupts an
+ * agent later. Files need Desktop, Documents, and Downloads; Screen & keyboard
+ * needs Accessibility and Screen Recording. All of them go to Kortix. Each row
+ * turns green as macOS answers; the desktop app restarts the agent once
+ * Screen & keyboard is ready.
+ */
+function ComputerSetup() {
+  const t = useTranslations('computers');
+  const grants = useComputerGrants();
+  const [asked, setAsked] = useState(false);
   const request = useMutation({
     retry: false,
     mutationFn: desktopComputerRequestGrants,
+    onMutate: () => setAsked(true),
     onError: (error: Error) => errorToast(error.message || t('actionFailed')),
     onSettled: () => void grants.refetch(),
   });
-  const current = grants.data;
-  if (!current || (current.accessibility && current.screenRecording)) return null;
+  const missing = grants.data?.missing ?? [];
+  // The steps shown: every one that was missing while this dialog was open, so
+  // a step that turns green stays in view. Adjusted during render.
+  const [steps, setSteps] = useState<readonly SetupStep[]>([]);
+  const added = missing.filter((step) => !steps.includes(step));
+  if (added.length > 0) setSteps([...steps, ...added]);
+  if (steps.length === 0) return null;
+  const done = missing.length === 0;
+
   return (
-    <InfoBanner tone="info" icon={CursorClickIcon} title={t('grants.title')}>
-      <div className="space-y-2.5">
-        <p>{t('grants.hint')}</p>
-        <p className="text-xs">
-          {t('grants.accessibility')}: {current.accessibility ? t('grants.allowed') : t('grants.missing')}
-          {' · '}
-          {t('grants.screenRecording')}:{' '}
-          {current.screenRecording ? t('grants.allowed') : t('grants.missing')}
+    <section className="space-y-3 rounded-md border p-4">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">{done ? t('setup.doneTitle') : t('setup.title')}</p>
+        <p className="text-muted-foreground text-xs text-pretty">
+          {done ? t('setup.doneHint') : t('setup.hint')}
         </p>
-        <Button size="sm" disabled={request.isPending} onClick={() => request.mutate()}>
-          {request.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          {t('grants.allow')}
-        </Button>
       </div>
-    </InfoBanner>
+      <ul className="divide-border divide-y">
+        {SETUP_STEPS.filter(({ key }) => steps.includes(key)).map(({ key, icon: StepIcon }) => {
+          const allowed = !missing.includes(key);
+          return (
+            <li key={key} className="flex items-center gap-3 py-2.5">
+              <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-sm">
+                <StepIcon className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-sm">{t(`setup.${key}`)}</p>
+                <p className="text-muted-foreground truncate text-xs">
+                  {t(`setup.${key}Description`)}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 text-xs',
+                  allowed ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
+                {allowed ? t('capability.allowed') : asked ? t('setup.waiting') : t('setup.needed')}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {done ? null : (
+        <div className="space-y-2">
+          <Button className="w-full" disabled={request.isPending} onClick={() => request.mutate()}>
+            {request.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            {t('setup.allowAll')}
+          </Button>
+          {asked ? (
+            <p className="text-muted-foreground text-xs text-pretty">{t('setup.settingsHint')}</p>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 

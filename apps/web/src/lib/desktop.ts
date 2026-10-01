@@ -423,13 +423,20 @@ export const desktopComputerResume = () => desktopServiceVerb('computer_resume')
 export const desktopComputerDisconnect = () =>
   desktopCommand<DesktopComputerDisconnectResult>('computer_disconnect');
 export const desktopComputerOpenLogs = () => desktopAction<null>('computer_open_logs');
-/** macOS grants Computer Use runs with, held by the Kortix app. `null` off macOS or off desktop. */
+/**
+ * The macOS grants the Kortix app holds for this computer's approved access.
+ * `files`: Desktop, Documents, and Downloads (`null` = not asked yet).
+ * `missing`: what setup still needs, in the order it asks. `null` off macOS
+ * or off desktop.
+ */
 export interface DesktopComputerGrants {
   accessibility: boolean;
   screenRecording: boolean;
+  files?: boolean | null;
+  missing?: ('files' | 'accessibility' | 'screenRecording')[];
 }
 export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>('computer_grants');
-/** Asks macOS for every missing grant at once; the prompts name Kortix. */
+/** Setup's "Allow all": asks macOS for every missing grant, one prompt at a time. */
 export const desktopComputerRequestGrants = () =>
   desktopAction<DesktopComputerGrants>('computer_grants_request');
 export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAccess>('computer_access_get');

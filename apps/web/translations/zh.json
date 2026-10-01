@@ -20338,7 +20338,8 @@
       "desktop": "屏幕和键盘",
       "desktopDescription": "查看并使用你的应用",
       "allowed": "已允许",
-      "notAllowed": "未允许"
+      "notAllowed": "未允许",
+      "needsSetup": "需要设置"
     },
     "runInBackground": "在后台运行",
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
@@ -20353,14 +20354,21 @@
     "alreadyConnectedLive": "它当前在线。批准后将转移到此请求：当前连接会停止。其项目和共享保持不变。",
     "reconnect": "重新连接",
     "accessHint": "选定的访问权限会一直有效，直到你撤销。",
-    "grants": {
-      "title": "允许 Kortix 查看你的屏幕并使用你的应用",
-      "hint": "macOS 会请求两项权限，都授予 Kortix。允许后即可使用 Computer Use。",
+    "setup": {
+      "title": "完成电脑设置",
+      "hint": "macOS 会对下面每项权限询问一次。权限授予 Kortix，因此代理工作时不会再询问。",
+      "files": "桌面、文稿和下载",
+      "filesDescription": "读写这些文件夹中的文件",
       "accessibility": "辅助功能",
+      "accessibilityDescription": "在你的应用中使用键盘和鼠标",
       "screenRecording": "屏幕录制",
-      "allowed": "已允许",
-      "missing": "未允许",
-      "allow": "允许访问"
+      "screenRecordingDescription": "查看屏幕上的内容",
+      "needed": "尚未允许",
+      "waiting": "等待你操作",
+      "allowAll": "全部允许",
+      "settingsHint": "如果打开了系统设置，请在列表中开启 Kortix。此页面会自动更新。",
+      "doneTitle": "你的电脑已准备就绪",
+      "doneHint": "Kortix 已获得所需的全部权限。代理现在可以使用这台电脑。"
     }
   },
   "messageFrom": {

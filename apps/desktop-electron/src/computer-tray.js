@@ -446,32 +446,59 @@ function setupComputer(deps) {
   const pause = () => serviceVerb('stop', (next) => next.paused === true || !next.serviceActive);
   const resume = () => serviceVerb('start', (next) => next.serviceActive === true);
 
-  /* ─── Computer Use grants (macOS) ────────────────────────────────────── */
+  /* ─── Computer setup: macOS grants (Kortix holds them) ───────────────── */
+
+  const grantsFile = path.join(userData, 'computer-grants.json');
+  /** macOS asks for these folders separately from the rest of the home folder. */
+  const PROTECTED_FOLDERS = ['Desktop', 'Documents', 'Downloads'];
+
+  /** Folder access as last answered; macOS has no way to read it without asking. */
+  function filesGrant() {
+    try {
+      const files = JSON.parse(fs.readFileSync(grantsFile, 'utf8')).files;
+      return typeof files === 'boolean' ? files : null;
+    } catch {
+      return null;
+    }
+  }
 
   /**
-   * Accessibility and Screen Recording, as macOS answers them for Kortix. The
-   * agent runs as this app's binary and starts the bundled driver as its own
-   * child, so these are the grants Computer Use runs with. `null` off macOS.
+   * The grants this machine's approved access needs, as macOS answers them for
+   * Kortix. The agent runs as this app's binary and starts the bundled driver
+   * as its own child, so they hold for the agent too. `null` off macOS.
    */
-  function grants() {
+  async function grants() {
     if (process.platform !== 'darwin') return null;
-    return {
+    const { home } = await context();
+    const current = {
       accessibility: systemPreferences.isTrustedAccessibilityClient(false),
       screenRecording: systemPreferences.getMediaAccessStatus('screen') === 'granted',
+      files: filesGrant(),
     };
+    return { ...current, missing: computer.computerSetupMissing(home, current) };
   }
 
   let grantWatch = null;
   /**
-   * Asks macOS for every missing grant at once; each prompt names Kortix. The
-   * agent restarts once they are all granted: macOS applies a new grant to a
-   * process only from its next launch.
+   * Setup's "Allow all": asks macOS for every missing grant, one prompt at a
+   * time, while the person is looking at the setup screen. Each prompt names
+   * Kortix. Once Accessibility and Screen Recording hold, the agent restarts:
+   * macOS applies them only to a process launched after the grant.
    */
   async function requestGrants() {
-    const before = grants();
+    const before = await grants();
     if (!before) return null;
-    if (!before.accessibility) systemPreferences.isTrustedAccessibilityClient(true);
-    if (!before.screenRecording) {
+    if (before.missing.includes('files')) {
+      // Each read of a protected folder raises its prompt once and waits for the answer.
+      let all = true;
+      for (const folder of PROTECTED_FOLDERS) {
+        all = (await fs.promises.readdir(path.join(os.homedir(), folder)).then(() => true, () => false)) && all;
+      }
+      if (!all) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders');
+      fs.writeFileSync(grantsFile, JSON.stringify({ files: all }));
+    }
+    if (before.missing.includes('accessibility')) systemPreferences.isTrustedAccessibilityClient(true);
+    if (before.missing.includes('screenRecording')) {
       // The first capture attempt adds Kortix to Screen Recording and shows the
       // prompt. After a "Don't Allow", only System Settings can grant it.
       if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
@@ -480,12 +507,14 @@ function setupComputer(deps) {
         void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
       }
     }
-    if (!grantWatch && !(before.accessibility && before.screenRecording)) {
+    const needsRestart = before.missing.includes('accessibility') || before.missing.includes('screenRecording');
+    if (needsRestart && !grantWatch) {
       const until = Date.now() + 10 * 60_000;
-      grantWatch = setInterval(() => {
-        const now = grants();
-        if (now?.accessibility && now.screenRecording) void serviceVerb('restart', (next) => next.serviceActive === true);
-        if ((now?.accessibility && now.screenRecording) || Date.now() > until) {
+      grantWatch = setInterval(async () => {
+        const now = await grants();
+        const ready = now && now.accessibility && now.screenRecording;
+        if (ready) void serviceVerb('restart', (next) => next.serviceActive === true);
+        if (ready || Date.now() > until) {
           clearInterval(grantWatch);
           grantWatch = null;
         }
@@ -681,10 +710,6 @@ function setupComputer(deps) {
       .then(async (result) => {
         closeApproval();
         await refresh();
-        // Onboarding: approving Computer Use asks macOS for its grants at once.
-        if (result?.ok && computer.missingComputerUseGrants(home, grants()).length > 0) {
-          void requestGrants();
-        }
         return result;
       })
       .finally(() => {

@@ -74,16 +74,18 @@ function effectiveHome(home) {
 }
 
 /**
- * The macOS grants Computer Use still needs, when this machine's pairing
- * approved it (`desktop` in config.json). `grants` is null off macOS. The
- * agent runs as this app's binary and the bundled driver runs embedded under
- * it, so both grants belong to Kortix.
+ * The macOS grants this machine's approved access still needs, in the order
+ * setup asks for them. Files (`filesystem`) need the protected folders
+ * (Desktop, Documents, Downloads); Computer Use (`desktop`) needs
+ * Accessibility and Screen Recording. All of them belong to Kortix: the agent
+ * runs as this app's binary and the bundled driver runs embedded under it.
+ * `grants` is null off macOS.
  *
  * @param {string | null} home
- * @param {{ accessibility: boolean, screenRecording: boolean } | null} grants
- * @returns {('accessibility' | 'screenRecording')[]}
+ * @param {{ accessibility: boolean, screenRecording: boolean, files: boolean | null } | null} grants
+ * @returns {('files' | 'accessibility' | 'screenRecording')[]}
  */
-function missingComputerUseGrants(home, grants) {
+function computerSetupMissing(home, grants) {
   if (!grants) return [];
   let capabilities = [];
   try {
@@ -91,8 +93,14 @@ function missingComputerUseGrants(home, grants) {
   } catch {
     return [];
   }
-  if (!Array.isArray(capabilities) || !capabilities.includes('desktop')) return [];
-  return /** @type {const} */ (['accessibility', 'screenRecording']).filter((grant) => !grants[grant]);
+  if (!Array.isArray(capabilities)) return [];
+  const missing = [];
+  if (capabilities.includes('filesystem') && grants.files !== true) missing.push('files');
+  if (capabilities.includes('desktop')) {
+    if (!grants.accessibility) missing.push('accessibility');
+    if (!grants.screenRecording) missing.push('screenRecording');
+  }
+  return missing;
 }
 
 function agentEnv(home, base = process.env) {
@@ -572,7 +580,7 @@ function keepRunningInTray(status) {
 }
 
 module.exports = {
-  missingComputerUseGrants,
+  computerSetupMissing,
   accessPrompt,
   accessView,
   agentCliPath,

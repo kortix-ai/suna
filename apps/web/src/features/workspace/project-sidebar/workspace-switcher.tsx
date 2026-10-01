@@ -64,6 +64,7 @@ import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import {
+  COMPUTER_SETUP_EVENT,
   ComputerConnectModal,
   ComputerStateDot,
   useOwnsPairedComputer,
@@ -97,7 +98,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
@@ -125,6 +126,12 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
   const [computerDialog, setComputerDialog] = useState<ComputerDialog | null>(null);
+  // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
+  useEffect(() => {
+    const openSetup = () => setComputerDialog('this');
+    window.addEventListener(COMPUTER_SETUP_EVENT, openSetup);
+    return () => window.removeEventListener(COMPUTER_SETUP_EVENT, openSetup);
+  }, []);
   const { data: adminRole } = useAdminRole();
   // Self-host hides the row for non-admins when account creation is restricted
   // — admins are exempt (see `isAccountCreationRestricted()` /

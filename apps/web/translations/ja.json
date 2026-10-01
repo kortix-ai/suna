@@ -20338,7 +20338,8 @@
       "desktop": "画面とキーボード",
       "desktopDescription": "アプリを見て操作",
       "allowed": "許可",
-      "notAllowed": "許可なし"
+      "notAllowed": "許可なし",
+      "needsSetup": "設定が必要"
     },
     "runInBackground": "バックグラウンドで実行",
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
@@ -20353,14 +20354,21 @@
     "alreadyConnectedLive": "現在オンラインです。承認するとこのリクエストに移行し、現在の接続は停止します。プロジェクトと共有はそのまま残ります。",
     "reconnect": "再接続",
     "accessHint": "選択したアクセス権は、取り消すまで有効です。",
-    "grants": {
-      "title": "Kortix に画面の表示とアプリの操作を許可",
-      "hint": "macOS が2つの権限を求めます。どちらも Kortix 用です。許可すると Computer Use が使えます。",
+    "setup": {
+      "title": "コンピューターの設定を完了",
+      "hint": "macOS が下の各権限を一度だけ確認します。権限は Kortix に付与されるため、エージェントの作業中に再び確認されることはありません。",
+      "files": "デスクトップ、書類、ダウンロード",
+      "filesDescription": "これらのフォルダのファイルを読み書き",
       "accessibility": "アクセシビリティ",
+      "accessibilityDescription": "アプリでキーボードとマウスを使用",
       "screenRecording": "画面収録",
-      "allowed": "許可済み",
-      "missing": "未許可",
-      "allow": "アクセスを許可"
+      "screenRecordingDescription": "画面の内容を表示",
+      "needed": "未許可",
+      "waiting": "操作を待っています",
+      "allowAll": "すべて許可",
+      "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。この画面は自動で更新されます。",
+      "doneTitle": "コンピューターの準備ができました",
+      "doneHint": "Kortix に必要な権限がすべてそろいました。エージェントがこのコンピューターを使えます。"
     }
   },
   "messageFrom": {
