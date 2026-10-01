@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import type {
   AssistantMessage,
   Message,
@@ -9,6 +8,7 @@ import type {
   ToolPart,
   UserMessage,
 } from '@opencode-ai/sdk/v2/client';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 // Mock the notification sink BEFORE importing the module under test, so
 // `handle-event.ts`'s `import { infoToast, notify* } from '../../platform/ui'`
@@ -457,7 +457,9 @@ describe('session.compacted', () => {
     expect(
       queryClient.getQueryData<Session>(runtimeKeys.runtimeSession('ses_a'))?.time.compacting,
     ).toBeUndefined();
-    expect(queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0].time.compacting).toBeUndefined();
+    expect(
+      queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0].time.compacting,
+    ).toBeUndefined();
   });
 
   test('failure: a rejected refetch invalidates the runtime-session query instead of leaving it stale forever', async () => {
@@ -866,7 +868,7 @@ describe('turn end refreshes open file viewers', () => {
     const observer = new QueryObserver(queryClient, {
       queryKey,
       queryFn: async () => 'content',
-      staleTime: Infinity,
+      staleTime: Number.POSITIVE_INFINITY,
     });
     const unsubscribe = observer.subscribe(() => {});
     queryClient.setQueryData(queryKey, 'before the turn');
@@ -937,9 +939,9 @@ describe('turn end refreshes open file viewers', () => {
 
     handleEvent({ id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_1' } });
 
-    expect(queryClient.getQueryCache().find({ queryKey: key, exact: true })!.state.isInvalidated).toBe(
-      true,
-    );
+    expect(
+      queryClient.getQueryCache().find({ queryKey: key, exact: true })!.state.isInvalidated,
+    ).toBe(true);
   });
 
   test('idle → idle leaves open file queries alone — nothing ran, nothing changed', () => {
@@ -1379,11 +1381,21 @@ describe('a USER message.updated whose parts never arrive is re-read from the se
     });
     // `applySyncEvent` is a spy here; the message lands in the store as it
     // would have via the real one.
-    useSyncStore.getState().upsertMessage('ses_up', { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } as never);
+    useSyncStore
+      .getState()
+      .upsertMessage('ses_up', {
+        id: 'msg_user_np',
+        sessionID: 'ses_up',
+        role: 'user',
+        time: { created: 1 },
+      } as never);
     handleEvent({
       id: 'evt_u',
       type: 'message.updated',
-      properties: { sessionID: 'ses_up', info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } },
+      properties: {
+        sessionID: 'ses_up',
+        info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } },
+      },
     } as never);
     await new Promise((r) => setTimeout(r, 5));
     expect(calls).toEqual([['ses_up', 'sse-gap']]);
@@ -1397,11 +1409,26 @@ describe('a USER message.updated whose parts never arrive is re-read from the se
       },
       userPartsGraceMs: 0,
     });
-    useSyncStore.getState().upsertPart('msg_user_p', { id: 'prt_1', messageID: 'msg_user_p', sessionID: 'ses_up2', type: 'text', text: 'hi' } as never, 'ses_up2');
+    useSyncStore
+      .getState()
+      .upsertPart(
+        'msg_user_p',
+        {
+          id: 'prt_1',
+          messageID: 'msg_user_p',
+          sessionID: 'ses_up2',
+          type: 'text',
+          text: 'hi',
+        } as never,
+        'ses_up2',
+      );
     handleEvent({
       id: 'evt_u2',
       type: 'message.updated',
-      properties: { sessionID: 'ses_up2', info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } } },
+      properties: {
+        sessionID: 'ses_up2',
+        info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } },
+      },
     } as never);
     await new Promise((r) => setTimeout(r, 5));
     expect(calls).toEqual([]);
@@ -1443,5 +1470,18 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
       properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
     } as never);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('event-family routing characterization', () => {
+  test('the reducer sees unknown events and message removal exactly once', () => {
+    const { handleEvent, applySyncEvent } = buildHandler();
+    const removed = {
+      id: 'evt_removed',
+      type: 'message.removed',
+      properties: { sessionID: 'ses_1', messageID: 'msg_1' },
+    } as Parameters<typeof handleEvent>[0];
+    handleEvent(removed);
+    expect(applySyncEvent.calls).toEqual([[removed]]);
   });
 });

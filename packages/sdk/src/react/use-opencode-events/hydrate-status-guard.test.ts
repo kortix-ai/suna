@@ -12,10 +12,11 @@ import { describe, expect, test } from 'bun:test';
  * the whole event-stream harness: hydration may FILL a gap, never overwrite a
  * value the live stream already put there.
  */
-const SOURCE = await Bun.file(new URL('./index.ts', import.meta.url).pathname).text();
+const SOURCE = await Bun.file(new URL('./hydrate-core.ts', import.meta.url).pathname).text();
+const INDEX_SOURCE = await Bun.file(new URL('./index.ts', import.meta.url).pathname).text();
 
 function hydrateStatusBlock(): string {
-  const start = SOURCE.indexOf('client.session\n        .status()');
+  const start = SOURCE.indexOf('client.session\n    .status()');
   expect(start).toBeGreaterThan(-1);
   const end = SOURCE.indexOf('reconcileMissingBusySessions.current(statuses)', start);
   expect(end).toBeGreaterThan(start);
@@ -26,7 +27,7 @@ describe('hydrateCore session-status snapshot', () => {
   test('a revived stream re-reads held transcripts lost while its previous handle was parked', () => {
     // The replacement handle has no pendingGap from the old handle. Without
     // this call, a completed response remains truncated until a hard refresh.
-    expect(SOURCE).toContain('hydrateCore({ rehydrateMessages: streamGeneration > 0 })');
+    expect(INDEX_SOURCE).toContain('hydrate({ rehydrateMessages: streamGeneration > 0 })');
   });
 
   test('the fill decision routes through shouldSkipStatusFill with the slot stamp', () => {
