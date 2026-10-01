@@ -1000,8 +1000,6 @@ export async function forwardToSandbox(
   // error status and therefore never invalidated anything — still costs the
   // next connect its cache entry, so it re-resolves instead of re-dialling the
   // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
-  /** Set per attempt: did we hand the daemon the CLIENT's Accept-Encoding? */
-  let upstreamEncodingForwarded = false;
   const sseStallKey = `${sandboxId}:${port}`;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -1154,8 +1152,7 @@ export async function forwardToSandbox(
         if (STRIP_FORWARD_HEADERS.has(name)) continue;
         headers.set(key, value);
       }
-      upstreamEncodingForwarded = forwardsClientEncoding(port, remainingPath);
-      if (upstreamEncodingForwarded) {
+      if (forwardsClientEncoding(port, remainingPath)) {
         // Pass the caller's own negotiation through, so the daemon can gzip and
         // the compressed bytes reach the client untouched (the API's compress
         // middleware passes a body that already carries `content-encoding`).
@@ -1598,30 +1595,13 @@ export async function forwardToSandbox(
         );
       }
 
-      // When we forwarded the client's `Accept-Encoding` (the
-      // `/kortix/opencode/*` namespace), the daemon answered gzipped and the
-      // ~1.4 s provider hop carried 0.9 KB instead of 8.7 KB — which is the
-      // entire point. But `fetch` DECODES a `Content-Encoding` body per the
-      // WHATWG spec while leaving the header and the compressed
-      // `Content-Length` on the response object. Measured on Bun 1.3:
-      // 55 compressed bytes on the wire, `content-encoding: gzip`,
-      // `content-length: 55`, and 4,012 DECOMPRESSED bytes out of
-      // `arrayBuffer()`. Forwarding those two headers with a decoded body is a
-      // response no client can read, so both go. The API's own compress
-      // middleware then re-compresses for the API->client hop; the two hops
-      // negotiate independently, and the expensive one is the one that shrank.
-      if (upstreamEncodingForwarded && respHeaders.has('content-encoding')) {
-        respHeaders.set('x-kortix-upstream-encoding', respHeaders.get('content-encoding')!);
-        respHeaders.delete('content-encoding');
-        respHeaders.delete('content-length');
-        const exposedEncoding = respHeaders.get('Access-Control-Expose-Headers');
-        respHeaders.set(
-          'Access-Control-Expose-Headers',
-          exposedEncoding
-            ? `${exposedEncoding}, x-kortix-upstream-encoding`
-            : 'x-kortix-upstream-encoding',
-        );
-      }
+      // When we forwarded the client's `Accept-Encoding` (the `/kortix/runtime/*`
+      // namespace), the daemon answered gzipped and the provider hop carried
+      // 0.9 KB instead of 8.7 KB. The upstream fetch runs with
+      // `decompress: false`, so `upstream.body` is those raw compressed bytes:
+      // the daemon's `content-encoding` and `content-length` describe them and
+      // go to the client untouched. The API's compress middleware skips a body
+      // that is already encoded (preview-encoding-passthrough.test.ts).
 
       return new Response(upstream.body, {
         status: upstream.status,

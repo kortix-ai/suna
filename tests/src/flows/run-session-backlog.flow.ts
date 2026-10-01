@@ -325,10 +325,12 @@ harnessFlow(
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx, harness) => {
-    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
     const marker = `RUN2_PONG_${Date.now()}`;
     let promptId = '';
     await ctx.step('POST .../prompts → 202 with a durable prompt id', async () => {
@@ -354,6 +356,22 @@ harnessFlow(
           retryOnError: isKe2eRetryableError,
         },
       );
+    });
+    // The SDK's `session.messages()` and the CLI read this route, and every
+    // real client negotiates compression: the proxy must hand the daemon's
+    // gzip answer through with its `content-encoding`, or no client can read it.
+    await ctx.step('a client reads the conversation from the runtime: the gzip answer of …/kortix/runtime/messages/<root> decodes', async () => {
+      const detail = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+      const root = detail.status(200).json<any>()?.opencode_session_id;
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/kortix/runtime/messages/${root}?limit=200`), { headers: { 'accept-encoding': 'gzip' } });
+      const messages = r.status(200).json<any>()?.messages;
+      if (!Array.isArray(messages) || !messages.some((m: any) => m.info?.role === 'user' && JSON.stringify(m.parts).includes(marker))) {
+        throw new Error(`the runtime transcript did not decode to the prompt: ${r.text().slice(0, 200)}`);
+      }
     });
   },
 );
