@@ -7,6 +7,7 @@ import {
   SESSION_DOT_MATRIX_POOL,
   TRACK_STEP_MS,
   buildDotMatrixTrack,
+  dotMatrixTrack,
   cubicBezier,
   dotMatrixLayout,
   remapOpacityToTriplet,
@@ -238,6 +239,14 @@ describe('UI-thread playback track', () => {
         });
       }
     }
+  });
+
+  test('the cache builds each variant and mode once', () => {
+    const entry = variant('dotm-3x3-10');
+    expect(dotMatrixTrack(entry, false)).toBe(dotMatrixTrack(entry, false));
+    expect(dotMatrixTrack(entry, true)).toBe(dotMatrixTrack(entry, true));
+    expect(dotMatrixTrack(entry, true)).not.toBe(dotMatrixTrack(entry, false));
+    expect(dotMatrixTrack(entry, false).data).toEqual(buildDotMatrixTrack(entry, false).data);
   });
 
   test('a still track is the idle frame', () => {

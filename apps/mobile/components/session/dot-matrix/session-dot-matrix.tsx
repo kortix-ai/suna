@@ -14,7 +14,7 @@
  * no React render. Reduce Motion → web's idle frame, no loop.
  */
 
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -25,7 +25,7 @@ import Animated, {
 
 import { useTurnPalette } from '@/components/session/tool/shared/styles';
 import {
-  buildDotMatrixTrack,
+  dotMatrixTrack,
   dotMatrixLayout,
   sessionDotMatrixVariant,
   trackSampleIndex,
@@ -52,14 +52,17 @@ function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDot
   // Hidden cells are a fixed mask per glyph (pinned by dot-matrix.test.ts),
   // so they are simply not rendered.
   const visible = useMemo(() => entry.frame(0, true).map((value) => value !== null), [entry]);
-  const built = useMemo(() => buildDotMatrixTrack(entry, still), [entry, still]);
+  const built = dotMatrixTrack(entry, still);
   const track = useSharedValue<DotMatrixTrack>(built);
   const sample = useSharedValue(0);
   const clock = useSharedValue(0);
 
-  // Sampled once on the JS thread; the shared value hands the table to the UI
-  // thread. The initial value covers the first render.
+  // The initial value covers the first render; hand the UI thread a new table
+  // only when the glyph or Reduce Motion changes.
+  const synced = useRef(built);
   useEffect(() => {
+    if (synced.current === built) return;
+    synced.current = built;
     track.value = built;
     sample.value = 0;
     clock.value = 0;
@@ -91,6 +94,7 @@ function SessionDotMatrixImpl({ sessionId, size = 14, color, style }: SessionDot
             index={index}
             track={track}
             sample={sample}
+            cells={layout.grid * layout.grid}
             left={(index % layout.grid) * pitch}
             top={Math.floor(index / layout.grid) * pitch}
             size={layout.dotSize}
@@ -106,6 +110,7 @@ function Dot({
   index,
   track,
   sample,
+  cells: expectedCells,
   left,
   top,
   size,
@@ -114,6 +119,7 @@ function Dot({
   index: number;
   track: SharedValue<DotMatrixTrack>;
   sample: SharedValue<number>;
+  cells: number;
   left: number;
   top: number;
   size: number;
@@ -121,7 +127,8 @@ function Dot({
 }) {
   const animatedStyle = useAnimatedStyle(() => {
     const { data, cells } = track.value;
-    return { opacity: data[sample.value * cells + index] ?? 0 };
+    // The table lags one frame behind a glyph change; hide rather than misindex.
+    return { opacity: cells === expectedCells ? (data[sample.value * cells + index] ?? 0) : 0 };
   });
   return (
     <Animated.View

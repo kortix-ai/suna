@@ -925,6 +925,19 @@ export function buildDotMatrixTrack(entry: DotMatrixVariant, still: boolean): Do
   return { data, cells, periodMs };
 }
 
+const trackCache = new Map<string, DotMatrixTrack>();
+
+/** `buildDotMatrixTrack`, built once per variant and mode for the app's life. */
+export function dotMatrixTrack(entry: DotMatrixVariant, still: boolean): DotMatrixTrack {
+  const key = `${entry.name}:${still ? 'still' : 'moving'}`;
+  let track = trackCache.get(key);
+  if (!track) {
+    track = buildDotMatrixTrack(entry, still);
+    trackCache.set(key, track);
+  }
+  return track;
+}
+
 /** The track sample shown `elapsedMs` after mount. Runs on the UI thread. */
 export function trackSampleIndex(periodMs: number, elapsedMs: number): number {
   'worklet';
