@@ -953,10 +953,6 @@
           "name": "AgentMail Email",
           "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions."
-        },
         "llm_gateway": {
           "name": "LLM Gateway",
           "description": "Route this project through the managed Kortix LLM gateway for managed models, metering, and budgets."
@@ -1007,7 +1003,7 @@
         },
         "human_messaging": {
           "name": "Human Messaging",
-          "description": "Let agents message people and other sessions. `kortix send alice@example.com` opens a conversation that starts with the agent's message and shows under Asked you in the recipient's sidebar. Several addresses open a group chat."
+          "description": "Let agents message people and other sessions. `kortix send alice@example.com` opens a conversation that starts with the agent's message and shows under Asked you in the recipient's sidebar. Several addresses open a group chat. Messages between sessions name the sending session, so its agent can reply."
         },
         "reminders": {
           "name": "Reminders",
@@ -1369,7 +1365,11 @@
     "dailyAt9AM": "Daily at 9 AM",
     "weekdaysAt9AM": "Weekdays at 9 AM",
     "weeklyOnMonday": "Weekly on Monday",
-    "monthlyOn1st": "Monthly on 1st"
+    "monthlyOn1st": "Monthly on 1st",
+    "runFailed": {
+      "label": "Last run didn’t finish",
+      "nextRun": "The next run tries again."
+    }
   },
   "sidebar": {
     "referAndEarn": "Refer & Earn",
@@ -2288,7 +2288,7 @@
       "oneMoment": "One moment…",
       "useDifferentEmail": "Use a different email",
       "usePasswordInstead": "Use a password instead",
-      "emailCodeInstead": "Email me a code instead",
+      "emailLinkInstead": "Email me a link instead",
       "forgotPassword": "Forgot your password?",
       "automaticAccount": "New here? Continue creates your account automatically.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Looking up your identity provider…",
         "use": "Use single sign-on (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Check your email",
-        "description": "We sent a code to <address>{email}</address>",
-        "verifying": "Verifying…",
-        "notReceived": "Didn't receive a code?",
+        "description": "We sent a sign-in link to <address>{email}</address>. Open it to continue.",
+        "notReceived": "Didn't receive the link?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"
       },
@@ -9899,7 +9898,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Only {value0}",
       "text0dfd0cbdd238": "This is the only time the full key is displayed. Store it somewhere safe.",
-      "text0e0b01710c4b": "Slack is live · Teams and email are rolling out · or start sessions from the API",
       "text0e1181a97f66": "A real machine, a real query, an analysis you can re-run",
       "text0e16f24ee012": "· {value0} by {value1}",
       "text0e22e022480d": "Choose which model runs this turn",
@@ -14482,7 +14480,6 @@
       "textf5262c55d1be": "Microsoft Teams connected, but publishing the app to your Teams catalog failed.",
       "text76930360e909": "Microsoft Teams connected. Publishing the app to your Teams catalog…",
       "textb8d155eea2ab": "Microsoft consent was declined.",
-      "textd4b32aea5c4a": "Microsoft Teams is turned off for this project.",
       "text57ef9e5e8110": "Teams one-click install isn't configured on this server.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Invite people to work in this account.",
@@ -16956,7 +16953,7 @@
       "textd7da08389824": "service account",
       "textd7db5a6e1483": "Copy this token now",
       "textd7e9af636757": "Tokens are stored per host, so switching hosts switches the account and the default project with it.",
-      "textd7eb7cdcff7d": "Check your email for a sign-in code",
+      "textd7eb7cdcff7d": "Check your email for a sign-in link",
       "textd7f179da0e70": "We build self-driving companies. Humans verify, steer, and govern while agent teams do work across engineering, product, operations, finance, support, and growth.",
       "textd800b1eb8a84": "Click \"Create App Integration\".",
       "textd814d7970df3": "\"Move from X to Y\" is a solution you pre-committed to. Slow, flaky, breaks for this one customer — those are problems.",
@@ -19094,7 +19091,36 @@
       "text7458028e0d1d": "Done dictating",
       "text9c84d6622566": "Dictate message",
       "textf164e4b031dc": "Updated session presence",
-      "text9e6a0b0a06c2": "Viewed session message authors"
+      "text9e6a0b0a06c2": "Viewed session message authors",
+      "text5f58426c214e": "We are building the open-source AI Management System. Every company should own all of it.",
+      "textf729ef1ea584": "License and seat reconciliation",
+      "text7912f8e97c06": "A cron trigger opens the quarterly access review and the monthly license reconciliation. Triggers name the agent they run as, so the unattended session has exactly the reach the attended one has — no more.",
+      "textbc0deb1bab41": "Kortix is the open-source AI Management System — self-hostable, any model. Start one project free.",
+      "text0c5b38410c06": "Introducing Kortix: the open-source AI Management System",
+      "textf216fe1b31a2": "Start with one department, connect the tools it already uses, and turn the workflow into a git-backed project the client can own.",
+      "textdcb3e70ce4dc": "Kortix – the open-source AI Management System.",
+      "text1345783053b5": "Kortix vs Claude Cowork: a desktop assistant, or an AI Management System for the company?",
+      "textd90da51ca5c2": "Claude Cowork runs Anthropic models only, in Anthropic's cloud or your Bedrock, Google Cloud, or Microsoft Foundry account, with no self-host. Here is where a company outgrows it.",
+      "text0216eab899cb": "Consultancies need one repo for their clients’ agents",
+      "text3059f4c530b3": "Why consultancies need one git repo for their clients’ agents, memory, connectors, policy, and auditable work.",
+      "textad70f35eaccc": "Our mission: take a company from human to AGI, and let it keep every byte of itself on the way there.",
+      "text66b6392a2418": "Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.",
+      "text809a706ff256": "Accents and status",
+      "text5ed8e8176c1d": "The only hues in product UI. They paint glyphs, dots, tints and charts. The label beside them stays foreground or muted-foreground, because every accent fails AA as body text on white. Idle has no hue: muted-foreground.",
+      "text1b730c5151b5": "Chart ramp",
+      "text7ac77b03cfd2": "Data visualization only. Read it through var(--chart-n), not a utility.",
+      "textf25fe860a82d": "10 variants, 8 sizes. Buttons are <code>rounded-md</code>. Panels, cards and rows are rounded-md too; floating panels are rounded-lg; rounded-2xl is marketing only. The <code>destructive</code> variant is reserved for the one irreversible confirm.",
+      "textc94e8cb68cba": "Banned patterns",
+      "text9bb4af3b0beb": "These ship in the code base but the brand kit bans them. Do not add a new use.",
+      "text1aff73a5df45": "{why} Use {instead}.",
+      "text81b004dc7e0b": "Slack and Teams are live · email is rolling out · or start sessions from the API",
+      "text7d7b98240405": "Two are live. One is experimental. We will say which.",
+      "textb60c863bbacb": "On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack.",
+      "text80043b03898d": "Update the Kortix app in Teams",
+      "textdf757dbe33eb": "Your Teams catalog has version {value0} of the Kortix app. Version {value1} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
+      "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
+      "texte15f213fa506": "Publish app update",
+      "textcafd830fcf85": "Listed project agent identities"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20127,6 +20153,7 @@
     "everyoneDefaultMeta": "Until you add a group or a person",
     "everyoneMeta": "Everyone with access to the project",
     "groupMeta": "Group",
+    "agentMeta": "Agent",
     "memberMeta": "Member",
     "remove": "Remove {name}",
     "keep": "Keep",
@@ -20150,8 +20177,12 @@
     "addAccountDescription": "Name the account and choose who can use it.",
     "onlyYou": "Only you",
     "onlyYouDescription": "Only you can use it, in your private sessions.",
-    "specificPeople": "Specific people or groups",
-    "specificPeopleDescription": "Only the people and groups you pick, in their private sessions.",
+    "onlyRequester": "Only {name}",
+    "onlyRequesterUnnamed": "Only the person who asked",
+    "onlyRequesterDescription": "Only they can use it, directly or in their own private sessions.",
+    "specificPeople": "Specific people, groups, or agents",
+    "specificPeopleDescription": "Only the people, groups, and agents you pick. People use it in their private sessions; an agent in all its sessions.",
+    "agentShareHint": "An agent uses it in all its sessions, triggers included. Anyone who can run that agent can use it through the agent.",
     "shareRequiresManage": "Sharing an account needs permission to manage the project's connections.",
     "nameTaken": "An account named {label} already exists.",
     "noAccountsTitle": "No account yet",

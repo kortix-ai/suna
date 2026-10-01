@@ -1470,6 +1470,10 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // When the current streak of failed RUNS began; null once a run finishes.
+    // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
+    // owner is pushed only when it goes from null to set.
+    runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
     // Account-local sharing policy for sessions created by this trigger. The
     // portable manifest cannot contain member/group ids from one account.
     sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
@@ -2385,6 +2389,10 @@ export const sessionRuntimeProjections = kortixSchema.table(
     /** The sandbox that produced it. Names the winner when a warm fork adopts. */
     externalId: text('external_id').notNull(),
     // ── identity (the freshness check reads these, never the jsonb) ──────────
+    /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
+    schema: text('schema'),
+    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    harness: text('harness'),
     runtimeSessionId: text('opencode_session_id'),
     harnessVersion: text('opencode_version'),
     agentConfigEtag: text('agent_config_etag'),
@@ -3849,9 +3857,9 @@ export const sessionPendingQuestions = kortixSchema.table(
     sessionId: text('session_id').notNull(),
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
-    /** The opencode session that asked; survives an opencode restart changing it. */
+    /** The runtime session that asked; survives a runtime restart changing it. */
     runtimeSessionId: text('opencode_session_id'),
-    /** The raw QuestionInfo[] as opencode reported it. */
+    /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */

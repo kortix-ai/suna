@@ -103,6 +103,10 @@ export interface AgentConfigResponse {
   default_agent: string | null;
   /** The declared block, or null for a v1 manifest / an agent not declared yet. */
   block: AgentConfigBlock | null;
+  /** The harness a new session of this project runs (`opencode` or `pi`). Absent from an older API. */
+  harness?: string;
+  /** The `behavior` settings that harness ignores (pi: `options`, `color`). Absent from an older API. */
+  ignored_settings?: string[];
 }
 
 export async function getAgentConfig(projectId: string, agentName: string) {

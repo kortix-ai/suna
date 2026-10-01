@@ -17,6 +17,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { inputPath } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 
 import { useFilePreviewStore } from '@/stores/file-preview-store';
@@ -54,7 +55,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const streamingInput = partStreamingInput(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
-  const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
+  const filePath = inputPath(input) || inputPath(streamingInput);
   // Two `split()` calls — one on the path, one on the basename — allocating two
   // throwaway arrays per render, for a value that only changes when the part does.
   const filename = useMemo(() => getFilename(filePath) || '', [filePath]);

@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 /**
- * The Teams channel connector is gated on the per-project `teams` experimental
- * feature — the same shape as email/voice, and NOT an operator env var. These
- * assert the gate behaviourally: a project with a live Teams install still gets
- * no `teams` connector until it opts in.
+ * The Teams channel connector is registered by the install, like Slack's. The
+ * per-project `teams` feature flag graduated on 2026-10-01, so a value a
+ * project stored while it existed changes nothing.
  */
 
 let projectMetadata: unknown = {};
@@ -30,35 +29,36 @@ mock.module('../channels/install-store', () => ({
 
 const { synthesizeChannelConnectors } = await import('../connectors/channel-materialize');
 
-const teamsSpecs = async () =>
-  (await synthesizeChannelConnectors('p-1', [])).filter((s) => s.platform === 'teams');
+const teamsSpecs = async (declared: Parameters<typeof synthesizeChannelConnectors>[1] = []) =>
+  (await synthesizeChannelConnectors('p-1', declared)).filter((s) => s.platform === 'teams');
 
 beforeEach(() => {
   projectMetadata = {};
   hasTeamsInstall = true;
 });
 
-describe('synthesizeChannelConnectors — Teams is gated on the `teams` experiment', () => {
-  test('a live Teams install alone does NOT materialize the connector', async () => {
-    expect(await teamsSpecs()).toEqual([]);
-  });
-
-  test('opting into `teams` materializes the connector for a project with an install', async () => {
-    projectMetadata = { experimental: { teams: true } };
+describe('synthesizeChannelConnectors — a Teams install is the registration', () => {
+  test('a live Teams install materializes the connector', async () => {
     const specs = await teamsSpecs();
     expect(specs).toHaveLength(1);
     expect(specs[0]!.provider).toBe('channel');
     expect(specs[0]!.enabled).toBe(true);
   });
 
-  test('an explicit `teams: false` keeps the connector off', async () => {
+  test('a `teams: false` stored while Teams was a flag is inert', async () => {
     projectMetadata = { experimental: { teams: false } };
+    expect(await teamsSpecs()).toHaveLength(1);
+  });
+
+  test('without an install there is no connector', async () => {
+    hasTeamsInstall = false;
     expect(await teamsSpecs()).toEqual([]);
   });
 
-  test('the flag alone is not enough — the install is still required', async () => {
-    projectMetadata = { experimental: { teams: true } };
-    hasTeamsInstall = false;
-    expect(await teamsSpecs()).toEqual([]);
+  test('an explicit channel declaration is never shadowed', async () => {
+    const declared = [{ slug: 'teams', provider: 'channel', platform: 'teams' }] as unknown as Parameters<
+      typeof synthesizeChannelConnectors
+    >[1];
+    expect(await teamsSpecs(declared)).toEqual([]);
   });
 });

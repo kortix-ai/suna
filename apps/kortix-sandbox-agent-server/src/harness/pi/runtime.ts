@@ -3,14 +3,14 @@
  *
  * There is no child process, no port and no RPC. pi's tools run against this
  * sandbox's own filesystem and shell, the model goes through the Kortix LLM
- * gateway, and every lifecycle event is reshaped into the OpenCode wire the
- * product already renders (see wire.ts). One pi session IS one Kortix session:
+ * gateway, and every lifecycle event is emitted as a Kortix session event
+ * (`kortix.transcript.v1`, see turn-events.ts). One pi session IS one Kortix session:
  * the root id is a deterministic function of the session id, so a restart
  * resolves the same root and restores the same transcript from disk.
  *
  * Extensions are pi's own: the Agent runs inside pi-coding-agent's
  * `AgentSession` (extensions/host.ts), so a package from pi.dev loads and runs
- * unmodified. Kortix keeps the model, the tools, the permission gate and the wire.
+ * unmodified. Kortix keeps the model, the tools, the permission gate and the event format.
  *
  * Heavy dependencies (`@earendil-works/pi-*`) load on `start()`, never at
  * import: the resolver imports this module for every boot, including OpenCode's.
@@ -20,6 +20,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult, ExecutionEnv, Skill } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
+import { KORTIX_RUNTIME_SCHEMA, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
+import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
@@ -30,40 +32,21 @@ import { resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
 import type { PiConfigReleases } from './config-release'
 import type { ExtensionStatus, InlineExtension, PiSession, RunnerRef } from './extensions/host'
 import type { KortixHost, SpawnSessionInput, SpawnSessionResult } from './extensions/subagents'
-import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRequestWire, type PermissionRule, type QuestionRequestWire } from './interactions'
-import type { CatalogModel, PiModels, SelectedModel } from './model'
+import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule } from './interactions'
+import type { PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
-import { WireTranscript, type WireFrame, type WireMessage } from './transcript'
-import { PiWireAdapter, assistantMessageError, type WireEmission } from './wire'
+import { TranscriptStore, type RuntimeFrame } from './transcript'
+import { PiTurnEvents, assistantMessageError, type TurnEventEmission } from './turn-events'
+import { withAgentSampling } from './sampling'
 import { TransientRetry, type RetryPlan } from './transient-retry'
-import { WIRE_MESSAGE_ID, WireIdClock, mintChildId, mintRootId } from './wire-id'
+import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
 
-/** OpenCode `AgentConfig`, as apps/api compiles it (compile-agent-config.ts). */
-export interface CompiledAgent {
-  description?: string
-  mode?: 'primary' | 'subagent' | 'all'
-  model?: string
-  variant?: string
-  temperature?: number
-  top_p?: number
-  prompt?: string
-  disable?: boolean
-  tools?: Record<string, boolean>
-  hidden?: boolean
-  options?: Record<string, unknown>
-  color?: string
-  steps?: number
-  permission?: unknown
-}
+export type { CompiledAgent }
 
-export interface CompiledAgentConfig {
-  model?: string
-  /** The manifest's `default_agent`, when it is declared, enabled and primary. */
-  default_agent?: string
-  agent?: Record<string, CompiledAgent>
-}
+/** The compiled agent set as `KORTIX_COMPILED_AGENT_CONFIG` carries it (apps/api compile-agent-config.ts). */
+export type CompiledAgentConfig = Partial<CompiledAgentSet>
 
 export function parseCompiledAgentConfig(raw: string | undefined): CompiledAgentConfig | null {
   if (!raw?.trim()) return null
@@ -90,6 +73,8 @@ export interface PromptInput {
   model?: { providerID: string; modelID: string }
   variant?: string
   system?: string
+  /** OpenCode `noReply`: the message joins the conversation, no turn runs. */
+  noReply?: boolean
 }
 
 export class PromptRejected extends Error {}
@@ -102,8 +87,8 @@ export function parsePromptBody(raw: unknown): PromptInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new PromptRejected('prompt body must be an object')
   const body = raw as Record<string, unknown>
   if (body.messageID !== undefined) {
-    if (typeof body.messageID !== 'string' || !WIRE_MESSAGE_ID.test(body.messageID)) {
-      throw new PromptRejected('messageID must use the OpenCode wire format')
+    if (typeof body.messageID !== 'string' || !MESSAGE_ID.test(body.messageID)) {
+      throw new PromptRejected('messageID must be a Kortix message id (msg_ + 12 hex clock + 14 base62)')
     }
   }
   if (body.model !== undefined) {
@@ -115,6 +100,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
   if (body.agent !== undefined && (typeof body.agent !== 'string' || !body.agent)) throw new PromptRejected('agent must be a non-empty string')
   if (body.variant !== undefined && typeof body.variant !== 'string') throw new PromptRejected('variant must be a string')
   if (body.system !== undefined && typeof body.system !== 'string') throw new PromptRejected('system must be a string')
+  if (body.noReply !== undefined && typeof body.noReply !== 'boolean') throw new PromptRejected('noReply must be a boolean')
   if (!Array.isArray(body.parts) || body.parts.length === 0) throw new PromptRejected('parts must be a non-empty array')
   const text: string[] = []
   const files: PromptInput['files'] = []
@@ -147,6 +133,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
     ...(body.model ? { model: body.model as PromptInput['model'] } : {}),
     ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
     ...(typeof body.system === 'string' ? { system: body.system } : {}),
+    ...(body.noReply === true ? { noReply: true } : {}),
   }
 }
 
@@ -155,17 +142,17 @@ export type TurnOutcome = 'completed' | 'error' | 'aborted'
 export interface TurnEnd {
   messageId: string
   status: 'idle' | 'error'
-  error?: { name: string; message?: string }
+  error?: { name: string; message?: string; statusCode?: number; code?: TurnErrorCode }
 }
 
 export interface PiRuntimeHooks {
   onTurnBegin?: (turn: { rootId: string; messageId: string }) => void
   onTurnEnd?: (turn: TurnEnd & { rootId: string }) => void
-  onQuestionAsked?: (request: QuestionRequestWire, answer: (answers: string[][]) => void) => void
+  onQuestionAsked?: (request: RuntimeQuestionRequest, answer: (answers: string[][]) => void) => void
   /** A tool call waits for the user's approval (root or subagent). Report only: the reply comes over the permission routes. */
-  onPermissionAsked?: (request: PermissionRequestWire) => void
+  onPermissionAsked?: (request: RuntimePermissionRequest) => void
   /** Every frame the runtime publishes on the event bus (the audit trail reads it). */
-  onFrame?: (frame: WireFrame) => void
+  onFrame?: (frame: RuntimeFrame) => void
 }
 
 export interface PiRuntimeOptions {
@@ -185,7 +172,7 @@ interface ChildSession {
   createdAt: number
   updatedAt: number
   status: 'idle' | 'busy'
-  transcript: WireTranscript
+  transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
   /** Set while a prompt runs in the child. */
@@ -199,7 +186,7 @@ interface ChildDump {
   createdAt: number
   updatedAt: number
   agentMessages: AgentMessage[]
-  transcript: WireMessage[]
+  transcript: KortixMessage[]
 }
 
 interface Turn {
@@ -215,7 +202,7 @@ interface Dump {
   title: string
   createdAt: number
   agentMessages: AgentMessage[]
-  transcript: WireMessage[]
+  transcript: KortixMessage[]
   turns: Array<{ messageId: string; status: 'idle' | 'error' }>
   /** Absent in dumps written before child sessions existed. */
   children?: ChildDump[]
@@ -228,7 +215,7 @@ function decodeDataUrl(url: string): { mime: string; data: string } | null {
 
 export class PiRuntime {
   readonly rootId: string
-  readonly transcript = new WireTranscript()
+  readonly transcript = new TranscriptStore()
   readonly permissions: PermissionBroker
   readonly questions: QuestionBroker
   readonly createdAt: number
@@ -240,7 +227,7 @@ export class PiRuntime {
   private readonly now: () => number
   private readonly hooks: PiRuntimeHooks
   private readonly releases: Pick<PiConfigReleases, 'skillDirs' | 'piConfigDir' | 'notice'> | null
-  private readonly clock = new WireIdClock()
+  private readonly clock = new MessageIdClock()
   private state: HarnessState = 'down'
   private startError: string | null = null
   private agent: Agent | null = null
@@ -267,7 +254,7 @@ export class PiRuntime {
   private compiled: CompiledAgentConfig | null = null
   private agentName = 'build'
   private policy: PermissionPolicy = {}
-  private adapter: PiWireAdapter | null = null
+  private adapter: PiTurnEvents | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private active: Turn | null = null
   private runningTools = 0
@@ -391,7 +378,7 @@ export class PiRuntime {
       // pi spreads the live process.env into every shell itself; BASH_ENV adds
       // the egress shim's proxy + CA, which only the agent env file carries.
       this.executionEnv = new node.NodeExecutionEnv({ cwd: this.workspace, shellEnv: { ...AGENT_SHELL_ENV } })
-      this.adapter = new PiWireAdapter({
+      this.adapter = new PiTurnEvents({
         sessionID: this.rootId,
         mintMessageId: () => this.clock.mint(this.now()),
         parentMessageId: () => this.active?.messageId ?? null,
@@ -413,8 +400,12 @@ export class PiRuntime {
       this.policy = compilePermissionPolicy(this.compiledAgent()?.permission)
       this.permissions.setPolicy(this.policy)
       const restored = this.restore()
+      if (this.compiledAgent()?.options) logger.warn('[pi] the agent sets `options`; pi does not apply provider options', { agent: this.agentName })
       const agent = new core.Agent({
-        streamFn: (model, context, options) => this.models!.models.streamSimple(model, context, options),
+        streamFn: withAgentSampling(
+          (model, context, options) => this.models!.models.streamSimple(model, context, options),
+          () => this.sampling(this.compiledAgent(), this.selected!),
+        ),
         convertToLlm,
         toolExecution: 'parallel',
         initialState: {
@@ -559,6 +550,21 @@ export class PiRuntime {
       if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
     }
     this.publishUserMessage(this.rootId, messageId, input)
+    if (input.noReply) {
+      // OpenCode `noReply`: the next turn's model sees this message, and none
+      // runs now. On the serial queue so it lands between turns, and persisted
+      // so a box that sleeps before anyone answers still has it.
+      const done = (this.queue = this.queue.then(() => {
+        const images = this.images(input)
+        this.agent!.state.messages = [
+          ...this.agent!.state.messages,
+          { role: 'user', content: images.length ? [{ type: 'text', text: input.text }, ...images] : input.text, timestamp: this.now() },
+        ]
+        this.completedTurns.set(messageId, 'idle')
+        this.persist()
+      }).catch(() => {}))
+      return { messageId, done: done.then(() => 'completed' as TurnOutcome) }
+    }
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, resolve, outcome }
@@ -650,8 +656,9 @@ export class PiRuntime {
       for (const frame of this.adapter!.settleRetry()) this.publish(frame)
       if (timedOut) {
         outcome = 'error'
-        error = { name: 'TimeoutError', message: 'The session made no progress. Please try again.' }
-        this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message: error.message } } } })
+        const message = 'The session made no progress. Please try again.'
+        error = { name: 'TimeoutError', message }
+        this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
         this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
         this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
       }
@@ -663,7 +670,8 @@ export class PiRuntime {
       else if (!timedOut && last && (last.stopReason === 'error' || last.stopReason === 'length')) {
         outcome = 'error'
         const wire = assistantMessageError({ stopReason: last.stopReason as never, errorMessage: last.errorMessage })
-        error = wire ? { name: wire.name, message: (wire.data as { message?: string }).message } : undefined
+        const data = wire?.data as { message?: string; statusCode?: number } | undefined
+        error = wire ? { name: wire.name, message: data?.message, statusCode: data?.statusCode, code: wire.code } : undefined
       }
     } catch (err) {
       outcome = 'error'
@@ -671,7 +679,7 @@ export class PiRuntime {
       error = { name: timedOut ? 'TimeoutError' : 'UnknownError', message }
       this.adapter?.settleRetry()
       logger.error('[pi] turn failed', { messageId: turn.messageId, err: message })
-      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: error.name, data: { message } } } })
+      this.publish({ type: 'session.error', properties: { sessionID: this.rootId, error: { name: 'UnknownError', data: { message } } } })
       this.publish({ type: 'session.status', properties: { sessionID: this.rootId, status: { type: 'idle' } } })
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
@@ -802,7 +810,7 @@ export class PiRuntime {
         createdAt,
         updatedAt: createdAt,
         status: 'idle',
-        transcript: new WireTranscript(),
+        transcript: new TranscriptStore(),
         agentMessages: [],
         agent: null,
       }
@@ -817,7 +825,7 @@ export class PiRuntime {
     const messageId = this.clock.mint(this.now())
     this.publishUserMessage(child.id, messageId, { messageID: messageId, text: input.prompt, files: [] }, { agent: input.agent, selected })
     const retry = new TransientRetry({ baseDelayMs: this.cfg.piTurnRetryBaseMs, contextWindow: () => selected.model.contextWindow ?? 0, now: this.now })
-    const adapter = new PiWireAdapter({
+    const adapter = new PiTurnEvents({
       sessionID: child.id,
       mintMessageId: () => this.clock.mint(this.now()),
       parentMessageId: () => messageId,
@@ -829,7 +837,10 @@ export class PiRuntime {
       retryPlan: (message) => retryStatus(retry.plan(message)),
     })
     const agent = new core.Agent({
-      streamFn: (m, context, options) => this.models!.models.streamSimple(m, context, options),
+      streamFn: withAgentSampling(
+        (m, context, options) => this.models!.models.streamSimple(m, context, options),
+        () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+      ),
       toolExecution: 'sequential',
       initialState: {
         systemPrompt: this.systemPrompt(core.formatSkillsForSystemPrompt, { base: input.systemPrompt, tools, policy, interactive: false }),
@@ -894,7 +905,7 @@ export class PiRuntime {
   }
 
   /** The child session a read names, or null. */
-  childSession(id: string): { object: Record<string, unknown>; transcript: WireTranscript } | null {
+  childSession(id: string): { object: Record<string, unknown>; transcript: TranscriptStore } | null {
     const child = this.children.get(id)
     return child ? { object: this.childSessionObject(child), transcript: child.transcript } : null
   }
@@ -913,7 +924,7 @@ export class PiRuntime {
 
   private translateAndPublish(event: AgentEvent): void {
     if (!this.adapter) return
-    let frames: WireEmission[]
+    let frames: TurnEventEmission[]
     try {
       frames = this.adapter.translate(event)
     } catch (err) {
@@ -924,8 +935,8 @@ export class PiRuntime {
   }
 
   /** Sequence one wire frame onto the bus AND fold it into the transcript. */
-  publish(frame: WireFrame, opts: { transcriptOnly?: boolean; busOnly?: boolean } = {}): void {
-    const p = frame.properties
+  publish(frame: RuntimeFrame, opts: { transcriptOnly?: boolean; busOnly?: boolean } = {}): void {
+    const p = frame.properties as Record<string, unknown>
     const session =
       (p.sessionID as string | undefined) ??
       (p.info as { sessionID?: string } | undefined)?.sessionID ??
@@ -1028,6 +1039,16 @@ export class PiRuntime {
 
   private compiledAgent(): CompiledAgent | undefined {
     return this.compiled?.agent?.[this.agentName]
+  }
+
+  /** An agent's `temperature`, `top_p` and `steps` for its requests on `model`. */
+  private sampling(agent: CompiledAgent | undefined, model: SelectedModel) {
+    return {
+      temperature: agent?.temperature,
+      top_p: agent?.top_p,
+      steps: agent?.steps,
+      acceptsTemperature: this.models?.catalog[model.modelID]?.temperature !== false,
+    }
   }
 
   private thinkingLevel(variant: string | undefined, selected: SelectedModel | null = this.selected): ModelThinkingLevel {
@@ -1135,95 +1156,6 @@ export class PiRuntime {
     }
   }
 
-  /** The OpenCode `Agent` object for the selected agent. */
-  agentObject(): Record<string, unknown> {
-    const agent = this.compiledAgent() ?? {}
-    return {
-      name: this.agentName,
-      ...(agent.description !== undefined ? { description: agent.description } : {}),
-      mode: agent.mode ?? 'primary',
-      native: false,
-      hidden: agent.hidden === true || agent.disable === true,
-      ...(agent.top_p !== undefined ? { topP: agent.top_p } : {}),
-      ...(agent.temperature !== undefined ? { temperature: agent.temperature } : {}),
-      ...(agent.color !== undefined ? { color: agent.color } : {}),
-      permission: this.policy,
-      ...(this.selected ? { model: { providerID: this.selected.providerID, modelID: this.selected.modelID } } : {}),
-      ...(agent.variant !== undefined ? { variant: agent.variant } : {}),
-      ...(agent.prompt !== undefined ? { prompt: agent.prompt } : {}),
-      options: { ...(agent.options ?? {}) },
-      ...(agent.steps !== undefined ? { steps: agent.steps } : {}),
-    }
-  }
-
-  /** The OpenCode `Config` document the picker and composer read. */
-  configObject(): Record<string, unknown> {
-    const selected = this.selected
-    const provider =
-      selected && (selected.variants.length > 0 || selected.images)
-        ? {
-            provider: {
-              [selected.providerID]: {
-                models: {
-                  [selected.modelID]: {
-                    ...(selected.variants.length ? { variants: Object.fromEntries(selected.variants.map((v) => [v, {}])) } : {}),
-                    attachment: selected.images,
-                  },
-                },
-              },
-            },
-          }
-        : {}
-    return {
-      ...provider,
-      default_agent: this.agentName,
-      ...(selected ? { model: `${selected.providerID}/${selected.modelID}` } : {}),
-      agent: this.compiled?.agent ?? {},
-      permission: this.compiledAgent()?.permission ?? {},
-      autoupdate: false,
-    }
-  }
-
-  /** The OpenCode `/provider` document: one gateway provider, the catalog as its models. */
-  providerList(): Record<string, unknown> {
-    const selected = this.selected
-    const catalog = this.models?.catalog ?? {}
-    const providerID = selected?.providerID ?? 'kortix'
-    const models: Record<string, unknown> = {}
-    const entries: Array<[string, CatalogModel]> =
-      Object.keys(catalog).length > 0 ? Object.entries(catalog) : selected ? [[selected.modelID, { name: selected.modelID }]] : []
-    for (const [id, entry] of entries) {
-      models[id] = {
-        id,
-        providerID,
-        name: entry.name ?? id,
-        api: { id: 'openai-completions', url: '', npm: '@earendil-works/pi-ai' },
-        capabilities: {
-          temperature: true,
-          reasoning: entry.reasoning === true,
-          attachment: entry.attachment === true,
-          toolcall: true,
-          input: { text: true, audio: false, image: entry.attachment === true, video: false, pdf: false },
-          output: { text: true, audio: false, image: false, video: false, pdf: false },
-          interleaved: false,
-        },
-        cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-        limit: { context: entry.limit?.context ?? 128_000, output: entry.limit?.output ?? 32_768 },
-        status: 'active',
-        options: {},
-        headers: {},
-        release_date: '',
-        variants: Object.fromEntries(Object.keys(entry.variants ?? {}).map((v) => [v, {}])),
-      }
-    }
-    const provider = { id: providerID, name: 'Kortix', source: 'config', env: [], options: {}, models }
-    return {
-      all: [provider],
-      default: selected ? { [providerID]: selected.modelID } : {},
-      connected: [providerID],
-    }
-  }
-
   /** The `/kortix/opencode/state` document. */
   stateDoc(): Record<string, unknown> {
     const bus = kortixEventBus()
@@ -1245,19 +1177,17 @@ export class PiRuntime {
             : null,
     }))
     return {
+      schema: KORTIX_RUNTIME_SCHEMA,
       epoch: bus.epoch,
       seq: bus.headSeq,
       built_at: new Date(this.now()).toISOString(),
       identity: {
+        harness: 'pi',
         runtime_session_id: this.rootId,
         harness_version: PI_HARNESS_VERSION,
-        // Pre-W3 names of the two fields above, for an API that predates them.
-        opencode_session_id: this.rootId,
-        opencode_version: PI_HARNESS_VERSION,
         daemon_build: null,
         agent_config_etag: this.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG || null,
         head_seq: null,
-        harness: 'pi',
       },
       agents: { known: true, value: agents },
       commands: { known: true, value: [] },
@@ -1280,7 +1210,7 @@ export class PiRuntime {
             title: this.title,
             parent_id: null,
             directory: this.workspace,
-            time: { created: this.createdAt, updated: this.updatedAt, compacting: null },
+            time: { created: this.createdAt, updated: this.updatedAt, compacting: null, archived: null },
             revert: null,
           },
           ...[...this.children.values()].map((child) => ({
@@ -1288,7 +1218,7 @@ export class PiRuntime {
             title: child.title,
             parent_id: this.rootId,
             directory: this.workspace,
-            time: { created: child.createdAt, updated: child.updatedAt, compacting: null },
+            time: { created: child.createdAt, updated: child.updatedAt, compacting: null, archived: null },
             revert: null,
           })),
         ],
@@ -1390,7 +1320,7 @@ export class PiRuntime {
       for (const turn of dump.turns) this.completedTurns.set(turn.messageId, turn.status)
       this.children.clear()
       for (const saved of dump.children ?? []) {
-        const transcript = new WireTranscript()
+        const transcript = new TranscriptStore()
         transcript.load(saved.transcript)
         for (const message of saved.transcript) this.clock.observe(message.info.id as string)
         const { transcript: _saved, ...rest } = saved

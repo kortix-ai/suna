@@ -30,7 +30,7 @@ import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
 import { runtimeModelCatalog } from '../llm-gateway/models/runtime-catalog';
 import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway/resolution/default-model';
-import { toOpencodeModelRef, toWireModel } from '../llm-gateway/resolution/effective';
+import { toWireModel } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
 import { channelModelContext, projectModelContext } from './slack/model-gate';
@@ -246,7 +246,7 @@ export async function checkChannelModel(
     personalUserId: scope.personalUserId,
     ...(keys ? { providerSecretPools: selectionPools(keys) } : options.sessionId ? { sessionId: options.sessionId } : {}),
   }).catch(() => false);
-  return servable ? { ok: true, model: toOpencodeModelRef(model), keys } : { ok: false, reason: 'not_servable' };
+  return servable ? { ok: true, model: toWireModel(model), keys } : { ok: false, reason: 'not_servable' };
 }
 
 /**
@@ -424,8 +424,10 @@ export async function planChannelSessionStart(input: {
 }
 
 /**
- * The model a follow-up in a chat conversation must carry, or null to leave
- * the session's own.
+ * The model a follow-up in a chat conversation carries: the conversation's
+ * `/model` choice, else the session's pin. Every prompt carries it, so the
+ * runtime runs the model Kortix shows (`channelTurnModel`). Null only when
+ * there is nothing servable to send.
  *
  * The conversation's `/model` choice is the model: a Teams chat keeps one
  * session, so a choice that waited for the next session did nothing. A choice
@@ -470,7 +472,6 @@ export async function planChannelFollowUp(input: {
     agentGrantEnv,
     personalUserId: scope.personalUserId,
     sessionId: session.sessionId,
-    explicit: Boolean(chosen) && toWireModel(chosen!) !== (session.pinnedModel ? toWireModel(session.pinnedModel) : null),
   });
 }
 

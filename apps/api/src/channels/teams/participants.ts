@@ -4,8 +4,9 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { sessionWebUrl } from '../slack/util';
-import { sendCard } from '../teams-api';
+import { conversationMemberId } from '../teams-api';
 import { buildJoinRequestCard, buildNoticeCard } from './cards';
+import { sendCardPrivately } from './private-reply';
 import { chatUser, lookupChatIdentity, resolveProjectChatActor } from '../core/identity';
 import type { TeamsConversationRef } from './types';
 
@@ -20,10 +21,11 @@ import type { TeamsConversationRef } from './types';
  *   gets an Approve / Deny card in the conversation; the requester is told to
  *   send again once approved.
  *
- * Teams has no ephemeral messages, so what Slack whispers to one person here
- * REPLACES that person's own live card (the "Working on it…" already posted
- * for their message), and the owner's Approve / Deny card is a normal card
- * whose buttons only the owner can act on (`decideTeamsThreadJoin` checks).
+ * What Slack whispers to one person here goes to that person alone in a
+ * Teams targeted message (private-reply.ts): the refusal to the requester
+ * (session.ts), the owner's Approve / Deny card, and the decision. When Teams
+ * refuses a targeted message the card goes to the whole conversation, and the
+ * buttons still work only for the owner (`decideTeamsThreadJoin` checks).
  */
 
 const PLATFORM = 'teams';
@@ -86,6 +88,13 @@ async function loadParticipant(input: { tenantId: string; conversationId: string
   return row ?? null;
 }
 
+/** The Teams user id (`29:…`) of whoever started the session: its owner. */
+function sessionStarterTeamsId(metadata: Record<string, unknown> | null | undefined): string | null {
+  const teams = metadata?.teams;
+  const user = teams && typeof teams === 'object' ? (teams as Record<string, unknown>).user : null;
+  return typeof user === 'string' && user ? user : null;
+}
+
 async function requesterLabel(userId: string, fallback: string): Promise<string> {
   const email = (await lookupEmailsByUserIds([userId]).catch(() => null))?.get(userId);
   return email || fallback;
@@ -93,7 +102,7 @@ async function requesterLabel(userId: string, fallback: string): Promise<string>
 
 export type ParticipantVerdict =
   | { allowed: true }
-  /** Not allowed; `notice` is what the requester's own live card should now say. */
+  /** Not allowed; `notice` is what the requester alone is told (session.ts). */
   | { allowed: false; notice: string };
 
 export async function ensureTeamsThreadParticipant(input: {
@@ -188,8 +197,9 @@ export async function ensureTeamsThreadParticipant(input: {
 
   if (inserted) {
     const label = await requesterLabel(input.actorUserId, input.requesterName);
-    await sendCard(
+    await sendCardPrivately(
       input.ref,
+      sessionStarterTeamsId(input.sessionMetadata),
       buildJoinRequestCard({
         requesterLabel: label,
         projectId: input.projectId,
@@ -325,10 +335,12 @@ export async function decideTeamsThreadJoin(input: {
 
   const label = await requesterLabel(requesterUserId, 'They');
   const sessionUrl = sessionWebUrl(config.FRONTEND_URL, session.projectId, sessionId);
-  // Tell the requester in the conversation (no ephemeral in Teams): they know
-  // to send again, and everyone else sees the thread is open now.
-  await sendCard(
-    { ...input.ref, projectId: session.projectId },
+  // Tell the requester alone: they know to send again. The request stored
+  // their Entra object id; a targeted message needs their Teams user id.
+  const ref = { ...input.ref, projectId: session.projectId };
+  await sendCardPrivately(
+    ref,
+    await conversationMemberId(ref, input.requesterTeamsUserId),
     buildNoticeCard(
       input.decision === 'approved'
         ? `${label} — you're approved for this Kortix session. Send your message again and I'll continue. You can also [open the session in Kortix](${sessionUrl}).`

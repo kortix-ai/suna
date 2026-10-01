@@ -1127,10 +1127,6 @@
           "name": "AgentMail-E-Mail",
           "description": "Weisen Sie AgentMail-Postfächer zu, damit eingehende E-Mail-Threads Kortix-Sitzungen starten und fortsetzen können."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Verbinden Sie einen Microsoft-Teams-Bot, damit Chats und Kanäle Kortix-Sitzungen starten und fortsetzen können."
-        },
         "llm_gateway": {
           "name": "LLM-Gateway",
           "description": "Leiten Sie dieses Projekt über das verwaltete Kortix-LLM-Gateway für Modelle, Messung und Budgets."
@@ -1181,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Nachrichten an Menschen",
-          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat."
+          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat. Nachrichten zwischen Sitzungen nennen die sendende Sitzung, damit deren Agent antworten kann."
         },
         "reminders": {
           "name": "Erinnerungen",
@@ -1369,7 +1365,11 @@
     "dailyAt9AM": "Täglich um 9 Uhr",
     "weekdaysAt9AM": "Werktags um 9 Uhr",
     "weeklyOnMonday": "Wöchentlich am Montag",
-    "monthlyOn1st": "Monatlich am 1."
+    "monthlyOn1st": "Monatlich am 1.",
+    "runFailed": {
+      "label": "Letzter Lauf nicht abgeschlossen",
+      "nextRun": "Der nächste Lauf versucht es erneut."
+    }
   },
   "sidebar": {
     "referAndEarn": "Empfehlen",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Einen Moment …",
       "useDifferentEmail": "Andere E-Mail-Adresse verwenden",
       "usePasswordInstead": "Stattdessen ein Passwort verwenden",
-      "emailCodeInstead": "Code per E-Mail senden",
+      "emailLinkInstead": "Stattdessen einen Link per E-Mail senden",
       "forgotPassword": "Passwort vergessen?",
       "automaticAccount": "Neu hier? Mit „Weiter“ wird dein Konto automatisch erstellt.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Identitätsanbieter wird gesucht …",
         "use": "Single Sign-on (SSO) verwenden"
       },
-      "code": {
+      "link": {
         "title": "E-Mail prüfen",
-        "description": "Wir haben einen Code an <address>{email}</address> gesendet",
-        "verifying": "Wird überprüft …",
-        "notReceived": "Keinen Code erhalten?",
+        "description": "Wir haben einen Anmeldelink an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
+        "notReceived": "Keinen Link erhalten?",
         "resendIn": "Erneut senden in {seconds}",
         "resend": "Erneut senden"
       },
@@ -9886,7 +9885,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Nur {value0}",
       "text0dfd0cbdd238": "Dies ist das einzige Mal, dass der vollständige Schlüssel angezeigt wird. Bewahre ihn sicher auf.",
-      "text0e0b01710c4b": "Slack ist live · Teams und E-Mail werden eingeführt · oder starte Sitzungen über die API",
       "text0e1181a97f66": "Eine echte Maschine, eine echte Abfrage, eine Analyse, die Sie erneut ausführen können",
       "text0e16f24ee012": "· {value0} von {value1}",
       "text0e22e022480d": "Wähle, welches Modell diesen Schritt ausführt",
@@ -14469,7 +14467,6 @@
       "textf5262c55d1be": "Microsoft Teams verbunden, aber die Veröffentlichung der App in deinem Teams-Katalog ist fehlgeschlagen.",
       "text76930360e909": "Microsoft Teams verbunden. Die App wird in deinem Teams-Katalog veröffentlicht…",
       "textb8d155eea2ab": "Die Microsoft-Zustimmung wurde abgelehnt.",
-      "textd4b32aea5c4a": "Microsoft Teams ist für dieses Projekt deaktiviert.",
       "text57ef9e5e8110": "Die Teams-Ein-Klick-Installation ist auf diesem Server nicht konfiguriert.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Lade Personen ein, in diesem Konto zu arbeiten.",
@@ -16943,7 +16940,7 @@
       "textd7da08389824": "Dienstkonto",
       "textd7db5a6e1483": "Kopiere diesen Token jetzt",
       "textd7e9af636757": "Token werden pro Host gespeichert. Beim Wechsel des Hosts wechseln daher auch das Konto und das Standardprojekt.",
-      "textd7eb7cdcff7d": "Prüfe deine E-Mails auf einen Anmeldecode",
+      "textd7eb7cdcff7d": "Prüfe deine E-Mails auf einen Anmeldelink",
       "textd7f179da0e70": "Wir bauen selbststeuernde Unternehmen. Menschen prüfen, lenken und steuern, während Agententeams Arbeit in Engineering, Product, Operations, Finance, Support und Growth erledigen.",
       "textd800b1eb8a84": "Klicken Sie auf „Create App Integration“.",
       "textd814d7970df3": "„Von X nach Y migrieren“ ist eine Lösung, auf die du dich voreilig festgelegt hast. Langsam, instabil, bricht bei diesem einen Kunden — das sind Probleme.",
@@ -19081,7 +19078,36 @@
       "text7458028e0d1d": "Diktat beenden",
       "text9c84d6622566": "Nachricht diktieren",
       "textf164e4b031dc": "Sitzungspräsenz aktualisiert",
-      "text9e6a0b0a06c2": "Nachrichtenautoren der Sitzung angesehen"
+      "text9e6a0b0a06c2": "Nachrichtenautoren der Sitzung angesehen",
+      "text5f58426c214e": "Wir entwickeln das Open-Source-AI Management System. Jedes Unternehmen sollte es vollständig besitzen.",
+      "textf729ef1ea584": "Abgleich von Lizenzen und Sitzplätzen",
+      "text7912f8e97c06": "Ein Cron-Trigger öffnet die vierteljährliche Zugriffsprüfung und den monatlichen Lizenzabgleich. Trigger benennen den Agenten, unter dem sie laufen. So hat die unbeaufsichtigte Sitzung genau dieselben Zugriffsmöglichkeiten wie die betreute – nicht mehr.",
+      "textbc0deb1bab41": "Kortix ist das Open-Source-AI Management System – selbst hostbar, mit jedem Modell. Starte ein Projekt kostenlos.",
+      "text0c5b38410c06": "Kortix vorgestellt: das Open-Source-AI Management System",
+      "textf216fe1b31a2": "Beginne mit einer Abteilung, verbinde die Tools, die sie bereits nutzt, und verwandle den Workflow in ein Git-basiertes Projekt, das der Kunde besitzen kann.",
+      "textdcb3e70ce4dc": "Kortix – das Open-Source-AI Management System.",
+      "text1345783053b5": "Kortix vs. Claude Cowork: Desktop-Assistent oder AI Management System für das Unternehmen?",
+      "textd90da51ca5c2": "Claude Cowork nutzt nur Anthropic-Modelle, in der Cloud von Anthropic oder in deinem Bedrock-, Google-Cloud- oder Microsoft-Foundry-Konto, ohne Self-Hosting. Hier wächst ein Unternehmen darüber hinaus.",
+      "text0216eab899cb": "Beratungen brauchen ein Repo für die Agenten ihrer Kunden",
+      "text3059f4c530b3": "Warum Beratungen ein einziges Git-Repo für die Agenten, das Memory, die Connectoren, die Richtlinien und die prüfbare Arbeit ihrer Kunden brauchen.",
+      "textad70f35eaccc": "Unsere Mission: ein Unternehmen vom Menschen zur AGI führen und es dabei jedes Byte von sich selbst behalten lassen.",
+      "text66b6392a2418": "Notizen zum Aufbau, Betrieb und zur Steuerung von KI-Agenten, die echte Arbeit erledigen — vom Team hinter Kortix.",
+      "text809a706ff256": "Akzente und Status",
+      "text5ed8e8176c1d": "Die einzigen Farbtöne in der Produkt-UI. Sie färben Glyphen, Punkte, Tönungen und Diagramme. Die Beschriftung daneben bleibt foreground oder muted-foreground, weil jeder Akzent als Fließtext auf Weiß AA verfehlt. Inaktiv hat keinen Farbton: muted-foreground.",
+      "text1b730c5151b5": "Diagrammskala",
+      "text7ac77b03cfd2": "Nur für Datenvisualisierung. Über var(--chart-n) lesen, nicht über eine Utility.",
+      "textf25fe860a82d": "10 Varianten, 8 Größen. Buttons sind <code>rounded-md</code>. Panels, Karten und Zeilen sind ebenfalls rounded-md; schwebende Panels sind rounded-lg; rounded-2xl gibt es nur im Marketing. Die Variante <code>destructive</code> ist der einen unumkehrbaren Bestätigung vorbehalten.",
+      "textc94e8cb68cba": "Verbotene Muster",
+      "text9bb4af3b0beb": "Diese kommen in der Codebasis noch vor, aber das Brand Kit verbietet sie. Füge keine neue Verwendung hinzu.",
+      "text1aff73a5df45": "{why} Verwende stattdessen {instead}.",
+      "text81b004dc7e0b": "Slack und Teams sind live · E-Mail wird eingeführt · oder starte Sitzungen über die API",
+      "text7d7b98240405": "Zwei sind live. Einer ist experimentell. Wir sagen, welcher.",
+      "textb60c863bbacb": "Für jedes Projekt aktiv, ohne Flag. Ein Tenant-Admin stimmt einmal zu, oder ein Projekt bringt seine eigene Bot-App mit. Dieselben Sitzungen, dieselben Identitätsregeln wie bei Slack.",
+      "text80043b03898d": "Kortix-App in Teams aktualisieren",
+      "textdf757dbe33eb": "Dein Teams-Katalog hat Version {value0} der Kortix-App. Version {value1} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
+      "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
+      "texte15f213fa506": "App-Update veröffentlichen",
+      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20127,6 +20153,7 @@
     "everyoneDefaultMeta": "Bis Sie eine Gruppe oder Person hinzufügen",
     "everyoneMeta": "Alle mit Zugriff auf das Projekt",
     "groupMeta": "Gruppe",
+    "agentMeta": "Agent",
     "memberMeta": "Mitglied",
     "remove": "{name} entfernen",
     "keep": "Behalten",
@@ -20150,8 +20177,12 @@
     "addAccountDescription": "Benennen Sie das Konto und wählen Sie, wer es verwenden darf.",
     "onlyYou": "Nur Sie",
     "onlyYouDescription": "Nur Sie können es verwenden, in Ihren privaten Sitzungen.",
-    "specificPeople": "Bestimmte Personen oder Gruppen",
-    "specificPeopleDescription": "Nur die ausgewählten Personen und Gruppen, in ihren privaten Sitzungen.",
+    "onlyRequester": "Nur {name}",
+    "onlyRequesterUnnamed": "Nur die Person, die gefragt hat",
+    "onlyRequesterDescription": "Nur diese Person kann es nutzen – direkt oder in ihren eigenen privaten Sitzungen.",
+    "specificPeople": "Bestimmte Personen, Gruppen oder Agenten",
+    "specificPeopleDescription": "Nur die ausgewählten Personen, Gruppen und Agenten. Personen nutzen es in ihren privaten Sitzungen, ein Agent in allen seinen Sitzungen.",
+    "agentShareHint": "Ein Agent nutzt es in allen seinen Sitzungen, auch in Triggern. Wer diesen Agenten ausführen darf, kann es über den Agenten nutzen.",
     "shareRequiresManage": "Zum Teilen eines Kontos benötigen Sie die Berechtigung, die Verbindungen des Projekts zu verwalten.",
     "nameTaken": "Ein Konto namens {label} gibt es bereits.",
     "noAccountsTitle": "Noch kein Konto",

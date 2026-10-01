@@ -1127,10 +1127,6 @@
           "name": "AgentMail 邮件",
           "description": "分配 AgentMail 收件箱，让传入的邮件会话能够启动和继续 Kortix 会话。"
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "连接 Microsoft Teams 机器人，让聊天和频道能够启动和继续 Kortix 会话。"
-        },
         "llm_gateway": {
           "name": "LLM 网关",
           "description": "通过 Kortix 托管 LLM 网关路由此项目，以使用托管模型、计量和预算。"
@@ -1181,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "向人发消息",
-          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。"
+          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。会话之间的消息会注明发送方会话，以便其智能体回复。"
         },
         "reminders": {
           "name": "提醒",
@@ -1369,7 +1365,11 @@
     "dailyAt9AM": "每天上午9点",
     "weekdaysAt9AM": "工作日上午9点",
     "weeklyOnMonday": "每周一",
-    "monthlyOn1st": "每月1号"
+    "monthlyOn1st": "每月1号",
+    "runFailed": {
+      "label": "上次运行未完成",
+      "nextRun": "下次运行会重试。"
+    }
   },
   "sidebar": {
     "referAndEarn": "推荐赚取",
@@ -2288,7 +2288,7 @@
       "oneMoment": "请稍候…",
       "useDifferentEmail": "使用其他邮箱",
       "usePasswordInstead": "改用密码",
-      "emailCodeInstead": "通过邮箱发送验证码",
+      "emailLinkInstead": "改为通过邮箱发送链接",
       "forgotPassword": "忘记密码？",
       "automaticAccount": "还没有账户？点击“继续”即可自动创建账户。",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "正在查找您的身份提供商…",
         "use": "使用单点登录（SSO）"
       },
-      "code": {
+      "link": {
         "title": "查看您的邮箱",
-        "description": "我们已向 <address>{email}</address> 发送验证码",
-        "verifying": "验证中…",
-        "notReceived": "没收到验证码？",
+        "description": "我们已向 <address>{email}</address> 发送登录链接。打开链接即可继续。",
+        "notReceived": "未收到链接？",
         "resendIn": "{seconds} 秒后重新发送",
         "resend": "重新发送"
       },
@@ -9886,7 +9885,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "仅限 {value0}",
       "text0dfd0cbdd238": "这是完整密钥唯一一次显示。请将其安全地存储在其他位置。",
-      "text0e0b01710c4b": "Slack 已上线 · Teams 和电子邮件即将推出 · 或从 API 开始会话",
       "text0e1181a97f66": "真实机器、真实查询、可重新运行的分析",
       "text0e16f24ee012": "· {value0} 由 {value1}",
       "text0e22e022480d": "选择本轮运行的模型",
@@ -14469,7 +14467,6 @@
       "textf5262c55d1be": "已连接 Microsoft Teams，但将应用发布到你的 Teams 目录失败。",
       "text76930360e909": "已连接 Microsoft Teams。正在将应用发布到你的 Teams 目录…",
       "textb8d155eea2ab": "Microsoft 同意已被拒绝。",
-      "textd4b32aea5c4a": "此项目已关闭 Microsoft Teams。",
       "text57ef9e5e8110": "此服务器未配置 Teams 一键安装。",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "邀请成员在此账户中协作。",
@@ -16943,7 +16940,7 @@
       "textd7da08389824": "服务账户",
       "textd7db5a6e1483": "立即复制此令牌",
       "textd7e9af636757": "令牌按主机存储，因此切换主机会同时切换账户和默认项目。",
-      "textd7eb7cdcff7d": "请检查 email 获取登录代码",
+      "textd7eb7cdcff7d": "请检查邮箱中的登录链接",
       "textd7f179da0e70": "我们构建自动驾驶企业。人类负责验证、引导和治理，代理团队则在工程、产品、运营、财务、支持和增长等领域开展工作。",
       "textd800b1eb8a84": "点击“Create App Integration”。",
       "textd814d7970df3": "“从 X 迁移到 Y”是你预先承诺的解决方案。速度慢、不稳定、对这个客户失效——这些才是问题。",
@@ -19081,7 +19078,36 @@
       "text7458028e0d1d": "完成听写",
       "text9c84d6622566": "语音输入消息",
       "textf164e4b031dc": "已更新会话在线状态",
-      "text9e6a0b0a06c2": "查看了会话消息作者"
+      "text9e6a0b0a06c2": "查看了会话消息作者",
+      "text5f58426c214e": "我们正在构建开源的 AI Management System。每家公司都应完整拥有它。",
+      "textf729ef1ea584": "许可证与席位对账",
+      "text7912f8e97c06": "cron 触发器会启动季度访问审查和每月许可证核对。触发器会指定运行它的代理，因此无人值守会话拥有与有人值守会话完全相同的权限范围——不会更多。",
+      "textbc0deb1bab41": "Kortix 是开源的 AI Management System，可自行托管，支持任何模型。免费开始一个项目。",
+      "text0c5b38410c06": "隆重介绍 Kortix：开源的 AI Management System",
+      "textf216fe1b31a2": "从一个部门开始，连接它已在使用的工具，把工作流变成客户可以拥有的、基于 git 的项目。",
+      "textdcb3e70ce4dc": "Kortix – 开源的 AI Management System。",
+      "text1345783053b5": "Kortix vs Claude Cowork：桌面助手，还是面向企业的 AI Management System？",
+      "textd90da51ca5c2": "Claude Cowork 只运行 Anthropic 模型，部署在 Anthropic 的云或你的 Bedrock、Google Cloud 或 Microsoft Foundry 账户中，无法自托管。以下是企业会超出它的地方。",
+      "text0216eab899cb": "咨询公司需要一个仓库来管理客户的代理",
+      "text3059f4c530b3": "为什么咨询公司需要一个 git 仓库来统一管理客户的代理、记忆、连接器、策略和可审计工作。",
+      "textad70f35eaccc": "我们的使命：带领一家公司从人类走向 AGI，并让它在这条路上保有自身的每一个字节。",
+      "text66b6392a2418": "来自 Kortix 团队的现场笔记：关于构建、运行和治理能够完成实际工作的 AI 代理。",
+      "text809a706ff256": "强调色与状态",
+      "text5ed8e8176c1d": "产品 UI 中仅有的色相。它们用于字形、圆点、色调和图表。旁边的标签保持 foreground 或 muted-foreground，因为每种强调色作为白底正文都达不到 AA。空闲状态没有色相：muted-foreground。",
+      "text1b730c5151b5": "图表色阶",
+      "text7ac77b03cfd2": "仅用于数据可视化。通过 var(--chart-n) 读取，而不是工具类。",
+      "textf25fe860a82d": "10 种变体，8 种尺寸。按钮使用 <code>rounded-md</code>。面板、卡片和行也使用 rounded-md；浮动面板使用 rounded-lg；rounded-2xl 仅用于营销页面。<code>destructive</code> 变体只留给唯一不可撤销的确认操作。",
+      "textc94e8cb68cba": "禁用模式",
+      "text9bb4af3b0beb": "这些仍存在于代码库中，但品牌规范已禁止使用。不要新增使用。",
+      "text1aff73a5df45": "{why} 请改用 {instead}。",
+      "text81b004dc7e0b": "Slack 和 Teams 已上线 · 电子邮件即将推出 · 或从 API 开始会话",
+      "text7d7b98240405": "两个已上线。一个处于实验阶段。我们会说明是哪一个。",
+      "textb60c863bbacb": "对每个项目都已开启，无需开关。租户管理员只需同意一次，或者项目使用自己的机器人应用。会话和身份规则与 Slack 相同。",
+      "text80043b03898d": "在 Teams 中更新 Kortix 应用",
+      "textdf757dbe33eb": "你的 Teams 目录中的 Kortix 应用是 {value0} 版。{value1} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
+      "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
+      "texte15f213fa506": "发布应用更新",
+      "textcafd830fcf85": "已列出项目代理身份"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20127,6 +20153,7 @@
     "everyoneDefaultMeta": "直到你添加一个组或一个人",
     "everyoneMeta": "所有可以访问该项目的人",
     "groupMeta": "组",
+    "agentMeta": "智能体",
     "memberMeta": "成员",
     "remove": "移除 {name}",
     "keep": "保留",
@@ -20150,8 +20177,12 @@
     "addAccountDescription": "为账户命名，并选择谁可以使用它。",
     "onlyYou": "仅你自己",
     "onlyYouDescription": "只有你可以在自己的私密会话中使用。",
-    "specificPeople": "特定人员或群组",
-    "specificPeopleDescription": "只有你选择的人员和群组，可在其私密会话中使用。",
+    "onlyRequester": "仅 {name}",
+    "onlyRequesterUnnamed": "仅发起请求的人",
+    "onlyRequesterDescription": "只有此人可以直接或在其自己的私人会话中使用它。",
+    "specificPeople": "指定的人员、群组或智能体",
+    "specificPeopleDescription": "仅限你选择的人员、群组和智能体。人员在其私人会话中使用；智能体在其所有会话中使用。",
+    "agentShareHint": "智能体会在其所有会话（包括触发器）中使用它。任何可以运行该智能体的人都可以通过该智能体使用它。",
     "shareRequiresManage": "共享账户需要管理项目连接的权限。",
     "nameTaken": "名为 {label} 的账户已存在。",
     "noAccountsTitle": "还没有账户",

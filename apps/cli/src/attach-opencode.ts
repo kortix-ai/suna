@@ -251,10 +251,10 @@ async function resolveRuntimeViaApi(request: AttachResolveRequest): Promise<Sess
 }
 
 /**
- * The version the session's OpenCode server actually runs, from its own
- * `/global/health` — the sandbox image may be newer or older than this CLI's
- * baked pin, and the TUI must match the server, not the pin. Falls back to
- * undefined (→ the runtime-versions pin) when the probe fails.
+ * The version the session's OpenCode server actually runs, from the daemon's
+ * `/kortix/health` harness block — the sandbox image may be newer or older than
+ * this CLI's baked pin, and the TUI must match the server, not the pin. Falls
+ * back to undefined (→ the runtime-versions pin) when the probe fails.
  *
  * The value crosses a trust boundary: it comes from inside the sandbox and
  * ends up in a download URL and an executable path, so anything that is not
@@ -262,10 +262,8 @@ async function resolveRuntimeViaApi(request: AttachResolveRequest): Promise<Sess
  */
 async function runtimeOpencodeVersion(runtime: SessionRuntime): Promise<string | undefined> {
   try {
-    const health = unwrapRuntime(
-      await withKortixScope(runtime.auth, () => runtime.runtime.global.health()),
-    );
-    const version = (health as { version?: unknown }).version;
+    const { health } = await withKortixScope(runtime.auth, () => runtime.handle.health());
+    const version = health?.harness?.id === 'opencode' ? health.harness.version : undefined;
     return typeof version === 'string' && isValidOpencodeVersion(version) ? version : undefined;
   } catch {
     return undefined;

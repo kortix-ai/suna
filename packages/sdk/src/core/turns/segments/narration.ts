@@ -18,6 +18,7 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
+import { inputPath, type ToolKind, toolKind } from '../tool-kind';
 import { getToolPrimaryArg, normalizeName } from '../tools/tool-meta';
 import { parseWebSearchOutput, wsDomain } from '../tools/web-helpers';
 import { stripTrailingSlashes } from '../text-scan';
@@ -51,135 +52,42 @@ export type StepFamily =
   | 'retired'
   | 'other';
 
-/** Context-engine bookkeeping — meaningless to this audience, so Easy mode omits it. */
-const HIDDEN = new Set(['prune', 'distill', 'compress', 'context_info']);
-
-const FAMILY_BY_TOOL: Record<string, StepFamily> = {};
-function assign(family: StepFamily, tools: string[]) {
-  for (const t of tools) FAMILY_BY_TOOL[t] = family;
-}
-
-assign('explore', ['read', 'glob', 'grep', 'list']);
-assign('edit', ['write', 'edit', 'morph_edit', 'apply_patch']);
-assign('run', ['bash', 'pty_spawn', 'pty_read', 'pty_write', 'pty_input', 'pty_kill']);
-assign('web', [
-  'web_search',
-  'websearch',
-  'web_fetch',
-  'webfetch',
-  'scrape_webpage',
-  'scrapewebpage',
-  'image_search',
-]);
-assign('create', ['image_gen', 'video_gen', 'presentation_gen', 'show', 'show_user']);
-
-// `todo_write` is the model's own step checklist — nothing is delegated to
-// another agent. This is the ONLY thing left in `plan`; every `task_*` /
-// `agent_task_*` alias below shares a component with an explicit agent_*
-// delegation tool, so it belongs in `delegate`, not here.
-assign('plan', ['todo_write', 'todowrite']);
-
-// Every one of these renders one of: AgentSpawnTool, AgentTaskUpdateTool,
-// AgentMessageTool, TaskDoneTool, AgentStopTool, AgentStatusTool, or
-// TaskListTool — the same components the bare `agent_*` tools render. A
-// `task_*` alias and its `agent_task_*` twin MUST land here together, or the
-// same backend action narrates two different ways depending on which the
-// model happened to emit.
-assign('delegate', [
-  // spawn a helper agent to do work (renders AgentSpawnTool / SessionSpawnTool)
-  'agent_spawn',
-  'agent_task',
-  'agent_task_create',
-  'agent_task_start',
-  'task',
-  'task_create',
-  'task_start',
-  'session_spawn',
-  'session_start_background',
-  // send an instruction/update to a running helper (AgentMessageTool / AgentTaskUpdateTool)
-  'agent_message',
-  'agent_task_message',
-  'task_message',
-  'agent_task_update',
-  'task_update',
-  'session_message',
-  // read-only status check on helpers/tasks (AgentStatusTool / TaskListTool)
-  'agent_status',
-  'agent_task_list',
-  'agent_task_get',
-  'task_list',
-  'task_get',
-  // stop a running helper (AgentStopTool)
-  'agent_stop',
-  'agent_task_cancel',
-  'task_cancel',
-  // mark a helper's task done (TaskDoneTool)
-  'agent_task_approve',
-  'task_approve',
-  'task_done',
-  // remove a task (TaskDeleteTool)
-  'task_delete',
-]);
-// Genuine read-only lookups of past/other session state — no delegation happens here.
-assign('sessions', [
-  'session_get',
-  'session_read',
-  'session_search',
-  'session_lineage',
-  'session_stats',
-  'session_list',
-  'session_list_background',
-  'session_list_spawned',
-]);
-assign('memory', ['memory', 'memory_search', 'mem_search', 'ltm_search', 'get_mem']);
-assign('connectors', [
-  'connector_get',
-  'connector_list',
-  'connector_setup',
-  'kortix_connector_call',
-  'kortix_connectors',
-  'kortix_connectors_connectors',
-  'kortix_connectors_discover',
-  'kortix_connectors_describe',
-  'kortix_connectors_call',
-  'kortix_connector_describe',
-  'kortix_connector_discover',
-]);
-assign('automations', [
-  'triggers',
-  'trigger_create',
-  'trigger_delete',
-  'trigger_get',
-  'trigger_list',
-  'trigger_pause',
-  'trigger_resume',
-  'trigger_test',
-  'trigger_update',
-]);
-assign('projects', [
-  'project_create',
-  'project_delete',
-  'project_get',
-  'project_list',
-  'project_select',
-  'project_update',
-]);
-assign('skills', ['skill']);
-assign('ask', ['question', 'ask']);
-assign('retired', [
-  'integration_list',
-  'integration_connect',
-  'integration_search',
-  'integration_actions',
-  'integration_run',
-  'integration_request',
-  'integration_exec',
-]);
+/** The narration family of each tool kind. Context-engine bookkeeping is
+ *  meaningless to this audience, so Easy mode omits it. */
+const FAMILY_OF_KIND: Record<ToolKind, StepFamily | 'hidden'> = {
+  read: 'explore',
+  list: 'explore',
+  glob: 'explore',
+  grep: 'explore',
+  write: 'edit',
+  edit: 'edit',
+  apply_patch: 'edit',
+  bash: 'run',
+  pty: 'run',
+  web_search: 'web',
+  webfetch: 'web',
+  media: 'create',
+  show: 'create',
+  // `task` and every legacy `agent_*`/`task_*` helper share a component with
+  // an explicit delegation, so they narrate the same way.
+  task: 'delegate',
+  delegate: 'delegate',
+  sessions: 'sessions',
+  // The model's own step checklist — nothing is delegated.
+  todowrite: 'plan',
+  question: 'ask',
+  memory: 'memory',
+  connectors: 'connectors',
+  automations: 'automations',
+  projects: 'projects',
+  skill: 'skills',
+  context: 'hidden',
+  retired: 'retired',
+  other: 'other',
+};
 
 export function familyForTool(toolName: string): StepFamily | 'hidden' {
-  const n = normalizeName(toolName);
-  if (HIDDEN.has(n)) return 'hidden';
-  return FAMILY_BY_TOOL[n] ?? 'other';
+  return FAMILY_OF_KIND[toolKind(toolName)];
 }
 
 /**
@@ -688,12 +596,11 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
       return `Looked through your files · ${reads} read`;
     }
     case 'edit': {
-      if (n === 1) {
-        const verb = normalizeName(parts[0].tool) === 'write' ? 'Wrote' : 'Updated';
-        return arg ? `${verb} ${arg}` : `${verb} a file`;
-      }
-      const writes = parts.filter((p) => normalizeName(p.tool) === 'write').length;
-      return writes === n ? `Wrote ${n} files` : `Updated ${n} files`;
+      // Count files, not calls: a write then an edit of one file is one file.
+      const files = new Set(parts.map((p) => inputPath(rawInput(p))).filter(Boolean)).size || n;
+      const verb = parts.every((p) => normalizeName(p.tool) === 'write') ? 'Wrote' : 'Updated';
+      if (files === 1) return arg ? `${verb} ${arg}` : `${verb} a file`;
+      return `${verb} ${files} files`;
     }
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;

@@ -69,6 +69,27 @@ describe('askedYouAsker', () => {
     expect(askedYouAsker(session({ id: 'a', owner_email: 'o@example.com' }))).toBe('o@example.com');
     expect(askedYouAsker(session({ id: 'a' }))).toBeNull();
   });
+
+  test('metadata.asked_by wins: the asking agent reads as its name (else the session title), never the owner', () => {
+    const owner = { owner_name: 'Owner Name', initiator: { type: 'member' as const, id: 'u', label: 'Owner Name' } };
+    expect(
+      askedYouAsker(session({ id: 'a', ...owner, metadata: { asked_by: { kind: 'session', session_id: 's', name: 'Launch prep' } } })),
+    ).toBe('Launch prep');
+    expect(
+      askedYouAsker(session({ id: 'a', ...owner, metadata: { asked_by: { kind: 'session', session_id: 's', name: 'Launch prep', agent: 'release-bot' } } })),
+    ).toBe('release-bot');
+    expect(
+      askedYouAsker(session({ id: 'a', ...owner, metadata: { asked_by: { kind: 'person', name: 'Blair', email: 'b@example.com' } } })),
+    ).toBe('Blair');
+    expect(
+      askedYouAsker(session({ id: 'a', metadata: { asked_by: { kind: 'person', name: '', email: 'b@example.com' } } })),
+    ).toBe('b@example.com');
+  });
+
+  test('an empty or malformed asked_by falls back to the owner logic', () => {
+    expect(askedYouAsker(session({ id: 'a', owner_name: 'Owner Name', metadata: { asked_by: { kind: 'session', name: '' } } }))).toBe('Owner Name');
+    expect(askedYouAsker(session({ id: 'a', owner_name: 'Owner Name', metadata: { asked_by: 'x' } }))).toBe('Owner Name');
+  });
 });
 
 describe('sessionParticipantCount', () => {

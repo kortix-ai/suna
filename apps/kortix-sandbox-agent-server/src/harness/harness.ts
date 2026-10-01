@@ -9,6 +9,7 @@ import type { HarnessProxyService } from './contract/proxy'
 import type { HarnessControlService } from './contract/control'
 import type { HarnessDiagnosticsService } from './contract/diagnostics'
 import type { HarnessQueryFactory } from './contract/queries'
+import type { HarnessTurnService } from './contract/turns'
 import { openCodeDefinition } from './open-code/service'
 import { piDefinition } from './pi/service'
 
@@ -26,6 +27,7 @@ export interface HarnessService {
   readonly control: HarnessControlService
   readonly diagnostics: HarnessDiagnosticsService
   readonly queries: HarnessQueryFactory
+  readonly turns: HarnessTurnService
   readonly background: { start(cfg: Config): ResourceMonitor }
   readonly assets: HarnessAssetsService
 }

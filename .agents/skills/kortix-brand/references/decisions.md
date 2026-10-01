@@ -121,7 +121,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Source:** surface agents S4 and S6 (2026-10-01).
 
 ### Q39 App icons, manifests and favicons
-- **Decision:** The shipped icon files are the interim spec: a dark `--background` tile with the white symbol for the large icons, the maskable icon and `icon-dark-32`, and a light tile with the black symbol for `icon-light-32` and `favicon.ico`. Symbol scale and file list are in `brandmark.md`, measured with `sips` and pixel sampling on 2026-10-01. `favicon.svg` and `favicon.png` are off-master and stay only where code still references them. A Slack or Teams manifest takes the dark `--background` hex. OPEN: a design lead confirms the tile and scale, and a person aligns `manifest.json` `background_color`, `theme_color` and the viewport `themeColor` pair with the token.
+- **Decision:** `favicon.svg` (dark `#121215` mark on a light `#F8F8F8` tile) is the one web icon artwork, for light and dark color schemes. `favicon.ico`, `favicon.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `icon-light-32.png` and `icon-dark-32.png` are rasterized from it. The file list and render rules are in `brandmark.md`. Jay decided this on 2026-10-01 and reverted the white-on-dark-tile set from PR #8567. A Slack or Teams manifest takes the dark `--background` hex. OPEN: a person aligns `manifest.json` `background_color`, `theme_color` and the viewport `themeColor` pair with the token.
 - **Where:** `visual/brandmark.md`, `visual/color.md`.
 - **Supersedes:** "One icon spec is OPEN" for the web files only. The desktop and mobile icons keep their own artwork.
 - **Source:** surface agents S1 and S7 (2026-10-01).
@@ -401,7 +401,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Where:** `visual/color.md`.
 - **Supersedes:** the Tailwind palette classes in `status.tsx`, and the yellow-as-info mapping.
 - **Source:** brand-kit build 2026-10-01.
-- **Related OPEN:** J-4 (web status tokens), J-7 (light and dark accent pairs for text).
+- **Related:** J-4 (mobile status parity, resolved), J-7 (light and dark accent pairs for text, open).
 
 ### D4a Floating panels open and close with no animation
 - **Decision:** Menus, selects, popovers, tooltips, submenus and the command palette open and close with no animation. Modals, sheets and toasts keep 200 to 300ms. The hover card is the only animated floating panel.
@@ -530,7 +530,7 @@ Eight decisions made while the generator replaced the hand-written token blocks.
 - **Source:** brand-kit build 2026-10-01.
 
 ### K4 Open questions found by the kit build (OPEN)
-- **J-4.** Web status colors are Tailwind palette classes in `status.tsx`. Mobile has `success` and `warning` tokens. Decide: promote to web tokens, or map to `kortix-green` and `kortix-orange`.
+- **J-4.** Resolved: web status uses `kortix-green` and `kortix-orange`; mobile semantic status aliases these accents.
 - **J-5.** Mobile keeps stock spacing (decided). It also keeps stock type (`text-xs` is 12px on mobile, 13px on web) and stock radius (`rounded-xl` 12px against 14px). Decide whether type and radius follow web.
 - **J-6.** `text-md` sets line height with a denominator of 0.9375 against a 0.9rem size (21.12px, not 22px). Fix the denominator or delete `text-md` (8 uses). Until then add no use.
 - **J-7.** `kortix-*` accents are theme-invariant and measure 2.4 to 4.0:1 on white. Decide on light and dark pairs for text use.
@@ -539,12 +539,12 @@ Eight decisions made while the generator replaced the hand-written token blocks.
 - **Outlined `Card`.** It ships `rounded-xl` and a `border-border/60`. Both conflict with `rounded-md` and one border color.
 - **Source:** brand-kit build 2026-10-01.
 
-### J-4 (OPEN) Web status tokens
-- **Decision:** Open. See the J-4 bullet in K4.
-- **Why:** `status.tsx` paints success and warning with palette classes. Mobile has `success` and `warning` tokens.
+### J-4 Mobile status parity
+- **Decision:** Alias mobile success and warning to `kortix-green` and `kortix-orange`, matching web status.
+- **Why:** Web status now uses brand accents; the former mobile emerald and amber shades drift from the current status palette.
 - **Where:** `visual/visual-system.json` (`color.status_mobile_only`), `visual/color.md`.
-- **Supersedes:** none.
-- **Source:** `visual-system.json` `J-4`.
+- **Supersedes:** the open J-4 decision and mobile Tailwind shade mapping.
+- **Source:** KRTX-398 status parity regression, 2026-10-01.
 
 ### J-5 (OPEN) Mobile type and radius
 - **Decision:** Open. See the J-5 bullet in K4.

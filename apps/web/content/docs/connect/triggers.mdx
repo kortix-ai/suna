@@ -244,6 +244,19 @@ sandbox can retain the previous value.
 3. **`reuse`** — re-prompt the most recent non-failed session this trigger previously created. A pinned trigger falls back here too, before falling further.
 4. **`fresh`** — create a new sandbox and branch. This is the default, and the final fallback for every mode. The new session becomes the trigger's session for future `reuse` and `keyed` fires.
 
+A `reuse` or `keyed` session whose history no longer fits the model, even after automatic compaction, is retired. The next fire starts a fresh session. Any other failure keeps the session for the next fire.
+
+## Failed runs
+
+When a run that a trigger started ends with an error, Kortix records it on the trigger:
+
+- `last_status` becomes `failed` and `last_error` holds the reason, for example `Out of credits: Payment Required: Insufficient credits.`
+- The Schedule page marks the trigger "Last run didn’t finish" and shows the reason in its panel.
+- The account owner gets one mobile push when the first run fails. A later failed run updates the reason without another push.
+- The trigger stays `failed` while it keeps firing. A new fire does not prove that its run works.
+
+The next run that finishes clears the failure. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
+
 ## Session access
 
 Sessions a trigger creates use the private policy by default. The trigger
@@ -315,7 +328,7 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 
 | Method + path | Needs | Notes |
 | --- | --- | --- |
-| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
+| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state (`last_fired_at`, `last_status`, `last_error`, `last_attempt_at`), and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
 | `POST /v1/projects/{projectId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
 | `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
 | `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |

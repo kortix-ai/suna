@@ -7,7 +7,7 @@ import {
   providerAuthRequirement,
   generationControlCapabilities,
 } from '@kortix/llm-catalog/lite';
-import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { ProviderListResponse as SdkProviderListResponse } from '../runtime/runtime-types';
 
 import type {
   ProjectLlmCatalogProvidersResponse,

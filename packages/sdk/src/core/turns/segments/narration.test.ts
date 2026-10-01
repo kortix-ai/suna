@@ -80,6 +80,22 @@ describe('narrateStep', () => {
     expect(narrateStep('edit', [part('write'), part('edit')])).toBe('Updated 2 files');
   });
 
+  it('counts files, not calls: a write then an edit of one file names that file', () => {
+    expect(
+      narrateStep('edit', [part('write', { path: 'hello.py' }), part('edit', { path: 'hello.py' })]),
+    ).toBe('Updated hello.py');
+  });
+
+  it('counts distinct files across repeated edits', () => {
+    expect(
+      narrateStep('edit', [
+        part('edit', { filePath: '/a/one.ts' }),
+        part('edit', { filePath: '/a/one.ts' }),
+        part('edit', { filePath: '/a/two.ts' }),
+      ]),
+    ).toBe('Updated 2 files');
+  });
+
   it('counts reads', () => {
     expect(narrateStep('explore', [part('read'), part('read'), part('read')])).toBe('Read 3 files');
   });

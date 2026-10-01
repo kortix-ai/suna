@@ -1127,10 +1127,6 @@
           "name": "Correo de AgentMail",
           "description": "Asigna buzones de AgentMail para que los correos entrantes puedan iniciar y continuar sesiones de Kortix."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Conecta un bot de Microsoft Teams para que los chats y canales puedan iniciar y continuar sesiones de Kortix."
-        },
         "llm_gateway": {
           "name": "Puerta de enlace LLM",
           "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
@@ -1181,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Mensajes a personas",
-          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal."
+          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal. Los mensajes entre sesiones indican la sesión que los envía, para que su agente pueda responder."
         },
         "reminders": {
           "name": "Recordatorios",
@@ -1369,7 +1365,11 @@
     "dailyAt9AM": "Diariamente a las 9 AM",
     "weekdaysAt9AM": "Días laborables a las 9 AM",
     "weeklyOnMonday": "Semanalmente el lunes",
-    "monthlyOn1st": "Mensualmente el día 1"
+    "monthlyOn1st": "Mensualmente el día 1",
+    "runFailed": {
+      "label": "La última ejecución no terminó",
+      "nextRun": "La próxima ejecución lo vuelve a intentar."
+    }
   },
   "sidebar": {
     "referAndEarn": "Referir y Ganar",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Un momento…",
       "useDifferentEmail": "Usar otro correo electrónico",
       "usePasswordInstead": "Usar una contraseña",
-      "emailCodeInstead": "Enviarme un código por correo electrónico",
+      "emailLinkInstead": "Enviarme un enlace por correo electrónico",
       "forgotPassword": "¿Olvidaste tu contraseña?",
       "automaticAccount": "¿Eres nuevo? Al continuar, tu cuenta se creará automáticamente.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Buscando tu proveedor de identidad…",
         "use": "Usar inicio de sesión único (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Revisa tu correo electrónico",
-        "description": "Enviamos un código a <address>{email}</address>",
-        "verifying": "Verificando…",
-        "notReceived": "¿No recibiste el código?",
+        "description": "Enviamos un enlace de acceso a <address>{email}</address>. Ábrelo para continuar.",
+        "notReceived": "¿No recibiste el enlace?",
         "resendIn": "Reenviar en {seconds}",
         "resend": "Reenviar"
       },
@@ -9886,7 +9885,6 @@
       "text0df6f1cad36c": "Mostrar",
       "text0df9df285277": "Solo {value0}",
       "text0dfd0cbdd238": "Esta es la única vez que se muestra la clave completa. Guárdala en un lugar seguro.",
-      "text0e0b01710c4b": "Slack está disponible · Teams y el correo electrónico se están implementando · o inicia sesiones desde la API",
       "text0e1181a97f66": "Una máquina real, una consulta real y un análisis que puedes volver a ejecutar",
       "text0e16f24ee012": "· {value0} por {value1}",
       "text0e22e022480d": "Elegir qué modelo ejecuta este turno",
@@ -14469,7 +14467,6 @@
       "textf5262c55d1be": "Microsoft Teams conectado, pero falló la publicación de la app en tu catálogo de Teams.",
       "text76930360e909": "Microsoft Teams conectado. Publicando la app en tu catálogo de Teams…",
       "textb8d155eea2ab": "Se rechazó el consentimiento de Microsoft.",
-      "textd4b32aea5c4a": "Microsoft Teams está desactivado para este proyecto.",
       "text57ef9e5e8110": "La instalación en un clic de Teams no está configurada en este servidor.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Invita a personas a trabajar en esta cuenta.",
@@ -16943,7 +16940,7 @@
       "textd7da08389824": "cuenta de servicio",
       "textd7db5a6e1483": "Copia este token ahora",
       "textd7e9af636757": "Los tokens se almacenan por host, así que cambiar de host cambia la cuenta y el proyecto predeterminado asociado.",
-      "textd7eb7cdcff7d": "Revisa tu email para encontrar el código de inicio de sesión",
+      "textd7eb7cdcff7d": "Revisa tu correo para encontrar el enlace de inicio de sesión",
       "textd7f179da0e70": "Creamos empresas autónomas. Las personas verifican, dirigen y gobiernan mientras los equipos de agentes trabajan en ingeniería, producto, operaciones, finanzas, soporte y crecimiento.",
       "textd800b1eb8a84": "Haz clic en «Create App Integration».",
       "textd814d7970df3": "«Pasar de X a Y» es una solución con la que te comprometiste de antemano. Es lenta, inestable y falla con este cliente concreto; esos son los problemas.",
@@ -19081,7 +19078,36 @@
       "text7458028e0d1d": "Terminar dictado",
       "text9c84d6622566": "Dictar mensaje",
       "textf164e4b031dc": "Presencia en la sesión actualizada",
-      "text9e6a0b0a06c2": "Vio los autores de los mensajes de la sesión"
+      "text9e6a0b0a06c2": "Vio los autores de los mensajes de la sesión",
+      "text5f58426c214e": "Estamos construyendo el AI Management System de código abierto. Toda empresa debería poseerlo por completo.",
+      "textf729ef1ea584": "Conciliación de licencias y puestos",
+      "text7912f8e97c06": "Un activador cron abre la revisión trimestral de accesos y la conciliación mensual de licencias. Los activadores indican con qué agente se ejecutan, por lo que la sesión desatendida tiene exactamente el mismo alcance que la atendida, ni más ni menos.",
+      "textbc0deb1bab41": "Kortix es el AI Management System de código abierto, autoalojable y compatible con cualquier modelo. Empieza un proyecto gratis.",
+      "text0c5b38410c06": "Presentamos Kortix: el AI Management System de código abierto",
+      "textf216fe1b31a2": "Empieza con un departamento, conecta las herramientas que ya usa y convierte el flujo de trabajo en un proyecto basado en git que el cliente pueda poseer.",
+      "textdcb3e70ce4dc": "Kortix: el AI Management System de código abierto.",
+      "text1345783053b5": "Kortix frente a Claude Cowork: ¿un asistente de escritorio o un AI Management System para la empresa?",
+      "textd90da51ca5c2": "Claude Cowork solo ejecuta modelos de Anthropic, en la nube de Anthropic o en tu cuenta de Bedrock, Google Cloud o Microsoft Foundry, sin autoalojamiento. Aquí es donde una empresa lo supera.",
+      "text0216eab899cb": "Las consultoras necesitan un único repo para los agentes de sus clientes",
+      "text3059f4c530b3": "Por qué las consultoras necesitan un único repo git para los agentes, la memoria, los conectores, las políticas y el trabajo auditable de sus clientes.",
+      "textad70f35eaccc": "Nuestra misión: llevar a una empresa de lo humano a la AGI y dejar que conserve cada byte de sí misma por el camino.",
+      "text66b6392a2418": "Notas de campo sobre crear, ejecutar y gobernar agentes de IA que hacen trabajo real, del equipo que crea Kortix.",
+      "text809a706ff256": "Acentos y estado",
+      "text5ed8e8176c1d": "Los únicos tonos de la UI del producto. Colorean glifos, puntos, tintes y gráficos. La etiqueta de al lado sigue en foreground o muted-foreground, porque ningún acento cumple AA como texto sobre blanco. Inactivo no tiene tono: muted-foreground.",
+      "text1b730c5151b5": "Escala de gráficos",
+      "text7ac77b03cfd2": "Solo para visualización de datos. Léela mediante var(--chart-n), no con una utilidad.",
+      "textf25fe860a82d": "10 variantes, 8 tamaños. Los botones son <code>rounded-md</code>. Los paneles, tarjetas y filas también son rounded-md; los paneles flotantes son rounded-lg; rounded-2xl es solo para marketing. La variante <code>destructive</code> se reserva para la única confirmación irreversible.",
+      "textc94e8cb68cba": "Patrones prohibidos",
+      "text9bb4af3b0beb": "Siguen en el código, pero el brand kit los prohíbe. No añadas nuevos usos.",
+      "text1aff73a5df45": "{why} Usa {instead}.",
+      "text81b004dc7e0b": "Slack y Teams están disponibles · el correo electrónico se está implementando · o inicia sesiones desde la API",
+      "text7d7b98240405": "Dos están disponibles. Uno es experimental. Te decimos cuál.",
+      "textb60c863bbacb": "Activo en todos los proyectos, sin flag. Un administrador del tenant da su consentimiento una vez, o un proyecto usa su propia app de bot. Las mismas sesiones y las mismas reglas de identidad que Slack.",
+      "text80043b03898d": "Actualiza la app de Kortix en Teams",
+      "textdf757dbe33eb": "Tu catálogo de Teams tiene la versión {value0} de la app de Kortix. La versión {value1} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
+      "textcd2c4b26eedd": "Kortix no tiene registro de la versión de la app en tu catálogo de Teams. La versión {value0} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
+      "texte15f213fa506": "Publicar actualización de la app",
+      "textcafd830fcf85": "Identidades de agente del proyecto enumeradas"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20127,6 +20153,7 @@
     "everyoneDefaultMeta": "Hasta que añadas un grupo o una persona",
     "everyoneMeta": "Todos con acceso al proyecto",
     "groupMeta": "Grupo",
+    "agentMeta": "Agente",
     "memberMeta": "Miembro",
     "remove": "Quitar a {name}",
     "keep": "Mantener",
@@ -20150,8 +20177,12 @@
     "addAccountDescription": "Ponle un nombre a la cuenta y elige quién puede usarla.",
     "onlyYou": "Solo tú",
     "onlyYouDescription": "Solo tú puedes usarla, en tus sesiones privadas.",
-    "specificPeople": "Personas o grupos concretos",
-    "specificPeopleDescription": "Solo las personas y los grupos que elijas, en sus sesiones privadas.",
+    "onlyRequester": "Solo {name}",
+    "onlyRequesterUnnamed": "Solo la persona que lo pidió",
+    "onlyRequesterDescription": "Solo esa persona puede usarlo, directamente o en sus propias sesiones privadas.",
+    "specificPeople": "Personas, grupos o agentes concretos",
+    "specificPeopleDescription": "Solo las personas, grupos y agentes que elijas. Las personas lo usan en sus sesiones privadas; un agente, en todas sus sesiones.",
+    "agentShareHint": "Un agente lo usa en todas sus sesiones, incluidos los disparadores. Quien pueda ejecutar ese agente puede usarlo a través del agente.",
     "shareRequiresManage": "Para compartir una cuenta necesitas permiso para gestionar las conexiones del proyecto.",
     "nameTaken": "Ya existe una cuenta llamada {label}.",
     "noAccountsTitle": "Aún no hay ninguna cuenta",

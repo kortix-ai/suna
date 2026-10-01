@@ -46,6 +46,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { etagMatches } from '../shared/http-cache';
+import { callerOverlayFlags } from './caller-flags';
 import type { AppEnv } from '../types';
 import {
   managedSkillOverlay,
@@ -133,7 +134,7 @@ runtimeAssetsApp.openapi(
     },
   }),
   async (c) => {
-    const manifest = await runtimeAssetsManifest();
+    const manifest = await runtimeAssetsManifest(await callerOverlayFlags(c));
     // Short max-age + ETag: the payload is immutable for a deploy, but a caller
     // must see a new deploy's digests promptly rather than after a cache TTL.
     c.header('Cache-Control', 'no-cache');
@@ -410,8 +411,8 @@ runtimeAssetsApp.openapi(
       ...errors(401),
     },
   }),
-  (c) => {
-    const overlay = managedSkillOverlay();
+  async (c) => {
+    const overlay = managedSkillOverlay(await callerOverlayFlags(c));
     const etag = `"${overlay.hash}"`;
     c.header('ETag', etag);
     c.header('Cache-Control', 'no-cache');

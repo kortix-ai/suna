@@ -153,7 +153,7 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: 'Read who wrote each message of a session',
     description:
-      'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name}`. `initial_author` is the parent session for a spawned session\'s first message, else null.',
+      'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null.',
     ...auth,
     request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
     responses: { 200: json(AnyObject, 'Message authors'), ...errors(400, 403, 404) },

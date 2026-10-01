@@ -163,9 +163,9 @@ describe('daemon-delivered initial turn lifecycle', () => {
     const bootState: SandboxBootState = {
       repoMaterializationError: null,
       timeline: [],
-      initialOpenCodeSessionRequired: true,
-      initialOpenCodeSessionId: null,
-      initialOpenCodeSessionError: null,
+      initialRuntimeSessionRequired: true,
+      initialRuntimeSessionId: null,
+      initialRuntimeSessionError: null,
     };
     let releaseDelivery: (() => void) | undefined;
     const delivery = new Promise<void>((resolve) => {
@@ -178,11 +178,11 @@ describe('daemon-delivered initial turn lifecycle', () => {
       async () => delivery,
     );
     await Bun.sleep(0);
-    expect(bootState.initialOpenCodeSessionId).toBeNull();
+    expect(bootState.initialRuntimeSessionId).toBeNull();
 
     releaseDelivery?.();
     await publishing;
-    expect(bootState.initialOpenCodeSessionId).toBe('ses_root');
+    expect(bootState.initialRuntimeSessionId).toBe('ses_root');
   });
 
   test('promotes the pre-created token with the sandbox credential and stable identities', async () => {
@@ -413,7 +413,7 @@ describe('daemon-delivered initial turn lifecycle', () => {
       const before = Date.now();
       await publishInitialOpenCodeSessionAfterPrompt(bootState, 'ses_root', async () => {});
       expect(bootState.initialPromptDeliveredAtMs).toBeGreaterThanOrEqual(before);
-      expect(bootState.initialOpenCodeSessionId).toBe('ses_root');
+      expect(bootState.initialRuntimeSessionId).toBe('ses_root');
     });
   });
 

@@ -46,8 +46,13 @@ export async function jwtPrincipal(c: Context, userId: string, email: string, pa
   c.set('userId', userId);
   c.set('userEmail', email);
   c.set('authType', 'supabase');
+  // The token's assurance level ('aal2' = the session passed MFA), on every
+  // path: MFA gates read it (`mfaGateBlocks`, the IAM actor). combinedAuth's
+  // local path used to drop it, so an account that requires MFA refused an
+  // aal2 session there (2026-10-01: chat `/bind` asked for the code again
+  // after every step-up).
+  if (payload?.aal) c.set('mfaAal', payload.aal);
   if (!preview || path === 'network') {
-    if (payload?.aal) c.set('mfaAal', payload.aal);
     if (payload?.session_id) c.set('sessionId', payload.session_id);
     if (typeof payload?.iat === 'number') c.set('sessionIat', payload.iat);
   }

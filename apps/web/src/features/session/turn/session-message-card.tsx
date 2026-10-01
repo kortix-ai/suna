@@ -15,22 +15,27 @@ import { ArrowBendDownRightIcon, ChatCircleTextIcon, QuestionIcon } from '@phosp
  * it only fills in a title when the map has nothing.
  */
 function senderOf(info: SessionMessagePromptInfo, author?: SessionMessageAuthor) {
-  if (author?.kind === 'session') return { sessionId: author.session_id, name: author.name };
+  if (author?.kind === 'session') {
+    return { sessionId: author.session_id, name: author.agent || author.name, title: author.name };
+  }
   if (author?.kind === 'member') return { name: author.name };
   if (info.sender.kind === 'session') {
-    return { sessionId: info.sender.sessionId, name: info.sender.title };
+    const { sessionId, title, agent } = info.sender;
+    return { sessionId, name: agent || title, title };
   }
   return { name: info.sender.name };
 }
 
-/** The sender as text, or as a link to its session. */
-function SenderName({ sessionId, name }: { sessionId?: string; name: string }) {
+/** The sender as text, or as a link to its session. An agent's name carries
+ *  its session's title as the tooltip. */
+function SenderName({ sessionId, name, title }: { sessionId?: string; name: string; title?: string }) {
   const sessionHref = useProjectSessionHref();
   const href = sessionId ? sessionHref(sessionId) : null;
   if (!href) return <span className="text-foreground font-medium">{name}</span>;
   return (
     <HoverPrefetchLink
       href={href}
+      title={title && title !== name ? title : undefined}
       className="text-foreground font-medium underline-offset-2 hover:underline"
     >
       {name}
@@ -70,7 +75,7 @@ export function SessionMessageCard({
         <Icon className="size-3.5 shrink-0" aria-hidden />
         {isAsk ? (
           <>
-            <SenderName sessionId={sender.sessionId} name={name} />
+            <SenderName sessionId={sender.sessionId} name={name} title={sender.title} />
             <span>{t('asked')}</span>
             <span className="text-foreground font-medium">
               {info.to.map((p) => p.name || p.email).join(', ')}
@@ -79,7 +84,7 @@ export function SessionMessageCard({
         ) : (
           <>
             <span>{t('from')}</span>
-            <SenderName sessionId={sender.sessionId} name={name} />
+            <SenderName sessionId={sender.sessionId} name={name} title={sender.title} />
           </>
         )}
       </div>
@@ -123,7 +128,11 @@ function SessionAuthorLabel({ author }: { author: Extract<SessionMessageAuthor, 
     >
       <ChatCircleTextIcon className="size-3.5 shrink-0" aria-hidden />
       {t('from')}
-      <SenderName sessionId={author.session_id} name={author.name || t('untitledSession')} />
+      <SenderName
+        sessionId={author.session_id}
+        name={author.agent || author.name || t('untitledSession')}
+        title={author.name}
+      />
     </span>
   );
 }

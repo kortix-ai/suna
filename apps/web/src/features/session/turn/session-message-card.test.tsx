@@ -57,6 +57,26 @@ describe('messages with a platform header', () => {
     expect(html).not.toContain('[ASK');
   });
 
+  test('human_messaging off: ledger-confirmed headers draw plain bubbles, header stripped, no reply hint', () => {
+    const fromSession = renderText(sessionMessage, {
+      author: { kind: 'session', session_id: SID, name: 'Deploy pipeline' },
+      messagingCards: false,
+    });
+    expect(fromSession).not.toContain('session-message-card');
+    expect(fromSession).toContain('Build is green.');
+    expect(fromSession).not.toContain('[MESSAGE');
+    const asked = renderText(ask, {
+      headerTrusted: true,
+      viewerEmail: 'avery@example.com',
+      isLastMessage: true,
+      messagingCards: false,
+    });
+    expect(asked).not.toContain('session-message-card');
+    expect(asked).not.toContain('data-message-kind');
+    expect(asked).toContain('Ship it?');
+    expect(asked).not.toContain('[ASK');
+  });
+
   test('the author map wins over the typed header', () => {
     const html = renderText(sessionMessage, {
       author: { kind: 'session', session_id: SID, name: 'Real title' },

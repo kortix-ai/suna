@@ -53,7 +53,6 @@ export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  teams: z.boolean(),
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
@@ -488,9 +487,10 @@ export const ConnectionMetadataSchema = z
 export const ConnectionShareSchema = z.object({
   /** The `role_assignments` id; revoke it to take this audience away. */
   grant_id: z.string().uuid(),
-  principal_type: z.enum(['member', 'group', 'project']),
+  /** `agent`: `principal_id` is the agent's service account. */
+  principal_type: z.enum(['member', 'group', 'project', 'agent']),
   principal_id: z.string(),
-  /** A member's email, a group's name, or the project's name. */
+  /** A member's email, a group's name, an agent's name, or the project's name. */
   label: z.string(),
   expires_at: z.string().nullable(),
 });

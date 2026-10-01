@@ -130,6 +130,8 @@ interface SessionTurnProps {
   rewindDisabled?: boolean;
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /** `human_messaging` is on for the project: ask / from-session cards may draw. */
+  messagingCards?: boolean;
 }
 
 const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
@@ -157,6 +159,7 @@ function SessionTurnImpl({
   rewindDisabled,
   queueState,
   uploadStatus,
+  messagingCards,
 }: SessionTurnProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -267,6 +270,7 @@ function SessionTurnImpl({
       rewindDisabled={rewindDisabled}
       queueState={queueState}
       uploadStatus={uploadStatus}
+      messagingCards={messagingCards}
     />
   );
 

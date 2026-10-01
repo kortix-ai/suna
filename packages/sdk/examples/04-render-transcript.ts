@@ -20,7 +20,6 @@
  */
 import { createKortix } from '../src/index';
 import { classifyTurn, type ClassifiedPart } from '../src/core/turns/index';
-import type { MessageWithParts } from '../src/transcript';
 
 function renderPart(part: ClassifiedPart): string {
   switch (part.kind) {
@@ -64,10 +63,7 @@ async function main() {
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
   const session = kortix.session(projectId, sessionId);
-  const { opencodeSessionId } = await session.ensureReady();
-
-  const result = await session.runtime.session.messages({ sessionID: opencodeSessionId });
-  const messages = (result.data ?? []) as MessageWithParts[];
+  const { messages } = await session.messages();
 
   for (const message of messages) {
     const { parts, error, isEmpty } = classifyTurn(message);
