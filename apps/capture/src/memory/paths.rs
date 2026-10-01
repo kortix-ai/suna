@@ -6,7 +6,7 @@
 //! ```text
 //! <data_dir>/memory.db        SQLite index (frames, OCR, FTS5, segments, AX)
 //! <data_dir>/frames/          staged JPEG stills awaiting video encode
-//! <data_dir>/videos/          finalized 1 fps HEVC chunks (sha256 names)
+//! <data_dir>/videos/          finalized 1 fps H.264 chunks (sha256 names)
 //! <data_dir>/icons/           app icons
 //! <data_dir>/settings.json    user settings (hot-reloaded by the recorder)
 //! <data_dir>/recorder.json    recorder heartbeat/status

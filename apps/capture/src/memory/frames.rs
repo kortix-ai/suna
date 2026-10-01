@@ -13,7 +13,7 @@ use std::time::Duration;
 pub enum FrameImage {
     /// Staged still (not yet encoded).
     Still(PathBuf),
-    /// Frame `index` of a 1 fps HEVC chunk.
+    /// Frame `index` of a 1 fps chunk.
     Video { path: PathBuf, index: i64, downscaled: bool },
     /// Screenshot removed by retention; text is still available.
     Removed,

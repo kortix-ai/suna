@@ -1,6 +1,6 @@
 # apps/capture
 
-Rust crate `kortix-capture`. It records the screen of one machine (a frame about every 2 seconds, OCR text, 1 fps HEVC chunks) and uploads the chunks to the user's Kortix account. The web app is the UI. The crate has no window.
+Rust crate `kortix-capture`. It records the screen of one machine (a frame about every 2 seconds, OCR text, 1 fps H.264 chunks, playable in every browser) and uploads the chunks to the user's Kortix account. The web app is the UI. The crate has no window.
 
 Bins:
 - `kortix-capture`: `record` plus local read commands (`status`, `query`, `usage`, `now`, `grab-screen`, `install-skill`) for debugging and agents.

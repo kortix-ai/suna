@@ -6,7 +6,7 @@
 //! 2. OCR: drain frames with `ocr_status = 0`. A frame whose still is
 //!    byte-identical to the previous frame copies that frame's text instead of
 //!    running Vision again. A backlog switches to the fast recognizer.
-//! 3. finalizer: pack OCR'd stills into 1 fps HEVC chunks and delete them.
+//! 3. finalizer: pack OCR'd stills into 1 fps H.264 chunks and delete them.
 //! 4. uploader (see `uploader.rs`): polls the capture gate and uploads chunks.
 //!    Capture idles in state `off` while the gate is closed.
 //!

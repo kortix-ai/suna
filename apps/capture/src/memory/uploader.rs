@@ -337,7 +337,7 @@ impl Uploader {
             "chunks",
             Some(json!({
                 "client_uid": sha, "started_at": iso(v.start), "ended_at": iso(v.end), "frame_count": frames.len(),
-                "width": v.width, "height": v.height, "codec": "hevc", "video_bytes": bytes.len(), "video_sha256": sha,
+                "width": v.width, "height": v.height, "codec": "h264", "video_bytes": bytes.len(), "video_sha256": sha,
             })),
         )?;
         if chunk["already_committed"].as_bool() != Some(true) {
@@ -573,7 +573,7 @@ mod tests {
             let b = &s.chunk_bodies[0];
             assert_eq!(b["client_uid"], f.video_sha.as_str());
             assert_eq!(b["video_sha256"], f.video_sha.as_str());
-            assert_eq!((b["frame_count"].as_i64(), b["width"].as_i64(), b["height"].as_i64(), b["codec"].as_str()), (Some(3), Some(1280), Some(720), Some("hevc")));
+            assert_eq!((b["frame_count"].as_i64(), b["width"].as_i64(), b["height"].as_i64(), b["codec"].as_str()), (Some(3), Some(1280), Some(720), Some("h264")));
             assert_eq!(b["started_at"], "2023-11-14T22:13:20.000Z");
             assert_eq!(b["ended_at"], "2023-11-14T22:13:24.000Z");
             assert_eq!(s.puts, vec![("chunk-1".to_string(), b["video_bytes"].as_u64().unwrap() as usize, Some("AES256".to_string()))]);

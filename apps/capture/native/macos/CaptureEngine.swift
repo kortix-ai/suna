@@ -589,18 +589,22 @@ func icon(_ req: JSON) -> JSON {
     return ["path": out, "dominant_color": dominantColor(cg), "display_name": name]
 }
 
-/// Encode staged frames into one HEVC MP4 at 1 fps (frame i at t = i s).
+/// Encode staged frames into one H.264 (or HEVC on request) MP4 at 1 fps (frame i at t = i s).
 func encode(_ req: JSON) -> JSON {
     guard let inputs = req["inputs"] as? [String], !inputs.isEmpty, let out = req["out"] as? String,
-          let width = req["width"] as? Int, let height = req["height"] as? Int else { return fail("bad_request") }
+          let reqWidth = req["width"] as? Int, let reqHeight = req["height"] as? Int else { return fail("bad_request") }
     let quality = req["quality"] as? Double ?? 0.5
+    // H.264 plays in every browser; HEVC is smaller but Chrome on Linux and most Firefox builds cannot decode it.
+    let hevc = (req["codec"] as? String) == "hevc"
+    // H.264 needs even dimensions.
+    let width = hevc ? reqWidth : max(2, reqWidth & ~1), height = hevc ? reqHeight : max(2, reqHeight & ~1)
     let outURL = URL(fileURLWithPath: out)
     try? FileManager.default.removeItem(at: outURL)
     try? FileManager.default.createDirectory(at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
     do {
         let writer = try AVAssetWriter(outputURL: outURL, fileType: .mp4)
         let settings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoCodecKey: hevc ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
             AVVideoWidthKey: width, AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: [
                 AVVideoQualityKey: quality,

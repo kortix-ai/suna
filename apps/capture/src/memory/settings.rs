@@ -23,7 +23,7 @@ pub struct Settings {
     pub max_width: u32,
     /// JPEG quality for staged stills (0..1).
     pub staging_quality: f64,
-    /// HEVC quality for finalized chunks (0..1). Higher = sharper, bigger.
+    /// Video quality for finalized chunks (0..1). Higher = sharper, bigger.
     pub video_quality: f64,
     /// Frames per video chunk (1 fps playback, so also seconds per chunk).
     pub chunk_max_frames: usize,
