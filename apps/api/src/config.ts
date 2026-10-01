@@ -667,26 +667,6 @@ const envSchema = z.object({
   // route streams the bytes when that host is loopback or private.
   KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: optUrl(''),
 
-  // ── Kortix Capture (optional) ───────────────────────────────────────────
-  // Screen-capture video chunks. Recorders PUT to presigned URLs; users read
-  // through presigned GETs. Same shape as the project snapshot store above.
-  //   dev/staging/prod: the environment's capture bucket (Terraform,
-  //     modules/project-snapshots-bucket), credentials from the ECS task role.
-  //   local/preview/self-host: Supabase Storage's S3 protocol endpoint
-  //     (`<supabase>/storage/v1/s3`), bucket `kortix-capture` (created by
-  //     database migration), with the S3 protocol key pair.
-  // Unset => the machine API answers 503 `CAPTURE_STORAGE_UNCONFIGURED`.
-  KORTIX_CAPTURE_S3_BUCKET: optStr,
-  KORTIX_CAPTURE_S3_REGION: optStr,
-  KORTIX_CAPTURE_S3_ENDPOINT: optUrl(''),
-  /** Endpoint the RECORDER and the browser reach, when it differs from the API's. Presigned URLs are signed for this host. */
-  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: optUrl(''),
-  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: optBoolFalse,
-  /** Optional key prefix inside the bucket, namespacing environments that share one bucket. */
-  KORTIX_CAPTURE_S3_PREFIX: optStr,
-  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: optStr,
-  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: optStr,
-
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -1400,14 +1380,6 @@ export const config = {
   KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT: env.KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT,
   KORTIX_CONFIG_ARCHIVE_PUBLIC_URL: env.KORTIX_CONFIG_ARCHIVE_PUBLIC_URL,
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: env.KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES,
-  KORTIX_CAPTURE_S3_BUCKET: env.KORTIX_CAPTURE_S3_BUCKET,
-  KORTIX_CAPTURE_S3_REGION: env.KORTIX_CAPTURE_S3_REGION,
-  KORTIX_CAPTURE_S3_ENDPOINT: env.KORTIX_CAPTURE_S3_ENDPOINT,
-  KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: env.KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT,
-  KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: env.KORTIX_CAPTURE_S3_FORCE_PATH_STYLE,
-  KORTIX_CAPTURE_S3_PREFIX: env.KORTIX_CAPTURE_S3_PREFIX,
-  KORTIX_CAPTURE_S3_ACCESS_KEY_ID: env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID,
-  KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: env.KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,

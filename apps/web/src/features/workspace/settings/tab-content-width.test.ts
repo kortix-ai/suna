@@ -82,7 +82,6 @@ const FORM_TABS = [
   'profile-tab.tsx',
   'sandbox-tab.tsx',
   'security-tab.tsx',
-  'capture-tab.tsx',
   'sessions-tab.tsx',
   'snapshots-tab.tsx',
   // API keys: `AccessRow` list rows, not a `<Table>`, so it is a form tab.

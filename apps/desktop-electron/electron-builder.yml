@@ -39,10 +39,6 @@ extraResources:
   # bundle as an ES module.
   - from: ../../packages/agent-tunnel/package.json
     to: agent-tunnel/package.json
-  # Kortix Capture recorder (+ engine), staged by scripts/stage-capture.js. The
-  # agent service supervises it. An absent folder only logs a warning.
-  - from: capture-stage
-    to: capture
 
 # Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
 protocols:
@@ -57,9 +53,6 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Screen Recording needs no entitlement: macOS gates it with a user grant
-  # (TCC) for a non-sandboxed, hardened-runtime app. Only the usage string
-  # below is set. Camera and microphone are the ones that need entitlements.
   # Universal binary → ONE .dmg that runs natively on both Apple Silicon and
   # Intel. Avoids the "wrong-arch download" bug and halves the CI mac matrix.
   # The `zip` target is REQUIRED for auto-update: Squirrel.Mac (what
@@ -88,8 +81,6 @@ mac:
       NSAllowsArbitraryLoads: true
       NSAllowsArbitraryLoadsInWebContent: true
       NSAllowsLocalNetworking: true
-    # Shown by the Screen Recording permission prompt (Kortix Capture).
-    NSScreenCaptureUsageDescription: Kortix Capture records your screen so your agents can search what you saw. You choose when it records and can pause it at any time.
 
 # Per-arch dmg name so the /download route can pick the right one
 # (e.g. Kortix-0.9.82-arm64.dmg / Kortix-0.9.82-x64.dmg).

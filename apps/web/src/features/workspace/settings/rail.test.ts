@@ -48,7 +48,6 @@ describe('railGroups', () => {
     expect(tabsOf()).toEqual([
       'profile',
       'security',
-      'capture',
       'appearance',
       'sessions',
       'preferences',

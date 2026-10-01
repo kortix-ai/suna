@@ -191,19 +191,3 @@ describe('resolvePresignTarget stays the one presign rule', () => {
     });
   });
 });
-
-describe('ObjectStore.presignUpload', () => {
-  test('signs content type, exact length and SSE-S3 into a PUT URL', async () => {
-    const store = new ObjectStore(() => ({ ...SUPABASE, accessKeyId: 'AKIDEXAMPLE', secretAccessKey: 'secret' }));
-    const { url, headers } = await store.presignUpload('capture/a/b.mp4', 600, 'video/mp4', 1234);
-    const u = new URL(url);
-    expect(u.pathname).toBe('/storage/v1/s3/b/capture/a/b.mp4');
-    expect(u.searchParams.has('x-amz-checksum-crc32')).toBe(false);
-    expect(u.searchParams.get('X-Amz-Expires')).toBe('600');
-    const signed = (u.searchParams.get('X-Amz-SignedHeaders') ?? '').split(';');
-    expect(signed).toContain('content-type');
-    expect(signed).toContain('content-length');
-    expect(signed).toContain('x-amz-server-side-encryption');
-    expect(headers).toEqual({ 'Content-Type': 'video/mp4', 'x-amz-server-side-encryption': 'AES256' });
-  });
-});

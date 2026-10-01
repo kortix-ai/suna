@@ -41,8 +41,6 @@ export type SettingsTab =
   // own; sounds and notifications on their own. Each is person-scoped, like
   // the pane it came from.
   | 'security'
-  // Kortix Capture: the workspace switch, the caller's computers, their data.
-  | 'capture'
   | 'appearance'
   | 'sessions'
   | 'preferences'
@@ -140,7 +138,6 @@ export const DEFAULT_SETTINGS_TAB: SettingsTab = 'profile';
 export const SETTINGS_TABS: readonly SettingsTab[] = [
   'profile',
   'security',
-  'capture',
   'appearance',
   'sessions',
   'preferences',

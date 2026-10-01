@@ -30,7 +30,6 @@ import './routes/sandbox-templates';
 import './routes/project-credentials';
 import './routes/secrets';
 import './routes/secret-delivery';
-import '../capture/project-routes';
 import './routes/provider-oauth';
 import './routes/repository-replacement';
 import './routes/secret-broker';
