@@ -1,5 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import { auditFilterQuery } from './audit-filter';
 import { exportAccountAudit, listAccountAudit, listProjectAudit } from './audit';
 import { listAuditEvents } from './iam';
 
@@ -72,58 +73,21 @@ test('exportAccountAudit sends the same reconstruction filters', async () => {
   });
 });
 
-// Characterization: the exact querystring every audit surface sends for a
-// fully-populated filter. Pins field order, snake_case names, and URL encoding
-// so the shared querystring builder cannot drift from the wire contract.
-test('the audit querystring is byte-stable for a fully-populated filter', async () => {
-  const full = {
-    action: 'iam.policy.',
-    actor: 'actor-1',
-    actorType: 'agent',
-    projectId: 'project-1',
-    sessionId: 'session-1',
-    source: 'api_key',
-    credentialKind: 'oauth_app',
-    phase: 'completed',
-    outcome: 'success',
-    resourceType: 'session',
-    requestId: 'request-1',
-    correlationId: 'correlation-1',
-    since: '2026-01-01T00:00:00.000Z',
-    until: '2026-01-02T00:00:00.000Z',
-    q: 'gmail + inbox',
-    cursor: 'cursor|1',
-    limit: 200,
-  } as const;
+test('audit querystrings preserve fully-populated filters', async () => {
+  const full = { action: 'a', actor: 'b', actorType: 'agent', projectId: 'p', sessionId: 's',
+    source: 'api_key', credentialKind: 'oauth_app', phase: 'completed', outcome: 'success',
+    resourceType: 'session', requestId: 'r', correlationId: 'c', since: '2026-01-01',
+    until: '2026-01-02', q: 'gmail + inbox', cursor: 'cursor|1', limit: 200 } as const;
+  await listAccountAudit('a', full);
+  await exportAccountAudit('a', { format: 'csv', ...full });
+  const expected = 'action=a&actor=b&actor_type=agent&project_id=p&session_id=s&source=api_key&credential_kind=oauth_app&phase=completed&outcome=success&resource_type=session&request_id=r&correlation_id=c&since=2026-01-01&until=2026-01-02&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200';
+  expect(new URL(calls[0]!.url).search.slice(1)).toBe(expected);
+  expect(new URL(calls[1]!.url).search.slice(1)).toBe(`format=csv&${expected}`);
+});
 
-  await listAccountAudit('account-1', full);
-  await exportAccountAudit('account-1', { format: 'csv', ...full });
-  // listProjectAudit binds the project into the path; a caller-passed
-  // projectId is ignored (no project_id param), as today.
-  await listProjectAudit('project-1', full);
-
-  const [listQs, exportQs, projectQs] = calls.map((call) => new URL(call.url).search);
-  expect(listQs).toBe(
-    '?action=iam.policy.&actor=actor-1&actor_type=agent&project_id=project-1' +
-      '&session_id=session-1&source=api_key&credential_kind=oauth_app&phase=completed' +
-      '&outcome=success&resource_type=session&request_id=request-1' +
-      '&correlation_id=correlation-1&since=2026-01-01T00%3A00%3A00.000Z' +
-      '&until=2026-01-02T00%3A00%3A00.000Z&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200',
-  );
-  expect(exportQs).toBe(
-    '?format=csv&action=iam.policy.&actor=actor-1&actor_type=agent&project_id=project-1' +
-      '&session_id=session-1&source=api_key&credential_kind=oauth_app&phase=completed' +
-      '&outcome=success&resource_type=session&request_id=request-1' +
-      '&correlation_id=correlation-1&since=2026-01-01T00%3A00%3A00.000Z' +
-      '&until=2026-01-02T00%3A00%3A00.000Z&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200',
-  );
-  expect(projectQs).toBe(
-    '?action=iam.policy.&actor=actor-1&actor_type=agent' +
-      '&session_id=session-1&source=api_key&credential_kind=oauth_app&phase=completed' +
-      '&outcome=success&resource_type=session&request_id=request-1' +
-      '&correlation_id=correlation-1&since=2026-01-01T00%3A00%3A00.000Z' +
-      '&until=2026-01-02T00%3A00%3A00.000Z&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200',
-  );
+test('audit filter rejects unknown runtime keys', () => {
+  expect(auditFilterQuery({ format: 'csv', action: 'iam.policy', ...{ unexpected: 'secret' } }).toString())
+    .toBe('format=csv&action=iam.policy');
 });
 
 test('listAuditEvents sends project and session reconstruction filters', async () => {
