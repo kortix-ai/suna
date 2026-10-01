@@ -72,6 +72,22 @@ module "project_snapshots" {
   tags   = local.tags
 }
 
+# ── Kortix Capture object store ───────────────────────────────────────────────
+# Private bucket for screen-capture video (one mp4 per chunk). Recorders PUT
+# through presigned URLs minted by the API task role; users read through
+# presigned GETs. The API deletes objects itself (retention sweep, delete own
+# data); the lifecycle rule is only a backstop above the 3650-day maximum
+# retention, and a delete leaves no recoverable version after one day.
+# KORTIX_CAPTURE_S3_BUCKET / _S3_REGION in the deploy workflow's task env
+# overrides name this bucket; apply this first, then name it.
+module "capture" {
+  source                  = "../../modules/project-snapshots-bucket"
+  name                    = "${local.name}-capture"
+  tags                    = local.tags
+  expiration_days         = 3660
+  noncurrent_version_days = 1
+}
+
 module "api" {
   source = "../../modules/ecs-api"
 
@@ -97,6 +113,8 @@ module "api" {
   ses_send_identity_names     = ["kortix.com", "kortix.ai"]
   project_snapshots_enabled   = true
   project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture.bucket_arn
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 

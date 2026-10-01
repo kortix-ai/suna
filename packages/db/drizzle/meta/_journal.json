@@ -736,6 +736,13 @@
       "when": 1790854200000,
       "tag": "20261001113000_session_runtime_projection_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790881834294,
+      "tag": "20261001191034_capture",
+      "breakpoints": true
     }
   ]
 }

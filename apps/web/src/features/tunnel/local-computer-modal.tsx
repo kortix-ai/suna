@@ -1,7 +1,9 @@
 'use client';
 
 import {
+  CaretRightIcon,
   CursorClickIcon,
+  DotsThreeIcon,
   FolderIcon,
   HandPalmIcon,
   MonitorIcon,
@@ -14,8 +16,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
@@ -58,6 +68,7 @@ import {
   ComputerGlyph,
   ComputerStateDot,
   DESKTOP_STATUS_KEY,
+  groupOwnedComputers,
   platformName,
   useConnectDesktopComputer,
   useOwnsPairedComputer,
@@ -646,10 +657,32 @@ function YourComputersContent({
   const { owned } = useOwnsPairedComputer();
   // Live status while the dialog is open: the same query, polled.
   useTunnelConnections({ refetchInterval: 10_000 });
+  // In the desktop app, the machine this window runs on.
+  const { tunnelId: thisTunnelId } = useThisComputerState();
   const { connectorAlias } = useProjectComputerAccounts(projectId);
   const deleteMachine = useDeleteTunnelConnection();
   const queryClient = useQueryClient();
   const [target, setTarget] = useState<TunnelConnection | null>(null);
+  const [confirmOlder, setConfirmOlder] = useState(false);
+  const { computers, older } = groupOwnedComputers(owned);
+
+  const afterRemoval = () => {
+    // Its accounts leave every project's connector list too.
+    void queryClient.invalidateQueries({ queryKey: ['connections'] });
+    successToast(t('disconnected'));
+  };
+  const removeOlder = useMutation({
+    retry: false,
+    // One by one: each removal revokes that registration's accounts.
+    mutationFn: async (machines: readonly TunnelConnection[]) => {
+      for (const machine of machines) await deleteMachine.mutateAsync(machine.tunnelId);
+    },
+    onSuccess: () => {
+      setConfirmOlder(false);
+      afterRemoval();
+    },
+    onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
+  });
 
   return (
     <>
@@ -659,13 +692,14 @@ function YourComputersContent({
           <ModalDescription>{t('pairedWith', { email: user.email })}</ModalDescription>
         ) : null}
       </ModalHeader>
-      <ModalBody className="min-h-0 overflow-y-auto">
-        {owned.length > 0 ? (
+      <ModalBody className="min-h-0 space-y-4 overflow-y-auto">
+        {computers.length > 0 ? (
           <ul className="divide-border divide-y">
-            {owned.map((machine) => (
+            {computers.map((machine) => (
               <ComputerListRow
                 key={machine.tunnelId}
                 machine={machine}
+                isThisComputer={machine.tunnelId === thisTunnelId}
                 onDisconnect={() => setTarget(machine)}
               />
             ))}
@@ -673,6 +707,40 @@ function YourComputersContent({
         ) : (
           <p className="text-muted-foreground text-sm">{t('notConnected')}</p>
         )}
+        {older.length > 0 ? (
+          <Collapsible className="rounded-md border">
+            <div className="flex items-center gap-2 px-3 py-2">
+              <CollapsibleTrigger asChild>
+                <Button size="sm" variant="ghost" className="group -ml-2 gap-1.5">
+                  <CaretRightIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
+                  {t('older.title')}
+                  <span className="text-muted-foreground tabular-nums">{older.length}</span>
+                </Button>
+              </CollapsibleTrigger>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-kortix-red hover:bg-kortix-red/15 hover:text-kortix-red ml-auto"
+                onClick={() => setConfirmOlder(true)}
+              >
+                {t('older.removeAll')}
+              </Button>
+            </div>
+            <p className="text-muted-foreground px-3 pb-3 text-xs text-pretty">{t('older.hint')}</p>
+            <CollapsibleContent>
+              <ul className="divide-border divide-y border-t px-3">
+                {older.map((machine) => (
+                  <ComputerListRow
+                    key={machine.tunnelId}
+                    machine={machine}
+                    isThisComputer={false}
+                    onDisconnect={() => setTarget(machine)}
+                  />
+                ))}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : null}
       </ModalBody>
       <ModalFooter className="border-t py-3 sm:justify-between">
         <Button size="sm" variant="ghost" asChild>
@@ -685,7 +753,7 @@ function YourComputersContent({
         </Button>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={onConnectAnother}>
           <PlusIcon className="size-3.5 shrink-0" />
-          {owned.length > 0 ? t('connectAnother') : t('connectYourComputer')}
+          {computers.length > 0 ? t('connectAnother') : t('connectYourComputer')}
         </Button>
       </ModalFooter>
 
@@ -698,19 +766,27 @@ function YourComputersContent({
         description={t('unpairDescription')}
         confirmLabel={t('disconnect')}
         confirmVariant="destructive"
-        isPending={deleteMachine.isPending}
+        isPending={deleteMachine.isPending && !removeOlder.isPending}
         onConfirm={() => {
           if (!target) return;
           deleteMachine.mutate(target.tunnelId, {
             onSuccess: () => {
               setTarget(null);
-              successToast(t('disconnected'));
-              // Its accounts leave every project's connector list too.
-              void queryClient.invalidateQueries({ queryKey: ['connections'] });
+              afterRemoval();
             },
             onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
           });
         }}
+      />
+      <ConfirmDialog
+        open={confirmOlder}
+        onOpenChange={setConfirmOlder}
+        title={t('older.confirmTitle')}
+        description={t('older.confirmDescription')}
+        confirmLabel={t('older.removeAll')}
+        confirmVariant="destructive"
+        isPending={removeOlder.isPending}
+        onConfirm={() => removeOlder.mutate(older)}
       />
     </>
   );
@@ -719,9 +795,11 @@ function YourComputersContent({
 /** One paired machine: name, live status, and what Kortix may use on it. */
 function ComputerListRow({
   machine,
+  isThisComputer,
   onDisconnect,
 }: {
   machine: TunnelConnection;
+  isThisComputer: boolean;
   onDisconnect: () => void;
 }) {
   const t = useTranslations('computers');
@@ -733,12 +811,18 @@ function ComputerListRow({
   const granted = REQUEST_CAPABILITIES.filter((key) => machine.capabilities.includes(key))
     .map((key) => t(`capability.${key}`))
     .join(' · ');
+  const name = computerDisplayName(machine.name, machine.machineInfo) || t('thisComputer');
   return (
     <li className="flex items-center gap-3 py-3">
       <ComputerGlyph />
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="truncate text-sm font-medium">
-          {computerDisplayName(machine.name, machine.machineInfo) || t('thisComputer')}
+        <p className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm font-medium">{name}</span>
+          {isThisComputer ? (
+            <Badge variant="outline" size="xs">
+              {t('thisComputerBadge')}
+            </Badge>
+          ) : null}
         </p>
         <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <StatusText state={state} />
@@ -747,9 +831,23 @@ function ComputerListRow({
         </p>
         {granted ? <p className="text-muted-foreground truncate text-xs">{granted}</p> : null}
       </div>
-      <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDisconnect}>
-        {t('disconnectEllipsis')}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 shrink-0"
+            aria-label={t('actionsFor', { name })}
+          >
+            <DotsThreeIcon className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem variant="destructive" onSelect={onDisconnect}>
+            {t('disconnectEllipsis')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   );
 }

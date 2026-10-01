@@ -126,6 +126,40 @@ export function useProjectComputerAccounts(
   };
 }
 
+/**
+ * The caller's machines as people think of them: one entry per physical
+ * computer. `computers`: registrations that name their hardware (one per
+ * hardware id, the live or most recently seen one), plus any online now.
+ * `older`: registrations from agents older than hardware ids that are offline;
+ * nothing can tell which computer they were, so they are listed apart. Both
+ * live first, then most recently seen.
+ */
+export function groupOwnedComputers(machines: readonly TunnelConnection[]): {
+  computers: TunnelConnection[];
+  older: TunnelConnection[];
+} {
+  const seen = (machine: TunnelConnection) =>
+    machine.isLive ? Number.MAX_SAFE_INTEGER : Date.parse(machine.lastHeartbeatAt ?? machine.createdAt) || 0;
+  const byRecency = [...machines].sort((a, b) => seen(b) - seen(a));
+  const hardware = (machine: TunnelConnection) =>
+    typeof machine.machineInfo?.machineId === 'string' ? machine.machineInfo.machineId : null;
+  const counted = new Set<string>();
+  const computers: TunnelConnection[] = [];
+  const older: TunnelConnection[] = [];
+  for (const machine of byRecency) {
+    const id = hardware(machine);
+    if (id) {
+      if (!counted.has(id)) computers.push(machine);
+      counted.add(id);
+    } else if (machine.isLive) {
+      computers.push(machine);
+    } else {
+      older.push(machine);
+    }
+  }
+  return { computers, older };
+}
+
 /** True once the caller owns a paired machine, in any project. Polls once a
  *  minute until they do: the sidebar promo mounts it for every signed-in user
  *  and hides for good once they own one, so polling then would be waste. The
@@ -168,7 +202,7 @@ export function useDesktopComputer({ poll = false }: { poll?: boolean } = {}) {
  * One-click pairing through the desktop app. Resolves once the service runs.
  * `reauth` drops a stale local pairing first (see `useThisComputerState`).
  */
-export function useConnectDesktopComputer(projectId: string) {
+export function useConnectDesktopComputer(projectId?: string) {
   const t = useTranslations('computers');
   const queryClient = useQueryClient();
   return useMutation({

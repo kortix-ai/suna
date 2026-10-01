@@ -19,6 +19,7 @@ const kortix = createKortix({ backendUrl, getToken });
 
 kortix.accounts; // account / team operations
 kortix.accountInvites; // invite accept/decline by token alone
+kortix.capture; // Kortix Capture: settings, devices, search over screen captures
 kortix.projects; // top-level project operations
 kortix.connectors; // Connector calls scoped by an agent-minted token
 kortix.project(id); // id-bound project handle
@@ -70,6 +71,24 @@ Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome
 The API does not store request bodies, prompts, secrets, credentials, or raw
 connector arguments in the centralized event. Connector events can include a
 bounded argument preview that redacts credential-shaped fields and opaque data.
+
+### Capture — `kortix.capture`
+
+Kortix Capture records a member's screen on their own machine and uploads it to
+the account. An owner or admin switches it on for the account, and each member
+switches it on for their own machine. Recordings belong to the member who made
+them; an owner or admin reads another member's only while the owner has enabled
+`admins_can_view`, and each such read is audited as `capture.member_view`.
+
+| method | what |
+| --- | --- |
+| `getSettings(accountId)` · `updateSettings(accountId, { enabled, admins_can_view, retention_days })` | account switch, owner-only `admins_can_view`, retention (1 to 3650 days, default 30). Owner or admin writes; any member reads |
+| `listDevices()` · `updateDevice(deviceId, { enabled, paused_until, account_id })` | your machines across accounts · turn one on, pause it, or move it to an account you belong to |
+| `search(accountId, { q, from, to, app, domain, user_id, limit, cursor })` | full-text search over window titles and on-screen text, newest first, cursor-paged |
+| `timeline(accountId, { from, to, user_id })` | recorded chunks and seconds per app |
+| `videoUrl(accountId, chunkId)` · `frame(accountId, frameId)` | a 10-minute presigned mp4 URL · one frame with its text |
+| `deleteData(accountId, { from, to })` | delete your own recordings (video and frames) in a range |
+| `projectSearch(projectId, opts)` · `projectTimeline(projectId, { from, to })` · `projectFrame(projectId, frameId)` | the acting person's captures from inside a project. A session token (an agent, or the CLI in a sandbox) acts for the person its private session runs for; a user token acts for that user. Never another member. A caller with no person (trigger, service account, shared session) gets `403 CAPTURE_NO_HUMAN`; capture off for that person gets `403 CAPTURE_NOT_ENABLED`. A session read is audited as `capture.agent_read` |
 
 ### Access assignments
 

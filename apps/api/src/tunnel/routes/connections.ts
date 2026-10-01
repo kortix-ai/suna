@@ -12,7 +12,8 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, inArray, isNull, ne, type SQL } from 'drizzle-orm';
+import type { Context } from 'hono';
+import { eq, and, desc, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
@@ -147,6 +148,46 @@ export async function unpairMachine(tunnelId: string, where?: SQL): Promise<bool
   );
   if (deleted) tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
   return deleted;
+}
+
+/**
+ * One machine, one registration per person. Once a registration reports a
+ * hardware id (at approval, or in its first heartbeat that carries one), the
+ * owner's other registrations of the same hardware are superseded: each is
+ * unpaired with its accounts. Only offline ones: two agents running on one
+ * machine at once never cut each other off, and the next heartbeat after one
+ * stops retires it. Another person's registration is never touched. Returns
+ * the retired tunnel ids.
+ */
+export async function retireSupersededRegistrations(tunnelId: string, machineId: string): Promise<string[]> {
+  const [self] = await db
+    .select({ ownerUserId: tunnelConnections.ownerUserId })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, tunnelId))
+    .limit(1);
+  if (!self?.ownerUserId) return [];
+  const others = await db
+    .select({
+      tunnelId: tunnelConnections.tunnelId,
+      status: tunnelConnections.status,
+      lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
+      relayOwnerId: tunnelConnections.relayOwnerId,
+      relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
+    })
+    .from(tunnelConnections)
+    .where(
+      and(
+        eq(tunnelConnections.ownerUserId, self.ownerUserId),
+        sql`${tunnelConnections.machineInfo}->>'machineId' = ${machineId}`,
+        ne(tunnelConnections.tunnelId, tunnelId),
+      ),
+    );
+  const retired: string[] = [];
+  for (const other of others) {
+    if (isTunnelConnectionLive(other)) continue;
+    if (await unpairMachine(other.tunnelId)) retired.push(other.tunnelId);
+  }
+  return retired;
 }
 
 export function createConnectionsRouter() {
@@ -332,6 +373,41 @@ export function createConnectionsRouter() {
 }
 
 /**
+ * Verify a machine's own credential: `Authorization: Bearer kortix_tnl_…` plus
+ * `X-Tunnel-Id`, checked exactly like the WebSocket handshake. For routes
+ * mounted before user auth that a paired machine calls (`DELETE /tunnel/self`,
+ * `/capture/agent/*`). The caller applies its own rate limit first.
+ */
+export async function authenticateMachine(c: Context): Promise<
+  | {
+      ok: true;
+      machine: { tunnelId: string; accountId: string; ownerUserId: string | null; setupTokenHash: string };
+    }
+  | { ok: false; response: Response }
+> {
+  const tunnelId = c.req.header('x-tunnel-id') ?? '';
+  const header = c.req.header('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!isUuid(tunnelId)) return { ok: false, response: c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400) };
+  // Look the machine up before the costly verifier, as the WS handshake does.
+  const [machine] = isTunnelToken(token)
+    ? await db
+        .select({
+          accountId: tunnelConnections.accountId,
+          ownerUserId: tunnelConnections.ownerUserId,
+          setupTokenHash: tunnelConnections.setupTokenHash,
+        })
+        .from(tunnelConnections)
+        .where(eq(tunnelConnections.tunnelId, tunnelId))
+        .limit(1)
+    : [];
+  if (!machine?.setupTokenHash || !verifySecretKey(token, machine.setupTokenHash)) {
+    return { ok: false, response: c.json({ error: 'Invalid machine credential' }, 401) };
+  }
+  return { ok: true, machine: { tunnelId, ...machine, setupTokenHash: machine.setupTokenHash } };
+}
+
+/**
  * `DELETE /v1/tunnel/self` — a machine unpairs itself (v2 X4). Mounted before
  * user auth: the ONLY credential is the machine's own setup token
  * (`Authorization: Bearer kortix_tnl_…` + `X-Tunnel-Id`), verified exactly
@@ -362,25 +438,13 @@ export function createTunnelSelfRouter() {
       if (!limited.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: limited.retryAfterMs }, 429);
       }
-      const tunnelId = c.req.header('x-tunnel-id') ?? '';
-      const header = c.req.header('authorization') ?? '';
-      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-      if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
-      // Look the machine up before the costly verifier, as the WS handshake does.
-      const [machine] = isTunnelToken(token)
-        ? await db
-            .select({ setupTokenHash: tunnelConnections.setupTokenHash })
-            .from(tunnelConnections)
-            .where(eq(tunnelConnections.tunnelId, tunnelId))
-            .limit(1)
-        : [];
-      if (!machine?.setupTokenHash || !verifySecretKey(token, machine.setupTokenHash)) {
-        return c.json({ error: 'Invalid machine credential' }, 401);
-      }
+      const verified = await authenticateMachine(c);
+      if (!verified.ok) return verified.response;
+      const { tunnelId, setupTokenHash } = verified.machine;
       // A token rotated after the check above no longer matches this hash.
       const unpaired = await unpairMachine(
         tunnelId,
-        eq(tunnelConnections.setupTokenHash, machine.setupTokenHash),
+        eq(tunnelConnections.setupTokenHash, setupTokenHash),
       );
       if (!unpaired) return c.json({ error: 'Invalid machine credential' }, 401);
       return c.json({ success: true });

@@ -5,6 +5,7 @@ import {
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
+  RecordIcon as Record,
   KeyIcon as Key,
   LinkIcon as Link,
   PaletteIcon as Palette,
@@ -63,6 +64,12 @@ const STATIC_GROUPS: readonly RailGroupDefinition[] = [
         label: 'Security',
         description: 'Two-factor authentication and the devices signed in as you.',
         icon: ShieldCheck,
+      },
+      {
+        tab: 'capture',
+        label: 'Capture',
+        description: 'Record this computer and search what your screen showed.',
+        icon: Record,
       },
       {
         tab: 'appearance',

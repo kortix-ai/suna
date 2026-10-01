@@ -444,6 +444,34 @@ export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAcce
 export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
   desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
 
+/* ─── Kortix Capture (desktop app) ────────────────────────────────────────
+   The recorder runs beside the computer agent. The app reads its status file
+   and writes the pause time; the recorder gates itself on the account. */
+
+export type DesktopCaptureState = 'recording' | 'paused' | 'off' | 'needs_permission' | 'blocked' | 'error';
+
+export interface DesktopCaptureStatus {
+  state: DesktopCaptureState;
+  /** The tray line, e.g. `Capture: Recording`. */
+  label: string;
+  reason: string | null;
+  /** Epoch ms the pause ends; null when not paused by the person. */
+  pausedUntilMs: number | null;
+  permissions: { screen: boolean; accessibility: boolean } | null;
+  upload: { pending: number; last_success_at: number | null; last_error: string | null } | null;
+  lastCaptureMs: number | null;
+  lastError: string | null;
+}
+
+export const desktopCaptureStatus = () => desktopCommand<DesktopCaptureStatus>('capture_status');
+/** Pause for `minutes` (default 60, max 24 h). Rejects on bad input. */
+export const desktopCapturePause = (input: { minutes?: number } = {}) =>
+  desktopAction<DesktopCaptureStatus>('capture_pause', { ...input });
+export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
+/** macOS: opens the Screen Recording privacy pane. Other systems need no grant (`opened: false`). */
+export const desktopCaptureRequestPermission = () =>
+  desktopAction<{ ok: boolean; opened: boolean }>('capture_request_permission');
+
 export const desktopWindow = {
   minimize: () => tauri()?.window.getCurrentWindow().minimize(),
   toggleMaximize: () => tauri()?.window.getCurrentWindow().toggleMaximize(),
