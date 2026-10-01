@@ -50,7 +50,7 @@
  * Layout rules: apps/mobile/design.md → Project sidebar.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -88,6 +88,7 @@ import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
+import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
 import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -297,14 +298,20 @@ export function ProjectLeftDrawer({
   const mineRoots = useMemo(() => rootRowsOnly(mine.sessions), [mine.sessions]);
   const sharedRoots = useMemo(() => rootRowsOnly(shared.sessions), [shared.sessions]);
   const automatedRoots = useMemo(() => rootRowsOnly(automated.sessions), [automated.sessions]);
+  // Depends on the `refetch` functions (stable), not the query objects (new on
+  // every render): the callback must not change on each fetch's re-render.
+  const refetchMine = mine.refetch;
+  const refetchShared = shared.refetch;
+  const refetchAutomated = automated.refetch;
+  const refetchAsked = askedQuery.refetch;
   const refetchAll = useCallback(async () => {
     await Promise.all([
-      mine.refetch(),
-      shared.refetch(),
-      automatedOpen ? automated.refetch() : Promise.resolve(),
-      humanMessaging ? askedQuery.refetch() : Promise.resolve(),
+      refetchMine(),
+      refetchShared(),
+      automatedOpen ? refetchAutomated() : Promise.resolve(),
+      humanMessaging ? refetchAsked() : Promise.resolve(),
     ]);
-  }, [mine, shared, automated, automatedOpen, askedQuery, humanMessaging]);
+  }, [refetchMine, refetchShared, refetchAutomated, refetchAsked, automatedOpen, humanMessaging]);
   // Sessions that wait on the user, newest wait first: their own group above
   // the list, from every loaded top-level row. A session not loaded yet (an
   // older page, a child) is left to the Review row's count.
@@ -392,11 +399,7 @@ export function ProjectLeftDrawer({
   // session created or renamed elsewhere shows without a pull. After the
   // slide (open is 420ms): a response landing mid-slide re-rendered the list
   // while it moved (Jay, 2026-09-27: "not smooth").
-  useEffect(() => {
-    if (!open) return;
-    const timer = setTimeout(() => void refetchAll(), DRAWER_REFETCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [open, refetchAll]);
+  useRefetchOnOpen(open, refetchAll, DRAWER_REFETCH_DELAY_MS);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
     void refetchAll();

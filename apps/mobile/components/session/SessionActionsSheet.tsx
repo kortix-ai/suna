@@ -147,18 +147,23 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     // page, a parent's children), and the sheet re-renders on any list write
     // so a rename shows at once. No query of its own.
     const [, bumpLists] = React.useReducer((n: number) => n + 1, 0);
-    React.useEffect(
-      () =>
-        queryClient.getQueryCache().subscribe((event) => {
-          // Data writes only (a fetch result, `setQueryData`). Observer events
-          // fire while ProjectScreen and the drawer render, and every poll
-          // tick emits several: a bump on those re-rendered this sheet on each
-          // and set state during another component's render.
-          if (event.type !== 'updated' || event.action.type !== 'success') return;
-          if (event.query.queryKey[0] === 'project-sessions') bumpLists();
-        }),
-      [queryClient]
-    );
+    React.useEffect(() => {
+      // Structural sharing hands back the same data when a refetch changed
+      // nothing: that write must not re-render the sheet.
+      const seen = new WeakMap<object, unknown>();
+      return queryClient.getQueryCache().subscribe((event) => {
+        // Data writes only (a fetch result, `setQueryData`). Observer events
+        // fire while ProjectScreen and the drawer render, and every poll
+        // tick emits several: a bump on those re-rendered this sheet on each
+        // and set state during another component's render.
+        if (event.type !== 'updated' || event.action.type !== 'success') return;
+        if (event.query.queryKey[0] !== 'project-sessions') return;
+        const data = event.query.state.data;
+        if (seen.has(event.query) && seen.get(event.query) === data) return;
+        seen.set(event.query, data);
+        bumpLists();
+      });
+    }, [queryClient]);
     const liveRow = (session: ProjectSession) =>
       cachedSessionRow(queryClient, projectId, session.session_id) ?? session;
 
