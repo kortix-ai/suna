@@ -66,6 +66,7 @@ let SessionConnecting: typeof import('./SessionConnecting').SessionConnecting;
 
 // ── Captures the mocks feed the assertions ───────────────────────────────────
 let listProps: any = null; // the FlatList's latest props
+let healthPillProps: { onSwitch?: () => void } | null = null;
 let composerProps: any = null; // SessionChatInput's latest props
 let wakingComposerProps: any = null; // the SavedThread Composer's latest props
 let markdownActionsValue: any = null; // MarkdownActionsProvider's value
@@ -316,7 +317,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/ConnectProviderSheet': { ConnectProviderSheet: Capture(() => {}) },
   '@/components/session/ConnectorAuthSheet': { ConnectorAuthSheet: Capture(() => {}) },
   '@/components/session/SessionChangeRequests': { SessionChangeRequests: Empty },
-  '@/components/session/SandboxHealthPill': { SandboxHealthPill: Empty },
+  '@/components/session/SandboxHealthPill': { SandboxHealthPill: Capture((props: { onSwitch?: () => void }) => { healthPillProps = props; }) },
   '@/components/session/LiveUpdatesPausedPill': { LiveUpdatesPausedPill: Empty },
   '@/components/session/SandboxPreviewSheet': { SandboxPreviewSheet: Capture(() => {}) },
   '@/components/session/turn/activity-sheet': { ActivitySheetHost: Empty },
@@ -666,6 +667,7 @@ beforeEach(() => {
   viewProps.length = 0;
   listProps = null;
   spacerFired = null;
+  healthPillProps = null;
   composerProps = null;
   wakingComposerProps = null;
   markdownActionsValue = null;
@@ -723,6 +725,14 @@ afterEach(async () => {
 });
 
 // ── Scroll physics ───────────────────────────────────────────────────────────
+
+describe('inactive sandbox navigation', () => {
+  test('session health pill does not offer the legacy instance selector', async () => {
+    await renderPage();
+    expect(healthPillProps).not.toBeNull();
+    expect(healthPillProps?.onSwitch).toBeUndefined();
+  });
+});
 
 describe('SessionPage scroll physics', () => {
   test('follows layout changes to the end while follow is on, instantly on the first settle', async () => {

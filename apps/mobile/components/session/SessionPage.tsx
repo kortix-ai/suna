@@ -2002,7 +2002,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           so it takes no layout space the rest of the time. */}
       {!hasQuestion && (
         <SandboxHealthPill
-          onSwitch={() => router.push('/(settings)/instances')}
           whenReachable={
             liveUpdates.paused ? <LiveUpdatesPausedPill onReconnect={liveUpdates.reconnect} /> : null
           }
