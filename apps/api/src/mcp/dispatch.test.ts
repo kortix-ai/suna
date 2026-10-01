@@ -46,6 +46,9 @@ describe('MCP tool families through tools/call', () => {
     expect(await firstText('read_skill')).toContain('guide — A guide');
     expect(await call('call_api', { method: 'DELETE', path: '/v1/oauth/token' })).toEqual({ content: [{ type: 'text', text: 'path must start with /v1/ and not target /v1/oauth or an MCP endpoint' }], isError: true });
   });
+  test('connector fallback reaches the same tool dispatcher', async () => {
+    expect(await call('list_connectors', { project_id: project })).toEqual({ content: [{ type: 'text', text: 'HTTP 404\nmissing' }], isError: true });
+  });
   test('unknown tool keeps the JSON-RPC error', async () => {
     expect(await call('unknown')).toEqual({ code: -32602, message: 'Unknown tool: unknown' });
   });
