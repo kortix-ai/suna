@@ -211,7 +211,7 @@ test('mention controller navigates, selects with Tab and releases rows on exit',
   expect(onKeyDown!(fakeKeyDown('ArrowUp'))).toBe(true);
   expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(true);
   expect(selected).toEqual([rows[1], rows[0]]);
-  onExit!();
+  onExit!({} as Parameters<NonNullable<typeof onExit>>[0]);
   expect(owns.at(-1)).toBe(false);
   expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(false);
 });

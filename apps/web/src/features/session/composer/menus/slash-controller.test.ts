@@ -514,7 +514,7 @@ test('slash controller navigates both directions, selects with Tab and releases 
   expect(onKeyDown!(fakeKeyDown('ArrowUp'))).toBe(true);
   expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(true);
   expect(selected[1].index).toBe(0);
-  onExit!();
+  onExit!({} as Parameters<NonNullable<typeof onExit>>[0]);
   expect(owns.at(-1)).toBe(false);
   expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(false);
 });
