@@ -12,7 +12,7 @@ Never skip the model because it "has not changed". With no model on the prompt, 
 
 **Incident:** 2026-10-01, found in a live Teams test on dev. A Teams channel session was pinned to `kortix/deepseek-v4.1-flash`, and the channel's `/model` was DeepSeek too. Yet every turn from 2026-09-24 14:21Z ran on `codex/gpt-6-astra`, per `session_transcript_messages.info.model`. One earlier prompt had carried that model, and each later follow-up sent none. Each failed with "Connect Codex to use this model", while the web composer showed DeepSeek.
 
-`channelTurnModel` sent a model only for an image or an explicit `/model` change (`explicit`). Its own comment had recorded the stale-runtime-model hazard for images on 2026-09-21. Fixed in the PR that adds this entry.
+`channelTurnModel` sent a model only for an image or an explicit `/model` change (`explicit`). Its own comment had recorded the stale-runtime-model hazard for images on 2026-09-21. Fixed in PR #8618.
 
 **Enforcement:**
 - `apps/api/src/__tests__/unit-channel-vision-model.test.ts` → "a plain text message carries its healthy pin, so the runtime cannot answer on a stale model".

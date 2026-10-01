@@ -22,7 +22,7 @@ The same check also blocked members of an MFA-required account in two other ways
 - they could not be granted a ChatGPT login;
 - they could not list logins for a project, even at aal2.
 
-Fixed in the PR that adds this entry.
+Fixed in PR #8618.
 
 **Enforcement:** `apps/api/src/__tests__/integration-usable-gateway-secrets.test.ts` → "an account that requires MFA", which runs the real `authorize` on a fresh MFA-required account:
 - a member's session reaches the shared login;
