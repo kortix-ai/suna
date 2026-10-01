@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { handleRpc } from './index';
+import { mock } from 'bun:test';
+mock.module('../middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
+import { createMcpApp } from './index';
 
 const project = '11111111-1111-4111-8111-111111111111';
 const ctx = {
@@ -15,8 +17,13 @@ const ctx = {
     return new Response('missing', { status: 404 });
   },
 };
-const call = async (name: string, args: Record<string, unknown> = {}) =>
-  await handleRpc(ctx, 'tools/call', { name, arguments: args });
+const app = createMcpApp(ctx.dispatch);
+const call = async (name: string, args: Record<string, unknown> = {}) => {
+  const response = await app.request('http://localhost/', { method: 'POST', headers: { authorization: 'Bearer test' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+  const payload = await response.json();
+  if (payload.error) return payload.error;
+  return payload.result;
+};
 const firstText = async (name: string, args: Record<string, unknown> = {}) => {
   const content = (await call(name, args)).content[0];
   if (content?.type !== 'text') throw new Error('expected text content');
@@ -41,6 +48,6 @@ describe('MCP tool families through tools/call', () => {
     expect(await call('call_api', { method: 'DELETE', path: '/v1/oauth/token' })).toEqual({ content: [{ type: 'text', text: 'path must start with /v1/ and not target /v1/oauth or an MCP endpoint' }], isError: true });
   });
   test('unknown tool keeps the JSON-RPC error', async () => {
-    await expect(call('unknown')).rejects.toMatchObject({ rpcCode: -32602, message: 'Unknown tool: unknown' });
+    expect(await call('unknown')).toEqual({ code: -32602, message: 'Unknown tool: unknown' });
   });
 });
