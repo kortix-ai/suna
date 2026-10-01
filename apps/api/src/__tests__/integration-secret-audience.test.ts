@@ -212,6 +212,21 @@ describe('secret audience — who may use one value', () => {
     expect((await envFor(trigger.personId, trigger.agentId)).NIGHTLY_KEY).toBe('nightly-agent');
   });
 
+  test('a value a person enters through a secret link is a fresh rotation, not "rotation required"', async () => {
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'LINKED_KEY', value: 'linked-1', scope: 'connector' });
+    const read = async () =>
+      (await db
+        .select({ rotatedAt: projectSecrets.rotatedAt, updatedAt: projectSecrets.updatedAt })
+        .from(projectSecrets)
+        .where(and(eq(projectSecrets.projectId, PROJECT), eq(projectSecrets.identifier, 'LINKED_KEY'))))[0]!;
+    const first = await read();
+    expect(first.rotatedAt?.getTime()).toBe(first.updatedAt.getTime());
+    // Re-submitting the link replaces the value: that is a rotation too.
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'LINKED_KEY', value: 'linked-2', scope: 'connector' });
+    const second = await read();
+    expect(second.rotatedAt?.getTime()).toBe(second.updatedAt.getTime());
+  });
+
   test('a session whose token is not minted yet (first boot env) acts as its agent from agent_name', async () => {
     const reporterSa = crypto.randomUUID();
     const booting = crypto.randomUUID();
