@@ -3265,7 +3265,10 @@ export const accountGithubInstallationsRelations = relations(
 export const auditEvents = kortixSchema.table(
   'audit_events',
   {
-    eventId: uuid('event_id').defaultRandom().primaryKey(),
+    // UUIDv7 (migration 20261002..._audit_events_uuid_v7): the leading 48 bits are the
+    // creation time in ms, so new ids append at the right edge of the pkey btree
+    // instead of landing on a random cold page. Rows written before it keep their v4 id.
+    eventId: uuid('event_id').default(sql`kortix.uuid_v7()`).primaryKey(),
     // Deliberately no FK. Account deletion must not rewrite or delete forensic history.
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
