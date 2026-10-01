@@ -397,7 +397,6 @@ This page lists 698 route actions and 64 other events.
 | --- | --- | --- |
 | `iam.action.list` | Listed IAM actions | `GET /v1/accounts/:accountId/iam/actions` |
 | `iam.agent_identity.list` | Listed agent identities | `GET /v1/accounts/:accountId/iam/agent-identities` |
-| `iam.agent_identity.list` | Listed agent identities | `GET /v1/projects/:projectId/agent-identities` |
 | `iam.assignment.grant` or `iam.assignment.granted` | Granted a role | `POST /v1/accounts/:accountId/iam/assignments` |
 | `iam.assignment.list` | Listed role assignments | `GET /v1/accounts/:accountId/iam/assignments` |
 | `iam.assignment.revoke` or `iam.assignment.revoked` | Revoked a role assignment | `DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId` |
@@ -582,6 +581,7 @@ This page lists 698 route actions and 64 other events.
 | `project.access_request.create` | Requested project access | `POST /v1/projects/:projectId/access-requests` |
 | `project.access_request.list` | Listed project access requests | `GET /v1/projects/:projectId/access-requests` |
 | `project.access_request.reject` | Rejected project access request | `POST /v1/projects/:projectId/access-requests/:requestId/reject` |
+| `project.agent_identity.list` | Listed project agent identities | `GET /v1/projects/:projectId/agent-identities` |
 | `project.cli_token.create` | Created project CLI token | `POST /v1/projects/:projectId/cli-token` |
 | `project.cli_token.list` | Listed project CLI tokens | `GET /v1/projects/:projectId/cli-token` |
 | `project.cli_token.revoke` | Revoked project CLI token | `DELETE /v1/projects/:projectId/cli-token/:tokenId` |
