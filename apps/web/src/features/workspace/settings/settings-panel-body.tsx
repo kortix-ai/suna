@@ -57,6 +57,7 @@ import { PlanTab } from './tabs/plan-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
 import { SandboxTab } from './tabs/sandbox-tab';
+import { CaptureTab } from './tabs/capture-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
@@ -82,6 +83,7 @@ import { useSettingsAccountId } from './use-settings-account-id';
 export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'profile',
   'security',
+  'capture',
   'appearance',
   'sessions',
   'preferences',
@@ -718,6 +720,9 @@ function SettingsTabPane({
   }
   if (item.tab === 'security') {
     return <SecurityTab />;
+  }
+  if (item.tab === 'capture') {
+    return <CaptureTab />;
   }
   if (item.tab === 'appearance') {
     return <AppearanceTab />;

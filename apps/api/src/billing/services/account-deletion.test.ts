@@ -130,6 +130,8 @@ mock.module('../repositories/credit-accounts', () => ({
   updateCreditAccount: async () => undefined,
 }));
 
+mock.module('../../capture/chunks', () => ({ purgeCapture: async () => 0 }));
+
 mock.module('../wallet', () => ({
   wallet: { forfeit: async () => undefined },
 }));

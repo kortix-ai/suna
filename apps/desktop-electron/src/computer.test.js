@@ -512,6 +512,118 @@ describe('desktop wiring', () => {
   });
 });
 
+describe('Kortix Capture', () => {
+  const now = Date.parse('2030-01-01T12:00:00.000Z');
+  const withRecorder = (recorder, settings) => {
+    const home = tempDir();
+    fs.mkdirSync(path.join(home, 'capture'));
+    if (recorder) fs.writeFileSync(path.join(home, 'capture', 'recorder.json'), JSON.stringify({ pid: process.pid, updated_at_ms: now - 1000, ...recorder }));
+    if (settings) fs.writeFileSync(path.join(home, 'capture', 'settings.json'), JSON.stringify(settings));
+    return home;
+  };
+  const status = (recorder, settings) => computer.captureStatus(withRecorder(recorder, settings), now);
+
+  test('maps recorder.json to the tray line', () => {
+    expect(status({ state: 'recording' })).toMatchObject({ state: 'recording', label: 'Capture: Recording' });
+    expect(status({ state: 'disabled' })).toMatchObject({ state: 'off', label: 'Capture: Off — not enabled' });
+    expect(status({ state: 'off' }).state).toBe('off');
+    expect(status({ state: 'recording', permissions: { screen: false, accessibility: true } })).toMatchObject({
+      state: 'needs_permission',
+      label: 'Capture: Needs Screen Recording permission',
+    });
+    expect(status({ state: 'error', last_error: 'boom' })).toMatchObject({ state: 'error', label: 'Capture: Error', lastError: 'boom' });
+    expect(status({ state: 'locked' })).toMatchObject({ state: 'blocked', label: 'Capture: Idle — screen locked' });
+    expect(status({ state: 'self_on_screen' }).label).toBe('Capture: Idle — Kortix on screen');
+    expect(status({ state: 'something_new' }).state).toBe('error');
+  });
+
+  test('a pause in settings.json wins over recording and names the end time; an expired one does not', () => {
+    const paused = status({ state: 'recording' }, { paused_until_ms: now + 3_600_000 });
+    expect(paused.state).toBe('paused');
+    expect(paused.label).toMatch(/^Capture: Paused until /);
+    expect(paused.pausedUntilMs).toBe(now + 3_600_000);
+    expect(status({ state: 'recording' }, { paused_until_ms: now - 1 }).state).toBe('recording');
+  });
+
+  test('no recorder, a dead pid, or a stale heartbeat reads as off', () => {
+    expect(status(null).state).toBe('off');
+    expect(status({ state: 'recording', pid: 2 ** 22 + 12345 }).state).toBe('off');
+    expect(status({ state: 'recording', updated_at_ms: now - 120_000 }).state).toBe('off');
+    expect(computer.captureStatus(path.join(tempDir(), 'nope'), now).state).toBe('off');
+  });
+
+  test('pause writes paused_until_ms and keeps other settings; resume writes null', () => {
+    const home = withRecorder({ state: 'recording' }, { recording_enabled: true, interval_ms: 1000 });
+    const until = computer.capturePauseUntil(60, now);
+    expect(until).toBe(now + 3_600_000);
+    computer.writeCapturePause(home, until);
+    const file = path.join(home, 'capture', 'settings.json');
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ recording_enabled: true, interval_ms: 1000, paused_until_ms: until });
+    computer.writeCapturePause(home, null);
+    expect(JSON.parse(fs.readFileSync(file, 'utf8')).paused_until_ms).toBeNull();
+    // creates the directory and file when the recorder never ran
+    const fresh = tempDir();
+    computer.writeCapturePause(fresh, until);
+    expect(JSON.parse(fs.readFileSync(path.join(fresh, 'capture', 'settings.json'), 'utf8'))).toEqual({ paused_until_ms: until });
+  });
+
+  test('capturePauseUntil rejects bad minutes and caps at 24 h', () => {
+    expect(() => computer.capturePauseUntil(0)).toThrow('positive');
+    expect(() => computer.capturePauseUntil('x')).toThrow('positive');
+    expect(computer.capturePauseUntil(10 ** 6, now)).toBe(now + 24 * 3_600_000);
+  });
+
+  test('the tray shows the line, Pause when recording, Resume when paused, and a permission item when needed', () => {
+    const online = { paired: true, tunnelId: 't1', status: 'online', state: 'online', paused: false, serviceInstalled: true, serviceActive: true };
+    const access = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
+    const base = { openAtLogin: false, loginItemSupported: false, keepAwakeSupported: false, now };
+    const calls = [];
+    const actions = new Proxy({}, { get: (_t, name) => () => calls.push(name) });
+    const items = (capture) => computer.trayMenuTemplate(online, access, { ...base, capture }, actions);
+    const recording = items(computer.captureStatus(withRecorder({ state: 'recording' }), now));
+    expect(recording.find((i) => i.id === 'capture')).toMatchObject({ label: 'Capture: Recording', enabled: false });
+    recording.find((i) => i.id === 'capture-pause').click();
+    expect(recording.find((i) => i.id === 'capture-pause').label).toBe('Pause capture for 1 hour');
+    expect(recording.find((i) => i.id === 'capture-resume')).toBeUndefined();
+    const paused = items(computer.captureStatus(withRecorder({ state: 'recording' }, { paused_until_ms: now + 1000 }), now));
+    paused.find((i) => i.id === 'capture-resume').click();
+    expect(paused.find((i) => i.id === 'capture-pause')).toBeUndefined();
+    const needs = items(computer.captureStatus(withRecorder({ state: 'recording', permissions: { screen: false } }), now));
+    needs.find((i) => i.id === 'capture-permission').click();
+    expect(calls).toEqual(['capturePause', 'captureResume', 'capturePermission']);
+    expect(items(null).find((i) => i.id === 'capture')).toBeUndefined();
+  });
+
+  test('the service env carries KORTIX_CAPTURE_BIN only when a recorder exists', () => {
+    expect(computer.agentEnv(null, {}, '/r/capture/kortix-capture').KORTIX_CAPTURE_BIN).toBe('/r/capture/kortix-capture');
+    expect(computer.agentEnv(null, { KORTIX_CAPTURE_BIN: '/stale' }, null).KORTIX_CAPTURE_BIN).toBeUndefined();
+  });
+
+  test('captureBinPath: packaged resources, KORTIX_CAPTURE_BIN in dev, null when absent', () => {
+    const resources = tempDir();
+    expect(computer.captureBinPath({ isPackaged: true, resourcesPath: resources })).toBeNull();
+    const bin = path.join(resources, 'capture', process.platform === 'win32' ? 'kortix-capture.exe' : 'kortix-capture');
+    fs.mkdirSync(path.dirname(bin));
+    fs.writeFileSync(bin, '');
+    expect(computer.captureBinPath({ isPackaged: true, resourcesPath: resources })).toBe(bin);
+    expect(computer.captureBinPath({ isPackaged: false, env: { KORTIX_CAPTURE_BIN: bin } })).toBe(bin);
+  });
+
+  test('wiring: capture_* commands pass the trusted-sender gate; the build ships and describes the recorder', () => {
+    const read = (file) => fs.readFileSync(path.join(__dirname, file), 'utf8');
+    const main = read('main.js');
+    const handler = main.slice(main.indexOf("ipcMain.handle('kortix:invoke'"), main.indexOf("ipcMain.handle('kortix:navigate'"));
+    expect(handler.indexOf("cmd.startsWith('capture_')")).toBeGreaterThan(handler.indexOf('isTrustedSender(event)'));
+    const tray = read('computer-tray.js');
+    for (const cmd of ['capture_status', 'capture_pause', 'capture_resume', 'capture_request_permission']) expect(tray).toContain(`case '${cmd}':`);
+    expect(computer.SCREEN_RECORDING_PANE).toBe('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+    const builder = fs.readFileSync(path.join(__dirname, '..', 'electron-builder.yml'), 'utf8');
+    expect(builder).toContain('from: capture-stage');
+    expect(builder).toContain('to: capture');
+    expect(builder).toContain('NSScreenCaptureUsageDescription:');
+  });
+});
+
 describe('computer setup (the macOS grants the approved access needs)', () => {
   test('files need the protected folders; Computer Use needs Accessibility and Screen Recording', () => {
     const home = tempDir();
