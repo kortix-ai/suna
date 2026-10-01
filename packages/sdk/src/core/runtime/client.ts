@@ -11,8 +11,10 @@
 
 import {
 	createRuntimeRestClient,
+	fetchEventTransport,
 	type RuntimeClient,
 	type RuntimeClientConfig,
+	type RuntimeEventTransport,
 } from "./runtime-rest-client";
 
 // The types a host reads runtime data with: the Kortix transcript
@@ -25,7 +27,9 @@ export type * from "./runtime-types";
 export type {
 	RuntimeClient,
 	RuntimeClientConfig,
+	RuntimeEventMessage,
 	RuntimeEventStreamOptions,
+	RuntimeEventTransport,
 	RuntimeRequestOptions,
 	RuntimeResult,
 } from "./runtime-rest-client";
@@ -38,7 +42,8 @@ export type OpencodeClientConfig = RuntimeClientConfig;
 export type createOpencodeClient = typeof createRuntimeRestClient;
 
 import { authenticatedFetch } from "../http/auth";
-import { isConfigured } from "../http/config";
+import { isConfigured, platformConfig } from "../http/config";
+import { platformRequestHeaders } from "../http/transport";
 import { getActiveRuntimeUrl } from "../session/server-store/active";
 import { ApiError } from "../http/api/errors";
 
@@ -134,10 +139,34 @@ export function getClientForUrl(url: string): RuntimeClient {
 		);
 	}
 
-	const client = createRuntimeRestClient({ baseUrl: url, fetch: authenticatedFetch as typeof fetch });
+	const client = createRuntimeRestClient({
+		baseUrl: url,
+		fetch: authenticatedFetch as typeof fetch,
+		eventTransport: platformEventTransport,
+	});
 	clientsByUrl.set(url, client);
 	return client;
 }
+
+/**
+ * The live event stream's transport, read from the platform config on every
+ * connection: the host's `eventStreamTransport` with the platform auth headers,
+ * or the streaming `authenticatedFetch`.
+ */
+const platformEventTransport: RuntimeEventTransport = async function* (request) {
+	const custom = platformConfig().eventStreamTransport;
+	if (!custom) {
+		yield* fetchEventTransport(authenticatedFetch as typeof fetch)(request);
+		return;
+	}
+	const { headers, rejected } = await platformRequestHeaders(request.url, request.headers);
+	try {
+		yield* custom({ ...request, headers });
+	} catch (error) {
+		if ((error as { status?: unknown } | null)?.status === 401) rejected();
+		throw error;
+	}
+};
 
 /**
  * Drop a per-URL client (e.g. when a session sandbox is closed). No-op if the

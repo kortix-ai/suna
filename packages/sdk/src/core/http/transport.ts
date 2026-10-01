@@ -111,6 +111,25 @@ function withPlatformHeaders(url: string, base: Record<string, string>, token: s
   return headers;
 }
 
+/**
+ * `send()`'s token and header policy for a request the configured `fetch` does
+ * not carry: one connection of the live event stream on a host with its own
+ * `eventStreamTransport`. Throws `AuthError` without a token. `rejected()`
+ * reports that the server answered 401, so the next connection asks the host
+ * for a fresh token.
+ */
+export async function platformRequestHeaders(
+  url: string,
+  base?: HeadersInit,
+): Promise<{ headers: Headers; rejected: () => void }> {
+  const token = await currentToken();
+  if (!token) throw new AuthError();
+  return {
+    headers: new Headers(withPlatformHeaders(url, callerHeaders(url, { headers: base }), token)),
+    rejected: () => platformConfig().getToken.invalidate?.(token),
+  };
+}
+
 // ── Send ────────────────────────────────────────────────────────────────────
 
 /** A `ReadableStream` request body can be read once, so it cannot be resent. */
