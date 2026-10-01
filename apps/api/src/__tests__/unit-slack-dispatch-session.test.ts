@@ -801,3 +801,45 @@ describe('spawnAgentTurn — a thread owned by another project', () => {
     expect(messages[0].text).toContain('belongs to a different Kortix project');
   });
 });
+
+
+describe('dispatchSlackEvent — bot sender boundary', () => {
+  test('own bot is refused before claiming or delivering its message', async () => {
+    dbResults = [[], [{ eventId: 'claim' }], [project], [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], []];
+    await dispatchSlackEvent('proj-1', {
+      type: 'event_callback', team_id: 'T1',
+      event: { type: 'message', subtype: 'bot_message', channel_type: 'channel', channel: 'C1', ts: '400.1', user: 'B1', bot_id: 'BSELF', text: '<@B1> hello' },
+    });
+    expect(deliverCalls).toBe(0);
+    expect(createSessionCalls).toBe(0);
+    expect(finalizeCalls).toHaveLength(0);
+    expect(messages).toHaveLength(0);
+    expect(ephemerals).toHaveLength(0);
+  });
+
+  test('another bot mentioning us reaches the existing session', async () => {
+    dbResults = [[], [{ eventId: 'claim' }], [project], [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], []];
+    await dispatchSlackEvent('proj-1', {
+      type: 'event_callback', team_id: 'T1',
+      event: { type: 'message', subtype: 'bot_message', channel_type: 'channel', channel: 'C1', ts: '400.2', user: 'U_OTHERBOT', bot_id: 'BOTHER', text: '<@B1> hello' },
+    });
+    expect(deliverCalls).toBe(1);
+    expect(createSessionCalls).toBe(0);
+  });
+
+  for (const text of ['<@B1>', '<@B1> hello']) {
+    test(`unlinked bot receives no identity prompt for ${text}`, async () => {
+      config.SLACK_REQUIRE_USER_IDENTITY = true;
+      dbResults = [[], [{ eventId: 'claim' }], [project], []];
+      await dispatchSlackEvent('proj-1', {
+        type: 'event_callback', team_id: 'T1',
+        event: { type: 'app_mention', channel: 'C1', ts: '400.3', user: 'U_OTHERBOT', bot_id: 'BOTHER', text },
+      });
+      expect(deliverCalls).toBe(0);
+      expect(createSessionCalls).toBe(0);
+      expect(messages).toHaveLength(0);
+      expect(ephemerals).toHaveLength(0);
+      expect(finalizeCalls).toHaveLength(0);
+    });
+  }
+});

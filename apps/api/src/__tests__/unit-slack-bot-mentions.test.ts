@@ -166,19 +166,6 @@ describe('the event another bot sends now classifies as real work', () => {
 });
 
 describe('source contracts', () => {
-  const dispatchSrc = readFileSync(
-    join(import.meta.dir, '..', 'channels', 'slack', 'dispatch.ts'),
-    'utf8',
-  );
-
-  test('our own bot is refused while another bot mentioning us is classified', async () => {
-    const own = ev({ user: BOT, bot_id: 'BSELF', subtype: 'bot_message', channel_type: 'channel', text: '<@B1> hello' });
-    const other = ev({ user: 'U_OTHERBOT', bot_id: 'B999', subtype: 'bot_message', channel_type: 'channel', text: '<@B1> hello' });
-    expect(isOwnBotEvent(own, BOT)).toBe(true);
-    expect(isOwnBotEvent(other, BOT)).toBe(false);
-    expect(await classifyEvent('T1', other, BOT)).toBe('mention');
-  });
-
   test('no username/icon override in the Slack send path — that is what keeps event.user ours', () => {
     // isOwnBotEvent identifies our messages by event.user. Slack only sets that
     // when a post goes out as the bot itself; posting with username/icon_emoji/
@@ -214,20 +201,6 @@ describe('source contracts', () => {
 // real bot-to-bot mention (Slack ts 1787153374.887479).
 
 describe('a bot sender is never sent an identity prompt', () => {
-  const src = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'dispatch.ts'), 'utf8');
-
-  test('postIdentityPrompt is guarded on the sender not being a bot', () => {
-    // BOTH sites: the bare-@mention branch and the main turn path. Checking only
-    // the first is how the second stayed unguarded — this test caught that.
-    const sites = [...src.matchAll(/await postIdentityPrompt\(/g)];
-    expect(sites.length, 'expected two identity-prompt sites').toBe(2);
-    for (const m of sites) {
-      const before = src.slice(Math.max(0, m.index! - 400), m.index!);
-      expect(before, 'an unlinked BOT gets an ephemeral + a DM it cannot read, and the mention looks ignored')
-        .toMatch(/if \(event\.bot_id\) return;|if \(!event\.bot_id\) \{/);
-    }
-  });
-
   test('link-bot is routed and identity-flag gated', () => {
     const cmds = readFileSync(join(import.meta.dir, '..', 'channels', 'slack', 'commands.ts'), 'utf8');
     expect(cmds, 'the only way to make a bot resolvable is gone').toContain("case 'link-bot':");
