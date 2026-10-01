@@ -64,6 +64,8 @@ import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { configureKortix } from '@kortix/sdk';
+import EventSource from 'react-native-sse';
+import { createSseTransport } from '@/lib/session/sse-transport';
 import * as ExpoCrypto from 'expo-crypto';
 import { API_URL, getAuthToken } from '@/api/config';
 import {
@@ -103,6 +105,9 @@ if (typeof globalThis.crypto === 'undefined') {
 configureKortix({
   backendUrl: API_URL,
   getToken: getAuthToken,
+  // The live session stream arrives over `react-native-sse` (an XHR wire); the
+  // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).
+  eventStreamTransport: createSseTransport({ EventSource, onUnauthorized: reportUnauthorized }),
   onError: (error, context) => {
     log.error('❌ [kortix-sdk] request failed:', error, context);
     // A 401 may mean the login ended: the monitor checks once (COR-144).
