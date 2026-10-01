@@ -1,0 +1,145 @@
+---
+title: Messaging people and sessions
+description: An agent asks a teammate a question, the teammate answers in a conversation, and the answer returns to the agent.
+---
+
+An agent can message two kinds of recipient: a person, and another [session](/docs/work/sessions). Every message shows who wrote it.
+
+- **Ask a person.** The agent opens a conversation with one or more project members. The first message is the agent's question. The people answer in that conversation.
+- **Message a session.** The agent sends text to another session. The receiving agent sees which session sent it and can reply.
+
+A conversation with people is a session. It has its own sandbox, its own agent, and its own transcript. The session that asked is its parent.
+
+## Send a message
+
+`kortix send` takes one target form per command.
+
+```sh
+# A session id: message that session's agent.
+kortix send 3f9a1c2e-7b04-4d1a-9c55-0a1b2c3d4e5f "The build is green. Start the release."
+
+# One email address: open a conversation with that project member.
+kortix send avery@example.com "Which region should I deploy to, eu-west or us-east?"
+
+# Several email addresses: open one group conversation.
+kortix send avery@example.com sam@example.com "Which region should I deploy to?"
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Text | Put the text after the targets, or pass `-p "<text>"`. Missing text exits with code `2`. |
+| Mixed targets | A session id together with emails exits with code `2`. |
+| `--project <id>` | The project for email targets. The default is the current session's project, or the linked project. |
+| `--name <title>` | The conversation title. The default is the first line of the text. |
+| `--json` | Machine output. See below. |
+
+Inside a sandbox, the sender is the current session. The server sets it from the session credential. The command has no flag for it.
+
+### JSON output
+
+A session target prints:
+
+```json
+{ "kind": "session", "session_id": "3f9a1c2e-7b04-4d1a-9c55-0a1b2c3d4e5f", "message_id": "msg_01", "queued": true }
+```
+
+The message is queued. A stopped session wakes up to receive it.
+
+A people target prints:
+
+```json
+{ "kind": "people", "session_id": "8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f", "project_id": "b7e6d5c4-3a2b-4109-8f7e-6d5c4b3a2918", "to": ["avery@example.com"], "url": "https://app.example.com/projects/b7e6d5c4-3a2b-4109-8f7e-6d5c4b3a2918/sessions/8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f" }
+```
+
+`session_id` is the new conversation. `to` lists the addresses.
+
+## Who can be asked
+
+An email must belong to a project member who may run sessions and who may use the conversation's agent: a person who cannot use the agent could not reply. List members with `kortix access ls`. The limit is 1 to 20 people per conversation. A message to people is text only.
+
+The same sender, people, and question within 2 minutes is the same ask: a retry after a timeout returns the first conversation and notifies nobody twice.
+
+| Error | Meaning |
+| --- | --- |
+| `400` `INVALID_PARTICIPANTS` | The list is empty, has more than 20 addresses, or has an invalid address. |
+| `400` `INVALID_PARTICIPANTS` | The message has files (`pending_prompt.parts`), or no text. |
+| `404` `PARTICIPANT_NOT_FOUND` | An address is not a project member who may run sessions, or the person cannot use the conversation's agent. The message names each address. |
+
+## What the people see
+
+- **The sidebar.** The conversation appears under **Asked you**. Each row names who asked: the agent (for example `from kortix`), or the person.
+- **A push notification.** Each person receives a `question` notification.
+- **The conversation card.** The first message shows the asking agent's name and the question.
+- **Authors.** Every message in a conversation shows its author, like a group chat.
+
+The conversation waits on each person until that person replies. In a group, one reply does not clear the others. Later notifications of the conversation (the agent finishes, the agent asks a question) go to its people, not to its owner. List the same conversations from the CLI:
+
+```sh
+kortix sessions ls --asked [--json]
+```
+
+## How the answer returns
+
+1. A person replies. The conversation's agent runs. It sees the ask header and the reply.
+2. The agent reports to the session that asked: `kortix send <parent-session-id> "<answer>"`.
+3. The asking session receives the answer as a prompt that starts with a header:
+
+```text
+[MESSAGE from session 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f "Which region should I deploy to?" (agent kortix) — sent by another agent, not by a person. Reply with `kortix send 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f "…"`.]
+
+Deploy to eu-west. Sam agrees.
+```
+
+With the flag on, a session may message its parent, and may reply to a session that messaged it, even when it cannot otherwise see that session. That message runs the receiving session's own agent and model, and it is delivered as that session's owner. The sender is still recorded as its author.
+
+In a group conversation, each human message reaches the agent with a header that names the author: `[MESSAGE from Avery Lee <avery@example.com>]`. The agent asks the group, collects the answers, and then reports once.
+
+## Example
+
+An agent deploys a service and needs a region.
+
+1. The agent runs:
+
+   ```sh
+   kortix send avery@example.com "Which region should I deploy the api to, eu-west or us-east?" --json
+   ```
+
+   The output has `"kind": "people"` and a new `session_id`. The agent keeps working on the parts that do not depend on the region.
+2. Avery sees **Asked you** in the sidebar and a notification. Avery opens the conversation and types `eu-west`.
+3. The conversation's agent runs, reads the reply, and runs `kortix send <asking-session-id> "Avery chose eu-west."`.
+4. The asking session receives `[MESSAGE from session <conversation-id> "…" — sent by another agent, not by a person. …]` followed by `Avery chose eu-west.` It continues with the deploy.
+
+## From Slack and Teams
+
+An agent working in a Slack thread or a Teams conversation can ask someone who is not in it. The answer arrives later as a new prompt, not as a Slack or Teams turn, so the agent posts it back explicitly: `slack send --channel <id> --thread <ts>` in Slack, `teams post --conversation <id>` in Teams. When the person is already in the thread, the agent asks there instead.
+
+## Privacy
+
+A conversation with people is shared with the named people and with the owner of the session that asked. Other project members cannot open it. Its session is `restricted`, with a member grant for each person named.
+
+`participants`, `awaiting_reply`, and `awaiting_reply_from` are server-managed metadata keys. A client that writes them gets `400`.
+
+## From the hosted MCP server
+
+The [`send_message` tool](/docs/connect/mcp) takes `to` instead of `session_id`: an array of email addresses, together with `project_id`. It opens the same conversation as `kortix send`.
+
+## API and SDK
+
+| Route | Effect |
+| --- | --- |
+| `POST /v1/projects/:projectId/sessions` | Body `participants` (emails) and `initial_prompt` (required with `participants`). Opens a conversation. The first message posts without an agent turn. |
+| `GET /v1/projects/:projectId/sessions?participant=me` | Conversations you were asked into, at any depth. |
+| `GET /v1/projects/:projectId/sessions/:sessionId/message-authors` | The author of each message: `{ authors, initial_author }`. |
+
+```ts
+const asked = await kortix.project(projectId).sessions.create({
+  participants: ['avery@example.com'],
+  initial_prompt: 'Which region should I deploy to?',
+});
+
+const { items } = await kortix.project(projectId).sessions.listPage({ participant: 'me' });
+
+const { authors, initial_author } = await kortix.session(projectId, asked.session_id).messageAuthors();
+```
+
+See [Sessions](/docs/sdk/sessions#who-wrote-each-message) for the author types and the React hook.

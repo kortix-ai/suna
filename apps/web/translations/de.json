@@ -1587,6 +1587,17 @@
       "failed": "Die Labels konnten nicht gespeichert werden",
       "tooLong": "Ein Label hat höchstens 64 Zeichen.",
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
+    },
+    "askedYou": {
+      "title": "Hat dich gefragt",
+      "from": "von {name}",
+      "arrival": "{name} hat dich etwas gefragt",
+      "arrivalUnknown": "Jemand hat dich etwas gefragt",
+      "open": "Öffnen",
+      "withOne": "Unterhaltung mit 1 Person",
+      "withMany": "Unterhaltung mit {count} Personen",
+      "askedFrom": "Gefragt von {title}",
+      "inConversation": "In dieser Unterhaltung"
     }
   },
   "dashboard": {
@@ -19092,7 +19103,6 @@
       "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "texte15f213fa506": "App-Update veröffentlichen",
       "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet",
-      "textea2f51bfe21c": "Teilnehmer der Sitzung angesehen",
       "text7f755292bf51": "Anhang konnte nicht heruntergeladen werden"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "Von",
+    "asked": "fragte",
+    "replyHint": "Antworte unten. Der Agent nimmt es auf.",
     "untitledSession": "Unbenannte Sitzung"
   },
   "sessionParticipants": {

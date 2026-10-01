@@ -67,6 +67,9 @@ mock.module('react', () => ({
     return [value, record] as const;
   },
 }));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
+}));
 mock.module('@/features/session/composer-chat-input', () => ({
   ComposerChatInput: (props: typeof composer) => {
     composer = props;

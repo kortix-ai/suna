@@ -13,6 +13,7 @@ import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import {
   mayResolveApproval,
   maySeeSessionApprovals,
+  maySeeSessionQuestion,
 } from '../lib/approval-authority';
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { isUuid } from '../../shared/validate';
@@ -117,7 +118,7 @@ projectsApp.openapi(
 // sessions have a connector call awaiting a human decision, and how many. A
 // project MANAGER sees every session; everyone else sees only the sessions they
 // LAUNCHED (mirrors who may resolve). Open agent questions count too, for the
-// same principals.
+// same principals plus the people a conversation was opened with.
 // Read-gated + cheap enough to poll.
 
 projectsApp.openapi(
@@ -182,7 +183,8 @@ projectsApp.openapi(
         ),
       );
 
-    // Count per (Kortix) session id.
+    // Count per (Kortix) session id, apart: who may see a question differs from
+    // who may see an approval (a conversation participant answers questions).
     const approvalsByKortix: Record<string, number> = {};
     for (const r of pendingRows) {
       const sid = r.sessionId ? String(r.sessionId) : null;
@@ -206,6 +208,7 @@ projectsApp.openapi(
         opencodeSessionId: projectSessions.runtimeSessionId,
         createdBy: projectSessions.createdBy,
         origin: projectSessions.origin,
+        metadata: projectSessions.metadata,
       })
       .from(projectSessions)
       .where(
@@ -229,9 +232,17 @@ projectsApp.openapi(
         callerUserId: loaded.userId,
         callerSessionId: callerKortixSessionId(c),
       };
-      const n = maySeeSessionApprovals(authority)
-        ? (approvalsByKortix[s.sessionId] ?? 0) + (questionsByKortix[s.sessionId] ?? 0)
-        : 0;
+      const participants = (s.metadata as { participants?: unknown } | null)?.participants;
+      const n =
+        (maySeeSessionApprovals(authority) ? (approvalsByKortix[s.sessionId] ?? 0) : 0) +
+        (maySeeSessionQuestion({
+          ...authority,
+          participantUserIds: Array.isArray(participants)
+            ? participants.filter((v): v is string => typeof v === 'string')
+            : [],
+        })
+          ? (questionsByKortix[s.sessionId] ?? 0)
+          : 0);
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
       if (s.opencodeSessionId) sessions[s.opencodeSessionId] = n;

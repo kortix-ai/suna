@@ -1587,6 +1587,17 @@
       "failed": "Could not save the labels",
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
+    },
+    "askedYou": {
+      "title": "Asked you",
+      "from": "from {name}",
+      "arrival": "{name} asked you",
+      "arrivalUnknown": "Someone asked you",
+      "open": "Open",
+      "withOne": "Conversation with 1 person",
+      "withMany": "Conversation with {count} people",
+      "askedFrom": "Asked from {title}",
+      "inConversation": "In this conversation"
     }
   },
   "dashboard": {
@@ -19105,7 +19116,6 @@
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "texte15f213fa506": "Publish app update",
       "textcafd830fcf85": "Listed project agent identities",
-      "textea2f51bfe21c": "Viewed session participants",
       "text7f755292bf51": "Could not download attachment"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "From",
+    "asked": "asked",
+    "replyHint": "Reply below. The agent picks it up.",
     "untitledSession": "Untitled session"
   },
   "sessionParticipants": {

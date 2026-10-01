@@ -1587,6 +1587,17 @@
       "failed": "Oznake nije moguće sačuvati",
       "tooLong": "Oznaka ima najviše 64 znaka.",
       "tooMany": "Sesija ima najviše 20 oznaka."
+    },
+    "askedYou": {
+      "title": "Pitali su te",
+      "from": "od {name}",
+      "arrival": "{name} te je pitao/la",
+      "arrivalUnknown": "Neko te je pitao",
+      "open": "Otvori",
+      "withOne": "Razgovor sa 1 osobom",
+      "withMany": "Razgovor sa {count} osoba",
+      "askedFrom": "Pitanje iz sesije {title}",
+      "inConversation": "U ovom razgovoru"
     }
   },
   "dashboard": {
@@ -19062,7 +19073,7 @@
       "text9c84d6622566": "Диктирај поруку",
       "textf164e4b031dc": "Присуство у сесији је ажурирано",
       "text9e6a0b0a06c2": "Pregledao autore poruka sesije",
-      "textea2f51bfe21c": "Прегледани учесници сесије",
+      "textea2f51bfe21c": "Pregledao učesnike sesije",
       "text5f58426c214e": "Градимо open-source AI Management System. Свака компанија треба да поседује све њене делове.",
       "textf729ef1ea584": "Усаглашавање лиценци и места",
       "text7912f8e97c06": "cron окидач покреће кварталну проверу приступа и месечно усаглашавање лиценци. Окидачи наводе агента под којим се извршавају, па аутоматизована сесија има потпуно исти домет као сесија уз надзор — ни више.",
@@ -19092,7 +19103,6 @@
       "textcd2c4b26eedd": "Kortix нема запис о верзији апликације у вашем Teams каталогу. Верзија {value0} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
       "texte15f213fa506": "Објави ажурирање апликације",
       "textcafd830fcf85": "Идентитети агената пројекта излистани",
-      "textea2f51bfe21c": "Pregledao učesnike sesije",
       "text7f755292bf51": "Prilog nije moguće preuzeti"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "Od",
+    "asked": "je pitao",
+    "replyHint": "Odgovorite ispod. Agent će preuzeti odgovor.",
     "untitledSession": "Sesija bez naslova"
   },
   "sessionParticipants": {

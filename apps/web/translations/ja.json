@@ -1587,6 +1587,17 @@
       "failed": "ラベルを保存できませんでした",
       "tooLong": "ラベルは 64 文字以内です。",
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
+    },
+    "askedYou": {
+      "title": "あなたへの質問",
+      "from": "{name} から",
+      "arrival": "{name} さんから質問が届きました",
+      "arrivalUnknown": "質問が届きました",
+      "open": "開く",
+      "withOne": "1人との会話",
+      "withMany": "{count}人との会話",
+      "askedFrom": "{title} からの質問",
+      "inConversation": "この会話の参加者"
     }
   },
   "dashboard": {
@@ -19092,7 +19103,6 @@
       "textcd2c4b26eedd": "Teams カタログのアプリのバージョンは Kortix に記録されていません。バージョン {value0} には、エージェントが Teams で使うすべてのコマンドと権限が含まれます。Teams 管理者が更新を公開します。その後、Teams が更新を表示しているチームで、チームの所有者がアプリを更新します: チーム → ⋯ → チームを管理 → アプリ → 更新。",
       "texte15f213fa506": "アプリの更新を公開",
       "textcafd830fcf85": "プロジェクトのエージェント ID を一覧表示しました",
-      "textea2f51bfe21c": "セッションの参加者を表示しました",
       "text7f755292bf51": "添付ファイルをダウンロードできませんでした"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "送信元",
+    "asked": "が質問:",
+    "replyHint": "下で返信してください。エージェントが引き継ぎます。",
     "untitledSession": "無題のセッション"
   },
   "sessionParticipants": {

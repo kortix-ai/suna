@@ -1587,6 +1587,17 @@
       "failed": "无法保存标签",
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
+    },
+    "askedYou": {
+      "title": "向你提问",
+      "from": "来自 {name}",
+      "arrival": "{name} 向你提问",
+      "arrivalUnknown": "有人向你提问",
+      "open": "打开",
+      "withOne": "与 1 人的对话",
+      "withMany": "与 {count} 人的对话",
+      "askedFrom": "来自 {title} 的提问",
+      "inConversation": "对话参与者"
     }
   },
   "dashboard": {
@@ -19092,7 +19103,6 @@
       "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "texte15f213fa506": "发布应用更新",
       "textcafd830fcf85": "已列出项目代理身份",
-      "textea2f51bfe21c": "查看了会话参与者",
       "text7f755292bf51": "无法下载附件"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "来自",
+    "asked": "询问了",
+    "replyHint": "在下方回复，智能体会接手处理。",
     "untitledSession": "未命名会话"
   },
   "sessionParticipants": {

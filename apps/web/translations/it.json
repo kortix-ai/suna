@@ -1587,6 +1587,17 @@
       "failed": "Impossibile salvare le etichette",
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
+    },
+    "askedYou": {
+      "title": "Ti hanno chiesto",
+      "from": "da {name}",
+      "arrival": "{name} ti ha fatto una domanda",
+      "arrivalUnknown": "Qualcuno ti ha fatto una domanda",
+      "open": "Apri",
+      "withOne": "Conversazione con 1 persona",
+      "withMany": "Conversazione con {count} persone",
+      "askedFrom": "Chiesto da {title}",
+      "inConversation": "In questa conversazione"
     }
   },
   "dashboard": {
@@ -19062,7 +19073,7 @@
       "text9c84d6622566": "Detta un messaggio",
       "textf164e4b031dc": "Presenza nella sessione aggiornata",
       "text9e6a0b0a06c2": "Ha visualizzato gli autori dei messaggi della sessione",
-      "textea2f51bfe21c": "Ha visualizzato i partecipanti alla sessione",
+      "textea2f51bfe21c": "Ha visualizzato i partecipanti della sessione",
       "text5f58426c214e": "Stiamo costruendo l’AI Management System open-source. Ogni azienda dovrebbe possederlo per intero.",
       "textf729ef1ea584": "Riconciliazione di licenze e postazioni",
       "text7912f8e97c06": "Un trigger cron apre la revisione trimestrale degli accessi e la riconciliazione mensile delle licenze. I trigger indicano l'agente con cui vengono eseguiti, così la sessione automatica ha esattamente lo stesso livello di accesso di quella assistita, non di più.",
@@ -19092,7 +19103,6 @@
       "textcd2c4b26eedd": "Kortix non ha traccia della versione dell'app nel tuo catalogo Teams. La versione {value0} include tutti i comandi e le autorizzazioni che il tuo agente usa in Teams. Un amministratore Teams pubblica l'aggiornamento. Poi un proprietario del team aggiorna l'app in ogni team in cui Teams la propone: il team → ⋯ → Gestisci team → App → Aggiorna.",
       "texte15f213fa506": "Pubblica l'aggiornamento dell'app",
       "textcafd830fcf85": "Identità degli agenti del progetto elencate",
-      "textea2f51bfe21c": "Ha visualizzato i partecipanti della sessione",
       "text7f755292bf51": "Impossibile scaricare l'allegato"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "Da",
+    "asked": "ha chiesto a",
+    "replyHint": "Rispondi qui sotto. L'agente lo raccoglierà.",
     "untitledSession": "Sessione senza titolo"
   },
   "sessionParticipants": {
