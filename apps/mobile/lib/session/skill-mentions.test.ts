@@ -7,7 +7,7 @@ import {
   resolveSkillSubmission,
   suggestionMenuTakesSubmit,
 } from './skill-mentions';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 function cmd(name: string, source?: Command['source'], description = ''): Command {
   return { name, description, source, template: '', hints: [] };

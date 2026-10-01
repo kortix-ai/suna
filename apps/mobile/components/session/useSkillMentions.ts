@@ -13,7 +13,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 import {
   detectSkillTrigger,
   filterSkills,

@@ -12,7 +12,6 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
 import { eq, and, desc, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -186,6 +185,39 @@ export async function retireSupersededRegistrations(tunnelId: string, machineId:
   for (const other of others) {
     if (isTunnelConnectionLive(other)) continue;
     if (await unpairMachine(other.tunnelId)) retired.push(other.tunnelId);
+  }
+  return retired;
+}
+
+/** A registration without a hardware id is removed after this long without a sign of life. */
+export const UNIDENTIFIED_RETENTION_DAYS = 30;
+
+/**
+ * Registrations made by agents older than hardware ids cannot be matched to a
+ * computer. Once one has shown no sign of life for 30 days (no heartbeat, no
+ * update, no relay ownership), it is unpaired with its accounts. A computer
+ * that comes back pairs again; its agent says how. Runs on the tunnel cleanup
+ * tick, at most `limit` per run. Returns the removed tunnel ids.
+ */
+export async function retireStaleUnidentifiedRegistrations(limit = 100): Promise<string[]> {
+  const stale = await db
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(
+      and(
+        sql`${tunnelConnections.machineInfo}->>'machineId' is null`,
+        sql`greatest(
+          ${tunnelConnections.lastHeartbeatAt},
+          ${tunnelConnections.relayOwnerHeartbeatAt},
+          ${tunnelConnections.updatedAt},
+          ${tunnelConnections.createdAt}
+        ) < now() - make_interval(days => ${UNIDENTIFIED_RETENTION_DAYS})`,
+      ),
+    )
+    .limit(limit);
+  const retired: string[] = [];
+  for (const { tunnelId } of stale) {
+    if (await unpairMachine(tunnelId)) retired.push(tunnelId);
   }
   return retired;
 }
@@ -373,41 +405,6 @@ export function createConnectionsRouter() {
 }
 
 /**
- * Verify a machine's own credential: `Authorization: Bearer kortix_tnl_…` plus
- * `X-Tunnel-Id`, checked exactly like the WebSocket handshake. For routes
- * mounted before user auth that a paired machine calls (`DELETE /tunnel/self`,
- * `/capture/agent/*`). The caller applies its own rate limit first.
- */
-export async function authenticateMachine(c: Context): Promise<
-  | {
-      ok: true;
-      machine: { tunnelId: string; accountId: string; ownerUserId: string | null; setupTokenHash: string };
-    }
-  | { ok: false; response: Response }
-> {
-  const tunnelId = c.req.header('x-tunnel-id') ?? '';
-  const header = c.req.header('authorization') ?? '';
-  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-  if (!isUuid(tunnelId)) return { ok: false, response: c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400) };
-  // Look the machine up before the costly verifier, as the WS handshake does.
-  const [machine] = isTunnelToken(token)
-    ? await db
-        .select({
-          accountId: tunnelConnections.accountId,
-          ownerUserId: tunnelConnections.ownerUserId,
-          setupTokenHash: tunnelConnections.setupTokenHash,
-        })
-        .from(tunnelConnections)
-        .where(eq(tunnelConnections.tunnelId, tunnelId))
-        .limit(1)
-    : [];
-  if (!machine?.setupTokenHash || !verifySecretKey(token, machine.setupTokenHash)) {
-    return { ok: false, response: c.json({ error: 'Invalid machine credential' }, 401) };
-  }
-  return { ok: true, machine: { tunnelId, ...machine, setupTokenHash: machine.setupTokenHash } };
-}
-
-/**
  * `DELETE /v1/tunnel/self` — a machine unpairs itself (v2 X4). Mounted before
  * user auth: the ONLY credential is the machine's own setup token
  * (`Authorization: Bearer kortix_tnl_…` + `X-Tunnel-Id`), verified exactly
@@ -438,13 +435,25 @@ export function createTunnelSelfRouter() {
       if (!limited.allowed) {
         return c.json({ error: 'Too many requests', retryAfterMs: limited.retryAfterMs }, 429);
       }
-      const verified = await authenticateMachine(c);
-      if (!verified.ok) return verified.response;
-      const { tunnelId, setupTokenHash } = verified.machine;
+      const tunnelId = c.req.header('x-tunnel-id') ?? '';
+      const header = c.req.header('authorization') ?? '';
+      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
+      // Look the machine up before the costly verifier, as the WS handshake does.
+      const [machine] = isTunnelToken(token)
+        ? await db
+            .select({ setupTokenHash: tunnelConnections.setupTokenHash })
+            .from(tunnelConnections)
+            .where(eq(tunnelConnections.tunnelId, tunnelId))
+            .limit(1)
+        : [];
+      if (!machine?.setupTokenHash || !verifySecretKey(token, machine.setupTokenHash)) {
+        return c.json({ error: 'Invalid machine credential' }, 401);
+      }
       // A token rotated after the check above no longer matches this hash.
       const unpaired = await unpairMachine(
         tunnelId,
-        eq(tunnelConnections.setupTokenHash, setupTokenHash),
+        eq(tunnelConnections.setupTokenHash, machine.setupTokenHash),
       );
       if (!unpaired) return c.json({ error: 'Invalid machine credential' }, 401);
       return c.json({ success: true });

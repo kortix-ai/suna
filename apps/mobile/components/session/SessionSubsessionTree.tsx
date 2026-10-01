@@ -1,10 +1,10 @@
 /**
- * OpenCode sub-sessions in the session lists (web parity:
+ * runtime sub-sessions in the session lists (web parity:
  * `apps/web/src/features/workspace/project-sidebar/project-session-list.tsx`,
  * `ProjectSubsessionRow` + `SubAgentConnector`).
  *
  * - `SubsessionCountBadge`: the count after a session title — how many direct
- *   sub-sessions its root OpenCode session has (`directSubsessions`). Shown
+ *   sub-sessions its root runtime session has (`directSubsessions`). Shown
  *   only above 4 (`showSubsessionCountBadge`; owner, 2026-09-26).
  * - `SubsessionTree`: a session's direct sub-sessions, one row each under
  *   its row: a connector (a vertical trunk plus one rounded elbow per row,
@@ -134,8 +134,8 @@ export interface SubsessionTreeProps {
   subsessions: readonly ProjectRuntimeSession[];
   /** The parent session's display title, for each row's accessibility label. */
   parentTitle: string;
-  /** The OpenCode id the thread shows: its row is `bg-accent`. */
-  activeOpenCodeId: string | null;
+  /** The runtime session id the thread shows: its row is `bg-accent`. */
+  activeRuntimeId: string | null;
   /**
    * Distance from the tree's container left edge to the centre of the parent
    * row's status mark: the trunk runs down that line.
@@ -154,7 +154,7 @@ export interface SubsessionTreeProps {
 export function SubsessionTree({
   subsessions,
   parentTitle,
-  activeOpenCodeId,
+  activeRuntimeId,
   trunkX,
   textX,
   showTime,
@@ -203,7 +203,7 @@ export function SubsessionTree({
           <SubsessionRow
             child={child}
             parentTitle={parentTitle}
-            active={child.id === activeOpenCodeId}
+            active={child.id === activeRuntimeId}
             now={now}
             showTime={showTime}
             textInset={textInset}

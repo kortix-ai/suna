@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { join } from 'path';
 
-import { TunnelAgent } from './agent';
+import { PAIR_AGAIN_COMMAND, TunnelAgent } from './agent';
 import { accessFilePath, accessRequestPath, desktopAppPath, readAccess, writeAccess } from './access';
 import { printStartupBanner } from './banner';
 import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
@@ -17,7 +17,6 @@ import {
   openBrowser,
   requestDeviceAuthorization,
 } from './device-auth';
-import { resolveCaptureBin, startCaptureSupervisor } from './capture-supervisor';
 import { collapseRepeatedLines, isShellStartupNoise } from './log-format';
 import { anyFlag, isInteractiveTerminal, isTruthyFlag, promptYesNo } from './prompts';
 import {
@@ -84,7 +83,7 @@ function shortenHomePath(path: string): string {
 
 // ── running the agent ────────────────────────────────────────────────────────
 
-function startAgent(config: TunnelConfig, options: { service?: boolean; capture?: boolean } = {}): void {
+function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): void {
   if (jsonMode) {
     // The agent logs to stdout. Keep stdout pure NDJSON for the caller.
     // ponytail: redirect by rebinding; give TunnelAgent a log sink if a second caller needs one.
@@ -125,14 +124,8 @@ function startAgent(config: TunnelConfig, options: { service?: boolean; capture?
   );
   agent.connect();
 
-  // Kortix Capture runs as a child of the always-on service only. The recorder
-  // gates itself on the API, so supervising it is always safe.
-  const bin = options.capture ? resolveCaptureBin() : null;
-  const capture = bin ? startCaptureSupervisor({ bin, home: agentTunnelHome() }) : null;
-
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
-    capture?.stop();
     agent.disconnect();
     process.exit(0);
   };
@@ -376,13 +369,13 @@ function commandRun(flags: Flags): void {
       if (!next.token || !next.tunnelId) return;
       clearInterval(wait);
       rotateServiceLogs();
-      startAgent(next, { service: true, capture: true });
+      startAgent(next, { service: true });
     }, 60_000);
     return;
   }
 
   if (asService) rotateServiceLogs();
-  startAgent(config, { service: asService, capture: asService });
+  startAgent(config, { service: asService });
 }
 
 /** Last agent line in the service log, so status reports evidence not a guess. */
@@ -448,7 +441,7 @@ function commandStatus(flags: Flags): void {
 
   if (approved.size === 0) {
     console.log(`  ${glyph.warn} ${c.dim}No capabilities approved — this tunnel cannot act.${c.reset}`);
-    console.log(`  ${c.dim}Pair again with${c.reset} ${c.white}agent-tunnel connect --reauth${c.reset}`);
+    console.log(`  ${c.dim}Pair again with${c.reset} ${c.white}${PAIR_AGAIN_COMMAND}${c.reset}`);
     blankLine();
   }
   console.log(`  ${c.dim}Recent logs:${c.reset} ${c.white}agent-tunnel logs${c.reset}`);

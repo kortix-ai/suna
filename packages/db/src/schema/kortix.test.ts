@@ -203,13 +203,24 @@ describe('canonical audit ledger', () => {
   test('indexes ordered session reads and idempotent source-ledger projections', () => {
     expect(indexNames(auditEvents)).toEqual(
       expect.arrayContaining([
-        'idx_audit_events_account_project_sequence',
-        'idx_audit_events_account_session_sequence',
         'idx_audit_events_session_sequence',
         'idx_audit_events_source_phase',
         'idx_audit_events_action_pattern',
       ]),
     );
+  });
+
+  test('does not re-add the audit indexes no read path uses', () => {
+    // Dropped by 20261001214716390_drop_unused_audit_events_indexes. Each one is
+    // an index write on every audit row. No query orders by session_sequence
+    // under an account/project predicate, and none filters resource_id.
+    for (const dropped of [
+      'idx_audit_events_account_project_sequence',
+      'idx_audit_events_account_session_sequence',
+      'idx_audit_events_resource',
+    ]) {
+      expect(indexNames(auditEvents)).not.toContain(dropped);
+    }
   });
 
   test('serves the bare session-scoped audit read from an index', () => {

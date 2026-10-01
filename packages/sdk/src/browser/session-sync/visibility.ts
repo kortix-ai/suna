@@ -10,6 +10,8 @@
  *
  * Framework-free and injectable so the rule is testable without a DOM.
  */
+import { onHostSignal } from '../../core/session/host-signals';
+
 export interface VisibilityTarget {
   visibilityState: string;
   addEventListener: (type: 'visibilitychange', handler: () => void) => void;
@@ -22,7 +24,11 @@ export function onTabVisible(
     ? undefined
     : (document as unknown as VisibilityTarget),
 ): () => void {
-  if (!target) return () => {};
+  // A host without a document (React Native) reports the return itself.
+  const stopHost = onHostSignal((signal) => {
+    if (signal === 'visible') run();
+  });
+  if (!target) return stopHost;
   const handler = () => {
     // Only the transition INTO visible. `visibilitychange` fires on the way out
     // too, and reading a tail the moment a tab is hidden repairs nothing.
@@ -30,5 +36,8 @@ export function onTabVisible(
     run();
   };
   target.addEventListener('visibilitychange', handler);
-  return () => target.removeEventListener('visibilitychange', handler);
+  return () => {
+    stopHost();
+    target.removeEventListener('visibilitychange', handler);
+  };
 }

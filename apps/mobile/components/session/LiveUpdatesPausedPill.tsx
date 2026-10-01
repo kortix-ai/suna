@@ -8,7 +8,7 @@
  * "No internet connection" banner already says why.
  *
  * Reconnect restarts the stream at once (`useStreamHealthStore.reconnect` →
- * `event-stream.ts` `retryNow`), past any backoff or park.
+ * the SDK's `notifyHostSignal('retry')`), past any backoff or park.
  */
 
 import * as React from 'react';

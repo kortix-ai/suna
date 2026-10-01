@@ -248,9 +248,11 @@ Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
-> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Use `createHttpSessionSyncController` for bounded history
-> synchronization. Keep the platform-specific event transport for live events.
+> **React Native / Expo:** REST works. Live streaming works with a host
+> transport: pass `configureKortix({ eventStreamTransport })` (one connection's
+> messages over the wire your runtime has, e.g. `react-native-sse`), and report
+> foreground and network changes with `notifyHostSignal`. `apps/mobile` runs
+> `useSession` from `@kortix/sdk/react` this way.
 
 ## Quick start
 
@@ -426,11 +428,11 @@ the paged session list. Both are per user and bounded; clear both on sign-out. S
 states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
 `sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
-A server-rendered host can seed a known OpenCode pin while `/start` runs:
+A server-rendered host can seed a known runtime session pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -843,10 +845,10 @@ The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
 dependency and is usable from any JS host, all of it from the root entry;
 `apps/mobile` imports `classifyTurn` from `@kortix/sdk` this way.
-React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
-`createHttpSessionSyncController` for message history, status recovery, and older
-pagination. Mobile keeps its platform-specific event transport because React
-Native cannot consume the SDK's fetch-based SSE stream.
+`apps/mobile` (React Native) also runs `useSession` from `@kortix/sdk/react`.
+Its only platform code for the session runtime is the event transport
+(`eventStreamTransport`, `react-native-sse`) and the lifecycle signals
+(`notifyHostSignal` from `AppState` and its network listener).
 
 ## Rules of the road
 

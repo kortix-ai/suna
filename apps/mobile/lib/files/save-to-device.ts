@@ -12,7 +12,7 @@
  *   iOS grants a picked folder for that session only, so it cannot be
  *   remembered.
  *
- * The file is fetched to the cache first (`downloadOpenCodeFileToCache`);
+ * The file is fetched to the cache first (`downloadSandboxFileToCache`);
  * this copies it into the chosen folder under a name
  * that does not overwrite an existing file.
  */

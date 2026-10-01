@@ -1893,14 +1893,25 @@ export interface SessionModelChangeResult {
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,
-  opencodeModel: string,
+  model: string,
 ): Promise<SessionModelChangeResult> {
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
-      { opencode_model: opencodeModel },
+      // `model` since W4; `opencode_model` is the same pin for an older API.
+      { model, opencode_model: model },
     ),
   );
+}
+
+/**
+ * The `provider/model` a session is pinned to, or null when it follows the
+ * project default. The pin is stored under the pre-W4 metadata key
+ * `opencode_model`; read it through this function, not from `metadata`.
+ */
+export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }): string | null {
+  const stored = session.metadata?.opencode_model;
+  return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
 }
 
 /** Who wrote one message: a project member, or another session's agent. */

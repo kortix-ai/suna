@@ -226,7 +226,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: !!user && !!projectId,
   });
   const pendingPrompt = pendingSessionPromptForRecovery(sessionId, currentProjectSession?.metadata);
-  const initialOpenCodeSessionId = findInitialSessionPin(currentProjectSession);
+  const initialRuntimeSessionId = findInitialSessionPin(currentProjectSession);
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
   // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
@@ -241,7 +241,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     browserPresence: !!user,
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
-    initialOpenCodeSessionId,
+    initialRuntimeSessionId,
     // This view renders lifecycle UI around the transcript. `SessionChat`
     // reads the live rows itself (`useSessionMessages`), so a streamed delta
     // re-renders the transcript only, not this whole page.
@@ -399,7 +399,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       typeof sandboxMetadata.runtimeWakeStartedAt === 'string'
         ? sandboxMetadata.runtimeWakeStartedAt
         : null,
-      session.opencodeSessionId,
+      session.runtimeSessionId,
       runtimeConnectionStatus,
       runtimeHealthy,
       runtimeVersion,
@@ -719,7 +719,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     isDormantSessionWithoutRuntime(terminalState);
   const sessionContentAvailable = canMountSessionChat({
     switched: session.switched,
-    opencodeSessionId: session.opencodeSessionId,
+    runtimeSessionId: session.runtimeSessionId,
   });
   const sessionSwitchLoading = shouldShowSessionSwitchLoading(
     switchingToSessionId,
@@ -1397,7 +1397,7 @@ function ActiveSessionChat({
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
 
-  const rootSessionId = sessionState.opencodeSessionId;
+  const rootSessionId = sessionState.runtimeSessionId;
   const runtimeSessions = sessionState.runtimeSessions;
   const sessionsLoading = sessionState.runtimeSessionsLoading;
   const sessionsListed = sessionState.runtimeSessionsListed;
@@ -1597,7 +1597,7 @@ function ActiveSessionChat({
           boundAgentName={boundAgentName}
           onContentReady={onChatReady}
           deferComposerFocus={!chatReady}
-          sessionState={chatSessionId === sessionState.opencodeSessionId ? sessionState : undefined}
+          sessionState={chatSessionId === sessionState.runtimeSessionId ? sessionState : undefined}
           readOnly={readOnly}
           inputReplacement={inputReplacement}
         />

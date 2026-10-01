@@ -133,7 +133,7 @@ let tree: ReactTestRenderer | undefined;
 
 /** A `MessageWithParts` stub: `turn-meta` reads only `info.time.created/completed`. */
 const message = (id: string, time: { created?: number; completed?: number }) =>
-  ({ id, info: { time } }) as unknown as import('@/lib/opencode/types').MessageWithParts;
+  ({ id, info: { time } }) as unknown as import('@/lib/session/types').MessageWithParts;
 
 describe('CompactionMarker (characterization: inline summary is the only path)', () => {
   test('a landed summary pill toggles the inline summary, no opens-elsewhere branch', async () => {
@@ -185,7 +185,7 @@ describe('TurnActions (characterization: only the turn/response/costInfo mode)',
   const turn = {
     userMessage: message('user-1', { created: 1_000 }),
     assistantMessages: [message('a-1', { created: 2_000, completed: 3_500 })],
-  } as import('@/lib/opencode/types').Turn;
+  } as import('@/lib/session/types').Turn;
   const costInfo = { cost: 0.5, tokens: { input: 10, output: 5 } };
 
   test('derives Finished/Duration from the turn and renders the action bar', async () => {

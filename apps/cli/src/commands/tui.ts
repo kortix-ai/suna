@@ -86,7 +86,8 @@ Keys:
   Alt+f / Alt+r     Files · Review.
   Alt+a / Alt+c     Apps · Customize.
   Alt+u / Alt+h     Account · switch host.
-  Alt+o             Hand this session to the stock opencode TUI.
+  Alt+o             Hand this session to the stock opencode TUI (OpenCode
+                    sessions only; a pi session shows a notice).
   Ctrl+c twice      Quit.
 
 Needs a real terminal at least 80x24 wide. Experimental means the screens,

@@ -37,8 +37,9 @@ import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { FileTextIcon, LinkBreakIcon, ShareNetworkIcon } from '@/lib/icons';
-import { loadFullHistory } from '@/lib/opencode/session-sync';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { loadSessionTranscriptMessages } from '@kortix/sdk/react';
+import { sessionRows, useSessionRows } from '@/lib/session/session-store';
+import type { MessageWithParts } from '@/lib/session/types';
 import { projectKeys } from '@/lib/projects/hooks';
 import {
   createSessionPublicShare,
@@ -162,11 +163,9 @@ export function SessionPublicShareRows({ projectId, session, onConfirm }: Sessio
     session
   );
 
-  // The transcript comes from the sync store, keyed by the OpenCode session id.
-  const runtimeSessionId = session.opencode_session_id;
-  const hasMessages = useSyncStore((s) =>
-    runtimeSessionId ? (s.messages[runtimeSessionId]?.length ?? 0) > 0 : false
-  );
+  // The transcript comes from the session store, keyed by the runtime session id.
+  const runtimeSessionId = session.runtime_session_id ?? session.opencode_session_id;
+  const hasMessages = (useSessionRows(runtimeSessionId)?.length ?? 0) > 0;
 
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   // False once the Share view unmounts (Back, sheet closed): a history load
@@ -182,15 +181,20 @@ export function SessionPublicShareRows({ projectId, session, onConfirm }: Sessio
     if (!runtimeSessionId || loadingHistory) return;
     haptics.tap();
     setLoadingHistory(true);
+    // The thread holds only its newest page: read the whole history from the
+    // runtime. A failed read shares what the thread holds, marked incomplete.
+    let messages: MessageWithParts[] | null = null;
     let complete = false;
     try {
-      ({ complete } = await loadFullHistory(runtimeSessionId));
+      messages = (await loadSessionTranscriptMessages(runtimeSessionId)) as MessageWithParts[];
+      complete = true;
+    } catch {
+      messages = sessionRows(runtimeSessionId);
     } finally {
       if (mountedRef.current) setLoadingHistory(false);
     }
     if (!mountedRef.current) return;
-    const messages = useSyncStore.getState().messages[runtimeSessionId];
-    const text = messages ? buildTranscriptText(title, messages, { incomplete: !complete }) : null;
+    const text = messages.length > 0 ? buildTranscriptText(title, messages, { incomplete: !complete }) : null;
     if (!text) {
       toast.error('Nothing to share yet.');
       return;

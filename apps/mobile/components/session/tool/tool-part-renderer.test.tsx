@@ -19,7 +19,7 @@
  * `tools/conformance.test.ts`). The pure contracts stay real: `@kortix/sdk`,
  * `shared/registry`, `shared/tool-part`, `lib/session/activity`,
  * `lib/session/disclosure-store`, `lib/session/user-message`,
- * `lib/opencode/diff-utils`, `stores/tab-store`. Mocks are file-scoped in
+ * `lib/session/diff-utils`, `stores/tab-store`. Mocks are file-scoped in
  * Bun 1.3; the graph here is only reachable from this file.
  */
 
@@ -57,9 +57,8 @@ const PALETTE = { mutedForeground: '#71717a' };
 mock.module('react-native', () => ({ View }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('@/components/ui/text', () => ({ Text }));
-mock.module('@/lib/opencode/sync-store', () => ({
-  useSyncStore: (selector: (store: { permissions: Record<string, unknown> }) => unknown) =>
-    selector({ permissions: {} }),
+mock.module('@/lib/session/session-store', () => ({
+  usePendingPermissions: () => [],
 }));
 mock.module('./shared/infrastructure', () => ({
   ToolRunningContext: React.createContext(false),

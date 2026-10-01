@@ -109,7 +109,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { useOpenCodeProviders } from '@/lib/opencode/hooks/use-opencode-data';
+import { useRuntimeProviders } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
 
@@ -823,7 +823,7 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
 }
 
 /** Gateway model catalog for a trigger's "Model" override picker (web parity:
- *  useOpenCodeProviders() + flattenModels() in gateway mode). Sandbox-free —
+ *  useRuntimeProviders() + flattenModels() in gateway mode). Sandbox-free —
  *  reads the project's server-side catalog directly. `gatewayDisabled` is
  *  true when the project hasn't turned the LLM gateway on; treat that as "no
  *  override available" rather than an error. */
@@ -847,7 +847,7 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
 
 /** The native-mode picker sources that need no sandbox: the runtime catalog
  *  and the project's secret NAMES. `project.secret.read` is manager-tier, so a
- *  member's read 403s: that is "no keys visible" (web: `useOpenCodeProviders`). */
+ *  member's read 403s: that is "no keys visible" (web: `useRuntimeProviders`). */
 async function fetchNativeModelCatalog(projectId: string) {
   const [llmCatalogProviders, secrets] = await Promise.all([
     getProjectLlmCatalogProviders(projectId),
@@ -862,13 +862,14 @@ async function fetchNativeModelCatalog(projectId: string) {
  * (`pickerProviderList` → `flattenModels`):
  * - LLM gateway on (`/detail` `experimental.llm_gateway`): `/model-picker`;
  * - gateway off: `/llm-catalog/providers` and the project's secret names,
- *   merged with the thread sandbox's `/provider` list once it answers.
+ *   merged with the bound session runtime's provider list once it answers
+ *   (`useRuntimeProviders`, which reads the project from `KortixProjectProvider`).
  * `modelDefaults` (`/model-defaults`) exists only with the gateway on; the
  * route answers 404 `llm_gateway_disabled` otherwise.
  * `isLoading`: the project mode, the list, or the default is not known yet.
  * Consumers hide the chip instead of flashing a wrong list.
  */
-export function useComposerModels(projectId: string | null, sandboxUrl?: string) {
+export function useComposerModels(projectId: string | null) {
   const detail = useProjectDetail(projectId);
   const modeKnown = !projectId || detail.isSuccess;
   const gatewayEnabled = detail.data?.project?.experimental?.llm_gateway === true;
@@ -889,7 +890,9 @@ export function useComposerModels(projectId: string | null, sandboxUrl?: string)
     staleTime: 60_000,
     retry: false,
   });
-  const runtime = useOpenCodeProviders(modeKnown && !gatewayEnabled ? sandboxUrl : undefined);
+  // The SDK's provider list for this project. Gateway on: it reads no runtime.
+  // Gateway off: the catalog merged with the runtime's own list.
+  const runtime = useRuntimeProviders();
   const defaults = useQuery({
     queryKey: projectKeys.modelDefaults(projectId),
     queryFn: () => getModelDefaults(projectId!),
@@ -905,7 +908,7 @@ export function useComposerModels(projectId: string | null, sandboxUrl?: string)
       modelPicker: picker.data,
       llmCatalogProviders: nativeData?.llmCatalogProviders,
       secretNames: new Set(nativeData?.secretNames ?? []),
-      runtimeProviders: runtime.data,
+      runtimeProviders: gatewayEnabled ? undefined : runtime.data,
     }),
     [gatewayEnabled, picker.data, nativeData, runtime.data],
   );

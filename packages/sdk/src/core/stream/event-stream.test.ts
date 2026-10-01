@@ -1246,6 +1246,83 @@ describe('openEventStream gap rehydrate', () => {
   });
 });
 
+describe('openEventStream connection state', () => {
+  test('reports connecting, open on the first frame, lost on a drop, and the same again on the reconnect', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const states: string[] = [];
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onConnectionChange: (state) => states.push(state),
+      timers: clock,
+    });
+    await tick();
+    // The connect call resolved, but no frame has arrived: not open yet.
+    expect(states).toEqual(['connecting']);
+
+    channels[0].push({ type: 'server.connected', properties: {} });
+    await tick();
+    expect(states).toEqual(['connecting', 'open']);
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    expect(states).toEqual(['connecting', 'open']);
+
+    channels[0].end();
+    await tick();
+    expect(states).toEqual(['connecting', 'open', 'lost']);
+
+    await clock.advance(250);
+    await tick();
+    channels[1].push({ type: 'server.connected', properties: {} });
+    await tick();
+    expect(states).toEqual(['connecting', 'open', 'lost', 'connecting', 'open']);
+
+    handle.close();
+    await tick();
+    // A close is not a loss.
+    expect(states).toEqual(['connecting', 'open', 'lost', 'connecting', 'open']);
+  });
+
+  test('a park ends on onParked, with no lost after the final attempt', async () => {
+    const clock = createFakeClock();
+    const { client } = createDeadSandboxClient();
+    const signals: string[] = [];
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onConnectionChange: (state) => signals.push(state),
+      onParked: () => signals.push('parked'),
+      maxConsecutiveHardFailures: 2,
+      timers: clock,
+    });
+    await tick();
+    await clock.advance(10_000);
+    await tick();
+    expect(signals).toEqual(['connecting', 'lost', 'connecting', 'parked']);
+    handle.close();
+  });
+
+  test('a subscriber that joins a live stream is told its current state', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    channels[0].push({ type: 'server.connected', properties: {} });
+    await tick();
+    const states: string[] = [];
+    const second = openEventStream({
+      client,
+      onEvent: () => {},
+      onConnectionChange: (state) => states.push(state),
+      timers: clock,
+    });
+    expect(states).toEqual(['open']);
+    first.close();
+    second.close();
+  });
+});
+
 describe('openEventStream shared-stream fan-out (F5)', () => {
   // F5 review finding: the previous single-live-stream invariant SILENTLY
   // KILLED subscriber #1 the moment subscriber #2 opened a stream for the

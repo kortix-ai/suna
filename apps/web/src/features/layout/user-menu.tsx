@@ -33,7 +33,6 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
-  RecordIcon as Record,
   SignOutIcon as LogOut,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
@@ -63,7 +62,6 @@ export function UserMenu({
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const tCapture = useTranslations('capture');
   const sidebar = React.useContext(SidebarContext);
   const { selectedAccountId } = useCurrentAccountStore();
 
@@ -229,16 +227,6 @@ export function UserMenu({
             {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
           </Link>
         </DropdownMenuItem>
-
-        {/* Kortix Capture: account-level, so it sits with the account rows. */}
-        {currentAccount && (
-          <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
-            <Link href="/capture" prefetch>
-              <Record />
-              {tCapture('menuLabel')}
-            </Link>
-          </DropdownMenuItem>
-        )}
 
         {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits `headers()`
             and has no `loading.tsx`. */}

@@ -153,7 +153,7 @@ interface SessionRowProps {
   expanded?: boolean;
   onToggleChildren?: (session: ProjectSession) => void;
   /** A row tap opens the session on its root; a sub-session row passes that sub-session's id. */
-  onOpen: (session: ProjectSession, focusOpenCodeId?: string) => void;
+  onOpen: (session: ProjectSession, focusRuntimeId?: string) => void;
   onActions: (session: ProjectSession) => void;
 }
 
@@ -269,7 +269,7 @@ const SessionRow = React.memo(function SessionRow({
         <SubsessionTree
           subsessions={subsessions}
           parentTitle={title}
-          activeOpenCodeId={null}
+          activeRuntimeId={null}
           trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           showTime

@@ -6,6 +6,7 @@
  * `tunnelRoute: '/monitoring'` in next.config.ts) to bypass ad-blockers.
  */
 
+import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
 import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
 
@@ -58,7 +59,8 @@ if (SENTRY_DSN) {
       // promise rejections — drop them all here.
       'Server URL not ready',
       'sandbox is still loading',
-      'opencode not ready',
+      // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+      ...RUNTIME_NOT_READY_MARKERS,
       // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
       // account / subscription required — the exact strings emitted by
       // `apps/api/src/billing/services/billing-gate.ts:assertBillingActive`).

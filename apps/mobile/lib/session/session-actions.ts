@@ -9,7 +9,7 @@
  *      `/vcs/diff?mode=branch` (web `useSessionChanges`: the working tree plus
  *      every commit this branch carries over its base). Needs the live
  *      runtime, so only the open thread shows it.
- *   3. Compact — the OpenCode summarize call (`useCompactSession`). Needs the
+ *   3. Compact — the runtime's summarize call (`useSummarizeRuntimeSession`). Needs the
  *      live runtime, one that serves `session.compact` (not pi), and never
  *      runs while the session works.
  *
@@ -20,7 +20,7 @@
 
 export type ChangeStatus = 'added' | 'deleted' | 'modified';
 
-/** One entry of the runtime's `/vcs/diff` answer (OpenCode `VcsFileDiff`). */
+/** One entry of the runtime's `/vcs/diff` answer (the SDK's `VcsFileDiff`). */
 export interface VcsFileChange {
   file: string;
   patch?: string;
@@ -121,13 +121,16 @@ export function patchForFile(file: Pick<ChangedFile, 'path' | 'patch'>): string 
 // ─── Rows ────────────────────────────────────────────────────────────────────
 
 /** Is the sheet's session the thread on screen? The tab store keys a thread by
- *  its OpenCode id; ProjectScreen resolves a row by either id, so this does too. */
+ *  its runtime session id; ProjectScreen resolves a row by either id, so this does too. */
 export function isOpenThreadSession(
-  session: { session_id: string; opencode_session_id: string | null },
+  session: { session_id: string; runtime_session_id?: string | null; opencode_session_id: string | null },
   activeSessionId: string | null,
 ): boolean {
   if (!activeSessionId) return false;
-  return session.opencode_session_id === activeSessionId || session.session_id === activeSessionId;
+  return (
+    (session.runtime_session_id ?? session.opencode_session_id) === activeSessionId ||
+    session.session_id === activeSessionId
+  );
 }
 
 /** The branch a session's change request merges into: its base, else `main` (web). */

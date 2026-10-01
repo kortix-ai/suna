@@ -69,14 +69,6 @@ registerSystemRoutes(app);
 
 registerPlatformEndpoints(app);
 
-// Kortix Capture: the recorder authenticates with its machine token (before
-// user auth); the user API authenticates itself, so it mounts before the
-// /v1/accounts router and its blanket auth.
-import { createCaptureAgentRouter } from './capture/agent-routes';
-import { createCaptureUserRouter } from './capture/user-routes';
-app.route('/v1/capture/agent', createCaptureAgentRouter());
-app.route('/v1', createCaptureUserRouter());
-
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit

@@ -9,7 +9,6 @@ export * from './git-backend';
 export * from './access';
 export * from './secrets';
 export * from './account-secret-resources';
-export * from './capture';
 export * from './connectors';
 export * from './policies';
 export * from './sandbox';

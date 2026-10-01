@@ -28,7 +28,12 @@ import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '
 import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
-import { createConnectionsRouter, retireSupersededRegistrations } from './routes/connections';
+import {
+  createConnectionsRouter,
+  retireStaleUnidentifiedRegistrations,
+  retireSupersededRegistrations,
+  UNIDENTIFIED_RETENTION_DAYS,
+} from './routes/connections';
 import { createRpcRouter } from './routes/rpc';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
@@ -432,6 +437,13 @@ function startTunnelService(): void {
   cleanupInterval = setInterval(() => void runWorkerTick('tunnel-cleanup', async () => {
     try {
       tunnelRateLimiter.cleanup();
+
+      const retired = await retireStaleUnidentifiedRegistrations();
+      if (retired.length > 0) {
+        console.log(
+          `[tunnel-cleanup] removed ${retired.length} registration(s) without a hardware id, silent ${UNIDENTIFIED_RETENTION_DAYS}+ days`,
+        );
+      }
 
       // Expire pending device auth requests
       await db
