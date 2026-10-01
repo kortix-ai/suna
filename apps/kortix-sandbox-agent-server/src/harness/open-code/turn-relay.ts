@@ -1,3 +1,4 @@
+import { relayTurnBegin, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
@@ -31,12 +32,11 @@ export function __resetRelayedTurnSignatures(): void {
 // relayed (or refused as already-known by apps/api). A turn's identity is its
 // user message, so one turn relays once no matter how many `busy`/`retry`
 // status frames it emits. Per-process, like `relayedTurnSignatures`.
-const relayedTurnBegins = new Map<string, string>()
 const turnBeginRelaysInFlight = new Set<string>()
 
 /** Test-only: clear the per-turn begin dedup between cases. */
 export function __resetRelayedTurnBegins(): void {
-  relayedTurnBegins.clear()
+  resetTurnBeginRelaysForTests()
   turnBeginRelaysInFlight.clear()
 }
 
@@ -108,61 +108,9 @@ export async function relayTurnBeginToApi(
       return
     }
     if (!newestUserId) return
-    if (relayedTurnBegins.get(opencodeSessionId) === newestUserId) return
 
-    const { projectId, sessionId, token, apiRoot } = ctx
-    const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-    const payload = JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_begin',
-      opencode_session_id: opencodeSessionId,
-      turn_message_id: newestUserId,
-    })
-    // A credential the API has refused, repeatedly and without contradiction,
-    // cannot accept this relay: both attempts carry the same dead token, and
-    // every `busy`/`retry` frame would re-issue them — the `POST .../turn-stream
-    // -> 401` warn spike in KRTX-446. Skip while the shared breaker reports the
-    // credential dead; it clears on the next answer that is not the dead-token
-    // 401, so this resumes by itself and never stops the daemon.
     if (sessionTokenPresumedDead()) return
-    // Two attempts only: `busy`/`retry` frames recur for a live turn, so a
-    // transient failure retries itself on the next frame.
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: payload,
-          signal: AbortSignal.timeout(15_000),
-        })
-        if (res.ok) {
-          // ANY definitive answer dedups: adopted, already-open, or
-          // already-known all mean this exact message needs no further relay.
-          relayedTurnBegins.set(opencodeSessionId, newestUserId)
-          const data = (await res.json().catch(() => null)) as { outcome?: string } | null
-          if (data?.outcome === 'adopted') {
-            logger.info('[opencode-events] box-initiated turn adopted', {
-              opencodeSessionId,
-              messageId: newestUserId,
-            })
-          }
-          return
-        }
-        const bodyText = await res.text().catch(() => '')
-        noteControlPlaneResponse(res.status, bodyText)
-        logger.warn('[opencode-events] turn-begin relay non-ok', {
-          status: res.status,
-          attempt,
-          body: bodyText.slice(0, 200),
-        })
-      } catch (err) {
-        logger.warn('[opencode-events] turn-begin relay fetch failed', {
-          err: (err as Error).message,
-          attempt,
-        })
-      }
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 1_000))
-    }
+    await relayTurnBegin(opencodeSessionId, newestUserId)
   } finally {
     turnBeginRelaysInFlight.delete(opencodeSessionId)
   }

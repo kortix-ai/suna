@@ -1,3 +1,4 @@
+import { relayTurnAccepted } from '../shared/turn-relay'
 import { logger } from '@/lib/log/logger'
 import { hasKortixLlmGateway, type Opencode } from './lifecycle'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
@@ -52,30 +53,7 @@ export async function relayInitialTurnAcceptedToApi(
   messageId: string,
   turnToken: string,
 ): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) throw new Error('initial turn acceptance relay context is unavailable')
-  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
-  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sandboxToken}`,
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_accepted',
-      opencode_session_id: opencodeSessionId,
-      turn_message_id: messageId,
-      turn_token: turnToken,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn acceptance rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
-  return body.ok === true
+  return relayTurnAccepted(opencodeSessionId, messageId, turnToken)
 }
 
 /** Claim the pending first turn through the session-bound Kortix credential. */
