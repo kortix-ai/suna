@@ -2288,7 +2288,7 @@
       "oneMoment": "请稍候…",
       "useDifferentEmail": "使用其他邮箱",
       "usePasswordInstead": "改用密码",
-      "emailCodeInstead": "通过邮箱发送验证码",
+      "emailLinkInstead": "改为通过邮箱发送链接",
       "forgotPassword": "忘记密码？",
       "automaticAccount": "还没有账户？点击“继续”即可自动创建账户。",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "正在查找您的身份提供商…",
         "use": "使用单点登录（SSO）"
       },
-      "code": {
+      "link": {
         "title": "查看您的邮箱",
-        "description": "我们已向 <address>{email}</address> 发送验证码",
-        "verifying": "验证中…",
-        "notReceived": "没收到验证码？",
+        "description": "我们已向 <address>{email}</address> 发送登录链接。打开链接即可继续。",
+        "notReceived": "未收到链接？",
         "resendIn": "{seconds} 秒后重新发送",
         "resend": "重新发送"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "服务账户",
       "textd7db5a6e1483": "立即复制此令牌",
       "textd7e9af636757": "令牌按主机存储，因此切换主机会同时切换账户和默认项目。",
-      "textd7eb7cdcff7d": "请检查 email 获取登录代码",
+      "textd7eb7cdcff7d": "请检查邮箱中的登录链接",
       "textd7f179da0e70": "我们构建自动驾驶企业。人类负责验证、引导和治理，代理团队则在工程、产品、运营、财务、支持和增长等领域开展工作。",
       "textd800b1eb8a84": "点击“Create App Integration”。",
       "textd814d7970df3": "“从 X 迁移到 Y”是你预先承诺的解决方案。速度慢、不稳定、对这个客户失效——这些才是问题。",

@@ -222,6 +222,14 @@ describe('signUpWithPassword is also a sign-IN door for an existing account', ()
 });
 
 describe('sendEmailCode mints the link, so the gate has to run there', () => {
+  test('sends a sign-in link and tells the recipient to open it', async () => {
+    const result = await sendEmailCode(
+      null,
+      form({ email: 'test@example.test', origin: 'http://localhost:3000' }),
+    );
+    expect(result).toMatchObject({ success: true, message: 'Check your email for a sign-in link' });
+    expect(otpEmailRedirectTo).toContain('/auth/callback');
+  });
   async function mintedReturnUrl(): Promise<string | null> {
     await sendEmailCode(
       null,
