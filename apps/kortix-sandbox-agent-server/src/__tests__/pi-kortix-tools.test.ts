@@ -184,7 +184,7 @@ describe('the web tools follow the websearch and webfetch capabilities', () => {
     ['web_search', { websearch: 'deny', web_search: 'allow' }, 'allow'],
     ['memory', { websearch: 'deny', webfetch: 'deny', edit: 'deny' }, 'allow'],
   ])('%s under %j is %s', (tool, policy, expected) => {
-    expect(rule(policy, tool)).toBe(expected)
+    expect<string>(rule(policy, tool)).toBe(expected)
   })
 })
 
