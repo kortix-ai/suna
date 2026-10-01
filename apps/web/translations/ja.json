@@ -2288,7 +2288,7 @@
       "oneMoment": "少々お待ちください…",
       "useDifferentEmail": "別のメールアドレスを使用",
       "usePasswordInstead": "パスワードを使用",
-      "emailCodeInstead": "メールでコードを受け取る",
+      "emailLinkInstead": "代わりにメールでリンクを受け取る",
       "forgotPassword": "パスワードをお忘れですか？",
       "automaticAccount": "初めての方は、「続行」を選ぶとアカウントが自動的に作成されます。",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "IDプロバイダーを確認中…",
         "use": "シングルサインオン（SSO）を使用"
       },
-      "code": {
+      "link": {
         "title": "メールを確認してください",
-        "description": "<address>{email}</address>にコードを送信しました",
-        "verifying": "確認中…",
-        "notReceived": "コードが届きませんか？",
+        "description": "<address>{email}</address> にログインリンクを送信しました。リンクを開いて続行してください。",
+        "notReceived": "リンクが届きませんか？",
         "resendIn": "{seconds}秒後に再送信",
         "resend": "再送信"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "サービスアカウント",
       "textd7db5a6e1483": "今すぐこのトークンをコピー",
       "textd7e9af636757": "トークンはホストごとに保存されるため、ホストを切り替えるとアカウントとデフォルトプロジェクトも切り替わります。",
-      "textd7eb7cdcff7d": "サインインコードをメールで確認してください",
+      "textd7eb7cdcff7d": "メールでログインリンクを確認してください",
       "textd7f179da0e70": "私たちは自律走行する企業を構築します。人間が検証、方向づけ、管理する一方で、エージェントチームがエンジニアリング、プロダクト、オペレーション、財務、サポート、成長の仕事を担います。",
       "textd800b1eb8a84": "「Create App Integration」をクリックします。",
       "textd814d7970df3": "「XからYへ移行」は事前に決めた解決策。遅い、不安定、この顧客では動かない — それらが問題です。",

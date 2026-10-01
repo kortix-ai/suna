@@ -2288,7 +2288,7 @@
       "oneMoment": "Un momento…",
       "useDifferentEmail": "Usa un'altra email",
       "usePasswordInstead": "Usa invece una password",
-      "emailCodeInstead": "Inviami invece un codice via email",
+      "emailLinkInstead": "Inviami invece un link via email",
       "forgotPassword": "Hai dimenticato la password?",
       "automaticAccount": "È la prima volta qui? Continuando, il tuo account verrà creato automaticamente.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Ricerca del provider di identità…",
         "use": "Usa il single sign-on (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Controlla la tua email",
-        "description": "Abbiamo inviato un codice a <address>{email}</address>",
-        "verifying": "Verifica in corso…",
-        "notReceived": "Non hai ricevuto il codice?",
+        "description": "Abbiamo inviato un link di accesso a <address>{email}</address>. Aprilo per continuare.",
+        "notReceived": "Non hai ricevuto il link?",
         "resendIn": "Invia di nuovo tra {seconds}",
         "resend": "Invia di nuovo"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "account di servizio",
       "textd7db5a6e1483": "Copia subito questo token",
       "textd7e9af636757": "I token vengono memorizzati per host, quindi cambiando host cambiano anche l’account e il progetto predefinito.",
-      "textd7eb7cdcff7d": "Controlla la tua email per il codice di accesso",
+      "textd7eb7cdcff7d": "Controlla la tua email per il link di accesso",
       "textd7f179da0e70": "Costruiamo aziende autonome. Gli esseri umani verificano, guidano e governano, mentre i team di agenti lavorano in engineering, prodotto, operations, finanza, supporto e crescita.",
       "textd800b1eb8a84": "Fai clic su \"Create App Integration\".",
       "textd814d7970df3": "\"Passare da X a Y\" è una soluzione a cui ti sei già impegnato. Lento, instabile, non funziona per questo cliente — questi sono problemi.",

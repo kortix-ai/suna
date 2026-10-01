@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Unified auth — ONE flow for login and registration (email → code or
+ * Unified auth — ONE flow for login and registration (email → link or
  * password). There is no sign-in/sign-up toggle: the visitor types an email,
  * Continue resolves whether that address already has an account, and the
  * password step renders in the mode the flow already knows — "Welcome back"
@@ -16,8 +16,8 @@
  */
 
 import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
-import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,7 +28,7 @@ import { ProjectPendingScreen } from '@/components/projects/project-pending-scre
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { CodeInput, FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
+import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
@@ -53,12 +53,11 @@ import {
   sendEmailCode,
   signInWithPassword,
   signUpWithPassword,
-  verifyOtp,
 } from './actions';
 
 const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
-type Step = 'entry' | 'sso' | 'credentials' | 'code';
+type Step = 'entry' | 'sso' | 'credentials' | 'link';
 
 const RESEND_COOLDOWN_SECONDS = 30;
 const EASE = [0.23, 1, 0.32, 1] as const;
@@ -138,19 +137,13 @@ function AuthCardForm({
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
   const [pendingAction, setPendingAction] = useState<
-    'continue' | 'code' | 'resend' | 'password' | 'sso' | null
+    'continue' | 'link' | 'resend' | 'password' | 'sso' | null
   >(null);
   const pending = pendingAction !== null;
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  // After a magic-link email is sent, the same email also carries a 6-digit
-  // code. We keep the sent-to address around so the user can paste the code
-  // directly (links sometimes break across mail clients / new tabs).
   const [sentEmail, setSentEmail] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const [verifying, setVerifying] = useState(false);
   const [resendIn, setResendIn] = useState(0);
-  const lastTriedCode = useRef('');
   const emailRef = useRef<HTMLInputElement>(null);
 
   // Gentle two-part entrance per step: header first, body 60ms behind.
@@ -161,7 +154,7 @@ function AuthCardForm({
   });
 
   useEffect(() => {
-    if (step !== 'code' || resendIn <= 0) return;
+    if (step !== 'link' || resendIn <= 0) return;
     const t = setTimeout(() => setResendIn((prev) => prev - 1), 1000);
     return () => clearTimeout(t);
   }, [step, resendIn]);
@@ -206,7 +199,6 @@ function AuthCardForm({
   const goToEntry = () => {
     clearNotices();
     setSentEmail(null);
-    setCode('');
     setSsoUrl(null);
     setSsoFallbackMode('unknown');
     setStep('entry');
@@ -268,7 +260,7 @@ function AuthCardForm({
     return formData;
   };
 
-  const sendMagic = async (to?: string, source: 'continue' | 'code' | 'resend' = 'code') => {
+  const sendMagic = async (to?: string, source: 'continue' | 'link' | 'resend' = 'link') => {
     const target = (to ?? email).trim();
     if (!target) return;
     clearNotices();
@@ -277,17 +269,15 @@ function AuthCardForm({
     try {
       const formData = buildBaseFormData(target);
       // One flow: continuing IS the agreement (the legal footer says so), and
-      // the code path signs in existing accounts and registers new ones alike.
+      // the email link signs in existing accounts and registers new ones alike.
       formData.set('acceptedTerms', 'true');
 
       const result = await sendEmailCode(null, formData);
 
       if (result && (result as any).success) {
         setSentEmail((result as any).email || target);
-        setCode('');
-        lastTriedCode.current = '';
         setResendIn(RESEND_COOLDOWN_SECONDS);
-        setStep('code');
+        setStep('link');
       } else if (result && 'message' in result) {
         failWith((result as any).message as string);
       }
@@ -333,7 +323,7 @@ function AuthCardForm({
         // The domain is bound to a SAML provider. Ask the flow how strict
         // the org is: enforced SSO redirects straight to the IdP (no
         // password door), everything else lands on an interstitial that
-        // defaults to SSO but keeps the password/code escapes visible —
+        // defaults to SSO but keeps the password/email escapes visible —
         // a pre-SSO password account must never dead-end here.
         const { mode: resolved } = await resolveAuthMode(address);
         if (resolved === 'sso') {
@@ -408,8 +398,8 @@ function AuthCardForm({
         // Work domain with no SAML provider → fall through to magic/password.
       }
 
-      // Magic link is the default path: Continue emails a code and lands the
-      // user on the code step (the code signs in existing accounts and
+      // Magic link is the default path: Continue emails a link and lands the
+      // user on the link step (the link signs in existing accounts and
       // registers new ones — no mode needed). Password-only deployments go
       // through the existence check instead, so the password step opens
       // already knowing whether this is a sign-in or a registration.
@@ -435,7 +425,7 @@ function AuthCardForm({
     }
   };
 
-  // Escape hatch off the code step for people who'd rather type a password.
+  // Escape hatch off the link step for people who'd rather type a password.
   // The address can live in either field depending on how the step was reached,
   // and the credentials step renders it read-only from `email` — so settle on
   // one before switching, and bounce focus back if we somehow have neither.
@@ -460,7 +450,6 @@ function AuthCardForm({
         return;
       }
       setCredMode(resolved);
-      setCode('');
       setStep('credentials');
     } finally {
       setPendingAction(null);
@@ -540,40 +529,6 @@ function AuthCardForm({
     }
   };
 
-  const verifyCode = async () => {
-    if (!sentEmail || code.length !== 6) return;
-    setErrorMessage(null);
-    setVerifying(true);
-
-    const formData = buildBaseFormData(sentEmail);
-    formData.set('token', code);
-
-    try {
-      const result = await verifyOtp(null, formData);
-
-      if (result && (!('success' in result) || !(result as any).success)) {
-        failWith(((result as any).message as string) || t('errors.invalidCode'));
-        return;
-      }
-
-      await establishSessionAndRedirect(result);
-    } catch (err: any) {
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
-      failWith(err?.message || t('errors.unexpected'));
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  // Auto-verify the moment the sixth digit lands — no extra button press.
-  useEffect(() => {
-    if (step === 'code' && code.length === 6 && !verifying && lastTriedCode.current !== code) {
-      lastTriedCode.current = code;
-      void verifyCode();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, step, verifying]);
-
   const handleResend = async () => {
     if (!sentEmail || pending || resendIn > 0) return;
     await sendMagic(sentEmail, 'resend');
@@ -637,18 +592,18 @@ function AuthCardForm({
                 </button>
               )}
               {passwordEnabled && magicLinkEnabled && (
-                <span aria-hidden className="text-muted-foreground/40 select-none">
+                <span aria-hidden className="text-muted-foreground select-none">
                   ·
                 </span>
               )}
               {magicLinkEnabled && (
                 <button
                   type="button"
-                  onClick={() => sendMagic(email, 'code')}
+                  onClick={() => sendMagic(email, 'link')}
                   disabled={pending}
                   className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
                 >
-                  {pendingAction === 'code' ? t('sending') : t('emailCodeInstead')}
+                  {pendingAction === 'link' ? t('sending') : t('emailLinkInstead')}
                 </button>
               )}
             </p>
@@ -667,14 +622,14 @@ function AuthCardForm({
     );
   }
 
-  /* ── Code step ── */
-  if (step === 'code') {
+  /* ── Link step ── */
+  if (step === 'link') {
     return (
       <>
         <m.div {...rise(0)}>
           <StepHeader
-            title={t('code.title')}
-            description={t.rich('code.description', {
+            title={t('link.title')}
+            description={t.rich('link.description', {
               email: sentEmail ?? '',
               address: (chunks) => (
                 <span className="text-foreground font-medium wrap-break-word">{chunks}</span>
@@ -686,77 +641,53 @@ function AuthCardForm({
         <m.div {...rise(0.06)}>
           {info && <InfoStrip message={info} />}
 
-          <CodeInput
-            value={code}
-            onChange={(next) => {
-              if (errorMessage) setErrorMessage(null);
-              setCode(next);
-            }}
-            disabled={verifying}
-            invalid={!!errorMessage}
-          />
-
           <div className="text-muted-foreground mt-6 space-y-2 text-sm">
-            {verifying ? (
-              <div className="flex items-center gap-2">
-                <Loading className="text-muted-foreground size-4 shrink-0" />
-                <span>{t('code.verifying')}</span>
-              </div>
-            ) : (
-              <>
-                <p>
-                  {t('code.notReceived')}{' '}
-                  {resendIn > 0 ? (
-                    <span className="tabular-nums">
-                      {t('code.resendIn', { seconds: resendIn })}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleResend}
-                      disabled={pending}
-                      className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
-                    >
-                      {pendingAction === 'resend' ? t('sending') : t('code.resend')}
-                    </button>
-                  )}
-                </p>
-                {/* The two ways off this step, side by side — same weight, same
-                    dialect as the resend line above. `-my-2 py-2` grows the hit
-                    area to ~40px without opening a gap between the rows. */}
-                <p className="flex items-center gap-2">
+            <p>
+              {t('link.notReceived')}{' '}
+              {resendIn > 0 ? (
+                <span className="tabular-nums">{t('link.resendIn', { seconds: resendIn })}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={pending}
+                  className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
+                >
+                  {pendingAction === 'resend' ? t('sending') : t('link.resend')}
+                </button>
+              )}
+            </p>
+            <p className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={goToEntry}
+                className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+              >
+                {t('useDifferentEmail')}
+              </button>
+              {passwordEnabled && (
+                <>
+                  <span aria-hidden className="text-muted-foreground select-none">
+                    ·
+                  </span>
                   <button
                     type="button"
-                    onClick={goToEntry}
-                    className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
+                    onClick={() => void goToPassword()}
+                    disabled={pending}
+                    className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
                   >
-                    {t('useDifferentEmail')}
+                    {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
                   </button>
-                  {passwordEnabled && (
-                    <>
-                      <span aria-hidden className="text-muted-foreground/40 select-none">
-                        ·
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void goToPassword()}
-                        disabled={pending}
-                        className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
-                      >
-                        {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
-                      </button>
-                    </>
-                  )}
-                </p>
-              </>
-            )}
+                </>
+              )}
+            </p>
           </div>
         </m.div>
       </>
     );
   }
 
-  /* ── Credentials step (password, with email-code alternative) ── */
+  /* ── Credentials step (password, with email-link alternative) ── */
   if (step === 'credentials') {
     const copy = credentialsCopy(credMode, tI18nComplete);
     const credentialKey =
@@ -837,10 +768,10 @@ function AuthCardForm({
               onClick={() => sendMagic()}
               disabled={pending}
             >
-              {pendingAction === 'code' ? (
+              {pendingAction === 'link' ? (
                 <Loading className="text-foreground! size-4 shrink-0" />
               ) : null}
-              {t('emailCodeInstead')}
+              {t('emailLinkInstead')}
             </Button>
           )}
         </m.div>
@@ -898,7 +829,7 @@ function AuthCardForm({
 
         {/* Explicit SSO entry — the discoverable counterpart of the silent
             home-realm discovery Continue already performs. Same dialect as the
-            code-step footer links; only rendered when this deployment has SAML
+            link-step footer links; only rendered when this deployment has SAML
             enabled, so self-hosted installs without SSO never show a dead door. */}
         {samlEnabled && (
           <p className="text-muted-foreground mt-4 text-sm">
