@@ -10,17 +10,7 @@ import { releaseMessageRehydrate, reserveMessageRehydrate, shouldSkipStatusFill 
 import { sessionsNeedingRehydrate } from './rehydrate-targets';
 import type { useEventStreamRefs } from './use-event-stream-refs';
 
-export function hydrateCore({
-  client,
-  queryClient,
-  addPermission,
-  addQuestion,
-  applySyncEvent,
-  reconcileMissingBusySessions,
-  fetchLspDiagnosticsDebounced,
-  reconcileSessionTail,
-  options,
-}: {
+type HydrationDeps = {
   client: ReturnType<typeof getClient>;
   queryClient: ReturnType<typeof useQueryClient>;
   addPermission: ReturnType<typeof useRuntimePendingStore.getState>['addPermission'];
@@ -34,29 +24,13 @@ export function hydrateCore({
   >['fetchLspDiagnosticsDebounced'];
   reconcileSessionTail: typeof reconcileSessionTailFromRegistry;
   options?: { refetchSessions?: boolean; rehydrateMessages?: boolean };
-}): void {
-  client.permission
-    .list()
-    .then((res) => {
-      if (Array.isArray(res.data)) res.data.forEach(addPermission);
-    })
-    .catch((err) => {
-      logger.error('Failed to hydrate pending permissions', {
-        error: String(err),
-      });
-    });
+};
 
-  client.question
-    .list()
-    .then((res) => {
-      if (Array.isArray(res.data)) res.data.forEach(addQuestion);
-    })
-    .catch((err) => {
-      logger.error('Failed to hydrate pending questions', {
-        error: String(err),
-      });
-    });
-
+function hydrateStatuses({
+  client,
+  applySyncEvent,
+  reconcileMissingBusySessions,
+}: Pick<HydrationDeps, 'client' | 'applySyncEvent' | 'reconcileMissingBusySessions'>): void {
   client.session
     .status()
     .then((res) => {
@@ -71,16 +45,6 @@ export function hydrateCore({
       // for the rest.
       const statuses = res.data ?? {};
       for (const [sessionID, status] of Object.entries(statuses)) {
-        // ONLY where this read is newer than what the live stream has
-        // already said. The read is a snapshot of the moment it was ISSUED,
-        // it carries no timestamp of its own, and it used to be written in
-        // unconditionally — so a `busy` that was true when the request left
-        // overwrote an `idle` frame that arrived while it was in flight, and
-        // because the object identity changed the store restamped the stale
-        // reading as the freshest observation there is. That put the Stop
-        // button and the turn shimmer back on a finished turn, and
-        // `hydrateCore` runs on every heartbeat-gap rehydrate, so it could
-        // land on any turn boundary.
         // FILL A GAP, NEVER OVERWRITE. This snapshot describes the moment
         // the request was ISSUED and carries no timestamp of its own, so an
         // unconditional write let a `busy` that was true on the way out
@@ -136,7 +100,48 @@ export function hydrateCore({
         error: String(err),
       });
     });
+}
 
+function hydrateTails({ reconcileSessionTail }: Pick<HydrationDeps, 'reconcileSessionTail'>): void {
+  const syncState = useSyncStore.getState();
+  // EVERY held transcript, not only the ones the status slot calls busy
+  // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
+  // so a gap wide enough to lose message frames is wide enough to lose
+  // the frame that would have marked the session busy.
+  for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
+    if (!reserveMessageRehydrate(sid)) continue;
+    reconcileSessionTail(sid, 'sse-gap')
+      .catch(() => {})
+      .finally(() => releaseMessageRehydrate(sid));
+  }
+}
+
+export function hydrateCore(deps: HydrationDeps): void {
+  const { client, queryClient, addPermission, addQuestion, fetchLspDiagnosticsDebounced, options } =
+    deps;
+  client.permission
+    .list()
+    .then((res) => {
+      if (Array.isArray(res.data)) res.data.forEach(addPermission);
+    })
+    .catch((err) => {
+      logger.error('Failed to hydrate pending permissions', {
+        error: String(err),
+      });
+    });
+
+  client.question
+    .list()
+    .then((res) => {
+      if (Array.isArray(res.data)) res.data.forEach(addQuestion);
+    })
+    .catch((err) => {
+      logger.error('Failed to hydrate pending questions', {
+        error: String(err),
+      });
+    });
+
+  hydrateStatuses(deps);
   // Fetch current LSP diagnostics so errors/warnings show immediately
   // on page load (or reconnect) without waiting for agent tool output.
   fetchLspDiagnosticsDebounced.current();
@@ -148,17 +153,5 @@ export function hydrateCore({
     });
   }
 
-  if (options?.rehydrateMessages) {
-    const syncState = useSyncStore.getState();
-    // EVERY held transcript, not only the ones the status slot calls busy
-    // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
-    // so a gap wide enough to lose message frames is wide enough to lose
-    // the frame that would have marked the session busy.
-    for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
-      if (!reserveMessageRehydrate(sid)) continue;
-      reconcileSessionTail(sid, 'sse-gap')
-        .catch(() => {})
-        .finally(() => releaseMessageRehydrate(sid));
-    }
-  }
+  if (options?.rehydrateMessages) hydrateTails(deps);
 }
