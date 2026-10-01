@@ -23,28 +23,6 @@ export type { ContextBreakdown } from './context-usage';
 
 import type { FlatModel } from '../model-flatten';
 
-// ============================================================================
-// Token Progress Circle
-// ============================================================================
-//
-// Deliberately kept visible in BOTH the simple and advanced composer toolbars
-// (see composer-toolbar.tsx) — it's a quiet, non-interactive ring with no
-// label text, not a "control" a non-technical user has to understand. The
-// brief for the composer simplification explicitly allows ambient surfaces
-// like this to stay put: it communicates "the conversation is getting long"
-// without asking anyone to know what a token is.
-//
-// Hover opens a HoverCard (not Hint), laid out as three tiers so it answers
-// three different questions in reading order:
-//
-//   1. VERDICT   — headline + percent. "Am I fine, or do I need to act?"
-//   2. METER     — Progress bar + used/left. "How much room is there?"
-//   3. COMPOSITION — per-kind token rows + model line. "Where did it go, and
-//                    whose window am I even looking at?"
-//
-// Tiers 1–2 are for everyone; tier 3 is the technical read that used to be
-// missing entirely. The ring alone stays the ambient glanceable meter.
-
 interface TokenProgressProps {
   messages: MessageWithParts[] | undefined;
   models?: FlatModel[];

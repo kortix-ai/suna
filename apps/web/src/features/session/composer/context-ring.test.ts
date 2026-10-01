@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { MessageWithParts } from '@kortix/sdk/react';
 
 import { getContextReading, getContextUsage } from './context-ring';
-import { getContextUsage as deriveContextUsage } from './context-usage';
+import { getLastAssistantTokenBreakdown } from './token-progress';
 
 function assistantWithTokens(input: number, cache?: { read: number; write: number }, output?: number): MessageWithParts {
   return {
@@ -110,11 +110,8 @@ test('unknown model and streaming assistant retain the last cached snapshot', ()
   expect(getContextReading([previous, streaming])).toEqual({ percent: usage.percent, tone: usage.tone });
 });
 
-
-test('ring export and card derivation share the same usage owner', () => {
-  expect(getContextUsage).toBe(deriveContextUsage);
-  const messages = [assistantWithTokens(30_000, { read: 4_000, write: 2_000 })];
-  expect(deriveContextUsage(messages).breakdown).toEqual({
-    input: 30_000, output: 0, reasoning: 0, cache: 6_000, total: 36_000,
-  });
+test('ring reading and card breakdown agree for cached streaming usage', () => {
+  const messages = [assistantWithTokens(100_000, { read: 20_000, write: 10_000 }, 10_000), assistantWithTokens(0)];
+  expect(getContextReading(messages)).toEqual({ percent: 70, tone: 'warning' });
+  expect(getLastAssistantTokenBreakdown(messages)).toEqual(getContextUsage(messages).breakdown);
 });
