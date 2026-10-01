@@ -173,4 +173,3 @@ export async function activateSubscriptionForAccount(params: {
 
   console.log(`[Webhook] Subscription activated: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
 }
-
