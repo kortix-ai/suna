@@ -28,6 +28,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { FieldLabel, InfoStrip, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -184,9 +185,8 @@ function AuthCardForm({
     setInfo(null);
   };
 
-  // Errors surface as a toast plus a shake on the offending field — no inline
-  // block. `errorMessage` sticks around only to drive aria-invalid; clearing
-  // it before each attempt lets the shake replay on repeat failures.
+  // Keep sign-in failures visible after the toast expires. Clearing the
+  // message before each attempt lets the field shake replay.
   const failWith = (msg: string) => {
     setErrorMessage(msg);
     errorToast(msg);
@@ -735,6 +735,7 @@ function AuthCardForm({
 
       <m.div {...rise(0.06)}>
         {info && <InfoStrip message={info} />}
+        {errorMessage && <InfoBanner tone="destructive">{errorMessage}</InfoBanner>}
 
         {googleEnabled && (
           <div className="mb-8">

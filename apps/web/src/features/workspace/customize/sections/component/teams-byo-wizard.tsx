@@ -58,14 +58,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  Stepper,
-  StepperIndicator,
-  StepperItem,
-  StepperSeparator,
-  StepperTitle,
-  StepperTrigger,
-} from '@/components/ui/stepper';
+import { ByoWizardSteps } from './byo-wizard-steps';
 import { successToast } from '@/components/ui/toast';
 import { ManifestCopyBlock } from '@/features/workspace/customize/sections/component/manifest-copy-block';
 import {
@@ -73,9 +66,7 @@ import {
   useTeamsManifest,
   type TeamsMode,
 } from '@/hooks/channels/use-teams-installations';
-import { cn } from '@/lib/utils';
-import { CheckIcon, ArrowSquareOutIcon as ExternalLinkIcon, LockIcon } from '@phosphor-icons/react';
-import { m } from 'motion/react';
+import { ArrowSquareOutIcon as ExternalLinkIcon, LockIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -167,48 +158,9 @@ export function TeamsByoWizard({
         </ModalHeader>
 
         <ModalBody className="max-h-[65vh] overflow-y-auto">
-          <Stepper
-            orientation="vertical"
-            count={steps.length}
-            value={step}
-            onValueChange={(v) => setStep(v as StepNumber)}
-            className="flex w-full flex-col"
-          >
-            {steps.map(({ step: n, title }) => {
-              const active = n === step;
-              return (
-                <div key={n} className="flex gap-3">
-                  {/* `disabled` belongs on StepperItem, not the trigger — the
-                      trigger reads it from item context. Only completed steps
-                      are re-visitable; jumping ahead would skip the
-                      confirmation each step exists to collect. */}
-                  <StepperItem step={n} disabled={n > step} className="items-center">
-                    <StepperTrigger className="flex shrink-0">
-                      <StepperIndicator className="size-6 text-xs font-semibold tabular-nums">
-                        {n < step ? <CheckIcon className="size-3" /> : n}
-                      </StepperIndicator>
-                    </StepperTrigger>
-                    <StepperSeparator className="m-0" />
-                  </StepperItem>
-
-                  <div className={cn('min-w-0 flex-1 pt-0.5', active ? 'pb-6' : 'pb-4')}>
-                    <StepperTitle
-                      className={cn(
-                        'transition-colors',
-                        active ? 'text-foreground' : 'text-muted-foreground',
-                      )}
-                    >
-                      {title}
-                    </StepperTitle>
-
-                    {active ? (
-                      <m.div
-                        key={`body-${n}`}
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
-                        className="mt-3 space-y-4"
-                      >
+          <ByoWizardSteps steps={steps} step={step} onStepChange={setStep}>
+            {(n) => (
+              <>
                         {n === 1 ? (
                           <StepRegisterBot endpoint={endpoint} onNext={() => setStep(2)} />
                         ) : null}
@@ -230,13 +182,9 @@ export function TeamsByoWizard({
                             error={manifest.error instanceof Error ? manifest.error.message : null}
                           />
                         ) : null}
-                      </m.div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-          </Stepper>
+              </>
+            )}
+          </ByoWizardSteps>
         </ModalBody>
 
         {/* Step 2 is the commit and step 3 is its receipt, so both get the
