@@ -21,7 +21,7 @@ set statement_timeout = '30s';
 --   audit_events directly, which still holds every row until the cutover.
 --
 -- ROLL BACK: no down migration (repo policy). Roll the app back; the view stays unused.
---   To remove it: a forward migration with DROP VIEW (nothing else depends on it).
+--   To remove it: a forward migration that removes the view (nothing else depends on it).
 --
 -- `SELECT *` is expanded once, here. A later ADD COLUMN on audit_events must also
 -- recreate this view, or the new column is missing from every read; the audit DB
