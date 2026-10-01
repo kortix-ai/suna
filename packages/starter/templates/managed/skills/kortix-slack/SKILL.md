@@ -320,7 +320,9 @@ A `slack send` with no `--channel` is the turn's answer. When it cannot be deliv
 
 **A reminder fire is not a Slack turn either.** When you set a reminder (`kortix remind`) from a Slack thread, write the channel id and thread ts into the reminder text — e.g. `kortix remind "Check whether the deploy finished; post the result with slack send --channel C0123ABCD --thread 1727600000.000100" --in 30m` — and answer the fire with `slack send --channel <id> --thread <ts>`. A plain `slack send` on that turn exits 1 with `no_open_turn`.
 
+<!-- flag:human_messaging -->
 **An answer from another session is not a Slack turn either.** When you ask someone who is not in this thread (`kortix send <email> "…"`) or message another session, their answer comes back later as a `[MESSAGE from session …]` prompt with no open Slack turn. Put the channel id and thread ts in your question's context or your notes before you end the turn, and post the answer with `slack send --channel <id> --thread <ts>`. When the person you need is already in the thread, ask there instead (the `question` tool below).
+<!-- /flag:human_messaging -->
 </final-answer>
 
 <asking-the-user>

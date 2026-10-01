@@ -74,7 +74,8 @@ export function SessionAskedFromLink({
     retry: false,
     staleTime: 30_000,
   });
-  if (!parentId || !parent || parent.can_access === false) return null;
+  // A disabled query still serves a cached parent, so the flag gates the link too.
+  if (!enabled || !parentId || !parent || parent.can_access === false) return null;
   return (
     <Button
       asChild
