@@ -82,14 +82,6 @@ function ttlMs(): number {
   return Number.isFinite(ttl) && ttl > 0 ? ttl : 0;
 }
 
-async function loadStableUser(token: string): Promise<LiveUser | null> {
-  for (;;) {
-    const version = invalidationVersion;
-    const user = await loader(token);
-    if (version === invalidationVersion) return user;
-  }
-}
-
 /**
  * The live user behind `token`, or null when GoTrue says the session is gone.
  * Throws when GoTrue cannot be reached. `expSeconds` is the verified `exp`
@@ -97,7 +89,13 @@ async function loadStableUser(token: string): Promise<LiveUser | null> {
  */
 export async function confirmJwtLive(token: string, expSeconds: number | undefined): Promise<LiveUser | null> {
   const ttl = ttlMs();
-  if (ttl === 0) return loadStableUser(token);
+  if (ttl === 0) {
+    for (;;) {
+      const version = invalidationVersion;
+      const user = await loader(token);
+      if (version === invalidationVersion) return user;
+    }
+  }
 
   const key = keyFor(token);
   const now = Date.now();
@@ -110,8 +108,11 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const request = loadStableUser(token)
-    .then((user) => {
+  const request = (async () => {
+    for (;;) {
+      const version = invalidationVersion;
+      const user = await loader(token);
+      if (version !== invalidationVersion) continue;
       if (user) {
         const tokenExpiry = typeof expSeconds === 'number' ? expSeconds * 1000 : Number.POSITIVE_INFINITY;
         const expiresAt = Math.min(Date.now() + ttl, tokenExpiry);
@@ -124,10 +125,10 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
         }
       }
       return user;
-    })
-    .finally(() => {
-      if (inflight.get(key) === request) inflight.delete(key);
-    });
+    }
+  })().finally(() => {
+    if (inflight.get(key) === request) inflight.delete(key);
+  });
   inflight.set(key, request);
   return request;
 }

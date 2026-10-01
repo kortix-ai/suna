@@ -438,3 +438,17 @@ for (const ttl of [0, 30000]) {
     }
   });
 }
+
+test('deletion in the loader completion microtask cannot republish cached liveness', async () => {
+  const answer = Promise.resolve({ id: 'user-1', email: '' });
+  let calls = 0;
+  liveness.__setJwtLivenessLoaderForTests(() => {
+    calls++;
+    return calls === 1 ? answer : Promise.resolve(null);
+  });
+  const pending = liveness.confirmJwtLive('publication-gap-token', Math.floor(Date.now() / 1000) + 3600);
+  await answer.then(() => liveness.forgetUserJwtLiveness('user-1'));
+  await pending;
+  expect(liveness.jwtLivenessCacheSize()).toBe(0);
+  expect(await liveness.confirmJwtLive('publication-gap-token', Math.floor(Date.now() / 1000) + 3600)).toBeNull();
+});
