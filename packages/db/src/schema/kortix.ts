@@ -21,6 +21,11 @@ import {
 
 export const kortixSchema = pgSchema('kortix');
 
+export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'provisioning',
   'active',

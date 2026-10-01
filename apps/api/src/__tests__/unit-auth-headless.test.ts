@@ -3,7 +3,9 @@
 // limits per IP, and the PKCE social flow keeps the verifier on the client.
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
@@ -13,6 +15,14 @@ const testConfig: Record<string, unknown> = {
   FRONTEND_URL: 'https://app.example',
 };
 mock.module('../config', () => ({ config: testConfig }));
+const claims = new Set<string>();
+mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
+  const digest = new PgDialect().sqlToQuery(query).params[0];
+  if (typeof digest !== 'string') throw new Error('missing token digest');
+  if (claims.has(digest)) return [];
+  claims.add(digest);
+  return [{ token_hash: digest }];
+} } }));
 mock.module('../shared/auth-audit', () => ({
   auditLoginFail: () => {},
   auditLoginSuccess: () => {},
@@ -55,6 +65,7 @@ const post = (path: string, body: unknown, ip = '203.0.113.7') =>
 
 beforeEach(() => {
   seen = [];
+  claims.clear();
   respond = () => Response.json(SESSION);
 });
 
@@ -78,6 +89,15 @@ describe('/v1/auth headless routes', () => {
     respond = () => Response.json({ error: 'invalid_grant', error_description: 'Refresh Token Not Found' }, { status: 400 });
     const r2 = await post('/refresh', { refresh_token: 'dead' });
     expect(await r2.json()).toEqual({ error: 'invalid_grant', error_description: 'Refresh Token Not Found' });
+  });
+
+  test('the same refresh token is accepted at most once even if GoTrue allows reuse', async () => {
+    respond = () => Response.json({ ...SESSION, refresh_token: 'rotated' });
+    const first = await post('/refresh', { refresh_token: 'synthetic-refresh' });
+    const replay = await post('/refresh', { refresh_token: 'synthetic-refresh' });
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(400);
+    expect(seen.length).toBe(1);
   });
 
   test('signup reports requires_email_confirmation when GoTrue returns a bare user', async () => {

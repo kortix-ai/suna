@@ -15,7 +15,10 @@
  * `POST /sign-out`) live on the authenticated router in ./index.ts.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { db } from '../shared/db';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
@@ -395,12 +398,25 @@ headlessAuthRouter.openapi(
     tags: ['auth'],
     summary: 'Rotate a session with its refresh token (headless)',
     request: { body: { required: true, content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
-    responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429) },
+    responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429, 503) },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const digest = createHash('sha256').update(body.refresh_token).digest('hex');
+    // A unique insert is atomic across replicas. Fail closed if the store is down.
+    let claimed: { token_hash: string }[];
+    try {
+      claimed = await db.execute<{ token_hash: string }>(sql`
+        INSERT INTO kortix.used_refresh_tokens (token_hash, expires_at)
+        VALUES (${digest}, now() + interval '90 days')
+        ON CONFLICT DO NOTHING RETURNING token_hash
+      `);
+    } catch {
+      return c.json({ error: 'auth_unavailable', error_description: 'Refresh temporarily unavailable' }, 503);
+    }
+    if (!claimed.length) return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
     const result = await gotrue<Record<string, unknown>>('/token', {
       body: { refresh_token: body.refresh_token },
       clientIp: requestClientIp(c),

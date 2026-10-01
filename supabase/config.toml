@@ -39,6 +39,9 @@ site_url = "http://localhost:3000"
 # the user to site_url instead of back into the app.
 additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000", "kortix://**"]
 enable_signup = true
+# GoTrue must reject a rotated refresh token even outside the Kortix proxy.
+refresh_token_rotation_enabled = true
+refresh_token_reuse_interval = 0
 
 [auth.email]
 enable_signup = true
