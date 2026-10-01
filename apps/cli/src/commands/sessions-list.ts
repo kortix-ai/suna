@@ -9,6 +9,8 @@ export interface SessionListFlags {
   children?: string;
   /** Sessions carrying every one of these labels. */
   labels?: string[];
+  /** Conversations you were asked into (`participant=me`). */
+  asked?: boolean;
 }
 
 /** Consume the `sessions ls` list flags from argv. Throws a usage message. */
@@ -25,7 +27,8 @@ export function takeSessionListFlags(rest: string[]): SessionListFlags {
   const children = takeFlagValue(rest, ['--children']);
   if (children && picked.length) throw new Error('--children cannot be combined with --mine, --shared or --automated');
   const labels = takeFlagValues(rest, ['--label']);
-  return { startedBy: picked[0], search, children, ...(labels.length ? { labels } : {}) };
+  const asked = takeFlagBool(rest, ['--asked']);
+  return { startedBy: picked[0], search, children, ...(labels.length ? { labels } : {}), ...(asked ? { asked } : {}) };
 }
 
 /**
@@ -41,6 +44,7 @@ export function sessionListQuery(flags: SessionListFlags, parentId?: string): st
   if (flags.startedBy) params.set('started_by', flags.startedBy);
   if (flags.search) params.set('q', flags.search);
   for (const label of flags.labels ?? []) params.append('label', label);
+  if (flags.asked) params.set('participant', 'me');
   return params.size > 0 ? `?${params}` : '';
 }
 

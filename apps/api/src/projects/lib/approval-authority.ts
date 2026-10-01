@@ -112,3 +112,25 @@ export function maySeeSessionApprovals(input: {
   if (input.targetSessionOrigin === 'backend') return false;
   return input.targetSessionCreatedBy === input.callerUserId;
 }
+
+/**
+ * May this caller SEE (and so be told about) the open agent question of a
+ * session? The approval rule, plus the people a conversation was opened with:
+ * a participant answers the question the conversation's agent asks them, which
+ * they cannot do for a gated connector call (resolving stays launcher/manager).
+ * A session-bound caller keeps the narrowing: it sees only its own session.
+ */
+export function maySeeSessionQuestion(input: {
+  isManager: boolean;
+  targetSessionId: string;
+  targetSessionOrigin: string | null;
+  targetSessionCreatedBy: string | null;
+  callerUserId: string;
+  callerSessionId: string | null;
+  participantUserIds: readonly string[];
+}): boolean {
+  if (input.callerSessionId === null && input.participantUserIds.includes(input.callerUserId)) {
+    return true;
+  }
+  return maySeeSessionApprovals(input);
+}

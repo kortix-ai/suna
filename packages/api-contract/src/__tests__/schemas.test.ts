@@ -150,6 +150,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       config_releases: true,
       agent_principal: false,
       us_region: false,
+      human_messaging: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -730,6 +731,7 @@ describe('envelopes', () => {
       'config_releases',
       'agent_principal',
       'us_region',
+      'human_messaging',
     ]);
   });
 
