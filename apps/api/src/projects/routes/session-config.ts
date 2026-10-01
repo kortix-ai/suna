@@ -32,6 +32,7 @@ import {
   reloadSessionConfig,
 } from '../lib/session-reload';
 import { timeConfigStage } from '../lib/config-stage-timing';
+import { normalizeRunningSkillsHash } from '../../runtime-assets/managed-skills';
 import { computeDesiredRuntime } from '../../runtime-convergence/desired';
 import { diffRuntime } from '../../runtime-convergence/diff';
 import { toRuntimeBlockWire, type RuntimeBlockWire } from '../../runtime-convergence/wire';
@@ -49,7 +50,10 @@ import type { SandboxConfigState } from '../lib/session-reload';
  */
 async function runtimeBlockFor(releaseId: string | null, running: SandboxConfigState): Promise<RuntimeBlockWire> {
   const desired = await computeDesiredRuntime({ releaseId });
-  return toRuntimeBlockWire(diffRuntime(desired, running.runtimeTruth));
+  return toRuntimeBlockWire(diffRuntime(desired, {
+      ...running.runtimeTruth,
+      managed_skills_hash: normalizeRunningSkillsHash(running.runtimeTruth.managed_skills_hash),
+    }));
 }
 projectsApp.openapi(
   createRoute({

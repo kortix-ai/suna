@@ -15,6 +15,8 @@ import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { propagateFeaturesToActiveSandboxes } from '../projects/lib/sandbox-env-push';
+import { sandboxFeaturesValue } from './sandbox-features';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;
@@ -39,6 +41,10 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
   agentmail_email: reconcileProjectChannels,
   llm_gateway: async ({ projectId, metadata }) => {
     await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
+  },
+  // The in-box CLI hides `send` while the flag is off (KORTIX_FEATURES).
+  human_messaging: async ({ projectId, metadata }) => {
+    await propagateFeaturesToActiveSandboxes(projectId, sandboxFeaturesValue(metadata));
   },
 };
 

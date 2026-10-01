@@ -230,7 +230,16 @@ projectsApp.openapi(
     // The question names the conversation; the header never becomes a title.
     body.name ??= conversationName(question);
     const participantIds = resolved.people.map((p) => p.userId);
-    participantMetadata = { participants: participantIds, awaiting_reply_from: participantIds, awaiting_reply: true };
+    participantMetadata = {
+      participants: participantIds,
+      awaiting_reply_from: participantIds,
+      awaiting_reply: true,
+      // Who asked, as the people see it: the asking session for an agent's
+      // ask (its owner's name read as "a message from yourself"), else the person.
+      asked_by: sender.kind === 'session'
+        ? { kind: 'session', session_id: sender.sessionId, name: sender.title }
+        : { kind: 'person', name: sender.name, email: sender.email },
+    };
     // An agent that re-runs `kortix send` after a timeout must not open a
     // second conversation and notify the same people twice. Without a
     // caller key, the same sender + people + question within the hour is the

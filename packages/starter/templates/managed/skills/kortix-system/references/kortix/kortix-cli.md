@@ -354,12 +354,12 @@ Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
 parked session. A fire never starts a new session; if the session is
 deleted or failed the reminder pauses itself. Max 20 active per session, 200 per project; schedules reach at most 366 days ahead.
 
+<!-- flag:human_messaging -->
 ### Send — message sessions and people
 
-Behind the per-project `human_messaging` feature flag (off by default):
-emailing people answers `feature_disabled` without it; `kortix projects
-features enable human_messaging` turns it on (the user's decision). Sending
-to a session id needs no flag beyond normal session access.
+Enabled for this project (per-project `human_messaging` feature flag). Emailing
+people answers `feature_disabled` if the flag is turned off. Sending to a
+session id needs no flag beyond normal session access.
 
 | Command | What it does |
 | --- | --- |
@@ -386,6 +386,7 @@ Headers the receiving agent sees:
 Errors: `feature_disabled` (403), `PARTICIPANT_NOT_FOUND` (404: not a member
 who may run sessions; the message names the addresses, see `kortix access
 ls`), `INVALID_PARTICIPANTS` (400).
+<!-- /flag:human_messaging -->
 
 ### Channels (Slack)
 

@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, how to schedule and automate work, or how to message people and other sessions (`kortix send`: ask a teammate a question, open a group chat, report back to the session that asked)."
+description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -157,8 +157,10 @@ Kortix cloud state — not just files in the repo. Examples:
 | "label / classify a session, or find sessions by label" | `kortix sessions new --label <l> --meta k=v …` · `kortix sessions update [<id>] --label <l> --unlabel <l> --meta k=v --unmeta k` *(no id = this session)* · `kortix sessions ls --label <l>` |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
+<!-- flag:human_messaging -->
 | "I need a person to decide / answer something" | `kortix access ls` (find the email) → `kortix send <email> "<self-contained question>"` *(needs the `human_messaging` flag)* |
 | "message another session's agent / reply to one that messaged me" | `kortix send <session-id> "…"` |
+<!-- /flag:human_messaging -->
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
@@ -463,10 +465,11 @@ watching — usually via `slack send`, silent otherwise), and it must be
 </scheduling>
 
 <continual-harness>
+<!-- flag:human_messaging -->
 ## Messaging people and other sessions
 
-Behind the per-project `human_messaging` feature flag (off by default; the
-user turns it on: `kortix projects features enable human_messaging`).
+Enabled for this project (per-project `human_messaging` feature flag). Use it to
+ask a teammate a question, open a group chat, or report back to the session that asked.
 
 | Command | What it does |
 | --- | --- |
@@ -488,9 +491,10 @@ user turns it on: `kortix projects features enable human_messaging`).
   `kortix send <id> "…"`.
 - **Group chat:** human messages carry `[MESSAGE from Name <email>]`. Address
   people by name.
-- Errors: `feature_disabled` (tell the user how to enable it; do not enable it
+- Errors: `feature_disabled` (the flag was turned off; tell the user, do not enable it
   yourself), `PARTICIPANT_NOT_FOUND` (not a project member; check
   `kortix access ls`).
+<!-- /flag:human_messaging -->
 
 ## Continual harness — the project refines its own scaffolding
 

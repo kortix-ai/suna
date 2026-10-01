@@ -8,6 +8,7 @@ const SANDBOX_ENV_KEYS = [
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
   'KORTIX_PROJECT_ID',
+  'KORTIX_FEATURES',
 ] as const;
 
 type SandboxEnvKey = (typeof SANDBOX_ENV_KEYS)[number];
