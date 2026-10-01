@@ -70,11 +70,14 @@ describe('askedYouAsker', () => {
     expect(askedYouAsker(session({ id: 'a' }))).toBeNull();
   });
 
-  test('metadata.asked_by wins: the asking session reads as its title, never the owner', () => {
+  test('metadata.asked_by wins: the asking agent reads as its name (else the session title), never the owner', () => {
     const owner = { owner_name: 'Owner Name', initiator: { type: 'member' as const, id: 'u', label: 'Owner Name' } };
     expect(
       askedYouAsker(session({ id: 'a', ...owner, metadata: { asked_by: { kind: 'session', session_id: 's', name: 'Launch prep' } } })),
     ).toBe('Launch prep');
+    expect(
+      askedYouAsker(session({ id: 'a', ...owner, metadata: { asked_by: { kind: 'session', session_id: 's', name: 'Launch prep', agent: 'release-bot' } } })),
+    ).toBe('release-bot');
     expect(
       askedYouAsker(session({ id: 'a', ...owner, metadata: { asked_by: { kind: 'person', name: 'Blair', email: 'b@example.com' } } })),
     ).toBe('Blair');
