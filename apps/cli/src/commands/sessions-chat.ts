@@ -90,16 +90,6 @@ export async function loadSessionForChat(
   return { ...runtime, ctx };
 }
 
-/**
- * Ensure the session has a working OpenCode session id. If the Kortix
- * row already has one, use it. Otherwise: list, pick the first, or
- * create one — and persist the id back to Kortix so subsequent CLI calls
- * stay glued to the same conversation.
- */
-export async function ensureOpencodeSession(r: ResolvedSession): Promise<string> {
-  return r.opencodeSessionId;
-}
-
 /** Extract a plain-text representation of a message's parts. */
 export function extractMessageText(msg: MessageWithParts): string {
   return msg.parts
@@ -249,8 +239,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
 
-  const ocSessionId = await ensureOpencodeSession(resolved);
-  if (!ocSessionId) return 1;
+  const runtimeSessionId = resolved.runtimeSessionId;
 
   const extra = agent ? { agent } : undefined;
 
@@ -269,7 +258,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   // Replay any prior conversation so the REPL has context on screen.
   try {
     const history = await withKortixScope(resolved.auth, async () =>
-      (await resolved.handle.messages({ conversationId: ocSessionId, limit: 20 })).messages,
+      (await resolved.handle.messages({ conversationId: runtimeSessionId, limit: 20 })).messages,
     );
     for (const msg of history) printMessage(msg);
   } catch {
@@ -334,7 +323,7 @@ async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Pr
   for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
       const messages = await withKortixScope(resolved.auth, async () =>
-        (await resolved.handle.messages({ conversationId: resolved.opencodeSessionId, limit: 10 })).messages,
+        (await resolved.handle.messages({ conversationId: resolved.runtimeSessionId, limit: 10 })).messages,
       );
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
@@ -614,7 +603,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     try {
       const runtime = await resolveSessionRuntime({ auth, client, projectId, session });
       messages = await withKortixScope(auth, async () =>
-        (await runtime.handle.messages({ conversationId: runtime.opencodeSessionId, limit })).messages,
+        (await runtime.handle.messages({ conversationId: runtime.runtimeSessionId, limit })).messages,
       );
     } catch (err) {
       // A box that is not answering — still waking, just parked, mid-restart —
@@ -771,7 +760,7 @@ type AssistantReply = MessageWithParts & { info: Extract<MessageWithParts['info'
  * prompt is the user message the transcript did not hold before the send.
  */
 export async function sendAndWaitForReply(
-  target: Pick<SessionRuntime, 'auth' | 'handle' | 'opencodeSessionId'>,
+  target: Pick<SessionRuntime, 'auth' | 'handle' | 'runtimeSessionId'>,
   text: string,
   extra?: { agent?: string },
   timeoutMs = 10 * 60_000,
@@ -781,7 +770,7 @@ export async function sendAndWaitForReply(
   // read by `after` the prompt if that happens.
   const tip = () =>
     withKortixScope(target.auth, async () =>
-      (await target.handle.messages({ conversationId: target.opencodeSessionId, limit: 200 })).messages,
+      (await target.handle.messages({ conversationId: target.runtimeSessionId, limit: 200 })).messages,
     );
   const before = new Set((await tip()).map((message) => message.info.id));
   await withKortixScope(target.auth, () => target.handle.send(text, extra));
@@ -798,7 +787,7 @@ export async function sendAndWaitForReply(
       | undefined;
     if (!reply || (reply.info.time.completed == null && !reply.info.error)) continue;
     const { statuses } = await withKortixScope(target.auth, () => target.handle.pending());
-    const status = statuses[target.opencodeSessionId];
+    const status = statuses[target.runtimeSessionId];
     if (!status || status.type === 'idle') return reply;
   }
   throw new Error('Timed out waiting for the reply.');
