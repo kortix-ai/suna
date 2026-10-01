@@ -53,11 +53,15 @@ mock.module('@kortix/sdk/react', () => ({
   useRuntimeConfig: () => ({ data: {} }),
   useProjectConfig: () => ({}),
   useSessionPrompts: () => ({ prompts: inboxPrompts }),
+  useSessionMessageAuthors: () => ({ data: undefined }),
   useSessionWorking: () => ({
     state: busy ? 'working' : 'idle',
     turnId: busy ? 'user-fixture' : null,
     serverOpenTurnToken: null,
   }),
+}));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
 }));
 mock.module('next/navigation', () => ({
   useParams: () => ({}),
@@ -158,6 +162,40 @@ describe('SessionChat transcript rows', () => {
     expect(markup).toContain('data-testid="session-busy-indicator"');
     expect(markup).toContain('Thinking');
     busy = false;
+  });
+
+  test('an ask (no_reply first message) shows its card with no Queued, Sending or Thinking', () => {
+    const ask =
+      '[ASK from Avery <avery@example.com> to Viewer <viewer@example.com> — the people named answer here.]\n\nWhich region?';
+    fixtureMessages = [];
+    inboxPrompts = [
+      {
+        prompt_id: 'ask-1',
+        client_message_id: 'c-ask-1',
+        message_id: 'm-ask-1',
+        text: ask,
+        full_text: ask,
+        state: 'delivering',
+        placement: 'transcript',
+        reason: null,
+        no_reply: true,
+        attempts: 0,
+        last_error: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+        available_at: '2026-01-01T00:00:00.000Z',
+      } as SessionPrompt,
+    ];
+    try {
+      const markup = renderChat();
+      expect(markup).toContain('data-message-kind="ask"');
+      expect(markup).toContain('Which region?');
+      expect(markup).not.toContain('Thinking');
+      expect(markup).not.toContain('Sending');
+      expect(markup).not.toContain('Queued');
+    } finally {
+      inboxPrompts = [];
+      fixtureMessages = baseFixtureMessages;
+    }
   });
 
   test('inbox hook rows reach the mounted chat in queued and restored order', () => {

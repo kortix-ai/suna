@@ -6,6 +6,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { newlyAwaiting, askedYouAsker } from '@/features/workspace/project-sidebar/asked-you';
 import type { ProjectSession } from '@kortix/sdk';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
 const QUESTION_PREVIEW_CHARS = 120;
@@ -33,6 +34,7 @@ export function useAskedYouArrival({
 }) {
   const t = useTranslations('sidebar.askedYou');
   const seen = useRef<Set<string> | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!enabled || !loaded) return;
@@ -42,6 +44,8 @@ export function useAskedYouArrival({
     }
     for (const session of newlyAwaiting(sessions, viewerId, seen.current)) {
       seen.current.add(session.session_id);
+      // Already looking at it: the card in front of them says the same thing.
+      if (pathname?.includes(session.session_id)) continue;
       const asker = askedYouAsker(session);
       const question = (session.name ?? '').slice(0, QUESTION_PREVIEW_CHARS);
       const toastId = `asked-you-${session.session_id}`;
@@ -61,5 +65,5 @@ export function useAskedYouArrival({
         ),
       });
     }
-  }, [enabled, loaded, sessions, viewerId, projectId, t]);
+  }, [enabled, loaded, sessions, viewerId, projectId, t, pathname]);
 }
