@@ -3,7 +3,6 @@
 
 import { isQuestionTool } from './session-activity-groups';
 import { SessionApprovalPrompt } from '@/features/session/session-approval-prompt';
-import { isPendingAction, useSessionAudit } from '@/features/session/session-audit-shared';
 import { childSessionHref } from '@/features/session/tool/tools/session-spawn-urls';
 import { SessionPermissionPrompt } from '@/features/session/session-permission-prompt';
 import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
@@ -22,10 +21,11 @@ import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
-import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QueuedPromptList } from './composer/queued-prompt-list';
+import { runtimePermissionLocksComposer } from './composer/send-blockers';
 import { SessionPrintHeader } from './print/session-print-header';
 import { useSessionPrint } from './print/use-session-print';
 import {
@@ -588,15 +588,6 @@ export function SessionChat({
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
-  // Pending connector-approvals for this session pause the run — lock the
-  // composer (like a question) until they're resolved. Shares the query key with
-  // SessionApprovalPrompt, so it's one request.
-  const approvalRouteParams = useParams<{ id?: string; sessionId?: string }>();
-  const { data: approvalAudit } = useSessionAudit(
-    projectId ?? approvalRouteParams.id,
-    approvalRouteParams.sessionId,
-  );
-  const hasPendingApproval = (approvalAudit?.actions ?? []).some(isPendingAction);
   const { data: commands } = useRuntimeCommands();
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: allSessions } = useRuntimeSessions();
@@ -4498,7 +4489,7 @@ export function SessionChat({
                 // Same dead-prompt guard as questions: only lock while the agent is
                 // actually paused on the decision (isBusy), so a stale card can't
                 // swallow the composer on an idle session.
-                lockForApproval={hasPendingApproval || (pendingPermissions.length > 0 && isBusy)}
+                lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionCanAct={questionAction.canAct}
