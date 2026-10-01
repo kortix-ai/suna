@@ -1134,6 +1134,25 @@ describe('one machine, one registration', () => {
     expect(carol).toEqual({ ownerUserId: CAROL, name: 'Carol MacBook' });
   });
 
+  test('the approval page names the machine the approver already registered, and only theirs', async () => {
+    const info = async (userId: string, code: string) => {
+      const response = await request('GET', `/v1/tunnel/device-auth/${code}/info`, tokens[userId]!);
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { registered: unknown }).registered;
+    };
+    const known = await startPairing({ machineHostname: 'carol-mac.local', machine_id: HARDWARE });
+    expect(await info(CAROL, known.deviceCode)).toEqual({
+      tunnelId: carolTunnel,
+      name: 'Carol MacBook',
+      capabilities: ['filesystem'],
+      isLive: false,
+    });
+    // Alice never paired this hardware; an agent without an id matches nothing.
+    expect(await info(ALICE, known.deviceCode)).toBeNull();
+    const anonymous = await startPairing({ machineHostname: 'carol-mac.local' });
+    expect(await info(CAROL, anonymous.deviceCode)).toBeNull();
+  });
+
   test('Share works like any account: the owner picks who, and the computer stays one account', async () => {
     const response = await request(
       'POST',
