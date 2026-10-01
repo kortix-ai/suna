@@ -62,6 +62,17 @@ describe('deriveSessionFiles', () => {
     expect(deriveSessionFiles([msg('user', [{ type: 'text', text: '<file filename="missing.pdf">x</file>' }])])).toEqual([]);
   });
 
+  test('lists path-backed file-only uploads and skips pathless attachments', () => {
+    const files = deriveSessionFiles([
+      msg('user', [
+        { type: 'file', id: 'upload-1', filename: 'brief.pdf', mime: 'application/pdf', path: '/workspace/uploads/brief.pdf' },
+        { type: 'file', id: 'upload-2', filename: 'remote.pdf', mime: 'application/pdf', url: 'https://example.test/remote.pdf' },
+      ]),
+    ]);
+    expect(files).toMatchObject([{ name: 'brief.pdf', path: '/workspace/uploads/brief.pdf', shown: true, fresh: 'new' }]);
+    expect(files).toHaveLength(1);
+  });
+
   test('skips files the agent only read', () => {
     const files = deriveSessionFiles([
       msg('assistant', [tool('read', { filePath: '/workspace/a.md' })]),

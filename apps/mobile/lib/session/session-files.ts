@@ -229,6 +229,16 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
   messages.forEach((message, messageIndex) => {
     const isLatest = messageIndex >= latestStart;
     for (const part of message.parts ?? []) {
+      if (message.info.role === 'user' && part.type === 'file' && 'path' in part && typeof part.path === 'string') {
+        const item = candidate(part.id, part.path, { shown: true, kind: kindOfName(part.filename || part.path) });
+        if (item) {
+          const key = pathKey(item.path);
+          if (!indexByKey.has(key)) {
+            indexByKey.set(key, files.length);
+            files.push({ ...item, key, ...(isLatest ? { fresh: 'new' } : {}) });
+          }
+        }
+      }
       if (message.info.role === 'user' && part.type === 'text') {
         for (const file of parseUserMessageText(part.text).files) {
           const item = candidate(part.id, file.path, { shown: true, kind: kindOfName(file.filename || file.path) });
