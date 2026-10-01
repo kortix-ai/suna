@@ -31,9 +31,6 @@ if (!hasRuntime()) {
 // is impossible, so a package never ships without it.
 require('../src/computer').ensureDevAgentCli();
 
-// Kortix Capture (apps/capture) is optional: stage it when built, skip when not.
-require('./stage-capture').stageCapture();
-
 // The Computer Use driver ships inside the macOS app (fetch-cua-driver.js).
 require('./fetch-cua-driver')
   .fetchCuaDriver()

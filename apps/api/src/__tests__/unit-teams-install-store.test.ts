@@ -32,6 +32,10 @@ mock.module('../projects/secrets', () => ({
     input.name === 'MS_TEAMS_TENANT_ID' && input.consumer === 'connector'
       ? '435431f6-fc5c-4d3e-8d99-9ff939fec417'
       : null,
+  getProjectSecretValuesForConsumer: async (input: { names: string[]; consumer: string }) =>
+    input.consumer === 'connector' && input.names.includes('MS_TEAMS_TENANT_ID')
+      ? { MS_TEAMS_TENANT_ID: '435431f6-fc5c-4d3e-8d99-9ff939fec417' }
+      : {},
 }));
 
 const { loadTeamsInstall } = await import('../channels/install-store');

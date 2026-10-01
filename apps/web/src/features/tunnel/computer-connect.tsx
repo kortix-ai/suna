@@ -202,7 +202,7 @@ export function useDesktopComputer({ poll = false }: { poll?: boolean } = {}) {
  * One-click pairing through the desktop app. Resolves once the service runs.
  * `reauth` drops a stale local pairing first (see `useThisComputerState`).
  */
-export function useConnectDesktopComputer(projectId?: string) {
+export function useConnectDesktopComputer(projectId: string) {
   const t = useTranslations('computers');
   const queryClient = useQueryClient();
   return useMutation({

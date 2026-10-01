@@ -57,23 +57,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const { billing, sandboxShares } = bindCommerce();
   const { projects, github, gitBackend, connectStatus, marketplace } = bindCatalog();
 
-  /** Kortix Capture: account settings, the caller's recording devices, and search over their captures. */
-  const capture = {
-    getSettings: P.getCaptureSettings,
-    updateSettings: P.updateCaptureSettings,
-    listDevices: P.listCaptureDevices,
-    updateDevice: P.updateCaptureDevice,
-    search: P.searchCapture,
-    timeline: P.getCaptureTimeline,
-    videoUrl: P.getCaptureVideoUrl,
-    frame: P.getCaptureFrame,
-    deleteData: P.deleteCaptureData,
-    /** The acting person's captures, from inside a project (agents and the CLI in a sandbox). */
-    projectSearch: P.searchProjectCapture,
-    projectTimeline: P.getProjectCaptureTimeline,
-    projectFrame: P.getProjectCaptureFrame,
-  };
-
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
     const connections = projectConnections(projectId);
@@ -95,7 +78,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Headless regular auth — see `auth` above. */
     auth,
     accounts,
-    capture,
     /** Identity and access — assignments, roles, permissions, groups, probes. */
     iam,
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */

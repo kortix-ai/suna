@@ -675,13 +675,6 @@ export async function ensureLocalStack(
           ...(S3_PROTOCOL_ACCESS_KEY_SECRET
             ? { KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET }
             : {}),
-          // Kortix Capture video: same endpoint, bucket `kortix-capture`.
-          KORTIX_CAPTURE_S3_BUCKET: "kortix-capture",
-          KORTIX_CAPTURE_S3_REGION: "local",
-          KORTIX_CAPTURE_S3_ENDPOINT: `${API_URL.replace(/\/+$/, "")}/storage/v1/s3`,
-          KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: "true",
-          ...(S3_PROTOCOL_ACCESS_KEY_ID ? { KORTIX_CAPTURE_S3_ACCESS_KEY_ID: S3_PROTOCOL_ACCESS_KEY_ID } : {}),
-          ...(S3_PROTOCOL_ACCESS_KEY_SECRET ? { KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: S3_PROTOCOL_ACCESS_KEY_SECRET } : {}),
           SCHEDULER_ENABLED: "false",
           // OAU-7 replays a rotated refresh token after this window; keep it short.
           KORTIX_OAUTH_REFRESH_GRACE_MS: "2000",

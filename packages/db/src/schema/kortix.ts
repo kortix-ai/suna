@@ -4,7 +4,6 @@ import {
   bigint,
   boolean,
   check,
-  customType,
   foreignKey,
   index,
   integer,
@@ -3330,7 +3329,6 @@ export const auditEvents = kortixSchema.table(
   (table) => [
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
-    index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
     index('idx_audit_events_account_project_time').on(
       table.accountId,
       table.projectId,
@@ -3341,16 +3339,15 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.occurredAt,
     ),
-    index('idx_audit_events_account_project_sequence').on(
-      table.accountId,
-      table.projectId,
-      table.sessionSequence,
-    ),
-    index('idx_audit_events_account_session_sequence').on(
-      table.accountId,
-      table.sessionId,
-      table.sessionSequence,
-    ),
+    // Dropped 2026-10-01 (migration 20261001214716390_drop_unused_audit_events_indexes):
+    // `idx_audit_events_account_project_sequence` (account_id, project_id,
+    // session_sequence), `idx_audit_events_account_session_sequence` (account_id,
+    // session_id, session_sequence) and `idx_audit_events_resource` (resource_type,
+    // resource_id). 22 GB, one index write each on every audit row. No query orders
+    // by session_sequence under an account/project predicate (the only
+    // session_sequence read is the session_id-only index below), and no query
+    // filters resource_id; resource_type is matched with LIKE 'x%', which a
+    // default-collation (en_US.UTF-8) btree cannot serve.
     // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
     // filters on `session_id` ALONE and orders by (session_sequence, event_id)
     // — deliberately without an account predicate, because chain rows written
@@ -6482,115 +6479,3 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   index('idx_push_device_tokens_user').on(table.userId),
   check('push_device_tokens_platform', sql`${table.platform} in ('ios', 'android')`),
 ]);
-
-const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
-
-/**
- * Kortix Capture, per account: the owner/admin switch, the "admins can view
- * members' captures" switch (owner only), and retention. No row = capture off.
- */
-export const captureAccountSettings = kortixSchema.table(
-  'capture_account_settings',
-  {
-    accountId: uuid('account_id')
-      .primaryKey()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    enabled: boolean('enabled').default(false).notNull(),
-    adminsCanView: boolean('admins_can_view').default(false).notNull(),
-    retentionDays: integer('retention_days').default(30).notNull(),
-    updatedBy: uuid('updated_by'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [check('capture_account_settings_retention_check', sql`${table.retentionDays} BETWEEN 1 AND 3650`)],
-);
-
-/**
- * One row per paired machine that asked for capture config. The owner is
- * `tunnel_connections.owner_user_id`. `tunnel_id` is set NULL when the machine
- * unpairs: the row and its chunks stay, so retention and delete-own-data still
- * reach the stored objects.
- */
-export const captureDevices = kortixSchema.table(
-  'capture_devices',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    tunnelId: uuid('tunnel_id')
-      .unique()
-      .references(() => tunnelConnections.tunnelId, { onDelete: 'set null' }),
-    enabled: boolean('enabled').default(false).notNull(),
-    pausedUntil: timestamp('paused_until', { withTimezone: true }),
-    lastUploadAt: timestamp('last_upload_at', { withTimezone: true }),
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index('idx_capture_devices_user').on(table.userId)],
-);
-
-/** One uploaded mp4 (a few minutes of screen). `client_uid` makes upload retries idempotent. */
-export const captureChunks = kortixSchema.table(
-  'capture_chunks',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    deviceId: uuid('device_id')
-      .notNull()
-      .references(() => captureDevices.id, { onDelete: 'cascade' }),
-    clientUid: text('client_uid').notNull(),
-    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
-    endedAt: timestamp('ended_at', { withTimezone: true }).notNull(),
-    frameCount: integer('frame_count').notNull(),
-    width: integer('width').notNull(),
-    height: integer('height').notNull(),
-    codec: text('codec').notNull(),
-    videoKey: text('video_key').notNull(),
-    videoBytes: bigint('video_bytes', { mode: 'number' }).notNull(),
-    videoSha256: text('video_sha256').notNull(),
-    status: text('status').default('pending').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    committedAt: timestamp('committed_at', { withTimezone: true }),
-  },
-  (table) => [
-    unique('capture_chunks_device_client_uid_unique').on(table.deviceId, table.clientUid),
-    check('capture_chunks_status_check', sql`${table.status} IN ('pending', 'committed')`),
-    check('capture_chunks_codec_check', sql`${table.codec} IN ('hevc', 'h264')`),
-    index('idx_capture_chunks_user_started').on(table.accountId, table.userId, table.startedAt.desc()),
-    // Reader: the retention sweep.
-    index('idx_capture_chunks_started').on(table.startedAt),
-  ],
-);
-
-/** One sampled frame: window metadata plus OCR text, searchable through `tsv`. */
-export const captureFrames = kortixSchema.table(
-  'capture_frames',
-  {
-    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-    chunkId: uuid('chunk_id')
-      .notNull()
-      .references(() => captureChunks.id, { onDelete: 'cascade' }),
-    accountId: uuid('account_id').notNull(),
-    userId: uuid('user_id').notNull(),
-    ts: timestamp('ts', { withTimezone: true }).notNull(),
-    frameIndex: integer('frame_index').notNull(),
-    appBundle: text('app_bundle'),
-    appName: text('app_name'),
-    windowTitle: text('window_title'),
-    url: text('url'),
-    domain: text('domain'),
-    text: text('text'),
-    tsv: tsvector('tsv').generatedAlwaysAs(
-      sql`to_tsvector('simple', coalesce(window_title,'') || ' ' || coalesce(text,''))`,
-    ),
-  },
-  (table) => [
-    unique('capture_frames_chunk_index_unique').on(table.chunkId, table.frameIndex),
-    index('idx_capture_frames_user_ts').on(table.accountId, table.userId, table.ts.desc()),
-    index('idx_capture_frames_tsv').using('gin', table.tsv),
-  ],
-);

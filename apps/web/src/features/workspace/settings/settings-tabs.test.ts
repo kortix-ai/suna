@@ -49,7 +49,6 @@ describe('SETTINGS_TABS', () => {
     expect([...SETTINGS_TABS]).toEqual([
       'profile',
       'security',
-      'capture',
       'appearance',
       'sessions',
       'preferences',
