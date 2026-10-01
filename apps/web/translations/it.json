@@ -20352,7 +20352,16 @@
     "alreadyConnectedHint": "Approva per ricollegarlo con una nuova chiave e l’accesso che scegli. Progetti e condivisioni restano.",
     "alreadyConnectedLive": "È online ora. Approva per spostarlo su questa richiesta: la connessione attuale si interrompe. Progetti e condivisioni restano.",
     "reconnect": "Ricollega",
-    "accessHint": "L’accesso selezionato resta attivo finché non lo revochi."
+    "accessHint": "L’accesso selezionato resta attivo finché non lo revochi.",
+    "grants": {
+      "title": "Consenti a Kortix di vedere lo schermo e usare le tue app",
+      "hint": "macOS chiede due autorizzazioni, entrambe per Kortix. Computer Use funziona appena le consenti.",
+      "accessibility": "Accessibilità",
+      "screenRecording": "Registrazione schermo",
+      "allowed": "consentito",
+      "missing": "non consentito",
+      "allow": "Consenti accesso"
+    }
   },
   "messageFrom": {
     "from": "Da",
