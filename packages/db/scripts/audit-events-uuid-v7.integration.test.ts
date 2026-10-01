@@ -67,6 +67,17 @@ describe.skipIf(!databaseUrl)('audit_events.event_id is a UUIDv7', () => {
     expect(new Set(rows.map((row) => row.id)).size).toBe(200);
   });
 
+  test('ids of one multi-row statement sort in generation order (sub-millisecond field)', async () => {
+    // 5,000 ids are generated within a few milliseconds, so most share a
+    // millisecond. A millisecond-only prefix would order those at random.
+    const { rows } = await client!.query<{ id: string }>(
+      `SELECT kortix.uuid_v7()::text AS id FROM generate_series(1, 5000) AS n ORDER BY n`,
+    );
+    const inversions = rows.filter((row, i) => i > 0 && row.id < rows[i - 1]!.id).length;
+    // Two ids can still fall in the same microsecond; allow 0.1%.
+    expect(inversions).toBeLessThanOrEqual(5);
+  });
+
   test('the column default is kortix.uuid_v7(), and new ids sort by creation time', async () => {
     const { rows: def } = await client!.query<{ expr: string }>(
       `SELECT pg_get_expr(d.adbin, d.adrelid) AS expr
