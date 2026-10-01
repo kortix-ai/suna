@@ -56,15 +56,4 @@ export function bindAccounts() {
     },
   };
 
-  /**
-   * Identity and access — the canonical RBAC surface.
-   *
-   * One vocabulary: a PRINCIPAL (user, group, service account, pending invitee)
-   * holds a ROLE at a SCOPE (the account, or one project), optionally narrowed
-   * to one OBJECT, as one ASSIGNMENT row. A role is a set of PERMISSIONS.
-   *
-   * `assignments` is the only grant store — it replaced the account-role column,
-   * the project-role column, group grants, policies and resource grants. There is
-   * no second way to grant anything, and `can`/`canBatch` is the only way to ask.
-   */
 }

@@ -112,4 +112,3 @@ export type ProjectHandle = ReturnType<Kortix['project']>;
 /** The id-bound session handle returned by `kortix.session(pid, sid)`. */
 export type SessionHandle = ReturnType<Kortix['session']>;
 
-// ── tiny tuple helpers: bind the leading id arg(s) without re-typing the rest ──
