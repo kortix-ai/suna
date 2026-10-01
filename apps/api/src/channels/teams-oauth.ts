@@ -1,7 +1,6 @@
 import { config } from '../config';
 import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import {
   saveTeamsInstall,
   setTeamsCatalogAppId,
@@ -35,7 +34,6 @@ export type TeamsInstallRedirectStatus =
   | 'failed'
   | 'publishing'
   | 'declined'
-  | 'disabled'
   | 'unconfigured';
 
 /**
@@ -48,7 +46,7 @@ async function runCatalogPublish(input: {
   baseUrl: string;
   appId: string;
   tenantId: string;
-}): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'disabled' | 'unconfigured'>> {
+}): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'unconfigured'>> {
   const { projectId } = input;
   await setTeamsPublishState(projectId, 'publishing').catch(() => {});
   let published: Awaited<ReturnType<typeof publishTeamsAppToCatalog>>;
@@ -181,10 +179,9 @@ export function teamsOrgConsentUrl(input: {
   /** The Kortix user starting the install; only they can complete it. */
   userId: string;
   baseUrl: string;
-  enabled: boolean;
 }): string | null {
   const appId = config.MICROSOFT_APP_ID;
-  if (!appId || !input.enabled) return null;
+  if (!appId) return null;
   const url = new URL(`${AUTHORITY}/authorize`);
   url.searchParams.set('client_id', appId);
   url.searchParams.set('response_type', 'code');
@@ -211,12 +208,6 @@ teamsOauthApp.get('/callback', async (c: any) => {
   const state = verifyState(rawState);
   if (!state) return c.redirect(`${frontendBase()}/?teams_error=expired`, 302);
   const dest = (status: TeamsInstallRedirectStatus) => channelsUrl(state.projectId, status);
-
-  // The flag is per project, so it can only be read once the signed state
-  // tells us which project this consent belongs to.
-  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) {
-    return c.redirect(dest('disabled'), 302);
-  }
 
   if (c.req.query('error')) {
     console.warn('[teams-oauth] authorize error', {
@@ -250,7 +241,6 @@ export async function completeTeamsOauthInstall(input: {
     redirectUrl: channelsUrl(state.projectId, status),
   });
 
-  if (!(await projectFeatureFlagEnabled(state.projectId, 'teams'))) return done('disabled');
   const appId = config.MICROSOFT_APP_ID;
   if (!appId) return done('unconfigured');
 
