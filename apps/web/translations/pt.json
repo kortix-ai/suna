@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "Diariamente às 9h",
     "weekdaysAt9AM": "Dias úteis às 9h",
     "weeklyOnMonday": "Semanalmente na segunda-feira",
-    "monthlyOn1st": "Mensalmente no dia 1"
+    "monthlyOn1st": "Mensalmente no dia 1",
+    "runFailed": {
+      "label": "A última execução não terminou",
+      "nextRun": "A próxima execução tenta novamente."
+    }
   },
   "sidebar": {
     "referAndEarn": "Indicar e Ganhar",

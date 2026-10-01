@@ -249,8 +249,9 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
       const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
       const detail = triggerDetail(t);
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
+      const failed = t.last_status === 'failed' ? `  ${C.red}last run failed${C.reset}` : '';
       process.stdout.write(
-        `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 30), 30)}  ${C.faded}${lastFired}${C.reset}\n`,
+        `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 30), 30)}  ${C.faded}${lastFired}${C.reset}${failed}\n`,
       );
     }
     process.stdout.write(`\n  ${C.dim}${resp.triggers.length} trigger${resp.triggers.length === 1 ? '' : 's'}${C.reset}\n`);
@@ -794,6 +795,8 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = fals
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
   }
   rows.push(['last_fired', t.last_fired_at ?? 'never']);
+  if (t.last_status) rows.push(['last_status', t.last_status === 'failed' ? `${C.red}failed${C.reset}` : t.last_status]);
+  if (t.last_error) rows.push(['last_error', t.last_error]);
   rows.push(['prompt', trimMid(t.prompt_template.replace(/\n/g, ' '), 80)]);
   const labelW = Math.max(...rows.map(([label]) => label.length)) + 1;
 

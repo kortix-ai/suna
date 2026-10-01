@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "每天上午9点",
     "weekdaysAt9AM": "工作日上午9点",
     "weeklyOnMonday": "每周一",
-    "monthlyOn1st": "每月1号"
+    "monthlyOn1st": "每月1号",
+    "runFailed": {
+      "label": "上次运行未完成",
+      "nextRun": "下次运行会重试。"
+    }
   },
   "sidebar": {
     "referAndEarn": "推荐赚取",
