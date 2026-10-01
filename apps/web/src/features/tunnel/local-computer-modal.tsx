@@ -1,6 +1,15 @@
 'use client';
 
-import { HandPalmIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
+import {
+  CursorClickIcon,
+  FolderIcon,
+  HandPalmIcon,
+  MonitorIcon,
+  PlusIcon,
+  ScrollIcon,
+  WarningIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
@@ -23,17 +32,26 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+import { useAuth } from '@/features/providers/auth-provider';
+import {
+  useDeleteTunnelConnection,
+  useTunnelConnections,
+  type TunnelConnection,
+} from '@/hooks/tunnel/use-tunnel';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   desktopComputerAccessGet,
   desktopComputerAccessSet,
   desktopComputerDisconnect,
+  desktopComputerGrants,
   desktopComputerOpenLogs,
   desktopComputerPause,
+  desktopComputerRequestGrants,
   desktopComputerResume,
 } from '@/lib/desktop';
 import { relativeTime } from '@/lib/relative-time';
+import { cn } from '@/lib/utils';
 import {
   ComputerCapabilities,
   computerDisplayName,
@@ -42,12 +60,14 @@ import {
   DESKTOP_STATUS_KEY,
   platformName,
   useConnectDesktopComputer,
+  useOwnsPairedComputer,
   useProjectComputerAccounts,
   useThisComputerState,
   type ComputerState,
 } from './computer-connect';
 
 const DESKTOP_ACCESS_KEY = ['desktop-computer-access'] as const;
+const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
 
 type ComputerAccess = NonNullable<Awaited<ReturnType<typeof desktopComputerAccessGet>>>;
 type AccessMode = ComputerAccess['mode'];
@@ -113,6 +133,8 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
   const deleteMachine = useDeleteTunnelConnection();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const access = useComputerAccess();
+  const grants = useComputerGrants();
+  const { user } = useAuth();
 
   // Any account of this machine in the project, shared or private, names the
   // connector; an older project may use another slug than `computer`.
@@ -233,6 +255,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         }
       />
       <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
+        <ComputerSetup />
         {access.current?.mode === 'ask' && access.current.pendingRequest ? (
           <AccessRequestBanner
             capability={access.current.pendingRequest.capability}
@@ -244,7 +267,10 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         ) : null}
         <section className="space-y-2">
           <Label>{t('capabilitiesTitle')}</Label>
-          <ComputerCapabilities granted={machine?.capabilities ?? []} />
+          <ComputerCapabilities
+            granted={machine?.capabilities ?? []}
+            needsSetup={capabilitiesNeedingSetup(grants.data?.missing)}
+          />
           <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
         </section>
         <SettingsRowGroup>
@@ -270,6 +296,9 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
             </SettingsRow>
           ) : null}
         </SettingsRowGroup>
+        {user?.email ? (
+          <p className="text-muted-foreground text-xs">{t('pairedWith', { email: user.email })}</p>
+        ) : null}
       </ModalBody>
       <ModalFooter className="border-t py-3 sm:justify-between">
         <div className="flex w-full items-center gap-1 sm:w-auto">
@@ -324,6 +353,112 @@ function StatusText({ state }: { state: ComputerState }) {
       <ComputerStateDot state={state} />
       <span>{t(`state.${state}`)}</span>
     </>
+  );
+}
+
+type SetupStep = 'files' | 'accessibility' | 'screenRecording';
+const SETUP_STEPS: readonly { key: SetupStep; icon: Icon }[] = [
+  { key: 'files', icon: FolderIcon },
+  { key: 'accessibility', icon: CursorClickIcon },
+  { key: 'screenRecording', icon: MonitorIcon },
+];
+
+/** The capabilities whose macOS grant is still missing, for the capability list. */
+export function capabilitiesNeedingSetup(missing: readonly SetupStep[] | undefined): string[] {
+  const pending: string[] = [];
+  if (missing?.includes('files')) pending.push('filesystem');
+  if (missing?.includes('accessibility') || missing?.includes('screenRecording')) pending.push('desktop');
+  return pending;
+}
+
+/**
+ * The macOS grants the Kortix app holds for this computer's approved access.
+ * Polls while one is missing: the person answers in macOS prompts and System
+ * Settings, outside this dialog. `null` off macOS or off desktop.
+ */
+function useComputerGrants() {
+  return useQuery({
+    queryKey: DESKTOP_GRANTS_KEY,
+    queryFn: async () => (await desktopComputerGrants()) ?? null,
+    refetchInterval: (query) => ((query.state.data?.missing?.length ?? 0) > 0 ? 2_000 : false),
+  });
+}
+
+/**
+ * Setup, right after connecting: every macOS permission the approved access
+ * needs, asked for on the spot with one button, so no prompt interrupts an
+ * agent later. Files need Desktop, Documents, and Downloads; Screen & keyboard
+ * needs Accessibility and Screen Recording. All of them go to Kortix. Each row
+ * turns green as macOS answers; the desktop app restarts the agent once
+ * Screen & keyboard is ready.
+ */
+function ComputerSetup() {
+  const t = useTranslations('computers');
+  const grants = useComputerGrants();
+  const [asked, setAsked] = useState(false);
+  const request = useMutation({
+    retry: false,
+    mutationFn: desktopComputerRequestGrants,
+    onMutate: () => setAsked(true),
+    onError: (error: Error) => errorToast(error.message || t('actionFailed')),
+    onSettled: () => void grants.refetch(),
+  });
+  const missing = grants.data?.missing ?? [];
+  // The steps shown: every one that was missing while this dialog was open, so
+  // a step that turns green stays in view. Adjusted during render.
+  const [steps, setSteps] = useState<readonly SetupStep[]>([]);
+  const added = missing.filter((step) => !steps.includes(step));
+  if (added.length > 0) setSteps([...steps, ...added]);
+  if (steps.length === 0) return null;
+  const done = missing.length === 0;
+
+  return (
+    <section className="space-y-3 rounded-md border p-4">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">{done ? t('setup.doneTitle') : t('setup.title')}</p>
+        <p className="text-muted-foreground text-xs text-pretty">
+          {done ? t('setup.doneHint') : t('setup.hint')}
+        </p>
+      </div>
+      <ul className="divide-border divide-y">
+        {SETUP_STEPS.filter(({ key }) => steps.includes(key)).map(({ key, icon: StepIcon }) => {
+          const allowed = !missing.includes(key);
+          return (
+            <li key={key} className="flex items-center gap-3 py-2.5">
+              <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-sm">
+                <StepIcon className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="text-sm">{t(`setup.${key}`)}</p>
+                <p className="text-muted-foreground truncate text-xs">
+                  {t(`setup.${key}Description`)}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'flex shrink-0 items-center gap-1 text-xs',
+                  allowed ? 'text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
+                {allowed ? t('capability.allowed') : asked ? t('setup.waiting') : t('setup.needed')}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {done ? null : (
+        <div className="space-y-2">
+          <Button className="w-full" disabled={request.isPending} onClick={() => request.mutate()}>
+            {request.isPending ? <Loading className="size-4 shrink-0" /> : null}
+            {t('setup.allowAll')}
+          </Button>
+          {asked ? (
+            <p className="text-muted-foreground text-xs text-pretty">{t('setup.settingsHint')}</p>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -459,5 +594,162 @@ function AccessSection({
         )}
       </p>
     </section>
+  );
+}
+
+/**
+ * "Your computer" where this machine cannot pair in one click (a browser, or a
+ * desktop build without the agent): every machine the caller paired, with its
+ * live status. `onConnectAnother` opens the connect dialog.
+ */
+export function YourComputersModal({
+  projectId,
+  open,
+  onOpenChange,
+  onConnectAnother,
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConnectAnother: () => void;
+}) {
+  return (
+    <Modal open={open} onOpenChange={onOpenChange}>
+      {/* No initial focus: the first control in the list is "Disconnect…". */}
+      <ModalContent
+        className="flex flex-col lg:max-w-lg"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        {open ? (
+          <YourComputersContent
+            projectId={projectId}
+            onClose={() => onOpenChange(false)}
+            onConnectAnother={onConnectAnother}
+          />
+        ) : null}
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function YourComputersContent({
+  projectId,
+  onClose,
+  onConnectAnother,
+}: {
+  projectId: string;
+  onClose: () => void;
+  onConnectAnother: () => void;
+}) {
+  const t = useTranslations('computers');
+  const { user } = useAuth();
+  const { owned } = useOwnsPairedComputer();
+  // Live status while the dialog is open: the same query, polled.
+  useTunnelConnections({ refetchInterval: 10_000 });
+  const { connectorAlias } = useProjectComputerAccounts(projectId);
+  const deleteMachine = useDeleteTunnelConnection();
+  const queryClient = useQueryClient();
+  const [target, setTarget] = useState<TunnelConnection | null>(null);
+
+  return (
+    <>
+      <ModalHeader>
+        <ModalTitle>{t('yourComputersTitle')}</ModalTitle>
+        {user?.email ? (
+          <ModalDescription>{t('pairedWith', { email: user.email })}</ModalDescription>
+        ) : null}
+      </ModalHeader>
+      <ModalBody className="min-h-0 overflow-y-auto">
+        {owned.length > 0 ? (
+          <ul className="divide-border divide-y">
+            {owned.map((machine) => (
+              <ComputerListRow
+                key={machine.tunnelId}
+                machine={machine}
+                onDisconnect={() => setTarget(machine)}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground text-sm">{t('notConnected')}</p>
+        )}
+      </ModalBody>
+      <ModalFooter className="border-t py-3 sm:justify-between">
+        <Button size="sm" variant="ghost" asChild>
+          <Link
+            href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(connectorAlias)}`}
+            onClick={onClose}
+          >
+            {t('manageInProject')}
+          </Link>
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={onConnectAnother}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          {owned.length > 0 ? t('connectAnother') : t('connectYourComputer')}
+        </Button>
+      </ModalFooter>
+
+      <ConfirmDialog
+        open={target !== null}
+        onOpenChange={(next) => {
+          if (!next) setTarget(null);
+        }}
+        title={t('disconnectConfirmTitle')}
+        description={t('unpairDescription')}
+        confirmLabel={t('disconnect')}
+        confirmVariant="destructive"
+        isPending={deleteMachine.isPending}
+        onConfirm={() => {
+          if (!target) return;
+          deleteMachine.mutate(target.tunnelId, {
+            onSuccess: () => {
+              setTarget(null);
+              successToast(t('disconnected'));
+              // Its accounts leave every project's connector list too.
+              void queryClient.invalidateQueries({ queryKey: ['connections'] });
+            },
+            onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
+          });
+        }}
+      />
+    </>
+  );
+}
+
+/** One paired machine: name, live status, and what Kortix may use on it. */
+function ComputerListRow({
+  machine,
+  onDisconnect,
+}: {
+  machine: TunnelConnection;
+  onDisconnect: () => void;
+}) {
+  const t = useTranslations('computers');
+  const locale = useLocale();
+  const state: ComputerState = machine.isLive ? 'online' : 'offline';
+  const lastSeen =
+    !machine.isLive && machine.lastHeartbeatAt ? relativeTime(machine.lastHeartbeatAt, locale) : '';
+  const platform = platformName(machine.machineInfo?.platform);
+  const granted = REQUEST_CAPABILITIES.filter((key) => machine.capabilities.includes(key))
+    .map((key) => t(`capability.${key}`))
+    .join(' · ');
+  return (
+    <li className="flex items-center gap-3 py-3">
+      <ComputerGlyph />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="truncate text-sm font-medium">
+          {computerDisplayName(machine.name, machine.machineInfo) || t('thisComputer')}
+        </p>
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <StatusText state={state} />
+          {lastSeen ? <span>· {t('lastSeen', { time: lastSeen })}</span> : null}
+          {platform ? <span>· {platform}</span> : null}
+        </p>
+        {granted ? <p className="text-muted-foreground truncate text-xs">{granted}</p> : null}
+      </div>
+      <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDisconnect}>
+        {t('disconnectEllipsis')}
+      </Button>
+    </li>
   );
 }

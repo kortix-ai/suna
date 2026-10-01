@@ -111,6 +111,8 @@ export interface ProjectSession {
   search_match?: 'self' | 'child';
   owner_email?: string | null;
   owner_name?: string | null;
+  /** The owner's profile photo URL, or null. */
+  owner_avatar_url?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
   /**
    * The people a conversation was opened with (`metadata.participants`),
@@ -437,6 +439,38 @@ export async function setProjectSessionSharing(
     await backendApi.put<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}/sharing`,
       intent,
+    ),
+  );
+}
+
+/** One person who can open a session. */
+export interface SessionParticipant {
+  user_id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  /** True for the person making the request. */
+  is_viewer: boolean;
+}
+
+export interface SessionParticipants {
+  /** Who can open the session now, owner first. At most 20; see `total`. */
+  participants: SessionParticipant[];
+  /** How many people can open the session now. */
+  total: number;
+  /** Two or more distinct people can open the session. */
+  multi_user: boolean;
+}
+
+/**
+ * Who can open a session. Who wrote each message is
+ * `getSessionMessageAuthors`.
+ */
+export async function getSessionParticipants(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<SessionParticipants>(
+      `/projects/${projectId}/sessions/${sessionId}/participants`,
+      { showErrors: false },
     ),
   );
 }
@@ -1899,7 +1933,7 @@ export function sessionModelPin(session: { metadata?: Record<string, unknown> | 
 
 /** Who wrote one message: a project member, or another session's agent. */
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null }
+  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url?: string | null }
   /** `name` is the session title; `agent` is the agent that session runs. */
   | { kind: 'session'; session_id: string; name: string; agent?: string };
 

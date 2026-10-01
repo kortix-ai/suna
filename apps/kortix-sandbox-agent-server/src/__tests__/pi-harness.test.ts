@@ -554,7 +554,10 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
 
     await waitForRunningTool(r, root)
-    expect(readFileSync(join(r.workspace, 'note.txt'), 'utf8')).toBe('kortix')
+    // The first running tool can be the printf itself. The shell creates
+    // note.txt empty before printf writes it, so wait for the content.
+    const note = join(r.workspace, 'note.txt')
+    await waitFor(() => existsSync(note) && readFileSync(note, 'utf8') === 'kortix')
     const message = (await r.user(`/kortix/runtime/messages/${root}/${messageId}`).then((res) => res.json())) as { info: { id: string; role: string } }
     expect(message.info).toMatchObject({ id: messageId, role: 'user' })
     expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`)).status).toBe(404)

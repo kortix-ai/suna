@@ -31,7 +31,7 @@
 import React from 'react';
 import { ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { groupMessagesIntoTurns } from '@kortix/sdk';
+import { groupMessagesIntoTurns, type SessionMessageAuthors, type SessionParticipants } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -53,6 +53,8 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
+import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
+import { messageAvatarPerson } from '@/lib/session/participants';
 
 export interface SessionConnectError {
   title: string;
@@ -78,6 +80,8 @@ export function SessionConnecting({
   sessionId,
   empty = false,
   onSend,
+  projectId,
+  projectSessionId,
 }: {
   /** The user's just-sent first message (a fresh send from project home), shown as the thread shows it. */
   firstMessage?: string;
@@ -104,8 +108,18 @@ export function SessionConnecting({
   empty?: boolean;
   /** Queues a message while the computer wakes. Absent: the composer is disabled. */
   onSend?: (text: string) => void;
+  /**
+   * The project session, for the shared-session senders. Read here, not only
+   * in `SessionPage`: the saved copy shows while the computer wakes, and its
+   * prompts carry their avatars from the first frame. The live page reuses
+   * the cached answer.
+   */
+  projectId?: string;
+  projectSessionId?: string;
 }) {
   const { colorScheme } = useColorScheme();
+  const participants = useSessionParticipants(projectId, projectSessionId).data;
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId).data;
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const files = firstFiles ?? [];
@@ -126,6 +140,8 @@ export function SessionConnecting({
         onRestart={onRestart}
         restarting={restarting}
         onSend={onSend}
+        participants={participants}
+        messageAuthors={messageAuthors}
       />
     );
   }
@@ -261,8 +277,12 @@ function SavedThread({
   onRestart,
   restarting,
   onSend,
+  participants,
+  messageAuthors,
 }: {
   turns: Turn[];
+  participants?: SessionParticipants;
+  messageAuthors?: SessionMessageAuthors;
   sessionId?: string;
   statusLabel: string | null;
   error?: SessionConnectError | null;
@@ -297,6 +317,12 @@ function SavedThread({
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
+                sender={messageAvatarPerson(
+                  messageAuthors,
+                  participants,
+                  participants?.participants.find((person) => person.is_viewer)?.user_id,
+                  turn.userMessage.info.id,
+                )}
               />
             </View>
           );

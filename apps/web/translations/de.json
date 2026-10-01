@@ -8950,7 +8950,6 @@
     "autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f": "Erstellen Sie einen Befehl",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2": "Wählen Sie einen Anschluss",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e": "Wählen Sie links eine aus oder fügen Sie eine App hinzu.",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558": "Keine Authentifizierung erforderlich",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49": "Muss eingerichtet werden",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa": "App hinzufügen",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc": "Konnektoren suchen…",
@@ -11997,7 +11996,7 @@
       "text4b3bf58beb3e": "Die Postgres-Datenbank als Verzeichnis, das Sie sichern können",
       "text4b4c31294fb5": "Ausführen um",
       "text4b51686b2606": "Nichts wartet auf Überprüfung",
-      "text4b5274edd83f": "Lokale Desktop-Apps über CUA Driver untersuchen und steuern",
+      "text72cfe7efa2b5": "Den Bildschirm sehen und die Apps auf diesem Computer bedienen",
       "text4b5bf8bae40d": "Externe Dienste, die dieser Agent aufrufen kann.",
       "text4b6617d27a7f": "Details zum Dienstanbieter",
       "text4b68ab3847fe": "X",
@@ -13735,7 +13734,6 @@
       "text7d68a1835cee": "Die Stimme lebt in",
       "text7d7a2199230e": "- Ticket + Kundenhistorie abrufen",
       "text7d870610b59d": "Connector hinzugefügt, aber die Autorisierung ist fehlgeschlagen: {value0}",
-      "text7d899c8ca569": "Standardmäßig ist nichts ausgewählt. Der ausgewählte Zugriff bleibt aktiv, bis du ihn widerrufst.",
       "text7d92aa0e75c4": "Operatorschalter",
       "text7d9eb7acb13e": "Schließen",
       "text7da07ad47ba0": "Verbinde deine Tools und übergib einem Kortix-Agenten eine echte Aufgabe. Kostenlos starten, kostenlos selbst hosten.",
@@ -19106,7 +19104,8 @@
       "text80043b03898d": "Kortix-App in Teams aktualisieren",
       "textdf757dbe33eb": "Dein Teams-Katalog hat Version {value0} der Kortix-App. Version {value1} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
-      "texte15f213fa506": "App-Update veröffentlichen"
+      "texte15f213fa506": "App-Update veröffentlichen",
+      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20339,17 +20338,50 @@
       "desktop": "Bildschirm & Tastatur",
       "desktopDescription": "Deine Apps sehen und bedienen",
       "allowed": "Erlaubt",
-      "notAllowed": "Nicht erlaubt"
+      "notAllowed": "Nicht erlaubt",
+      "needsSetup": "Einrichtung nötig"
     },
     "runInBackground": "Im Hintergrund ausführen",
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
     "manageInProject": "Im Projekt verwalten",
-    "disconnectEllipsis": "Trennen…"
+    "disconnectEllipsis": "Trennen…",
+    "yourComputersTitle": "Deine Computer",
+    "pairedWith": "Mit deinem Konto verbunden: {email}.",
+    "connectAnother": "Weiteren Computer verbinden",
+    "approvingAs": "Du bestätigst als {email}. Der Computer wird diesem Konto zugeordnet.",
+    "alreadyConnected": "{name} ist bereits mit deinem Konto verbunden",
+    "alreadyConnectedHint": "Bestätige, um ihn mit einem neuen Schlüssel und dem gewählten Zugriff neu zu verbinden. Seine Projekte und Freigaben bleiben.",
+    "alreadyConnectedLive": "Er ist gerade online. Bestätige, um ihn auf diese Anfrage zu übertragen: Die aktuelle Verbindung endet. Seine Projekte und Freigaben bleiben.",
+    "reconnect": "Neu verbinden",
+    "accessHint": "Der ausgewählte Zugriff bleibt aktiv, bis du ihn widerrufst.",
+    "setup": {
+      "title": "Richte deinen Computer fertig ein",
+      "hint": "macOS fragt einmal nach jeder Berechtigung unten. Sie gehen an Kortix, damit nichts mehr fragt, während ein Agent arbeitet.",
+      "files": "Schreibtisch, Dokumente und Downloads",
+      "filesDescription": "Dateien in diesen Ordnern lesen und schreiben",
+      "accessibility": "Bedienungshilfen",
+      "accessibilityDescription": "Tastatur und Maus in deinen Apps nutzen",
+      "screenRecording": "Bildschirmaufnahme",
+      "screenRecordingDescription": "Sehen, was auf dem Bildschirm ist",
+      "needed": "Noch nicht erlaubt",
+      "waiting": "Wartet auf dich",
+      "allowAll": "Alle erlauben",
+      "settingsHint": "Wenn sich die Systemeinstellungen öffnen, aktiviere Kortix in der Liste. Diese Ansicht aktualisiert sich selbst.",
+      "doneTitle": "Dein Computer ist bereit",
+      "doneHint": "Kortix hat alle nötigen Berechtigungen. Agenten können diesen Computer jetzt nutzen."
+    }
   },
   "messageFrom": {
     "from": "Von",
     "asked": "fragte",
     "replyHint": "Antworte unten. Der Agent nimmt es auf.",
     "untitledSession": "Unbenannte Sitzung"
+  },
+  "sessionParticipants": {
+    "title": "Personen",
+    "sentBy": "Gesendet von {name}",
+    "people": "Personen in dieser Sitzung: {names}",
+    "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
+    "more": "{count} weitere können diese Sitzung öffnen"
   }
 }

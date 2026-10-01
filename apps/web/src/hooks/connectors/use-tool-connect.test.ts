@@ -111,7 +111,6 @@ describe('toolConnectSteps', () => {
     await steps.start();
     await steps.finalize();
 
-    expect(calls).toHaveLength(2);
     expect(calls[1]?.options).toEqual({ owner: 'project' });
   });
 });

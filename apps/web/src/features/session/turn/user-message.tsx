@@ -1,9 +1,10 @@
 'use client';
 
+import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel, SessionMessageCard } from './session-message-card';
 import { ReminderTurnCard } from './reminder-turn-card';
 import { isAskForViewer } from './message-author';
-import { toast } from 'sonner';
+import { errorToast } from '@/components/ui/toast';
 import {
   fetchSessionAttachment,
   isSessionAttachmentRef,
@@ -505,7 +506,7 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
       link.remove();
       if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+      errorToast(error instanceof Error ? error.message : 'Could not download attachment');
     } finally {
       setDownloading(false);
     }
@@ -761,8 +762,11 @@ export function UserMessageBubble({
   textId,
   textRef,
   quoted,
+  tail = false,
   children,
 }: {
+  /** The sender's avatar sits above: the top-right corner, under it, is 4px. */
+  tail?: boolean;
   /** The text overflows its clamp, so there is something to expand. */
   canExpand: boolean;
   expanded: boolean;
@@ -785,6 +789,8 @@ export function UserMessageBubble({
       className={cn(
         BUBBLE_SURFACE,
         'relative overflow-hidden',
+        // 4px: `--radius` (10) minus 6, the corner under the sender's avatar.
+        tail && 'rounded-tr-[calc(var(--radius)-6px)]',
         fullWidth ? 'w-full' : 'w-fit',
         canExpand && 'cursor-pointer',
       )}
@@ -1656,7 +1662,9 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {showAuthor && author && <MessageAuthorLabel author={author} />}
+      {/* A member author is the avatar above the bubble; another session's
+          agent has no face, so it keeps the named label. */}
+      {showAuthor && author?.kind === 'session' && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />
@@ -1674,25 +1682,28 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <UserMessageBubble
-          canExpand={canExpand}
-          expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
-          textId={`${message.info.id}-text`}
-          textRef={textRef}
-          quoted={Boolean(quotedPieces)}
-        >
-          {quotedPieces ? (
-            <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
-          ) : (
-            (bodyText || effectiveCommandInfo) && (
-              <>
-                {commandLead}
-                {renderSegments(segments)}
-              </>
-            )
-          )}
-        </UserMessageBubble>
+        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
+          <UserMessageBubble
+            tail={showAuthor && author?.kind === 'member'}
+            canExpand={canExpand}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            textId={`${message.info.id}-text`}
+            textRef={textRef}
+            quoted={Boolean(quotedPieces)}
+          >
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              (bodyText || effectiveCommandInfo) && (
+                <>
+                  {commandLead}
+                  {renderSegments(segments)}
+                </>
+              )
+            )}
+          </UserMessageBubble>
+        </MessageSenderAbove>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate

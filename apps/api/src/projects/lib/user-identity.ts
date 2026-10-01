@@ -18,6 +18,8 @@ export interface UserIdentity {
   email: string | null;
   /** Best available display name from auth metadata. */
   displayName: string | null;
+  /** Profile picture URL from auth metadata, or null. */
+  avatarUrl: string | null;
   /**
    * Whether this user_id resolves to a real auth user. `false` means the auth
    * provider returned NO user for this id — i.e. it's a shadow/orphan principal
@@ -68,6 +70,14 @@ export function userIdentityIsCacheable(
   return value.exists && !value.transient;
 }
 
+/**
+ * A profile picture URL a client may put in an `<img src>`. The value is
+ * user-written auth metadata, and a cleared avatar is stored as `''`.
+ */
+function avatarUrlOf(value: unknown): string | null {
+  return typeof value === 'string' && /^https?:\/\//i.test(value) ? value : null;
+}
+
 const userIdentityMemo = ttlMemo({
   ttlMs: USER_IDENTITY_TTL_MS,
   keyFn: (uid: string) => uid,
@@ -87,10 +97,15 @@ const userIdentityMemo = ttlMemo({
           : typeof metadata?.full_name === 'string'
             ? metadata.full_name
             : null;
-      return { email: user?.email ?? null, displayName, exists: !!user };
+      return {
+        email: user?.email ?? null,
+        displayName,
+        avatarUrl: avatarUrlOf(metadata?.avatar_url),
+        exists: !!user,
+      };
     } catch {
       // Transient (network/5xx) — assume the user exists; don't hide them.
-      return { email: null, displayName: null, exists: true, transient: true };
+      return { email: null, displayName: null, avatarUrl: null, exists: true, transient: true };
     }
   },
 });
@@ -100,6 +115,7 @@ interface AuthUserRow {
   email: string | null;
   name: string | null;
   full_name: string | null;
+  avatar_url?: string | null;
 }
 
 /**
@@ -118,7 +134,8 @@ async function readAuthUsers(ids: string[]): Promise<AuthUserRow[]> {
     SELECT u.id::text AS id,
            u.email,
            u.raw_user_meta_data->>'name' AS name,
-           u.raw_user_meta_data->>'full_name' AS full_name
+           u.raw_user_meta_data->>'full_name' AS full_name,
+           u.raw_user_meta_data->>'avatar_url' AS avatar_url
     FROM auth.users u
     WHERE u.id = ANY(${`{${ids.join(',')}}`}::uuid[])
   `)) as unknown as AuthUserRow[];
@@ -149,6 +166,7 @@ export async function resolveUserIdentities(
       result.set(uid, {
         email: row?.email ?? null,
         displayName: row?.name ?? row?.full_name ?? null,
+        avatarUrl: avatarUrlOf(row?.avatar_url),
         exists: !!row,
       });
     }

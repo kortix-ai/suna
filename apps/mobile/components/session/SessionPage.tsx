@@ -6,8 +6,9 @@
  * keeps it current); this page only reads them and adds its optimistic sends.
  *
  * A send goes through the server prompt inbox (`createSessionPrompt`) with
- * agent/model/variant and the upload handles of any files (COR-185). A
- * sub-agent's thread sends to that sub-agent's own runtime session.
+ * agent/model/variant and the upload handles of any files (COR-185): the inbox
+ * records the sender, which the shared-session avatars read. A sub-agent's
+ * thread sends to that sub-agent's own runtime session.
  */
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
@@ -48,10 +49,14 @@ import {
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
+import { SessionParticipantStack } from '@/components/session/SessionParticipantStack';
+import { SessionParticipantsSheet } from '@/components/session/SessionParticipantsSheet';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
+import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { humanMessagingEnabled } from '@/lib/session/asked-you';
+import { messageAvatarPerson, type AvatarPerson } from '@/lib/session/participants';
+import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
@@ -903,6 +908,29 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
+  // Who can open this session, and who wrote each prompt. A new prompt with
+  // no recorded author yet makes the authors hook ask once more.
+  const participants = useSessionParticipants(projectId, projectSessionId).data;
+  // Every user message and queued prompt on screen wants an author.
+  const wantedAuthorIds = useMemo(
+    () => [
+      ...turns.map((turn) => turn.userMessage.info.id),
+      ...queuedMessages.flatMap((prompt) => [prompt.message_id, ...(prompt.wire_message_id ? [prompt.wire_message_id] : [])]),
+    ],
+    [turns, queuedMessages],
+  );
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds).data;
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // A queued prompt is keyed by its own message id, or by the wire id it was
+  // re-minted under; either finds its author.
+  const queuedSender = useCallback(
+    (prompt: SessionPrompt) =>
+      messageAvatarPerson(messageAuthors, participants, viewerId, prompt.message_id) ??
+      (prompt.wire_message_id
+        ? messageAvatarPerson(messageAuthors, participants, viewerId, prompt.wire_message_id)
+        : null),
+    [messageAuthors, participants, viewerId],
+  );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
@@ -1624,13 +1652,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
+            sender={messageAvatarPerson(messageAuthors, participants, viewerId, id)}
             messagingCards={messagingCards}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, messagingCards],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, messagingCards, participants, messageAuthors, viewerId],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1685,6 +1714,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onRemove={handleRemoveQueued}
           onSendNow={handleQueueSendNow}
           isDark={isDark}
+          senderOf={queuedSender}
         />,
       );
     }
@@ -1699,6 +1729,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleRemoveQueued,
     handleQueueSendNow,
     isDark,
+    queuedSender,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -1755,6 +1786,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // project session rows. The parent and every sub-agent open through the
   // project-session open path (`onOpenProjectSession`), like a drawer row.
   const subAgentListSheetRef = useRef<SheetRef>(null);
+  // The header's avatar stack opens who can open this session.
+  const participantsSheetRef = useRef<SheetRef>(null);
+  const openParticipantsSheet = useCallback(() => participantsSheetRef.current?.open(), []);
   // No open path, nothing to open: the chip hides rather than dead-ends.
   const headerRelation = onOpenProjectSession ? (subAgentRelationValue ?? null) : null;
   const handleSubAgentRelationPress = useCallback(() => {
@@ -1803,6 +1837,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             relation chip (or nothing) holds the edge there. */}
         {onOpenRightDrawer ? (
           <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+            <SessionParticipantStack participants={participants} onPress={openParticipantsSheet} />
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
         ) : (
@@ -1810,6 +1845,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         )}
       </FloatingMenuButton>
       <SubAgentListSheet ref={subAgentListSheetRef} subAgents={subAgents ?? EMPTY_PROJECT_SESSIONS} onSelect={handleSubAgentSelect} />
+      <SessionParticipantsSheet ref={participantsSheetRef} participants={participants} />
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
@@ -2108,8 +2144,11 @@ function QueuePanel({
   onRemove,
   onSendNow,
   isDark,
+  senderOf,
 }: {
   messages: SessionPrompt[];
+  /** The prompt's sender avatar in a shared session, else null. */
+  senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2174,6 +2213,11 @@ function QueuePanel({
                   borderTopColor: borderColor,
                 }}
               >
+                {(() => {
+                  // Queued prompts show their sender too, like the transcript.
+                  const sender = senderOf?.(qm);
+                  return sender ? <ParticipantAvatar person={sender} /> : null;
+                })()}
                 <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
                   {qm.text}
                 </Text>
