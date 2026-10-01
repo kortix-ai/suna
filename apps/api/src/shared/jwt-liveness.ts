@@ -9,8 +9,7 @@
  * a page load fires 10–20 parallel API calls, each with its own GoTrue call.
  *
  * `jwt-verify.ts` now checks an HS256 token's signature and expiry locally with
- * `SUPABASE_JWT_SECRET`, and an ES256/RS256 token's against the JWKS. What
- * local verification cannot see, for any algorithm, is REVOCATION:
+ * `SUPABASE_JWT_SECRET`. What local verification cannot see is REVOCATION:
  * sign-out, a deleted or banned user, a GoTrue-side session revoke. GoTrue's
  * `getUser` does see it, so it stays in the loop — but at most once per token
  * per `SUPABASE_JWT_LIVENESS_TTL_MS` (default 0: no cache) per replica.
