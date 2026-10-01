@@ -32,6 +32,16 @@ Vercel and `*-fe-ecs.kortix.com` paths.
 | `deploy-prod.yml` | Retags tested staging images, applies production migrations, rolls production ECS services, publishes the release, and verifies the live version. |
 | `rollback-prod.yml` | Rolls selected production ECS services to existing immutable release images. It can also promote the matching Vercel frontend deployment. |
 
+## CI evidence
+
+The `Tests` workflow covers the core lane, packages lane, and four browser lanes.
+Check all six lanes at the reviewed PR head and again at the merged `main` SHA;
+concurrent changes on `main` can introduce failures after a green PR run.
+
+Translation catalogs must keep one effective value per key. Remove overwritten
+duplicates without changing parsed catalog content. Verify catalog content and
+merge-driver behavior rather than pinning committed JSON bytes.
+
 ## Preview lifecycle
 
 Adding the `preview` label to a pull request starts the preview workflow.
