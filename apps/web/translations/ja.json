@@ -19065,7 +19065,8 @@
       "textbbb4106e8144": "聞き取り中…",
       "text7458028e0d1d": "音声入力を完了",
       "text9c84d6622566": "メッセージを音声入力",
-      "textf164e4b031dc": "セッションのプレゼンスを更新しました"
+      "textf164e4b031dc": "セッションのプレゼンスを更新しました",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

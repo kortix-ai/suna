@@ -434,6 +434,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Removed a second factor': 'textbdc773ad4cf8',
   'Removed attachment upload': 'text91420d2587c2',
   'Removed branding asset': 'text43e76f8f35f2',
+  'Removed connector account': 'text092e391cacdb',
   'Removed connector credential': 'text7bfda661e6d7',
   'Removed marketplace source': 'text0cdf4618d3b8',
   'Removed member': 'text0704475d6978',

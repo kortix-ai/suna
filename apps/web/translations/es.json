@@ -19065,7 +19065,8 @@
       "textbbb4106e8144": "Escuchando…",
       "text7458028e0d1d": "Terminar dictado",
       "text9c84d6622566": "Dictar mensaje",
-      "textf164e4b031dc": "Presencia en la sesión actualizada"
+      "textf164e4b031dc": "Presencia en la sesión actualizada",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

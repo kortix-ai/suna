@@ -19065,7 +19065,8 @@
       "textbbb4106e8144": "Écoute en cours…",
       "text7458028e0d1d": "Terminer la dictée",
       "text9c84d6622566": "Dicter un message",
-      "textf164e4b031dc": "Présence dans la session mise à jour"
+      "textf164e4b031dc": "Présence dans la session mise à jour",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

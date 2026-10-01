@@ -19065,7 +19065,8 @@
       "textbbb4106e8144": "正在聆听…",
       "text7458028e0d1d": "完成听写",
       "text9c84d6622566": "语音输入消息",
-      "textf164e4b031dc": "已更新会话在线状态"
+      "textf164e4b031dc": "已更新会话在线状态",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

@@ -19065,7 +19065,8 @@
       "textbbb4106e8144": "Hört zu…",
       "text7458028e0d1d": "Diktat beenden",
       "text9c84d6622566": "Nachricht diktieren",
-      "textf164e4b031dc": "Sitzungspräsenz aktualisiert"
+      "textf164e4b031dc": "Sitzungspräsenz aktualisiert",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

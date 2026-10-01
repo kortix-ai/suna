@@ -19078,7 +19078,8 @@
       "textbbb4106e8144": "Listening…",
       "text7458028e0d1d": "Done dictating",
       "text9c84d6622566": "Dictate message",
-      "textf164e4b031dc": "Updated session presence"
+      "textf164e4b031dc": "Updated session presence",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
