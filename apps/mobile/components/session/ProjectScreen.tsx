@@ -634,6 +634,13 @@ export function ProjectScreen() {
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
               onSend={canQueueWhileWaking ? handleWakingSend : undefined}
+              projectId={projectId}
+              projectSessionId={
+                activeProjectSession?.session_id ??
+                connectingProjectSessionId ??
+                (activeSessionId ? openedProjectSessionIdsRef.current[activeSessionId] : undefined) ??
+                undefined
+              }
             />
           </View>
         ) : null}

@@ -185,6 +185,7 @@ export { fileContentKeys, binaryBlobKeys, fileListKeys, gitStatusKeys } from './
 export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';
+export * from './use-session-participants';
 export * from './use-project-sessions';
 export * from './use-sessions-needing-input';
 export * from './session-cache-write';

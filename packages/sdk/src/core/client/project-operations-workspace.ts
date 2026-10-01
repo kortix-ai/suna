@@ -1,7 +1,7 @@
 import * as P from '../rest/projects-client';
 import { bindProjectOperationsReview } from './project-operations-review';
 
-type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
+import type { DropFirst } from './binding-types';
 export function bindProjectOperationsWorkspace(projectId: string) {
   return {
     files: {

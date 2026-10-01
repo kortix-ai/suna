@@ -1,7 +1,7 @@
 import * as P from '../rest/projects-client';
 import { bindProjectPlatformSettings } from './project-platform-settings';
 
-type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
+import type { DropFirst } from './binding-types';
 export function bindProjectPlatformSecurity(projectId: string) {
   return {
     channels: {

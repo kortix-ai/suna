@@ -1,6 +1,6 @@
 'use client';
 
-import { HandPalmIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
+import { HandPalmIcon, PlusIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
@@ -23,7 +23,12 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
+import { useAuth } from '@/features/providers/auth-provider';
+import {
+  useDeleteTunnelConnection,
+  useTunnelConnections,
+  type TunnelConnection,
+} from '@/hooks/tunnel/use-tunnel';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
   desktopComputerAccessGet,
@@ -42,6 +47,7 @@ import {
   DESKTOP_STATUS_KEY,
   platformName,
   useConnectDesktopComputer,
+  useOwnsPairedComputer,
   useProjectComputerAccounts,
   useThisComputerState,
   type ComputerState,
@@ -113,6 +119,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
   const deleteMachine = useDeleteTunnelConnection();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const access = useComputerAccess();
+  const { user } = useAuth();
 
   // Any account of this machine in the project, shared or private, names the
   // connector; an older project may use another slug than `computer`.
@@ -270,6 +277,9 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
             </SettingsRow>
           ) : null}
         </SettingsRowGroup>
+        {user?.email ? (
+          <p className="text-muted-foreground text-xs">{t('pairedWith', { email: user.email })}</p>
+        ) : null}
       </ModalBody>
       <ModalFooter className="border-t py-3 sm:justify-between">
         <div className="flex w-full items-center gap-1 sm:w-auto">
@@ -459,5 +469,162 @@ function AccessSection({
         )}
       </p>
     </section>
+  );
+}
+
+/**
+ * "Your computer" where this machine cannot pair in one click (a browser, or a
+ * desktop build without the agent): every machine the caller paired, with its
+ * live status. `onConnectAnother` opens the connect dialog.
+ */
+export function YourComputersModal({
+  projectId,
+  open,
+  onOpenChange,
+  onConnectAnother,
+}: {
+  projectId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConnectAnother: () => void;
+}) {
+  return (
+    <Modal open={open} onOpenChange={onOpenChange}>
+      {/* No initial focus: the first control in the list is "Disconnect…". */}
+      <ModalContent
+        className="flex flex-col lg:max-w-lg"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
+        {open ? (
+          <YourComputersContent
+            projectId={projectId}
+            onClose={() => onOpenChange(false)}
+            onConnectAnother={onConnectAnother}
+          />
+        ) : null}
+      </ModalContent>
+    </Modal>
+  );
+}
+
+function YourComputersContent({
+  projectId,
+  onClose,
+  onConnectAnother,
+}: {
+  projectId: string;
+  onClose: () => void;
+  onConnectAnother: () => void;
+}) {
+  const t = useTranslations('computers');
+  const { user } = useAuth();
+  const { owned } = useOwnsPairedComputer();
+  // Live status while the dialog is open: the same query, polled.
+  useTunnelConnections({ refetchInterval: 10_000 });
+  const { connectorAlias } = useProjectComputerAccounts(projectId);
+  const deleteMachine = useDeleteTunnelConnection();
+  const queryClient = useQueryClient();
+  const [target, setTarget] = useState<TunnelConnection | null>(null);
+
+  return (
+    <>
+      <ModalHeader>
+        <ModalTitle>{t('yourComputersTitle')}</ModalTitle>
+        {user?.email ? (
+          <ModalDescription>{t('pairedWith', { email: user.email })}</ModalDescription>
+        ) : null}
+      </ModalHeader>
+      <ModalBody className="min-h-0 overflow-y-auto">
+        {owned.length > 0 ? (
+          <ul className="divide-border divide-y">
+            {owned.map((machine) => (
+              <ComputerListRow
+                key={machine.tunnelId}
+                machine={machine}
+                onDisconnect={() => setTarget(machine)}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground text-sm">{t('notConnected')}</p>
+        )}
+      </ModalBody>
+      <ModalFooter className="border-t py-3 sm:justify-between">
+        <Button size="sm" variant="ghost" asChild>
+          <Link
+            href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(connectorAlias)}`}
+            onClick={onClose}
+          >
+            {t('manageInProject')}
+          </Link>
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={onConnectAnother}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          {owned.length > 0 ? t('connectAnother') : t('connectYourComputer')}
+        </Button>
+      </ModalFooter>
+
+      <ConfirmDialog
+        open={target !== null}
+        onOpenChange={(next) => {
+          if (!next) setTarget(null);
+        }}
+        title={t('disconnectConfirmTitle')}
+        description={t('unpairDescription')}
+        confirmLabel={t('disconnect')}
+        confirmVariant="destructive"
+        isPending={deleteMachine.isPending}
+        onConfirm={() => {
+          if (!target) return;
+          deleteMachine.mutate(target.tunnelId, {
+            onSuccess: () => {
+              setTarget(null);
+              successToast(t('disconnected'));
+              // Its accounts leave every project's connector list too.
+              void queryClient.invalidateQueries({ queryKey: ['connections'] });
+            },
+            onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
+          });
+        }}
+      />
+    </>
+  );
+}
+
+/** One paired machine: name, live status, and what Kortix may use on it. */
+function ComputerListRow({
+  machine,
+  onDisconnect,
+}: {
+  machine: TunnelConnection;
+  onDisconnect: () => void;
+}) {
+  const t = useTranslations('computers');
+  const locale = useLocale();
+  const state: ComputerState = machine.isLive ? 'online' : 'offline';
+  const lastSeen =
+    !machine.isLive && machine.lastHeartbeatAt ? relativeTime(machine.lastHeartbeatAt, locale) : '';
+  const platform = platformName(machine.machineInfo?.platform);
+  const granted = REQUEST_CAPABILITIES.filter((key) => machine.capabilities.includes(key))
+    .map((key) => t(`capability.${key}`))
+    .join(' · ');
+  return (
+    <li className="flex items-center gap-3 py-3">
+      <ComputerGlyph />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <p className="truncate text-sm font-medium">
+          {computerDisplayName(machine.name, machine.machineInfo) || t('thisComputer')}
+        </p>
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <StatusText state={state} />
+          {lastSeen ? <span>· {t('lastSeen', { time: lastSeen })}</span> : null}
+          {platform ? <span>· {platform}</span> : null}
+        </p>
+        {granted ? <p className="text-muted-foreground truncate text-xs">{granted}</p> : null}
+      </div>
+      <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onDisconnect}>
+        {t('disconnectEllipsis')}
+      </Button>
+    </li>
   );
 }

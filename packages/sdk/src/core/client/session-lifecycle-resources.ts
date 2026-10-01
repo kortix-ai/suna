@@ -59,6 +59,7 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
       P.setProjectSessionSharing(ctx.projectId, ctx.sessionId, intent),
     previews: () => P.getSessionPreviewCandidates(ctx.projectId, ctx.sessionId),
+    participants: () => P.getSessionParticipants(ctx.projectId, ctx.sessionId),
     commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
       P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
     publicShares: {
@@ -68,6 +69,5 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
         P.revokeSessionPublicShare(ctx.projectId, ctx.sessionId, ...a),
     },
-    /** Scheduled prompts into this session — see `CreateSessionReminderInput`. */
   };
 }

@@ -1,6 +1,6 @@
 import { createPromptAttachmentController } from '../attachments/prompt-attachments';
 import * as P from '../rest/projects-client';
-type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
+import type { DropFirst } from './binding-types';
 export function bindProjectCore(projectId: string) {
   return {
     attachments: {
@@ -27,6 +27,5 @@ export function bindProjectCore(projectId: string) {
     onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
       P.setProjectOnboardingComplete(projectId, ...a),
 
-    /** Provider-neutral serverless Apps owned by this project. */
   };
 }

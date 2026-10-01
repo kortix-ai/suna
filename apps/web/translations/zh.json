@@ -8950,7 +8950,6 @@
     "autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f": "创建命令",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2": "选择一个连接器",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e": "选择左侧的一个，或添加一个应用程序。",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558": "无需授权",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49": "需要设置",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa": "添加应用程序",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc": "搜索连接器...",
@@ -11997,7 +11996,7 @@
       "text4b3bf58beb3e": "Postgres 数据库，作为可备份的目录",
       "text4b4c31294fb5": "运行时间",
       "text4b51686b2606": "没有等待审核的内容",
-      "text4b5274edd83f": "通过 CUA Driver 检查和控制本地桌面应用",
+      "text72cfe7efa2b5": "查看屏幕并使用这台电脑上的应用",
       "text4b5bf8bae40d": "此代理可以调用的外部服务。",
       "text4b6617d27a7f": "服务提供商详情",
       "text4b68ab3847fe": "X",
@@ -13735,7 +13734,6 @@
       "text7d68a1835cee": "语调存储在",
       "text7d7a2199230e": "- 提取工单和客户历史",
       "text7d870610b59d": "已添加连接器，但授权失败：{value0}",
-      "text7d899c8ca569": "默认未选择任何内容。选定的访问权限会一直有效，直到你撤销。",
       "text7d92aa0e75c4": "操作员开关",
       "text7d9eb7acb13e": "关闭",
       "text7da07ad47ba0": "连接你的工具，把真实任务交给 Kortix 代理。免费开始，免费自托管。",
@@ -19106,7 +19104,8 @@
       "text80043b03898d": "在 Teams 中更新 Kortix 应用",
       "textdf757dbe33eb": "你的 Teams 目录中的 Kortix 应用是 {value0} 版。{value1} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
-      "texte15f213fa506": "发布应用更新"
+      "texte15f213fa506": "发布应用更新",
+      "textcafd830fcf85": "已列出项目代理身份"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20344,12 +20343,28 @@
     "runInBackground": "在后台运行",
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
     "manageInProject": "在项目中管理",
-    "disconnectEllipsis": "断开连接…"
+    "disconnectEllipsis": "断开连接…",
+    "yourComputersTitle": "你的电脑",
+    "pairedWith": "已连接到你的账户 {email}。",
+    "connectAnother": "连接另一台电脑",
+    "approvingAs": "你将以 {email} 的身份批准。这台电脑将归属此账户。",
+    "alreadyConnected": "{name} 已连接到你的账户",
+    "alreadyConnectedHint": "批准后将使用新密钥和你选择的权限重新连接。其项目和共享保持不变。",
+    "alreadyConnectedLive": "它当前在线。批准后将转移到此请求：当前连接会停止。其项目和共享保持不变。",
+    "reconnect": "重新连接",
+    "accessHint": "选定的访问权限会一直有效，直到你撤销。"
   },
   "messageFrom": {
     "from": "来自",
     "asked": "询问了",
     "replyHint": "在下方回复，智能体会接手处理。",
     "untitledSession": "未命名会话"
+  },
+  "sessionParticipants": {
+    "title": "成员",
+    "sentBy": "发送者：{name}",
+    "people": "此会话中的成员：{names}",
+    "peopleMore": "此会话中的成员：{names}，另有 {count} 人",
+    "more": "另有 {count} 人可以打开此会话"
   }
 }

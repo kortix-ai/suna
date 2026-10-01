@@ -1,5 +1,5 @@
 import * as P from '../rest/projects-client';
-type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
+import type { DropFirst } from './binding-types';
 export function connectorDataPlane(projectId?: string) {
   return {
     /** Callable catalog for this project or token scope. */

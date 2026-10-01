@@ -1,7 +1,7 @@
 import * as P from '../rest/projects-client';
 import { bindProjectMembership } from './project-membership';
 
-type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
+import type { DropFirst } from './binding-types';
 export function bindProjectAccessSecurity(projectId: string) {
   return {
     tokens: {

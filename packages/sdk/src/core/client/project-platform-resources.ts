@@ -30,6 +30,5 @@ export function bindProjectPlatformResources(projectId: string) {
         P.runGatewayPlayground(projectId, prompt, models, system),
     },
 
-    /** Slack + email + Meet channel connections. */
   };
 }

@@ -119,6 +119,8 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** The owner's profile photo, for the starter mark. */
+    ownerAvatarUrl?: string | null;
     /** Display name of a member/service-account initiator that is not the owner. */
     initiatorName?: string | null;
     /** Resolved people of a conversation (`metadata.participants`), single-session read only. */
@@ -199,6 +201,7 @@ export function serializeSession(
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
+    owner_avatar_url: ctx?.ownerAvatarUrl ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
     participant_people: canAccess ? (ctx?.participants ?? []) : [],
     visibility: row.visibility,

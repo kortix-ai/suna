@@ -8950,7 +8950,6 @@
     "autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f": "Créer une commande",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2": "Choisissez un connecteur",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e": "Choisissez-en une sur la gauche ou ajoutez une application.",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558": "Aucune authentification nécessaire",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49": "Nécessite une configuration",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa": "Ajouter une application",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc": "Rechercher des connecteurs…",
@@ -11997,7 +11996,7 @@
       "text4b3bf58beb3e": "La base de données Postgres, sous forme d’un répertoire sauvegardable",
       "text4b4c31294fb5": "Exécuter à",
       "text4b51686b2606": "Aucun élément en attente de révision",
-      "text4b5274edd83f": "Inspecter et contrôler les applications de bureau locales via CUA Driver",
+      "text72cfe7efa2b5": "Voir l’écran et utiliser les applications de cet ordinateur",
       "text4b5bf8bae40d": "Services externes que cet agent peut appeler.",
       "text4b6617d27a7f": "Détails du fournisseur de services",
       "text4b68ab3847fe": "X",
@@ -13735,7 +13734,6 @@
       "text7d68a1835cee": "Le ton se trouve dans",
       "text7d7a2199230e": "- Extraire le ticket + l’historique client",
       "text7d870610b59d": "Connecteur ajouté, mais l’autorisation a échoué : {value0}",
-      "text7d899c8ca569": "Rien n’est sélectionné par défaut. Les accès sélectionnés restent actifs jusqu’à leur révocation.",
       "text7d92aa0e75c4": "Interrupteur opérateur",
       "text7d9eb7acb13e": "Fermer",
       "text7da07ad47ba0": "Connectez vos outils et confiez une vraie tâche à un agent Kortix. Gratuit pour commencer, gratuit à auto-héberger.",
@@ -19106,7 +19104,8 @@
       "text80043b03898d": "Mettre à jour l'application Kortix dans Teams",
       "textdf757dbe33eb": "Votre catalogue Teams contient la version {value0} de l'application Kortix. La version {value1} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
       "textcd2c4b26eedd": "Kortix ne connaît pas la version de l'application dans votre catalogue Teams. La version {value0} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
-      "texte15f213fa506": "Publier la mise à jour de l'application"
+      "texte15f213fa506": "Publier la mise à jour de l'application",
+      "textcafd830fcf85": "Identités d’agent du projet répertoriées"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20344,12 +20343,28 @@
     "runInBackground": "Exécuter en arrière-plan",
     "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
     "manageInProject": "Gérer dans le projet",
-    "disconnectEllipsis": "Déconnecter…"
+    "disconnectEllipsis": "Déconnecter…",
+    "yourComputersTitle": "Vos ordinateurs",
+    "pairedWith": "Connecté à votre compte, {email}.",
+    "connectAnother": "Connecter un autre ordinateur",
+    "approvingAs": "Vous approuvez en tant que {email}. L’ordinateur est associé à ce compte.",
+    "alreadyConnected": "{name} est déjà connecté à votre compte",
+    "alreadyConnectedHint": "Approuvez pour le reconnecter avec une nouvelle clé et l’accès choisi. Ses projets et partages sont conservés.",
+    "alreadyConnectedLive": "Il est en ligne. Approuvez pour le transférer vers cette demande : la connexion actuelle s’arrête. Ses projets et partages sont conservés.",
+    "reconnect": "Reconnecter",
+    "accessHint": "Les accès sélectionnés restent actifs jusqu’à leur révocation."
   },
   "messageFrom": {
     "from": "De",
     "asked": "a demandé à",
     "replyHint": "Répondez ci-dessous. L'agent le reprendra.",
     "untitledSession": "Session sans titre"
+  },
+  "sessionParticipants": {
+    "title": "Personnes",
+    "sentBy": "Envoyé par {name}",
+    "people": "Personnes dans cette session : {names}",
+    "peopleMore": "Personnes dans cette session : {names} et {count} de plus",
+    "more": "{count} autres peuvent ouvrir cette session"
   }
 }

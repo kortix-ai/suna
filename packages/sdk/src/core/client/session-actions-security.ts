@@ -53,6 +53,5 @@ export function bindSessionActionsSecurity(ctx: SessionBindingContext) {
       }
       return result;
     },
-    /** Abort the agent's current run in this session. */
   };
 }

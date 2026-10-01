@@ -3,7 +3,7 @@ import { bindProjectOperationsAdmin } from './project-operations-admin';
 
 import type { projectConnections } from './project-connections';
 import { connectorDataPlane } from './project-connectors';
-type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
+import type { DropFirst } from './binding-types';
 export function bindProjectOperations(
   projectId: string,
   connections: ReturnType<typeof projectConnections>,

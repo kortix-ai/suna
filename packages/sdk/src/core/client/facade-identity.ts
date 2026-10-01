@@ -36,6 +36,5 @@ export function bindIdentity() {
     decline: P.declineAccountInvite,
   };
 
-  /** Top-level project operations (not bound to an id). */
   return { auth, accounts, iam, accountInvites };
 }

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 699,
+  "count": 700,
   "routes": [
     {
       "method": "GET",
@@ -2277,6 +2277,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/open-bundle"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/participants"
     },
     {
       "method": "PUT",
