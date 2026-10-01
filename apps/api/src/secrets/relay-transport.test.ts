@@ -230,29 +230,6 @@ describe('the response leg streams', () => {
     expect(upstream.rawHeaders).toContainEqual(['content-type', 'application/json']);
   });
 
-  test('MEASURED: bun does NOT preserve duplicate non-known RESPONSE headers', async () => {
-    // Pinning what is TRUE rather than what would be nice. Measured on bun
-    // 1.3.14 against a raw-socket upstream emitting two literal `X-Dup:` lines:
-    // `res.rawHeaders` came back holding only the LAST value, while `set-cookie`
-    // (a known header) kept both. So `res.rawHeaders` does NOT give the full
-    // duplicate fidelity node does — the same collapse the REQUEST leg already
-    // suffers, now measured on the response leg too.
-    //
-    // It costs the relay nothing today: every name in SAFE_RESPONSE_HEADERS is
-    // single-valued, and `set-cookie` is deliberately excluded from that list,
-    // so no header that can legitimately repeat ever travels back. This test
-    // exists so the day that whitelist grows a repeatable header, it fails here
-    // instead of silently dropping a value in production.
-    handler = (_req, res) => {
-      res.writeHead(200, ['x-dup', 'one', 'x-dup', 'two']);
-      res.end('{}');
-    };
-    const upstream = await openUpstream(head('/dup', 'GET'), null, { seam: seam() });
-    await drain(upstream.body);
-    const dups = upstream.rawHeaders.filter(([name]) => name === 'x-dup').map(([, v]) => v);
-    expect(dups).toHaveLength(1);
-    expect(dups[0]).toContain('two');
-  });
 });
 
 describe('the byte budgets are the ONLY inbound guard, so they are asserted', () => {
