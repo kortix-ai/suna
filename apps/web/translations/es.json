@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Mensajes a personas",
-          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal."
+          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal. Los mensajes entre sesiones indican la sesión que los envía, para que su agente pueda responder."
         },
         "reminders": {
           "name": "Recordatorios",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Un momento…",
       "useDifferentEmail": "Usar otro correo electrónico",
       "usePasswordInstead": "Usar una contraseña",
-      "emailCodeInstead": "Enviarme un código por correo electrónico",
+      "emailLinkInstead": "Enviarme un enlace por correo electrónico",
       "forgotPassword": "¿Olvidaste tu contraseña?",
       "automaticAccount": "¿Eres nuevo? Al continuar, tu cuenta se creará automáticamente.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Buscando tu proveedor de identidad…",
         "use": "Usar inicio de sesión único (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Revisa tu correo electrónico",
-        "description": "Enviamos un código a <address>{email}</address>",
-        "verifying": "Verificando…",
-        "notReceived": "¿No recibiste el código?",
+        "description": "Enviamos un enlace de acceso a <address>{email}</address>. Ábrelo para continuar.",
+        "notReceived": "¿No recibiste el enlace?",
         "resendIn": "Reenviar en {seconds}",
         "resend": "Reenviar"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "cuenta de servicio",
       "textd7db5a6e1483": "Copia este token ahora",
       "textd7e9af636757": "Los tokens se almacenan por host, así que cambiar de host cambia la cuenta y el proyecto predeterminado asociado.",
-      "textd7eb7cdcff7d": "Revisa tu email para encontrar el código de inicio de sesión",
+      "textd7eb7cdcff7d": "Revisa tu correo para encontrar el enlace de inicio de sesión",
       "textd7f179da0e70": "Creamos empresas autónomas. Las personas verifican, dirigen y gobiernan mientras los equipos de agentes trabajan en ingeniería, producto, operaciones, finanzas, soporte y crecimiento.",
       "textd800b1eb8a84": "Haz clic en «Create App Integration».",
       "textd814d7970df3": "«Pasar de X a Y» es una solución con la que te comprometiste de antemano. Es lenta, inestable y falla con este cliente concreto; esos son los problemas.",

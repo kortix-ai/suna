@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Messages aux personnes",
-          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe."
+          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe. Les messages entre sessions indiquent la session expéditrice, pour que son agent puisse répondre."
         },
         "reminders": {
           "name": "Rappels",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Un instant…",
       "useDifferentEmail": "Utiliser une autre adresse e-mail",
       "usePasswordInstead": "Utiliser un mot de passe",
-      "emailCodeInstead": "M’envoyer un code par e-mail",
+      "emailLinkInstead": "M’envoyer un lien par e-mail",
       "forgotPassword": "Mot de passe oublié ?",
       "automaticAccount": "Nouveau ici ? Continuer crée automatiquement votre compte.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Recherche de votre fournisseur d’identité…",
         "use": "Utiliser l’authentification unique (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Consultez votre boîte e-mail",
-        "description": "Nous avons envoyé un code à <address>{email}</address>",
-        "verifying": "Vérification…",
-        "notReceived": "Vous n’avez pas reçu de code ?",
+        "description": "Nous avons envoyé un lien de connexion à <address>{email}</address>. Ouvrez-le pour continuer.",
+        "notReceived": "Vous n’avez pas reçu le lien ?",
         "resendIn": "Renvoyer dans {seconds}",
         "resend": "Renvoyer"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "compte de service",
       "textd7db5a6e1483": "Copiez ce jeton maintenant",
       "textd7e9af636757": "Les jetons sont stockés par hôte : changer d’hôte change donc de compte et de projet par défaut.",
-      "textd7eb7cdcff7d": "Consultez votre email pour obtenir un code de connexion",
+      "textd7eb7cdcff7d": "Consultez votre e-mail pour obtenir un lien de connexion",
       "textd7f179da0e70": "Nous construisons des entreprises autonomes. Les humains vérifient, pilotent et gouvernent, tandis que les équipes d’agents travaillent dans l’ingénierie, le produit, les opérations, la finance, le support et la croissance.",
       "textd800b1eb8a84": "Cliquez sur « Create App Integration ».",
       "textd814d7970df3": "« Move from X to Y » est une solution à laquelle vous vous êtes engagé par avance. Lent, instable, défaillant pour ce client précis — ce sont des problèmes.",

@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Poruke ljudima",
-          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet."
+          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet. Poruke između sesija navode sesiju koja ih šalje, da bi njen agent mogao da odgovori."
         },
         "reminders": {
           "name": "Подсетници",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Само тренутак…",
       "useDifferentEmail": "Користи другу имејл адресу",
       "usePasswordInstead": "Користи лозинку",
-      "emailCodeInstead": "Пошаљи ми код имејлом",
+      "emailLinkInstead": "Пошаљи ми линк имејлом",
       "forgotPassword": "Заборавили сте лозинку?",
       "automaticAccount": "Нови сте овде? Кликом на „Настави“ налог ће бити аутоматски направљен.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Проналажење добављача идентитета…",
         "use": "Користи јединствену пријаву (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Проверите имејл",
-        "description": "Послали смо код на <address>{email}</address>",
-        "verifying": "Провера…",
-        "notReceived": "Нисте добили код?",
+        "description": "Послали смо линк за пријаву на <address>{email}</address>. Отворите га да наставите.",
+        "notReceived": "Нисте добили линк?",
         "resendIn": "Поново пошаљи за {seconds}",
         "resend": "Пошаљи поново"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "сервисни налог",
       "textd7db5a6e1483": "Копирај овај токен сада",
       "textd7e9af636757": "Токени се чувају по хосту, па промена хоста мења налог и подразумевани пројекат.",
-      "textd7eb7cdcff7d": "Проверите е-пошту за код за пријављивање",
+      "textd7eb7cdcff7d": "Проверите е-пошту за линк за пријаву",
       "textd7f179da0e70": "Градимо компаније које се саме управљају. Људи проверавају, усмеравају и управљају, док тимови агената обављају посао кроз инжењеринг, производ, операције, финансије, подршку и раст.",
       "textd800b1eb8a84": "Кликните на „Create App Integration“.",
       "textd814d7970df3": "„Прелазак са X на Y“ је решење на које сте се унапред обавезали. Споро, нестабилно, ломи се за овог клијента — то су проблеми.",

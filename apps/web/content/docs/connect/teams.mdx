@@ -83,15 +83,17 @@ as them, with their own credentials, secrets, and connected apps. An unlinked
 sender, or one without access to the project, gets a card to connect or request
 access instead of a session.
 
-The sign-in link appears only in a one-to-one chat with the bot. It links the
-person it was issued for to whoever opens it, so in a channel or group chat,
-where everyone sees the card, the bot sends the link to your private chat with
-it and says so. Teams allows that only when you have added the app for
-yourself; otherwise the card asks you to open a private chat with the bot and
-send `/login` there. A message you sent in the channel while unlinked runs once
-you connect, if you do so within 10 minutes. When you finish connecting in the
-browser, your private chat with the bot confirms which Kortix account you are
-linked as.
+The sign-in link appears only where you alone can see it: in your one-to-one
+chat with the bot, or, in a channel or group chat, in a reply marked **Only you
+can see this message**. The link connects the person it was issued for to
+whoever opens it, so it never appears where others can see it. If Teams refuses
+that private reply, the bot sends the link to your private chat with it and
+says so in the conversation. Teams allows that only when you have added the app
+for yourself; otherwise the card asks you to open a private chat with the bot
+and send `/login` there. A message you sent in the channel while unlinked runs
+once you connect, if you do so within 10 minutes. When you finish connecting in
+the browser, your private chat with the bot confirms which Kortix account you
+are linked as.
 
 A sign-in link works once and expires after 10 minutes. A Teams account that is
 connected to one Kortix account cannot be connected to another: send `/logout`
@@ -102,6 +104,24 @@ connected with. A link made without it asks you to connect again.
 When someone without access asks for it, every account owner and admin gets
 the request in Kortix. Those who linked Teams also get it in their private chat
 with the bot, with a **Review in Kortix** button.
+
+## Private replies
+
+In a channel or group chat, what the bot says to one person is visible only to
+that person, marked **Only you can see this message**, as Slack's ephemeral
+messages are:
+
+- the replies to your commands;
+- the card to connect your account or to request access;
+- why your message did not run: the join policy, or an agent you may not use;
+- under **approval**, the owner's Approve / Deny card, and the decision to the
+  person who asked.
+
+The **Working on it…** card that everyone sees appears only when your message
+may run. Teams deletes a private reply after 24 hours. If Teams refuses a
+private reply, the bot posts the card for the whole conversation instead. The
+sign-in link is the exception: it then goes to your private chat with the bot,
+never to the conversation.
 
 ## Roles and permissions
 
@@ -303,7 +323,7 @@ directory and are not limited.
 
 ## Limits
 
-Teams bots cannot add message reactions, send ephemeral (only-you) messages, or
-search messages — those Slack affordances have no Teams equivalent. The agent
-can read a channel only in a team the app was added to, and only by the rules
-in [Reading a channel](#reading-a-channel).
+Teams bots cannot add message reactions or search messages — those Slack
+affordances have no Teams equivalent. The agent can read a channel only in a
+team the app was added to, and only by the rules in
+[Reading a channel](#reading-a-channel).

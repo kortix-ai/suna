@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Nachrichten an Menschen",
-          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat."
+          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat. Nachrichten zwischen Sitzungen nennen die sendende Sitzung, damit deren Agent antworten kann."
         },
         "reminders": {
           "name": "Erinnerungen",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Einen Moment …",
       "useDifferentEmail": "Andere E-Mail-Adresse verwenden",
       "usePasswordInstead": "Stattdessen ein Passwort verwenden",
-      "emailCodeInstead": "Code per E-Mail senden",
+      "emailLinkInstead": "Stattdessen einen Link per E-Mail senden",
       "forgotPassword": "Passwort vergessen?",
       "automaticAccount": "Neu hier? Mit „Weiter“ wird dein Konto automatisch erstellt.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Identitätsanbieter wird gesucht …",
         "use": "Single Sign-on (SSO) verwenden"
       },
-      "code": {
+      "link": {
         "title": "E-Mail prüfen",
-        "description": "Wir haben einen Code an <address>{email}</address> gesendet",
-        "verifying": "Wird überprüft …",
-        "notReceived": "Keinen Code erhalten?",
+        "description": "Wir haben einen Anmeldelink an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
+        "notReceived": "Keinen Link erhalten?",
         "resendIn": "Erneut senden in {seconds}",
         "resend": "Erneut senden"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "Dienstkonto",
       "textd7db5a6e1483": "Kopiere diesen Token jetzt",
       "textd7e9af636757": "Token werden pro Host gespeichert. Beim Wechsel des Hosts wechseln daher auch das Konto und das Standardprojekt.",
-      "textd7eb7cdcff7d": "Prüfe deine E-Mails auf einen Anmeldecode",
+      "textd7eb7cdcff7d": "Prüfe deine E-Mails auf einen Anmeldelink",
       "textd7f179da0e70": "Wir bauen selbststeuernde Unternehmen. Menschen prüfen, lenken und steuern, während Agententeams Arbeit in Engineering, Product, Operations, Finance, Support und Growth erledigen.",
       "textd800b1eb8a84": "Klicken Sie auf „Create App Integration“.",
       "textd814d7970df3": "„Von X nach Y migrieren“ ist eine Lösung, auf die du dich voreilig festgelegt hast. Langsam, instabil, bricht bei diesem einen Kunden — das sind Probleme.",
