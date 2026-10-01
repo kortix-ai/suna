@@ -10,6 +10,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 
 import { textToParagraphs } from '../composer-logic';
 import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
+import { useLatestRef } from '../hooks/use-latest-ref';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { localizedSlashActions } from '../menus/slash-actions';
@@ -391,34 +392,12 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // comparison), so a fresh inline callback each render would otherwise go
     // stale. Applied to every value a stable, memoized-once closure below
     // needs to read fresh: onEmptyChange, onSubmit, disabled, placeholder.
-    const onEmptyChangeRef = useRef(onEmptyChange);
-    const onDocChangeRef = useRef(onDocChange);
-    useEffect(() => {
-      onEmptyChangeRef.current = onEmptyChange;
-    }, [onEmptyChange]);
-    useEffect(() => {
-      onDocChangeRef.current = onDocChange;
-    }, [onDocChange]);
-
-    const onSubmitRef = useRef(onSubmit);
-    useEffect(() => {
-      onSubmitRef.current = onSubmit;
-    }, [onSubmit]);
-
-    const onArrowUpAtStartRef = useRef(onArrowUpAtStart);
-    useEffect(() => {
-      onArrowUpAtStartRef.current = onArrowUpAtStart;
-    }, [onArrowUpAtStart]);
-
-    const disabledRef = useRef(disabled ?? false);
-    useEffect(() => {
-      disabledRef.current = disabled ?? false;
-    }, [disabled]);
-
-    const placeholderRef = useRef(placeholder);
-    useEffect(() => {
-      placeholderRef.current = placeholder;
-    }, [placeholder]);
+    const onEmptyChangeRef = useLatestRef(onEmptyChange);
+    const onDocChangeRef = useLatestRef(onDocChange);
+    const onSubmitRef = useLatestRef(onSubmit);
+    const onArrowUpAtStartRef = useLatestRef(onArrowUpAtStart);
+    const disabledRef = useLatestRef(disabled ?? false);
+    const placeholderRef = useLatestRef(placeholder);
 
     // Same "extensions are frozen at construction" reasoning as
     // `placeholderRef` above (see extensions.ts) — the mention/slash
@@ -426,59 +405,27 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // the moment a menu opens or updates, never at construction, so these
     // refs are what keeps the `@`/`/` menus reading LIVE data instead of
     // whatever was current the moment the editor first mounted.
-    const agentsRef = useRef(agents ?? []);
-    useEffect(() => {
-      agentsRef.current = agents ?? [];
-    }, [agents]);
-
-    const sessionsRef = useRef(sessions ?? []);
-    useEffect(() => {
-      sessionsRef.current = sessions ?? [];
-    }, [sessions]);
-
-    const currentSessionIdRef = useRef(currentSessionId);
-    useEffect(() => {
-      currentSessionIdRef.current = currentSessionId;
-    }, [currentSessionId]);
-
-    const commandsRef = useRef(commands ?? []);
-    useEffect(() => {
-      commandsRef.current = commands ?? [];
-    }, [commands]);
+    const agentsRef = useLatestRef(agents ?? []);
+    const sessionsRef = useLatestRef(sessions ?? []);
+    const currentSessionIdRef = useLatestRef(currentSessionId);
+    const commandsRef = useLatestRef(commands ?? []);
 
     // Same live-getter reasoning as commandsRef — defaults to SLASH_ACTIONS
     // (buildSlashSections' own default, made explicit here rather than left
     // implicit) so an unset `actions` prop is byte-identical to before this
     // prop existed.
-    const actionsRef = useRef(actions ?? defaultActions);
-    useEffect(() => {
-      actionsRef.current = actions ?? defaultActions;
-    }, [actions, defaultActions]);
+    const actionsRef = useLatestRef(actions ?? defaultActions);
 
     // Same live-getter reasoning again, and it matters MORE here than for any
     // ref above: this list grows while the user watches. The agent finishes a
     // file mid-turn, the panel re-derives, and the very next `/` must already
     // offer it — a value closed over at editor construction would offer the
     // session's files as they were when the tab was opened, forever.
-    const filesRef = useRef(files ?? []);
-    useEffect(() => {
-      filesRef.current = files ?? [];
-    }, [files]);
+    const filesRef = useLatestRef(files ?? []);
 
-    const onSelectCommandRef = useRef(onSelectCommand);
-    useEffect(() => {
-      onSelectCommandRef.current = onSelectCommand;
-    }, [onSelectCommand]);
-
-    const onSelectActionRef = useRef(onSelectAction);
-    useEffect(() => {
-      onSelectActionRef.current = onSelectAction;
-    }, [onSelectAction]);
-
-    const onMenuOpenChangeRef = useRef(onMenuOpenChange);
-    useEffect(() => {
-      onMenuOpenChangeRef.current = onMenuOpenChange;
-    }, [onMenuOpenChange]);
+    const onSelectCommandRef = useLatestRef(onSelectCommand);
+    const onSelectActionRef = useLatestRef(onSelectAction);
+    const onMenuOpenChangeRef = useLatestRef(onMenuOpenChange);
 
     /**
      * Guards `createSubmitOnEnterHandler` (below) against submitting the
@@ -545,7 +492,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         reportedMenuOpenRef.current = next;
         onMenuOpenChangeRef.current?.(next);
       },
-      [],
+      [onMenuOpenChangeRef],
     );
 
     const handleUpdate = useMemo(
@@ -554,7 +501,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           (isEmpty) => onEmptyChangeRef.current(isEmpty),
           (doc, isEmpty) => onDocChangeRef.current?.(doc, isEmpty),
         ),
-      [],
+      [onDocChangeRef, onEmptyChangeRef],
     );
 
     const handleKeyDown = useMemo(
@@ -566,7 +513,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           // / `slashOwnsEnterRef` above, so Up never reaches this while one is open.
           () => onArrowUpAtStartRef.current?.() ?? false,
         ),
-      [],
+      [disabledRef, onArrowUpAtStartRef, onSubmitRef],
     );
 
     const editor = useEditor({

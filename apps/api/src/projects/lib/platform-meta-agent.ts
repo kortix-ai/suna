@@ -15,6 +15,7 @@ import type { ProjectConfigSummary } from '../git/types';
 export function addPlatformMetaAgent(config: ProjectConfigSummary): ProjectConfigSummary {
   return {
     ...config,
+    default_agent: META_AGENT_NAME,
     open_code_default_agent: META_AGENT_NAME,
     agents: [
       {

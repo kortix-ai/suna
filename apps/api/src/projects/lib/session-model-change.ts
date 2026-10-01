@@ -101,6 +101,8 @@ export function modelChangeNeedsLivePush(input: {
 
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
+  model: string;
+  /** @deprecated The pre-W4 name of `model`. Same value. */
   opencode_model: string;
   /** True only when a live sandbox took the new model NOW. */
   applied_live: boolean;
@@ -138,6 +140,7 @@ export function modelChangeResult(input: {
 }): ModelChangeResult {
   if (!input.needsPush) {
     return {
+      model: input.model,
       opencode_model: input.model,
       applied_live: false,
       detail:
@@ -147,9 +150,10 @@ export function modelChangeResult(input: {
     };
   }
   if (input.push?.applied) {
-    return { opencode_model: input.model, applied_live: true };
+    return { model: input.model, opencode_model: input.model, applied_live: true };
   }
   return {
+    model: input.model,
     opencode_model: input.model,
     applied_live: false,
     push_failed: true,

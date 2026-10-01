@@ -214,26 +214,15 @@ describe('isTerminalTurnEnd — a retry is not a turn end', () => {
   });
 });
 
-describe('isWarmPoolBox — the marker the warm coordinator leaves on the row', () => {
-  test('an available warm box is recognised from the sandbox row itself, with no join', () => {
-    expect(
-      isWarmPoolBox({
-        warm_session: { state: 'available', sandbox_slug: 'default' },
-      }),
-    ).toBe(true);
+describe('isWarmPoolBox — only speculative session sandboxes', () => {
+  test('the actual warm-session marker is recognized', () => {
+    expect(isWarmPoolBox({ warm: true, source: 'ui' })).toBe(true);
   });
 
-  test('a claimed or discarded marker is not a warm-pool box', () => {
-    expect(isWarmPoolBox({ warm_session: { state: 'claimed' } })).toBe(false);
-    expect(isWarmPoolBox({ warm_session: { state: 'discarded' } })).toBe(false);
-  });
-
-  test('an ordinary box, a null row and a malformed marker are all not warm', () => {
-    expect(isWarmPoolBox(null)).toBe(false);
-    expect(isWarmPoolBox(undefined)).toBe(false);
-    expect(isWarmPoolBox({})).toBe(false);
-    expect(isWarmPoolBox({ warm_session: 'available' })).toBe(false);
-    expect(isWarmPoolBox({ warm_session: ['available'] })).toBe(false);
+  test('ordinary sessions and legacy warm-pool metadata are not warm', () => {
+    for (const metadata of [null, undefined, {}, { warm: 'true' }, { warm: false }, { warm_session: { state: 'available' } }]) {
+      expect(isWarmPoolBox(metadata)).toBe(false);
+    }
   });
 });
 

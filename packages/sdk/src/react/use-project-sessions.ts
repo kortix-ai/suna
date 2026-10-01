@@ -61,7 +61,10 @@ export function flattenProjectSessionPages(
 }
 
 export interface UseProjectSessionsOptions
-  extends Pick<ListProjectSessionsOptions, 'scope' | 'limit'> {
+  extends Pick<
+    ListProjectSessionsOptions,
+    'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'participant'
+  > {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
   refetchInterval?: number | false | ((sessions: ProjectSession[]) => number | false);
@@ -76,14 +79,20 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
+  const { parent, startedBy, q, labels, participant } = options ?? {};
   const query = useInfiniteQuery({
-    queryKey: qk.project.sessionsPaged(projectId, scope),
+    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, participant }),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       listProjectSessionsPage(projectId, {
         scope,
         limit: options?.limit,
         cursor: pageParam,
+        parent,
+        startedBy,
+        q,
+        labels,
+        participant,
       }),
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
@@ -108,4 +117,37 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
      */
     sessions: flattenProjectSessionPages(query.data),
   };
+}
+
+export interface UseSessionChildrenOptions extends Pick<ListProjectSessionsOptions, 'limit' | 'q'> {
+  /** Set false until the parent is expanded — children load lazily. */
+  enabled?: boolean;
+}
+
+/**
+ * One session's children (`parent=<sessionId>`), newest first, a page at a
+ * time. Its own cache slot per (parent, q), so an expanded row and a search
+ * never share entries.
+ */
+export function useSessionChildren(
+  projectId: string,
+  parentSessionId: string,
+  options?: UseSessionChildrenOptions,
+) {
+  const q = options?.q;
+  const query = useInfiniteQuery({
+    queryKey: qk.project.sessionChildren(projectId, parentSessionId, q),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      listProjectSessionsPage(projectId, {
+        parent: parentSessionId,
+        limit: options?.limit,
+        cursor: pageParam,
+        q,
+      }),
+    getNextPageParam: projectSessionsPageParam,
+    enabled: options?.enabled ?? true,
+    ...contract('inventory'),
+  });
+  return { ...query, sessions: flattenProjectSessionPages(query.data) };
 }

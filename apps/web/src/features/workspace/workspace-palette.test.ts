@@ -6,6 +6,8 @@ import type { KortixProject } from '@kortix/sdk';
 
 import {
   ROOT_SUGGESTION_LIMIT,
+  SEARCH_ONLY_ITEM_IDS,
+  SUGGESTION_PRIORITY,
   WORKSPACE_SWITCHER_ITEM_ID,
   buildRootSuggestions,
 } from '@/features/workspace/command-palette';
@@ -369,16 +371,28 @@ describe('buildRootSuggestions — the no-query root page', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  test('respects the cap and keeps registry order behind the pin', () => {
-    const result = buildRootSuggestions(items);
-    const rest = items
-      .filter((i) => i.group === 'actions' || i.group === 'navigation')
-      .filter((i) => i.id !== WORKSPACE_SWITCHER_ITEM_ID)
-      .slice(0, ROOT_SUGGESTION_LIMIT - 1)
-      .map((i) => i.id);
+  test('leads with the everyday moves in SUGGESTION_PRIORITY order, then registry order, capped', () => {
+    const result = buildRootSuggestions(items).map((i) => i.id);
+    const available = new Set(items.map((i) => i.id));
+    const leading = SUGGESTION_PRIORITY.filter((id) => available.has(id)).slice(
+      0,
+      ROOT_SUGGESTION_LIMIT,
+    );
 
     expect(result).toHaveLength(ROOT_SUGGESTION_LIMIT);
-    expect(result.slice(1).map((i) => i.id)).toEqual(rest);
+    expect(result.slice(0, leading.length)).toEqual(leading);
+    expect(result[0]).toBe(WORKSPACE_SWITCHER_ITEM_ID);
+    // The rare actions registry order used to put near the top are no longer there.
+    expect(result).not.toContain('compact-session');
+    expect(result).not.toContain('restart-config');
+  });
+
+  test('search-only rows (New session, Open Audit, Home, Open session) are absent from Suggestions, still in the registry', () => {
+    const suggested = buildRootSuggestions(items).map((i) => i.id);
+    for (const id of SEARCH_ONLY_ITEM_IDS) {
+      expect(suggested).not.toContain(id);
+      expect(items.map((i) => i.id)).toContain(id);
+    }
   });
 
   test('offers only actions and navigation rows', () => {

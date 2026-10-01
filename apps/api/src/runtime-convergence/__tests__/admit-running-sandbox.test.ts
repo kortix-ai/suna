@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { logger } from '../../lib/logger';
 import { admitRunningSandbox } from '../admit-running-sandbox';
 import { managedLineupFingerprint } from '../catalog-fingerprint';
 import { MIN_DAEMON_BUILD } from '../admission';
@@ -23,6 +24,37 @@ const BASE_INPUT = {
 };
 
 describe('admitRunningSandbox', () => {
+  const originalEnforce = process.env.RUNTIME_ADMISSION_ENFORCE;
+  afterEach(() => {
+    if (originalEnforce === undefined) delete process.env.RUNTIME_ADMISSION_ENFORCE;
+    else process.env.RUNTIME_ADMISSION_ENFORCE = originalEnforce;
+  });
+
+  test('reports observe-only refusal as a warning and enforced refusal as an error', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    const error = spyOn(logger, 'error').mockImplementation(() => {});
+    const deps = { fetchHealth: async () => ({ capabilities: [] }), resolveReleaseId: async () => null };
+    try {
+      process.env.RUNTIME_ADMISSION_ENFORCE = 'false';
+      expect((await admitRunningSandbox(BASE_INPUT, deps)).admitted).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        '[runtime-convergence] admission refused — observe only, box still used',
+        expect.objectContaining({ failed_check: 'config_release_capability' }),
+      );
+      expect(error).not.toHaveBeenCalled();
+
+      process.env.RUNTIME_ADMISSION_ENFORCE = 'true';
+      expect((await admitRunningSandbox(BASE_INPUT, deps)).admitted).toBe(false);
+      expect(error).toHaveBeenCalledWith(
+        '[runtime-convergence] admission refused — box replaced, not used',
+        expect.objectContaining({ failed_check: 'config_release_capability' }),
+      );
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   test('admits a box whose health proves every check', async () => {
     // The real, live fingerprint of this deployment's served managed lineup —
     // admitRunningSandbox composes `computeDesiredRuntime` for real (only the

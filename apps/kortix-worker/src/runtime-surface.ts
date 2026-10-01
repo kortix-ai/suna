@@ -1,5 +1,5 @@
 /**
- * The Kortix Runtime API, pi-worker half — `/kortix/opencode/*` served by the
+ * The Kortix Runtime API, pi-worker half — `/kortix/runtime/*` (`/kortix/opencode/*` before W3) served by the
  * WORKER so the product's session surface renders a pi session unchanged.
  *
  * The web client speaks ONLY this namespace since #6987: one `/state`
@@ -84,7 +84,10 @@ interface Resync {
   recover: string[];
 }
 
-const RECOVER_RECIPE = ['GET /kortix/opencode/state', 'GET /kortix/opencode/messages/:sessionId'];
+/** The Runtime API mount, and its pre-W3 path. */
+export const RUNTIME_API_PREFIX = /^\/kortix\/(?:runtime|opencode)\//;
+
+const RECOVER_RECIPE = ['GET /kortix/runtime/state', 'GET /kortix/runtime/messages/:sessionId'];
 
 export class WorkerEventBus {
   private seq = 0;
@@ -333,6 +336,9 @@ export class RuntimeSurface {
       seq: this.bus.headSeq,
       built_at: new Date().toISOString(),
       identity: {
+        runtime_session_id: this.rootId,
+        harness_version: null,
+        // Pre-W3 names of the two fields above, for an API that predates them.
         opencode_session_id: this.rootId,
         opencode_version: null,
         daemon_build: null,
@@ -397,11 +403,12 @@ export class RuntimeSurface {
   }
 
   /**
-   * Serve one `/kortix/opencode/*` request. Returns false when the subpath is
+   * Serve one Runtime API request: `/kortix/runtime/*`, or `/kortix/opencode/*`,
+   * its pre-W3 path an older API still calls. Returns false when the subpath is
    * not part of this surface (the caller then 404s it).
    */
   handle(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
-    const sub = url.pathname.slice('/kortix/opencode/'.length).replace(/\/+$/, '');
+    const sub = url.pathname.replace(RUNTIME_API_PREFIX, '').replace(/\/+$/, '');
     const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
       res
         .writeHead(status, { 'content-type': 'application/json', ...headers })
@@ -540,6 +547,6 @@ export class RuntimeSurface {
 
     // Lazy passthroughs the worker has no upstream for (vcs-diff, config,
     // todo, …): an honest 404 — the product degrades those panels gracefully.
-    return json(404, { error: `no pi handler for /kortix/opencode/${sub}` });
+    return json(404, { error: `no pi handler for /kortix/runtime/${sub}` });
   }
 }

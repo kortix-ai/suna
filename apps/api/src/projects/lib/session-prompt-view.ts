@@ -147,6 +147,9 @@ export function serializePrompt(row: PromptRow) {
     /** Names + types of this prompt's files, so a reloaded tab can still draw
      *  their tiles while the send is in flight. Never the bytes. */
     attachments: promptAttachments(payload),
+    /** Posted without a turn (the first message of a conversation with people):
+     *  no agent will answer it, so a host shows no "thinking" for it. */
+    no_reply: payload.noReply === true,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };

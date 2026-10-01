@@ -48,38 +48,6 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
   ),
 );
 
-// Backward compatibility hook
-export function usePresentationViewerContext() {
-  const openPresentation = usePresentationViewerStore((s) => s.openPresentation);
-  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
-
-  return {
-    openPresentation,
-    closePresentation,
-  };
-}
-
-// Hook for backward compatibility with usePresentationViewer
-export function usePresentationViewer() {
-  const isOpen = usePresentationViewerStore((s) => s.isOpen);
-  const presentationName = usePresentationViewerStore((s) => s.presentationName);
-  const sandboxUrl = usePresentationViewerStore((s) => s.sandboxUrl);
-  const initialSlide = usePresentationViewerStore((s) => s.initialSlide);
-  const openPresentation = usePresentationViewerStore((s) => s.openPresentation);
-  const closePresentation = usePresentationViewerStore((s) => s.closePresentation);
-
-  return {
-    viewerState: {
-      isOpen,
-      presentationName,
-      sandboxUrl,
-      initialSlide,
-    },
-    openPresentation,
-    closePresentation,
-  };
-}
-
 // Component wrapper to render the FullScreenPresentationViewer
 export function PresentationViewerWrapper() {
   const isOpen = usePresentationViewerStore((s) => s.isOpen);

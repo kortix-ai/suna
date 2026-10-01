@@ -129,7 +129,8 @@ export function prettyFieldLabel(envVar: string): string {
     .replace(/_/g, ' ')
     .toLowerCase();
   const upper = trimmed.toUpperCase();
-  if (upper === 'API KEY') return 'API key';
+  // OPENCODE_GO_API_KEY, ZAI_CODING_PLAN_API_KEY: the row already names the provider.
+  if (upper.endsWith('API KEY')) return 'API key';
   if (upper === 'API URL') return 'API URL';
   if (upper === 'BASE URL') return 'Base URL';
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);

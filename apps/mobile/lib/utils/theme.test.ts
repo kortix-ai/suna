@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -45,6 +45,17 @@ mock.module('expo-router/react-navigation', () => ({
     },
     fonts: {},
   },
+  // Bun shares one module registry across the mobile suite, so this stub is
+  // what every later importer of 'expo-router/react-navigation' links
+  // against. Export the names the app imports (inert here), or a file that
+  // loads such a module after this one fails with "Export named
+  // 'useFocusEffect' not found" (project-screen-characterization, CI).
+  ThemeProvider: ({ children }: { children?: unknown }) => children,
+  useFocusEffect: () => {},
+  useIsFocused: () => true,
+  useNavigation: () => ({}),
+  StackActions: {},
+  CommonActions: {},
 }));
 
 let THEME: (typeof import('./theme'))['THEME'];
@@ -555,16 +566,17 @@ const HSL_TOLERANCE = 0.2;
 
 type Hsla = { h: number; s: number; l: number; a: number };
 
+// A quoted string survives: web's `@source "…/dist/*.js"` holds a literal `/*`
+// that is not a comment start.
 function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '');
+  return source.replace(/"[^"\n]*"|\/\*[\s\S]*?\*\//g, (m) => (m.startsWith('"') ? m : ''));
 }
 
 /**
  * Collect `--name: value;` declarations from every block whose selector is
  * exactly `selector` (at the start of a line, followed by `{`), merged in
  * source order so a later declaration wins — the CSS cascade for same-
- * specificity rules. web declares `--sidebar-*` twice (a legacy hsl block at
- * the top of the file and the oklch block later); the later one must win.
+ * specificity rules. A later declaration of the same token wins.
  */
 function webDeclarations(selector: ':root' | '.dark'): Map<string, string> {
   const css = stripComments(webCss);
@@ -695,8 +707,7 @@ function hslaDrift(mobile: Hsla, web: Hsla): string | null {
  * Deliberately NOT in the set:
  *   border-width        a length, mobile-only (hairline stroke)
  *   radius              a length; compared separately below
- *   success / warning   web has no CSS variable; compared against the
- *                       Tailwind palette classes status.tsx uses (below)
+ *   success / warning   mobile-only tokens; web status uses brand colors
  */
 const WEB_PARITY_TOKENS: Record<string, string> = {
   background: 'background',
@@ -751,38 +762,6 @@ const WEB_PARITY_TOKENS: Record<string, string> = {
   'terminal-border': 'terminal-border',
 };
 
-/**
- * web's status palette is not a CSS variable: status.tsx STATUS_TEXT uses
- * Tailwind classes (`text-emerald-600 dark:text-emerald-400`). Tailwind 4
- * resolves those from `tailwindcss/theme.css`. The oklch values are pinned
- * here (tailwindcss 4.3.3) so this test does not depend on web's
- * node_modules; a separate test re-reads theme.css when it is installed.
- */
-const TAILWIND_PALETTE: Record<string, string> = {
-  'emerald-400': 'oklch(76.5% 0.177 163.223)',
-  'emerald-600': 'oklch(59.6% 0.145 163.225)',
-  'amber-400': 'oklch(82.8% 0.189 84.429)',
-  'amber-600': 'oklch(66.6% 0.179 58.318)',
-};
-const STATUS_TSX_PATH = join(__dirname, '../../../web/src/components/ui/status.tsx');
-const TAILWIND_THEME_PATH = join(__dirname, '../../../web/node_modules/tailwindcss/theme.css');
-
-/** Read `tone: 'text-<light> dark:text-<dark>'` from web's STATUS_TEXT. */
-function webStatusShades(tone: 'success' | 'warning'): { light: string; dark: string } {
-  const src = readFileSync(STATUS_TSX_PATH, 'utf8');
-  const m = src.match(
-    new RegExp(`${tone}:\\s*'text-([a-z]+-\\d+)\\s+dark:text-([a-z]+-\\d+)'`)
-  );
-  if (!m) throw new Error(`status.tsx STATUS_TEXT.${tone} not in 'text-X dark:text-Y' form`);
-  return { light: m[1], dark: m[2] };
-}
-
-function paletteColor(shade: string): Hsla {
-  const value = TAILWIND_PALETTE[shade];
-  if (!value) throw new Error(`Tailwind shade ${shade} not pinned in TAILWIND_PALETTE`);
-  return parseWebColor(value);
-}
-
 describe('color conversion helpers are correct', () => {
   it('converts known oklch values to the sRGB hex they render as', () => {
     // oklch(0.669 0.1837 248.8066) is web's accent-blue, commented #0099ff.
@@ -795,7 +774,7 @@ describe('color conversion helpers are correct', () => {
     expect(toHexColor(`hsl(${fmtHsla(parseWebColor('#0f0f0f'))})`)).toBe('#0f0f0f');
   });
 
-  it('the later web --sidebar block wins over the legacy hsl block', () => {
+  it('web declares --sidebar as the oklch surface-1 value', () => {
     expect(webRoot.get('sidebar')).toBe('oklch(0.9672 0 0)');
     expect(webDark.get('sidebar-border')).toBe('oklch(0.2178 0 0)');
   });
@@ -829,37 +808,18 @@ describe('global.css matches apps/web globals.css', () => {
     expect(rawTokenValue('.dark:root', 'radius')).toBe(resolveWeb(webDark, 'radius'));
   });
 
-  it('--success / --warning match the Tailwind shades web status.tsx uses', () => {
-    const drift: string[] = [];
+  it('--success / --warning match the canonical mobile status palette', () => {
+    const palette = JSON.parse(
+      readFileSync(join(__dirname, '../../../../.agents/skills/kortix-brand/references/visual/visual-system.json'), 'utf8')
+    );
     for (const tone of ['success', 'warning'] as const) {
-      const shades = webStatusShades(tone);
-      for (const [mobileScope, shade] of [
-        [':root', shades.light],
-        ['.dark:root', shades.dark],
-      ] as const) {
-        let mobileValue: string;
-        try {
-          mobileValue = resolveTokenValue(mobileScope, tone);
-        } catch {
-          drift.push(`--${tone} missing in ${mobileScope} → ${fmtHsla(paletteColor(shade))}`);
-          continue;
-        }
-        const expected = hslaDrift(parseMobileColor(mobileValue), paletteColor(shade));
-        if (expected) drift.push(`--${tone} (${mobileScope}): ${mobileValue} → ${expected}`);
+      for (const [scope, theme] of [[':root', 'light'], ['.dark:root', 'dark']] as const) {
+        const actual = parseMobileColor(resolveTokenValue(scope, tone));
+        const expected = parseWebColor(palette.color.status_mobile_only[tone][theme]);
+        expect(hslaDrift(actual, expected)).toBeNull();
       }
     }
-    expect(drift).toEqual([]);
   });
-
-  it.skipIf(!existsSync(TAILWIND_THEME_PATH))(
-    'pinned TAILWIND_PALETTE equals the installed tailwindcss/theme.css',
-    () => {
-      const themeCss = readFileSync(TAILWIND_THEME_PATH, 'utf8');
-      for (const [shade, value] of Object.entries(TAILWIND_PALETTE)) {
-        expect(themeCss).toContain(`--color-${shade}: ${value};`);
-      }
-    }
-  );
 });
 
 describe('THEME carries the web-parity tokens', () => {

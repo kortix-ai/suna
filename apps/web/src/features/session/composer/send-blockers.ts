@@ -43,6 +43,10 @@ import type { UiTranslator } from '@/i18n/translator';
  *     `commandBlocker`.
  */
 
+export function runtimePermissionLocksComposer(pendingPermissions: number, isBusy: boolean): boolean {
+  return pendingPermissions > 0 && isBusy;
+}
+
 export type SendBlocker =
   'active_question' | 'pending_permission' | 'read_only' | 'session_working' | 'runtime_waking';
 

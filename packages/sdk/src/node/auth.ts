@@ -553,7 +553,7 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
     const current = await viewer(request);
     if (!current) throw new KortixAuthError('unauthenticated', 'No signed-in Kortix viewer on this request');
     const token = current.token;
-    return createScopedKortix({ backendUrl, getToken: async () => token, fetch: fetchImpl, clientSource: 'web' });
+    return createScopedKortix({ backendUrl, getToken: async () => token, fetch: fetchImpl });
   }
 
   return {

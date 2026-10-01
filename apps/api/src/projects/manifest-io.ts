@@ -42,8 +42,9 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * instead of reading the agent's declared grant (the runtime-wiring gap
  * fixed by `extractAgents` in `./agents.ts`, the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and remains refused.
+ * v3 retains the agents map and adds YAML-only behavior.
  */
-export const MAX_SCHEMA_VERSION = 2;
+export const MAX_SCHEMA_VERSION = 3;
 
 /* ─── Manifest IO ───────────────────────────────────────────────────────── */
 
@@ -158,6 +159,10 @@ export function synthesizeBlankManifest(project: {
           secrets: 'all',
           kortix_permissions: 'all',
           skills: 'all',
+          // Nobody declared this agent, so it keeps the project checkout a
+          // declared agent must opt into (KRTX-165). Without it a blank
+          // project's first session boots with no repo and fails to compile.
+          repository_access: true,
         },
       },
     },

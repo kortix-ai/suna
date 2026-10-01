@@ -251,7 +251,10 @@ test('mobile Settings navigation has a zoom-safe first row on macOS', () => {
   expect(source).toContain('kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2');
   expect(source).toContain('kx-settings-mobile-tabs');
   expect(css).toMatch(/\.kx-settings-mobile-titlebar \.kx-settings-mobile-tabs\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
-  expect(css).toMatch(/\.kx-settings-mobile-titlebar \[data-slot='tabs-trigger'\]\s*\{[^}]*height:\s*var\(--kx-titlebar-control-size\)/);
+  // The tabs are a segmented track: the outer box takes the control size and
+  // the inner list and triggers fill it, so nothing exceeds the band.
+  expect(css).toMatch(/\[data-slot='tabs-list'\]\.kx-settings-mobile-tabs\s*\{[^}]*height:\s*100%/);
+  expect(css).toMatch(/\.kx-settings-mobile-titlebar \[data-slot='tabs-trigger'\]\s*\{[^}]*height:\s*100%/);
 });
 
 /**

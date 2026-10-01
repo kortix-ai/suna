@@ -60,6 +60,7 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  compileSelectedAgentConfig,
   manifestPiPackageLists,
   manifestPiPackages,
   manifestRuntime,
@@ -243,6 +244,32 @@ agents:
       '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),
     }) as OpencodeConfig;
     expect(compiled.model).toBeUndefined();
+  });
+
+  // W1 B5: pi reads `default_agent` for a session with no agent chosen; OpenCode reads the same key.
+  test('names the manifest default_agent, so every runtime runs it when no agent is chosen', () => {
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    expect(compiled.default_agent).toBe('support');
+  });
+
+  test('omits default_agent when that agent cannot run as the primary one', () => {
+    const subagent = parseYaml(`
+kortix_version: 2
+default_agent: pr-bot
+agents:
+  pr-bot:
+    kortix_permissions: []
+`);
+    const disabled = parseYaml(`
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    enabled: false
+`);
+    const md = { '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs') };
+    expect((compileAgentConfig(subagent, 'opencode', md) as OpencodeConfig).default_agent).toBeUndefined();
+    expect((compileAgentConfig(disabled, 'opencode', {}) as OpencodeConfig).default_agent).toBeUndefined();
   });
 });
 
@@ -503,18 +530,25 @@ agents:
 
 describe('selectSessionHarness — flag OR manifest', () => {
   test('pi when the project flag is on, whatever the manifest says', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode' })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi' })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
   });
 
   test('pi when the manifest says runtime: pi, even with the flag off', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
   });
 
   test('opencode in every other case', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode' })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
+  });
+
+  // W1 B7: pi calls models only through the gateway; without it the box would never start.
+  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
   });
 });
 
@@ -836,5 +870,88 @@ describe('resolveSelectedAgentConfigForSession', () => {
     await expect(
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
+  });
+});
+
+describe('v3 YAML-only agent boot', () => {
+  test('reads only YAML and an explicit prompt_file at the session ref', async () => {
+    manifestFile = { path: 'kortix.yaml', content: `kortix_version: 3
+runtime: pi
+default_agent: writer
+agents:
+  writer:
+    model: test/model
+    prompt: Be concise.
+  reader:
+    prompt_file: agents/reader.md
+` };
+    mdFileContent = { 'agents/reader.md': 'Read only.' };
+    readRepoFileCalls = [];
+    const result = await resolveCompiledAgentConfigForSession(PROJECT, 'feature/yaml');
+    expect(JSON.parse(result!).agent.writer.prompt).toBe('Be concise.');
+    expect(JSON.parse(result!).agent.reader.prompt).toBe('Read only.');
+    expect(readRepoFileCalls).toEqual(['agents/reader.md']);
+    expect(manifestRuntime(parseYaml(manifestFile.content))).toBe('pi');
+    const selected = await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml');
+    expect(Object.keys(JSON.parse(selected).agent)).toEqual(['reader']);
+  });
+
+  test('a missing prompt file never produces a partial agent configuration', async () => {
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    prompt_file: agents/missing.md\n' };
+    mdFileContent = {};
+    await expect(resolveCompiledAgentConfigForSession(PROJECT)).rejects.toThrow('no such file');
+    await expect(resolveSelectedAgentConfigForSession(PROJECT, 'writer')).rejects.toThrow('no such file');
+  });
+
+  test('compiles inline behavior without an agent markdown file and isolates selected agent', () => {
+    const manifest = parseYaml(`kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    model: test/model\n    prompt: Speak briefly.\n    skills: [review]\n  reader:\n    prompt_file: agents/reader.md\n`);
+    const files = { 'agents/reader.md': 'Read only.' };
+    const compiled = compileAgentConfig(manifest, 'opencode', files);
+    expect(compiled?.model).toBe('test/model');
+    expect(compiled?.agent.writer?.prompt).toBe('Speak briefly.');
+    expect(compiled?.agent.writer?.permission).toMatchObject({ skill: { '*': 'deny', review: 'allow' } });
+    expect(compiled?.agent.reader?.prompt).toBe('Read only.');
+    const selected = compileSelectedAgentConfig(manifest, 'reader', 'opencode', files);
+    expect(Object.keys(selected.agent)).toEqual(['reader']);
+    expect(selected.agent.reader?.prompt).toBe('Read only.');
+    expect(() => compileAgentConfig(manifest, 'opencode')).toThrow('prompt_file');
+    expect(() => compileAgentConfig({ ...manifest, agents: { writer: { prompt_file: '../secret.md' } } }, 'opencode', { '../secret.md': 'wrong' })).toThrow('prompt_file');
+  });
+});
+
+describe('v2 agent tool toggles', () => {
+  test('manifest tool toggles compile per agent without changing other agents', () => {
+    const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
+    expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
+    expect(config?.agent.other.tools).toBeUndefined();
+  });
+});
+
+describe('compileAgentConfig — a denied bash/edit also denies the tools that do the same job', () => {
+  const manifest = parseYaml(
+    ['kortix_version: 2', 'default_agent: kortix', 'agents:', '  kortix:', '    skills: all', '  no-edit:', '    skills: all', ''].join('\n'),
+  );
+  const compileNoEdit = (frontmatter: string) =>
+    compileAgentConfig(manifest, 'opencode', {
+      'agents/no-edit.md': supportMd(frontmatter, 'body'),
+    })!.agent['no-edit']!.permission as Record<string, unknown>;
+
+  test('bash: deny and edit: deny deny pty_* and memory', () => {
+    const permission = compileNoEdit('permission:\n  edit: deny\n  bash: deny\n  task: deny');
+    expect(permission).toMatchObject({ edit: 'deny', bash: 'deny', task: 'deny', memory: 'deny' });
+    for (const tool of ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list']) {
+      expect(permission[tool]).toBe('deny');
+    }
+  });
+
+  test('a pattern-scoped bash rule that allows something leaves pty_* alone', () => {
+    const permission = compileNoEdit('permission:\n  bash:\n    "*": deny\n    "ls *": allow');
+    expect(permission.pty_spawn).toBeUndefined();
+  });
+
+  test('an explicit rule on the tool wins', () => {
+    const permission = compileNoEdit('permission:\n  bash: deny\n  pty_list: allow');
+    expect(permission.pty_list).toBe('allow');
+    expect(permission.pty_spawn).toBe('deny');
   });
 });

@@ -830,8 +830,10 @@ export async function reloadSessionConfig(input: {
           ),
         );
     }
-    // Read the etag the box runs now: the release carried the governance.
-    const after = converged.reload ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
+    // Read the etag the box runs now: the release carried the governance. pi
+    // applies a release in place, so `applied` arrives with no `reload`.
+    const after =
+      converged.outcome === 'applied' ? await readSandboxConfigState({ sessionId: input.sessionId }, deps) : null;
     return {
       ...convergeToReloadResult(converged, { previousEtag: before.etag, etagAfter: after?.etag ?? null }),
       repo_refreshed: repoRefreshed,
@@ -842,11 +844,12 @@ export async function reloadSessionConfig(input: {
 
   // ── The pre-release path ────────────────────────────────────────────────
   // Reached two ways: a daemon without `config.release.v1`, and a project
-  // whose `config_releases` flag is OFF (spec, "Feature flag"). Only the plain
-  // refresh plus the governance push — what a reload did before releases.
-  // Never `config_dir=1`: the old handler writes into `/workspace`.
+  // whose `config_releases` flag is OFF (spec, "Feature flag"). OpenCode reads
+  // the agent files in the session's checkout here, so the refresh also brings
+  // the base branch's config dir into it (`base_config=1`). Without that, a fix
+  // merged to base never reached a live session (prod 2026-09-30).
   input.onPhase?.('refreshing-workspace');
-  const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo }, deps);
+  const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo, baseConfig: pullRepo }, deps);
   repoRefreshed = pullRepo && refreshed.ok;
   checkout = classifyWorkspaceCheckout({
     requested: pullRepo,
@@ -856,9 +859,12 @@ export async function reloadSessionConfig(input: {
   });
   commitSha = refreshed.commitSha ?? commitSha;
 
-  // An old daemon cannot report its agent files: the files converge after its
-  // self-update, on the convergence scheduler's 6- and 7-minute attempts.
-  const agentFiles: ReloadAgentFiles = 'unknown';
+  // A daemon built before `base_config` answers without `config_dir`: 'unknown'.
+  const agentFiles = classifyAgentFiles({
+    requested: pullRepo,
+    synced: refreshed.configDirSynced,
+    reason: refreshed.configDirReason,
+  });
   if (input.onlyIfStale) {
     const latestEtag = await deps.latestEtag({
       projectId: input.projectId,
@@ -900,25 +906,31 @@ export async function reloadSessionConfig(input: {
     baseRef: input.baseRef,
   });
 
+  // The daemon reloads the OpenCode config itself when it brought agent files
+  // forward (dispose-first, so milliseconds). On a project without releases
+  // the push above runs as well and disposes again; both are cheap.
+  const daemonReload = agentFiles === 'updated' ? (refreshed.configReload?.how ?? null) : null;
+  const applied = push.applied || daemonReload === 'disposed' || daemonReload === 'restarted';
+  const opencodeReload = push.opencodeReload ?? daemonReload;
   return {
-    applied: push.applied,
+    applied,
     previous_etag: before.etag,
     // On a refusal the box still runs what it ran; do not report the new hash as
     // though it had landed.
-    etag: push.applied ? latest : before.etag,
+    etag: applied ? latest : before.etag,
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
     agent_files: agentFiles,
-    opencode_reload: push.opencodeReload ?? null,
-    turn_ended: push.opencodeTurnEnded ?? null,
-    ...(push.applied
-      ? push.opencodeReload === 'kept-old'
+    opencode_reload: opencodeReload ?? null,
+    turn_ended: push.opencodeTurnEnded ?? (daemonReload ? (refreshed.configReload?.turnEnded ?? null) : null),
+    ...(applied || daemonReload === 'kept-old'
+      ? opencodeReload === 'kept-old'
         ? {
             reason:
               'the new opencode did not start, so the session kept the config it was already running',
           }
         : {}
-      : { reason: push.reason ?? 'agent config unchanged' }),
+      : { reason: agentFiles === 'already-current' ? 'already current' : (push.reason ?? 'agent config unchanged') }),
     ...releaseFields(null, null),
   };
 }
@@ -934,7 +946,8 @@ export function convergeToReloadResult(
   const reloaded = converged.reload !== null;
   const common = {
     previous_etag: etags.previousEtag,
-    etag: reloaded ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    etag: converged.outcome === 'applied' ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
+    // Null for a runtime that applies a release in place (pi): nothing restarted.
     opencode_reload: reloaded ? ('restarted' as const) : null,
     turn_ended: converged.reload?.turn_ended ?? null,
   };
@@ -1038,15 +1051,30 @@ async function convergeSandboxConfig(
  * `/workspace`; on a capable daemon it is an alias for converge, which the
  * reload sends explicitly.
  *
+ * `baseConfig` sends `base_config=1`: the daemon brings the base branch's
+ * changes to the OpenCode config dir into the checkout (`syncConfigDirToBase` —
+ * file by file, keeping the session's own edits and commits, never moving a
+ * ref), and reloads the OpenCode config when files changed, despite
+ * `restart=0` (answered as `config_dir.reload`). The pre-release path needs it
+ * because OpenCode reads its agent files from this checkout.
+ *
  * `restart=0`: the config push right after restarts opencode anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
  */
 async function refreshSandboxWorkspace(
   sessionId: string,
-  opts: { pullRepo: boolean },
+  opts: { pullRepo: boolean; baseConfig?: boolean },
   deps: SessionReloadDeps,
-): Promise<{ ok: boolean; commitSha: string | null }> {
-  const unreachable = { ok: false, commitSha: null };
+): Promise<{
+  ok: boolean;
+  commitSha: string | null;
+  /** `null` = the box did not say (a daemon built before `base_config`). */
+  configDirSynced: boolean | null;
+  configDirReason?: string;
+  /** The config reload the daemon ran because it brought files forward. */
+  configReload?: { how: 'disposed' | 'restarted' | 'kept-old'; turnEnded: boolean | null };
+}> {
+  const unreachable = { ok: false, commitSha: null, configDirSynced: null };
   try {
     const endpoint = await deps.endpoint(sessionId);
     if (!endpoint) return unreachable;
@@ -1060,11 +1088,14 @@ async function refreshSandboxWorkspace(
       // `repo=0` when the caller did not ask for the session branch to be
       // pulled. The refresh still stages runtime assets, which is how an old
       // daemon receives its replacement.
-      res = await deps.fetch(`${endpoint.baseUrl}/kortix/refresh?restart=0${opts.pullRepo ? '' : '&repo=0'}`, {
-        method: 'POST',
-        headers: endpoint.headers,
-        signal: AbortSignal.timeout(120_000),
-      });
+      res = await deps.fetch(
+        `${endpoint.baseUrl}/kortix/refresh?restart=0${opts.pullRepo ? '' : '&repo=0'}${opts.baseConfig ? '&base_config=1' : ''}`,
+        {
+          method: 'POST',
+          headers: endpoint.headers,
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
       if (res.status !== 409 || attempt >= REFRESH_BUSY_RETRIES) break;
       await deps.sleep(REFRESH_BUSY_DELAY_MS);
     }
@@ -1072,9 +1103,22 @@ async function refreshSandboxWorkspace(
     // The daemon answers `{repo: {before, after}}` — there is no `repo.commit`,
     // so the old read was always undefined and `commit_sha` always reported the
     // PRE-reload value, making a successful pull look like a no-op.
-    const body = (await res.json()) as { repo?: { after?: { commit?: unknown } } };
+    const body = (await res.json()) as {
+      repo?: { after?: { commit?: unknown } };
+      config_dir?: { synced?: unknown; skipped?: unknown; reload?: unknown; turn_ended?: unknown };
+    };
     const commit = body.repo?.after?.commit;
-    return { ok: true, commitSha: typeof commit === 'string' ? commit : null };
+    const dir = body.config_dir;
+    const how = dir?.reload;
+    return {
+      ok: true,
+      commitSha: typeof commit === 'string' ? commit : null,
+      configDirSynced: typeof dir?.synced === 'boolean' ? dir.synced : null,
+      ...(typeof dir?.skipped === 'string' ? { configDirReason: dir.skipped } : {}),
+      ...(how === 'disposed' || how === 'restarted' || how === 'kept-old'
+        ? { configReload: { how, turnEnded: typeof dir?.turn_ended === 'boolean' ? dir.turn_ended : null } }
+        : {}),
+    };
   } catch {
     // A failed pull is not a failed reload: the config recompiles from the git
     // MIRROR, not the sandbox's working tree, so the agent still updates.

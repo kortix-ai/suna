@@ -4,7 +4,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from '
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { runSandboxOnBoot } from '../shared/on-boot'
-import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
+import { bootstrapRuntimeSessionRequested, loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
@@ -29,10 +29,12 @@ import {
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { materializeProject } from '@/services/config-provider/config-provider'
-import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
-import { ConvergeBusyError, convergeConfigRelease } from './config-release'
+import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { ConvergeBusyError } from '@/services/config-release/release'
+import { convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
+import { retryDeferredOpencodeEnvRestart, restoreOpencodeRuntimeEnvSnapshotIfUnset } from './control'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
 // sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
 // which is also the warm-fork adoption path, since `adopt()` ends in
@@ -55,8 +57,20 @@ import {
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
-import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
-import { relayPermissionToApi } from './permission-relay'
+import { createRuntimeAuditRelay } from '../shared/audit-relay'
+import {
+  claimInitialTurn,
+  claimedRuntimeSessionPin,
+  initialTurnClaim,
+  relayPermission,
+  relayRuntimeSession,
+  relayTurnAbandoned,
+  relayTurnAccepted,
+  relayTurnBegin,
+  relayTurnEnd,
+  resetTurnBeginRelaysForTests,
+  type TurnEndFrame,
+} from '../shared/turn-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
@@ -64,6 +78,7 @@ import {
   openCodeSeedBakedPinPath,
   openCodeSessionPinPath,
   readOpenCodeSessionPin,
+  migratePreW3AuditSpool,
   resolveOpenCodeAuditSpoolPath,
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
@@ -84,9 +99,8 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
-import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
+import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
-import type { InitialTurnClaim } from '@/types/control-plane'
 
 const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'deepseek-v4-flash-free',
@@ -95,18 +109,29 @@ const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
   'north-mini-code-free',
 ])
 
-let claimedInitialTurn: InitialTurnClaim | null = null
 
-/** Test seam: a daemon process claims at most one initial turn. */
-export function resetClaimedInitialTurnForTests(): void {
-  claimedInitialTurn = null
+
+/** The projection relay pushes OpenCode's `/kortix/runtime/state` document. */
+function registerOpenCodeStateReader(): void {
+  registerRuntimeStateReader(async () => {
+    const store = runtimeStateStore()
+    if (!store) return null
+    const { doc, etag } = await store.read()
+    return { doc, etag }
+  })
 }
-
 
 /** Run the existing OpenCode cold/session boot behind the harness boundary. */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
-  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  // FIRST THING, before anything spawns or binds: restore the config-affecting
+  // opencode runtime env this box last applied, so this fresh daemon process
+  // does not read its own restart as a config change. `process.env` is
+  // process-local — see `restoreOpencodeRuntimeEnvSnapshotIfUnset`'s doc for
+  // the 2026-09-29 incident this closes.
+  restoreOpencodeRuntimeEnvSnapshotIfUnset()
+  registerOpenCodeStateReader()
+  const bootstrapSession = bootstrapRuntimeSessionRequested()
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
   } catch (err) {
@@ -230,10 +255,10 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // The initial-turn claim is a read (it returns the API's `delivering` record
   // for this session; nothing server-side changes). It used to run only after
   // OpenCode answered, costing one control-plane round trip on the critical
-  // path. Prefetch it now — memoized in claimInitialTurnFromApi — so the
+  // path. Prefetch it now — memoized in the shared claimInitialTurn — so the
   // initial-session path finds it resolved.
   if (bootstrapSession && (process.env.KORTIX_SESSION_ID ?? '').trim()) {
-    void claimInitialTurnFromApi()
+    void claimInitialTurn()
       .then(() => {
         if (bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) return
         bootMark('initial-turn-claimed')
@@ -469,7 +494,7 @@ function armSeedAdoption(
       // deriving session's credentials, which must never serve this fork.
       server.reload(cfg2)
       bootState.initialOpenCodeSessionRequired =
-        (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+        bootstrapRuntimeSessionRequested()
       logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
@@ -694,48 +719,15 @@ async function startSessionRuntime(
   // restart here strands nothing, and the first turn must run on a provider map
   // that has every managed model the picker offers.
   await reconcileManagedModels(opencode, cfg, bootMark)
-  const auditRelay = createAuditRelay(
-    async (events) => {
-      const ctx = sandboxRelayContext()
-      if (!ctx) throw new Error('audit relay context is unavailable')
-      const response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
-          body: JSON.stringify({ events }),
-          signal: AbortSignal.timeout(15_000),
-        },
-      )
-      if (!response.ok) {
-        const body = await response.text().catch(() => '')
-        noteControlPlaneResponse(response.status, body)
-        const error = new Error(
-          `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
-        ) as Error & { retryAfterMs?: number }
-        // 503 + Retry-After is the API telling us this session's audit sequence
-        // lock is contended. Honour it instead of hammering the convoy.
-        const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '', 10)
-        if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1_000
-        throw error
-      }
-    },
-    // Batch size, cadence, the dropped classes and the coalesced classes all
-    // come from the environment so an incident can retune the emission
-    // contract without a daemon release. See the contract block in
-    // opencode-audit-relay.ts.
-    {
-      spoolPath: resolveOpenCodeAuditSpoolPath(process.env),
-      ...auditRelayConfigFromEnv(process.env),
-    },
-  )
-  const auditConfig = auditRelayConfigFromEnv(process.env)
-  logger.info('[opencode-events] audit relay emission contract', {
-    batchSize: auditConfig.batchSize,
-    flushMs: auditConfig.flushMs,
-    dropTypes: auditConfig.dropTypes,
-    coalesceTypes: auditConfig.coalesceTypes.length,
-  })
+  // One relay for every harness (shared/audit-relay.ts). A spool an older
+  // daemon left behind is renamed first, or loading it would fail the runtime.
+  const auditSpoolPath = resolveOpenCodeAuditSpoolPath(process.env)
+  try {
+    migratePreW3AuditSpool(auditSpoolPath)
+  } catch (err) {
+    logger.warn('[opencode-events] pre-W3 audit spool migration failed', { err: (err as Error).message })
+  }
+  const auditRelay = createRuntimeAuditRelay('opencode', auditSpoolPath)
   const flushAuditRelay = () => {
     logger.info('[opencode-events] audit relay volume', auditRelay.stats())
     void auditRelay.stop().catch((error) =>
@@ -786,9 +778,9 @@ async function startSessionRuntime(
     )
   }
   // Report only: apps/api pushes "needs your approval". The permission itself
-  // stays open for the user (permission-relay.ts).
+  // stays open for the user (shared/permission-relay.ts).
   const onPermissionAsked = (req: PermissionRequest) => {
-    void relayPermissionToApi(req).catch((err) =>
+    void relayPermission(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
     )
   }
@@ -811,6 +803,10 @@ async function startSessionRuntime(
       // tripwires forbid. `applyStagedAssetsIfIdle` re-asks the turn oracle
       // anyway, so a CHILD session going idle under a live root turn is refused.
       convergeRuntimeAssetsAtTurnEnd(cfg)
+      // Same boundary, same reasoning, for a config-affecting `/kortix/env`
+      // restart `applyEnvironment` deferred while this turn (or an earlier
+      // one) was running. A no-op when nothing is pending.
+      await retryDeferredOpencodeEnvRestart(opencode, cfg.workspace)
     })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -871,13 +867,13 @@ async function startSessionRuntime(
   }
   let initialTurnAcceptanceSettled = false
   const initialTurnAcceptancePending = () =>
-    !initialTurnAcceptanceSettled && claimedInitialTurn !== null
+    !initialTurnAcceptanceSettled && initialTurnClaim() !== null
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
     const opencodeSessionId = bootState.initialOpenCodeSessionId
-    const turnToken = claimedInitialTurn?.turnToken
-    const messageId = claimedInitialTurn?.messageId
+    const turnToken = initialTurnClaim()?.turnToken
+    const messageId = initialTurnClaim()?.messageId
     if (!opencodeSessionId || !turnToken || !messageId) return
     initialTurnAcceptanceInFlight = true
     try {
@@ -976,7 +972,7 @@ async function startSessionRuntime(
     // NOT established — a `defer` (opencode slow to answer, prior root pinned)
     // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
     // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
-    // request `initial_opencode_session_pending`, and the session spun "Waking
+    // request `initial_runtime_session_pending`, and the session spun "Waking
     // the agent" until a human clicked Restart (reported session, 10+ min).
     // The runtime is unusable without the root, so retry until established —
     // bounded interval, detached so the rest of boot (readiness probe, event
@@ -1244,7 +1240,7 @@ async function runWarmSeedMode(
       // tokenless or with seed-only credentials.
       server.reload(cfg2)
       bootState.initialOpenCodeSessionRequired =
-        (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+        bootstrapRuntimeSessionRequested()
       logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
@@ -1415,14 +1411,14 @@ type InitialSessionBootState = Pick<
  * and release a poisoned failure flag left by an earlier attempt.
  *
  * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
- * not the box. `proxy.ts` (`initial_opencode_session_failed`, 503) and
+ * not the box. `proxy.ts` (`initial_runtime_session_failed`, 503) and
  * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
  * because until now nothing ever cleared it: it was written on a caught
  * throw in two places and cleared in none, so one throwing attempt wedged
  * the sandbox for its whole life even after `retryUntilInitialSessionEstablished`
  * established the root on a later rung. Only a manual Restart healed it.
  * Exported so proxy-auth.test.ts can prove the HTTP consequence: the proxy
- * stops answering `initial_opencode_session_failed` once this runs.
+ * stops answering `initial_runtime_session_failed` once this runs.
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
   bootState.initialOpenCodeSessionId = sessionId
@@ -1472,12 +1468,12 @@ async function maybeCreateInitialOpencodeSession(
   bootMark: (label: string) => void,
   onListening?: () => void,
 ): Promise<void> {
-  const claimedTurn = await claimInitialTurnFromApi()
+  const claimedTurn = await claimInitialTurn()
   if (!bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) {
     bootMark('initial-turn-claimed')
   }
   const prompt = claimedTurn?.prompt ?? ''
-  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  const bootstrapSession = bootstrapRuntimeSessionRequested()
   if (!prompt && !bootstrapSession) return
 
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
@@ -1508,7 +1504,13 @@ async function maybeCreateInitialOpencodeSession(
   const resolved = await resolveExistingRoot(
     baseUrl,
     workspace,
-    priorPin,
+    // The local pin file is missing on a box whose home was rebuilt or
+    // converged from a legacy runtime. The control plane's pin then decides:
+    // resolveExistingRoot resumes it, or defers when OpenCode is slow, instead
+    // of creating an empty root that the relay below writes over the durable
+    // pin (prod 2026-09-23). The local pin still wins: it is this box's own
+    // record. Delivery bookkeeping keeps using the local pin only.
+    priorPin ?? claimedRuntimeSessionPin(),
     rootListDeadlineMs,
     onListening,
   )
@@ -1586,7 +1588,7 @@ async function maybeCreateInitialOpencodeSession(
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
   // that could land on the wrong root.
-  void relayBootstrapPinToApi(sessionId)
+  void relayRuntimeSession(sessionId)
 
   if (prompt && !alreadyDelivered) {
     await publishInitialOpenCodeSessionAfterPrompt(bootState, sessionId, () =>
@@ -1671,6 +1673,20 @@ export async function finalizeOrphanedTurn(
   // opencode took to the grave and interrupting one that was about to finish.
   if (!(await confirmTurnOrphaned(baseUrl, workspace, sessionId, inspection))) return false
   await abortOpencodeTurn(baseUrl, workspace, sessionId)
+  // The abort above is best-effort against whichever process now answers for
+  // this root — after a respawn/swap that is a process that never held this
+  // turn's generation, so it stamps neither `time.completed` nor an error on
+  // the message (2026-09-29 incident). relayTurnEndToApi / reconcileFinishedFirstTurn
+  // scan for the newest COMPLETED assistant message; after this abort that scan
+  // keeps finding the turn BEFORE this one, already relayed, and skips forever
+  // — the API ledger stays `active` with no message_id for hours. Relay THIS
+  // turn's own end, keyed by its own identity, so it never depends on opencode
+  // ever settling it.
+  if (inspection.lastTurnParentId) {
+    await relayOrphanedTurnEndToApi(sessionId, inspection.lastTurnParentId).catch((err) =>
+      logger.warn('[boot] orphaned-turn relay failed', { sessionId, err: (err as Error).message }),
+    )
+  }
   return true
 }
 
@@ -2028,6 +2044,22 @@ interface RootInspection {
    *  unfinished" from "a different turn has since started". */
   lastMessageId: string | null
   /**
+   * The incomplete last assistant message's OWN `parentID` — the user prompt
+   * it is answering. `null` when the last message is not an incomplete
+   * assistant, or carries no `parentID`.
+   *
+   * This is the turn's identity from apps/api's point of view
+   * (`session_turns` rows are keyed by the prompt, not by the reply —
+   * `relayTurnEndToApi`'s `turn_message_id` is the same field). A turn this
+   * abort orphans (2026-09-29 incident) never gets `time.completed` stamped
+   * on it by a process that never held its generation, so it can never
+   * become "the newest COMPLETED turn" the natural relay / reconcile-on-
+   * subscribe backstop scan for — they keep finding the turn BEFORE it,
+   * already relayed, and skip forever. `finalizeOrphanedTurn` relays THIS
+   * turn's end directly, keyed by this id.
+   */
+  lastTurnParentId: string | null
+  /**
    * False when the read failed — opencode unreachable, non-2xx, the 5s
    * timeout a cold post-resume opencode routinely hits, or an unparseable
    * response. Mirrors `RootInspection.known` in opencode-turn-state.ts (same
@@ -2146,18 +2178,39 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
     // Non-2xx (opencode answering but unhappy — e.g. mid-restart) is a read
     // failure, not "no messages": `known: false`.
     if (!res.ok) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+      return {
+        hasMessages: false,
+        lastTurnIncomplete: false,
+        lastTurnHasError: false,
+        lastMessageId: null,
+        lastTurnParentId: null,
+        known: false,
+      }
     }
     const msgs = (await res.json()) as Array<{
-      info?: { id?: string; role?: string; error?: unknown; time?: { completed?: number } }
+      info?: { id?: string; role?: string; error?: unknown; parentID?: string; time?: { completed?: number } }
     }>
     // An unparseable shape is also a read failure, not a genuinely empty root
     // — only an actual `[]` counts as a confirmed-empty root.
     if (!Array.isArray(msgs)) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+      return {
+        hasMessages: false,
+        lastTurnIncomplete: false,
+        lastTurnHasError: false,
+        lastMessageId: null,
+        lastTurnParentId: null,
+        known: false,
+      }
     }
     if (msgs.length === 0) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: true }
+      return {
+        hasMessages: false,
+        lastTurnIncomplete: false,
+        lastTurnHasError: false,
+        lastMessageId: null,
+        lastTurnParentId: null,
+        known: true,
+      }
     }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
@@ -2166,12 +2219,20 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       lastTurnIncomplete: Boolean(incomplete),
       lastTurnHasError: Boolean(last?.info?.error),
       lastMessageId: last?.info?.id ?? null,
+      lastTurnParentId: incomplete ? last?.info?.parentID ?? null : null,
       known: true,
     }
   } catch {
     // Unreachable, or the 5s AbortSignal.timeout above fired — the exact "cold
     // post-resume opencode" hazard this whole tri-state exists for.
-    return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    return {
+      hasMessages: false,
+      lastTurnIncomplete: false,
+      lastTurnHasError: false,
+      lastMessageId: null,
+      lastTurnParentId: null,
+      known: false,
+    }
   }
 }
 
@@ -2248,38 +2309,6 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
   }
 }
 
-/**
- * Report the canonical opencode root to apps/api so it writes the durable DB
- * pin (project_sessions.opencode_session_id) at bootstrap — no browser needed.
- * Best-effort and fire-once: even if it never lands (transient blip), the API
- * still heals the pin on the first /ensure-opencode. Never blocks boot.
- */
-async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) return
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        session_id: sessionId,
-        kind: 'opencode_session',
-        opencode_session_id: opencodeSessionId,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) {
-      logger.warn('[boot] bootstrap pin relay non-ok', { status: res.status })
-      return
-    }
-    logger.info('[boot] bootstrap opencode session pinned via api', { opencodeSessionId })
-  } catch (err) {
-    logger.warn('[boot] bootstrap pin relay failed', { err: (err as Error).message })
-  }
-}
-
 export async function createInitialOpenCodeSession(
   opencode: Opencode,
   workspace: string,
@@ -2308,116 +2337,6 @@ export async function deliverInitialOpenCodePrompt(
   if (!response.ok) {
     throw new Error(`opencode prompt failed: ${response.status} ${await response.text()}`)
   }
-}
-
-/**
- * Promote only the initial-turn authority that apps/api created before the
- * sandbox existed. The daemon cannot mint a token, create a lifecycle record,
- * or revive a record removed by terminal evidence.
- */
-export async function relayInitialTurnAcceptedToApi(
-  opencodeSessionId: string,
-  messageId: string,
-  turnToken: string,
-): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) throw new Error('initial turn acceptance relay context is unavailable')
-  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
-  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sandboxToken}`,
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_accepted',
-      opencode_session_id: opencodeSessionId,
-      turn_message_id: messageId,
-      turn_token: turnToken,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn acceptance rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
-  return body.ok === true
-}
-
-/** Claim the pending first turn through the session-bound Kortix credential. */
-export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null> {
-  if (claimedInitialTurn) return claimedInitialTurn
-  const ctx = sandboxRelayContext()
-  if (!ctx) return null
-  const { projectId, sessionId, token, apiRoot } = ctx
-  let response: Response | null = null
-  let lastError: unknown = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ session_id: sessionId, kind: 'initial_turn_claim' }),
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (response.ok || response.status < 500) break
-      lastError = new Error(`initial turn claim returned ${response.status}`)
-    } catch (error) {
-      lastError = error
-    }
-    if (attempt < 2) await Bun.sleep(250 * 2 ** attempt)
-  }
-  if (!response) {
-    throw new Error(`initial turn claim failed after 3 attempts: ${String(lastError)}`)
-  }
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn claim rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json()) as {
-    initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
-  }
-  const turn = body.initial_turn
-  if (
-    !turn ||
-    typeof turn.prompt !== 'string' ||
-    typeof turn.turn_token !== 'string' ||
-    typeof turn.message_id !== 'string'
-  ) return null
-  claimedInitialTurn = {
-    prompt: turn.prompt,
-    turnToken: turn.turn_token,
-    messageId: turn.message_id,
-  }
-  return claimedInitialTurn
-}
-
-/** Remove only a pre-created initial-turn record that OpenCode never accepted. */
-export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) throw new Error('initial turn abandonment relay context is unavailable')
-  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
-  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sandboxToken}`,
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_abandoned',
-      turn_token: turnToken,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn abandonment rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
-  return body.ok === true
 }
 
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
@@ -2454,7 +2373,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
   )
   if (observation.inFlight === null) return 'unknown'
   if (observation.inFlight) {
-    await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+    await relayTurnAccepted(opencodeSessionId, messageId, turnToken)
     return 'accepted'
   }
   // THIS boot just delivered the prompt, and OpenCode has not picked it up
@@ -2474,7 +2393,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
   ) {
     return 'unknown'
   }
-  await relayInitialTurnAbandonedToApi(turnToken)
+  await relayTurnAbandoned(turnToken)
   return 'inactive'
 }
 
@@ -2558,16 +2477,13 @@ export function __resetRelayedTurnSignatures(): void {
   relayedTurnSignatures.clear()
 }
 
-// Turn-begin relay dedup: root id -> the newest user message id already
-// relayed (or refused as already-known by apps/api). A turn's identity is its
-// user message, so one turn relays once no matter how many `busy`/`retry`
-// status frames it emits. Per-process, like `relayedTurnSignatures`.
-const relayedTurnBegins = new Map<string, string>()
+// One turn-begin read per root at a time; the per-message dedup lives in the
+// shared relay (`relayTurnBegin`).
 const turnBeginRelaysInFlight = new Set<string>()
 
 /** Test-only: clear the per-turn begin dedup between cases. */
 export function __resetRelayedTurnBegins(): void {
-  relayedTurnBegins.clear()
+  resetTurnBeginRelaysForTests()
   turnBeginRelaysInFlight.clear()
 }
 
@@ -2639,61 +2555,7 @@ export async function relayTurnBeginToApi(
       return
     }
     if (!newestUserId) return
-    if (relayedTurnBegins.get(opencodeSessionId) === newestUserId) return
-
-    const { projectId, sessionId, token, apiRoot } = ctx
-    const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-    const payload = JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_begin',
-      opencode_session_id: opencodeSessionId,
-      turn_message_id: newestUserId,
-    })
-    // A credential the API has refused, repeatedly and without contradiction,
-    // cannot accept this relay: both attempts carry the same dead token, and
-    // every `busy`/`retry` frame would re-issue them — the `POST .../turn-stream
-    // -> 401` warn spike in KRTX-446. Skip while the shared breaker reports the
-    // credential dead; it clears on the next answer that is not the dead-token
-    // 401, so this resumes by itself and never stops the daemon.
-    if (sessionTokenPresumedDead()) return
-    // Two attempts only: `busy`/`retry` frames recur for a live turn, so a
-    // transient failure retries itself on the next frame.
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: payload,
-          signal: AbortSignal.timeout(15_000),
-        })
-        if (res.ok) {
-          // ANY definitive answer dedups: adopted, already-open, or
-          // already-known all mean this exact message needs no further relay.
-          relayedTurnBegins.set(opencodeSessionId, newestUserId)
-          const data = (await res.json().catch(() => null)) as { outcome?: string } | null
-          if (data?.outcome === 'adopted') {
-            logger.info('[opencode-events] box-initiated turn adopted', {
-              opencodeSessionId,
-              messageId: newestUserId,
-            })
-          }
-          return
-        }
-        const bodyText = await res.text().catch(() => '')
-        noteControlPlaneResponse(res.status, bodyText)
-        logger.warn('[opencode-events] turn-begin relay non-ok', {
-          status: res.status,
-          attempt,
-          body: bodyText.slice(0, 200),
-        })
-      } catch (err) {
-        logger.warn('[opencode-events] turn-begin relay fetch failed', {
-          err: (err as Error).message,
-          attempt,
-        })
-      }
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 1_000))
-    }
+    await relayTurnBegin(opencodeSessionId, newestUserId)
   } finally {
     turnBeginRelaysInFlight.delete(opencodeSessionId)
   }
@@ -2791,90 +2653,67 @@ export async function relayTurnEndToApi(
   // clears on the next non-dead answer, and the daemon keeps serving.
   if (sessionTokenPresumedDead()) return
 
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  // This is the ONLY signal that finalizes a turn the agent ended without
-  // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
-  // best-effort: retry with backoff before giving up. A non-ok HTTP response is
-  // a definitive answer from apps/api (e.g. already finalized), so we stop on any
-  // `res.ok`; only network/5xx failures are retried.
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          session_id: sessionId,
-          kind: 'end',
-          status: effectiveStatus,
-          opencode_session_id: opencodeSessionId,
-          turn_message_id: turn.parentMessageId ?? undefined,
-          ...(error
-            ? {
-                error_name: error.name,
-                error_message: error.message,
-                error_status: error.statusCode,
-                error_retryable: error.isRetryable,
-                error_provider: error.providerID,
-              }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          ok?: boolean
-          turn_completion?: { outcome?: string; active_turn_count?: number }
-          queue_promoted?: boolean
-          promoted_prompt_id?: string | null
-        } | null
-        const outcome = data?.turn_completion?.outcome
-        const accepted =
-          outcome === undefined ||
-          outcome === 'closed' ||
-          outcome === 'already_closed' ||
-          outcome === 'no_active_turn'
-        if (!accepted) {
-          logger.warn('[opencode-events] turn-end relay was not settled', {
-            outcome: outcome ?? 'unknown',
-            opencodeSessionId,
-            turnMessageId: turn.parentMessageId,
-            activeTurnCount: data?.turn_completion?.active_turn_count,
-            queuePromoted: data?.queue_promoted,
-            promotedPromptId: data?.promoted_prompt_id,
-            attempt,
-          })
-          if (attempt < 4) {
-            const reread = await readRootTurnState(opencodeSessionId, opencode, cfg)
-            if (turn.completedAt == null || reread.completedAt === turn.completedAt) {
-              turn = reread
-              error = eventError ?? turn.error
-              effectiveStatus = error ? 'error' : status
-            }
-            await new Promise((r) => setTimeout(r, 1_000 * attempt))
-          }
-          continue
-        }
-        // Record the dedup signature ONLY on a confirmed relay — a res.ok is a
-        // definitive answer from apps/api (relayed, or already-finalized), so a
-        // later observation of the same completed turn is a safe no-op to skip.
-        if (dedupSig) relayedTurnSignatures.add(dedupSig)
-        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
-        return
+  // The shared relay retries an answer apps/api did not settle; re-read the
+  // turn first, unless it completed since the first read (a new turn).
+  const frame = (): TurnEndFrame => ({
+    runtimeSessionId: opencodeSessionId,
+    messageId: turn.parentMessageId,
+    status: effectiveStatus,
+    error,
+  })
+  const relayed = await relayTurnEnd(frame(), {
+    reread: async () => {
+      const reread = await readRootTurnState(opencodeSessionId, opencode, cfg)
+      if (turn.completedAt == null || reread.completedAt === turn.completedAt) {
+        turn = reread
+        error = eventError ?? turn.error
+        effectiveStatus = error ? 'error' : status
       }
-      const bodyText = await res.text().catch(() => '')
-      noteControlPlaneResponse(res.status, bodyText)
-      logger.warn('[opencode-events] turn-end relay non-ok', {
-        status: res.status,
-        attempt,
-        body: bodyText.slice(0, 200),
-      })
-    } catch (err) {
-      logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
-    }
-    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
+      return frame()
+    },
+  })
+  // Record the dedup signature ONLY on a confirmed relay: a settled answer is
+  // definitive (relayed, or already finalized), so a later observation of the
+  // same completed turn is a safe no-op to skip.
+  if (relayed && dedupSig) relayedTurnSignatures.add(dedupSig)
+}
+
+/**
+ * Relay ONE orphaned turn's end directly, keyed by ITS OWN identity — the
+ * prompt message id — never by "the newest COMPLETED assistant message"
+ * (`relayTurnEndToApi`'s/`reconcileFinishedFirstTurn`'s dedup).
+ *
+ * `finalizeOrphanedTurn` calls this after aborting a turn that a restart
+ * orphaned. The abort is best-effort against a process that never held that
+ * turn's generation, so OpenCode never stamps `time.completed` or an error on
+ * the message — it can never become "the newest completed turn" the other
+ * relay paths scan for. Without this, they keep finding the turn BEFORE it,
+ * already relayed, and skip forever: a stuck `active` turn with no
+ * `message_id`, for hours (2026-09-29 incident).
+ *
+ * Dedups on `relayedTurnSignatures` — the same per-process set
+ * `relayTurnEndToApi` records into — keyed by this turn's own prompt id
+ * rather than a completed timestamp, since this turn never gets one.
+ * `finalizeOrphanedTurn` can run more than once for the same stuck turn (the
+ * unplanned-respawn hook and the reused-root boot check both call it), so
+ * without this dedup a single incident would double-post.
+ */
+export async function relayOrphanedTurnEndToApi(opencodeSessionId: string, turnMessageId: string): Promise<void> {
+  const dedupSig = `orphan:${opencodeSessionId}:${turnMessageId}`
+  if (relayedTurnSignatures.has(dedupSig)) {
+    logger.info('[boot] orphaned-turn end already relayed; skipping', { opencodeSessionId, turnMessageId })
+    return
   }
-  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+  const relayed = await relayTurnEnd({
+    runtimeSessionId: opencodeSessionId,
+    messageId: turnMessageId,
+    status: 'error',
+    error: {
+      name: 'RuntimeAbortedTurn',
+      message: 'The agent runtime restarted mid-turn. Send your message again.',
+    },
+  })
+  if (relayed) relayedTurnSignatures.add(dedupSig)
 }
 
 interface RootTurnState {
@@ -3044,7 +2883,7 @@ async function classifyOpencodeSession(
  * Gateway-disabled sessions keep the native `provider/model` split. Bare
  * legacy Zen ids remain normalized onto the native OpenCode provider. */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
-  const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
+  const raw = (process.env.KORTIX_MODEL ?? process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
   if (!raw) return undefined
   if (hasKortixLlmGateway(process.env)) {
     const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
@@ -3087,6 +2926,7 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
   const { cfg, bootState, bootMark, serve } = context
+  registerOpenCodeStateReader()
   await runWarmSeedMode(cfg, bootState, bootMark, serve)
   return true
 }

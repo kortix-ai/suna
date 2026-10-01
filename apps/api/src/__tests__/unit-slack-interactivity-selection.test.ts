@@ -326,3 +326,18 @@ describe('settings buttons need a linked project manager', () => {
     expect(posts.at(-1)?.body.text).toContain('Switched this channel to');
   });
 });
+
+// An agent can post any button through the bot, including a look-alike
+// "Connect" whose value names a URL of its choosing. Kortix used to present
+// that URL as its own sign-in page. The link is now built for the clicker.
+describe('the Connect button', () => {
+  test('never presents a URL taken from the button value', async () => {
+    await handleBlockAction({
+      ...basePayload,
+      actions: [{ action_id: 'slack_login_connect', value: JSON.stringify({ url: 'https://phish.example.test/login', pendingId: 'pending-1' }) }],
+    });
+    const body = JSON.stringify(posts[0]?.body);
+    expect(body).not.toContain('phish.example.test');
+    expect(body).toMatch(/\/(slack\/login|v1\/channels\/slack\/identity\/login)\/[^"]+/);
+  });
+});

@@ -6,15 +6,16 @@ import { isSessionSandboxCredential } from '../../middleware/session-sandbox-cre
 import { permissionPushGate } from '../../notifications/permission-push';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { AnyObject, projectsApp } from '../lib/app';
+import { TurnPermissionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
+import { projectsApp } from '../lib/app';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 
 // POST /v1/projects/:projectId/turn-permission
-// Sandbox-to-apps/api relay for OpenCode's `permission.asked` event
-// (apps/kortix-sandbox-agent-server/src/harness/open-code/permission-relay.ts).
+// Sandbox-to-apps/api relay for a harness permission request, from OpenCode
+// and pi alike (apps/kortix-sandbox-agent-server/src/harness/shared/permission-relay.ts).
 // It only notifies: the session creator's devices get one "needs your
 // approval" push per request id. It never answers the permission — the user
-// approves in the session UI, over OpenCode's own API. Session resolution
+// approves in the session UI, over the harness's own API. Session resolution
 // matches POST /turn-question (routes/turn-questions.ts), but only a sandbox
 // credential may call it.
 
@@ -30,7 +31,10 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
+      // The daemon's body (`@kortix/api-contract/runtime-relay`). The handler
+      // reads `session_id` and `request_id`; `permission` and `patterns` name
+      // what waits for approval.
+      body: { content: { 'application/json': { schema: TurnPermissionRelayBodySchema } }, required: true },
     },
     responses: {
       200: json(z.object({ ok: z.literal(true), notified: z.boolean() }), 'OK'),

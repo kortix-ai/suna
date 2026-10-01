@@ -12,10 +12,13 @@ resource "aws_s3_bucket" "terraform_state_use2" {
 
   bucket = "kortix-terraform-state-us-east-2-935064898258"
 
-  tags = merge(local.tags, {
-    Name   = "kortix-terraform-state-us-east-2"
-    Region = "us-east-2"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+    Name       = "kortix-terraform-state-us-east-2"
+    Region     = "us-east-2"
+  }
 
   lifecycle {
     prevent_destroy = true
@@ -74,10 +77,13 @@ resource "aws_kms_key" "terraform_state_use2" {
     }]
   })
 
-  tags = merge(local.tags, {
-    Name   = "kortix-terraform-state-us-east-2"
-    Region = "us-east-2"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+    Name       = "kortix-terraform-state-us-east-2"
+    Region     = "us-east-2"
+  }
 
   lifecycle {
     prevent_destroy = true
@@ -196,10 +202,13 @@ resource "aws_dynamodb_table" "terraform_locks_use2" {
     kms_key_arn = aws_kms_key.terraform_state_use2.arn
   }
 
-  tags = merge(local.tags, {
-    Name   = "kortix-terraform-locks-us-east-2"
-    Region = "us-east-2"
-  })
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "security-baseline"
+    Compliance = "soc2"
+    Name       = "kortix-terraform-locks-us-east-2"
+    Region     = "us-east-2"
+  }
 
   lifecycle {
     prevent_destroy = true

@@ -22,6 +22,9 @@ import { fireGitTrigger } from '../projects/lib/trigger-fire';
 import {
   getSessionReminder,
   insertSessionReminder,
+  insertSessionReminderWithinCaps,
+  REMINDER_MAX_ACTIVE_PER_PROJECT,
+  REMINDER_MAX_ACTIVE_PER_SESSION,
   listSessionReminders,
   reminderSpec,
   parseReminderDraft,
@@ -214,5 +217,53 @@ describe('session reminders on the trigger tables', () => {
     expect(row?.sessionId).toBeNull();
     const executions = await db.select().from(projectTriggerExecutions).where(eq(projectTriggerExecutions.slug, spec.slug));
     expect(executions).toHaveLength(0);
+  });
+
+  test('concurrent creates never pass the per-session cap', async () => {
+    const now = new Date();
+    const sessionId = await seedSession();
+    const draft = parseReminderDraft({ prompt: 'flood', in: '5h' }, now);
+    if ('error' in draft) throw new Error(draft.error);
+    const results = await Promise.all(
+      Array.from({ length: REMINDER_MAX_ACTIVE_PER_SESSION * 2 }, () =>
+        insertSessionReminderWithinCaps({
+          projectId: PROJECT,
+          spec: reminderSpec({ id: `reminder.${crypto.randomUUID().slice(0, 12).replace('-', '')}`, sessionId, agent: 'kortix', draft, now }),
+          createdBy: OWNER,
+          firstFireAt: draft.firstFireAt,
+          now,
+        }),
+      ),
+    );
+    expect(results.filter((r) => 'row' in r)).toHaveLength(REMINDER_MAX_ACTIVE_PER_SESSION);
+    expect(results.filter((r) => 'error' in r)).toHaveLength(REMINDER_MAX_ACTIVE_PER_SESSION);
+    expect(await listSessionReminders(PROJECT, sessionId)).toHaveLength(REMINDER_MAX_ACTIVE_PER_SESSION);
+  });
+
+  test('a project holds at most REMINDER_MAX_ACTIVE_PER_PROJECT active reminders', async () => {
+    const project = crypto.randomUUID();
+    await db.insert(projects).values({ projectId: project, accountId: ACCOUNT, name: 'cap', repoUrl: 'https://example.com/cap.git' });
+    const now = new Date();
+    const draft = parseReminderDraft({ prompt: 'cap', in: '5h' }, now);
+    if ('error' in draft) throw new Error(draft.error);
+    const add = async (sessionId: string) =>
+      insertSessionReminderWithinCaps({
+        projectId: project,
+        spec: reminderSpec({ id: `reminder.${crypto.randomUUID().slice(0, 12).replace('-', '')}`, sessionId, agent: 'kortix', draft, now }),
+        createdBy: OWNER,
+        firstFireAt: draft.firstFireAt,
+        now,
+      });
+    const seed = async () => {
+      const sessionId = crypto.randomUUID();
+      await db.insert(projectSessions).values({ sessionId, accountId: ACCOUNT, projectId: project, branchName: `cap-${sessionId.slice(0, 8)}`, createdBy: OWNER });
+      return sessionId;
+    };
+    const sessions = await Promise.all(Array.from({ length: REMINDER_MAX_ACTIVE_PER_PROJECT / REMINDER_MAX_ACTIVE_PER_SESSION + 1 }, seed));
+    for (const sessionId of sessions.slice(0, -1)) {
+      for (let i = 0; i < REMINDER_MAX_ACTIVE_PER_SESSION; i++) expect('row' in (await add(sessionId))).toBe(true);
+    }
+    const over = await add(sessions.at(-1)!);
+    expect(over).toEqual({ error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active reminders. Stop one first.` });
   });
 });

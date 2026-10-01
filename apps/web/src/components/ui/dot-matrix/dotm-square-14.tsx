@@ -1,14 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
 
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase, rowMajorIndex } from '@/lib/dotmatrix-core';
-import {
-  useDotMatrixPhases,
-  usePrefersReducedMotion,
-  useSteppedCycle,
-} from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component, rowMajorIndex } from '@/lib/dotmatrix-core';
 
 export type DotmSquare14Props = DotMatrixCommonProps;
 
@@ -36,35 +30,9 @@ function maskCell(mask: string, row: number, col: number): FrameCell {
   return (mask[rowMajorIndex(row, col)] as FrameCell | undefined) ?? '.';
 }
 
-export function DotmSquare14({
-  speed = 1.25,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  size = 14,
-  dotSize = 2,
-  ...rest
-}: DotmSquare14Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-  const sequenceLength = FRAME_SEQUENCE.length;
-  const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== 'idle' && sequenceLength > 0,
-    cycleMsBase: 1700,
-    steps: sequenceLength,
-    speed,
-  });
+function makeResolver(cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
-    const frameIndex = FRAME_SEQUENCE[step] ?? 0;
+    const frameIndex = FRAME_SEQUENCE[cycle] ?? 0;
     const mask = FRAME_MASKS[frameIndex] ?? FRAME_MASKS[0]!;
 
     return ({ isActive, row, col }) => {
@@ -81,21 +49,6 @@ export function DotmSquare14({
       }
       return { style: { opacity: BASE_OPACITY, transition: SMOOTH_TRANSITION } };
     };
-  }, [step]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={size}
-      dotSize={dotSize}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmSquare14 = createDotm5x5Component('DotmSquare14', makeResolver, { speed: 1.25, size: 14, dotSize: 2, cycleMsBase: 1700, steps: FRAME_SEQUENCE.length });

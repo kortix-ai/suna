@@ -105,10 +105,10 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync
 import { dirname, join } from 'node:path'
 import { OPENCODE_HOME } from './paths'
 import { describeOpencodeError, isConfigErrorName } from './proven-check'
-import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
+import { access, constants, open, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
-import { AGENT_ENV_SH } from '../shared/agent-env-file'
+import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
@@ -271,6 +271,48 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
 }
 
 /**
+ * The `OPENCODE_CONFIG_CONTENT` patch that routes each config-dir agent `.md`'s
+ * own `model:` through `kortix`, or undefined when no `.md` needs one.
+ *
+ * {@link normalizeGatewayModelRefs} never sees these refs: OpenCode reads the
+ * `.md` files itself, AFTER the composed `OPENCODE_CONFIG` file, so a raw
+ * `model: codex/gpt-6-sol` beat it and named provider `codex`, which gateway
+ * mode does not have. Every prompt that named no model then failed "Model not
+ * found: codex/gpt-6-sol." (prod 2026-09-30: every Slack follow-up to one
+ * project's default agent). `OPENCODE_CONFIG_CONTENT` is the one layer OpenCode
+ * merges after the config dir, and it merges deeply, so only `model` changes.
+ */
+export async function gatewayAgentModelPatch(configDir: string): Promise<string | undefined> {
+  const agent: Record<string, { model: string }> = {}
+  for (const sub of ['agent', 'agents']) {
+    const root = join(configDir, sub)
+    const files = await readdir(root, { recursive: true }).catch(() => [] as string[])
+    for (const rel of files) {
+      if (!rel.endsWith('.md')) continue
+      const model = frontmatterModel(await readFile(join(root, rel), 'utf8').catch(() => ''))
+      if (model && !model.startsWith('kortix/')) {
+        agent[rel.slice(0, -'.md'.length)] = { model: toKortixOpencodeModelRef(model) }
+      }
+    }
+  }
+  return Object.keys(agent).length > 0 ? JSON.stringify({ agent }) : undefined
+}
+
+/** The `model:` in a Markdown file's YAML frontmatter, or null. */
+function frontmatterModel(text: string): string | null {
+  const lines = text.split(/\r?\n/)
+  if (lines[0]?.trim() !== '---') return null
+  const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---')
+  if (end < 0) return null
+  try {
+    const data = Bun.YAML.parse(lines.slice(1, end).join('\n')) as { model?: unknown } | null
+    return typeof data?.model === 'string' && data.model.trim() ? data.model.trim() : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Native-mode counterpart of {@link normalizeGatewayModelRefs}: a `kortix/…`
  * ref left behind by a gateway→native toggle (compiled agent config, repo
  * config, model prefs) names a provider that does not exist off-gateway.
@@ -393,7 +435,7 @@ export async function buildOpencodeConfigContent(
   // native provider and is ignored.
   const nativeSessionModel = (() => {
     if (hasLlmGateway) return undefined
-    const raw = env.KORTIX_OPENCODE_MODEL?.trim()
+    const raw = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
     if (!raw) return undefined
     const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
     const slash = ref.indexOf('/')
@@ -547,7 +589,7 @@ export async function buildOpencodeConfigContent(
       kortix: kortixProvider,
     }
     normalizeGatewayModelRefs(out)
-    const resolvedSessionModel = env.KORTIX_OPENCODE_MODEL?.trim()
+    const resolvedSessionModel = (env.KORTIX_MODEL ?? env.KORTIX_OPENCODE_MODEL)?.trim()
     const availableGatewayModel = Object.keys(
       (kortixProvider.models as Record<string, unknown> | undefined) ?? {},
     )[0]
@@ -1039,7 +1081,10 @@ function withManagedOverlay(
   if (live && Object.keys(live).length > 0) return { ...base, ...live }
   const out = { ...base }
   for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
-    if (!out[id]) out[id] = model
+    // Fill-only, except `limit`. The builder swaps a new daemon into an older
+    // image without re-baking its catalog, so this daemon's managed limit is
+    // the newer one. A stale limit puts compaction on the context wall.
+    out[id] = out[id] ? { ...out[id], limit: model.limit } : model
   }
   return out
 }
@@ -1283,6 +1328,9 @@ export type ManagedCatalogConvergeOutcome =
   /** No gateway credentials on this box (KORTIX_LLM_BASE_URL/KORTIX_TOKEN),
    *  or the gateway itself never answered. */
   | 'no-gateway'
+  /** `model` was asked for and the live gateway catalog does not carry it — a
+   *  retired or mistyped id. Nothing to repair; OpenCode's own error stands. */
+  | 'not-served'
 
 export interface ManagedCatalogConvergeResult {
   outcome: ManagedCatalogConvergeOutcome
@@ -1292,6 +1340,9 @@ export interface ManagedCatalogConvergeResult {
   /** Size of the live managed listing this call fetched, 0 when unavailable. */
   managed: number
   reason?: string
+  /** Set when the caller asked about one `model`: whether the RUNNING OpenCode
+   *  registers it after this call. */
+  modelPresent?: boolean
 }
 
 /**
@@ -1327,14 +1378,45 @@ export async function convergeManagedModelCatalog(
     allowRestart?: boolean
     catalogTargetFile?: string
     turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
+    /** The one model a turn asks for (`codex/gpt-6.1-sol`, `openai/…`, a
+     *  managed id). Any provider, not only managed: the image-baked catalog
+     *  is as stale for a new BYOK/ChatGPT model as for a managed one. */
+    model?: string
   } = {},
 ): Promise<ManagedCatalogConvergeResult> {
   const allowRestart = opts.allowRestart !== false
   const startedAt = Date.now()
   const baseUrl = process.env.KORTIX_LLM_BASE_URL
   const apiKey = process.env.KORTIX_TOKEN
+  if (opts.model && lastConfiguredProviderModelIds?.has(opts.model)) {
+    return { outcome: 'unchanged', missing: [], managed: 0, modelPresent: true }
+  }
   if (!hasKortixLlmGateway(process.env) || !baseUrl || !apiKey) {
-    return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'no gateway credentials on this box' }
+    return {
+      outcome: 'no-gateway',
+      missing: [],
+      managed: 0,
+      reason: 'no gateway credentials on this box',
+      ...(opts.model ? { modelPresent: false } : {}),
+    }
+  }
+  if (opts.model) {
+    const model = opts.model
+    const refreshed = await refreshGatewayCatalogFile({
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      targetCatalogFile: opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
+      fetchBaseURL: baseUrl,
+      fetchApiKey: apiKey,
+    })
+    if (!refreshed?.fullCatalogLive) {
+      return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'live gateway catalog unavailable', modelPresent: false }
+    }
+    process.env.KORTIX_LLM_CATALOG_FILE = refreshed.catalogFile
+    if (!readCatalogFile(refreshed.catalogFile)?.[model]) {
+      return { outcome: 'not-served', missing: [], managed: 0, reason: `the gateway does not serve ${model}`, modelPresent: false }
+    }
+    const result = await restartIfIdle(opencode, cfg, opts.turnProbe, [model], startedAt)
+    return { ...result, managed: 0, modelPresent: result.outcome === 'restarted' }
   }
   const live = await fetchManagedModels(baseUrl, apiKey)
   if (!live) {
@@ -1361,14 +1443,26 @@ export async function convergeManagedModelCatalog(
     })
     return { outcome: 'file-updated', missing, managed }
   }
-  const probe = opts.turnProbe ?? opencodeTurnInFlight
+  return { ...(await restartIfIdle(opencode, cfg, opts.turnProbe, missing, startedAt)), managed }
+}
+
+/** One idle-gated, verified OpenCode restart onto the catalog file already
+ *  written. Never ends a running turn, never retries. */
+async function restartIfIdle(
+  opencode: Pick<Opencode, 'getInternalUrl' | 'reloadVerified'>,
+  cfg: Pick<Config, 'workspace'>,
+  turnProbe: ((baseUrl: string, workspace: string) => Promise<boolean | null>) | undefined,
+  missing: string[],
+  startedAt: number,
+): Promise<Pick<ManagedCatalogConvergeResult, 'outcome' | 'missing' | 'reason'>> {
+  const probe = turnProbe ?? opencodeTurnInFlight
   const idle = async (): Promise<boolean> => (await probe(opencode.getInternalUrl(), cfg.workspace)) === false
   if (!(await idle())) {
     logger.warn('[opencode] on-demand catalog converge: skipping restart — a turn is live or unreadable', {
       missing,
       ms: Date.now() - startedAt,
     })
-    return { outcome: 'declined', missing, managed, reason: 'a turn is live or its state is unknown' }
+    return { outcome: 'declined', missing, reason: 'a turn is live or its state is unknown' }
   }
   const result = await opencode.reloadVerified({ mayPromote: idle })
   if (result.outcome !== 'swapped') {
@@ -1377,19 +1471,21 @@ export async function convergeManagedModelCatalog(
       reason: result.reason,
       ms: Date.now() - startedAt,
     })
-    return { outcome: 'declined', missing, managed, reason: result.reason ?? 'reload declined' }
+    return { outcome: 'declined', missing, reason: result.reason ?? 'reload declined' }
   }
-  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing managed models', {
+  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing models', {
     missing,
-    managed,
     ms: Date.now() - startedAt,
   })
-  return { outcome: 'restarted', missing, managed }
+  return { outcome: 'restarted', missing }
 }
 
 export type GatewayCatalogRefreshResult = {
   changed: boolean
   catalogFile: string
+  /** The full project catalog came from the gateway on this call, not the
+   *  file already on disk. */
+  fullCatalogLive: boolean
 }
 
 /**
@@ -1439,7 +1535,7 @@ export async function refreshGatewayCatalogFile(opts: {
     fullCatalogLive: !!liveModels,
     target: opts.targetCatalogFile,
   })
-  return { changed, catalogFile: opts.targetCatalogFile }
+  return { changed, catalogFile: opts.targetCatalogFile, fullCatalogLive: !!liveModels }
 }
 
 // Conservative window for a model we have no declared limit for. Better to
@@ -1663,7 +1759,16 @@ export function nextLivenessState(input: LivenessDecisionInput): LivenessDecisio
 }
 
 export type Opencode = HarnessLifecycleService & {
-  reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
+  /**
+   * @param opts.mayPromote Forwarded to `reloadVerified` as the last-moment
+   * turn check before the candidate is promoted — see `VerifiedReloadOptions`.
+   * Every `mustRespawn: true` caller must supply one: without it, a config
+   * push (e.g. `/kortix/env`) can promote a candidate and SIGTERM the running
+   * process while it holds a turn the API just accepted (2026-09-29 incident:
+   * `KORTIX_SECRET_CAPABILITIES` pushed fleet-wide by a release, turn accepted
+   * 200ms before the kill, orphaned for hours).
+   */
+  reloadConfig(opts?: { mustRespawn?: boolean; mayPromote?: () => Promise<boolean> }): Promise<ReloadConfigResult>
   /**
    * The workspace (repo checkout, config-dir deps, injected skills) landed
    * AFTER this process spawned. Rewrite the composed config with the same
@@ -1796,6 +1901,13 @@ export function createOpencodeLifecycle(
   const childPorts = new WeakMap<ChildProcess, number>()
   function livePort(): number {
     return (child ? childPorts.get(child) : undefined) ?? activePort
+  }
+  // The agent-model patch each process was spawned with. It rides the process
+  // env, which a dispose cannot change, so a reload whose patch differs from
+  // the live one must respawn (tryDisposeReload).
+  const agentModelPatches = new WeakMap<ChildProcess, string | undefined>()
+  function agentModelPatchFor(baseEnv: NodeJS.ProcessEnv): Promise<string | undefined> {
+    return hasKortixLlmGateway(baseEnv) ? gatewayAgentModelPatch(bootLinkPath()) : Promise.resolve(undefined)
   }
   let binaryPath: string | null = null
   let stopping = false
@@ -1932,13 +2044,13 @@ export function createOpencodeLifecycle(
       // OpenCode reads is one atomic `pointBootLink` and never a second env
       // writer, a hint, or a spawn-time decision.
       OPENCODE_CONFIG_DIR: bootLinkPath(),
-      // Every non-interactive shell opencode spawns (`bash -c`) sources this,
-      // so live project secrets reach the agent's commands without any
-      // opencode plugin/config. Interactive shells + terminals get it from the
-      // image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
-      BASH_ENV: AGENT_ENV_SH,
+      // Every non-interactive shell opencode spawns (`bash -c`) sources the
+      // agent env file, so live project secrets reach the agent's commands
+      // without any opencode plugin/config. Interactive shells + terminals get
+      // it from the image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
+      ...AGENT_SHELL_ENV,
       // Egress shim, when one is running. The agent's SHELLS get these from
-      // AGENT_ENV_SH above; setting them on the opencode process too covers its
+      // the agent env file above; setting them on the opencode process covers its
       // in-process HTTP clients (the built-in webfetch tool), which never go
       // through a shell. Safe for model traffic: NO_PROXY carries 127.0.0.1 (the
       // local LLM proxy) and the Kortix API host.
@@ -1963,9 +2075,12 @@ export function createOpencodeLifecycle(
     }
 
     const configPath = await writeComposedConfig(baseEnv)
+    let agentModelPatch: string | undefined
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
+      agentModelPatch = await agentModelPatchFor(baseEnv)
+      if (agentModelPatch) env.OPENCODE_CONFIG_CONTENT = agentModelPatch
     }
     startupMark('runtime-config-ready')
 
@@ -1992,6 +2107,7 @@ export function createOpencodeLifecycle(
     })
     childPorts.set(proc, port)
     spawnedAt.set(proc, Date.now())
+    agentModelPatches.set(proc, agentModelPatch)
     watchListeningLine(proc)
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
@@ -2415,6 +2531,12 @@ export function createOpencodeLifecycle(
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
+    // An agent `.md` whose `model:` changed needs a new process: its patch
+    // rides the env (see agentModelPatches).
+    if (child && (await agentModelPatchFor(baseEnv)) !== agentModelPatches.get(child)) {
+      logger.info('[opencode] an agent model ref changed; restarting instead of disposing')
+      return false
+    }
     const written = await writeComposedConfig(baseEnv).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
@@ -2697,15 +2819,21 @@ export function createOpencodeLifecycle(
       logger.warn('[opencode] an instance answered before the workspace was ready; restarting instead of disposing')
       return false
     },
-    async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
+    async reloadConfig(
+      opts: { mustRespawn?: boolean; mayPromote?: () => Promise<boolean> } = {},
+    ): Promise<ReloadConfigResult> {
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {
         return { how: 'disposed', turnEnded: false }
       }
       // Verified swap instead of the old kill-then-hope restart. A config that
       // cannot boot now leaves the running opencode in place and reports why,
-      // rather than taking the session down with it.
-      const result = await this.reloadVerified()
+      // rather than taking the session down with it. `mayPromote` is the LAST
+      // check, right before the live port moves — see its doc on
+      // `VerifiedReloadOptions`. Without forwarding it here, a respawn driven
+      // by `mustRespawn` (an env push) had no turn check at all, unlike the
+      // config-release path, which always supplies one (config-release.ts).
+      const result = await this.reloadVerified({ mayPromote: opts.mayPromote })
       if (result.outcome === 'kept-old') {
         logger.warn('[opencode] reload kept the previous instance', { reason: result.reason })
         // Nothing was replaced, so nothing was interrupted.

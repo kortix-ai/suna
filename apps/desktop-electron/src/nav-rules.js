@@ -45,4 +45,14 @@ function isAppPath(pathname) {
   );
 }
 
-module.exports = { APP_PATH_PREFIXES, isAppPath, isPreviewHost };
+/**
+ * The pages the "Connect this computer" dialog shows: the device approval,
+ * and sign-in when the session has lapsed. Any other page is the app, and a
+ * navigation there (Back, a link) closes the dialog instead of loading the app
+ * inside it.
+ */
+function isApprovalDialogPath(pathname) {
+  return pathname.startsWith('/tunnel/') || pathname === '/auth' || pathname.startsWith('/auth/');
+}
+
+module.exports = { APP_PATH_PREFIXES, isAppPath, isApprovalDialogPath, isPreviewHost };

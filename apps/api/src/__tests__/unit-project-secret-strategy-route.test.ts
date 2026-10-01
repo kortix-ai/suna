@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { connectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
+import { connectors, projectSecrets, projectSessionSecretHandles, roleAssignments } from '@kortix/db';
 import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
@@ -140,6 +140,8 @@ const databaseMock = {
       if (table === connectors) {
         return { where: async () => boundConnectorSlugs.map((slug) => ({ slug })) };
       }
+      // Secret audiences (secret-audience.ts): this project narrows none.
+      if (table === roleAssignments) return { where: async () => [] };
       if (table !== projectSecrets) throw new Error('unexpected table');
       // The destination-collision query is the only projectSecrets select that
       // asks for identifier + policy and no secretId, and the only one that

@@ -475,3 +475,22 @@ describe('qk.accounts — a real cache cannot serve one user another user\'s lis
     expect(client.getQueryState(qk.accounts.list('user_a'))?.isInvalidated).toBe(false);
   });
 });
+
+describe('qk.project.sessionsPaged label filter', () => {
+  test('labels get their own cache slot, independent of label order', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const labeled = qk.project.sessionsPaged('P1', 'visible', { labels: ['bug', 'eu'] });
+    expect(labeled).not.toEqual(plain);
+    expect(qk.project.sessionsPaged('P1', 'visible', { labels: ['eu', 'bug'] })).toEqual(labeled);
+    expect(qk.project.sessionsPaged('P1', 'visible', { labels: [] })).toEqual(plain);
+  });
+});
+
+describe('qk.project.sessionsPaged participant filter', () => {
+  test('the asked-into list gets its own cache slot', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const asked = qk.project.sessionsPaged('P1', 'visible', { participant: 'me' });
+    expect(asked).not.toEqual(plain);
+    expect(asked).not.toEqual(qk.project.sessionsPaged('P1', 'visible', { parent: 'root' }));
+  });
+});

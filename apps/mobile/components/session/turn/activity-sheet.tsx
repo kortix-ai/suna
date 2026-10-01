@@ -39,6 +39,7 @@ import { activitySheetEntries, burstHasPendingPermission, type ActivitySheetEntr
 import { useActivitySheetStore } from '@/lib/session/activity-sheet-store';
 import { useTabStore } from '@/stores/tab-store';
 import { ToolPartRenderer } from '@/components/session/tool/tool-part-renderer';
+import '@/components/session/tool/tools/register';
 import { FONT_MEDIUM, TURN_TYPE, useTurnPalette } from '@/components/session/tool/shared/styles';
 import { ToolDetailContext } from '@/components/session/tool/shared/surface';
 import {
@@ -47,7 +48,7 @@ import {
   type ConnectorHandoffRequest,
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ACTIVITY_ICONS } from '@/components/session/tool/shared/tool-icons';
-import type { ActivityContextValue } from './activity-step';
+import type { ActivityContextValue } from '@/lib/session/activity-sheet-store';
 
 /**
  * Lengths in pt, measured on the reference sheet (1080px @3x) unless noted.

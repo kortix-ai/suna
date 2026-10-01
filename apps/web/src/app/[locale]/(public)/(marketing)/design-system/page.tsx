@@ -11,12 +11,10 @@ import {
   CheckIcon as Check,
   CaretUpDownIcon as ChevronsUpDown,
   CopyIcon as Copy,
-  DownloadIcon as Download,
   GitBranchIcon as FolderGit2,
   QuestionIcon as HelpCircle,
   InfoIcon as Info,
   EnvelopeIcon as Mail,
-  DotsThreeIcon as MoreHorizontal,
   PlusIcon as Plus,
   MagnifyingGlassIcon as Search,
   GearSixIcon as Settings,
@@ -53,7 +51,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Badge, badgeColors } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -76,14 +74,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { EmojiPicker, type EmojiSelection } from '@/components/ui/emoji-picker';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
@@ -96,7 +86,6 @@ import { Input } from '@/components/ui/input';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -115,14 +104,6 @@ import { ProjectIconPicker } from '@/components/ui/project-icon-picker';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Section as BrandSection } from '@/components/ui/section';
-import { SectionCard } from '@/components/ui/section-card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
@@ -170,6 +151,8 @@ import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { WALLPAPER_DOWNLOADS, type WallpaperDownload } from '@/lib/wallpaper-downloads';
 import {
   PlugsConnectedIcon as Cable,
+  CloudIcon,
+  GithubLogoIcon,
   PlugIcon as Plug,
   RadioIcon as Radio,
   LightningIcon as Zap,
@@ -178,155 +161,143 @@ import {
 import { CardSection } from './card-section';
 import { ConfettiSection } from './confetti-section';
 import { IconsSection } from './icons-section';
+import {
+  AccentRow,
+  MotionBar,
+  SpacingBase,
+  SpacingRow,
+  TokenSwatch,
+  TypeRow,
+} from './live-tokens';
+import { DropdownDemos, SelectDemos } from './menu-demos';
+import { Download } from '@/features/icon/icons/download';
 
 // Filtered once at module load — the catalog is a static constant, so the
 // per-render filter().map() chain in the JSX collapses to a single map.
 const MARK_WALLPAPERS = WALLPAPER_DOWNLOADS.filter((w) => w.group === 'mark');
 const PRODUCT_WALLPAPERS = WALLPAPER_DOWNLOADS.filter((w) => w.group === 'product');
 
-const BRAND_COLORS = [
-  { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },
-  {
-    name: 'Off-Black',
-    hex: '#1A1A1A',
-    oklch: 'oklch(0.145 0 0)',
-    light: false,
-  },
-  { name: 'White', hex: '#FFFFFF', oklch: 'oklch(1 0 0)', light: true },
-  { name: 'Off-White', hex: '#F5F5F5', oklch: 'oklch(0.965 0 0)', light: true },
+/**
+ * Token NAMES only. No value lives in this file: every swatch is painted with
+ * `var(--token)` and the value beside it is read with getComputedStyle in
+ * `live-tokens.tsx`. Values come from `globals.css`, which is generated from
+ * `.agents/skills/kortix-brand/references/visual/visual-system.json`.
+ */
+
+/** The surface ladder, by depth (kit `color.md`, "Surface ladder"). */
+const SURFACE_LADDER = [
+  { role: 'canvas', token: '--background', note: 'The page itself.' },
+  { role: 'pane', token: '--pane', note: 'The content pane inside the app shell.' },
+  { role: 'shell', token: '--surface', note: 'A full-bleed pane that stands in for the page.' },
+  { role: 'surface-1', token: '--card', note: 'Lifted region, sidebar, hover surface.' },
+  { role: 'surface-2', token: '--secondary', note: 'Inset controls, chips, track wells.' },
+  { role: 'top surface', token: '--popover', note: 'Overlays, fields, panels inside a panel.' },
+  { role: 'ink', token: '--foreground', note: 'Primary text.' },
+  { role: 'ink-muted', token: '--muted-foreground', note: 'Descriptions, meta, idle state.' },
+  { role: 'hairline', token: '--border', note: 'Every content border.' },
+] as const;
+
+/** Every other semantic token the product reads. */
+const SEMANTIC_TOKENS = [
+  { name: 'Primary', token: '--primary' },
+  { name: 'Primary Foreground', token: '--primary-foreground' },
+  { name: 'Card Foreground', token: '--card-foreground' },
+  { name: 'Popover Foreground', token: '--popover-foreground' },
+  { name: 'Muted', token: '--muted' },
+  { name: 'Accent', token: '--accent' },
+  { name: 'Accent Foreground', token: '--accent-foreground' },
+  { name: 'Secondary Foreground', token: '--secondary-foreground' },
+  { name: 'Input', token: '--input' },
+  { name: 'Ring', token: '--ring' },
+  { name: 'Hover', token: '--hover' },
+  { name: 'Active', token: '--active' },
+  { name: 'Destructive', token: '--destructive' },
+  { name: 'Destructive Foreground', token: '--destructive-foreground' },
+  { name: 'Sidebar', token: '--sidebar' },
+  { name: 'Sidebar Row', token: '--sidebar-row' },
+  { name: 'Sidebar Row Control', token: '--sidebar-row-control' },
+  { name: 'Sidebar Border', token: '--sidebar-border' },
 ] as const;
 
 /**
- * Core theme palette — mirrors exactly the CSS custom properties defined in
- * `:root` (light) and `.dark` in apps/web/src/app/globals.css.
- * This is the single source of truth displayed on the /brand page.
- * If you change a token in globals.css, change it here too.
+ * The only sources of hue in product UI (kit decision D5). The classes are
+ * written out in full so Tailwind compiles them.
  */
-const CORE_PALETTE = [
+const ACCENTS = [
   {
-    name: 'Background',
-    var: '--background',
-    light: 'oklch(1 0 0)',
-    dark: 'oklch(0.145 0 0)',
+    name: 'kortix-base',
+    token: '--kortix-base',
+    meaning: 'Brand, focus, links. Aliases --ring.',
+    dot: 'bg-kortix-base',
+    tint: 'bg-kortix-base/15',
   },
   {
-    name: 'Foreground',
-    var: '--foreground',
-    light: 'oklch(0.145 0 0)',
-    dark: 'oklch(0.94 0 0)',
+    name: 'kortix-green',
+    token: '--kortix-green',
+    meaning: 'success, running, connected, merged',
+    dot: 'bg-kortix-green',
+    tint: 'bg-kortix-green/15',
   },
   {
-    name: 'Card',
-    var: '--card',
-    light: 'oklch(0.99 0 0)',
-    dark: 'oklch(0.21 0 0)',
+    name: 'kortix-red',
+    token: '--kortix-red',
+    meaning: 'error, failed',
+    dot: 'bg-kortix-red',
+    tint: 'bg-kortix-red/15',
   },
   {
-    name: 'Card Foreground',
-    var: '--card-foreground',
-    light: 'oklch(0.145 0 0)',
-    dark: 'oklch(0.94 0 0)',
+    name: 'kortix-orange',
+    token: '--kortix-orange',
+    meaning: 'warning, needs attention',
+    dot: 'bg-kortix-orange',
+    tint: 'bg-kortix-orange/15',
   },
   {
-    name: 'Popover',
-    var: '--popover',
-    light: 'oklch(1 0 0)',
-    dark: 'oklch(0.24 0 0)',
+    name: 'kortix-yellow',
+    token: '--kortix-yellow',
+    meaning: 'pending',
+    dot: 'bg-kortix-yellow',
+    tint: 'bg-kortix-yellow/15',
   },
   {
-    name: 'Popover Foreground',
-    var: '--popover-foreground',
-    light: 'oklch(0.145 0 0)',
-    dark: 'oklch(0.94 0 0)',
+    name: 'kortix-blue',
+    token: '--kortix-blue',
+    meaning: 'info, open, in review',
+    dot: 'bg-kortix-blue',
+    tint: 'bg-kortix-blue/15',
   },
   {
-    name: 'Primary',
-    var: '--primary',
-    light: 'oklch(0.205 0 0)',
-    dark: 'oklch(0.94 0 0)',
-  },
-  {
-    name: 'Primary Foreground',
-    var: '--primary-foreground',
-    light: 'oklch(0.985 0 0)',
-    dark: 'oklch(0.18 0 0)',
-  },
-  {
-    name: 'Secondary',
-    var: '--secondary',
-    light: 'oklch(0.46 0 0)',
-    dark: 'oklch(0.55 0.01 260)',
-  },
-  {
-    name: 'Secondary Foreground',
-    var: '--secondary-foreground',
-    light: 'oklch(1 0 0)',
-    dark: 'oklch(0.94 0 0)',
-  },
-  {
-    name: 'Muted',
-    var: '--muted',
-    light: 'oklch(0.955 0 0)',
-    dark: 'oklch(0.27 0 0)',
-  },
-  {
-    name: 'Muted Foreground',
-    var: '--muted-foreground',
-    light: 'oklch(0.45 0 0)',
-    dark: 'oklch(0.60 0 0)',
-  },
-  {
-    name: 'Accent',
-    var: '--accent',
-    light: 'oklch(0.96 0 0)',
-    dark: 'oklch(0.25 0 0)',
-  },
-  {
-    name: 'Accent Foreground',
-    var: '--accent-foreground',
-    light: 'oklch(0.145 0 0)',
-    dark: 'oklch(0.94 0 0)',
-  },
-  {
-    name: 'Border',
-    var: '--border',
-    light: 'oklch(0.885 0 0)',
-    dark: 'oklch(0.30 0 0)',
-  },
-  {
-    name: 'Input',
-    var: '--input',
-    light: 'oklch(0.905 0 0)',
-    dark: 'oklch(0.27 0 0)',
-  },
-  {
-    name: 'Ring',
-    var: '--ring',
-    light: 'oklch(0.708 0 0)',
-    dark: 'oklch(0.50 0 0)',
-  },
-  {
-    name: 'Destructive',
-    var: '--destructive',
-    light: 'oklch(0.577 0.245 27.325)',
-    dark: 'oklch(0.396 0.141 25.723)',
+    name: 'kortix-purple',
+    token: '--kortix-purple',
+    meaning: 'Reserved. No default meaning. Do not assign one.',
+    dot: 'bg-kortix-purple',
+    tint: 'bg-kortix-purple/15',
   },
 ] as const;
 
+/** Chart ramp: data visualization only. Read through `var(--chart-n)`. */
+const CHART_TOKENS = ['--chart-1', '--chart-2', '--chart-3', '--chart-4', '--chart-5'] as const;
+
 type LogoFormat = 'svg' | 'png';
+
+/** Kit vocabulary (D6): symbol = the mark alone, logo = symbol + wordmark, brandmark-bg = the outline wallpaper. */
+type LogoKind = 'symbol' | 'logo' | 'brandmark-bg';
 
 interface LogoAsset {
   id: string;
+  kind: LogoKind;
   label: string;
   variant: string;
   svgSrc: string;
-  pngSrc: string;
+  /** Absent for brandmark-bg: it ships as SVG only. */
+  pngSrc?: string;
   dark: boolean;
 }
 
 const LOGO_ASSETS: LogoAsset[] = [
   {
-    id: 'brandmark-black',
+    id: 'symbol-black',
+    kind: 'symbol',
     label: 'Symbol',
     variant: 'Black',
     svgSrc: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg',
@@ -334,7 +305,8 @@ const LOGO_ASSETS: LogoAsset[] = [
     dark: false,
   },
   {
-    id: 'brandmark-white',
+    id: 'symbol-white',
+    kind: 'symbol',
     label: 'Symbol',
     variant: 'White',
     svgSrc: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg',
@@ -343,6 +315,7 @@ const LOGO_ASSETS: LogoAsset[] = [
   },
   {
     id: 'logo-black',
+    kind: 'logo',
     label: 'Logo',
     variant: 'Black',
     svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
@@ -351,13 +324,37 @@ const LOGO_ASSETS: LogoAsset[] = [
   },
   {
     id: 'logo-white',
+    kind: 'logo',
     label: 'Logo',
     variant: 'White',
     svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
     pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
     dark: true,
   },
+  {
+    id: 'brandmark-bg',
+    kind: 'brandmark-bg',
+    label: 'brandmark-bg',
+    variant: 'White outline',
+    svgSrc: '/kortix-brandmark-bg.svg',
+    dark: true,
+  },
 ];
+
+/** Asset names for the vocabulary note: the term, and the file that carries it. */
+const LOGO_VOCABULARY = [
+  { term: 'symbol', file: 'brandkit/Logo/Brandmark/' },
+  { term: 'logo', file: 'brandkit/Logo/Logomark/' },
+  { term: 'brandmark-bg', file: 'kortix-brandmark-bg.svg' },
+] as const;
+
+/**
+ * The black mark files need a white ground, whatever the page theme. Named
+ * constant on purpose (kit color.md, "Escape hatches": the asset is not ours to
+ * recolor). The dark ground is a token scope: `dark` re-declares the tokens.
+ */
+const LOGO_GROUND_LIGHT = 'bg-white';
+const LOGO_GROUND_DARK = 'dark bg-background';
 
 interface SocialAsset {
   id: string;
@@ -383,141 +380,67 @@ const SOCIAL_ASSETS: SocialAsset[] = [
   },
 ];
 
-const TYPE_SCALE = [
-  {
-    token: 'text-xs',
-    size: '0.75rem',
-    px: '~12px',
-    twClass: 'text-xs',
-    use: 'Secondary labels, tooltips, KBD',
-  },
-  {
-    token: 'text-sm',
-    size: '0.875rem',
-    px: '~14px',
-    twClass: 'text-sm',
-    use: 'Body text, menu items',
-  },
-  {
-    token: 'text-md',
-    size: '0.9375rem',
-    px: '15px',
-    twClass: 'text-md',
-    use: 'Between body and default UI text',
-  },
-  {
-    token: 'text-base',
-    size: '1rem',
-    px: '~16px',
-    twClass: 'text-base',
-    use: 'Default UI text, inputs',
-  },
-  {
-    token: 'text-lg',
-    size: '1.125rem',
-    px: '~18px',
-    twClass: 'text-lg',
-    use: 'Section headers, dialog titles',
-  },
-  {
-    token: 'text-xl',
-    size: '1.25rem',
-    px: '~20px',
-    twClass: 'text-xl',
-    use: 'Page section titles',
-  },
-  {
-    token: 'text-2xl',
-    size: '1.5rem',
-    px: '~24px',
-    twClass: 'text-2xl',
-    use: 'Page titles',
-  },
-  {
-    token: 'text-3xl',
-    size: '1.875rem',
-    px: '~30px',
-    twClass: 'text-3xl',
-    use: 'Hero subheadings',
-  },
-  {
-    token: 'text-4xl',
-    size: '2.25rem',
-    px: '~36px',
-    twClass: 'text-4xl',
-    use: 'Display / hero headings',
-  },
-  {
-    token: 'text-5xl',
-    size: '3rem',
-    px: '~48px',
-    twClass: 'text-5xl',
-    use: 'Marketing display',
-  },
-  {
-    token: 'text-6xl',
-    size: '3.75rem',
-    px: '~60px',
-    twClass: 'text-6xl',
-    use: 'Large display',
-  },
-  {
-    token: 'text-7xl',
-    size: '4.5rem',
-    px: '~72px',
-    twClass: 'text-7xl',
-    use: 'Oversized display',
-  },
-  {
-    token: 'text-8xl',
-    size: '6rem',
-    px: '~96px',
-    twClass: 'text-8xl',
-    use: 'Hero numerals / clocks',
-  },
+/**
+ * Type rungs. Name and role only: the size is read from `--text-<step>` at
+ * runtime. Roles follow the kit's `typography.md` ("The scale").
+ */
+const TYPE_STEPS = [
+  { step: 'xs', role: 'Meta, captions, row descriptions: the workhorse' },
+  { step: 'sm', role: 'Body, row titles, labels, button text' },
+  { step: 'md', role: 'Do not add uses', legacy: 'Non-canonical' },
+  { step: 'base', role: 'Long-form prose only' },
+  { step: 'lg', role: 'Rare sub-heading' },
+  { step: 'xl', role: 'Section page title' },
+  { step: '2xl', role: 'Detail-view title. App ceiling.' },
+  { step: '3xl', role: 'Display. Marketing and decks only.' },
+  { step: '4xl', role: 'Display. Marketing and decks only.' },
+  { step: '5xl', role: 'Display. Marketing and decks only.' },
+  { step: '6xl', role: 'Hero. Marketing and decks only.' },
+  { step: '7xl', role: 'Hero. Marketing ceiling.' },
+  { step: '8xl', role: 'Hero numerals. Marketing and decks only.' },
 ] as const;
 
-const MOTION_DURATIONS = [
-  { name: 'Fast', token: '--duration-fast', ms: 100 },
-  { name: 'Normal', token: '--duration-normal', ms: 150 },
-  { name: 'Moderate', token: '--duration-moderate', ms: 200 },
-  { name: 'Slow', token: '--duration-slow', ms: 300 },
-  { name: 'Slower', token: '--duration-slower', ms: 500 },
+/**
+ * Duration utilities, written in full so Tailwind compiles them. The readout
+ * in `MotionBar` is the computed transition, so a dead utility shows up here
+ * as the 150ms default.
+ */
+const DURATIONS = [
+  { name: 'duration-fast', cls: 'duration-fast', use: 'Hover color and opacity' },
+  { name: 'duration-normal', cls: 'duration-normal', use: 'The default UI transition' }, // audit:allow prose uses the word transition
+  { name: 'duration-moderate', cls: 'duration-moderate', use: 'Disclosure, accordion, tab' },
+  { name: 'duration-slow', cls: 'duration-slow', use: 'Modal, drawer, sheet. The product ceiling.' },
+  { name: 'duration-slower', cls: 'duration-slower', use: 'Marketing and decks only' },
 ] as const;
 
 const EASING_CURVES = [
+  { name: 'ease-out', cls: 'ease-out', note: 'Enter and exit. Reach here first.' },
+  { name: 'ease-in-out', cls: 'ease-in-out', note: 'On-screen elements that move or morph.' },
+  { name: 'ease-default', cls: 'ease-default', note: 'The Kortix house curve.' },
+  { name: 'ease-in', cls: 'ease-in', note: 'Banned. Starts slow, so the UI feels sluggish.' }, // audit:allow data row that names the banned curve
+] as const;
+
+/** Primitives and patterns the brand kit bans (`kortix-design-system`, "Do not use"). */
+const BANNED_PATTERNS = [
   {
-    name: 'Default',
-    token: '--ease-default',
-    value: 'cubic-bezier(0.2, 0, 0, 1)',
+    name: 'SectionCard',
+    why: 'A second panel system beside Card.',
+    instead: 'Card, or a bg-popover rounded-md border panel',
   },
-  { name: 'Ease In', token: '--ease-in', value: 'cubic-bezier(0.4, 0, 1, 1)' },
   {
-    name: 'Ease Out',
-    token: '--ease-out',
-    value: 'cubic-bezier(0, 0, 0.2, 1)',
+    name: 'List / ListRow',
+    why: 'A divider-separated list is a second row system.',
+    instead: 'a ul with space-y-2 and entity row classes',
   },
   {
-    name: 'Ease In-Out',
-    token: '--ease-in-out',
-    value: 'cubic-bezier(0.4, 0, 0.2, 1)',
+    name: 'Stagger mount',
+    why: 'The delay is charged to the user on every visit.',
+    instead: 'no delay: every item appears at once',
   },
 ] as const;
 
-const SPACING_SCALE = [
-  { token: '0.5', px: 2 },
-  { token: '1', px: 4 },
-  { token: '1.5', px: 6 },
-  { token: '2', px: 8 },
-  { token: '3', px: 12 },
-  { token: '4', px: 16 },
-  { token: '5', px: 20 },
-  { token: '6', px: 24 },
-  { token: '8', px: 32 },
-  { token: '10', px: 40 },
-  { token: '12', px: 48 },
-  { token: '16', px: 64 },
-] as const;
+/** Spacing steps. Width is `calc(var(--spacing) * step)`; the px is measured. */
+const SPACING_STEPS = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12, 16, 20, 24] as const;
 
 const SHADOW_SCALE: ReadonlyArray<{
   label: string;
@@ -525,12 +448,6 @@ const SHADOW_SCALE: ReadonlyArray<{
   use: string;
   twClass?: string;
 }> = [
-  {
-    label: 'shadow-2xs',
-    twClass: 'shadow-2xs',
-    cssVar: '--shadow-2xs',
-    use: 'Hairline lift — inputs, thumbnails',
-  },
   {
     label: 'shadow-xs',
     twClass: 'shadow-xs',
@@ -561,12 +478,6 @@ const SHADOW_SCALE: ReadonlyArray<{
     cssVar: '--shadow-xl',
     use: 'Command palette, floating windows',
   },
-  {
-    label: 'shadow-2xl',
-    twClass: 'shadow-2xl',
-    cssVar: '--shadow-2xl',
-    use: 'Marketing, large previews',
-  },
 ];
 
 const TOC_SECTIONS = [
@@ -588,6 +499,7 @@ const TOC_SECTIONS = [
       { id: 'comp-input', label: 'Input' },
       { id: 'comp-textarea', label: 'Textarea' },
       { id: 'comp-select', label: 'Select' },
+      { id: 'comp-dropdown', label: 'Dropdown' },
       { id: 'comp-checkbox', label: 'Checkbox Group' },
       { id: 'comp-switch', label: 'Switch' },
       { id: 'comp-toggle', label: 'Toggle' },
@@ -596,7 +508,6 @@ const TOC_SECTIONS = [
       { id: 'comp-dialog', label: 'Dialog' },
       { id: 'comp-modal', label: 'Modal' },
       { id: 'comp-sheet', label: 'Sheet' },
-      { id: 'comp-dropdown', label: 'Dropdown' },
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-emoji-picker', label: 'Emoji Picker' },
@@ -624,7 +535,6 @@ const TOC_SECTIONS = [
     children: [
       { id: 'pat-spotlight-card', label: 'SpotlightCard' },
       { id: 'pat-search-bar', label: 'PageSearchBar' },
-      { id: 'pat-stagger', label: 'Stagger Mount' },
     ],
   },
   {
@@ -633,9 +543,8 @@ const TOC_SECTIONS = [
     children: [
       { id: 'pat-page-shell', label: 'PageShell' },
       { id: 'pat-section', label: 'Section' },
-      { id: 'pat-section-card', label: 'SectionCard' },
+      { id: 'pat-banned', label: 'Banned patterns' },
       { id: 'pat-avatars', label: 'Avatars' },
-      { id: 'pat-list', label: 'List & ListRow' },
       { id: 'pat-definition-list', label: 'DefinitionList' },
       { id: 'pat-inline-meta', label: 'InlineMeta' },
       { id: 'pat-empty-state', label: 'EmptyState' },
@@ -654,44 +563,20 @@ const ALL_SECTION_IDS = TOC_SECTIONS.flatMap((s) =>
   'children' in s && s.children ? [s.id, ...s.children.map((c) => c.id)] : [s.id],
 );
 
-function Hex({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        navigator.clipboard.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
-      }}
-      className="group inline-flex cursor-pointer items-center gap-1.5"
-    >
-      <span className="text-muted-foreground group-hover:text-foreground font-mono text-xs transition-colors">
-        {value}
-      </span>
-      {copied ? (
-        <Check className="size-2.5 text-emerald-500" />
-      ) : (
-        <Copy className="text-muted-foreground group-hover:text-muted-foreground size-2.5 transition-colors" />
-      )}
-    </button>
-  );
-}
-
 function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
-  const isWide = asset.label !== 'Symbol';
-  const downloadHref = fmt === 'png' ? asset.pngSrc : asset.svgSrc;
-  const downloadName = `kortix-${asset.label.toLowerCase()}-${asset.variant.toLowerCase()}.${fmt}`;
+  const isWide = asset.kind !== 'symbol';
+  // brandmark-bg ships as SVG only: the PNG toggle falls back to the SVG file.
+  const downloadFmt = fmt === 'png' && asset.pngSrc ? 'png' : 'svg';
+  const downloadHref = downloadFmt === 'png' ? asset.pngSrc : asset.svgSrc;
+  const downloadName = `kortix-${asset.kind}-${asset.variant.toLowerCase().replace(/\s+/g, '-')}.${downloadFmt}`;
 
   return (
     <div className="group relative">
       <div
         className={cn(
-          'relative flex aspect-[3/2] items-center justify-center overflow-hidden rounded-lg transition-colors',
+          'border-border relative flex aspect-[3/2] items-center justify-center overflow-hidden rounded-md border transition-colors',
           isWide ? 'px-6 py-8' : 'p-10',
-          asset.dark
-            ? 'border border-white/[0.06] bg-neutral-950'
-            : 'border bg-white ring-black/[0.06]',
+          asset.dark ? LOGO_GROUND_DARK : LOGO_GROUND_LIGHT,
         )}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -700,17 +585,21 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           alt={`Kortix ${asset.label} ${asset.variant}`}
           className={cn(
             'object-contain',
-            isWide ? 'max-h-8 w-full md:max-h-10' : 'max-h-10 w-auto md:max-h-12',
+            asset.kind === 'brandmark-bg'
+              ? 'size-full'
+              : isWide
+                ? 'max-h-8 w-full md:max-h-10'
+                : 'max-h-10 w-auto md:max-h-12',
           )}
         />
 
         <a
           href={downloadHref}
           download={downloadName}
-          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg bg-black/[0.04] opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white/[0.04]"
+          className="bg-hover absolute inset-0 flex cursor-pointer items-center justify-center rounded-md opacity-0 transition-opacity group-hover:opacity-100"
         >
           <span className="bg-background ring-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm ring-1">
-            <Download className="size-3" /> {fmt.toUpperCase()}
+            <Download className="size-3" /> {downloadFmt.toUpperCase()}
           </span>
         </a>
       </div>
@@ -731,8 +620,7 @@ function SocialCard({ asset }: { asset: SocialAsset }) {
     <div className="group relative">
       <div
         className={cn(
-          'relative aspect-square overflow-hidden rounded-lg',
-          asset.dark ? 'border border-white/[0.06]' : 'border ring-black/[0.06]',
+          'border-border relative aspect-square overflow-hidden rounded-md border',
         )}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -745,7 +633,7 @@ function SocialCard({ asset }: { asset: SocialAsset }) {
         <a
           href={asset.pngSrc}
           download={downloadName}
-          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg bg-black/[0.04] opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white/[0.04]"
+          className="bg-hover absolute inset-0 flex cursor-pointer items-center justify-center rounded-md opacity-0 transition-opacity group-hover:opacity-100"
         >
           <span className="bg-background ring-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm ring-1">
             <Download className="size-3" /> PNG
@@ -783,21 +671,15 @@ function WallpaperCard({ wallpaper }: { wallpaper: WallpaperDownload }) {
     DESIGN_SYSTEM_TRANSLATION_KEYS,
   );
   wallpaper = localizedWallpaper;
-  const isDark = wallpaper.theme === 'dark';
 
   return (
     <div className="group relative">
-      <div
-        className={cn(
-          'relative aspect-video overflow-hidden rounded-lg',
-          isDark ? 'border border-white/[0.06]' : 'border ring-black/[0.06]',
-        )}
-      >
+      <div className="border-border relative aspect-video overflow-hidden rounded-md border">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={wallpaper.preview}
           alt={tI18nComplete('text58432f02cc20', {
-            value0: wallpaper.name,
+            value0: wallpaper.id === 'brandmark' ? 'brandmark-bg' : wallpaper.name,
             value1: wallpaper.theme,
           })}
           className="size-full object-cover"
@@ -806,7 +688,9 @@ function WallpaperCard({ wallpaper }: { wallpaper: WallpaperDownload }) {
       </div>
 
       <div className="mt-2 flex items-baseline gap-1.5 px-0.5">
-        <span className="text-foreground text-xs font-medium">{wallpaper.name}</span>
+        <span className="text-foreground text-xs font-medium">
+          {wallpaper.id === 'brandmark' ? 'brandmark-bg' : wallpaper.name}
+        </span>
         <span className="text-muted-foreground font-mono text-xs capitalize">
           {wallpaper.theme}
         </span>
@@ -943,7 +827,7 @@ function EmojiPickerDemo() {
                 ? tI18nComplete('text1c01c6630cab', { value0: selection.label })
                 : tI18nComplete.raw('textb9edcf16a2bc')
             }
-            className="hit-area-1 size-9 shrink-0 transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
+            className="hit-area-1 size-9 shrink-0 transition-[color,background-color,scale] duration-normal active:scale-[0.96]"
           >
             {selection ? (
               // Named by the button's aria-label, so the glyph itself stays out
@@ -1013,7 +897,7 @@ function ProjectIconPickerDemo() {
                   : tI18nComplete.raw('textf2a9bd94c131')
             }
             className={cn(
-              'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
+              'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-normal active:scale-[0.96]',
               glyph && [glyphTint(glyph.color), glyphTintHover(glyph.color), 'hover:inset-ring-2'],
             )}
           >
@@ -1059,57 +943,6 @@ function ProjectIconPickerDemo() {
   );
 }
 
-function MotionBar({
-  label,
-  durationMs,
-  durationToken,
-  easing = 'var(--ease-default)',
-  easingToken,
-}: {
-  label: string;
-  durationMs: number;
-  durationToken?: string;
-  easing?: string;
-  easingToken?: string;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [active, setActive] = useState(false);
-
-  const replay = () => {
-    setActive(false);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setActive(true));
-    });
-  };
-
-  return (
-    <div className="flex items-center gap-4">
-      <button
-        type="button"
-        onClick={replay}
-        className="text-muted-foreground hover:text-foreground w-24 shrink-0 cursor-pointer text-left font-mono text-xs transition-colors"
-      >
-        {label}
-      </button>
-      <div className="bg-muted/30 relative h-7 flex-1 overflow-hidden rounded-md">
-        <div
-          className="bg-foreground/70 absolute top-1 bottom-1 left-1 rounded-sm"
-          style={{
-            width: active ? "calc(100% - 8px)" : '24px',
-            transitionProperty: 'width',
-            transitionDuration: durationToken ? `var(${durationToken})` : `${durationMs}ms`,
-            transitionTimingFunction: easingToken ? `var(${easingToken})` : easing,
-          }}
-        />
-      </div>
-      <span className="text-muted-foreground w-14 shrink-0 text-right font-mono text-xs">
-        {durationMs}
-        {tI18nComplete.raw('textf785c3ce1d58')}
-      </span>
-    </div>
-  );
-}
-
 function AntiPatternBlock({
   title,
   bad,
@@ -1131,8 +964,8 @@ function AntiPatternBlock({
       <div className="divide-border/30 grid divide-y md:grid-cols-2 md:divide-x md:divide-y-0">
         <div className="p-4">
           <div className="mb-2.5 flex items-center gap-1.5">
-            <X className="size-3 text-red-500" />
-            <span className="text-xs font-medium tracking-widest text-red-500/70 uppercase">
+            <X className="text-kortix-red size-3" />
+            <span className="text-muted-foreground text-xs font-medium">
               {tHardcodedUi.raw('appHomeDesignSystemPage.line566JsxTextDonAposT')}
             </span>
           </div>
@@ -1142,8 +975,8 @@ function AntiPatternBlock({
         </div>
         <div className="p-4">
           <div className="mb-2.5 flex items-center gap-1.5">
-            <Check className="size-3 text-emerald-500" />
-            <span className="text-xs font-medium tracking-widest text-emerald-500/70 uppercase">
+            <Check className="text-kortix-green size-3" />
+            <span className="text-muted-foreground text-xs font-medium">
               {tHardcodedUi.raw('i18nComplete.text30094e0bec00')}
             </span>
           </div>
@@ -1412,10 +1245,6 @@ export default function BrandPage() {
                   {tI18nHardcoded.raw('i18nComplete.texta150ce221602')}
                 </Badge>
                 <Badge variant="secondary">
-                  <span className="font-mono">7</span>{' '}
-                  {tI18nHardcoded.raw('i18nComplete.text43ae3265b99f')}
-                </Badge>
-                <Badge variant="secondary">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line714JsxTextOklchColors')}
                 </Badge>
                 <Badge variant="secondary">
@@ -1441,6 +1270,14 @@ export default function BrandPage() {
                   <LogoCard key={a.id} asset={a} fmt={logoFmt} />
                 ))}
               </div>
+              <dl className="text-muted-foreground mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                {LOGO_VOCABULARY.map((v) => (
+                  <div key={v.term} className="flex gap-1.5">
+                    <dt className="text-foreground font-mono">{v.term}</dt>
+                    <dd className="font-mono">{v.file}</dd>
+                  </div>
+                ))}
+              </dl>
               <p className="text-muted-foreground mt-6 text-sm leading-relaxed">
                 {tHardcodedUi.raw(
                   'appHomeDesignSystemPage.line737JsxTextTheSymbolIsDerivedFromTheLetterK',
@@ -1540,79 +1377,65 @@ export default function BrandPage() {
                 </p>
 
                 <div className="mb-8">
-                  <p className="text-muted-foreground mb-3 text-xs">
-                    {tI18nHardcoded.raw('i18nComplete.textdf42a4d5d353')}
+                  <div className="mb-3 flex items-baseline justify-between">
+                    <p className="text-muted-foreground text-xs">
+                      {tI18nHardcoded.raw('i18nComplete.textdf42a4d5d353')}
+                    </p>
+                    <p className="text-muted-foreground font-mono text-xs">
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line794JsxTextGlobalsCssRootDark')}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {SURFACE_LADDER.map((r) => (
+                      <TokenSwatch key={r.token} token={r.token} title={r.role} note={r.note} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <div className="mb-3 flex items-baseline justify-between">
+                    <p className="text-muted-foreground text-xs">
+                      {tHardcodedUi.raw('appHomeDesignSystemPage.line791JsxTextCorePalette')}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {SEMANTIC_TOKENS.map((token) => (
+                      <TokenSwatch key={token.token} token={token.token} title={token.name} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <p className="text-muted-foreground mb-1 text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.text809a706ff256')}
                   </p>
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {BRAND_COLORS.map((c) => (
-                      <div key={c.hex}>
-                        <div
-                          className={cn(
-                            'aspect-[4/3] rounded-lg',
-                            c.light ? 'ring-1 ring-black/[0.08]' : '',
-                          )}
-                          style={{ backgroundColor: c.hex }}
-                        />
-                        <div className="mt-2 space-y-0.5 px-0.5">
-                          <span className="text-foreground text-xs font-medium">{c.name}</span>
-                          <div className="flex flex-col">
-                            <Hex value={c.hex} />
-                            <Hex value={c.oklch} />
-                          </div>
-                        </div>
-                      </div>
+                  <p className="text-muted-foreground mb-3 max-w-xl text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.text5ed8e8176c1d')}
+                  </p>
+                  <div className="border-border rounded-md border px-4">
+                    {ACCENTS.map((a) => (
+                      <AccentRow
+                        key={a.token}
+                        token={a.token}
+                        name={a.name}
+                        meaning={a.meaning}
+                        dotClass={a.dot}
+                        tintClass={a.tint}
+                      />
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <div className="mb-3 flex items-baseline justify-between">
-                    <p className="text-muted-foreground text-xs">
-                      {tHardcodedUi.raw('appHomeDesignSystemPage.line791JsxTextCorePalette')}
-                    </p>
-                    <p className="text-muted-foreground/70 font-mono text-xs">
-                      {tHardcodedUi.raw('appHomeDesignSystemPage.line794JsxTextGlobalsCssRootDark')}
-                    </p>
-                  </div>
+                  <p className="text-muted-foreground mb-1 text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.text1b730c5151b5')}
+                  </p>
+                  <p className="text-muted-foreground mb-3 max-w-xl text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.text7ac77b03cfd2')}
+                  </p>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {CORE_PALETTE.map((token) => (
-                      <div
-                        key={token.var}
-                        className="border-border/50 overflow-hidden rounded-lg border"
-                      >
-                        <div className="grid h-14 grid-cols-2">
-                          <div
-                            className="relative ring-1 ring-black/[0.06] ring-inset"
-                            style={{ backgroundColor: token.light }}
-                          >
-                            <span className="absolute bottom-1 left-2 font-mono text-xs tracking-widest text-black/55 uppercase">
-                              {tI18nHardcoded.raw('i18nComplete.text99a7026172d4')}
-                            </span>
-                          </div>
-                          <div
-                            className="relative ring-1 ring-white/[0.06] ring-inset"
-                            style={{ backgroundColor: token.dark }}
-                          >
-                            <span className="absolute bottom-1 left-2 font-mono text-xs tracking-widest text-white/55 uppercase">
-                              {tI18nHardcoded.raw('i18nComplete.texte6bb5689beec')}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="bg-background px-3 py-2.5">
-                          <div className="mb-1 flex items-baseline justify-between gap-2">
-                            <span className="text-foreground truncate text-xs font-medium">
-                              {token.name}
-                            </span>
-                            <span className="text-muted-foreground shrink-0 font-mono text-xs">
-                              {token.var}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2">
-                            <Hex value={token.light} />
-                            <Hex value={token.dark} />
-                          </div>
-                        </div>
-                      </div>
+                    {CHART_TOKENS.map((token) => (
+                      <TokenSwatch key={token} token={token} title={token.slice(2)} />
                     ))}
                   </div>
                 </div>
@@ -1653,14 +1476,14 @@ export default function BrandPage() {
                   ))}
                 </div>
 
-                <div className="mt-6 rounded-lg bg-neutral-950 p-5 text-neutral-100 md:p-6">
-                  <span className="mb-3 block font-mono text-xs tracking-widest text-neutral-500">
+                <div className="bg-popover border-border mt-6 rounded-md border p-5 md:p-6">
+                  <span className="text-muted-foreground mb-3 block font-mono text-xs">
                     {tHardcodedUi.raw('appHomeDesignSystemPage.line880JsxTextRoobertMono')}
                   </span>
-                  <p className="font-mono text-lg tracking-tight md:text-2xl">
+                  <p className="text-foreground font-mono text-lg tracking-tight md:text-2xl">
                     {tHardcodedUi.raw('appHomeDesignSystemPage.line883JsxTextConstAgentNewKortix')}
                   </p>
-                  <p className="mt-4 font-mono text-xs text-neutral-600">
+                  <p className="text-muted-foreground mt-4 font-mono text-xs">
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line886JsxTextAbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz0123456789',
                     )}
@@ -1672,33 +1495,16 @@ export default function BrandPage() {
                     {tHardcodedUi.raw('appHomeDesignSystemPage.line894JsxTextTypeScale')}
                   </p>
                   <div className="space-y-0">
-                    {TYPE_SCALE.map((t) => (
-                      <div
-                        key={t.token}
-                        className="border-border/20 flex items-baseline gap-4 border-b py-3"
-                      >
-                        <div className="w-24 shrink-0">
-                          <span className="text-muted-foreground font-mono text-xs">{t.token}</span>
-                        </div>
-                        <div className="w-16 shrink-0">
-                          <span className="text-muted-foreground font-mono text-xs">{t.px}</span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span
-                            className="text-foreground block truncate font-medium"
-                            style={{ fontSize: t.size }}
-                          >
-                            {tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line917JsxTextTheQuickBrownFox',
-                            )}
-                          </span>
-                        </div>
-                        <div className="hidden max-w-48 shrink-0 sm:block">
-                          <span className="text-muted-foreground block truncate text-xs">
-                            {t.use}
-                          </span>
-                        </div>
-                      </div>
+                    {TYPE_STEPS.map((t) => (
+                      <TypeRow
+                        key={t.step}
+                        step={t.step}
+                        role={t.role}
+                        muted={'legacy' in t ? t.legacy : undefined}
+                        sample={tHardcodedUi.raw(
+                          'appHomeDesignSystemPage.line917JsxTextTheQuickBrownFox',
+                        )}
+                      />
                     ))}
                   </div>
                 </div>
@@ -1721,12 +1527,13 @@ export default function BrandPage() {
                   </p>
                   <DemoContainer>
                     <div className="space-y-3">
-                      {MOTION_DURATIONS.map((d) => (
+                      {DURATIONS.map((d) => (
                         <MotionBar
-                          key={d.token}
+                          key={d.name}
                           label={d.name}
-                          durationMs={d.ms}
-                          durationToken={d.token}
+                          durationClass={d.cls}
+                          easingClass="ease-out"
+                          note={d.use}
                         />
                       ))}
                     </div>
@@ -1741,11 +1548,11 @@ export default function BrandPage() {
                     <div className="space-y-3">
                       {EASING_CURVES.map((e) => (
                         <MotionBar
-                          key={e.token}
+                          key={e.name}
                           label={e.name}
-                          durationMs={300}
-                          durationToken="--duration-slow"
-                          easingToken={e.token}
+                          durationClass="duration-slow"
+                          easingClass={e.cls}
+                          note={e.note}
                         />
                       ))}
                     </div>
@@ -1765,21 +1572,12 @@ export default function BrandPage() {
                 </p>
 
                 <DemoContainer>
+                  <div className="mb-4">
+                    <SpacingBase />
+                  </div>
                   <div className="space-y-2.5">
-                    {SPACING_SCALE.map((s) => (
-                      <div key={s.token} className="flex items-center gap-4">
-                        <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs">
-                          {s.token}
-                        </span>
-                        <div
-                          className="bg-foreground/60 h-5 rounded-sm"
-                          style={{ width: `${s.px * 3}px` }}
-                        />
-                        <span className="text-muted-foreground font-mono text-xs">
-                          {s.px}
-                          {tI18nHardcoded.raw('i18nComplete.text6ee2cc105a67')}
-                        </span>
-                      </div>
+                    {SPACING_STEPS.map((step) => (
+                      <SpacingRow key={step} step={step} />
                     ))}
                   </div>
                 </DemoContainer>
@@ -1794,18 +1592,18 @@ export default function BrandPage() {
                   {tI18nHardcoded.raw(
                     'autoAppPublicMarketingDesignSystemPageJsxTextSubtleElevation8c9f8cda',
                   )}{' '}
-                  <code className="bg-muted rounded px-1 font-mono text-xs">box-shadow</code>{' '}
+                  <code className="bg-muted rounded-sm px-1 font-mono text-xs">box-shadow</code>{' '}
                   {tI18nHardcoded.raw('i18nComplete.textdb482d99cacb')}
                 </p>
 
                 <DemoContainer>
-                  <div className="bg-muted/40 rounded-2xl p-8">
+                  <div className="bg-muted rounded-md p-8">
                     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
                       {SHADOW_SCALE.map((s) => (
                         <div key={s.label} className="flex flex-col gap-3">
                           <div
                             className={cn(
-                              'bg-card border-border/50 flex h-28 items-center justify-center rounded-2xl border',
+                              'bg-card border-border flex h-28 items-center justify-center rounded-md border',
                               s.twClass,
                             )}
                             style={s.twClass ? undefined : { boxShadow: `var(${s.cssVar})` }}
@@ -1841,31 +1639,11 @@ export default function BrandPage() {
                     {tI18nHardcoded.raw('i18nComplete.text707eab0c23ec')}
                   </ComponentLabel>
                   <ComponentDesc>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1029JsxTextText10Variants8SizesTheFoundationOfEvery',
-                    )}
-                    <code className="bg-muted rounded px-1 font-mono text-xs">rounded-full</code>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1030JsxTextEveryContainerCardsDialogsInputsTextareasSelectsInfo',
-                    )}
-                    <code className="bg-muted rounded px-1 font-mono text-xs">rounded-2xl</code>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line1031JsxTextNeverPut')}
-                    <code className="bg-muted rounded px-1 font-mono text-xs">
-                      rounded-sm/md/lg/xl
-                    </code>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line1032JsxTextOnABoxThe')}
-                    <code className="bg-muted rounded px-1 font-mono text-xs">destructive</code>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1033JsxTextVariantIsReservedForThe',
-                    )}
-                    <strong>
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line1033JsxTextOneIrreversibleConfirm',
-                      )}
-                    </strong>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1033JsxTextAConfirmdialogAposSPrimaryActionTheDanger',
-                    )}
+                    {tI18nHardcoded.rich('i18nComplete.textf25fe860a82d', {
+                      code: (chunks) => (
+                        <code className="bg-muted rounded-sm px-1 font-mono text-xs">{chunks}</code>
+                      ),
+                    })}
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
@@ -2018,22 +1796,6 @@ export default function BrandPage() {
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4">
-                      <div>
-                        <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          {tI18nHardcoded.raw(
-                            'autoAppPublicMarketingDesignSystemPageJsxTextSolidColors15530798',
-                          )}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {(Object.keys(badgeColors) as Array<keyof typeof badgeColors>).map(
-                            (color) => (
-                              <Badge key={color} variant="solid" color={color}>
-                                {color}
-                              </Badge>
-                            ),
-                          )}
-                        </div>
-                      </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1114JsxTextBaseVariants')}
@@ -2245,31 +2007,25 @@ export default function BrandPage() {
                     )}
                   </ComponentDesc>
                   <DemoContainer>
-                    <div className="max-w-xs">
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line1259JsxAttrPlaceholderSelectAFramework',
-                            )}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="next">
-                            {tI18nHardcoded.raw('i18nComplete.text30b7f8482c4f')}
-                          </SelectItem>
-                          <SelectItem value="remix">
-                            {tI18nHardcoded.raw('i18nComplete.textf84ed4375595')}
-                          </SelectItem>
-                          <SelectItem value="astro">
-                            {tI18nHardcoded.raw('i18nComplete.textc490cce12748')}
-                          </SelectItem>
-                          <SelectItem value="nuxt">
-                            {tI18nHardcoded.raw('i18nComplete.texte88c87da3c8c')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <SelectDemos />
+                  </DemoContainer>
+                </div>
+
+                <div id="comp-dropdown" className="mb-12">
+                  <ComponentLabel>
+                    {tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}
+                  </ComponentLabel>
+                  <ComponentDesc>
+                    {tHardcodedUi.raw(
+                      'appHomeDesignSystemPage.line1528JsxTextContextualMenuTriggeredByAButtonRowsStay',
+                    )}{' '}
+                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
+                    {tHardcodedUi.raw(
+                      'appHomeDesignSystemPage.line1529JsxTextEvenDestructiveOnesLikeDeleteOrRemoveRed',
+                    )}
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <DropdownDemos />
                   </DemoContainer>
                 </div>
 
@@ -2519,7 +2275,7 @@ export default function BrandPage() {
                           {tI18nHardcoded.raw('i18nComplete.texteabbf3abaf8d')}
                         </p>
                         <Tabs defaultValue="outline-account">
-                          <TabsList animate="none">
+                          <TabsList animate="none" className="bg-transparent p-0">
                             <TabsTrigger variant="outline" value="outline-account">
                               {tI18nHardcoded.raw('i18nComplete.text7e1b0d5641f2')}
                             </TabsTrigger>
@@ -2576,6 +2332,33 @@ export default function BrandPage() {
                           <TabsContent value="underline-settings">
                             <p className="text-muted-foreground mt-2 text-sm">
                               {tI18nHardcoded.raw('i18nComplete.text54b316135c61')}
+                            </p>
+                          </TabsContent>
+                        </Tabs>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground mb-3 text-xs">
+                          {tI18nHardcoded.raw('i18nComplete.textd71a0c697cce')}
+                        </p>
+                        <Tabs defaultValue="segmented-managed" className="max-w-sm">
+                          <TabsList variant="segmented" className="w-full">
+                            <TabsTrigger value="segmented-managed">
+                              <CloudIcon />
+                              {tI18nHardcoded.raw('i18nComplete.text9ae34cca7f2d')}
+                            </TabsTrigger>
+                            <TabsTrigger value="segmented-github">
+                              <GithubLogoIcon />
+                              GitHub
+                            </TabsTrigger>
+                          </TabsList>
+                          <TabsContent value="segmented-managed">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {tI18nHardcoded.raw('i18nComplete.textafecbae4466e')}
+                            </p>
+                          </TabsContent>
+                          <TabsContent value="segmented-github">
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {tI18nHardcoded.raw('i18nComplete.text6cb9b40da8a0')}
                             </p>
                           </TabsContent>
                         </Tabs>
@@ -2754,50 +2537,6 @@ export default function BrandPage() {
                         </div>
                       </SheetContent>
                     </Sheet>
-                  </DemoContainer>
-                </div>
-
-                <div id="comp-dropdown" className="mb-12">
-                  <ComponentLabel>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}
-                  </ComponentLabel>
-                  <ComponentDesc>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1528JsxTextContextualMenuTriggeredByAButtonRowsStay',
-                    )}{' '}
-                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line1529JsxTextEvenDestructiveOnesLikeDeleteOrRemoveRed',
-                    )}
-                  </ComponentDesc>
-                  <DemoContainer>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline">
-                          <MoreHorizontal className="size-4" />
-                          {tI18nHardcoded.raw('i18nComplete.textd0db8b5e364b')}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuLabel>
-                          {tI18nHardcoded.raw('i18nComplete.textff8059dc6752')}
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.text464c4ffd019e')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.text02cdaabfca80')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.text66f4804ee23d')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem>
-                          {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
                   </DemoContainer>
                 </div>
 
@@ -3692,7 +3431,7 @@ export default function BrandPage() {
                             className="bg-card border-border/50 border"
                           >
                             <div className="flex cursor-pointer items-center gap-3 p-4">
-                              <div className="bg-muted border-border/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border">
+                              <div className="bg-muted border-border/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border">
                                 <I className="text-foreground h-4 w-4" />
                               </div>
                               <div className="min-w-0 flex-1">
@@ -3740,26 +3479,6 @@ export default function BrandPage() {
                         {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
                       </Button>
                     </div>
-                  </DemoContainer>
-                </div>
-
-                {/* ── Stagger Mount ── */}
-                <div id="pat-stagger" className="mb-12">
-                  <ComponentLabel>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2179JsxTextStaggerMount')}
-                  </ComponentLabel>
-                  <ComponentDesc>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2181JsxTextEveryManagementPageMountsItsThreeZonesWith',
-                    )}
-                    <code className="font-mono text-xs">delay-75</code>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2183JsxTextContentAt')}
-                    <code className="font-mono text-xs">delay-150</code>.
-                  </ComponentDesc>
-                  <DemoContainer>
-                    <pre className="text-muted-foreground bg-muted/20 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">
-                      {tI18nHardcoded.raw('i18nComplete.text8d70026dc329')}
-                    </pre>
                   </DemoContainer>
                 </div>
               </CollapsibleSection>
@@ -3848,82 +3567,32 @@ export default function BrandPage() {
                   </DemoContainer>
                 </div>
 
-                {/* ── SectionCard ── */}
-                <div id="pat-section-card" className="mb-12">
+                {/* ── Banned ── */}
+                <div id="pat-banned" className="mb-12">
                   <ComponentLabel>
-                    {tI18nHardcoded.raw('i18nComplete.text894b02c84063')}
+                    {tI18nHardcoded.raw('i18nComplete.textc94e8cb68cba')}
                   </ComponentLabel>
                   <ComponentDesc>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2264JsxTextTheOnePanelPatternComposesTheDesignSystem',
-                    )}
-                    <code>flush</code>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2267JsxTextToSeatAListEdgeToEdgeAnd',
-                    )}{' '}
-                    <code>
-                      {tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2268JsxTextToneQuotDestructiveQuot',
-                      )}
-                    </code>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2268JsxTextForDangerZonesNoSeparateComponentADanger',
-                    )}
-                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2270JsxTextTriggerRedIsTheBrakeNotThePaint',
-                    )}
+                    {tI18nHardcoded.raw('i18nComplete.text9bb4af3b0beb')}
                   </ComponentDesc>
-                  <DemoContainer className="space-y-4">
-                    <SectionCard
-                      title={tI18nHardcoded.raw('i18nComplete.text1044a4c056d0')}
-                      count={2}
-                      description={tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2278JsxAttrDescriptionPeopleWithAccessToThisAccount',
-                      )}
-                      action={
-                        <Button size="sm" className="h-8 px-3 text-sm">
-                          {tI18nHardcoded.raw('i18nComplete.text1fd9ae1607aa')}
-                        </Button>
-                      }
-                    >
-                      <p className="text-muted-foreground text-sm">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line2286JsxTextBodyContentSitsInThePaddedRegionPass',
-                        )}{' '}
-                        <code>flush</code>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line2287JsxTextToDropThePaddingForAList',
-                        )}
-                      </p>
-                    </SectionCard>
-                    <SectionCard
-                      tone="destructive"
-                      title={tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2292JsxAttrTitleDangerZone',
-                      )}
-                      description={tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line2293JsxAttrDescriptionIrreversibleActionsLiveHere',
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-foreground text-sm font-medium">
-                            {tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line2298JsxTextDeleteThisAccount',
-                            )}
-                          </p>
+                  <DemoContainer className="p-0">
+                    {BANNED_PATTERNS.map((b) => (
+                      <div
+                        key={b.name}
+                        className="border-border flex items-start gap-3 border-b px-4 py-3 last:border-b-0"
+                      >
+                        <X className="text-kortix-red mt-0.5 size-3 shrink-0" />
+                        <div className="min-w-0 text-sm">
+                          <code className="text-foreground font-mono text-xs">{b.name}</code>
                           <p className="text-muted-foreground mt-0.5 text-xs">
-                            {tHardcodedUi.raw(
-                              'appHomeDesignSystemPage.line2301JsxTextPermanentlyRemovesTheAccountAndAllItsData',
-                            )}
+                            {tI18nHardcoded('i18nComplete.text1aff73a5df45', {
+                              why: b.why,
+                              instead: b.instead,
+                            })}
                           </p>
                         </div>
-                        <Button variant="outline" size="sm" className="shrink-0">
-                          {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
-                        </Button>
                       </div>
-                    </SectionCard>
+                    ))}
                   </DemoContainer>
                 </div>
 
@@ -4017,105 +3686,6 @@ export default function BrandPage() {
                         ),
                       )}
                     </div>
-                  </DemoContainer>
-                </div>
-
-                {/* ── List & ListRow ── */}
-                <div id="pat-list" className="mb-12">
-                  <ComponentLabel>
-                    {tHardcodedUi.raw('appHomeDesignSystemPage.line2348JsxTextListAmpListrow')}
-                  </ComponentLabel>
-                  <ComponentDesc>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2350JsxTextTheStandardListADividerSeparated',
-                    )}
-                    <code>List</code> {tI18nHardcoded.raw('i18nComplete.text28391d3bc64e')}{' '}
-                    <code>ListRow</code>
-                    {tHardcodedUi.raw(
-                      'appHomeDesignSystemPage.line2351JsxTextSEachWithALeadingAvatarSlotUseravatar',
-                    )}{' '}
-                    <code>
-                      {tHardcodedUi.raw('appHomeDesignSystemPage.line2355JsxTextSectioncardFlush')}
-                    </code>
-                    .
-                  </ComponentDesc>
-                  <DemoContainer className="p-0">
-                    <SectionCard
-                      title={tI18nHardcoded.raw('i18nComplete.text1044a4c056d0')}
-                      count={2}
-                      flush
-                    >
-                      <List>
-                        <ListRow
-                          leading={
-                            <UserAvatar
-                              email={tHardcodedUi.raw(
-                                'appHomeDesignSystemPage.line2361JsxAttrEmailGraceKortixAi',
-                              )}
-                              name="Grace Hopper"
-                            />
-                          }
-                          title={tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line2362JsxAttrTitleGraceKortixAi',
-                          )}
-                          badges={
-                            <Badge variant="outline" size="sm">
-                              {tI18nHardcoded.raw('i18nComplete.text08b041935798')}
-                            </Badge>
-                          }
-                          subtitle={
-                            <InlineMeta>
-                              <span>
-                                {tHardcodedUi.raw(
-                                  'appHomeDesignSystemPage.line2370JsxTextJoinedMar32026',
-                                )}
-                              </span>
-                              <span>
-                                {tHardcodedUi.raw(
-                                  'appHomeDesignSystemPage.line2371JsxTextText4Projects',
-                                )}
-                              </span>
-                            </InlineMeta>
-                          }
-                          trailing={
-                            <Badge
-                              variant="outline"
-                              size="sm"
-                              className="border-foreground/30 text-foreground"
-                            >
-                              {tI18nHardcoded.raw('i18nComplete.text4b1b8aa3608a')}
-                            </Badge>
-                          }
-                        />
-                        <ListRow
-                          leading={
-                            <UserAvatar
-                              email={tHardcodedUi.raw(
-                                'appHomeDesignSystemPage.line2381JsxAttrEmailAlanKortixAi',
-                              )}
-                              name="Alan Turing"
-                            />
-                          }
-                          title={tHardcodedUi.raw(
-                            'appHomeDesignSystemPage.line2382JsxAttrTitleAlanKortixAi',
-                          )}
-                          subtitle={
-                            <InlineMeta>
-                              <span>
-                                {tHardcodedUi.raw(
-                                  'appHomeDesignSystemPage.line2385JsxTextJoinedApr12026',
-                                )}
-                              </span>
-                            </InlineMeta>
-                          }
-                          trailing={
-                            <Badge variant="outline" size="sm">
-                              {tI18nHardcoded.raw('i18nComplete.text7c968fb71f50')}
-                            </Badge>
-                          }
-                        />
-                      </List>
-                    </SectionCard>
                   </DemoContainer>
                 </div>
 
@@ -4288,7 +3858,7 @@ export default function BrandPage() {
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2509JsxTextMapsInsteadOfReInlining',
                     )}
-                    <code>text-emerald-500</code>.
+                    <code>{'text-<palette>-500'}</code>.
                   </ComponentDesc>
                   <DemoContainer className="flex flex-col gap-4">
                     <div className="flex items-center gap-4 text-sm">
@@ -4445,7 +4015,7 @@ export default function BrandPage() {
               >
                 <div className="grid gap-10 md:grid-cols-2">
                   <div>
-                    <p className="mb-4 text-xs tracking-widest text-emerald-600 uppercase dark:text-emerald-400">
+                    <p className="text-muted-foreground mb-4 text-xs font-medium">
                       {tI18nHardcoded.raw('i18nComplete.text30094e0bec00')}
                     </p>
                     {[
@@ -4464,15 +4034,15 @@ export default function BrandPage() {
                         key={t}
                         className="border-border/30 flex items-start gap-2.5 border-b py-2"
                       >
-                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                          <Check className="size-2.5" />
+                        <span className="bg-kortix-green/15 mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full">
+                          <Check className="text-kortix-green size-2.5" />
                         </span>
                         <span className="text-muted-foreground text-sm">{t}</span>
                       </div>
                     ))}
                   </div>
                   <div>
-                    <p className="mb-4 text-xs tracking-widest text-red-600 uppercase dark:text-red-400">
+                    <p className="text-muted-foreground mb-4 text-xs font-medium">
                       {tI18nHardcoded.raw('i18nComplete.text24b6bef25e6e')}
                       {"'"}t
                     </p>
@@ -4492,8 +4062,8 @@ export default function BrandPage() {
                         key={t}
                         className="border-border/30 flex items-start gap-2.5 border-b py-2"
                       >
-                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-600 dark:text-red-400">
-                          <X className="size-2.5" />
+                        <span className="bg-kortix-red/15 mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full">
+                          <X className="text-kortix-red size-2.5" />
                         </span>
                         <span className="text-muted-foreground text-sm">{t}</span>
                       </div>

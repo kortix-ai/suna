@@ -10,9 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { FaviconAvatar } from '@/components/ui/favicon-avatar';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { isKortixAppUrl } from '@/features/session/kortix-app-url';
@@ -23,7 +20,6 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useSessionPublicShares } from '@/hooks/use-session-public-shares';
 import { useTranslations } from '@/i18n/use-translations';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
-import { cn } from '@/lib/utils';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import {
   buildWebProxyUrl,
@@ -35,23 +31,19 @@ import {
   proxyUrlToInternal,
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
-import { recentDisplayLabel, useBrowserRecentsStore } from '@/stores/browser-recents-store';
+import { useBrowserRecentsStore } from '@/stores/browser-recents-store';
 import { useTabStore } from '@/stores/tab-store';
-import type { CreateSessionPublicShareInput } from '@kortix/sdk';
-import {
+import type { CreateSessionPublicShareInput } from '@kortix/sdk';import {
   WarningIcon as AlertTriangle,
-  ArrowLeftIcon as ArrowLeft,
-  ArrowRightIcon as ArrowRight,
   ArrowSquareOutIcon,
   GlobeIcon as Globe,
-  ArrowClockwiseIcon as GrRefresh,
   LinkSimpleIcon as Link2,
   DotsThreeIcon as MoreHorizontal,
   ArrowClockwiseIcon as RefreshCw,
   GearSixIcon as Settings2,
 } from '@phosphor-icons/react';
-import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PreviewLoadingOverlay, PreviewRecentsLanding, SandboxAddressBar } from './shared/sandbox-browser-chrome';
 
 interface PreviewTabContentProps {
   tabId: string;
@@ -64,18 +56,6 @@ function normalizePreviewLabel(value: unknown, fallback: string): string {
   const trimmed = value.trim();
   if (!trimmed || /^localhost:\d+$/i.test(trimmed)) return fallback;
   return trimmed;
-}
-
-/** Split a URL so the hostname can be rendered brighter than the rest. */
-function splitUrlForDisplay(url: string): { prefix: string; host: string; rest: string } | null {
-  try {
-    const host = new URL(url).host;
-    const idx = url.indexOf(host);
-    if (!host || idx === -1) return null;
-    return { prefix: url.slice(0, idx), host, rest: url.slice(idx + host.length) };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -94,13 +74,9 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   const updateTabMetadata = useTabStore((s) => s.openTab);
   const recents = useBrowserRecentsStore((s) => s.recents);
   const addRecent = useBrowserRecentsStore((s) => s.addRecent);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  // Set when the address bar gets something that isn't a sandbox port, so we
-  // can flag it inline instead of attempting to browse it.
-  const [addressError, setAddressError] = useState(false);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Recents come from a persisted store — render them only after mount so the
   // server and first client render agree.
@@ -112,11 +88,6 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   const port = (tab?.metadata?.port as number) || 0;
   const originalUrl = (tab?.metadata?.originalUrl as string) || '';
 
-  // Address bar state — shows the internal localhost URL
-  const [addressValue, setAddressValue] = useState(
-    originalUrl || (port ? `http://localhost:${port}/` : ''),
-  );
-  const [isAddressEditing, setIsAddressEditing] = useState(false);
   const addressInputRef = useRef<HTMLInputElement>(null);
 
   // Empty landing gets the cursor, like `autoFocus` did — but through
@@ -167,17 +138,6 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     addRecent(originalUrl);
   }, [originalUrl, previewUrl, addRecent]);
 
-  // Sync address bar when tab metadata changes externally
-  useEffect(() => {
-    if (!isAddressEditing) {
-      if (isExternalBrowsing) {
-        setAddressValue(originalUrl);
-      } else {
-        setAddressValue(originalUrl || (port ? `http://localhost:${port}/` : ''));
-      }
-    }
-  }, [originalUrl, port, isAddressEditing, isExternalBrowsing]);
-
   /** Clear any pending load timeout. */
   const clearLoadTimeout = useCallback(() => {
     if (loadTimeoutRef.current) {
@@ -210,6 +170,18 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   }, [previewUrl]);
 
   /** Navigate to a new URL within the sandbox. */
+  /** Push a URL onto the history stack, truncating any forward entries. */
+  const pushHistory = useCallback(
+    (proxyUrl: string) => {
+      setHistory((prev) => {
+        const trimmed = prev.slice(0, historyIndex + 1);
+        return [...trimmed, proxyUrl];
+      });
+      setHistoryIndex((prev) => prev + 1);
+    },
+    [historyIndex],
+  );
+
   const navigateTo = useCallback(
     (url: string) => {
       const externalUrl = normalizeExternalInput(url);
@@ -234,17 +206,8 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
           metadata: { url: newProxyUrl, port: 0, originalUrl: externalUrl, path: '/' },
         });
 
-        setAddressValue(externalUrl);
-
-        setHistory((prev) => {
-          const trimmed = prev.slice(0, historyIndex + 1);
-          return [...trimmed, newProxyUrl];
-        });
-        setHistoryIndex((prev) => prev + 1);
-
-        setIsLoading(true);
-        setHasError(false);
-        setRefreshKey((k) => k + 1);
+        pushHistory(newProxyUrl);
+        handleRefresh();
         return;
       }
 
@@ -263,168 +226,66 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         metadata: { url: newProxyUrl, port: newPort, originalUrl: newInternalUrl, path: newPath },
       });
 
-      setAddressValue(newInternalUrl);
-
-      setHistory((prev) => {
-        const trimmed = prev.slice(0, historyIndex + 1);
-        return [...trimmed, newProxyUrl];
-      });
-      setHistoryIndex((prev) => prev + 1);
-
-      setIsLoading(true);
-      setHasError(false);
-      setRefreshKey((k) => k + 1);
+      pushHistory(newProxyUrl);
+      handleRefresh();
     },
-    [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, historyIndex],
-  );
-
-  /**
-   * Handle address bar submission. This bar controls the sandbox's local
-   * PORTS only — not arbitrary external sites — so we accept a bare port,
-   * `:port`, `localhost:port`, `127.0.0.1:port`, or a full localhost URL
-   * (each optionally followed by a path). Anything else (e.g. `google.com`)
-   * is rejected inline rather than attempting to browse it.
-   */
-  const handleAddressSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-
-      let url = addressValue.trim();
-      if (!url) return;
-
-      if (/^\d{1,5}(?:[/?#]|$)/.test(url)) {
-        url = `http://localhost:${url}`;
-      } else if (/^:\d{1,5}/.test(url)) {
-        url = `http://localhost${url}`;
-      } else if (/^(?:localhost|127\.0\.0\.1):\d+/i.test(url)) {
-        url = `http://${url}`;
-      }
-
-      const parsed = parseLocalhostUrl(url);
-      if (!parsed) {
-        setAddressError(true);
-        return;
-      }
-
-      setAddressError(false);
-      setIsAddressEditing(false);
-      navigateTo(toInternalUrl(parsed.port, parsed.path));
-    },
-    [addressValue, navigateTo],
+    [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, pushHistory, handleRefresh],
   );
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
 
-  const handleBack = useCallback(() => {
-    if (!canGoBack) return;
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    const prevUrl = history[newIndex];
+  /** Walk the history stack in either direction; the two directions were two
+   *  byte-identical callbacks except for the sign. */
+  const goHistory = useCallback(
+    (delta: -1 | 1) => {
+      if (delta < 0 ? !canGoBack : !canGoForward) return;
+      const newIndex = historyIndex + delta;
+      setHistoryIndex(newIndex);
+      const url = history[newIndex];
 
-    if (isWebProxyUrl(prevUrl)) {
-      const targetUrl = parseWebProxyUrl(prevUrl);
-      if (targetUrl) {
-        let displayHost: string;
-        try {
-          displayHost = new URL(targetUrl).hostname;
-        } catch {
-          displayHost = targetUrl;
+      if (isWebProxyUrl(url)) {
+        const targetUrl = parseWebProxyUrl(url);
+        if (targetUrl) {
+          let displayHost: string;
+          try {
+            displayHost = new URL(targetUrl).hostname;
+          } catch {
+            displayHost = targetUrl;
+          }
+          updateTabMetadata({
+            id: tabId,
+            title: displayHost,
+            type: 'preview',
+            href: `/p/web`,
+            metadata: { url, port: 0, originalUrl: targetUrl, path: '/' },
+          });
+          handleRefresh();
+          return;
         }
-        updateTabMetadata({
-          id: tabId,
-          title: displayHost,
-          type: 'preview',
-          href: `/p/web`,
-          metadata: { url: prevUrl, port: 0, originalUrl: targetUrl, path: '/' },
-        });
-        setAddressValue(targetUrl);
-        setIsLoading(true);
-        setHasError(false);
-        setRefreshKey((k) => k + 1);
-        return;
       }
-    }
 
-    const internal = proxyUrlToInternal(prevUrl);
-    if (internal) {
-      const parsed = parseLocalhostUrl(internal);
-      if (parsed) {
-        const internalUrl = toInternalUrl(parsed.port, parsed.path);
-        updateTabMetadata({
-          id: tabId,
-          title: appPreviewTitle,
-          type: 'preview',
-          href: `/p/${parsed.port}`,
-          metadata: {
-            url: prevUrl,
-            port: parsed.port,
-            originalUrl: internalUrl,
-            path: parsed.path,
-          },
-        });
-        setAddressValue(internalUrl);
-        setIsLoading(true);
-        setHasError(false);
-        setRefreshKey((k) => k + 1);
-      }
-    }
-  }, [canGoBack, historyIndex, history, tabId, updateTabMetadata]);
-
-  const handleForward = useCallback(() => {
-    if (!canGoForward) return;
-    const newIndex = historyIndex + 1;
-    setHistoryIndex(newIndex);
-    const nextUrl = history[newIndex];
-
-    if (isWebProxyUrl(nextUrl)) {
-      const targetUrl = parseWebProxyUrl(nextUrl);
-      if (targetUrl) {
-        let displayHost: string;
-        try {
-          displayHost = new URL(targetUrl).hostname;
-        } catch {
-          displayHost = targetUrl;
+      const internal = proxyUrlToInternal(url);
+      if (internal) {
+        const parsed = parseLocalhostUrl(internal);
+        if (parsed) {
+          const internalUrl = toInternalUrl(parsed.port, parsed.path);
+          updateTabMetadata({
+            id: tabId,
+            title: appPreviewTitle,
+            type: 'preview',
+            href: `/p/${parsed.port}`,
+            metadata: { url, port: parsed.port, originalUrl: internalUrl, path: parsed.path },
+          });
+          handleRefresh();
         }
-        updateTabMetadata({
-          id: tabId,
-          title: displayHost,
-          type: 'preview',
-          href: `/p/web`,
-          metadata: { url: nextUrl, port: 0, originalUrl: targetUrl, path: '/' },
-        });
-        setAddressValue(targetUrl);
-        setIsLoading(true);
-        setHasError(false);
-        setRefreshKey((k) => k + 1);
-        return;
       }
-    }
+    },
+    [canGoBack, canGoForward, historyIndex, history, tabId, updateTabMetadata, handleRefresh],
+  );
 
-    const internal = proxyUrlToInternal(nextUrl);
-    if (internal) {
-      const parsed = parseLocalhostUrl(internal);
-      if (parsed) {
-        const internalUrl = toInternalUrl(parsed.port, parsed.path);
-        updateTabMetadata({
-          id: tabId,
-          title: appPreviewTitle,
-          type: 'preview',
-          href: `/p/${parsed.port}`,
-          metadata: {
-            url: nextUrl,
-            port: parsed.port,
-            originalUrl: internalUrl,
-            path: parsed.path,
-          },
-        });
-        setAddressValue(internalUrl);
-        setIsLoading(true);
-        setHasError(false);
-        setRefreshKey((k) => k + 1);
-      }
-    }
-  }, [canGoForward, historyIndex, history, tabId, updateTabMetadata]);
+  const handleBack = useCallback(() => goHistory(-1), [goHistory]);
+  const handleForward = useCallback(() => goHistory(1), [goHistory]);
 
   // Fallback: if onLoad doesn't fire within 5s, dismiss the loading state.
   // Cross-origin iframes frequently fail to fire onLoad events.
@@ -437,17 +298,14 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
     return clearLoadTimeout;
   }, [isLoading, refreshKey, clearLoadTimeout]);
 
-  // At rest the bar always shows the full URL; the overlay below re-renders it
-  // with the hostname highlighted (an input can't mix text colors).
+  // At rest the bar always shows the full URL; the overlay in
+  // `SandboxAddressBar` re-renders it with the hostname highlighted (an input
+  // can't mix text colors).
   const fullUrl = originalUrl || (port ? `http://localhost:${port}/` : '');
-  const urlParts = useMemo(
-    () => (isAddressEditing || addressError || !previewUrl ? null : splitUrlForDisplay(fullUrl)),
-    [isAddressEditing, addressError, previewUrl, fullUrl],
-  );
 
   const shareInput = useMemo<CreateSessionPublicShareInput | null>(() => {
     if (isExternalBrowsing || port <= 0) return null;
-    const parsed = parseLocalhostUrl(originalUrl || addressValue);
+    const parsed = parseLocalhostUrl(originalUrl || fullUrl);
     const path = (tab?.metadata?.path as string) || parsed?.path || '/';
     return {
       mode: 'view',
@@ -458,15 +316,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         path,
       },
     };
-  }, [addressValue, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title]);
-
-  const resetAddressToCurrent = useCallback(() => {
-    if (isExternalBrowsing) {
-      setAddressValue(originalUrl);
-    } else {
-      setAddressValue(originalUrl || (port ? `http://localhost:${port}/` : ''));
-    }
-  }, [isExternalBrowsing, originalUrl, port]);
+  }, [fullUrl, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title]);
 
   const hasPreview = !!previewUrl;
   const showRecents = mounted && recents.length > 0;
@@ -485,96 +335,25 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   return (
     <div className="bg-background flex h-full flex-col">
       <div className="border-border bg-background flex shrink-0 items-center gap-0.5 border-b px-2 py-1">
-        <Hint label={tHardcodedUi.raw('i18nComplete.text76900f1bfd16')} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            disabled={!hasPreview || !canGoBack}
-          >
-            <ArrowLeft className="size-4" />
-          </Button>
-        </Hint>
-
-        <Hint label={tHardcodedUi.raw('i18nComplete.textf1c65e14817e')} side="bottom">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleForward}
-            disabled={!hasPreview || !canGoForward}
-          >
-            <ArrowRight className="size-4" />
-          </Button>
-        </Hint>
-
-        <Hint label={tHardcodedUi.raw('i18nComplete.text0e9161011702')} side="bottom">
-          <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={!hasPreview}>
-            <GrRefresh className={cn('size-4', isLoading && 'animate-spinner-spin')} />
-          </Button>
-        </Hint>
-
-        <form onSubmit={handleAddressSubmit} className="flex min-w-0 flex-1 items-center px-1">
-          <div
-            className={cn(
-              'group/address hover:bg-input focus-within:bg-input focus-within:border-border relative flex h-7 w-full items-center rounded-sm border border-transparent bg-transparent px-3 text-xs tracking-tight transition-colors',
-              addressError &&
-                'border-kortix-red/60 focus-within:border-kortix-red/60 animate-shake',
-            )}
-          >
-            <Input
-              ref={addressInputRef}
-              type="text"
-              size="xs"
-              value={urlParts ? fullUrl : addressValue}
-              aria-label={tHardcodedUi.raw(
-                'autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26',
-              )}
-              onChange={(e) => {
-                setAddressValue(e.target.value);
-                if (addressError) setAddressError(false);
-              }}
-              onFocus={() => {
-                setIsAddressEditing(true);
-                if (hasPreview) resetAddressToCurrent();
-                setTimeout(() => addressInputRef.current?.select(), 0);
-              }}
-              onBlur={() => setIsAddressEditing(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setIsAddressEditing(false);
-                  setAddressError(false);
-                  if (hasPreview) resetAddressToCurrent();
-                  addressInputRef.current?.blur();
-                }
-              }}
-              placeholder={tHardcodedUi.raw(
-                'autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9',
-              )}
-              className={cn(
-                'h-full min-w-0 flex-1 truncate rounded-none border-none bg-transparent px-0 font-medium focus:border-none',
-                // isAddressEditing && !!addressValue && 'font-mono',
-                urlParts && 'text-transparent',
-              )}
-            />
-            {urlParts && (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 right-3.5 left-3.5 flex items-center overflow-hidden whitespace-nowrap"
-              >
-                <span className="text-muted-foreground group-hover/address:text-foreground truncate transition-colors">
-                  {urlParts.prefix}
-                  <span className="text-foreground">{urlParts.host}</span>
-                  {urlParts.rest}
-                </span>
-              </span>
-            )}
-            {addressError && (
-              <span className="text-kortix-red ml-2 shrink-0 text-xs">
-                {tHardcodedUi.raw('i18nComplete.textce1e609b7bf5')}
-              </span>
-            )}
-          </div>
-        </form>
+        <SandboxAddressBar
+          displayValue={fullUrl}
+          hasPreview={hasPreview}
+          isLoading={isLoading}
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
+          onBack={handleBack}
+          onForward={handleForward}
+          onReload={handleRefresh}
+          onNavigate={navigateTo}
+          placeholder={tHardcodedUi.raw(
+            'autoComponentsTabsPreviewTabContentJsxAttrPlaceholderTypeA7d8290b9',
+          )}
+          ariaLabel={tHardcodedUi.raw(
+            'autoComponentsTabsPreviewTabContentJsxAttrTitleEnterA2bdb9e26',
+          )}
+          inputRef={addressInputRef}
+          resetOnEscape={hasPreview}
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -634,14 +413,11 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         <div className="relative flex-1 overflow-hidden">
           {/* Loading overlay */}
           {isLoading && (
-            <div className="bg-background/80 absolute inset-0 z-10 flex items-center justify-center">
-              <div className="text-muted-foreground flex flex-col items-center gap-2">
-                <Loading className="size-4" />
-                <p className="text-xs">
-                  {tHardcodedUi.raw('componentsTabsPreviewTabContent.line481JsxTextLoadingPreview')}
-                </p>
-              </div>
-            </div>
+            <PreviewLoadingOverlay
+              label={tHardcodedUi.raw(
+                'componentsTabsPreviewTabContent.line481JsxTextLoadingPreview',
+              )}
+            />
           )}
 
           {/* Error state */}
@@ -669,7 +445,6 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
 
           <iframe
             key={refreshKey}
-            ref={iframeRef}
             src={previewUrl}
             title={
               isExternalBrowsing
@@ -686,35 +461,15 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         /* Landing — recent URLs when we have them, helper copy otherwise */
         <div className="flex-1 overflow-y-auto">
           {showRecents ? (
-            <div className="mx-auto w-full max-w-md px-6 py-12">
-              <section className="space-y-3">
-                <h3 className="text-muted-foreground px-2 text-sm">
-                  {tHardcodedUi.raw('i18nComplete.text41a86988751a')}
-                </h3>
-                <ul className="space-y-1">
-                  {recents.map((recent) => (
-                    <li key={recent.url}>
-                      <button
-                        type="button"
-                        onClick={() => navigateTo(recent.url)}
-                        className="hover:bg-foreground/5 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors active:scale-[0.99]"
-                      >
-                        {isExternalUrl(recent.url) ? (
-                          <FaviconAvatar value={recent.url} size="xs" className="shrink-0" />
-                        ) : (
-                          <span className="flex size-5 shrink-0 items-center justify-center">
-                            <Globe className="text-muted-foreground/60 size-4" />
-                          </span>
-                        )}
-                        <span className="text-foreground/90 min-w-0 flex-1 truncate text-sm">
-                          {recentDisplayLabel(recent.url)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            </div>
+            <PreviewRecentsLanding
+              recents={recents}
+              onOpen={navigateTo}
+              renderIcon={(url) =>
+                isExternalUrl(url) ? (
+                  <FaviconAvatar value={url} size="xs" className="shrink-0" />
+                ) : undefined
+              }
+            />
           ) : (
             <EmptyState
               icon={Globe}

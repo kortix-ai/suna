@@ -14,6 +14,7 @@
  *   skills/<name>/SKILL.md    skills, any harness
  *   memory/                   project memory
  *   harnesses/opencode/       OpenCode only: opencode.jsonc, plugins/, tools/
+ *   harnesses/pi/             pi only: skills/, extensions/, prompts/, settings.json
  *
  * Projects created before 2026-09 keep everything under `.kortix/opencode`
  * and `.kortix/memory`. Every reader still accepts that layout.
@@ -30,6 +31,9 @@ export const HARNESSES_DIR = 'harnesses';
 export const OPENCODE_CONFIG_DIR = `${HARNESSES_DIR}/opencode`;
 /** OpenCode config dir of the pre-2026-09 layout; it also held agents/ and skills/. */
 export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode';
+/** Default pi config dir (`pi.config_dir`). */
+export const PI_CONFIG_DIR = `${HARNESSES_DIR}/pi`;
+export const LEGACY_PI_CONFIG_DIR = '.kortix/pi';
 export const LEGACY_MEMORY_DIR = '.kortix/memory';
 
 /** The conventional `.md` of a new agent. Writers also record it as `agents.<name>.file`. */
@@ -83,6 +87,16 @@ export function manifestOpencodeConfigDir(manifest: unknown): string | null {
 export function opencodeConfigDirCandidates(manifest: unknown): string[] {
   const explicit = manifestOpencodeConfigDir(manifest);
   return explicit ? [explicit] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
+}
+
+/**
+ * pi config dirs to try, in order: the manifest's own `pi.config_dir` alone,
+ * else `harnesses/pi` then `.kortix/pi`. The first one that exists is the
+ * project's (the daemon's `resolvePiProjectConfigDir` applies the same rule).
+ */
+export function piConfigDirCandidates(manifest: unknown): string[] {
+  const explicit = safeRepoPath(table(table(manifest)?.pi)?.config_dir);
+  return explicit ? [explicit] : [PI_CONFIG_DIR, LEGACY_PI_CONFIG_DIR];
 }
 
 /** The dir that held agents/ and skills/ in the pre-2026-09 layout. */

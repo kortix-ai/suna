@@ -51,6 +51,30 @@
  * prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
+import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
+
+type SessionListFilters = Pick<
+  ListProjectSessionsOptions,
+  'parent' | 'startedBy' | 'q' | 'labels' | 'participant'
+>;
+
+/** The filter fields that change the server response, or undefined when none is set. */
+function normalizeSessionListFilters(filters?: SessionListFilters) {
+  const q = filters?.q?.trim();
+  const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
+  if (!filters?.parent && !filters?.startedBy && !filters?.participant && !q && !labels) {
+    return undefined;
+  }
+  return {
+    parent: filters?.parent ?? null,
+    startedBy: filters?.startedBy ?? null,
+    q: q ?? null,
+    // Only present when set, so pre-label and pre-participant keys stay byte-identical.
+    ...(labels ? { labels } : {}),
+    ...(filters?.participant ? { participant: filters.participant } : {}),
+  };
+}
+
 export const qk = {
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
@@ -146,6 +170,9 @@ export const qk = {
   project: {
     /** Invalidation prefix. Never pass this as a `queryKey`. */
     scope: (id: string) => ['kx', 'project', id] as const,
+
+    /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
+    needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
 
     /**
      * The bare project row — `getProject`, `GET /projects/:id`, a
@@ -261,8 +288,24 @@ export const qk = {
      * reaches the paged list too. That is the point of the shared prefix — a
      * new slot must not need a second invalidation nobody remembers to add.
      */
-    sessionsPaged: (id: string, scope: 'visible' | 'project' = 'visible') =>
-      [...qk.project.sessionsScope(id), 'list-paged', scope] as const,
+    sessionsPaged: (
+      id: string,
+      scope: 'visible' | 'project' = 'visible',
+      filters?: SessionListFilters,
+    ) => {
+      const key = [...qk.project.sessionsScope(id), 'list-paged', scope] as const;
+      // The filter set is one extra segment, present only when a filter is
+      // set, so the unfiltered key is byte-identical to the pre-filter one.
+      const normalized = normalizeSessionListFilters(filters);
+      return normalized ? ([...key, normalized] as const) : key;
+    },
+
+    /**
+     * One session's children (`parent=<sessionId>`), infinite. Its own slot
+     * beside `sessionsPaged`; nests under `sessionsScope` for invalidation.
+     */
+    sessionChildren: (id: string, parentSessionId: string, q?: string) =>
+      [...qk.project.sessionsScope(id), 'list-children', parentSessionId, q?.trim() ?? ''] as const,
 
     /**
      * One session, by id. Nests directly under the scope-LESS
@@ -348,6 +391,9 @@ export const qk = {
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,
+    /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
+    sessionMessageAuthors: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

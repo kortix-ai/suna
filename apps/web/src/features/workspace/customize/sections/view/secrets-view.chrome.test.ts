@@ -28,6 +28,13 @@ const shellHeader = code.slice(shellStart, childrenStart);
 const shellChildren = code.slice(childrenStart);
 
 describe('SecretsView page chrome', () => {
+  test('a failed save leaves the form open with its entered value for retry', () => {
+    const save = code.slice(code.indexOf('const save = useMutation('), code.indexOf('const grantIdentifier'));
+    expect(save.slice(save.indexOf('onMutate:'), save.indexOf('onSuccess:'))).not.toContain('onOpenChange(false)');
+    expect(save.slice(save.indexOf('onSuccess:'), save.indexOf('onError:'))).toContain('onOpenChange(false)');
+    expect(save.slice(save.indexOf('onError:'), save.indexOf('onSettled:'))).not.toContain('onOpenChange(true)');
+  });
+
   test('the page is the shared capability shell, not its own column', () => {
     expect(shellStart).toBeGreaterThan(-1);
     expect(childrenStart).toBeGreaterThan(shellStart);

@@ -34,11 +34,8 @@ export {
 // SPECIALIZED HOOKS - Use the unified data internally
 // =============================================================================
 
-// Billing modal state
-export { useBillingModal } from './use-billing-modal';
-
 // Credits ledger (rich variant with typeFilter, account-scoped via context)
-export { useTransactions, useTransactionsSummary } from './use-transactions';
+export { useTransactions } from './use-transactions';
 
 // Session-first LLM and compute cost explorer
 export {
@@ -53,17 +50,6 @@ export { COST_PAGE_SIZE, useCostByProject, useCostSummary } from './use-cost-exp
 
 // Download restriction for free tier
 export { useDownloadRestriction } from './use-download-restriction';
-
-// =============================================================================
-// TIER CONFIGURATIONS - Static data, separate endpoint
-// =============================================================================
-
-export {
-  getTierByKey,
-  useTierConfigurations,
-  type TierConfiguration,
-  type TierConfigurationsResponse,
-} from './use-tier-configurations';
 
 // =============================================================================
 // TYPE EXPORTS

@@ -46,6 +46,33 @@ A model id has one of three shapes:
 Connect a BYOK key on the project's Model settings page, or set the
 provider's env var directly as a [secret](/docs/project/secrets).
 
+Each provider reads its own key. Some providers share one env var on
+models.dev, for example OpenCode Zen (`opencode`) and OpenCode Go
+(`opencode-go`) both list `OPENCODE_API_KEY`. The provider that owns the name
+keeps it. Every other provider reads `<PROVIDER_ID>_API_KEY`: OpenCode Go reads
+`OPENCODE_GO_API_KEY`, Z.ai Coding Plan reads `ZAI_CODING_PLAN_API_KEY`, and
+Moonshot China reads `MOONSHOTAI_CN_API_KEY`. A Zen key therefore never lists
+Go models. The connect form and `kortix providers set` use the right name.
+
+### OpenCode Zen and Go (sign in with OpenCode)
+
+Connect OpenCode Zen or OpenCode Go with an API key, or sign in with your
+OpenCode Console account instead:
+
+1. Open **Customize → Models → Providers** and find **OpenCode Go**.
+2. Choose **Sign in with OpenCode**. Copy the code, choose **Open auth page**,
+   and approve the device in your OpenCode workspace.
+3. The key field shows the provider as connected. Remove the key to sign out.
+
+From the CLI: `kortix providers login opencode-go`, or `kortix providers
+login opencode` for Zen. Zen models are used by id, for example
+`opencode/glm-5.3-flash`; the picker does not list them. Zen and Go
+each hold their own login, so signing in to one never connects the other. The
+login lasts 30 days, and Kortix renews it before it expires. When OpenCode
+refuses a login, Kortix renews it once and retries the request. When the
+renewal fails too, the request returns `provider_reauth_required`: sign in
+again.
+
 ### Kortix-managed models
 
 The picker lists these under **Kortix**, with their token rates. Every one
@@ -59,10 +86,15 @@ data retention, and never falls back to another provider.
 | GLM 5.3 Flash | `glm-5.3-flash` |
 
 Kortix does not offer OpenAI or Anthropic models as managed models. Use them
-through a BYOK key or a ChatGPT plan. A ChatGPT plan adds `codex/gpt-6-astra`,
-`codex/gpt-6-sol`, and `codex/gpt-6-luna` (plus the GPT-5.x models). A BYOK
-key offers its provider's whole catalog, for example
-`anthropic/claude-opus-5-5` with an Anthropic key. The picker shows the newest model of each family by default.
+through a BYOK key or a ChatGPT plan. A BYOK key offers its provider's whole
+catalog, for example `anthropic/claude-opus-5-5` with an Anthropic key. A
+ChatGPT plan offers every model Codex offers a ChatGPT account, for example
+`codex/gpt-6.1-sol`. The picker shows the newest model of each family by default.
+
+Both lists update automatically. The API reads [models.dev](https://models.dev)
+and the Codex CLI's published model list every hour, so a new release appears
+within an hour of its listing, without a Kortix release. When you connect a
+provider, its newest stable model with tool calling becomes the default.
 
 ## Disable providers or models
 

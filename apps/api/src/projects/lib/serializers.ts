@@ -16,7 +16,7 @@ import {
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { normalizeAuditClientSource } from '../../shared/audit-client-source';
+import { sessionInitiatorLabel } from './session-initiator';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
@@ -53,7 +53,6 @@ export type RequestAuditContext = {
   path: string;
   ip: string | null;
   userAgent: string | null;
-  clientReportedSource?: string | null;
 };
 
 // Session-status constants live in a dependency-free module so lean callers (the
@@ -120,6 +119,10 @@ export function serializeSession(
     ownerEmail?: string | null;
     /** Resolved human or service-account display name. */
     ownerName?: string | null;
+    /** Display name of a member/service-account initiator that is not the owner. */
+    initiatorName?: string | null;
+    /** Resolved people of a conversation (`metadata.participants`), single-session read only. */
+    participants?: Array<{ user_id: string; name: string | null; email: string | null }>;
     /** Whether created_by identifies a human, service account, or stale principal. */
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
@@ -164,7 +167,7 @@ export function serializeSession(
   // snapshot above is [] when canAccess is false). It outranks the generated
   // auto title so list reads resolve the SAME string the session header shows
   // live, but never a user rename.
-  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.opencodeSessionId);
+  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -174,9 +177,11 @@ export function serializeSession(
     sandbox_provider: row.sandboxProvider,
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
-    opencode_session_id: row.opencodeSessionId,
+    runtime_session_id: row.runtimeSessionId,
+    opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
+    labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
     status: row.status,
     error: row.error,
@@ -188,14 +193,30 @@ export function serializeSession(
         ? trimSessionMetadataForList(row.metadata ?? {})
         : (row.metadata ?? {})
       : {},
+    runtime_sessions: opencodeSessions,
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
+    participant_people: canAccess ? (ctx?.participants ?? []) : [],
     visibility: row.visibility,
     origin: row.origin,
+    parent_session_id: row.parentSessionId ?? null,
+    initiator: row.initiatorType
+      ? {
+          type: row.initiatorType,
+          id: row.initiatorId,
+          label: sessionInitiatorLabel(
+            { type: row.initiatorType, id: row.initiatorId },
+            ctx?.initiatorName ??
+              (row.initiatorId && row.initiatorId === row.createdBy
+                ? (ctx?.ownerName ?? ctx?.ownerEmail ?? null)
+                : null),
+          ),
+        }
+      : null,
     secrets_allowlist: canAccess ? (row.secretsAllowlist ?? null) : null,
     sharing: visibilityToIntent(
       row.visibility as 'private' | 'project' | 'restricted',
@@ -365,7 +386,6 @@ export function requestAuditContext(c: Context): RequestAuditContext {
     path: c.req.path,
     ip: requestClientIp(c),
     userAgent: c.req.header('user-agent') || null,
-    clientReportedSource: normalizeAuditClientSource(c.req.header('x-kortix-client')),
   };
 }
 
@@ -607,6 +627,15 @@ export async function loadSecretViewsForUser(input: {
 
 export function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
+}
+
+/**
+ * Written only by the Microsoft Teams connection (channels/install-store.ts):
+ * the tenant, bot credentials and service URL. Connecting or disconnecting
+ * Teams changes them; the generic secrets API does not.
+ */
+export function isTeamsInstallSecretName(name: string): boolean {
+  return name.toUpperCase().startsWith('MS_TEAMS_');
 }
 
 export function serializeSessionSandboxConfig(

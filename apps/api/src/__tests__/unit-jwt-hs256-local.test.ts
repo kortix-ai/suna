@@ -1,5 +1,8 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import type { AuthVariables } from '../types';
 
 /**
  * Local HS256 verification + the GoTrue liveness cache (2026-09-23).
@@ -102,6 +105,45 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     countingLoader(async () => ({ id: USER, email: '' }));
     const result = await verifySupabaseJwt(sign({ role: 'anon', exp: inAnHour() }));
     expect(result).toEqual({ ok: false, reason: 'no-sub' });
+  });
+
+  test('with cache disabled a token revoked by another replica is refused on its next verification', async () => {
+    const { config } = await import('../config');
+    const previous = config.SUPABASE_JWT_LIVENESS_TTL_MS;
+    config.SUPABASE_JWT_LIVENESS_TTL_MS = 0;
+    let live = true;
+    const calls = countingLoader(async () => live ? { id: USER, email: '' } : null);
+    const token = sign({ sub: USER, exp: inAnHour() });
+    try {
+      expect((await verifySupabaseJwt(token)).ok).toBe(true);
+      live = false;
+      expect((await verifySupabaseJwt(token)).ok).toBe(false);
+      expect(calls).toHaveLength(2);
+    } finally {
+      config.SUPABASE_JWT_LIVENESS_TTL_MS = previous;
+    }
+  });
+
+  test('the authenticated identity route refuses the same bearer after upstream logout', async () => {
+    const { supabaseAuth } = await import('../middleware/auth');
+    const { config } = await import('../config');
+    const previous = config.SUPABASE_JWT_LIVENESS_TTL_MS;
+    config.SUPABASE_JWT_LIVENESS_TTL_MS = 0;
+    let live = true;
+    countingLoader(async () => live ? { id: USER, email: 'synthetic@example.test' } : null);
+    const token = sign({ sub: USER, exp: inAnHour() });
+    const app = new Hono<{ Variables: AuthVariables }>();
+    app.use('/v1/accounts/me', supabaseAuth);
+    app.get('/v1/accounts/me', (c) => c.json({ user_id: c.get('userId') }));
+    app.onError((error, c) => error instanceof HTTPException ? c.json({ error: error.message }, error.status) : c.json({ error: 'unexpected' }, 500));
+    try {
+      const request = () => app.request('/v1/accounts/me', { headers: { authorization: `Bearer ${token}` } });
+      expect((await request()).status).toBe(200);
+      live = false;
+      expect((await request()).status).toBe(401);
+    } finally {
+      config.SUPABASE_JWT_LIVENESS_TTL_MS = previous;
+    }
   });
 
   test('a revoked session is rejected, and the rejection is never cached', async () => {

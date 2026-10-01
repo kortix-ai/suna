@@ -38,6 +38,7 @@ export KORTIX_PROJECT_ID=...                      # the project your agent lives
 | 09 | [`09-kaab-backend-wrapper.ts`](09-kaab-backend-wrapper.ts) | **Kortix as a Backend, end to end**: mint a connector → per-user connection → backend-origin session (`secrets` + `connector_bindings`) → **stream**. One-shot CLI **and** a multi-tenant SSE service. | `bun run examples/09-kaab-backend-wrapper.ts "Summarize my signups"` |
 | 10 | [`10-deploy-app.ts`](10-deploy-app.ts) | Create a stable App URL and deploy a public OCI image through the provider-neutral Apps API. | `bun run examples/10-deploy-app.ts` |
 | 11 | [`11-sign-in-with-kortix.ts`](11-sign-in-with-kortix.ts) | **Sign in with Kortix**: gate your own app behind Kortix identity with `createKortixAuth` — one catch-all route, `viewer()`, and a request-scoped client acting as the viewer. | `bun run examples/11-sign-in-with-kortix.ts` |
+| 12 | [`12-session-labels.ts`](12-session-labels.ts) | **Session labels and metadata**: set labels and metadata at create, update them (`null` removes a metadata key), list by label server-side, and render conditionally. | `bun run examples/12-session-labels.ts` |
 
 ## Kortix as a Backend
 

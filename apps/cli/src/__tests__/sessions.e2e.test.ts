@@ -394,6 +394,14 @@ describe('sessions new CLI flow', () => {
       }>;
     };
     expect(parsed.sessions).toHaveLength(2);
+    // The API here predates W4 (only opencode_* names); the digest still
+    // serves the neutral keys, with the pre-W4 ones beside them.
+    expect((parsed.sessions[0] as unknown as { session: unknown }).session).toMatchObject({
+      runtime_session_id: 'ses_test',
+      runtime_titles: ['Digest target'],
+      opencode_session_id: 'ses_test',
+      opencode_titles: ['Digest target'],
+    });
     expect(parsed.sessions[0]!.transcript).toMatchObject({ available: true, source: 'live' });
     // The stopped session: served, and honest about where from.
     expect(parsed.sessions[1]!.transcript).toMatchObject({

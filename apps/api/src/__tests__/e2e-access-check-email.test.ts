@@ -137,3 +137,29 @@ describe('POST /access/check-email unified auth-flow modes', () => {
     });
   });
 });
+
+describe('POST /access/request-access input validation', () => {
+  test.each([
+    ['application/xml', '<root><email>x@example.com</email></root>'],
+    ['application/x-www-form-urlencoded', 'email=x@example.com'],
+    ['text/plain', 'not-json'],
+  ])('unsupported %s input is rejected with 400, never a 500', async (contentType, body) => {
+    const response = await accessControlApp.request('/request-access', {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: true, message: 'Validation failed', status: 400 });
+  });
+
+  test('a valid request is stored and answered 200', async () => {
+    const response = await accessControlApp.request('/request-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'someone@example.com' }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, message: 'Access request submitted' });
+  });
+});

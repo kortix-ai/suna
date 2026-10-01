@@ -69,8 +69,12 @@ async function loadAndMaybeApprove(
       backendUrl,
       accessToken: session.access_token,
     });
-  } catch {
-    return { kind: 'error', message: tI18nComplete.raw('text9ff8cfaf7d94') };
+  } catch (err) {
+    // The API names why ("expired or already used"); a network failure has no message.
+    return {
+      kind: 'error',
+      message: err instanceof Error && err.message ? err.message : tI18nComplete.raw('text9ff8cfaf7d94'),
+    };
   }
   const request: ConsentRequestView = {
     clientName: data.client_name || 'Unknown App',
