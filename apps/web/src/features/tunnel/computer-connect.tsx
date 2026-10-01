@@ -44,6 +44,9 @@ import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
 export const DESKTOP_STATUS_KEY = ['desktop-computer-status'] as const;
 
+/** Fired after this desktop pairs: the workspace menu opens computer setup. */
+export const COMPUTER_SETUP_EVENT = 'kortix:computer-setup';
+
 /** Same key and fetcher as `ConnectionsList`, so both share one cache entry. */
 function connectionsQueryOptions(projectId: string) {
   return {
@@ -185,7 +188,11 @@ export function useConnectDesktopComputer(projectId: string) {
       return result;
     },
     onSuccess: (result) => {
-      if (result.ok) successToast(t('connected'));
+      if (!result.ok) return;
+      successToast(t('connected'));
+      // Setup comes next, on the spot: the "Your computer" dialog asks macOS
+      // for every permission the approved access needs.
+      window.dispatchEvent(new Event(COMPUTER_SETUP_EVENT));
     },
     onError: (error: Error) => errorToast(error.message || t('connectFailed')),
     onSettled: () => {
@@ -330,12 +337,20 @@ const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Ic
  * What Kortix can use on a computer. With `granted` (the capabilities approved
  * at pairing) each row says Allowed / Not allowed; without it, it is a preview.
  */
-export function ComputerCapabilities({ granted }: { granted?: readonly string[] }) {
+export function ComputerCapabilities({
+  granted,
+  needsSetup,
+}: {
+  granted?: readonly string[];
+  /** Approved, but the macOS permission it needs is still missing (setup). */
+  needsSetup?: readonly string[];
+}) {
   const t = useTranslations('computers');
   return (
     <ul className="divide-border divide-y">
       {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
-        const allowed = granted?.includes(key);
+        const allowed = granted?.includes(key) && !needsSetup?.includes(key);
+        const pending = granted?.includes(key) && needsSetup?.includes(key);
         return (
           <li key={key} className="flex items-center gap-3 py-3">
             <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-sm">
@@ -355,7 +370,11 @@ export function ComputerCapabilities({ granted }: { granted?: readonly string[] 
                 )}
               >
                 {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
-                {allowed ? t('capability.allowed') : t('capability.notAllowed')}
+                {allowed
+                  ? t('capability.allowed')
+                  : pending
+                    ? t('capability.needsSetup')
+                    : t('capability.notAllowed')}
               </span>
             ) : null}
           </li>

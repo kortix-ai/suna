@@ -20338,7 +20338,8 @@
       "desktop": "Écran et clavier",
       "desktopDescription": "Voir et utiliser vos apps",
       "allowed": "Autorisé",
-      "notAllowed": "Non autorisé"
+      "notAllowed": "Non autorisé",
+      "needsSetup": "À configurer"
     },
     "runInBackground": "Exécuter en arrière-plan",
     "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
@@ -20353,14 +20354,21 @@
     "alreadyConnectedLive": "Il est en ligne. Approuvez pour le transférer vers cette demande : la connexion actuelle s’arrête. Ses projets et partages sont conservés.",
     "reconnect": "Reconnecter",
     "accessHint": "Les accès sélectionnés restent actifs jusqu’à leur révocation.",
-    "grants": {
-      "title": "Autoriser Kortix à voir votre écran et à utiliser vos apps",
-      "hint": "macOS demande deux autorisations, toutes deux pour Kortix. Computer Use fonctionne dès que vous les accordez.",
+    "setup": {
+      "title": "Terminez la configuration de votre ordinateur",
+      "hint": "macOS demande une fois chaque autorisation ci-dessous. Elles vont à Kortix, donc rien ne redemande pendant qu’un agent travaille.",
+      "files": "Bureau, Documents et Téléchargements",
+      "filesDescription": "Lire et écrire des fichiers dans ces dossiers",
       "accessibility": "Accessibilité",
+      "accessibilityDescription": "Utiliser le clavier et la souris dans vos apps",
       "screenRecording": "Enregistrement de l’écran",
-      "allowed": "autorisé",
-      "missing": "non autorisé",
-      "allow": "Autoriser l’accès"
+      "screenRecordingDescription": "Voir ce qui est à l’écran",
+      "needed": "Pas encore autorisé",
+      "waiting": "En attente de votre réponse",
+      "allowAll": "Tout autoriser",
+      "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cette vue se met à jour seule.",
+      "doneTitle": "Votre ordinateur est prêt",
+      "doneHint": "Kortix a toutes les autorisations nécessaires. Les agents peuvent maintenant utiliser cet ordinateur."
     }
   },
   "messageFrom": {

@@ -20338,7 +20338,8 @@
       "desktop": "Bildschirm & Tastatur",
       "desktopDescription": "Deine Apps sehen und bedienen",
       "allowed": "Erlaubt",
-      "notAllowed": "Nicht erlaubt"
+      "notAllowed": "Nicht erlaubt",
+      "needsSetup": "Einrichtung nötig"
     },
     "runInBackground": "Im Hintergrund ausführen",
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
@@ -20353,14 +20354,21 @@
     "alreadyConnectedLive": "Er ist gerade online. Bestätige, um ihn auf diese Anfrage zu übertragen: Die aktuelle Verbindung endet. Seine Projekte und Freigaben bleiben.",
     "reconnect": "Neu verbinden",
     "accessHint": "Der ausgewählte Zugriff bleibt aktiv, bis du ihn widerrufst.",
-    "grants": {
-      "title": "Kortix erlauben, deinen Bildschirm zu sehen und deine Apps zu bedienen",
-      "hint": "macOS fragt nach zwei Berechtigungen, beide für Kortix. Computer Use funktioniert, sobald du sie erlaubst.",
+    "setup": {
+      "title": "Richte deinen Computer fertig ein",
+      "hint": "macOS fragt einmal nach jeder Berechtigung unten. Sie gehen an Kortix, damit nichts mehr fragt, während ein Agent arbeitet.",
+      "files": "Schreibtisch, Dokumente und Downloads",
+      "filesDescription": "Dateien in diesen Ordnern lesen und schreiben",
       "accessibility": "Bedienungshilfen",
+      "accessibilityDescription": "Tastatur und Maus in deinen Apps nutzen",
       "screenRecording": "Bildschirmaufnahme",
-      "allowed": "erlaubt",
-      "missing": "nicht erlaubt",
-      "allow": "Zugriff erlauben"
+      "screenRecordingDescription": "Sehen, was auf dem Bildschirm ist",
+      "needed": "Noch nicht erlaubt",
+      "waiting": "Wartet auf dich",
+      "allowAll": "Alle erlauben",
+      "settingsHint": "Wenn sich die Systemeinstellungen öffnen, aktiviere Kortix in der Liste. Diese Ansicht aktualisiert sich selbst.",
+      "doneTitle": "Dein Computer ist bereit",
+      "doneHint": "Kortix hat alle nötigen Berechtigungen. Agenten können diesen Computer jetzt nutzen."
     }
   },
   "messageFrom": {
