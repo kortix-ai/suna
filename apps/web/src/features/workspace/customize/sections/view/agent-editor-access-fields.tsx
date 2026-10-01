@@ -343,7 +343,7 @@ export function WorkspaceSection({
       >
         <Switch
           aria-label={tRepository('label')}
-          checked={draft.repository_access ?? false}
+          checked={draft.repository_access ?? true}
           onCheckedChange={(enabled) => set('repository_access', enabled)}
         />
       </SettingRow>

@@ -86,10 +86,9 @@ import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
-  DownloadSimple,
   SignOutIcon as LogOut,
   MonitorIcon,
-  PlugsConnectedIcon,
+  CodeSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -97,6 +96,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
@@ -310,7 +310,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   intent would cache nothing for a dynamic route. */}
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                 <Link href="/download" prefetch data-desktop-hidden>
-                  <DownloadSimple />
+                  <Download />
                   {t('workspace.downloadApp')}
                 </Link>
               </DropdownMenuItem>
@@ -319,7 +319,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
                 size="sm"
               >
-                <PlugsConnectedIcon />
+                <CodeSimpleIcon />
                 {t('workspace.connectMcp')}
               </DropdownMenuItem>
 

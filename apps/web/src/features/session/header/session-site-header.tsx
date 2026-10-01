@@ -20,6 +20,7 @@ import { copyToClipboard } from '@/lib/utils/clipboard';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { SessionParticipantStack } from '@/features/session/participants/session-participants';
 import { PreviousRepositoryNotice } from '@/features/session/previous-repository-session';
 import {
   SessionConfigIndicator,
@@ -27,9 +28,9 @@ import {
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
+import { SessionAskedFromLink, SessionPeopleIndicator } from './session-people';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
-import { directSubsessions } from '@/components/projects/session-label';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
@@ -46,8 +47,13 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
-import { qk, useProjectSession, useRuntimeSupports } from '@kortix/sdk/react';
+import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import {
+  qk,
+  useProjectSession,
+  useRuntimeSupports,
+  useSessionParticipants,
+} from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -150,6 +156,9 @@ export function SessionSiteHeader({
   // is the manager-tier right to stop/restart/reload it. Reading the first for
   // a lifecycle control would hide Stop and Reload from every project manager
   // who did not create the session.
+  const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId, {
+    enabled: isProjectSession,
+  });
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
   // The Share button's accessible name. A member who cannot change access
@@ -489,6 +498,10 @@ export function SessionSiteHeader({
               </DropdownMenu>
             </div>
 
+            {isProjectSession && !parent ? (
+              <SessionAskedFromLink projectId={projectId!} session={projectSession} />
+            ) : null}
+
             {leadingAction}
           </div>
 
@@ -501,6 +514,10 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {isProjectSession && !parent ? (
+              <SessionPeopleIndicator projectId={projectId!} session={projectSession} />
+            ) : null}
 
             {isProjectSession ? <SessionRemindersIndicator runtimeSessionId={sessionId} /> : null}
 
@@ -572,6 +589,11 @@ export function SessionSiteHeader({
                 h-7, the row's 28px control size. Below `md` (the same 768px as
                 `isMobileViewport`) the label hides, the button goes square
                 like its size-7 siblings, and only then the Hint names it. */}
+            {/* Who can open the session; hover lists them. Renders for two or
+                more people. */}
+            {isProjectSession && projectSession && (
+              <SessionParticipantStack participants={sessionParticipants} />
+            )}
             {isProjectSession && projectSession && (
               <Hint
                 side="bottom"

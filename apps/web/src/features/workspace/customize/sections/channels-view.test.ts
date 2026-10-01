@@ -75,8 +75,9 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
 
   test('once connected, Slack becomes a peer row in the same list as Email and Teams', () => {
     // Not its own list above a "More channels" heading — the label is
-    // suppressed precisely when Slack has joined the rows.
-    expect(channelsSource).toContain('const showMoreLabel = !slackRow && hasRows;');
+    // suppressed precisely when Slack has joined the rows. The list always
+    // has the Teams row, so nothing else decides it.
+    expect(channelsSource).toContain('const showMoreLabel = !slackRow;');
     expect(channelsSource).toContain('showMoreLabel ? <Label>');
     expect(channelsSource).toContain("raw('text28647129955c')");
     expect(channelsSource).toMatch(
@@ -361,14 +362,14 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelsSource).toContain('Add to Teams');
   });
 
-  test('keeps Email and Teams behind their per-project flags', () => {
+  test('keeps Email behind its per-project flag; Teams is on for every project', () => {
     expect(channelsSource).toContain("useFeatureFlag(projectId, 'agentmail_email')");
     expect(channelsSource).toContain("EMAIL_CONNECTOR_SLUG = 'kortix_email'");
-    expect(channelsSource).toContain("const teamsFlag = useFeatureFlag(projectId, 'teams');");
-    expect(channelsSource).toContain('const teamsChannelEnabled = teamsFlag.enabled;');
     expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
-    expect(channelsSource).toMatch(/teamsChannelEnabled \? \(\s*<TeamsChannelRow/);
-    expect(channelsSource).toMatch(/teamsChannelEnabled \? <TeamsChannelPanel/);
+    // The `teams` flag graduated: no gate before the Teams row or panel.
+    expect(channelsSource).not.toContain("useFeatureFlag(projectId, 'teams')");
+    expect(channelsSource).toMatch(/\n\s*<TeamsChannelRow projectId=\{projectId\} canWrite=\{canWrite\} \/>/);
+    expect(channelsSource).toMatch(/\n\s*<TeamsChannelPanel projectId=\{projectId\} \/>/);
     // The old summary-query read (one hop shallower than every sibling) stays gone.
     expect(channelsSource).not.toContain('?.experimental?.');
     expect(channelsSource).not.toContain('if (mode && !mode.enabled) return null;');
@@ -521,11 +522,13 @@ describe('Channels view — Teams one-click install outcome', () => {
     expect(channelsSource).toContain("get('teams')");
     expect(channelsSource).toContain("delete('teams')");
     expect(channelsSource).toContain('router.replace');
-    for (const status of ['connected', 'review', 'failed', 'publishing', 'declined', 'disabled', 'unconfigured']) {
+    for (const status of ['connected', 'review', 'failed', 'publishing', 'declined', 'unconfigured']) {
       expect(channelsSource).toContain(`'${status}'`);
     }
-    // the retired status is gone everywhere on the web side
+    // the retired statuses are gone everywhere on the web side: `disabled`
+    // went with the `teams` feature flag
     expect(channelsSource).not.toContain('consented');
+    expect(channelsSource).not.toContain("case 'disabled'");
   });
 
   test('every new string goes through the i18n catalog (no hardcoded English)', () => {
@@ -538,7 +541,6 @@ describe('Channels view — Teams one-click install outcome', () => {
       'textf5262c55d1be',
       'text76930360e909',
       'textb8d155eea2ab',
-      'textd4b32aea5c4a',
       'text57ef9e5e8110',
       'text8ccfe10f2f2d', // Publish to your Teams catalog
     ]) {
@@ -549,5 +551,36 @@ describe('Channels view — Teams one-click install outcome', () => {
     const raw = readRawFileSync(join(dir, 'view/channels-view.tsx'), 'utf8');
     expect(raw).not.toContain('Catalog publish failed');
     expect(raw).not.toContain('Publish to your Teams catalog');
+  });
+});
+
+/**
+ * A catalog on a Teams app from before the read permission (manifest 1.0.0)
+ * refuses every thread read in a team. On dev (2026-10-01) the test tenant's
+ * catalog had published 1.0.0 ninety minutes before the permission landed,
+ * and nothing on this page said so. The fix takes two people, in order, and
+ * Teams never installs an update that adds a permission on its own, so the
+ * notice names both steps.
+ */
+describe('Channels view — a Teams catalog on an older app', () => {
+  test('the notice renders from the server verdict, as an InfoBanner under the rows', () => {
+    expect(channelsSource).toContain('teamsInstall?.appUpdateAvailable');
+    expect(channelsSource).toContain('<TeamsAppUpdateNotice');
+    expect(channelsSource).toMatch(/<InfoBanner\s+tone="warning"/);
+  });
+
+  test('it names both versions when the catalog version is known, and the latest when not', () => {
+    expect(channelsSource).toContain('install.appVersion');
+    expect(channelsSource).toContain('install.latestAppVersion');
+    expect(channelsSource).toContain('textdf757dbe33eb'); // Your Teams catalog has version {value0} of the Kortix app. …
+    expect(channelsSource).toContain('textcd2c4b26eedd'); // Kortix has no record of the app version in your Teams catalog. …
+    expect(channelsSource).toContain('text80043b03898d'); // Update the Kortix app in Teams
+  });
+
+  test('the row button says it publishes the update', () => {
+    expect(channelsSource).toContain('texte15f213fa506'); // Publish app update
+    const raw = readRawFileSync(join(dir, 'view/channels-view.tsx'), 'utf8');
+    expect(raw).not.toContain('Publish app update');
+    expect(raw).not.toContain('Manage team');
   });
 });

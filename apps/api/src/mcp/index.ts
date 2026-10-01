@@ -438,13 +438,18 @@ const TOOLS = [
   },
   {
     name: 'send_message',
-    title: 'Send a message to a session',
+    title: 'Send a message to a session or to people',
     description:
-      "Send a message to a session's agent. It waits in the session's inbox until the current turn ends, and a stopped session is started. Read the reply with read_session and wait_seconds.",
+      "Send a message to a session's agent (session_id), or to people (to + project_id). A session message waits in the session's inbox until the current turn ends, and a stopped session is started; read the reply with read_session and wait_seconds. Messaging people opens a new session whose first message is yours, shared with them; its agent runs when one of them replies. Several addresses make a group chat. Find people with kortix ['access','ls']. Needs the project's human_messaging feature flag.",
     inputSchema: {
       type: 'object',
-      properties: { session_id: SESSION_ID, text: { type: 'string', description: 'The message.' } },
-      required: ['session_id', 'text'],
+      properties: {
+        session_id: SESSION_ID,
+        to: { type: 'array', items: { type: 'string' }, description: 'Email addresses of project members, instead of session_id.' },
+        project_id: { ...PROJECT_ID, description: 'The project to open the conversation in. Required with `to`.' },
+        text: { type: 'string', description: 'The message.' },
+      },
+      required: ['text'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -767,6 +772,14 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       );
     }
     case 'send_message': {
+      if (Array.isArray(input.to)) {
+        const r = await callApi(ctx, 'POST', `/v1/projects/${projectArg(input)}/sessions`, {
+          body: { participants: input.to, initial_prompt: arg(input, 'text') },
+        });
+        if (r.status >= 400) return apiResult(r);
+        const session = JSON.parse(r.body);
+        return text(JSON.stringify({ session_id: session.session_id, project_id: session.project_id, name: session.name ?? null, to: input.to }, null, 2));
+      }
       const sessionId = arg(input, 'session_id');
       const message = arg(input, 'text');
       const path = await sessionPath(sessionId);
@@ -1083,7 +1096,7 @@ function instructions(): string {
   return [
     'Kortix MCP. You act as the signed-in user, with their permissions, across every account and project they can open — the same reach as the kortix CLI.',
     'Start with list_projects. Tools take a project_id (start_session, list_sessions, repository reads) or a session_id (everything about one session).',
-    'Sessions: start_session delegates a task to a Kortix agent in its own cloud sandbox; read_session (with wait_seconds) follows it; send_message continues it; list_sessions finds existing ones.',
+    'Sessions: start_session delegates a task to a Kortix agent in its own cloud sandbox; read_session (with wait_seconds) follows it; send_message continues it, or with `to` (emails) asks people in a new conversation that shows under their "Asked you"; list_sessions finds existing ones.',
     "Sandboxes: run_command runs bash in a session's sandbox, and read_file / write_file / list_files reach its live /workspace. With a project_id instead of a session_id, read_file and list_files read the project's git repository.",
     'Platform knowledge: read_skill lists the Kortix guides; read_skill name=kortix-system is the complete reference.',
     'Connectors (Gmail, Slack, GitHub, MCP servers, APIs a project connected): list_connectors shows what is connected and its accounts → search_connector_actions finds an action by intent → describe_connector_action reads its arguments → call_connector runs it as you (pass `reason` for a write whose args are only ids; a `pending_approval` result carries a link the human opens, then call again). A connector that is not connected: connect_connector returns the url the human opens. upload_connector_attachment stages a file for a call; search_connector_apps and add_connector add one to the project.',

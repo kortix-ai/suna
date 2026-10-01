@@ -2,7 +2,6 @@ import { lt } from 'drizzle-orm';
 import { chatEventDedup } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import { sendCard } from '../teams-api';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { listTenantProjects, resolveConversationProjectDetailed } from './binding';
@@ -87,7 +86,6 @@ export async function handleTeamsConversationUpdate(
       ? ((await listTenantProjects(tenantId).catch(() => []))[0]?.projectId ?? null)
       : null);
   if (!projectId) return;
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) return;
 
   const projectUrl = `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
   await sendCard(
@@ -174,13 +172,6 @@ export async function handleTeamsActivity(
     return;
   }
   const projectId = resolution.projectId;
-  // Per-project gate — the `teams` feature flag. This is the only
-  // enforcement point for the shared multi-tenant webhook, which cannot know
-  // the project before this line.
-  if (!(await projectFeatureFlagEnabled(projectId, 'teams'))) {
-    console.warn('[teams-webhook] teams feature is off for project — ignoring', { projectId });
-    return;
-  }
 
   // With `ChannelMessage.Read.Group` (RSC) Teams delivers every channel
   // message, not only @-mentions. An un-mentioned message is a follow-up in a

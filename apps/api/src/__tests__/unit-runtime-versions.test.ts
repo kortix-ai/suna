@@ -29,11 +29,18 @@ function readRepoFile(path: string): string {
 }
 
 describe('runtime version drift guards', () => {
-  test('SDK package and lockfile use the canonical OpenCode SDK pin', () => {
+  test('the OpenCode SDK types are pinned to the canonical version, for the transcript conformance check only', () => {
+    // @kortix/sdk owns its types (kortix.transcript.v1) and must not depend on OpenCode's SDK.
     const sdkPackage = JSON.parse(readRepoFile('packages/sdk/package.json')) as {
       dependencies?: Record<string, string>;
     };
-    expect(sdkPackage.dependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
+    expect(sdkPackage.dependencies?.['@opencode-ai/sdk']).toBeUndefined();
+    // apps/api type-checks OpenCode's frames against the Kortix transcript
+    // (unit-transcript-contract-drift.test.ts), at the OpenCode release the sandbox runs.
+    const apiPackage = JSON.parse(readRepoFile('apps/api/package.json')) as {
+      devDependencies?: Record<string, string>;
+    };
+    expect(apiPackage.devDependencies?.['@opencode-ai/sdk']).toBe(OPENCODE_SDK_VERSION);
 
     const lockfile = readRepoFile('pnpm-lock.yaml');
     expect(lockfile).toContain(`'@opencode-ai/sdk':`);

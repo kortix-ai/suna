@@ -625,6 +625,23 @@ async function appAuthorizationForCall(
   }
 }
 
+/**
+ * The connector's credential is a project secret whose audience does not
+ * include the person this call acts for (projects/lib/secret-audience.ts).
+ * `resolveCredential` throws it instead of returning null, so the caller is
+ * told the truth — not shared with them — rather than `needs_auth`.
+ */
+export class CredentialNotSharedError extends Error {
+  readonly reason = 'credential_not_shared';
+  constructor(identifier: string) {
+    super(
+      `The credential ${identifier} is shared only with specific people, and this call does not run as one of them. ` +
+        'It works in a private session of someone it is shared with. Ask its owner to share it with you.',
+    );
+    this.name = 'CredentialNotSharedError';
+  }
+}
+
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
@@ -691,6 +708,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
+    if (error instanceof CredentialNotSharedError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
+      return { status: 'denied', reason: error.reason, message: error.message };
+    }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
@@ -1142,6 +1163,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // An upstream that echoes the rejected body would echo the file's base64.
     const upstream = upstreamReason(result);
     const reason =
+      teamsReadConsentHint(connector, result) +
       (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
       fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
@@ -1249,6 +1271,27 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+/**
+ * Teams refuses a read with 403 "… Resource specific consent grants on the
+ * request ''" when the Kortix app in that team holds no permission to read its
+ * messages: the team added it before the app asked for one, and an update that
+ * adds a permission never installs itself (a team owner accepts it). Graph
+ * names a permission; this names who fixes it and where. A new app version
+ * reaches an organization only through a Teams admin's publish
+ * (teams/catalog.ts needs their sign-in).
+ */
+function teamsReadConsentHint(connector: GatewayConnector, result: ExecResult): string {
+  if (connector.provider !== 'channel' || connector.platform !== 'teams' || result.status !== 403) return '';
+  const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? '');
+  if (!/Resource specific consent/i.test(body)) return '';
+  return (
+    'Kortix cannot read messages in this team yet: the Kortix app in the team has no permission to read them. ' +
+    'A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update) and accepts the new permission. ' +
+    'If no update is offered, a Teams admin first publishes the latest app from the Kortix project ' +
+    '(Connectors → Channels → Microsoft Teams). '
+  );
 }
 
 /**

@@ -471,10 +471,12 @@ describe('simple gateway pipeline', () => {
     expect(traces).toHaveLength(1);
   });
 
+  // An error frame before any output served nothing: the client gets the
+  // provider's status as an HTTP error, which OpenCode can retry or compact on.
   test.each([
     ['a timeout', '"upstream_timeout"', 502],
     ['a numeric rate limit', '429', 429],
-  ])('records an in-band streaming provider error (%s) as a failed gateway request', async (_name, code, status) => {
+  ])('answers an in-band streaming provider error (%s) before output as an HTTP error', async (_name, code, status) => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
     const response = await handleChatCompletions(
@@ -496,11 +498,11 @@ describe('simple gateway pipeline', () => {
       },
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(status);
     expect(await response.text()).toContain('provider failed');
     expect(usage).toHaveLength(0);
     expect(traces).toHaveLength(1);
-    expect(traces[0]).toMatchObject({ status, ok: false, errorMessage: 'provider failed' });
+    expect(traces[0]).toMatchObject({ status, ok: false });
   });
 
   test('a stream the client stops before the usage frame still settles an estimate', async () => {
@@ -553,14 +555,18 @@ describe('simple gateway pipeline', () => {
   test('a stream stopped during prefill, before any output, settles the prompt', async () => {
     const usage: UsageEvent[] = [];
     const client = new AbortController();
-    const response = await handleChatCompletions(
+    let fetched!: () => void;
+    const upstreamAnswered = new Promise<void>((resolve) => { fetched = resolve; });
+    const pending = handleChatCompletions(
       {
         hooks: hooks(usage, []),
         logger: { info() {}, warn() {}, error() {} },
-        fetchImpl: async () =>
-          new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
+        fetchImpl: async () => {
+          fetched();
+          return new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
             headers: { 'content-type': 'text/event-stream' },
-          }),
+          });
+        },
       },
       {
         authorization: 'Bearer token',
@@ -572,7 +578,10 @@ describe('simple gateway pipeline', () => {
         }),
       },
     );
+    // The provider answered headers and is silent in prefill; the client stops.
+    await upstreamAnswered;
     client.abort();
+    const response = await pending;
     await response.body!.cancel();
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
@@ -956,6 +965,18 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     return { response, text, usage, traces };
   }
 
+  async function runManaged(
+    respond: (url: string) => Response,
+    requestBody: Record<string, unknown>,
+  ) {
+    const calls: string[] = [];
+    const result = await run((url) => {
+      calls.push(url);
+      return respond(url);
+    }, requestBody);
+    return { ...result, calls };
+  }
+
   test('an upstream 429 reaches the client as a Kortix 429 without upstream identity', async () => {
     const { response, text, traces } = await run(() =>
       new Response(coreweave429, { status: 429, headers: { 'retry-after': '7', 'content-type': 'application/json' } }));
@@ -978,6 +999,8 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
 
   test.each([
     [400, '{"error":{"message":"This endpoint\'s maximum context length is 131072 tokens (Wafer)"}}', 400, 'context_length_exceeded'],
+    // CoreWeave through OpenRouter, probed 2026-09-30: no word "context".
+    [400, '{"error":{"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"message\\":\\"This model configuration accepts at most 1048576 combined input and output tokens. However, your request has 1036630 input tokens and asks for 16384 output tokens (1053014 tokens total).\\"}","provider_name":"CoreWeave"}}}', 400, 'context_length_exceeded'],
     [400, '{"error":{"message":"vendor/model does not support image input on Morph"}}', 400, 'unsupported_input'],
     [400, '{"error":{"message":"Invalid schema for function noop"}}', 400, 'invalid_tool_definition'],
     [422, '{"error":{"message":"bad"}}', 400, 'invalid_request'],
@@ -988,6 +1011,33 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     const { response, text } = await run(() => new Response(body, { status }));
     expect(response.status).toBe(clientStatus);
     expect(JSON.parse(text).code).toBe(code);
+    expect(text).not.toMatch(LEAK);
+  });
+
+  // Prod 2026-09-30: a long GLM session reached OpenRouter's Decart endpoint,
+  // which answered 200 and then an in-band 400. OpenCode read that frame as an
+  // UnknownError, so it never compacted and every later turn failed the same
+  // way. Morph rejects the same request with a bare "Invalid request".
+  test('a context overflow reported in-band before output reaches the client as HTTP 400 context_length_exceeded', async () => {
+    const overflow =
+      'data: {"id":"gen-1","model":"vendor/model","provider":"Decart","choices":[],"error":{"code":400,' +
+      '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
+    const { response, text, calls } = await runManaged(
+      (url) =>
+        url.startsWith('https://morph.example')
+          ? new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', { status: 400 })
+          : new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
+              status: 200, headers: { 'content-type': 'text/event-stream' },
+            }),
+      { model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] },
+    );
+    expect(calls).toEqual(['https://morph.example/v1/chat/completions', 'https://openrouter.example/v1/chat/completions']);
+    expect(response.status).toBe(400);
+    expect(response.headers.get('content-type')).toBe('application/json');
+    const body = JSON.parse(text);
+    // OpenCode's parseAPICallError reads `error.code` to raise ContextOverflowError.
+    expect(body.error.code).toBe('context_length_exceeded');
+    expect(body.message).toBe('This request is longer than the primary-model context window.');
     expect(text).not.toMatch(LEAK);
   });
 

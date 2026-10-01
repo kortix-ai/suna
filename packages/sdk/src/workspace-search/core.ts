@@ -13,13 +13,20 @@ function normalizeSlashes(value: string): string {
   return value.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
+/** Strip trailing `/` without a backtracking regex (CodeQL js/polynomial-redos). */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
 export function normalizeSearchQuery(query: string): string {
   const normalized = normalizeSlashes(query.trim());
   if (!normalized) return '';
   if (normalized === '/' || normalized === '/workspace/' || normalized === 'workspace/') {
     return '/workspace';
   }
-  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+  return normalized.length > 1 ? trimTrailingSlashes(normalized) : normalized;
 }
 
 export function stripWorkspacePrefix(path: string): string {
@@ -69,7 +76,7 @@ export function parseWorkspacePaths(
   return dedupeWorkspaceSearchEntries(
     paths.map((path) => {
       const isDir = path.endsWith('/') || directorySet.has(normalizeWorkspacePath(path));
-      const cleanPath = isDir ? path.replace(/\/+$/, '') : path;
+      const cleanPath = isDir ? trimTrailingSlashes(path) : path;
       return toWorkspaceSearchEntry(cleanPath, isDir);
     }),
   );

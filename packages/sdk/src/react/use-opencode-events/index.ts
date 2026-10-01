@@ -1,39 +1,32 @@
 'use client';
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
-import { clearConfigOverrides } from '../use-opencode-config';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   noteSessionSyncEvent,
-  reconcileSessionTail,
+  reconcileSessionTail as reconcileSessionTailFromRegistry,
 } from '../../browser/session-sync/session-sync-registry';
-import { logger } from '../../core/http/logger';
-import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
-import { useSyncStore } from '../../browser/stores/sync-store';
+import { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';
 import {
   noteRuntimeEvidence,
   useSandboxConnectionStore,
 } from '../../browser/stores/sandbox-connection-store';
 import { useServerStore } from '../../browser/stores/server-store';
-import { useCurrentRuntime } from '../use-current-runtime';
-import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { opencodeKeys } from '../use-opencode-sessions';
+import { useSyncStore } from '../../browser/stores/sync-store';
+import { logger } from '../../core/http/logger';
+import { dropClientForUrl, getClient } from '../../core/runtime/client';
+import { openEventStream } from '../../core/stream/event-stream';
 import { useKortixRouteProjectId } from '../route-project';
+import { useCurrentRuntime } from '../use-current-runtime';
+import { clearConfigOverrides } from '../use-opencode-config';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
-import {
-  releaseMessageRehydrate,
-  reserveMessageRehydrate,
-  resolveClientEvictionUrl,
-  shouldSkipStatusFill,
-} from './helpers';
-import { sessionsNeedingRehydrate } from './rehydrate-targets';
+import { resolveClientEvictionUrl } from './helpers';
+import { hydrateCore } from './hydrate-core';
 import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
-import { openEventStream } from '../../core/stream/event-stream';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -50,18 +43,18 @@ import { openEventStream } from '../../core/stream/event-stream';
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
+export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   // The project this SSE connection's events are about — threaded into
   // `refetchKortixSessionMirrors` so a title/tree mirror refetch stays scoped
   // to the project actually being viewed instead of guessing at "every
   // project" (see that function's doc comment in `helpers.ts`).
   const projectId = useKortixRouteProjectId();
-  const addPermission = useOpenCodePendingStore((s) => s.addPermission);
-  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
-  const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
-  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
-  const clearPending = useOpenCodePendingStore((s) => s.clear);
+  const addPermission = useRuntimePendingStore((s) => s.addPermission);
+  const removePermission = useRuntimePendingStore((s) => s.removePermission);
+  const addQuestion = useRuntimePendingStore((s) => s.addQuestion);
+  const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
+  const clearPending = useRuntimePendingStore((s) => s.clear);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   const applySyncEvent = useSyncStore((s) => s.applyEvent);
   // Re-render (and re-read getActiveServerUrl, which resolves current-runtime) when
@@ -130,7 +123,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       clearPending();
       // NOTE: we intentionally do NOT wipe the sync store or the opencode
       // query cache here anymore. Those are now scoped per-sandbox (see
-      // opencodeKeys.activeServerKey + the sync store's session-id keying),
+      // runtimeKeys.activeServerKey + the sync store's session-id keying),
       // so each sandbox's data coexists safely. Wiping them was what made
       // switching back to an already-open session "reload". Diagnostics are
       // still cleared because they're keyed by bare file path (no sandbox
@@ -152,7 +145,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       return;
 
     // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
-    // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
+    // (getActiveRuntimeUrl → current-runtime) come from DIFFERENT accessors and
     // briefly diverge on a session switch: the server-store url is set before the
     // current-runtime url is pinned. In that window getClient() throws
     // RuntimeNotReadyError — and because this hook runs in the page render tree
@@ -179,145 +172,27 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
-      reconcileSessionTail,
+      reconcileSessionTail: reconcileSessionTailFromRegistry,
       projectId,
     });
 
-    // ---- CONSOLIDATED hydration function ----
-    // Single function for hydrating permissions, questions, and session statuses.
-    // Called both on initial connect and on SSE reconnect (gap > 5s).
-    // Previously this logic was duplicated in two places.
-    const hydrateCore = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) => {
-      client.permission
-        .list()
-        .then((res) => {
-          if (Array.isArray(res.data)) res.data.forEach(addPermission);
-        })
-        .catch((err) => {
-          logger.error('Failed to hydrate pending permissions', {
-            error: String(err),
-          });
-        });
+    const hydrate = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) =>
+      hydrateCore({
+        client,
+        queryClient,
+        addPermission,
+        addQuestion,
+        applySyncEvent,
+        reconcileMissingBusySessions,
+        fetchLspDiagnosticsDebounced,
+        reconcileSessionTail: reconcileSessionTailFromRegistry,
+        options,
+      });
 
-      client.question
-        .list()
-        .then((res) => {
-          if (Array.isArray(res.data)) res.data.forEach(addQuestion);
-        })
-        .catch((err) => {
-          logger.error('Failed to hydrate pending questions', {
-            error: String(err),
-          });
-        });
-
-      client.session
-        .status()
-        .then((res) => {
-          // This snapshot is the runtime's COMPLETE set of non-idle sessions,
-          // so it carries two facts: what each listed session is doing, and
-          // that every UNLISTED one is not busy. The second is the only repair
-          // the raw status slot has for a terminal frame this tab never saw,
-          // and the surfaces that still read that slot directly — the session
-          // panel, and the sub-agent banner for CHILD sessions, which have no
-          // Kortix session row for `GET .../turn` to answer about — depend on
-          // it. `useSessionWorking` answers for Kortix sessions; this answers
-          // for the rest.
-          const statuses = res.data ?? {};
-          for (const [sessionID, status] of Object.entries(statuses)) {
-            // ONLY where this read is newer than what the live stream has
-            // already said. The read is a snapshot of the moment it was ISSUED,
-            // it carries no timestamp of its own, and it used to be written in
-            // unconditionally — so a `busy` that was true when the request left
-            // overwrote an `idle` frame that arrived while it was in flight, and
-            // because the object identity changed the store restamped the stale
-            // reading as the freshest observation there is. That put the Stop
-            // button and the turn shimmer back on a finished turn, and
-            // `hydrateCore` runs on every heartbeat-gap rehydrate, so it could
-            // land on any turn boundary.
-            // FILL A GAP, NEVER OVERWRITE. This snapshot describes the moment
-            // the request was ISSUED and carries no timestamp of its own, so an
-            // unconditional write let a `busy` that was true on the way out
-            // clobber an `idle` frame that arrived while it was in flight — and
-            // because the object identity changed, the store restamped that
-            // stale reading as the freshest observation there is. Stop and the
-            // turn shimmer came back on a finished turn, and `hydrateCore` runs
-            // on every heartbeat-gap rehydrate, so it could land on any turn
-            // boundary. While the live stream is delivering (~140ms per frame
-            // for a busy session, and this runs on connect) the stream owns this
-            // value; the correction for a session that went idle unseen is
-            // `reconcileMissingBusySessions` below, which reads ABSENCE from the
-            // complete list rather than a per-session reading.
-            //
-            // Only a FRESH wire frame owns the slot (`shouldSkipStatusFill`).
-            // A `'local'` value is the tab's own fabrication (the missing-busy
-            // sweep, a synthetic abort) and never blocks — letting it block
-            // made a fabrication self-sustaining. A STALE wire frame no longer
-            // blocks either: this fill runs on reconnect, a reconnect happens
-            // because a stream died, and a dead stream's last frame — a wire
-            // idle vetoing the open `/turn` row while a long tool call moves
-            // no transcript — is exactly what this read exists to correct
-            // (prod, 2026-08-26).
-            const slotState = useSyncStore.getState();
-            if (
-              shouldSkipStatusFill({
-                hasSlot: !!slotState.sessionStatus[sessionID],
-                origin: slotState.sessionStatusOrigin[sessionID],
-                stampedAtMs: slotState.sessionStatusAt[sessionID],
-                nowMs: Date.now(),
-              })
-            )
-              continue;
-            // Locally-synthesized event (this is a REST poll, not an SSE
-            // frame) — omits the `id` field every real `Event` union member
-            // carries, hence the assertion. `synthetic: true` marks its write
-            // `'local'`: a snapshot is a reading ABOUT the runtime taken at
-            // issue time, not the runtime speaking on the wire.
-            applySyncEvent({
-              type: 'session.status',
-              synthetic: true,
-              properties: { sessionID, status },
-            } as unknown as OpenCodeSdkEvent);
-          }
-          // The ENUMERATION half is not a per-session reading and does not go
-          // stale the same way: a session absent from a complete list was not
-          // running when the list was taken, and the repair it drives
-          // (`markSessionIdleLocally`) is guarded on its own.
-          reconcileMissingBusySessions.current(statuses);
-        })
-        .catch((err) => {
-          logger.error('Failed to hydrate session statuses', {
-            error: String(err),
-          });
-        });
-
-      // Fetch current LSP diagnostics so errors/warnings show immediately
-      // on page load (or reconnect) without waiting for agent tool output.
-      fetchLspDiagnosticsDebounced.current();
-
-      if (options?.refetchSessions) {
-        queryClient.refetchQueries({
-          queryKey: opencodeKeys.sessions(),
-          type: 'active',
-        });
-      }
-
-      if (options?.rehydrateMessages) {
-        const syncState = useSyncStore.getState();
-        // EVERY held transcript, not only the ones the status slot calls busy
-        // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
-        // so a gap wide enough to lose message frames is wide enough to lose
-        // the frame that would have marked the session busy.
-        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
-          if (!reserveMessageRehydrate(sid)) continue;
-          reconcileSessionTail(sid, 'sse-gap')
-            .catch(() => {})
-            .finally(() => releaseMessageRehydrate(sid));
-        }
-      }
-    };
-
-    // Hydrate on initial connect — permissions, questions, and statuses
-    hydrateCore();
+    // A revived handle has no record of the previous handle's outage. Re-read
+    // the held transcripts so a response completed during the park appears
+    // without requiring a page refresh.
+    hydrate({ rehydrateMessages: streamGeneration > 0 });
 
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
@@ -344,7 +219,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
         noteSessionSyncEvent(event);
         handleEvent(event);
       },
-      onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
+      onGapRehydrate: () => hydrate({ rehydrateMessages: true }),
     });
 
     return () => {
@@ -379,12 +254,18 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
 /**
  * Headless provider component that connects the SSE event stream.
- * Renders nothing — just call useOpenCodeEventStream().
+ * Renders nothing — just call useRuntimeEventStream().
  *
  * Mount this once on any page that needs live session updates
  * (dashboard layout, onboarding page, etc.).
  */
-export function OpenCodeEventStreamProvider() {
-  useOpenCodeEventStream();
+export function RuntimeEventStreamProvider() {
+  useRuntimeEventStream();
   return null;
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `RuntimeEventStreamProvider`. Removed in the next major. */
+export const OpenCodeEventStreamProvider = RuntimeEventStreamProvider;
+/** @deprecated Renamed to `useRuntimeEventStream`. Removed in the next major. */
+export const useOpenCodeEventStream = useRuntimeEventStream;

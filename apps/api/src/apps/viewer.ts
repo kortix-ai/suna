@@ -33,6 +33,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { accountGroupMembers, oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
 import { hashSecretKey, randomAlphanumeric } from '../shared/crypto';
+import { validateOAuthAccessToken } from '../oauth/access-token';
 /*
  * The narrow email lookup (drizzle + db, its own cache, never throws) rather
  * than `projects/lib/access`'s re-export of it: that module drags the whole
@@ -281,7 +282,15 @@ export async function mintAppViewerToken(
   const scopes = appViewerScopes(scope);
   const key = `${app.appId}:${userId}:${scope}`;
   const hit = tokenCache.get(key);
-  if (hit && hit.expiresAt - TOKEN_REUSE_FLOOR_MS > Date.now()) {
+  // A hit is re-checked with the API's own validator. The row can die outside
+  // this process — another replica's access-policy save, `/v1/oauth/revoke`, a
+  // consent revoke — and this cache never hears of it. Serving it anyway sent
+  // a dead token on every request this replica answered for up to 55 minutes.
+  if (
+    hit
+    && hit.expiresAt - TOKEN_REUSE_FLOOR_MS > Date.now()
+    && (await validateOAuthAccessToken(hit.token)).isValid
+  ) {
     return { accessToken: hit.token, expiresAt: new Date(hit.expiresAt), scopes: hit.scopes };
   }
 

@@ -31,6 +31,7 @@ ID, and the branch name are the same value. See
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
+| `s.participants()` | `GET …/sessions/:sid/participants` | Reads who can open the session and who sent each prompt |
 | `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
 | `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
@@ -134,6 +135,13 @@ if (release?.fallback_reason) {
 never `!stale`. An older API omits `release`. See
 [Config convergence](/docs/work/runtime#config-convergence).
 
+`s.participants()` returns `{ participants, total, multi_user }`. `participants`
+lists the people who can open the session now, owner first, at most 20, each
+`{ user_id, name, email, avatar_url, is_viewer }`; `total` is the full count.
+`multi_user` is `true` when two or more people can open the session. In React,
+`useSessionParticipants(projectId, sessionId)` reads the same data. Who wrote
+each message is `s.messageAuthors()`.
+
 Three more read methods round out the handle:
 
 - `s.previews()` — candidate preview ports the runtime exposes.
@@ -168,13 +176,59 @@ Each result is `{ url, attachment_id, filename, mime, message_id, role }`.
 `role` is `user` for an upload and `assistant` for a file the agent showed;
 `mime` is null for the latter, and the bytes carry their own type.
 
+## Who wrote each message
+
+With the project flag `human_messaging` on, a session can open a conversation with
+project members. List the addresses in `participants`. `initial_prompt` is required
+with them. The server posts it from the caller with no agent turn and shares the new
+session with only those people. The agent runs when one of them replies. The limit is
+1 to 20 addresses. A flag that is off answers `403` `feature_disabled`; an address
+that is not a member who may run sessions answers `404` `PARTICIPANT_NOT_FOUND`.
+
+```ts
+const asked = await kortix.project(projectId).sessions.create({
+  participants: ['avery@example.com'],
+  initial_prompt: 'Which region should I deploy to?',
+})
+
+// The conversations you were asked into, at any depth.
+const { items } = await kortix.project(projectId).sessions.listPage({ participant: 'me' })
+```
+
+`createProjectSession(projectId, { participants, initial_prompt })` and
+`listProjectSessions(projectId, { participant: 'me' })` are the same calls as functions. `participants` and `awaiting_reply` are server-managed `metadata` keys.
+
+Every message has an author, with or without the flag. The server reads it from the
+credential that sent the prompt. The runtime transcript does not carry it.
+
+```ts
+const { authors, initial_author } = await kortix.session(projectId, sessionId).messageAuthors()
+// getSessionMessageAuthors(projectId, sessionId) is the same call as a function.
+
+const author = authors[runtimeMessageId] // undefined when the sender is unknown
+```
+
+`authors` is keyed by runtime message id. `initial_author` is the parent session for
+the first message of a spawned session. It is `null` when the session had no first
+prompt. Each author is a `SessionMessageAuthor`:
+
+| `kind` | Fields |
+| --- | --- |
+| `'member'` | `user_id`, `name`, `email` (`string \| null`) |
+| `'session'` | `session_id`, `name` |
+
+In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the
+same data. Pass the transcript's message count. A new message is the only event that
+adds an author, so the query refetches when the count changes. See
+[Messaging people and sessions](/docs/connect/messaging).
+
 ## Readiness is a handshake
 
 Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
 needed, waits for the runtime to boot, and returns the resolved runtime.
 
 ```ts
-const { opencodeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
+const { runtimeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
 ```
 
 On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
@@ -190,7 +244,7 @@ the same Kortix session:
 
 ```tsx
 const session = useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.opencode_session_id,
+  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -219,6 +273,12 @@ await s.send('Refactor the auth module');
 await s.send('One-off task', { model, agent }); // overrides for this call only
 await s.abort(); // stop the current run
 ```
+
+`send()` puts the prompt in the session's durable prompt inbox
+(`POST .../prompts`), the path the web composer and the CLI use. It resolves
+when the prompt is stored, with the inbox row (`prompt_id`, `state`,
+`message_id`), not when the turn ends. Read the reply from `s.stream()` or the
+transcript.
 
 For OpenCode REST sessions, the first `send()` on a handle reads the model and
 agent persisted on the Kortix session. This prevents a snapshot-inherited
@@ -324,8 +384,9 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 
 `health.capabilities` lists the session features the runtime serves. Read one
 with `runtimeSupports(capabilities, capability)` and hide the control when it
-returns `false`. An OpenCode session serves all nine; a pi session serves
-`session.subagents` only and answers the others with `501 feature_not_supported`.
+returns `false`. An OpenCode session serves all ten; a pi session serves
+`session.subagents` only and answers the others with `501 feature_not_supported`
+(`404` for the config document).
 
 | Capability | Feature |
 | --- | --- |
@@ -338,6 +399,7 @@ returns `false`. An OpenCode session serves all nine; a pi session serves
 | `session.todo` | The runtime's todo list |
 | `session.shell` | A shell command run as a turn |
 | `session.attach` | Attach the harness's own terminal client |
+| `session.config` | A runtime config document (`/global/config`); agents and models come from the project either way |
 
 ```ts
 import { runtimeSupports } from '@kortix/sdk';
@@ -390,11 +452,11 @@ Stream a session:
 
 ```ts
 const session = kortix.session(projectId, sessionId);
-const { opencodeSessionId } = await session.ensureReady();
+const { runtimeSessionId } = await session.ensureReady();
 
 const stream = await session.stream({
   onEvent: (event) => {
-    if (event.type === 'session.idle' && event.properties.sessionID === opencodeSessionId) {
+    if (event.type === 'session.idle' && event.properties.sessionID === runtimeSessionId) {
       onTurnDone();
       stream.close();
     }
@@ -641,23 +703,24 @@ removes the file, and its `attachment_id` can no longer be sent.
 this session's own sandbox. See the [SDK reference](/docs/sdk/reference) for
 the full method list.
 
-## The raw runtime
+## Session verbs
 
-`s.runtime` is the typed OpenCode REST client. Use it only for calls that `send`,
-`abort`, and `stream` do not cover. It requires a resolved OpenCode runtime —
-call `s.ensureReady()` first.
+The handle reads and answers the runtime for you. Each verb provisions the
+session first and targets this session's own sandbox, whichever harness runs it.
 
 ```ts
-const { opencodeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({
-  sessionID: opencodeSessionId,
-  parts: [{ type: 'text', text: 'Refactor the auth module' }],
-});
+// A page of the transcript, oldest first: { info, parts } messages (kortix.transcript.v1).
+const { messages, hasMore } = await s.messages({ limit: 50 });
+// What the agent waits on.
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, 'once'); // 'once' | 'always' | 'reject'
+await s.answerQuestion(questions[0].id, [['Yes']]); // null dismisses the question
+// Summarize the conversation. Needs the `session.compact` capability (see health()).
+await s.compact();
 ```
 
-The OpenCode `sessionID` here is not the session ID you pass to
-`kortix.session(projectId, sessionId)`. The SDK resolves it during
-`ensureReady()` and caches it on the handle.
+`s.runtime`, the raw REST compatibility client, is deprecated. Use the verbs
+above with `send`, `abort`, `rewind` and `stream`.
 
 ## Warm a project session
 
@@ -745,7 +808,7 @@ Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the requ
 
 Two errors mean the session's sandbox is not ready yet. Handle each one differently.
 
-`SessionNotReadyError` throws synchronously when you call a runtime accessor — `session.previewUrl()`, `session.proxyUrl()`, or `session.runtime` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox; it never falls back to another session's sandbox.
+`SessionNotReadyError` throws synchronously when you call a runtime accessor — `session.previewUrl()` or `session.proxyUrl()` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox; it never falls back to another session's sandbox.
 
 ```ts
 import { SessionNotReadyError } from '@kortix/sdk';

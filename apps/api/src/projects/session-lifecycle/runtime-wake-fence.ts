@@ -17,11 +17,11 @@ export const RUNTIME_WAKE_LEASE_MS = 240_000;
  * changes; this one never does, so a provider that flaps between two states
  * forever is still bounded and nothing downstream stays fenced off.
  *
- * Same shape as `STALE_OPENCODE_BOOT_HARD_MS` (readiness-clocks.ts) and for the
+ * Same shape as `STALE_RUNTIME_BOOT_HARD_MS` (readiness-clocks.ts) and for the
  * same reason — see the learning "A boot budget measures lack of progress, not
  * wall-clock".
  */
-export const RUNTIME_WAKE_HARD_MS = 10 * 60_000;
+export const RUNTIME_WAKE_HARD_MS = 12 * 60_000;
 // Covers the provider stop timeout while maintenance owns the late-start check.
 export const RUNTIME_WAKE_CLEANUP_LEASE_MS = 180_000;
 export const RUNTIME_WAKE_LATE_START_GUARD_MS = 15 * 60_000;

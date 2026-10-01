@@ -127,14 +127,26 @@ export interface AgentBlockV2 {
    *  Writers always set it; readers fall back to the conventional paths when
    *  it is omitted. */
   file?: string;
+  /** v3 only: inline system prompt or a repo-relative Markdown prompt file. */
+  prompt?: string;
+  prompt_file?: string;
+  /** v3: agent-specific model and native permission rules. */
+  model?: string;
+  description?: string;
+  mode?: 'primary' | 'subagent' | 'all';
+  permission?: PermissionConfigV2;
   /** Kortix governance: can this agent start a session at all? Default true
    *  when omitted. Compiles to the runtime's `disable` field (inverted,
    *  and only ever forces it ON — a hand-authored `disable: true` in the
    *  agent's own frontmatter still passes through when this is omitted) —
    *  see compile-agent-config.ts. */
   enabled?: boolean;
+  /** Built-in tool availability; omitted names retain the runtime default. */
+  tools?: Record<string, boolean>;
   /** Sandbox template slug for sessions that start with this agent. */
   sandbox?: string;
+  /** Declarative only: sandbox egress is NOT restricted until provider gateway isolation is enabled. */
+  network_egress?: { version: 1; default: 'deny'; rules: [] };
   connectors?: GrantSetV2;
   /** Connectors that must resolve before the session starts. Each
    *  entry must also exist in this agent's resolved `connectors` grant. */
@@ -555,7 +567,7 @@ const MOVED_TO_AGENT_MD_KEYS = [
 ] as const;
 
 /**
- * Validate an agent's native `.md` frontmatter as parsed OpenCode behavior
+ * Validate an agent's `.md` frontmatter: its behavior on every harness
  * (spec §2.2, 2026-07-05 redirect — the ONE home for mode/model/temperature/
  * top_p/steps/variant/color/hidden/permission/description). This is NOT part
  * of `validateManifest`'s pipeline (frontmatter lives in a repo file the
@@ -563,8 +575,8 @@ const MOVED_TO_AGENT_MD_KEYS = [
  * (compile-agent-config.ts), which DOES read the file, to reuse the exact
  * same field rules instead of re-deriving them. A stock OpenCode agent `.md`
  * with none of these fields set is valid as-is (every field optional); the
- * deprecated upstream `tools`/`maxSteps` fields are still flagged so an
- * author gets a pointer instead of a silently-ignored key.
+ * retired `tools`/`maxSteps` names are still flagged so an author gets a
+ * pointer instead of a silently-ignored key.
  */
 export function validateAgentMdFrontmatter(
   frontmatter: Record<string, unknown>,
@@ -634,18 +646,18 @@ export function validateAgentMdFrontmatter(
     validatePermissionConfig(frontmatter.permission, `${where}.permission`, issues);
   }
 
-  // Deprecated upstream fields — pointer errors, not silent pass-through.
+  // Retired field names — pointer errors, not silent pass-through.
   if (frontmatter.tools !== undefined) {
     issues.push({
       path: `${where}.tools`,
-      message: '`tools` is deprecated upstream — use `permission` instead.',
+      message: '`tools` is not an agent setting — use `permission` instead.',
       severity: 'error',
     });
   }
   if (frontmatter.maxSteps !== undefined) {
     issues.push({
       path: `${where}.maxSteps`,
-      message: '`maxSteps` is deprecated upstream — use `steps` instead.',
+      message: '`maxSteps` is not an agent setting — use `steps` instead.',
       severity: 'error',
     });
   }
@@ -655,10 +667,14 @@ export function validateAgentMdFrontmatter(
  *  redirect). Behavior lives in the agent's own `.md` frontmatter and is
  *  never validated here (this validator has no repo access) — see
  *  `validateAgentMdFrontmatter`. */
-function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[]): void {
+function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIssue[], v3 = false): void {
   if (!isTable(entry)) {
     issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
     return;
+  }
+
+  if (entry.tools !== undefined && (!isTable(entry.tools) || Object.values(entry.tools).some((value) => typeof value !== 'boolean'))) {
+    issues.push({ path: `${where}.tools`, message: 'tools must map tool names to booleans.', severity: 'error' });
   }
 
   if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
@@ -676,6 +692,19 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     }
   }
 
+  // A declaration is not an enforcement point: the provider gateway must
+  // isolate all outbound traffic before any policy can be applied.
+  if (entry.network_egress !== undefined) {
+    const policy = entry.network_egress;
+    if (!isTable(policy) || policy.version !== 1 || policy.default !== 'deny' ||
+        !Array.isArray(policy.rules) || policy.rules.length !== 0 ||
+        Object.keys(policy).some((key) => !['version', 'default', 'rules'].includes(key))) {
+      issues.push({ path: `${where}.network_egress`, message: 'only version 1 default-deny with empty rules is supported; network egress is not enforced.', severity: 'error' });
+    } else {
+      issues.push({ path: `${where}.network_egress`, message: 'declaration only: network egress is not enforced until provider gateway isolation is available.', severity: 'warning' });
+    }
+  }
+
   // v1's grant-set name — renamed to `secrets` in v2 (spec §2.2/§2.4).
   if (entry.env !== undefined) {
     issues.push({
@@ -687,17 +716,28 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
   // Pre-redirect / pre-refactor shapes: behavioral fields authored on the
   // manifest agent block at all (flat, or nested under the now-removed
   // `opencode:`) — these live ONLY in the agent's `.md` frontmatter now.
-  for (const key of MOVED_TO_AGENT_MD_KEYS) {
+  for (const key of v3 ? ['opencode', 'disable', 'file'] : MOVED_TO_AGENT_MD_KEYS) {
     if ((entry as Record<string, unknown>)[key] !== undefined) {
       issues.push({
         path: `${where}.${key}`,
-        message: `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
+        message: v3
+          ? `"${key}" is not supported in v3; declare behavior in kortix.yaml (prompt or prompt_file).`
+          : `"${key}" is agent behavior — it lives in this agent's own \`.md\` frontmatter now, not in kortix.yaml. Remove ${where}.${key} and set it in the frontmatter of the agent's \`.md\` (\`${where}.file\`, default \`agents/<name>.md\`) instead.`,
         severity: 'error',
       });
     }
   }
 
-  if (entry.file !== undefined && !safeAgentFile(entry.file)) {
+  if (!v3 && entry.prompt_file !== undefined) {
+    issues.push({ path: `${where}.prompt_file`, message: 'v2 agent behavior lives in its .md file.', severity: 'error' });
+  }
+  if (v3) {
+    if (entry.prompt !== undefined && typeof entry.prompt !== 'string') issues.push({ path: `${where}.prompt`, message: 'must be a string.', severity: 'error' });
+    if (entry.prompt_file !== undefined && (!safeAgentFile(entry.prompt_file) || entry.prompt !== undefined)) issues.push({ path: `${where}.prompt_file`, message: 'must be a repo-relative .md path and cannot be combined with prompt.', severity: 'error' });
+    validateAgentMdFrontmatter(entry, where, issues);
+  }
+
+  if (!v3 && entry.file !== undefined && !safeAgentFile(entry.file)) {
     issues.push({
       path: `${where}.file`,
       message:
@@ -772,7 +812,7 @@ export interface AgentsV2Scan {
  * callers can cross-validate `default_agent` and `triggers[].agent` against
  * them. Dispatch: called from `index.ts`'s `validateManifestBodyV2`.
  */
-export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[]): AgentsV2Scan {
+export function validateAgentsV2(node: unknown, path: string, issues: ManifestIssue[], v3 = false): AgentsV2Scan {
   const names: string[] = [];
   const disabledNames: string[] = [];
   if (node == null || (isTable(node) && Object.keys(node).length === 0)) {
@@ -806,7 +846,7 @@ export function validateAgentsV2(node: unknown, path: string, issues: ManifestIs
         disabledNames.push(name);
       }
     }
-    validateAgentBlockV2(entry, where, issues);
+    validateAgentBlockV2(entry, where, issues, v3);
   }
   return { names, disabledNames };
 }

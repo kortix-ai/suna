@@ -67,6 +67,9 @@ mock.module('react', () => ({
     return [value, record] as const;
   },
 }));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
+}));
 mock.module('@/features/session/composer-chat-input', () => ({
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
@@ -121,6 +124,7 @@ mock.module('@kortix/sdk/react', () => ({
   startSessionWithPrompt,
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionPrompts: () => ({ prompts: inboxPrompts, enqueue }),
   readStartStash: (sessionId: string) => stashes.get(sessionId) ?? null,
   writeStartStash: () => {},

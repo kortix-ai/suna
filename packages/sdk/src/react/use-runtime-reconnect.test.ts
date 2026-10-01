@@ -28,7 +28,7 @@ import {
   requestRuntimeReconnect,
   resetForServerSwitch,
   resetSandboxFail,
-  setOpenCodeHealth,
+  setRuntimeHealth,
   setSandboxStatus,
   useSandboxConnectionStore,
 } from '../browser/stores/sandbox-connection-store';
@@ -265,19 +265,19 @@ describe('sandbox-connection-store recovery resets counters', () => {
 // set while not healthy, cleared the instant it is — is what
 // `useRuntimeBootStalled()` reads to give that case a time bound anyway.
 describe('bootingSinceAt tracks the not-yet-healthy stretch', () => {
-  test('setOpenCodeHealth(false) arms the clock once, not on every call', () => {
+  test('setRuntimeHealth(false) arms the clock once, not on every call', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
-    setOpenCodeHealth(false);
+    setRuntimeHealth(false);
     const first = useSandboxConnectionStore.getState().bootingSinceAt;
     expect(first).not.toBeNull();
 
-    setOpenCodeHealth(false);
+    setRuntimeHealth(false);
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBe(first);
   });
 
-  test('setOpenCodeHealth(true) clears it', () => {
+  test('setRuntimeHealth(true) clears it', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: Date.now() - 60_000 });
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
   });
 
@@ -302,21 +302,21 @@ describe('bootingSinceAt tracks the not-yet-healthy stretch', () => {
   // longer than usual" forever, because nothing is actually starting and the
   // 503 repeats on every 150ms tick. The parked path must NOT arm the clock,
   // and must clear one a prior mount armed.
-  test('setOpenCodeHealth(parked) does NOT arm the boot-stall clock', () => {
+  test('setRuntimeHealth(parked) does NOT arm the boot-stall clock', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
-    setOpenCodeHealth(false, undefined, null, { parked: true });
+    setRuntimeHealth(false, undefined, null, { parked: true });
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
   });
 
-  test('setOpenCodeHealth(parked) clears a clock a prior mount armed', () => {
+  test('setRuntimeHealth(parked) clears a clock a prior mount armed', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: Date.now() - 60_000 });
-    setOpenCodeHealth(false, undefined, null, { parked: true });
+    setRuntimeHealth(false, undefined, null, { parked: true });
     expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
   });
 
   test('a genuine booting box (no parked flag) still arms the clock', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
-    setOpenCodeHealth(false);
+    setRuntimeHealth(false);
     expect(useSandboxConnectionStore.getState().bootingSinceAt).not.toBeNull();
   });
 });
@@ -499,7 +499,7 @@ describe('mount-time ordering: markRuntimeReadyVerified vs resetForServerSwitch'
     // never runs again for this mount (`useRuntimeReconnect` only calls it on
     // first mount), so nothing clobbers this.
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
 
     expect(useSandboxConnectionStore.getState()).toMatchObject({
       status: 'connected',
@@ -557,7 +557,7 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
     // The session switches before the route mounts the reconnect poller.
     resetForServerSwitch(url);
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     resetForServerSwitch(url);
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
   });
@@ -565,7 +565,7 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
   test('resetting for the URL already probed leaves a connected store alone', () => {
     resetForServerSwitch('https://api.test/v1/p/box-a/8000');
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     resetForServerSwitch('https://api.test/v1/p/box-a/8000');
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connected', healthy: true });
   });
@@ -573,7 +573,7 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
   test('a different runtime still starts from nothing', () => {
     resetForServerSwitch('https://api.test/v1/p/box-a/8000');
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     resetForServerSwitch('https://api.test/v1/p/box-b/8000');
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
   });
@@ -584,7 +584,7 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
   test('an empty URL (no runtime active yet) always resets', () => {
     resetForServerSwitch('');
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     resetForServerSwitch('');
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null, wasConnected: false });
   });
@@ -592,7 +592,7 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
   test('a reset without a URL always resets', () => {
     resetForServerSwitch('https://api.test/v1/p/box-a/8000');
     setSandboxStatus('connected');
-    setOpenCodeHealth(true);
+    setRuntimeHealth(true);
     resetForServerSwitch();
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
   });

@@ -31,12 +31,14 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 export function AccountTopBar({
   email,
+  name,
   signingOut,
   onLogOut,
   back,
   trailing,
 }: {
   email: string | null;
+  name?: string | null;
   signingOut: boolean;
   onLogOut: () => void;
   /** Rendered as a ghost link on the left. Omit on a page with nowhere to go back to. */
@@ -45,6 +47,7 @@ export function AccountTopBar({
   trailing?: ReactNode;
 }) {
   const t = useTranslations('newWorkspace');
+  const identity = name?.trim() || email;
 
   return (
     <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
@@ -71,13 +74,13 @@ export function AccountTopBar({
             <button
               type="button"
               disabled={signingOut}
-              aria-label={email ? `${t('account.loggedInAs')} ${email}` : t('account.label')}
+              aria-label={identity ? `${t('account.loggedInAs')} ${identity}` : t('account.label')}
               className="hover:bg-hover data-[state=open]:bg-hover focus-visible:ring-ring flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left transition-colors duration-(--duration-normal) ease-out focus-visible:ring-2 focus-visible:outline-none"
             >
               <span className="flex min-w-0 flex-col">
                 <span className="text-muted-foreground text-xs">{t('account.loggedInAs')}</span>
                 <span className="text-foreground max-w-56 truncate text-sm">
-                  {email ?? t('account.label')}
+                  {identity ?? t('account.label')}
                 </span>
               </span>
               {signingOut ? (

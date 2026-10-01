@@ -69,7 +69,7 @@ type Recorder = {
   deps: PrePromptEnvSyncDeps;
   envSync: Array<{ requestedAgent?: string | null; sessionId: string; providerName: string }>;
   remint: Array<{ sessionAgent: string; requestedAgent: string | null }>;
-  snapshot: Array<{ sessionId: string; projectId: string; externalId: string; userId?: string }>;
+  snapshot: Array<{ sessionId: string; projectId: string; accountId: string; userId?: string }>;
   titles: string[];
 };
 
@@ -100,7 +100,7 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       rec.snapshot.push({
         sessionId: input.sessionId,
         projectId: input.projectId,
-        externalId: input.externalId,
+        accountId: input.accountId,
         userId: input.userId,
       });
     }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
@@ -221,7 +221,7 @@ describe('runPrePromptEnvSync — a /command body', () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
     expect(rec.snapshot).toEqual([
-      { sessionId: 'sess-1', projectId: 'proj-1', externalId: 'ext-1', userId: 'u1' },
+      { sessionId: 'sess-1', projectId: 'proj-1', accountId: 'acct-1', userId: 'u1' },
     ]);
   });
 

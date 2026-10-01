@@ -32,7 +32,7 @@ import { SandboxUrlDetector } from '../sandbox-url-detector';
 const PILL_CLASS = 'bg-muted/80 flex shrink-0 items-center gap-2 rounded-md  px-3 py-1.5';
 const PILL_LABEL_CLASS = 'text-muted-foreground text-xs tracking-wide';
 
-/** Transcript copy — sentence case, one idea per line (comms). */
+/** Transcript copy — sentence case, one idea per line (kortix-brand voice-and-tone.md). */
 const COMPACTION_LABEL_LOADING = 'Compacting context…';
 const COMPACTION_LABEL_DONE = 'Context automatically compacted';
 

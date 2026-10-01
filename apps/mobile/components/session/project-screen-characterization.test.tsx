@@ -45,7 +45,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
   '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate') }) },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: [] }) },
-  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' } },
+  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
+    getSessionHealth: async (url: string, init?: RequestInit) => { const res = await globalThis.fetch(`${url}/kortix/health`, init); return { status: res.status, ok: res.ok, health: await res.json(), body: '' }; } },
   '@/components/kortix/toast-provider': { useToast: () => ({ error: spy('toast') }) },
   '@/lib/billing/upgrade-gate': { getUpgradeGate: (error: any) => error?.upgrade ? { reason: 'upgrade' } : null },
   '@/lib/platform/client': { getSandboxUrl: (id: string) => `https://sandbox.test/p/${id}/8000` },
@@ -146,7 +147,7 @@ describe('ProjectScreen connect and stack', () => {
     response = async () => ({ stage: 'starting', retriable: true, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1' } });
     health = async () => ({ ok: true, status: 200, json: async () => ({ boot_error: 'runtime failed' }) });
     await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-2' }));
-    expect(connecting.error).toMatchObject({ title: 'OpenCode runtime is not ready', detail: 'runtime failed' });
+    expect(connecting.error).toMatchObject({ title: 'Session runtime is not ready', detail: 'runtime failed' });
     expect(seen('switchSandbox')).toHaveLength(0);
   });
 

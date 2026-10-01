@@ -90,7 +90,9 @@ mock.module('../../projects/routes/shared', () => ({
 // and the grant sizes are the REAL ones, because the thing under test here is
 // which requests reach a writer and with what grant.
 const realDeadline = await import('../../projects/sandbox-deadline-policy');
+const realDeadlineWrites = await import('../../projects/sandbox-deadline');
 mock.module('../../projects/sandbox-deadline', () => ({
+  ...realDeadlineWrites,
   ...realDeadline,
   extendSandboxDeadline: async (target: unknown, grantMs?: number) => {
     extends_.push({ target, grantMs });

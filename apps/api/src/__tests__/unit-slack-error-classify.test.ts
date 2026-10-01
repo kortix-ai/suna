@@ -112,6 +112,18 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('context window');
   });
 
+  // OpenCode compacts on overflow by itself; this error reaches a thread only
+  // when its compaction failed, and a summary request would fail the same way.
+  test('OpenCode`s ContextOverflowError → "Conversation too long", never "ask me to summarize"', () => {
+    const r = classifyTurnError({
+      name: 'ContextOverflowError',
+      message: 'Conversation history too large to compact - exceeds model context limit',
+    });
+    expect(r.title).toBe('Conversation too long');
+    expect(r.text).toContain('Start a new thread');
+    expect(r.text.toLowerCase()).not.toContain('summarize');
+  });
+
   test('model-not-found (404) → "Model unavailable" with a config next step', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 404, message: 'The model `gpt-foo` does not exist' });
     expect(r.title).toBe('Model unavailable');
@@ -258,6 +270,33 @@ describe('classifyTurnError', () => {
     const r = classifyTurnError({ statusCode: 402, message: 'Insufficient credits' });
     expect(r.title).toBe('Out of credits');
     expect(r.aborted).toBe(false);
+  });
+});
+
+describe('classifyTurnError — the daemon code decides (W5 E11)', () => {
+  test.each([
+    ['credits', 'Out of credits'],
+    ['rate_limit', 'Usage limit reached'],
+    ['auth', 'Provider rejected the request'],
+    ['context_length', 'Conversation too long'],
+    ['output_length', 'Response too long'],
+    ['aborted', 'Run stopped'],
+  ] as const)('code %s with no name, status or matching text', (code, title) => {
+    expect(classifyTurnError({ name: 'UnknownError', message: 'upstream said no', code }).title).toBe(title);
+  });
+
+  test('a specific code beats text that names another bucket', () => {
+    expect(classifyTurnError({ message: 'rate limit exceeded', code: 'auth' }).title).toBe('Provider rejected the request');
+  });
+
+  test('code unknown falls back to the name, status and text checks', () => {
+    expect(classifyTurnError({ message: 'Insufficient credits. Balance: $-0.06', code: 'unknown' }).title).toBe('Out of credits');
+    expect(classifyTurnError({ name: 'TimeoutError', message: 'The session made no progress.', code: 'unknown' }).title).toBe('Run failed');
+  });
+
+  test('a ChatGPT login refusal still wins over an auth code', () => {
+    const r = classifyTurnError({ statusCode: 401, message: 'Could not parse your authentication token.', code: 'auth' });
+    expect(r.title).toBe('ChatGPT login needs reconnection');
   });
 });
 

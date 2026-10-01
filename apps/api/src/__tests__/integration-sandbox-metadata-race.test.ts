@@ -167,7 +167,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
       // egress pin (the secret broker then fails OPEN for that session).
       await seed({
         initStatus: 'ready',
-        opencodeBootPhase: 'ready',
+        runtimeBootPhase: 'ready',
         runtimeStartFailureCount: 2,
         stopReason: 'idle',
       });
@@ -199,20 +199,20 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
       expect(metadata.runtimeWakeStartedAt).toBe(restart.startedAt.toISOString());
       expect(metadata.runtimeWakeProviderStatus).toBe('starting');
       // What an explicit restart clears is still cleared.
-      expect(metadata.opencodeBootPhase).toBeUndefined();
+      expect(metadata.runtimeBootPhase).toBeUndefined();
       expect(metadata.runtimeStartFailureCount).toBeUndefined();
       expect(metadata.stopReason).toBeUndefined();
       expect(metadata.initStatus).toBe('ready');
     });
 
     test('a /start readiness write from a row read before the claim does not erase it', async () => {
-      const { markOpencodeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
       const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       const restart = claim();
       await claimInPlaceRestart({ sandboxId: SANDBOX_ID, externalId: EXTERNAL_ID, claim: restart });
 
-      await markOpencodeReadyWaitStarted(staleRow, 'not_ready', 'config-deps|opencode=starting');
+      await markRuntimeReadyWaitStarted(staleRow, 'not_ready', 'config-deps|opencode=starting');
 
       const metadata = await readMetadata();
       expect(metadata.runtimeRestartId).toBe(restart.id);
@@ -220,7 +220,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
     });
 
     test('a /start readiness write merges its clocks and keeps keys written after its read', async () => {
-      const { markOpencodeReadyWaitStarted } = await import('../projects/routes/shared');
+      const { markRuntimeReadyWaitStarted } = await import('../projects/routes/shared');
       const staleRow = { sandboxId: SANDBOX_ID, metadata: await readMetadata() } as never;
       await admin.query(
         `UPDATE kortix.session_sandboxes SET metadata = metadata || '{"egress_ip":"203.0.113.7"}'::jsonb
@@ -228,14 +228,14 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
         [SANDBOX_ID],
       );
 
-      await markOpencodeReadyWaitStarted(staleRow, 'not_ready', 'config-deps|opencode=starting');
+      await markRuntimeReadyWaitStarted(staleRow, 'not_ready', 'config-deps|opencode=starting');
 
       const metadata = await readMetadata();
       expect(metadata.egress_ip).toBe('203.0.113.7');
-      expect(metadata.opencodeReadyWaitReason).toBe('not_ready');
-      expect(typeof metadata.opencodeNotReadyWaitStartedAt).toBe('string');
-      expect(typeof metadata.opencodeBootWaitFirstSeenAt).toBe('string');
-      expect(metadata.opencodeBootPhase).toBe('config-deps|opencode=starting');
+      expect(metadata.runtimeReadyWaitReason).toBe('not_ready');
+      expect(typeof metadata.runtimeNotReadyWaitStartedAt).toBe('string');
+      expect(typeof metadata.runtimeBootWaitFirstSeenAt).toBe('string');
+      expect(metadata.runtimeBootPhase).toBe('config-deps|opencode=starting');
       expect(metadata.initStatus).toBe('ready');
     });
 

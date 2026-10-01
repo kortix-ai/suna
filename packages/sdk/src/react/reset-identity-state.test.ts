@@ -1,9 +1,9 @@
 import { beforeEach, expect, test } from 'bun:test';
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message } from '../core/runtime/runtime-types';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { resetIdentityState } from './reset-identity-state';
@@ -74,9 +74,9 @@ test('resetIdentityState forgets the previous user\'s transcripts, asks, receipt
     role: 'user',
     time: { created: 1 },
   } as unknown as Message);
-  useOpenCodePendingStore.getState().addPermission({ id: 'per_A', sessionID: 'ses_A' } as never);
-  useOpenCodePendingStore.getState().addQuestion({ id: 'que_A', sessionID: 'ses_A', questions: [] } as never);
-  useOpenCodePendingStore.getState().setAutoApproveAll('ses_A', true);
+  useRuntimePendingStore.getState().addPermission({ id: 'per_A', sessionID: 'ses_A' } as never);
+  useRuntimePendingStore.getState().addQuestion({ id: 'que_A', sessionID: 'ses_A', questions: [] } as never);
+  useRuntimePendingStore.getState().setAutoApproveAll('ses_A', true);
   useSessionWorkingStore.getState().noteAbortReceipt('kses_A', 1);
 
   const models = renderModelStore();
@@ -91,7 +91,7 @@ test('resetIdentityState forgets the previous user\'s transcripts, asks, receipt
   });
 
   expect(useSyncStore.getState().messages.ses_A).toBeUndefined();
-  const pending = useOpenCodePendingStore.getState();
+  const pending = useRuntimePendingStore.getState();
   expect(pending.permissions).toEqual({});
   expect(pending.questions).toEqual({});
   expect(pending.autoApproveAllSessions).toEqual({});

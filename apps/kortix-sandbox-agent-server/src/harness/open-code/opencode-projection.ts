@@ -85,7 +85,8 @@ export interface SessionProjection {
   title: string
   parent_id: string | null
   directory: string | null
-  time: { created: number; updated: number; compacting: number | null }
+  /** `archived`: when the conversation was archived; clients hide an archived child. */
+  time: { created: number; updated: number; compacting: number | null; archived: number | null }
   /** Present only when the session has a staged revert. */
   revert: unknown | null
 }
@@ -213,6 +214,7 @@ export function projectSessions(payload: unknown): SessionProjection[] {
         created: typeof time.created === 'number' ? time.created : 0,
         updated: typeof time.updated === 'number' ? time.updated : 0,
         compacting: typeof time.compacting === 'number' ? time.compacting : null,
+        archived: typeof time.archived === 'number' ? time.archived : null,
       },
       revert: session.revert ?? null,
     })
@@ -234,6 +236,7 @@ export function projectSessionRows(
     time_created: number
     time_updated: number
     time_compacting: number | null
+    time_archived?: number | null
     revert: string | null
   }>,
 ): SessionProjection[] {
@@ -246,6 +249,7 @@ export function projectSessionRows(
       created: row.time_created,
       updated: row.time_updated,
       compacting: row.time_compacting ?? null,
+      archived: row.time_archived ?? null,
     },
     revert: row.revert ? safeJson(row.revert) : null,
   }))

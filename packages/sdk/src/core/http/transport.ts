@@ -164,6 +164,7 @@ export async function send(
   const response = await dispatch(fetchImpl, input, init, token, signal);
   if (response.status !== 401 || !canRetry) return response;
 
+  platformConfig().getToken.invalidate?.(token);
   const fresh = await currentToken({ attempts: 2, baseDelayMs: 200 });
   if (!fresh || fresh === token) return response;
   return dispatch(fetchImpl, retryInput, init, fresh, signal);

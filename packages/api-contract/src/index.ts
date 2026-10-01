@@ -53,7 +53,6 @@ export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  teams: z.boolean(),
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
@@ -67,6 +66,7 @@ export const FeatureFlagMapSchema = z.object({
   config_releases: z.boolean(),
   agent_principal: z.boolean(),
   us_region: z.boolean(),
+  human_messaging: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -487,9 +487,10 @@ export const ConnectionMetadataSchema = z
 export const ConnectionShareSchema = z.object({
   /** The `role_assignments` id; revoke it to take this audience away. */
   grant_id: z.string().uuid(),
-  principal_type: z.enum(['member', 'group', 'project']),
+  /** `agent`: `principal_id` is the agent's service account. */
+  principal_type: z.enum(['member', 'group', 'project', 'agent']),
   principal_id: z.string(),
-  /** A member's email, a group's name, or the project's name. */
+  /** A member's email, a group's name, an agent's name, or the project's name. */
   label: z.string(),
   expires_at: z.string().nullable(),
 });
@@ -973,9 +974,19 @@ export const SessionCreateInputSchema = z
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
     title_source: z.string().optional(),
+    /** The session's `provider/model` pin. Wins over `opencode_model`. */
+    model: z.string().min(1).optional(),
+    /** @deprecated The pre-W4 name of `model`. */
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
+    /**
+     * Email addresses of project members to open a conversation with
+     * (feature flag `human_messaging`). `initial_prompt` is posted to them
+     * from the caller, no turn runs, and the session is shared with them. The
+     * agent runs when one of them replies.
+     */
+    participants: z.array(z.string().min(3).max(254)).min(1).max(20).optional(),
     session_id: z
       .string()
       .regex(
@@ -1047,6 +1058,9 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
+  /** The session's root conversation in its runtime (OpenCode or pi). */
+  runtime_session_id: z.string().nullable(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
@@ -1057,11 +1071,19 @@ export const ProjectSessionSchema = z.object({
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
+  /** The runtime's conversation tree snapshot; `[]` for a caller who cannot open the session. */
+  runtime_sessions: z.array(z.unknown()),
+  /** @deprecated The pre-W4 name of `runtime_sessions`. Same value. */
   opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
+  owner_avatar_url: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
+  /** The people a conversation was opened with, resolved to names. Single-session read only; `[]` elsewhere. */
+  participant_people: z
+    .array(z.object({ user_id: z.string(), name: z.string().nullable(), email: z.string().nullable() }))
+    .optional(),
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),
@@ -1311,7 +1333,9 @@ export const SessionStartResultSchema = z.object({
   retriable: z.boolean(),
   /** Serialized session_sandboxes row, or null while none is usable. */
   sandbox: ProjectSessionSandboxSchema.nullable(),
-  /** Canonical OpenCode root pin, resolved server-side once the box is up. */
+  /** Canonical runtime root pin, resolved server-side once the box is up. */
+  runtime_session_id: z.string().nullable().optional(),
+  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
   opencode_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
@@ -1555,6 +1579,12 @@ export const SecretSchema = z.object({
   strategy_locked: z.boolean(),
   last_rotated_at: z.string().nullable(),
   requires_rotation: z.boolean(),
+  /** Who can use the shared value: each audience grant. Empty = everyone in
+   *  the project. Present on `GET /secrets`. */
+  shared_with: z.array(ConnectionShareSchema).optional(),
+  /** Can the caller's sessions use the shared value? False only when it is
+   *  shared with specific people and the caller is not one of them. */
+  usable: z.boolean().optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 

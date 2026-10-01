@@ -21,6 +21,11 @@ import {
 
 export const kortixSchema = pgSchema('kortix');
 
+export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'provisioning',
   'active',
@@ -1028,7 +1033,7 @@ export const projectSessions = kortixSchema.table(
     sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
@@ -1465,6 +1470,10 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // When the current streak of failed RUNS began; null once a run finishes.
+    // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
+    // owner is pushed only when it goes from null to set.
+    runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
     // Account-local sharing policy for sessions created by this trigger. The
     // portable manifest cannot contain member/group ids from one account.
     sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
@@ -1802,7 +1811,7 @@ export const chatChannelBindings = kortixSchema.table(
     // default. Sessions started from this channel inherit these so different
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
-    opencodeModel: varchar('opencode_model', { length: 128 }),
+    model: varchar('opencode_model', { length: 128 }),
     // How Slack users may participate in sessions started from this channel.
     // Default is project-wide sharing: linked project members can join the
     // Slack thread. Teams can opt into owner approval or owner-only.
@@ -2184,7 +2193,7 @@ export const sessionTurns = kortixSchema.table(
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
     // OpenCode root this turn runs in. Null until the daemon reports it.
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     // Client-minted OpenCode user message id. Null for command turns.
     messageId: text('message_id'),
     state: varchar('state', { length: 16 }).default('delivering').notNull(),
@@ -2259,7 +2268,7 @@ export const sessionTranscriptMirrors = kortixSchema.table(
     // The OpenCode root the captured messages belong to. A re-pin (a restarted
     // box adopting a different root) makes the previous rows unreachable, so
     // the writer clears them when this changes.
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     // TRUE only when a capture proved it had seen the session's FIRST message
     // (the box returned fewer messages than the capture window). This is the
     // single bit `complete` is derived from; it is never assumed. Retention
@@ -2314,7 +2323,7 @@ export const sessionTranscriptMessages = kortixSchema.table(
     // `info.parentID` — the turn linkage OpenCode itself records (which user
     // message a step was parented on). Null on messages that carry none.
     parentMessageId: text('parent_message_id'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     role: text('role').notNull(),
     // Denormalized out of `info` so ordering and retention are index reads.
     // Order is (message_created_at, message_id) — the order OpenCode's own
@@ -2380,8 +2389,12 @@ export const sessionRuntimeProjections = kortixSchema.table(
     /** The sandbox that produced it. Names the winner when a warm fork adopts. */
     externalId: text('external_id').notNull(),
     // ── identity (the freshness check reads these, never the jsonb) ──────────
-    opencodeSessionId: text('opencode_session_id'),
-    opencodeVersion: text('opencode_version'),
+    /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
+    schema: text('schema'),
+    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    harness: text('harness'),
+    runtimeSessionId: text('opencode_session_id'),
+    harnessVersion: text('opencode_version'),
     agentConfigEtag: text('agent_config_etag'),
     daemonBuild: bigint('daemon_build', { mode: 'number' }),
     /** Daemon boot id. `seq` is meaningless outside it. */
@@ -3257,7 +3270,7 @@ export const auditEvents = kortixSchema.table(
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
     sessionId: text('session_id'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     turnId: text('turn_id'),
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
@@ -3844,9 +3857,9 @@ export const sessionPendingQuestions = kortixSchema.table(
     sessionId: text('session_id').notNull(),
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
-    /** The opencode session that asked; survives an opencode restart changing it. */
-    opencodeSessionId: text('opencode_session_id'),
-    /** The raw QuestionInfo[] as opencode reported it. */
+    /** The runtime session that asked; survives a runtime restart changing it. */
+    runtimeSessionId: text('opencode_session_id'),
+    /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */
@@ -6431,6 +6444,19 @@ export const sessionPresenceLeases = kortixSchema.table('session_presence_leases
   // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
   foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_presence_session_fk' }).onDelete('cascade'),
 ]);
+
+/**
+ * Audit reconciliation high-water mark, one row per account. `checked_at` is
+ * the start of the account's last COMPLETE pass: the next pass scans only
+ * source rows newer than it (minus a lookback). `full_scan_at` is the start of
+ * the last pass over the whole history, which re-verifies old rows weekly.
+ * Written only when a pass completes, so a crash resumes from the old mark.
+ */
+export const auditReconciliationState = kortixSchema.table('audit_reconciliation_state', {
+  accountId: uuid('account_id').primaryKey(),
+  checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  fullScanAt: timestamp('full_scan_at', { withTimezone: true }).notNull(),
+});
 
 /**
  * A user's Expo push device token plus that device's per-event notification

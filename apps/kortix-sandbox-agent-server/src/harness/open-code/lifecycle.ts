@@ -632,8 +632,50 @@ export async function buildOpencodeConfigContent(
     out.permission = { ...permission, question: 'deny' }
   }
 
+  // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
+  // OpenCode tool: the tools a capability covers get its rule (E9).
+  out.permission = capabilityToolRules(out.permission)
+  if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
+    for (const agent of Object.values(out.agent as Record<string, unknown>)) {
+      if (agent && typeof agent === 'object' && 'permission' in agent) {
+        const entry = agent as Record<string, unknown>
+        entry.permission = capabilityToolRules(entry.permission)
+      }
+    }
+  }
+
   Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
+}
+
+/**
+ * The OpenCode tools a capability covers beside its own: the pty plugin's
+ * tools run shell commands, the template's search and scrape tools reach the
+ * web. None of them asks for permission itself, and OpenCode matches a rule
+ * against the tool's own name, so an agent's `bash: deny` never reached
+ * `pty_spawn`.
+ */
+const CAPABILITY_TOOLS: Record<string, readonly string[]> = {
+  bash: ['pty_spawn', 'pty_write', 'pty_read', 'pty_list', 'pty_kill'],
+  websearch: ['web_search', 'image_search'],
+  webfetch: ['scrape_webpage'],
+}
+
+/**
+ * Give each covered tool its capability's rule. A tool that cannot ask is
+ * allowed only when the capability is exactly `allow`; an `ask` or a pattern
+ * map denies it, which hides it (fail closed). A rule the config sets for the
+ * tool itself wins. A bare action already covers every tool.
+ */
+export function capabilityToolRules(permission: unknown): unknown {
+  if (!permission || typeof permission !== 'object' || Array.isArray(permission)) return permission
+  const rules = { ...(permission as Record<string, unknown>) }
+  for (const [capability, tools] of Object.entries(CAPABILITY_TOOLS)) {
+    if (!(capability in rules)) continue
+    const action = rules[capability] === 'allow' ? 'allow' : 'deny'
+    for (const tool of tools) if (!(tool in rules)) rules[tool] = action
+  }
+  return rules
 }
 
 type KortixProviderOpts = {
@@ -1081,7 +1123,10 @@ function withManagedOverlay(
   if (live && Object.keys(live).length > 0) return { ...base, ...live }
   const out = { ...base }
   for (const [id, model] of Object.entries(BUNDLED_MANAGED_MODELS)) {
-    if (!out[id]) out[id] = model
+    // Fill-only, except `limit`. The builder swaps a new daemon into an older
+    // image without re-baking its catalog, so this daemon's managed limit is
+    // the newer one. A stale limit puts compaction on the context wall.
+    out[id] = out[id] ? { ...out[id], limit: model.limit } : model
   }
   return out
 }
@@ -1325,6 +1370,9 @@ export type ManagedCatalogConvergeOutcome =
   /** No gateway credentials on this box (KORTIX_LLM_BASE_URL/KORTIX_TOKEN),
    *  or the gateway itself never answered. */
   | 'no-gateway'
+  /** `model` was asked for and the live gateway catalog does not carry it — a
+   *  retired or mistyped id. Nothing to repair; OpenCode's own error stands. */
+  | 'not-served'
 
 export interface ManagedCatalogConvergeResult {
   outcome: ManagedCatalogConvergeOutcome
@@ -1334,6 +1382,9 @@ export interface ManagedCatalogConvergeResult {
   /** Size of the live managed listing this call fetched, 0 when unavailable. */
   managed: number
   reason?: string
+  /** Set when the caller asked about one `model`: whether the RUNNING OpenCode
+   *  registers it after this call. */
+  modelPresent?: boolean
 }
 
 /**
@@ -1369,14 +1420,45 @@ export async function convergeManagedModelCatalog(
     allowRestart?: boolean
     catalogTargetFile?: string
     turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
+    /** The one model a turn asks for (`codex/gpt-6.1-sol`, `openai/…`, a
+     *  managed id). Any provider, not only managed: the image-baked catalog
+     *  is as stale for a new BYOK/ChatGPT model as for a managed one. */
+    model?: string
   } = {},
 ): Promise<ManagedCatalogConvergeResult> {
   const allowRestart = opts.allowRestart !== false
   const startedAt = Date.now()
   const baseUrl = process.env.KORTIX_LLM_BASE_URL
   const apiKey = process.env.KORTIX_TOKEN
+  if (opts.model && lastConfiguredProviderModelIds?.has(opts.model)) {
+    return { outcome: 'unchanged', missing: [], managed: 0, modelPresent: true }
+  }
   if (!hasKortixLlmGateway(process.env) || !baseUrl || !apiKey) {
-    return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'no gateway credentials on this box' }
+    return {
+      outcome: 'no-gateway',
+      missing: [],
+      managed: 0,
+      reason: 'no gateway credentials on this box',
+      ...(opts.model ? { modelPresent: false } : {}),
+    }
+  }
+  if (opts.model) {
+    const model = opts.model
+    const refreshed = await refreshGatewayCatalogFile({
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      targetCatalogFile: opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
+      fetchBaseURL: baseUrl,
+      fetchApiKey: apiKey,
+    })
+    if (!refreshed?.fullCatalogLive) {
+      return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'live gateway catalog unavailable', modelPresent: false }
+    }
+    process.env.KORTIX_LLM_CATALOG_FILE = refreshed.catalogFile
+    if (!readCatalogFile(refreshed.catalogFile)?.[model]) {
+      return { outcome: 'not-served', missing: [], managed: 0, reason: `the gateway does not serve ${model}`, modelPresent: false }
+    }
+    const result = await restartIfIdle(opencode, cfg, opts.turnProbe, [model], startedAt)
+    return { ...result, managed: 0, modelPresent: result.outcome === 'restarted' }
   }
   const live = await fetchManagedModels(baseUrl, apiKey)
   if (!live) {
@@ -1403,14 +1485,26 @@ export async function convergeManagedModelCatalog(
     })
     return { outcome: 'file-updated', missing, managed }
   }
-  const probe = opts.turnProbe ?? opencodeTurnInFlight
+  return { ...(await restartIfIdle(opencode, cfg, opts.turnProbe, missing, startedAt)), managed }
+}
+
+/** One idle-gated, verified OpenCode restart onto the catalog file already
+ *  written. Never ends a running turn, never retries. */
+async function restartIfIdle(
+  opencode: Pick<Opencode, 'getInternalUrl' | 'reloadVerified'>,
+  cfg: Pick<Config, 'workspace'>,
+  turnProbe: ((baseUrl: string, workspace: string) => Promise<boolean | null>) | undefined,
+  missing: string[],
+  startedAt: number,
+): Promise<Pick<ManagedCatalogConvergeResult, 'outcome' | 'missing' | 'reason'>> {
+  const probe = turnProbe ?? opencodeTurnInFlight
   const idle = async (): Promise<boolean> => (await probe(opencode.getInternalUrl(), cfg.workspace)) === false
   if (!(await idle())) {
     logger.warn('[opencode] on-demand catalog converge: skipping restart — a turn is live or unreadable', {
       missing,
       ms: Date.now() - startedAt,
     })
-    return { outcome: 'declined', missing, managed, reason: 'a turn is live or its state is unknown' }
+    return { outcome: 'declined', missing, reason: 'a turn is live or its state is unknown' }
   }
   const result = await opencode.reloadVerified({ mayPromote: idle })
   if (result.outcome !== 'swapped') {
@@ -1419,19 +1513,21 @@ export async function convergeManagedModelCatalog(
       reason: result.reason,
       ms: Date.now() - startedAt,
     })
-    return { outcome: 'declined', missing, managed, reason: result.reason ?? 'reload declined' }
+    return { outcome: 'declined', missing, reason: result.reason ?? 'reload declined' }
   }
-  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing managed models', {
+  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing models', {
     missing,
-    managed,
     ms: Date.now() - startedAt,
   })
-  return { outcome: 'restarted', missing, managed }
+  return { outcome: 'restarted', missing }
 }
 
 export type GatewayCatalogRefreshResult = {
   changed: boolean
   catalogFile: string
+  /** The full project catalog came from the gateway on this call, not the
+   *  file already on disk. */
+  fullCatalogLive: boolean
 }
 
 /**
@@ -1481,7 +1577,7 @@ export async function refreshGatewayCatalogFile(opts: {
     fullCatalogLive: !!liveModels,
     target: opts.targetCatalogFile,
   })
-  return { changed, catalogFile: opts.targetCatalogFile }
+  return { changed, catalogFile: opts.targetCatalogFile, fullCatalogLive: !!liveModels }
 }
 
 // Conservative window for a model we have no declared limit for. Better to

@@ -17,7 +17,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * fields out its own way:
  *
  *  - `useAgentDraft` owns the draft, the baseline, the two writers (`set` for
- *    the Kortix block, `setOc` for the nested runtime block) and the dirty
+ *    the Kortix block, `setOc` for the nested `behavior` block) and the dirty
  *    check. Pure state; no shell.
  *  - `useAgentEditorOptions` loads the three option lists the sections need
  *    (secrets, connectors, sandbox templates).
@@ -35,7 +35,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * concern. The sections are the questions you actually ask about an agent —
  * Model, Access, Workspace, Tools, Basics — and every field still writes to
  * exactly the same place it always did. `set` writes the Kortix block, `setOc`
- * writes the nested runtime block; that split is a fact about the code, not a
+ * writes the nested `behavior` block; that split is a fact about the code, not a
  * heading in the UI.
  *
  * Field blocks live in agent-editor-basics-fields.tsx (Basics + Model),
@@ -128,12 +128,23 @@ export interface AgentDraft {
 }
 
 /**
+ * A served block with its behavior under `behavior` only. The API answers the
+ * pre-W4 `opencode` alias beside it; a draft that kept both would send two
+ * copies of every edit.
+ */
+export function behaviorBlock(block: AgentConfigBlock): AgentConfigBlock {
+  const { opencode, ...rest } = block;
+  const behavior = block.behavior ?? opencode;
+  return behavior ? { ...rest, behavior } : rest;
+}
+
+/**
  * The draft of one agent block. `initial` is read once — the caller keys the
  * component on the agent name so switching agents remounts rather than leaks.
  */
 export function useAgentDraft(initial: AgentConfigBlock): AgentDraft {
-  const [draft, setDraft] = useState<AgentConfigBlock>(initial);
-  const [baseline, setBaseline] = useState<AgentConfigBlock>(initial);
+  const [draft, setDraft] = useState<AgentConfigBlock>(() => behaviorBlock(initial));
+  const [baseline, setBaseline] = useState<AgentConfigBlock>(() => behaviorBlock(initial));
   const isDirty = useMemo(
     () => stableStringify(draft) !== stableStringify(baseline),
     [draft, baseline],
@@ -150,27 +161,28 @@ export function useAgentDraft(initial: AgentConfigBlock): AgentDraft {
     });
   }, []);
 
-  // Runtime fields live nested under `draft.opencode` — same clear-on-empty
+  // Behavior fields live nested under `draft.behavior` — same clear-on-empty
   // semantics as `set`, folded into the sub-object.
   const setOc = useCallback<SetRuntime>((key, value) => {
     setDraft((d) => {
-      const oc: RuntimeAgentConfig = { ...(d.opencode ?? {}) };
+      const oc: RuntimeAgentConfig = { ...(d.behavior ?? {}) };
       if (value === undefined || value === '') delete oc[key];
       else oc[key] = value;
       const next = { ...d };
-      if (Object.keys(oc).length > 0) next.opencode = oc;
-      else delete next.opencode;
+      if (Object.keys(oc).length > 0) next.behavior = oc;
+      else delete next.behavior;
       return next;
     });
   }, []);
 
   const discard = useCallback(() => setDraft(baseline), [baseline]);
   const commit = useCallback((saved: AgentConfigBlock) => {
-    setBaseline(saved);
-    setDraft(saved);
+    const block = behaviorBlock(saved);
+    setBaseline(block);
+    setDraft(block);
   }, []);
 
-  return { draft, oc: draft.opencode ?? {}, set, setOc, isDirty, discard, commit };
+  return { draft, oc: draft.behavior ?? {}, set, setOc, isDirty, discard, commit };
 }
 
 export interface AgentEditorOptions {

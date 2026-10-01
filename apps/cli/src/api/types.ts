@@ -77,6 +77,16 @@ export interface ProjectSecret {
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   /** True when an earlier sandbox may retain the previous value. */
   requires_rotation?: boolean;
+  /** Who can use the shared value; empty = everyone in the project. */
+  shared_with?: Array<{
+    grant_id: string;
+    principal_type: 'member' | 'group' | 'project';
+    principal_id: string;
+    label: string;
+    expires_at: string | null;
+  }>;
+  /** False when the value is shared with specific people and the caller is not one of them. */
+  usable?: boolean;
 }
 
 export interface ProjectSecretsResponse {
@@ -139,8 +149,13 @@ export interface ProjectSession {
   sandbox_provider: string;
   sandbox_id: string;
   sandbox_url: string | null;
+  /** Served by a W4 API; read it before `opencode_session_id`. */
+  runtime_session_id?: string | null;
+  /** @deprecated The pre-W4 name of `runtime_session_id`. */
   opencode_session_id: string | null;
-  /** Resolved display name: user-set custom_name, else the auto opencode title. */
+  /** The runtime's conversation tree (a W4 API); older APIs only have `metadata.opencode_sessions`. */
+  runtime_sessions?: unknown[];
+  /** Resolved display name: user-set custom_name, else the auto runtime title. */
   name: string | null;
   /** User-set name override (authoritative); null when unset. */
   custom_name: string | null;
@@ -197,6 +212,10 @@ export interface ProjectTrigger {
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
   last_fired_at: string | null;
+  /** `queued`, `fired`, or `failed` (the prompt was not delivered, or its run ended with an error). */
+  last_status?: string | null;
+  /** Why the last fire or run failed. */
+  last_error?: string | null;
   webhook_url: string | null;
 }
 

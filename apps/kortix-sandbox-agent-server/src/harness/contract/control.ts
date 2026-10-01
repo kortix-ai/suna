@@ -1,5 +1,5 @@
 import type { Config } from '@/lib/config/config'
-import type { RepoInfo } from '@/lib/git/git'
+import type { ConfigDirSyncResult, RepoInfo } from '@/lib/git/git'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 /** HTTP-independent control input. Native environment names remain adapter-owned. */
@@ -41,6 +41,14 @@ export interface HarnessRefreshInput {
   skipRestart: boolean
   /** Leave the checkout exactly as it is — no pull of the session branch. */
   skipRepo?: boolean
+  /**
+   * Bring the base branch's OpenCode config dir into the checkout
+   * (`syncConfigDirToBase`: file by file over what base changed, keeps the
+   * session's own edits and commits, never moves a ref). The runtime reloads
+   * its config when files changed, even with `skipRestart`, because it reads
+   * those files only when it loads its config.
+   */
+  syncBaseConfig?: boolean
   baseSha?: string
   forceFail: boolean
 }
@@ -54,6 +62,14 @@ export interface HarnessRefreshResult {
     pid?: number | null
     turn_ended?: boolean | null
     reason?: string
+  }
+  /**
+   * Present when `syncBaseConfig` was asked and the runtime supports it.
+   * `reload` is the config reload the sync caused under `skipRestart`.
+   */
+  config_dir?: ConfigDirSyncResult & {
+    reload?: 'disposed' | 'restarted' | 'kept-old'
+    turn_ended?: boolean | null
   }
   runtime: string
   runtime_pid: number | null
@@ -113,12 +129,15 @@ export interface HarnessCatalogConvergeResult {
    *  answer, including 'declined', which the caller must still read the reason
    *  of rather than treat as a failure. */
   ok: boolean
-  outcome: 'unchanged' | 'file-updated' | 'restarted' | 'declined' | 'no-gateway'
+  outcome: 'unchanged' | 'file-updated' | 'restarted' | 'declined' | 'no-gateway' | 'not-served'
   /** Managed ids the live gateway serves that this box's booted config lacked,
    *  as of the fresh fetch this call made. */
   missing: string[]
   managed: number
   reason: string | null
+  /** Present when the request named a `model`: whether the running OpenCode
+   *  registers it now. Absent from older daemons, which ignore `model`. */
+  model_present?: boolean
 }
 
 export interface HarnessControlOperations {
@@ -136,7 +155,7 @@ export interface HarnessControlOperations {
    * when idle, never across a running turn. Absent on a runtime that has no
    * gateway-model concept (pi). See `convergeManagedModelCatalog`.
    */
-  convergeCatalog?(): Promise<HarnessCatalogConvergeResult>
+  convergeCatalog?(options?: { model?: string }): Promise<HarnessCatalogConvergeResult>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */
@@ -167,9 +186,9 @@ export interface HarnessControlService {
    * `app/server.ts`: the harness ownership boundary (eslint.config.mjs,
    * ARCHITECTURE.md) forbids host production code from
    * importing a concrete adapter directly. Absent, or answering `false`
-   * unconditionally, on a runtime without a config-convergence concept (the
-   * `pi` harness) — it never blocks there, which is correct: nothing is
-   * mid-verify on a runtime that never verifies one.
+   * unconditionally, on a runtime without a config-convergence concept — it
+   * never blocks there, which is correct: nothing is mid-verify on a runtime
+   * that never verifies one.
    */
   convergenceInFlight?(): boolean
 }

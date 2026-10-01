@@ -3,7 +3,9 @@ import { and, eq, isNull, or } from 'drizzle-orm';
 import type { SecretConsumer, SecretStrategy } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
+import { filterSecretRowsByAudience, secretAudienceSubject } from '../lib/secret-audience';
 import { decryptProjectSecret } from './envelope';
+import { secretAudienceRank } from './grant-policy';
 
 export interface ProjectSecretConsumerRead {
   projectId: string;
@@ -213,9 +215,25 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
       ),
     );
 
-  type Row = (typeof rows)[number];
+  // A narrowed shared value is a candidate only for a person in its audience:
+  // the on-behalf-of human of a private session, else the direct caller.
+  // Callers with no session and no actor (git proxy, webhooks, channel
+  // installs, catalog sync) get values shared with everyone only.
+  const reachable = await filterSecretRowsByAudience({
+    projectId: input.projectId,
+    accountId,
+    subject: () =>
+      secretAudienceSubject({
+        projectId: input.projectId,
+        accountId,
+        sessionId: input.sessionId,
+        actorUserId: input.actorUserId,
+      }),
+    rows,
+  });
+  type Row = (typeof reachable)[number];
   const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
-  for (const row of rows) {
+  for (const row of reachable) {
     const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
     else if (row.ownerUserId === input.principalUserId) slot.personal = row;
@@ -233,6 +251,8 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
         Boolean(entry.row && entry.policyRow),
     )
     .sort((a, b) => {
+      const rank = secretAudienceRank(a.policyRow.audience) - secretAudienceRank(b.policyRow.audience);
+      if (rank !== 0) return rank;
       if (a.identifier === normalizedName) return -1;
       if (b.identifier === normalizedName) return 1;
       const updatedDifference = b.row.updatedAt.getTime() - a.row.updatedAt.getTime();

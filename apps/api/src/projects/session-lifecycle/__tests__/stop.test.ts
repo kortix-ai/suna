@@ -7,6 +7,9 @@ import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
+// When set, provider.stop waits on it (a provider confirm slower than the budget).
+let stopGate: Promise<void> | null = null;
+let captureGate: Promise<void> | null = null;
 // Per-call errors consumed before the persistent `stopError`. Lets a test
 // script a fail-then-succeed stop without mocking the provider module again.
 let stopErrors: Array<Error | undefined> = [];
@@ -78,6 +81,7 @@ mock.module('../../../platform/providers', () => ({
     stop: async (externalId: string) => {
       callOrder.push('provider.stop');
       stopCalls.push(externalId);
+      if (stopGate) await stopGate;
       const queued = stopErrors.shift();
       const thrown = queued ?? stopError;
       if (thrown) throw thrown;
@@ -127,6 +131,7 @@ mock.module('../../lib/session-transcript-capture', () => ({
   ) => {
     callOrder.push(`capture:${sessionId}`);
     captureOptions.push(options);
+    if (captureGate) await captureGate;
     return null;
   },
 }));
@@ -144,6 +149,9 @@ beforeEach(() => {
   sandboxRow = null;
   stopCalls = [];
   stopError = null;
+  stopGate = null;
+  captureGate = null;
+  process.env.STOP_SYNC_BUDGET_MS = '5000';
   stopErrors = [];
   pausedCompute = [];
   cacheInvalidations = [];
@@ -349,6 +357,59 @@ describe('stopSession', () => {
     expect(stopCalls).toEqual(['ext-1', 'ext-1']);
     expect(updateCalls).toEqual([]);
     expect(pausedCompute).toEqual([]);
+  });
+
+  // A provider confirm slower than the request budget must not become the
+  // API's 25 s 503. The route answers `stopping` in time, leaves the row
+  // `active`, and commits the stop when the provider confirms.
+  test('answers `stopping` inside the budget when the provider confirm is slower, then converges', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: {},
+    };
+    process.env.STOP_SYNC_BUDGET_MS = '300';
+    let release!: () => void;
+    stopGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const startedAt = Date.now();
+    const result = await stopSession(baseInput);
+
+    expect(Date.now() - startedAt).toBeLessThan(1_500);
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ ok: true, session_id: 'sess-1', status: 'stopping' });
+    // Nothing is claimed stopped while the provider has not confirmed.
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+
+    release();
+    await Bun.sleep(50);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(
+      updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+    ).toBe(true);
+  });
+
+  test('a hung transcript tail does not hold the stop past its cap', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'platinum',
+      status: 'active',
+      metadata: {},
+    };
+    captureGate = new Promise<void>(() => {});
+
+    const startedAt = Date.now();
+    const result = await stopSession(baseInput);
+
+    expect(Date.now() - startedAt).toBeLessThan(5_000);
+    expect(result.body).toMatchObject({ status: 'stopped' });
+    expect(stopCalls).toEqual(['ext-1']);
   });
 
   // T11: close the turn before the box loses power.

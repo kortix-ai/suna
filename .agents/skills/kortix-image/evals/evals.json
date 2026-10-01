@@ -6,8 +6,8 @@
       "prompt": "Create an image for a Kortix landing page hero about coding agents running in isolated sandboxes. It should feel premium and not like generic AI art.",
       "expected_output": "A clean, brand-grounded hero image (PNG) with a short prompt, neutral surfaces, one accent, and the official logo composited in.",
       "assertions": [
-        "The output reads or follows ../brand-guidelines/SKILL.md.",
-        "The prompt uses Kortix product nouns such as agents, repos, sandboxes, sessions, terminals, pull requests, or traces.",
+        "The output reads or follows ../kortix-brand/SKILL.md.",
+        "The prompt uses Kortix product nouns such as agents, repos, sandboxes, sessions, terminals, change requests, or traces.",
         "The output uses neutral Kortix surfaces and exactly one accent color.",
         "The output avoids generic AI imagery (robots, glowing brains, neon, holograms, glassmorphism, rainbow gradients).",
         "The image is output as PNG, not SVG.",

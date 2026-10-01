@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { getManagedModel } from '@kortix/llm-catalog';
 
-import { codexModelIds } from '../models/codex-models';
+import { CODEX_SEED_MODEL_IDS } from '../models/codex-models';
 
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -68,7 +68,7 @@ describe('gateway fallback policy configuration', () => {
     const policies = parseFallbackPolicies(DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES);
     expect(policies.length).toBeGreaterThan(0);
     const servable = (id: string) =>
-      getManagedModel(id) !== undefined || (id.startsWith('codex/') && codexModelIds().includes(id.slice(6)));
+      getManagedModel(id) !== undefined || (id.startsWith('codex/') && CODEX_SEED_MODEL_IDS.includes(id.slice(6)));
     for (const policy of policies) {
       expect([...policy.models, ...policy.fallbackModels].filter((id) => !servable(id))).toEqual([]);
       expect(policy.fallbackModels.filter((id) => policy.models.includes(id))).toEqual([]);

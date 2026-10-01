@@ -1,4 +1,4 @@
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import type { RuntimeClient } from '../runtime/client';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -10,7 +10,8 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  *   await kortix.project(pid).secrets.upsert({ name, value });
  *   const s = kortix.session(pid, sid);
  *   await s.start();
- *   s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via the SDK
+ *   await s.send('what files are here?');                  // through the prompt inbox
+ *   const { messages } = await s.messages();               // { info, parts }, kortix.transcript.v1
  *
  * REST methods are direct references to the platform client, so they keep their
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
@@ -26,7 +27,15 @@ import * as P from '../rest/projects-client';
 import * as A from '../rest/platform-client/auth';
 import type { HeadlessAuthApi } from '../rest/platform-client/auth';
 import { createKortixSession } from '../auth/session';
+import { authenticatedFetch } from '../http/auth';
 import { getSessionHealth } from '../session/health';
+import {
+  createRuntimeVerbs,
+  type PendingInteractions,
+  type RuntimeVerbs,
+  type TranscriptPage,
+} from '../session/runtime-verbs';
+import type { RuntimePermissionReply, RuntimeQuestionAnswer } from '../runtime/transcript-types';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { loadPreviewUrlTemplate } from '../session/preview-config';
 import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../session/preview-options';
@@ -37,17 +46,18 @@ import {
   type SessionRuntimeEntry,
 } from '../session/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
+import { mintWireMessageId } from '../session/wire-message-id';
 import {
   openEventStream,
   type EventStreamHandle,
-  type OpenCodeEvent,
+  type RuntimeEvent,
 } from '../stream/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
 export type SessionModel = { providerID: string; modelID: string };
 
 /** The opencode runtime client for the currently-active sandbox (set by the host). */
-function runtime(): OpencodeClient {
+function runtime(): RuntimeClient {
   return getClient();
 }
 
@@ -608,6 +618,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
 
+      /** This project's agents as principals (service accounts), for a "Who
+       *  can use it" picker. Any project member may read it. */
+      agentIdentities: () => P.listProjectAgentIdentities(projectId),
+
       secrets: {
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
@@ -622,7 +636,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
         setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
           P.upsertProjectGitCredential(projectId, input),
-        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */
+        /** The provider logins saved on this project (ChatGPT, OpenCode Zen, OpenCode Go). */
+        listProviderOAuth: () => P.listProjectProviderOAuth(projectId),
+        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT, opencode-go). */
         startProviderOAuth: (...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>) =>
           P.startProjectProviderOAuth(projectId, ...a),
         pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>
@@ -1086,11 +1102,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             Math.min(30_000, remainingMs()),
           );
         }
+        const runtimeSessionId = started?.runtime_session_id ?? started?.opencode_session_id;
         if (
           !started ||
           started.stage !== 'ready' ||
           !started.sandbox ||
-          !started.opencode_session_id
+          !runtimeSessionId
         ) {
           throw new ApiError(runtimeNotReadyMessage(started), {
             code: 'RUNTIME_UNAVAILABLE',
@@ -1111,7 +1128,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         // handle's own operations never read it back, only `_ready` below.
         setCurrentRuntime(runtimeUrl, externalId);
         return {
-          opencodeSessionId: started.opencode_session_id,
+          runtimeSessionId,
+          opencodeSessionId: runtimeSessionId,
           runtimeUrl,
           sandboxId: externalId,
         };
@@ -1137,6 +1155,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const ready = tryResolveReady();
       if (!ready) throw new SessionNotReadyError(action);
       return ready;
+    }
+
+    /** The session verbs, bound to this handle's own runtime (provisions it first). */
+    async function sessionVerbs(): Promise<RuntimeVerbs> {
+      const { runtimeSessionId, runtimeUrl } = await ensureReady();
+      return createRuntimeVerbs({ runtimeUrl, rootId: runtimeSessionId, fetch: authenticatedFetch as typeof fetch });
     }
 
     /** Clear this handle's cached runtime + the shared registry entry (restart/delete). */
@@ -1194,6 +1218,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
+      participants: () => P.getSessionParticipants(projectId, sessionId),
       commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
         P.commitSessionChanges(projectId, sessionId, input),
       publicShares: {
@@ -1224,6 +1249,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** Who wrote each message: a member, or another session's agent. */
+      messageAuthors: () => P.getSessionMessageAuthors(projectId, sessionId),
       /** The DURABLE server-side transcript mirror, in sync-store shape
        *  (OpenCode message envelopes verbatim, attachment bytes and tool
        *  inputs/outputs stripped). This is the read that answers while the
@@ -1329,29 +1356,41 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         _agent = agent;
       },
       /**
-       * Provision/resume if needed, then send a text prompt to the agent. A
-       * per-call `{ model, agent }` overrides the sticky setModel/setAgent
-       * choices for this message only.
+       * Provision/resume if needed, then put a text prompt in this session's
+       * durable inbox (`POST .../prompts`), the path every other producer
+       * uses. Resolves when the prompt is durable, not when the turn ends: the
+       * reply arrives on `stream()` and in the transcript. A per-call
+       * `{ model, agent }` overrides the sticky setModel/setAgent choices for
+       * this message only.
        */
       send: async (text: string, opts?: { model?: SessionModel; agent?: string }) => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        await ensureReady();
         const selectedModel = opts?.model ?? _model;
         const selectedAgent = opts?.agent ?? _agent;
         const persisted = selectedModel && selectedAgent ? {} : await persistedPromptDefaults();
         const model = selectedModel ?? persisted.model;
         const agent = selectedAgent ?? persisted.agent;
-        return getClientForUrl(runtimeUrl).session.prompt({
-          sessionID: opencodeSessionId,
+        // Minted with no transcript to place it against, so the server places
+        // it at delivery (`remintOnDelivery`), as the CLI does.
+        const messageId = mintWireMessageId();
+        const result = await P.createSessionPrompt(projectId, sessionId, {
+          clientMessageId: messageId,
+          messageId,
+          remintOnDelivery: true,
           parts: [{ type: 'text', text }],
-          ...(model ? { model } : {}),
-          ...(agent ? { agent } : {}),
+          clientSentAtMs: Date.now(),
+          ...(model || agent ? { overrides: { ...(model ? { model } : {}), ...(agent ? { agent } : {}) } } : {}),
         });
+        if (result.state === 'failed') {
+          throw new ApiError('This prompt was refused: its earlier delivery already failed.', { code: 'PROMPT_FAILED' });
+        }
+        return result;
       },
       /** Abort the agent's current run in this session. */
       abort: async () => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.abort({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
         });
       },
       /**
@@ -1359,17 +1398,17 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * OpenCode session. The next prompt commits the new path.
        */
       rewind: async (messageId: string) => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.revert({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
           messageID: messageId,
         });
       },
       /** Restore the path removed by `rewind()` before another prompt commits it. */
       restoreRewind: async () => {
-        const { opencodeSessionId, runtimeUrl } = await ensureReady();
+        const { runtimeSessionId, runtimeUrl } = await ensureReady();
         return getClientForUrl(runtimeUrl).session.unrevert({
-          sessionID: opencodeSessionId,
+          sessionID: runtimeSessionId,
         });
       },
       /**
@@ -1377,7 +1416,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * updates, session status, permissions/questions, lsp diagnostics, …).
        * A thin facade over the framework-free `openEventStream` primitive
        * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
-       * `@kortix/sdk/react`'s `useOpenCodeEventStream`): resolves THIS
+       * `@kortix/sdk/react`'s `useRuntimeEventStream`): resolves THIS
        * handle's own runtime first (`ensureReady()`), then connects a client
        * bound to that runtime URL — never the module-global "active" one, so
        * two session handles on two different sandboxes never cross wires.
@@ -1392,24 +1431,53 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        *   handle.close();
        */
       stream: async (opts: {
-        onEvent: (event: OpenCodeEvent) => void;
+        onEvent: (event: RuntimeEvent) => void;
         onGapRehydrate?: (gapMs: number) => void;
         signal?: AbortSignal;
       }): Promise<EventStreamHandle> => {
         const { runtimeUrl } = await ensureReady();
         return openEventStream({
-          client: getClientForUrl(runtimeUrl),
+          url: runtimeUrl,
           onEvent: opts.onEvent,
           onGapRehydrate: opts.onGapRehydrate,
           signal: opts.signal,
         });
       },
 
-      // ── runtime (opencode v2, THIS session's own sandbox) ────────────────
-      // The typed opencode client, reached ONLY through the SDK. The host never
-      // imports `@opencode-ai/sdk`. Opinionated wrappers (prompt/abort/setModel
-      // with server-owned side-effects) layer on top of this as they land.
-      get runtime(): OpencodeClient {
+      // ── session verbs (THIS session's own runtime) ───────────────────────
+      /**
+       * A page of this session's messages, oldest first (`{ info, parts }`,
+       * `kortix.transcript.v1`): the root conversation, or `conversationId`
+       * (a subagent child). `before` pages backwards.
+       */
+      messages: async (options?: {
+        conversationId?: string;
+        limit?: number;
+        before?: string;
+        signal?: AbortSignal;
+      }): Promise<TranscriptPage> => (await sessionVerbs()).messages(options),
+      /** Conversation statuses, and the permission requests and questions waiting for an answer. */
+      pending: async (): Promise<PendingInteractions> => (await sessionVerbs()).pending(),
+      /** Answer a permission request: `once`, `always` (the capability, for this session) or `reject`. */
+      answerPermission: async (requestId: string, reply: RuntimePermissionReply, message?: string) =>
+        (await sessionVerbs()).answerPermission(requestId, reply, message),
+      /** Answer a question (one answer per question), or dismiss it with `null`. */
+      answerQuestion: async (requestId: string, answers: RuntimeQuestionAnswer[] | null) =>
+        (await sessionVerbs()).answerQuestion(requestId, answers),
+      /**
+       * Summarize the conversation into a shorter context, with `model` or the
+       * runtime's default. Only a runtime with the `session.compact` capability
+       * supports it (see `health()`).
+       */
+      compact: async (model?: { providerID: string; modelID: string }) => (await sessionVerbs()).compact(model),
+
+      /**
+       * The raw runtime REST client of THIS session's own sandbox.
+       * @deprecated Use the session verbs (`messages`, `pending`,
+       * `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`,
+       * `rewind`). Removed in the next major.
+       */
+      get runtime(): RuntimeClient {
         return getClientForUrl(requireReady('runtime').runtimeUrl);
       },
 

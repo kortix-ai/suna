@@ -17,6 +17,7 @@
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { configureKortix } from '@kortix/sdk';
 import { readFileSync } from 'node:fs';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
@@ -69,6 +70,8 @@ let composerProps: any = null; // SessionChatInput's latest props
 let wakingComposerProps: any = null; // the SavedThread Composer's latest props
 let markdownActionsValue: any = null; // MarkdownActionsProvider's value
 let turnProps: any[] = []; // every mounted SessionTurn's props
+let sessionParticipants: any; // what `useSessionParticipants` reads
+let messageAuthors: any; // what `useSessionMessageAuthors` reads
 const scrollToEndCalls: any[][] = [];
 const previewCalls: { path: string; line?: number }[] = [];
 let previewHostMounts = 0;
@@ -83,12 +86,15 @@ let promptResponder: () => { ok: boolean; status: number; text: string };
 let abortResponder: () => { ok: boolean; status: number; text: string };
 let commandResponder: () => { ok: boolean; status: number; text: string };
 let abortThrows = false;
+let inboxRows: any[] = []; // what GET .../prompts answers
+let inboxFails = false; // POST .../prompts is refused
 
 const respond = (r: () => { ok: boolean; status: number; text: string }) => ({
   ok: r().ok,
   status: r().status,
   text: async () => r().text,
   json: async () => ({}),
+  headers: { get: () => null },
 });
 const fail = (): { ok: boolean; status: number; text: string } => ({
   ok: false,
@@ -103,8 +109,9 @@ const pass = (): { ok: boolean; status: number; text: string } => ({
 const okResponse = (json: unknown) => ({
   ok: true,
   status: 200,
-  text: async () => '',
+  text: async () => JSON.stringify(json),
   json: async () => json,
+  headers: { get: () => 'application/json' },
 });
 
 // ── React Native stand-ins ───────────────────────────────────────────────────
@@ -418,6 +425,8 @@ const mergedOverrides: Record<string, Record<string, any>> = {
       isLoading: false,
       refetchModelCount: spy('refetchModels'),
     }),
+    useSessionParticipants: () => ({ data: sessionParticipants }),
+    useSessionMessageAuthors: () => ({ data: messageAuthors }),
   },
   '@/lib/opencode/hooks/use-opencode-data': {
     useOpenCodeConfig: () => ({ data: null }),
@@ -445,6 +454,7 @@ const mergedOverrides: Record<string, Record<string, any>> = {
 const KEEP_REAL = new Set([
   'react',
   '@kortix/sdk',
+  '@/lib/session/participants',
   '@/lib/opencode/types',
   '@/lib/opencode/sync-store',
   '@/lib/opencode/runtime-capabilities',
@@ -644,6 +654,7 @@ beforeAll(async () => {
       default: MERGED[name].default ?? Empty,
     }));
   }
+  configureKortix({ backendUrl: 'https://api.test/v1', getToken: async () => 'token-1' });
   ({ useMessageQueueStore } = await import('@/stores/message-queue-store'));
   SessionPage = (await import('./SessionPage')).SessionPage;
   SessionConnecting = (await import('./SessionConnecting')).SessionConnecting;
@@ -652,6 +663,8 @@ beforeAll(async () => {
 beforeEach(() => {
   calls.length = 0;
   turnProps = [];
+  sessionParticipants = undefined;
+  messageAuthors = undefined;
   scrollToEndCalls.length = 0;
   previewCalls.length = 0;
   previewHostMounts = 0;
@@ -682,6 +695,8 @@ beforeEach(() => {
   abortResponder = pass;
   commandResponder = pass;
   abortThrows = false;
+  inboxRows = [];
+  inboxFails = false;
   resetStores();
   globalThis.fetch = (async (input: any, init?: any) => {
     if (abortThrows) throw new Error('offline');
@@ -698,6 +713,14 @@ beforeEach(() => {
       return respond(promptResponder);
     if (method === 'POST' && url.endsWith('/abort')) return respond(abortResponder);
     if (method === 'POST' && url.endsWith('/command')) return respond(commandResponder);
+    if (url.includes('/projects/proj-1/sessions/ps-1/prompts')) {
+      if (method === 'GET') return okResponse({ prompts: inboxRows });
+      if (method === 'POST' && url.endsWith('/prompts')) {
+        if (inboxFails) return respond(fail);
+        return okResponse({ prompt_id: 'p-new', state: 'queued', message_id: body?.message_id, deduped: false });
+      }
+      return okResponse({});
+    }
     if (url.endsWith('/question') || url.endsWith('/permission')) return okResponse([]);
     return okResponse({});
   }) as any;
@@ -894,84 +917,63 @@ describe('SessionPage scroll save and restore', () => {
 // ── Message queue ────────────────────────────────────────────────────────────
 
 describe('SessionPage message queue', () => {
-  test('drains queued messages in order once the agent settles, with the composer defaults', async () => {
+  const inboxPosts = () =>
+    fetchCalls.filter((c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'));
+
+  test('a queued message goes to the server inbox in order with the composer overrides', async () => {
     await renderPage();
+    const options = { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' };
     await act(async () => {
-      composerProps.onEnqueue('first');
-      composerProps.onEnqueue('second');
-      composerProps.onEnqueue('third');
+      await composerProps.onEnqueue('first', options);
+      await composerProps.onEnqueue('second', {});
     });
-    expect(useMessageQueueStore.getState().messages.map((m) => m.text)).toEqual([
-      'first',
-      'second',
-      'third',
-    ]);
+    expect(inboxPosts().map((c) => (c.body as any).parts[0].text)).toEqual(['first', 'second']);
+    expect(inboxPosts()[0].body).toMatchObject({
+      placement: 'composer',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
+    });
+    expect((inboxPosts()[1].body as any).overrides).toEqual({ agent: null, model: null, variant: null });
+    // The server drains the inbox: the client sends nothing to the runtime itself.
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
+  });
 
+  test('a refused inbox write toasts, rethrows, and leaves nothing in the local queue', async () => {
+    inboxFails = true;
+    await renderPage();
+    let thrown: unknown;
     await act(async () => {
-      setStatus({ type: 'idle' });
-      await sleep(650); // the drain's 500 ms settle delay
+      await composerProps.onEnqueue('held', {}).catch((e: unknown) => (thrown = e));
     });
-    expect(fetchCalls.filter((c) => c.url.endsWith('/prompt_async')).map((c) => c.body)).toEqual([
-      { parts: [{ type: 'text', text: 'first' }] },
-    ]);
-    expect(useMessageQueueStore.getState().messages.map((m) => m.text)).toEqual([
-      'second',
-      'third',
-    ]);
-    expect(useSyncStore.getState().sessionStatus[SID]).toEqual({ type: 'busy' });
-
-    // The agent settles again: the in-flight lock releases and the next goes out.
-    await act(async () => {
-      setStatus({ type: 'idle' });
-      await sleep(750); // 100 ms release + 500 ms settle + slack
-    });
-    await act(async () => {
-      setStatus({ type: 'idle' });
-      await sleep(750);
-    });
-    expect(
-      fetchCalls
-        .filter((c) => c.url.endsWith('/prompt_async'))
-        .map((c) => (c.body as any).parts[0].text),
-    ).toEqual(['first', 'second', 'third']);
+    expect(thrown).toBeTruthy();
+    expect(toastsOf('error').map((t) => t.message)).toContain('Could not queue the message. Try again.');
     expect(useMessageQueueStore.getState().messages).toEqual([]);
   });
 
-  test('a drain does not start while the agent is busy or a question is pending', async () => {
-    seedTurns(['one']);
+  test('pre-upgrade local rows move to the server inbox and leave the local store', async () => {
+    useMessageQueueStore.setState({
+      hydrated: true,
+      messages: [{ id: 'legacy-1', sessionId: SID, text: 'from before', timestamp: 1_700_000_000_000 }],
+    } as any);
     await renderPage();
     await act(async () => {
-      setStatus({ type: 'busy' });
-      composerProps.onEnqueue('held');
-      await sleep(650);
+      await sleep(30);
     });
-    expect(fetchCalls.filter((c) => c.url.endsWith('/prompt_async'))).toHaveLength(0);
-
-    // A pending question holds the drain even when the agent is idle.
-    await act(async () => {
-      setStatus({ type: 'idle' });
-      useSyncStore.setState(
-        (state) =>
-          ({ questions: { ...state.questions, [SID]: [{ id: 'q1', sessionID: SID }] } }) as any,
-      );
-      await sleep(650);
-    });
-    expect(fetchCalls.filter((c) => c.url.endsWith('/prompt_async'))).toHaveLength(0);
+    expect(inboxPosts().map((c) => c.body)).toMatchObject([
+      { client_message_id: 'legacy-1', parts: [{ type: 'text', text: 'from before' }], remint_on_delivery: true },
+    ]);
+    expect(useMessageQueueStore.getState().messages).toEqual([]);
   });
 
-  test('Send now stops the current reply and sends the queued message outside the drain', async () => {
+  test('Send now asks the server to run that queued prompt next', async () => {
+    inboxRows = [
+      { prompt_id: 'p-1', client_message_id: 'c-1', message_id: 'm-1', state: 'queued', reason: 'turn_active', text: 'urgent', attempts: 0, last_error: null, created_at: '', available_at: '' },
+    ];
     seedTurns(['one']);
     await renderPage();
     await act(async () => {
-      setStatus({ type: 'busy' });
-      composerProps.onEnqueue('urgent');
       await sleep(15);
     });
-
-    console.error('BTNS', JSON.stringify(buttons.map((b) => b.accessibilityLabel)));
-    const toggle = buttons.find((props) =>
-      String(props.accessibilityLabel ?? '').includes('queued messages'),
-    );
+    const toggle = buttons.find((props) => String(props.accessibilityLabel ?? '').includes('queued messages'));
     expect(toggle).toBeTruthy();
     await act(async () => {
       toggle.onPress();
@@ -981,19 +983,11 @@ describe('SessionPage message queue', () => {
     expect(sendNow).toHaveLength(1);
     await act(async () => {
       sendNow[0].onPress();
-      await sleep(350); // the 200 ms interrupt delay
+      await sleep(15);
     });
-    expect(toastCalls).toContainEqual({
-      kind: 'info',
-      message: 'Stopped the current reply to send this now',
-    });
-    expect(fetchCalls.some((c) => c.url.endsWith('/abort'))).toBe(true);
     expect(
-      fetchCalls
-        .filter((c) => c.url.endsWith('/prompt_async'))
-        .map((c) => (c.body as any).parts[0].text),
-    ).toEqual(['urgent']);
-    expect(useMessageQueueStore.getState().messages).toEqual([]);
+      fetchCalls.filter((c) => c.method === 'POST' && c.url.endsWith('/prompts/p-1/retry')),
+    ).toHaveLength(1);
   });
 });
 
@@ -1004,7 +998,7 @@ describe('SessionPage send, retry and stop', () => {
     seedTurns(['one']);
     await renderPage();
     await act(async () => {
-      promptResponder = fail;
+      inboxFails = true;
       composerProps.onSend('hello', {});
       await sleep(15);
     });
@@ -1022,13 +1016,21 @@ describe('SessionPage send, retry and stop', () => {
     const retryTurn = turnProps.find((props) => props.uploadStatus?.state === 'failed');
     expect(retryTurn.uploadStatus.onRetry).toBeTypeOf('function');
     await act(async () => {
-      promptResponder = pass;
+      inboxFails = false;
       retryTurn.uploadStatus.onRetry();
       await sleep(15);
     });
-    const promptPosts = fetchCalls.filter((c) => c.url.endsWith('/prompt_async'));
+    // A project session sends through the prompt inbox, never `prompt_async`.
+    const promptPosts = fetchCalls.filter(
+      (c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'),
+    );
     expect(promptPosts).toHaveLength(2);
-    expect(JSON.stringify(promptPosts[1].body)).toBe(JSON.stringify(promptPosts[0].body));
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
+    // Same ids, parts and overrides: the inbox dedupes on `client_message_id`.
+    // Only the send time differs.
+    const { client_sent_at_ms: _first, ...firstBody } = promptPosts[0].body;
+    const { client_sent_at_ms: _retry, ...retryBody } = promptPosts[1].body;
+    expect(retryBody).toEqual(firstBody);
     // One 'hello' user message again, under the failed attempt's wire id —
     // the prompt inbox dedupes on `clientMessageId`, so a retry cannot double-run.
     const after = (useSyncStore.getState().messages[SID] ?? []).filter(
@@ -1079,19 +1081,20 @@ describe('SessionPage send, retry and stop', () => {
 // ── Composer option assembly ────────────────────────────────────────────────
 
 describe('SessionPage prompt-options assembly', () => {
-  test('a requested prompt sends with the resolved agent, model key and variant', async () => {
+  test('a requested prompt goes to the prompt inbox with the resolved agent, model key and variant', async () => {
     await renderPage();
     await act(async () => {
       useSessionPromptRequestStore.getState().requestSend(SID, 'open change text');
       await sleep(15);
     });
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    const post = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'),
+    );
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'open change text' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
     expect(useSessionPromptRequestStore.getState().request).toBeNull();
   });
 
@@ -1119,13 +1122,14 @@ describe('SessionPage prompt-options assembly', () => {
     // The messages the revert hides leave the thread; the edit goes out as a send.
     const after = useSyncStore.getState().messages[SID] ?? [];
     expect(after.map((m) => [(m.parts[0] as any).text, m.info.role])).toEqual([['edited', 'user']]);
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    const post = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'),
+    );
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'edited' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
   });
 
   test('a slash command posts the command with the resolved agent, model string and variant', async () => {
@@ -1156,6 +1160,59 @@ describe('SessionPage file mentions', () => {
     expect(previewCalls).toEqual([{ path: 'src/app.ts', line: undefined }]);
     markdownActionsValue.onOpenFile?.('src/lib/x.ts');
     expect(previewCalls.at(-1)).toEqual({ path: 'src/lib/x.ts', line: undefined });
+  });
+});
+
+// ── Shared session: who sent each prompt ─────────────────────────────────────
+
+describe('SessionPage shared-session sender', () => {
+  const MEMBER = { user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null, is_viewer: false };
+  const ME = { ...MEMBER, user_id: 'me', name: 'Me', is_viewer: true };
+  const author = (person: typeof MEMBER) => ({
+    kind: 'member' as const,
+    user_id: person.user_id,
+    name: person.name,
+    email: person.email,
+    avatar_url: person.avatar_url,
+  });
+  const avatarOf = (person: typeof MEMBER) => ({ name: person.name, email: person.email, avatar_url: person.avatar_url });
+  const shared = { participants: [ME, MEMBER], total: 2, multi_user: true };
+  const userMessageId = () =>
+    (useSyncStore.getState().messages[SID] ?? []).find((m) => m.info.role === 'user')!.info.id;
+
+  test("a single-user session passes no sender for the viewer's own prompt", async () => {
+    seedTurns(['one']);
+    sessionParticipants = { participants: [ME], total: 1, multi_user: false };
+    messageAuthors = { authors: { [userMessageId()]: author(ME) }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+  });
+
+  test("the viewer's own prompt passes the viewer as its sender in a shared session", async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: { [userMessageId()]: author(ME) }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toEqual(avatarOf(ME));
+  });
+
+  test('a shared session passes a turn the other person who wrote its prompt', async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: { [userMessageId()]: author(MEMBER) }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toEqual(avatarOf(MEMBER));
+  });
+
+  test("a prompt with no recorded author, or another session's agent, stays without an avatar", async () => {
+    seedTurns(['one']);
+    sessionParticipants = shared;
+    messageAuthors = { authors: {}, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
+    messageAuthors = { authors: { [userMessageId()]: { kind: 'session', session_id: 'ses_lead', name: 'Lead' } }, initial_author: null };
+    await renderPage();
+    expect(turnProps.at(-1).sender).toBeNull();
   });
 });
 
@@ -1202,6 +1259,33 @@ describe('SessionConnecting saved thread', () => {
     expect(scroller).toBeTruthy();
     scroller.onContentSizeChange?.(320, 400);
     expect(scrollToEndCalls).toEqual([[{ animated: false }]]);
+  });
+
+  test('a shared session labels the saved prompts while the computer wakes, not only once it runs', async () => {
+    const MEMBER = { user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null, is_viewer: false };
+    const messages = [...makeTurn('one'), ...makeTurn('two')];
+    const firstPrompt = messages.find((m) => m.info.role === 'user')!.info.id;
+    sessionParticipants = { participants: [MEMBER], total: 2, multi_user: true };
+    messageAuthors = {
+      authors: { [firstPrompt]: { kind: 'member', user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null } },
+      initial_author: null,
+    };
+    await act(async () => {
+      tree = create(
+        React.createElement(SessionConnecting, {
+          messages,
+          statusLabel: 'Waking the computer',
+          sessionId: SID,
+          onCancel: () => {},
+          projectId: 'project',
+          projectSessionId: 'project-session',
+        } as any),
+      );
+    });
+    expect(turnProps.map((props) => props.sender)).toEqual([
+      { name: 'Marko', email: 'member@example.test', avatar_url: null },
+      null,
+    ]);
   });
 
   test('the waking composer takes a message and hands it to onSend', async () => {

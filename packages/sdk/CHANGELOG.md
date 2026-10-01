@@ -6,6 +6,60 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `modelRefToKey(ref, gatewayEnabled)`: one parser for a stored model ref
+  (session pin, channel binding, trigger, agent `model`). Gateway on, `kortix/x`
+  and `x` both name the gateway model `x`; gateway off, the ref splits on its
+  first `/` into the native provider and model.
+- `ModelOption` (`FlatModel` plus `id`, the ref a pick stores and sends).
+  `flattenModels` returns it.
+- `AgentConfigResponse` gains optional `harness` (the harness a new session of
+  the project runs) and `ignored_settings` (the `behavior` settings it does
+  not apply).
+- `RuntimeCapability` gains `session.config`: the runtime serves a config
+  document (`/global/config`). OpenCode does; pi does not.
+- One tool taxonomy: `toolKind(name)` returns a `ToolKind` (`read`, `edit`,
+  `bash`, `web_search`, `task`, `question`, …) for any harness's tool name,
+  including pi's and the `oc-`/`oc_`/dashed spellings. Narration families,
+  `toolViewModel`, `getToolInfo`, `toolInfo` categories and the context-tool
+  group all derive from it. `inputPath(input)` reads a file tool's path
+  (`filePath`, `file_path` or pi's `path`).
+- `ToolView` gains optional `kind`, `files` (`ToolFile[]`: path, type,
+  before/after, unified patch, line counts), `diff`, `diagnostics`, `answers`
+  and `childSessionId`, filled from whichever fields the harness sent;
+  `toToolView(part)` builds one from a tool part. `toolViewModel` renders
+  pi's `edits[]` as a file-edit diff.
+- The conversation tree of a project session: `runtimeSessionsOf`,
+  `rootRuntimeSession`, `directSubsessions` and `projectSessionForRuntimeId`
+  read `runtime_sessions`/`runtime_session_id` first and fall back to the
+  pre-W4 names.
+- The Kortix transcript format, `kortix.transcript.v1`
+  (`KORTIX_TRANSCRIPT_SCHEMA`): `KortixMessage` (`{ info, parts }`),
+  `KortixMessageInfo`, the `KortixPart` union and its 12 part types, the
+  message errors (`KortixMessageError`, each with an optional `code`),
+  `KortixSessionEvent` (the 14 session events, including
+  `message.part.delta`), `RuntimeQuestion`, `RuntimeQuestionRequest`,
+  `RuntimePermissionRequest`, `RUNTIME_PERMISSION_REPLIES`,
+  `RUNTIME_PERMISSION_CAPABILITIES`, `TURN_ERROR_CODES` and `isTurnErrorCode`.
+  They keep OpenCode 1.18's field names, so every value a runtime sends
+  today is valid. `Message`, `Part`, `TextPart`, `ToolPart`, `SessionStatus`,
+  `PermissionRequest`, `QuestionRequest` and the other transcript names this
+  package published before are now aliases of these types.
+- Session verbs on a session handle: `messages({ conversationId, limit,
+  before, signal })` reads a page of the transcript from the daemon's Kortix
+  route (`/kortix/runtime/messages`), `pending()` returns the conversation
+  statuses with the waiting permission requests and questions,
+  `answerPermission(id, reply, message?)`, `answerQuestion(id, answers | null)`
+  and `compact(model?)` (resolves with the model used; an `ApiError` with code
+  `MODEL_REQUIRED` when no model is known). New types `TranscriptPage`,
+  `PendingInteractions`, `RuntimeVerbs`, `RuntimeResult`,
+  `RuntimeRequestOptions`, `RuntimeEventStreamOptions`.
+- `openEventStream({ url })`: stream a runtime by its URL.
+- `TeamsInstallation` gains optional `appVersion` (the Teams app version the
+  org catalog serves, or `null` when no publish recorded it),
+  `latestAppVersion` (the version the server publishes), and
+  `appUpdateAvailable` (the org catalog serves an older app, or one with no
+  recorded version, so a Teams admin should publish the update). Absent on
+  older servers.
 - Computers are connector accounts. `addComputerToProject(projectId,
   { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
   `project(id).connectors.connections.addComputer`, and
@@ -60,7 +114,32 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   LSP diagnostics store and quota-safe storage instead of keeping its own
   copies. Not covered by semver.
 
+### Changed
+- Every turn start goes through the session's durable prompt inbox
+  (`POST .../prompts`), as the web composer and the CLI already did.
+  `session(pid, sid).send(text)` resolves with the `CreateSessionPromptResult`
+  once the prompt is durable, no longer with the runtime's reply message; the
+  reply arrives on `stream()` and in the transcript. A `failed` verdict throws
+  `ApiError` with code `PROMPT_FAILED`. This is a breaking change to the
+  return type. `useSession().send` and `sendParts` post the same inbox prompt
+  (the wire id is placed by the server, `remintOnDelivery`); a text part's
+  `id` stays the host's local correlation key and no longer goes on the wire.
+
 ### Deprecated
+- The message-id clock arithmetic (`wireIdClock`, `wireIdClockAt`,
+  `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`,
+  `newestWireIdClock`, `mintWireMessageIdAbove`, `MintedWireMessageId`,
+  `MintWireMessageIdAboveInput`, `WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`,
+  `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS`). Message ids are the
+  Kortix format v1 and opaque to clients; `mintWireMessageId` and
+  `WIRE_MESSAGE_ID` stay. The clock goes with OpenCode support.
+- `SessionHandle.runtime` (the raw runtime client): use the session verbs.
+- `openEventStream({ client })`: pass `url`.
+- The `teams` member of `FeatureFlagKey`. Microsoft Teams graduated out of the
+  flag system: every project can connect Teams. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'teams')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'teams', …)` answers `400`. Removed in the next major.
 - The `session_transcript_history` member of `FeatureFlagKey`. Saved session
   history graduated out of the flag system: every session saves its transcript
   and shows it while its computer is off. It is absent from
@@ -136,6 +215,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `narrateStep('edit', …)` counts files, not tool calls. A write then an
+  edit of one file reads "Updated hello.py", not "Updated 2 files"; a group
+  without file paths still counts its calls.
 - `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
   no longer throw when `window.localStorage` resolves to `null` (some
   embedded WebViews do this instead of throwing) or when a resolved storage
@@ -164,7 +246,32 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with 250ms → 500ms backoff. Mutations and HTTP `500` responses are never
   retried.
 
+### Changed
+- `useRuntimeCommands` loads only when the runtime serves `session.commands`,
+  and `useRuntimeConfig` only when it serves `session.config`. On pi both stay
+  empty instead of asking for documents pi does not have.
+
 ### Removed
+
+- The `@opencode-ai/sdk` dependency. The runtime REST client is this
+  package's own (`RuntimeClient`, same `{ data, error, request, response }`
+  results and the same requests, pinned by a recorded-request test). It
+  implements the 55 routes the SDK and its hosts call; `RuntimeClient` no
+  longer lists the others (`session.fork`, `pty.*`, `lsp.*`, ...), which is a
+  breaking type change for a consumer that called them through
+  `session.runtime`.
+- The OpenCode type re-export. `@kortix/sdk` and `@kortix/sdk/opencode-client`
+  no longer re-export every type of `@opencode-ai/sdk` (1,369 names, among
+  them the 88 `V2Event*` aliases and every `*Data`/`*Responses` request
+  type). The transcript names are Kortix types now (see Added); the runtime
+  types this package still reads (`Session`, `Agent`, `Command`, `Config`,
+  `Model`, `Provider`, `ProviderListResponse`, `McpStatus`, `Project`,
+  `Path`, `Pty`, `VcsFileDiff`, `Worktree*`, `FileContent`, the
+  `ProviderAuth*` types and the `Event` union of the 37 runtime events it
+  handles) are declared in this package, frozen at `@opencode-ai/sdk`
+  1.18.23. A consumer that imported any other OpenCode type from this
+  package must import it from `@opencode-ai/sdk`. This is an intentional
+  breaking type-contract change and requires a breaking SDK release.
 
 - The retired local sandbox value was removed from `AppHostingProvider`. This
   is an intentional breaking type-contract change and requires a breaking SDK

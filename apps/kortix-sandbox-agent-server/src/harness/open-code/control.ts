@@ -1,5 +1,5 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../contract/control'
-import { requireOpenCodeConfig } from './config'
+import { requireOpenCodeConfig, type OpenCodeConfig } from './config'
 import { convergeConfigRelease, isConvergenceInFlight, releaseGovernanceActive } from './config-release'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { syncEgressShim } from '@/services/egress-shim'
@@ -10,7 +10,8 @@ import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-prox
 import { logger } from '@/lib/log/logger'
 import { convergeManagedModelCatalog, requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
-import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
+import { readRepoInfo, refreshRepo, syncConfigDirToBase, syncWorkspaceToBase, type ConfigDirSyncResult } from '@/lib/git/git'
+import { readBootLinkTarget } from '@/services/config-release/boot-config'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import {
@@ -50,6 +51,9 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // drift apart on a live update.
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
   'KORTIX_SECRET_CAPABILITIES',
+  // Enabled feature flags, read by the in-box CLI through agent-env.sh. A push
+  // only moves process.env and the shell file; it needs no reload.
+  'KORTIX_FEATURES',
 ])
 
 /**
@@ -274,6 +278,19 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
 }
 
 /** `repo=0`: report the checkout as it is; nothing is fetched or pulled. */
+/**
+ * `syncConfigDirToBase` on the config dir OpenCode actually reads, when that
+ * dir is inside this checkout. A config release, or no project config dir at
+ * all, leaves nothing in the working tree to bring forward.
+ */
+async function syncServedConfigDir(cfg: OpenCodeConfig, baseSha?: string): Promise<ConfigDirSyncResult> {
+  const served = await readBootLinkTarget()
+  if (!served || !served.startsWith(`${cfg.projectTarget}/`)) {
+    return { synced: false, skipped: 'no tracked config dir' }
+  }
+  return syncConfigDirToBase(cfg, served.slice(cfg.projectTarget.length + 1), baseSha)
+}
+
 async function unchangedRepo(projectTarget: string) {
   const info = await readRepoInfo(projectTarget)
   if (!info) throw new Error('project repo is not materialized')
@@ -467,12 +484,17 @@ export function createOpenCodeControlService(
             runtime_turn_ended: reloadTurnEnded,
           }
         },
-        async refresh({ syncBase, skipRestart, skipRepo, baseSha, forceFail }: HarnessRefreshInput) {
+        async refresh({ syncBase, skipRestart, skipRepo, syncBaseConfig, baseSha, forceFail }: HarnessRefreshInput) {
           const repo = syncBase
             ? await syncWorkspaceToBase(cfg, baseSha)
             : skipRepo
               ? await unchangedRepo(cfg.projectTarget)
               : await refreshRepo(cfg)
+          // A project without config releases runs the agent files in this
+          // checkout, and a fast-forward of the session branch never brings the
+          // base branch's changes to them (prod 2026-09-30: an agent `.md` fix
+          // merged to main never reached a live session, through two reloads).
+          const configDir = syncBaseConfig && !syncBase ? await syncServedConfigDir(cfg, baseSha) : undefined
           // Verified swap, not a kill-then-hope restart: boot the new opencode,
           // prove it serves, and only then retire the running one. A config that
           // cannot boot leaves the session on the opencode it already had.
@@ -491,6 +513,10 @@ export function createOpenCodeControlService(
           const reload = skipRestart
             ? null
             : await opencode.reloadVerified({ forceFail })
+          // Agent files are read only when OpenCode loads its config. Under
+          // `restart=0` a dispose re-reads them in place (a verified swap only
+          // when the dispose does not confirm), so a sync costs milliseconds.
+          const configReload = configDir?.synced && skipRestart ? await opencode.reloadConfig() : null
           // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
           // API. This route is what the platform already calls on warm reuse and
           // reload, and (since this change) after a restart and a resume — the
@@ -547,6 +573,14 @@ export function createOpenCodeControlService(
                   },
                 }
               : {}),
+            ...(configDir
+              ? {
+                  config_dir: {
+                    ...configDir,
+                    ...(configReload ? { reload: configReload.how, turn_ended: configReload.turnEnded } : {}),
+                  },
+                }
+              : {}),
             runtime: opencode.getState(),
             runtime_pid: opencode.getPid(),
           }
@@ -573,14 +607,15 @@ export function createOpenCodeControlService(
         // daemon's own fetch-and-diff; the API decides WHETHER to call this at
         // all, this call decides HOW to repair). One attempt, idle-gated,
         // never ends a running turn — see `convergeManagedModelCatalog`.
-        async convergeCatalog() {
-          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true })
+        async convergeCatalog(options) {
+          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true, model: options?.model })
           return {
             ok: result.outcome !== 'no-gateway',
             outcome: result.outcome,
             missing: result.missing,
             managed: result.managed,
             reason: result.reason ?? null,
+            ...(result.modelPresent !== undefined ? { model_present: result.modelPresent } : {}),
           }
         },
         async abort() {

@@ -290,6 +290,15 @@ export async function createProjectSession(input: {
     input.visibility,
     parentSharing,
   );
+  // A conversation with people (`POST /sessions` `participants`, set only by
+  // the server): each participant is a member grant, and the first message is
+  // posted without a turn — the people answer it, not the agent.
+  const participantIds = Array.isArray(input.metadata?.participants)
+    ? (input.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const sessionGrants: SecretGrant[] = participantIds.length > 0
+    ? participantIds.map((principalId) => ({ principalType: 'member' as const, principalId }))
+    : inheritedGrants;
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -368,7 +377,12 @@ export async function createProjectSession(input: {
   }
   const secretsAllowlist = parsedSecrets.value ?? null;
   if (secretsAllowlist && secretsAllowlist.length > 0) {
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // The creator's own audience: a value shared only with them is a valid
+    // allowlist entry. Delivery re-applies the session's audience at boot.
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, {
+      personId: userId,
+      agentId: null,
+    });
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
@@ -503,7 +517,7 @@ export async function createProjectSession(input: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
   if (requestedModel) {
@@ -903,6 +917,8 @@ export async function createProjectSession(input: {
         accountId,
         sessionId,
         actorUserId: userId,
+        authorSessionId: input.callerSessionId ?? null,
+        noReply: participantIds.length > 0,
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -1137,9 +1153,9 @@ export async function createProjectSession(input: {
           )
           .returning({ sessionId: projectSessionConnectorBindings.sessionId });
       }
-      if (inheritedGrants.length > 0) {
+      if (sessionGrants.length > 0) {
         await tx.insert(projectSessionGrants).values(
-          inheritedGrants.map((g) => ({
+          sessionGrants.map((g) => ({
             sessionId,
             principalType: g.principalType,
             principalId: g.principalId,

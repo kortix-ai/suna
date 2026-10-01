@@ -1,16 +1,8 @@
 /**
- * ChainOfThought — a vertical list of steps, each opening independently.
+ * Disclosure primitives — the opening body and caret of a disclosure row.
  *
  * Mirrors apps/web `components/ui/chain-of-thought.tsx` and the animation of
  * `components/ui/disclosure.tsx`:
- * - `ChainOfThought`: `space-y-3` and nothing else — the gap sits BETWEEN rows.
- * - `ChainOfThoughtStep`: `relative`, plus a 1px rail (`bg-muted-foreground/15`,
- *   `left-2`, `top-[1.6rem]`, `bottom-0`) drawn ONLY while the step has open
- *   content. Web asks that twice — the step's own `data-state` and
- *   `has-[[data-state=open]]` on any descendant. React Native has no descendant
- *   selectors, so every disclosure inside a step reports its open state up
- *   through `useReportOpen`, and a step reports its own rail state to the step
- *   around it.
  * - `DisclosureContent`: height 0 → content height with opacity, then unmounts
  *   when closed (web `AnimatePresence initial={false}`: a row that mounts open
  *   does not animate). At rest open the body is never height-capped (web
@@ -18,17 +10,12 @@
  * - `DisclosureCaret`: `CaretRight` rotating 90° when open (`transition-transform`).
  */
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import { View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { TURN_SPACE } from '@/components/session/tool/shared/styles';
+import { CaretRightIcon } from '@/lib/icons';
+import { disclosureBodyMaxHeight } from '@/lib/session/activity';
+import { MOTION } from '@/lib/utils/theme';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type LayoutChangeEvent, View } from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -36,77 +23,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { CaretRightIcon } from '@/lib/icons';
-import { disclosureBodyMaxHeight } from '@/lib/session/activity';
-import { MOTION } from '@/lib/utils/theme';
-import { TURN_SPACE, useTurnPalette } from '@/components/session/tool/shared/styles';
-
-// ─── Open-state reporting ────────────────────────────────────────────────────
-
-type ReportOpen = (id: string, open: boolean) => void;
-
-const ChainOpenContext = createContext<ReportOpen | null>(null);
-
-/**
- * Tells the nearest `ChainOfThoughtStep` that this disclosure is open, so the
- * step draws its rail. A no-op outside a chain.
- */
-export function useReportOpen(open: boolean) {
-  const report = useContext(ChainOpenContext);
-  const id = useId();
-  useEffect(() => {
-    report?.(id, open);
-  }, [report, id, open]);
-  useEffect(() => () => report?.(id, false), [report, id]);
-}
-
-// ─── Chain ───────────────────────────────────────────────────────────────────
-
-export function ChainOfThought({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[{ rowGap: TURN_SPACE.gap3 }, style]}>{children}</View>;
-}
-
-const EMPTY_IDS: ReadonlySet<string> = new Set();
-
-export function ChainOfThoughtStep({ children }: { children: ReactNode }) {
-  const palette = useTurnPalette();
-  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(EMPTY_IDS);
-
-  const report = useCallback<ReportOpen>((id, open) => {
-    setOpenIds((prev) => {
-      if (prev.has(id) === open) return prev;
-      const next = new Set(prev);
-      if (open) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const active = openIds.size > 0;
-  // A nested step is open content of the step around it.
-  useReportOpen(active);
-
-  return (
-    <ChainOpenContext.Provider value={report}>
-      <View style={{ position: 'relative' }}>
-        {active && (
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: TURN_SPACE.railTop,
-              bottom: 0,
-              left: TURN_SPACE.railLeft,
-              width: 1,
-              backgroundColor: palette.rail,
-            }}
-          />
-        )}
-        {children}
-      </View>
-    </ChainOpenContext.Provider>
-  );
-}
 
 // ─── Disclosure body ─────────────────────────────────────────────────────────
 

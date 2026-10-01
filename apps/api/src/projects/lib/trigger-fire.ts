@@ -1,3 +1,4 @@
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
@@ -7,6 +8,8 @@ import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionComman
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';
 import { renderSessionKey } from './trigger-payload';
+import { keepRunFailure } from '../trigger-execution-store';
+import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 
@@ -100,8 +103,7 @@ export async function markGitTriggerFired(
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: {
         lastFiredAt: when,
-        lastStatus: status,
-        lastError: null,
+        ...keepRunFailure(status),
         lastAttemptAt: when,
         updatedAt: when,
       },
@@ -158,6 +160,9 @@ export async function findReusableTriggerSession(
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
         // Same soft-delete guard as the keyed lookup above.
         sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
+        // A session whose history no longer fits the model, even after
+        // compaction, fails every run. recordTriggerRunEnd retires it.
+        sql`${projectSessions.metadata} ->> ${TRIGGER_REUSE_RETIRED_AT} IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
@@ -195,6 +200,7 @@ export async function findKeyedTriggerSession(
         // resolving to the same session, every later message for that chat
         // would be swallowed silently rather than starting a new one.
         sql`${projectSessions.metadata} ->> 'deletedAt' IS NULL`,
+        sql`${projectSessions.metadata} ->> ${TRIGGER_REUSE_RETIRED_AT} IS NULL`,
       ),
     )
     .orderBy(desc(projectSessions.createdAt))
@@ -223,11 +229,18 @@ export async function findKeyedTriggerSession(
  * session must carry it on the prompt itself, or the prompt silently runs on
  * whatever default the session was created with — on prod that was a July
  * session pinned to a managed model the account can no longer use.
+ *
+ * The one place a stored ref becomes the runtime's `{providerID, modelID}`:
+ * with the LLM gateway every model is the `kortix` provider's; without it the
+ * ref is the native `provider/model`, and a managed id has no provider.
  */
-export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
+export function triggerModelOverride(
+  model: string | null | undefined,
+  gatewayEnabled = true,
+): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = toOpencodeModelRef(trimmed);
+  const ref = gatewayEnabled ? toOpencodeModelRef(trimmed) : trimmed.replace(/^kortix\//, '');
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -274,7 +287,7 @@ async function enqueueTriggerPrompt(input: {
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
-    overrides: triggerModelOverride(input.model),
+    overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});

@@ -200,7 +200,7 @@ describe('daemon proxy auth gate', () => {
         baseConfig({ autoClone: false, projectTarget: target }),
         fakeOpencode('ok'),
         Date.now(),
-        { repoMaterializationError: null, timeline, initialOpenCodeSessionRequired: true, initialOpenCodeSessionId: null },
+        { repoMaterializationError: null, timeline, initialRuntimeSessionRequired: true, initialRuntimeSessionId: null },
       )
       const third = await answering.request('/session?directory=%2Fworkspace', {
         headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
@@ -221,8 +221,8 @@ describe('daemon proxy auth gate', () => {
       {
         repoMaterializationError: null,
         timeline: [],
-        initialOpenCodeSessionRequired: true,
-        initialOpenCodeSessionId: null,
+        initialRuntimeSessionRequired: true,
+        initialRuntimeSessionId: null,
       },
     )
 
@@ -245,7 +245,7 @@ describe('daemon proxy auth gate', () => {
     })
     expect(res.status).toBe(503)
     const body = (await res.json()) as { reason: string }
-    expect(body.reason).toBe('initial_opencode_session_pending')
+    expect(body.reason).toBe('initial_runtime_session_pending')
   })
 
   it('holds every caller off until the workspace is complete, then lets them through', async () => {
@@ -273,9 +273,9 @@ describe('daemon proxy auth gate', () => {
     const bootState = {
       repoMaterializationError: null,
       timeline: [],
-      initialOpenCodeSessionRequired: true,
-      initialOpenCodeSessionId: null as string | null,
-      initialOpenCodeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
+      initialRuntimeSessionRequired: true,
+      initialRuntimeSessionId: null as string | null,
+      initialRuntimeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
     }
     const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
     const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
@@ -284,7 +284,7 @@ describe('daemon proxy auth gate', () => {
 
     const failed = await request()
     expect(failed.status).toBe(503)
-    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_opencode_session_failed')
+    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_runtime_session_failed')
 
     finalizeInitialSession(bootState, 'ses_root_abc')
 

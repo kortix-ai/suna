@@ -39,7 +39,6 @@ import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
   DiscordLogoIcon,
-  DownloadSimpleIcon as Download,
   GithubLogoIcon,
   StackIcon as Layers,
   LinkedinLogoIcon,
@@ -52,6 +51,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;

@@ -8,7 +8,7 @@
  * Stop button and the session page's open call drive, disk kept.
  */
 
-import { runtimeSupports } from '@kortix/sdk';
+import { ApiError, runtimeSupports } from '@kortix/sdk';
 
 import {
   emitJson,
@@ -18,7 +18,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { readRuntimeCapabilities } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
@@ -56,7 +56,7 @@ Needs project.session.stop, and the session owner or an account owner/admin.
 const START_HELP = help`Usage: kortix sessions start <session-id> [options]
 
 Wake a session: provisions a missing sandbox, resumes a stopped one, and
-resolves its OpenCode runtime. Idempotent — calling it on a running session
+resolves its session runtime. Idempotent — calling it on a running session
 just reports \`ready\`. Without --wait it reports the stage it reached in one
 call and exits 0.
 
@@ -386,51 +386,27 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   }
 
   // The session's OWN persisted model is the right one to summarize with —
-  // same split the prompt path uses. Fall back to the runtime's configured
-  // default when the row carries none.
-  let model = sessionPromptDefaults(resolved.session).model;
-  if (!model) {
-    try {
-      const config = await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime<{ model?: string }>(await resolved.runtime.global.config.get()),
-      );
-      const reference = typeof config?.model === 'string' ? config.model : '';
-      const separator = reference.indexOf('/');
-      if (separator > 0 && separator < reference.length - 1) {
-        model = {
-          providerID: reference.slice(0, separator),
-          modelID: reference.slice(separator + 1),
-        };
-      }
-    } catch {
-      // Fall through to the explicit error below — a guess would compact with
-      // a model the sandbox cannot serve.
-    }
-  }
-  if (!model) {
-    process.stderr.write(
-      `${status.err('No model configured for this session — set one with `kortix sessions model <id> <model>` first.')}\n`,
-    );
-    return 1;
-  }
-
+  // same split the prompt path uses. Without one, the runtime's configured
+  // default applies; with neither, `compact` refuses instead of guessing.
+  let model: { providerID: string; modelID: string };
   try {
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.session.summarize({
-          sessionID: resolved.opencodeSessionId,
-          providerID: model!.providerID,
-          modelID: model!.modelID,
-        }),
-      ),
+    model = await withKortixScope(resolved.auth, () =>
+      resolved.handle.compact(sessionPromptDefaults(resolved.session).model),
     );
   } catch (err) {
+    if (err instanceof ApiError && err.code === 'MODEL_REQUIRED') {
+      process.stderr.write(
+        `${status.err('No model configured for this session — set one with `kortix sessions model <id> <model>` first.')}\n`,
+      );
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
   if (json) {
     emitJson({
       session_id: resolved.session.session_id,
+      runtime_session_id: resolved.opencodeSessionId,
       opencode_session_id: resolved.opencodeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,

@@ -12,15 +12,18 @@
  * `SUPABASE_JWT_SECRET`. What local verification cannot see is REVOCATION:
  * sign-out, a deleted or banned user, a GoTrue-side session revoke. GoTrue's
  * `getUser` does see it, so it stays in the loop — but at most once per token
- * per `SUPABASE_JWT_LIVENESS_TTL_MS` (default 30 s) per replica.
+ * per `SUPABASE_JWT_LIVENESS_TTL_MS` (default 0: no cache) per replica.
+ *
+ * 2026-10-01: the ES256 (JWKS) path in `jwt-verify.ts` confirms liveness here
+ * too. Before, an ES256 token survived logout, a ban or a deleted user until
+ * `exp`.
  *
  * Security contract (explicit):
  *  - Only a POSITIVE GoTrue answer is cached. A rejection or a GoTrue failure is
  *    never cached, so the next request asks again.
  *  - An entry never outlives the token's own `exp`.
- *  - Revocation latency for an HS256 token = at most the TTL on a replica that
- *    already confirmed the token; 0 on every other replica. `POST
- *    /v1/auth/logout` drops the entry on the replica that served it.
+ *  - For immediate cross-replica logout, production must keep TTL at zero.
+ *    `POST /v1/auth/logout` drops the local entry as well.
  *  - TTL 0 disables the cache: every request asks GoTrue (the old behavior).
  *  - Keys are SHA-256 digests of the token; the raw token is never stored.
  *  - Bounded to MAX_ENTRIES; the oldest entry is evicted first.

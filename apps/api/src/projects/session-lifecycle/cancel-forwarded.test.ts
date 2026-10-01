@@ -73,7 +73,9 @@ mock.module('./inbox-rows', () => ({
   deleteInboxRowsWithAttachmentGrace: async () => [inboxRow],
 }));
 
+const realTurnLifecycle = await import('../sandbox-turn-lifecycle');
 mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
   closeSandboxTurnByMessageId: async (_sessionId: string, messageId: string) => {
     closedTurns.push(messageId);
   },

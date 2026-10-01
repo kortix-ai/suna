@@ -14,6 +14,7 @@
 // member.update for an account role, policy.create for a custom role), so the
 // ceiling cannot be side-stepped by picking a different route — which is
 // exactly what five parallel endpoints made possible.
+import { propagateProjectSecretsToActiveSandboxes } from '../../projects/lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull, or } from 'drizzle-orm';
 import { iamRoles } from '@kortix/db';
@@ -71,6 +72,16 @@ const PermissionSchema = z
     implies: z.array(z.string()),
   })
   .openapi('IamPermission');
+
+/**
+ * A `secret` grant changes which sessions may hold that value: re-push every
+ * live sandbox's env so a narrowed value leaves the boxes that lost it.
+ * Detached, like the fan-out after a secret write.
+ */
+function resyncSecretAudience(row: AssignmentRow): void {
+  if (row.objectType !== 'secret' || !row.scopeId) return;
+  void propagateProjectSecretsToActiveSandboxes(row.scopeId);
+}
 
 function serialize(row: AssignmentRow) {
   return {
@@ -280,6 +291,7 @@ iamRouter.openapi(
       expiresAt,
       source: 'manual',
     });
+    resyncSecretAudience(row);
     return c.json(serialize(row), 201);
   },
 );
@@ -308,6 +320,7 @@ iamRouter.openapi(
     // The last-owner guard lives in revokeAssignment, not here — it is the only
     // place that sees every revoke path (route, SCIM deprovision, expiry).
     const row = await revokeAssignment(await actorOf(c, accountId), accountId, assignmentId);
+    resyncSecretAudience(row);
     return c.json({ revoked: true, assignment: serialize(row) });
   },
 );

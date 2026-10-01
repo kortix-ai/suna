@@ -12,6 +12,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
+  TEAMS_CHANNEL_CONNECTOR_SLUG,
   channelApiBase,
   channelAuth,
   channelCatalog,
@@ -436,6 +437,73 @@ describe('handleCall — channel (slack)', () => {
     const [call] = fetchCalls;
     expect(call?.url).toBe('https://slack.com/api/conversations.replies?channel=C123&ts=111.222');
     expect(call?.headers.Authorization).toBe('Bearer xoxb-install-token');
+  });
+});
+
+/**
+ * Teams refuses a read with 403 "… Resource specific consent grants on the
+ * request ''" when the Kortix app installed in that team holds no permission
+ * to read its messages. On dev (2026-10-01) the agent relayed "a Teams admin
+ * needs to grant that permission", which names nobody's next step. The
+ * refusal now names the fix; Graph's text stays after it.
+ */
+describe('handleCall — channel (teams): a read the installed app may not make', () => {
+  const TEAMS: GatewayConnector = {
+    connectorId: 'conn-teams',
+    slug: TEAMS_CHANNEL_CONNECTOR_SLUG,
+    provider: 'channel',
+    platform: 'teams',
+    baseUrl: 'https://graph.microsoft.com/v1.0',
+    auth: { type: 'bearer', in: 'header', name: null, prefix: null },
+    hasAuth: true,
+    credentialMode: 'shared',
+    enabled: true,
+  };
+  const LIST_REPLIES: GatewayAction = {
+    path: 'teams.list_replies',
+    relPath: 'list_replies',
+    inputSchema: {
+      type: 'object',
+      properties: { 'team-id': { 'x-in': 'path' }, 'channel-id': { 'x-in': 'path' }, 'message-id': { 'x-in': 'path' } },
+      required: ['team-id', 'channel-id', 'message-id'],
+    },
+    risk: 'read',
+    binding: { kind: 'http', method: 'GET', path: '/teams/{team-id}/channels/{channel-id}/messages/{message-id}/replies' },
+  };
+  const refusal = (permissions: string) =>
+    JSON.stringify({
+      error: {
+        code: 'Forbidden',
+        message: `Missing role permissions on the request. API requires one of '${permissions}'. Roles on the request ''. Resource specific consent grants on the request ''.`,
+      },
+    });
+  const read = async (body: string, status = 403) => {
+    const { deps } = makeDeps(body, status);
+    deps.loadConnectorBySlug = async () => TEAMS;
+    deps.loadAction = async () => LIST_REPLIES;
+    return handleCall(deps, {
+      ...input,
+      connectorSlug: TEAMS_CHANNEL_CONNECTOR_SLUG,
+      actionPath: 'list_replies',
+      args: { 'team-id': 'team-1', 'channel-id': 'channel-1', 'message-id': 'message-1' },
+    });
+  };
+
+  test('a team: the reason says who updates the app, where, and what to do when no update shows', async () => {
+    const res = await read(refusal('ChannelMessage.Read.All, ChannelMessage.Read.Group'));
+    expect(res.status).toBe('error');
+    if (res.status !== 'error') return;
+    expect(res.reason).toStartWith('Kortix cannot read messages in this team yet');
+    expect(res.reason).toContain('A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update)');
+    expect(res.reason).toContain('Connectors → Channels → Microsoft Teams');
+    // The Graph cause stays, for whoever debugs it.
+    expect(res.reason).toContain('ChannelMessage.Read.Group');
+  });
+
+  test('any other refusal keeps the plain upstream reason', async () => {
+    const res = await read(JSON.stringify({ error: { code: 'Forbidden', message: 'Insufficient privileges.' } }));
+    if (res.status !== 'error') throw new Error('expected an error');
+    expect(res.reason).toStartWith('upstream_403');
   });
 });
 

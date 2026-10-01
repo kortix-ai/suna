@@ -7,7 +7,7 @@ import {
   providerAuthRequirement,
   generationControlCapabilities,
 } from '@kortix/llm-catalog/lite';
-import type { ProviderListResponse as SdkProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { ProviderListResponse as SdkProviderListResponse } from '../runtime/runtime-types';
 
 import type {
   ProjectLlmCatalogProvidersResponse,
@@ -198,33 +198,15 @@ export function mergeProjectSecretConnectedProviders(
  * Once the runtime is up, the live `/provider` list replaces this (it knows
  * auth.json, autoloaded providers like OpenCode Zen, and real capabilities).
  */
-/**
- * Which model a provider should DEFAULT to when the user has picked nothing.
- * Mirrors the API picker's table (apps/api/src/llm-gateway/models/
- * picker-catalog.ts FLAGSHIP_CANDIDATES) — first candidate present in the
- * catalog wins; a provider not listed (or whose candidates are absent) falls
- * back to its most recently released model. Without this the very first
- * message of a native project ran on whatever model happened to sort first in
- * the models.dev file (observed live: `Hy-MT2-30B-A3B`, which OpenRouter
- * refused with "No endpoints found that support tool use").
- */
-const NATIVE_FLAGSHIP_CANDIDATES: Record<string, string[]> = {
-  anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6'],
-  openai: ['gpt-5.5', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
-  google: ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'],
-  'x-ai': ['grok-4', 'grok-3'],
-  xai: ['grok-4', 'grok-3'],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-  mistral: ['mistral-large-latest', 'mistral-large'],
-  groq: ['llama-3.3-70b-versatile'],
-  perplexity: ['sonar-pro', 'sonar'],
-  openrouter: ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-4.5', 'openai/gpt-5.2'],
-};
-
-/** Table providers first, in table order — "first connected provider" then
- *  favors a direct flagship provider over e.g. OpenRouter's 350-model sprawl. */
+/** Direct flagship providers first, in this order, so "first connected
+ *  provider" favors them over e.g. OpenRouter's 350-model sprawl. Provider
+ *  order only: which MODEL is the default is always data-driven (newest
+ *  auto-selectable release, `autoSeedDefaultModel`), never a curated id list —
+ *  one pinned gpt-5.5 / claude-opus-4-8 for weeks after newer releases. */
 const NATIVE_PROVIDER_RANK = new Map(
-  Object.keys(NATIVE_FLAGSHIP_CANDIDATES).map((id, index) => [id, index]),
+  ['anthropic', 'openai', 'google', 'x-ai', 'xai', 'deepseek', 'mistral', 'groq', 'perplexity', 'openrouter'].map(
+    (id, index) => [id, index],
+  ),
 );
 
 /** The catalog fields the pre-runtime picker source reads per model — a
@@ -339,15 +321,11 @@ export function nativeProviderListFromCatalog(
           (b.released ?? '').localeCompare(a.released ?? '') ||
           bedrockInferenceProfileRank(b.id) - bedrockInferenceProfileRank(a.id),
       );
-      const ids = new Set(models.map((model) => model.id));
-      // `autoSeedDefaultModel` (not `models[0]`) is the data-driven fallback:
-      // it drops the bare Bedrock ids whenever the provider serves inference
-      // profiles, so a fresh Bedrock-BYOK workspace can never be auto-seeded
-      // with an id Bedrock rejects. See its doc comment for the live incident.
-      const flagship =
-        (NATIVE_FLAGSHIP_CANDIDATES[provider.id] ?? []).find((candidate) => ids.has(candidate)) ??
-        autoSeedDefaultModel(models)?.id ??
-        models[0]?.id;
+      // `autoSeedDefaultModel` (not `models[0]`): newest stable, tool-capable
+      // release, and never a bare Bedrock id when the provider serves
+      // inference profiles (a fresh Bedrock-BYOK workspace was once seeded
+      // with an id Bedrock rejects). See its doc comment.
+      const flagship = autoSeedDefaultModel(models)?.id ?? models[0]?.id;
       if (flagship) defaults[provider.id] = flagship;
       return {
         id: provider.id,
@@ -573,7 +551,7 @@ export interface PickerProviderListInput {
 
 /**
  * The provider list a project composer's model picker renders — the same
- * sources and rules `useOpenCodeProviders` applies. Feed the result to
+ * sources and rules `useRuntimeProviders` applies. Feed the result to
  * `flattenModels(list, { providerMode })`.
  *
  * - Gateway: the `/model-picker` catalog as the single `kortix` provider

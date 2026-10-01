@@ -7,7 +7,7 @@ import type {
 	SessionStatus,
 	TextPart,
 	UserMessage,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../core/runtime/runtime-types";
 import { projectWorking } from "../../core/session/working";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
@@ -2499,7 +2499,7 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// branch that history was simply resident, so this is a regression in what
 	// the user sees, not a missed optimisation.
 	//
-	// Dropping those events instead would be worse: `useOpenCodeMessages` (the
+	// Dropping those events instead would be worse: `useRuntimeMessages` (the
 	// spawn-tool preview of a child session) has no reconcile of its own and is
 	// fed by SSE alone, so a child streaming before its preview mounts would
 	// lose the frames outright. The events stay; the repaint decision is what

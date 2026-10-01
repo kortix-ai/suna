@@ -420,7 +420,7 @@ function buildAuditRow(rawInput: AuditEventInput): AuditRow {
     accountId: uuidOrNull(input.accountId || request?.accountId),
     projectId: uuidOrNull(input.projectId || request?.projectId),
     sessionId: input.sessionId || request?.sessionId || null,
-    opencodeSessionId: input.opencodeSessionId ?? null,
+    runtimeSessionId: input.opencodeSessionId ?? null,
     turnId: input.turnId ?? null,
     messageId: input.messageId ?? null,
     toolCallId: input.toolCallId ?? null,
@@ -512,12 +512,12 @@ export function auditWritesAreSynchronous(): boolean {
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   const scope = currentInboundAuditScope();
-  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
   if (auditWritesAreSynchronous()) {
     await insertAuditEvent(auditDb(), input);
-    return;
+  } else {
+    getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
   }
-  getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
+  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
 }
 
 /**

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 import { createHmac, randomUUID } from 'node:crypto';
+import { SQL, is } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -475,7 +476,7 @@ const triggerDbMock: any = {
               sandboxProvider: values.sandboxProvider,
               sandboxId: values.sandboxId ?? null,
               sandboxUrl: null,
-              opencodeSessionId: null,
+              runtimeSessionId: null,
               agentName: values.agentName ?? 'default',
               status: values.status ?? 'provisioning',
               error: null,
@@ -567,10 +568,19 @@ const triggerDbMock: any = {
                 (r) => r.projectId === values.projectId && r.slug === values.slug,
               );
               const existing = idx >= 0 ? runtimeRows[idx] : undefined;
+              // keepRunFailure sends CASE fragments that Postgres evaluates
+              // against the existing row: a failed run keeps its status and
+              // reason; any other row takes the written values.
+              const plainSet = Object.fromEntries(Object.entries(set).filter(([, v]) => !is(v, SQL)));
+              const keptFailure =
+                existing?.runFailingSince != null
+                  ? { lastStatus: existing.lastStatus, lastError: existing.lastError }
+                  : {};
               const next = {
                 ...existing,
                 ...values,
-                ...set,
+                ...plainSet,
+                ...keptFailure,
                 projectId: values.projectId,
                 slug: values.slug,
                 lastFiredAt: (set.lastFiredAt ??
@@ -1530,7 +1540,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       sandboxProvider: 'daytona',
       sandboxId: null,
       sandboxUrl: null,
-      opencodeSessionId: null,
+      runtimeSessionId: null,
       agentName: 'default',
       status: 'stopped',
       error: null,

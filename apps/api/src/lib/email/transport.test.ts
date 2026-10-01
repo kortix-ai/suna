@@ -85,7 +85,7 @@ afterEach(() => {
 });
 
 const MSG = {
-  to: ['user@example.test'],
+  to: ['user@kortix.com'],
   subject: 'Test',
   html: '<p>hello</p>',
   category: 'unit-test',
@@ -118,7 +118,7 @@ describe('configuredEmailProviders', () => {
     const payload = JSON.parse(String(calls[0].init.body));
     expect(payload).toEqual({
       From: { Email: 'noreply@example.test', Name: 'Kortix Test' },
-      To: [{ Email: 'user@example.test' }],
+      To: [{ Email: 'user@kortix.com' }],
       Subject: 'Test',
       HTML: '<p>hello</p>',
       // Empty: this caller passes no `text`. Kortix templates all supply one
@@ -149,7 +149,7 @@ describe('sendEmail', () => {
     expect(headers['X-Amz-Date']).toMatch(/^\d{8}T\d{6}Z$/);
     const payload = JSON.parse(String(calls[0].init.body));
     expect(payload.FromEmailAddress).toBe('Kortix Test <noreply@example.test>');
-    expect(payload.Destination.ToAddresses).toEqual(['user@example.test']);
+    expect(payload.Destination.ToAddresses).toEqual(['user@kortix.com']);
     expect(payload.EmailTags).toEqual([{ Name: 'category', Value: 'unit-test' }]);
   });
 
@@ -212,7 +212,7 @@ describe('sendEmail', () => {
     expect(calls[0].url).toBe('https://api.resend.com/emails');
     const payload = JSON.parse(String(calls[0].init.body));
     expect(payload.from).toBe('Kortix Test <noreply@example.test>');
-    expect(payload.to).toEqual(['user@example.test']);
+    expect(payload.to).toEqual(['user@kortix.com']);
     expect(payload.reply_to).toBeUndefined();
     expect(payload.tags).toEqual([{ name: 'category', value: 'unit-test' }]);
   });
@@ -249,6 +249,35 @@ describe('sendEmail', () => {
     responder = () => new Response('boom', { status: 500 });
     const result = await sendEmail(MSG);
     expect(result).toEqual({ ok: false, provider: 'mailtrap', status: 500, error: 'boom' });
+  });
+
+  test('relays never receive reserved test domains; local catchers still do', async () => {
+    mockConfig.AWS_SES_ACCESS_KEY_ID = 'AKIATEST';
+    mockConfig.AWS_SES_SECRET_ACCESS_KEY = 'secret';
+    mockConfig.RESEND_API_KEY = 're_test';
+    mockConfig.MAILTRAP_API_TOKEN = 'mt-token';
+    for (const to of [
+      'a@example.test',
+      'a@ke2e.kortix.test',
+      'a@example.com',
+      'a@sub.example.org',
+      'a@x.invalid',
+      'a@localhost',
+    ]) {
+      const result = await sendEmail({ ...MSG, to: [to] });
+      expect(result).toEqual({ ok: false, skipped: true, reason: 'reserved_recipient' });
+    }
+    expect(calls).toHaveLength(0);
+
+    await sendEmail({ ...MSG, to: ['a@example.test', 'b@kortix.com'] });
+    expect(JSON.parse(String(calls[0].init.body)).Destination.ToAddresses).toEqual(['b@kortix.com']);
+
+    calls = [];
+    mockConfig.MAILPIT_API_URL = 'http://127.0.0.1:54324';
+    mockConfig.EMAIL_PROVIDER_ORDER = 'ses,mailpit';
+    const local = await sendEmail({ ...MSG, to: ['a@example.test'] });
+    expect(local).toEqual({ ok: true, provider: 'mailpit', status: 200 });
+    expect(calls.map((call) => call.url)).toEqual(['http://127.0.0.1:54324/api/v1/send']);
   });
 
   test('a thrown network error falls through to the next provider', async () => {

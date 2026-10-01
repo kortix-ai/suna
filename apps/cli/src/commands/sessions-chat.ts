@@ -3,7 +3,7 @@ import { findSessionAttachments, type MessageWithParts, type Part } from '@korti
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
-import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
@@ -269,12 +269,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   // Replay any prior conversation so the REPL has context on screen.
   try {
     const history = await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.session.messages({
-          sessionID: ocSessionId,
-          limit: 20,
-        }),
-      ),
+      (await resolved.handle.messages({ conversationId: ocSessionId, limit: 20 })).messages,
     );
     for (const msg of history) printMessage(msg);
   } catch {
@@ -339,12 +334,7 @@ async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Pr
   for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
       const messages = await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(
-          await resolved.runtime.session.messages({
-            sessionID: resolved.opencodeSessionId,
-            limit: 10,
-          }),
-        ),
+        (await resolved.handle.messages({ conversationId: resolved.opencodeSessionId, limit: 10 })).messages,
       );
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
@@ -624,12 +614,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
     try {
       const runtime = await resolveSessionRuntime({ auth, client, projectId, session });
       messages = await withKortixScope(auth, async () =>
-        unwrapRuntime(
-          await runtime.runtime.session.messages({
-            sessionID: runtime.opencodeSessionId,
-            limit,
-          }),
-        ),
+        (await runtime.handle.messages({ conversationId: runtime.opencodeSessionId, limit })).messages,
       );
     } catch (err) {
       // A box that is not answering — still waking, just parked, mid-restart —
@@ -777,6 +762,48 @@ function messageToJson(msg: MessageWithParts): Record<string, unknown> {
   };
 }
 
+type AssistantReply = MessageWithParts & { info: Extract<MessageWithParts['info'], { role: 'assistant' }> };
+
+/**
+ * Put `text` in the session's prompt inbox (`handle.send`), then wait for the
+ * reply: the last assistant message answering the new user message, once the
+ * root is idle again. The inbox may place the prompt under a new id, so the
+ * prompt is the user message the transcript did not hold before the send.
+ */
+export async function sendAndWaitForReply(
+  target: Pick<SessionRuntime, 'auth' | 'handle' | 'opencodeSessionId'>,
+  text: string,
+  extra?: { agent?: string },
+  timeoutMs = 10 * 60_000,
+): Promise<AssistantReply> {
+  // One assistant message per model step: the window must hold the prompt
+  // and a long turn's replies. ponytail: a turn over ~200 steps outgrows it;
+  // read by `after` the prompt if that happens.
+  const tip = () =>
+    withKortixScope(target.auth, async () =>
+      (await target.handle.messages({ conversationId: target.opencodeSessionId, limit: 200 })).messages,
+    );
+  const before = new Set((await tip()).map((message) => message.info.id));
+  await withKortixScope(target.auth, () => target.handle.send(text, extra));
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const messages = await tip();
+    const prompt = messages.find((message) => message.info.role === 'user' && !before.has(message.info.id));
+    if (!prompt) continue;
+    const reply = [...messages]
+      .reverse()
+      .find((message) => message.info.role === 'assistant' && message.info.parentID === prompt.info.id) as
+      | AssistantReply
+      | undefined;
+    if (!reply || (reply.info.time.completed == null && !reply.info.error)) continue;
+    const { statuses } = await withKortixScope(target.auth, () => target.handle.pending());
+    const status = statuses[target.opencodeSessionId];
+    if (!status || status.type === 'idle') return reply;
+  }
+  throw new Error('Timed out waiting for the reply.');
+}
+
 /** Send one prompt, print the assistant reply (and any error). */
 async function sendAndPrint(
   resolved: ResolvedSession,
@@ -787,9 +814,7 @@ async function sendAndPrint(
   // In --json mode keep stdout pure JSON (no "…thinking" spinner).
   if (!json) process.stdout.write(`${C.dim}…thinking${C.reset}\r`);
   try {
-    const reply = await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(await resolved.handle.send(text, extra)),
-    );
+    const reply = await sendAndWaitForReply(resolved, text, extra);
     if (json) {
       emitJson(messageToJson({ info: reply.info, parts: reply.parts }));
       return reply.info.error ? 1 : 0;
@@ -960,17 +985,14 @@ async function fetchSessionActivity(
     // can start — or dispatch a subagent batch that leaves a user-role message
     // newest — after the user's prompt, and classifying off ONLY the last message
     // then mislabels a busy session as "queued".
-    const messageRequest = {
-      sessionID: ready.opencodeSessionId,
-      limit: 6,
-      // The generated OpenCode client accepts RequestInit fields. The narrowed
-      // SDK facade type currently lists only endpoint fields.
-      signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
-    } as Parameters<typeof handle.runtime.session.messages>[0] & { signal: AbortSignal };
     const msgs = await withKortixScope(auth, async () =>
-      unwrapRuntime(
-        await handle.runtime.session.messages(messageRequest),
-      ),
+      (
+        await handle.messages({
+          conversationId: ready.runtimeSessionId,
+          limit: 6,
+          signal: AbortSignal.timeout(SESSION_ACTIVITY_PHASE_TIMEOUT_MS),
+        })
+      ).messages,
     );
     if (msgs.length === 0) return { working: false, summary: 'no messages yet' };
     return deriveActivity(msgs, s.status);

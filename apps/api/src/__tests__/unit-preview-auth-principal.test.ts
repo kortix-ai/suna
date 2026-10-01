@@ -77,6 +77,20 @@ mock.module('../repositories/service-accounts', () => ({
   deleteServiceAccount: unmocked('service-accounts.deleteServiceAccount'),
 }));
 
+// App viewer tokens (`kortix_oat_`): the credential an App's server sends when
+// it acts as its viewer. combinedAuth accepts one on `/v1/p/...`; these edges
+// must too, and only with the `kortix` scope.
+const actualOAuth = await import('../oauth/access-token');
+mock.module('../oauth/access-token', () => ({
+  ...actualOAuth,
+  validateOAuthAccessToken: async (t: string) => {
+    if (t === 'kortix_oat_owner') return { isValid: true, userId: 'user-owner', scopes: ['profile', 'email', 'kortix'] };
+    if (t === 'kortix_oat_identity') return { isValid: true, userId: 'user-owner', scopes: ['profile', 'email'] };
+    if (t === 'kortix_oat_other') return { isValid: true, userId: 'user-other', scopes: ['profile', 'email', 'kortix'] };
+    return { isValid: false, error: 'Invalid OAuth access token' };
+  },
+}));
+
 mock.module('../shared/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
   verifySupabaseJwt: async (t: string) => {
@@ -186,6 +200,20 @@ describe('authenticatePreviewPrincipalDetailed — which credentials prove a pri
   });
   test('rejects an invalid kortix token', async () => {
     expect(await principalId('kortix_bad')).toBeNull();
+  });
+
+  // ── App viewer token (kortix_oat_) — WS + subdomain used to send it to the API-key table ──
+  test('accepts an App viewer token with the kortix scope and returns the viewer', async () => {
+    expect(await principalId('kortix_oat_owner')).toBe('user-owner');
+  });
+  test('rejects an identity-only viewer token: profile/email never opens a sandbox', async () => {
+    expect(await principalId('kortix_oat_identity')).toBeNull();
+  });
+  test('rejects a viewer token whose viewer lacks sandbox access', async () => {
+    expect(await principalId('kortix_oat_other')).toBeNull();
+  });
+  test('rejects a revoked or unknown viewer token', async () => {
+    expect(await principalId('kortix_oat_revoked')).toBeNull();
   });
 
   // ── Supabase JWT ───────────────────────────────────────────────────────────

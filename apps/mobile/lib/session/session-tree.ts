@@ -37,6 +37,8 @@ export interface SessionListFilter {
   parent?: 'root' | string;
   startedBy?: SessionStartedBy;
   q?: string;
+  /** `'me'` = conversations the viewer was asked into (`human_messaging`), at any depth. */
+  participant?: 'me';
 }
 
 /**
@@ -47,6 +49,7 @@ export function normalizeSessionListFilter(filter: SessionListFilter | undefined
   const out: SessionListFilter = {};
   if (filter?.parent) out.parent = filter.parent;
   if (filter?.startedBy) out.startedBy = filter.startedBy;
+  if (filter?.participant) out.participant = filter.participant;
   const q = filter?.q?.trim();
   if (q) out.q = q.slice(0, 200);
   return out;

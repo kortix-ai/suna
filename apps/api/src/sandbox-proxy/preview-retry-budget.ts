@@ -1,3 +1,5 @@
+import { classifyRuntimeRequest } from './runtime-request';
+
 // Total wall-clock budget for the preview proxy's auto-wake retry loop. Must
 // stay under the AWS ALB's 60s idle timeout: when every attempt hangs (a cold or
 // errored sandbox whose Daytona upstream never answers) the proxy has to return
@@ -35,10 +37,8 @@ export const PROXY_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 // non-idempotent body. One prod session recorded one `/webapp` submit as four
 // identical user messages, 11.0s / 11.8s / 13.7s apart.
 export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
-  return (
-    request.method.toUpperCase() === 'POST' &&
-    /^\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(request.path)
-  );
+  const classified = classifyRuntimeRequest(request.method, request.path);
+  return classified.kind === 'turn-start' && ['message', 'command', 'summarize'].includes(classified.verb);
 }
 
 export function isUploadRequest(request: { method: string; path: string }): boolean {

@@ -1,4 +1,4 @@
-/** LLM provider OAuth device flow (ChatGPT subscription via Codex): start, poll, status, disconnect. */
+/** LLM provider OAuth device flow (ChatGPT via Codex, OpenCode Zen and Go via the OpenCode Console): start, poll, status, disconnect. */
 import { parseSharingIntent } from '../../connectors/share';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -7,6 +7,13 @@ import { recordAuditEvent, runAuditedTransaction } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
+import {
+  OPENCODE_CONSOLE_PROVIDERS,
+  parseOpencodeLogin,
+  pollOpencodeDeviceAuth,
+  startOpencodeDeviceAuth,
+} from '../../llm-gateway/credentials/opencode-console';
+import { resolveCatalogUpstream } from '../../llm-gateway/models/provider-registry';
 import { requestPersonalOwner } from '../lib/personal-resources';
 import {
   decryptProjectSecret,
@@ -36,9 +43,9 @@ import { readJsonObject } from '../../shared/http-body';
 
 // ─── Provider OAuth device flow (poll-based) ───────────────────────────────
 //
-// Connect a subscription-backed LLM provider (today: a ChatGPT Plus/Pro
-// account via the OpenAI Codex device grant) and save the resulting login as
-// the project's CODEX_AUTH_JSON secret. Only the LLM gateway can decrypt this
+// Connect a subscription-backed LLM provider (a ChatGPT Plus/Pro account via
+// the OpenAI Codex device grant, or an OpenCode Console account for OpenCode
+// Zen and Go) and save the resulting login as the provider's project secret. Only the LLM gateway can decrypt this
 // value. The sandbox receives neither the token nor an opaque handle.
 //
 // Two quick, NON-streaming calls so they survive any edge (a long-lived
@@ -51,14 +58,50 @@ import { readJsonObject } from '../../shared/http-body';
 // memory), so start and poll need not hit the same pod. The detached task
 // isn't tied to a client connection, so nothing the edge does can kill it.
 
-// Kortix provider id → the secret we persist the resulting auth.json under.
-// Only OpenAI (ChatGPT) is wired today; the shape generalizes to others.
+// Kortix provider id → how its device flow runs and where the login is saved.
 // `legacySecretNames` are older names for the same login. Nothing writes them
 // any more, but clients and the gateway still count them as connected, so a
-// disconnect must delete them too.
-const OAUTH_PROVIDERS: Record<string, { secretName: string; legacySecretNames?: string[] }> = {
-  openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME, legacySecretNames: ['OPENCODE_AUTH_JSON'] },
-};
+// disconnect must delete them too. `resourceProviderId` tags a named (pooled)
+// connection. `secretName` is read lazily: the OpenCode names come from the
+// runtime catalog (a Console login is stored as the provider's own key secret,
+// see llm-gateway/credentials/opencode-console.ts).
+interface OAuthProvider {
+  label: string;
+  secretName: string;
+  resourceProviderId: string;
+  legacySecretNames?: string[];
+  start: () => Promise<{ verificationUrl: string; userCode: string; handle: string; intervalMs: number }>;
+  poll: (handle: string, userCode: string) => Promise<
+    { status: 'pending' } | { status: 'failed'; error: string } | { status: 'authorized'; authJson: string }>;
+  /** Whether a stored value is this login (an OpenCode key secret may hold a plain API key). */
+  isLogin: (value: string) => boolean;
+}
+
+function oauthProvider(provider: string): OAuthProvider | null {
+  if (provider === 'openai') {
+    return {
+      label: 'ChatGPT', secretName: CODEX_AUTH_JSON_SECRET_NAME, resourceProviderId: 'codex',
+      legacySecretNames: ['OPENCODE_AUTH_JSON'],
+      start: async () => {
+        const c = await startCodexDeviceAuth();
+        return { verificationUrl: c.verificationUrl, userCode: c.userCode, handle: c.deviceAuthId, intervalMs: c.intervalMs };
+      },
+      poll: (handle, userCode) => pollCodexDeviceAuth({ deviceAuthId: handle, userCode }),
+      isLogin: () => true,
+    };
+  }
+  const secretName = OPENCODE_CONSOLE_PROVIDERS[provider] ? resolveCatalogUpstream(provider)?.envVar : null;
+  if (!secretName) return null;
+  return {
+    label: 'OpenCode', secretName, resourceProviderId: provider,
+    start: async () => {
+      const c = await startOpencodeDeviceAuth();
+      return { verificationUrl: c.verificationUrl, userCode: c.userCode, handle: c.deviceCode, intervalMs: c.intervalMs };
+    },
+    poll: (handle) => pollOpencodeDeviceAuth(handle),
+    isLogin: (value) => parseOpencodeLogin(value) !== null,
+  };
+}
 
 // How long the encrypted flow handle stays valid (OpenAI expires the device
 // code on its side too; this just bounds the opaque handle clients hold).
@@ -66,20 +109,21 @@ const DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
 // Floor for the client poll cadence (OpenAI returns its own suggested interval).
 const OAUTH_POLL_INTERVAL_MS = 3000;
 
-// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret — private
-// (the caller's own per-user OAuth login, ownerUserId-scoped) when `sharing`
-// says so, else the project-wide shared row — then returns the caller's view
-// of it. Codex-specific on purpose: a generic OPENCODE_AUTH_JSON row is never
-// overwritten by this. `sharing` only ever chooses private-vs-shared here —
-// member/group secret sharing was retired (see projects/secrets.ts).
-async function writeCodexAuthSecret(input: {
+// Persists the login as the provider's project secret (CODEX_AUTH_JSON, or the
+// OpenCode key secret) — private (the caller's own per-user OAuth login,
+// ownerUserId-scoped) when `sharing` says so, else the project-wide shared
+// row — then returns the caller's view of it. A legacy OPENCODE_AUTH_JSON row
+// is never overwritten by this. `sharing` only ever chooses private-vs-shared
+// here — member/group secret sharing was retired (see projects/secrets.ts).
+async function writeOAuthLoginSecret(input: {
   projectId: string;
   accountId: string;
   userId: string;
+  secretName: string;
   value: string;
   sharing?: ReturnType<typeof parseSharingIntent>;
 }) {
-  const { projectId, accountId, userId, value, sharing } = input;
+  const { projectId, accountId, userId, secretName, value, sharing } = input;
   const now = new Date();
   let secretId: string;
 
@@ -88,8 +132,8 @@ async function writeCodexAuthSecret(input: {
       .insert(projectSecrets)
       .values({
         projectId,
-        identifier: CODEX_AUTH_JSON_SECRET_NAME,
-        name: CODEX_AUTH_JSON_SECRET_NAME,
+        identifier: secretName,
+        name: secretName,
         valueEnc: encryptProjectSecret(projectId, value),
         ownerUserId: userId,
         active: true,
@@ -116,15 +160,15 @@ async function writeCodexAuthSecret(input: {
         },
       })
       .returning({ secretId: projectSecrets.secretId });
-    if (!written) throw new Error('Failed to store the private Codex credential');
+    if (!written) throw new Error('Failed to store the private login');
     secretId = written.secretId;
   } else {
     const [written] = await db
       .insert(projectSecrets)
       .values({
         projectId,
-        identifier: CODEX_AUTH_JSON_SECRET_NAME,
-        name: CODEX_AUTH_JSON_SECRET_NAME,
+        identifier: secretName,
+        name: secretName,
         valueEnc: encryptProjectSecret(projectId, value),
         strategy: 'broker',
         consumer: 'llm_gateway',
@@ -148,7 +192,7 @@ async function writeCodexAuthSecret(input: {
         },
       })
       .returning({ secretId: projectSecrets.secretId });
-    if (!written) throw new Error('Failed to store the shared Codex credential');
+    if (!written) throw new Error('Failed to store the shared login');
     secretId = written.secretId;
   }
 
@@ -162,7 +206,7 @@ async function writeCodexAuthSecret(input: {
     resourceType: 'project_secret',
     resourceId: secretId,
     metadata: {
-      identifier: CODEX_AUTH_JSON_SECRET_NAME,
+      identifier: secretName,
       consumer: 'llm_gateway',
       sharing: sharing?.mode === 'private' ? 'private' : 'project',
     },
@@ -175,8 +219,8 @@ async function writeCodexAuthSecret(input: {
     userId,
     canManageShared: true,
   });
-  return views.find((v) => v.identifier === CODEX_AUTH_JSON_SECRET_NAME)
-    ?? { identifier: CODEX_AUTH_JSON_SECRET_NAME, name: CODEX_AUTH_JSON_SECRET_NAME };
+  return views.find((v) => v.identifier === secretName)
+    ?? { identifier: secretName, name: secretName };
 }
 
 /** A named connection only its owner can use: private, or restricted to the owner
@@ -190,10 +234,10 @@ function sharingIsOwnerOnly(sharing: ReturnType<typeof parseSharingIntent> | und
 /** Reconnect writes a fresh login into the caller's own ChatGPT account resource.
  * Its id, label, access, and session selections stay. A deleted account, or one
  * the caller did not create, matches no row, so a stale flow never recreates it. */
-async function reconnectCodexAccountResource(input: {
-  secretId: string; accountId: string; userId: string; projectId: string; value: string;
+async function reconnectAccountResource(input: {
+  secretId: string; accountId: string; userId: string; projectId: string; value: string; cfg: OAuthProvider;
 }): Promise<{ secretId: string; label: string } | null> {
-  const { secretId, accountId, userId, projectId, value } = input;
+  const { secretId, accountId, userId, projectId, value, cfg } = input;
   const [row] = await db.update(accountSecretResources).set({
     valueEnc: encryptAccountSecret(accountId, value),
     active: true,
@@ -204,31 +248,31 @@ async function reconnectCodexAccountResource(input: {
     eq(accountSecretResources.accountId, accountId),
     eq(accountSecretResources.secretId, secretId),
     eq(accountSecretResources.projectId, projectId),
-    eq(accountSecretResources.providerId, 'codex'),
-    eq(accountSecretResources.name, CODEX_AUTH_JSON_SECRET_NAME),
+    eq(accountSecretResources.providerId, cfg.resourceProviderId),
+    eq(accountSecretResources.name, cfg.secretName),
     eq(accountSecretResources.createdBy, userId),
   )).returning({ secretId: accountSecretResources.secretId, label: accountSecretResources.label });
   if (!row) return null;
   await recordAuditEvent({
     accountId, projectId, actorUserId: userId, actorType: 'human', source: 'api',
     action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: row.secretId,
-    metadata: { provider_id: 'codex', consumer: 'llm_gateway', reconnected: true },
+    metadata: { provider_id: cfg.resourceProviderId, consumer: 'llm_gateway', reconnected: true },
   });
   return row;
 }
 
 /** One OAuth completion creates one project-scoped account resource. The flow's UUID
  * makes concurrent or repeated polls idempotent without replacing another login. */
-async function writeCodexAccountResource(input: {
-  secretId: string; accountId: string; userId: string; label: string; value: string; projectId: string;
+async function writeAccountResource(input: {
+  secretId: string; accountId: string; userId: string; label: string; value: string; projectId: string; cfg: OAuthProvider;
   sharing?: ReturnType<typeof parseSharingIntent>;
 }) {
-  const { secretId, accountId, userId, label, value, projectId, sharing } = input;
+  const { secretId, accountId, userId, label, value, projectId, cfg, sharing } = input;
   const restricted = sharing?.mode === 'members' || sharing?.mode === 'private';
   const userIds = [...new Set([userId, ...(sharing?.mode === 'members' ? sharing.memberIds ?? [] : [])])];
   const created = await db.transaction(async (tx) => {
     const [row] = await tx.insert(accountSecretResources).values({
-      secretId, accountId, projectId, accessMode: restricted ? 'members' : 'project', label, providerId: 'codex', name: CODEX_AUTH_JSON_SECRET_NAME,
+      secretId, accountId, projectId, accessMode: restricted ? 'members' : 'project', label, providerId: cfg.resourceProviderId, name: cfg.secretName,
       valueEnc: encryptAccountSecret(accountId, value), consumer: 'llm_gateway',
       strategy: 'broker', createdBy: userId,
     }).onConflictDoNothing().returning({ secretId: accountSecretResources.secretId });
@@ -238,7 +282,7 @@ async function writeCodexAccountResource(input: {
   if (created) await recordAuditEvent({
     accountId, projectId, actorUserId: userId, actorType: 'human', source: 'api',
     action: 'secret.oauth.connected', resourceType: 'account_secret_resource', resourceId: secretId,
-    metadata: { provider_id: 'codex', consumer: 'llm_gateway' },
+    metadata: { provider_id: cfg.resourceProviderId, consumer: 'llm_gateway' },
   });
   return secretId;
 }
@@ -247,6 +291,8 @@ async function writeCodexAccountResource(input: {
 function authExpiresInMs(authJson: string): number | null {
   try {
     const parsed = JSON.parse(authJson);
+    // An OpenCode Console login is flat: { type, access, expires, ... }.
+    if (typeof parsed?.expires === 'number') return Math.max(0, parsed.expires - Date.now());
     // opencode auth.json is keyed by provider: { openai: { expires, ... } }.
     for (const entry of Object.values(parsed ?? {})) {
       const expires = (entry as { expires?: unknown })?.expires;
@@ -289,7 +335,8 @@ projectsApp.openapi(
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  if (!OAUTH_PROVIDERS[provider]) {
+  const cfg = oauthProvider(provider);
+  if (!cfg) {
     return c.json({ error: `OAuth device flow is not available for "${provider}"` }, 400);
   }
 
@@ -298,12 +345,12 @@ projectsApp.openapi(
   if (resourceLabel !== null && (resourceLabel.length < 1 || resourceLabel.length > 100)) {
     return c.json({ error: 'A named OAuth resource requires a 1–100 character label' }, 400);
   }
-  // Reconnect refreshes the login of an existing ChatGPT account resource in
+  // Reconnect refreshes the login of an existing named account resource in
   // place. It never renames or re-shares it, so a label or sharing is refused.
   const resourceId = body.resource_id === undefined ? null :
     typeof body.resource_id === 'string' ? body.resource_id.trim() : '';
   if (resourceId !== null && !z.string().uuid().safeParse(resourceId).success) {
-    return c.json({ error: 'resource_id must be the id of a ChatGPT account' }, 400);
+    return c.json({ error: `resource_id must be the id of a ${cfg.label} account` }, 400);
   }
   if (resourceId !== null && (resourceLabel !== null || body.sharing != null)) {
     return c.json({ error: 'Reconnecting keeps the account label and access; send only resource_id' }, 400);
@@ -316,7 +363,7 @@ projectsApp.openapi(
   if (named) {
     const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
       .where(and(eq(accountMembers.accountId, loaded.row.accountId), eq(accountMembers.userId, loaded.userId))).limit(1);
-    if (!member) return c.json({ error: 'An account member must own a ChatGPT connection' }, 403);
+    if (!member) return c.json({ error: `An account member must own a ${cfg.label} connection` }, 403);
   }
   if (resourceId !== null) {
     const [resource] = await db.select({
@@ -327,14 +374,14 @@ projectsApp.openapi(
     }).from(accountSecretResources)
       .where(and(eq(accountSecretResources.accountId, loaded.row.accountId), eq(accountSecretResources.secretId, resourceId)))
       .limit(1);
-    if (!resource || resource.projectId !== projectId || resource.providerId !== 'codex' ||
-      resource.name !== CODEX_AUTH_JSON_SECRET_NAME) {
-      return c.json({ error: 'ChatGPT account not found' }, 404);
+    if (!resource || resource.projectId !== projectId || resource.providerId !== cfg.resourceProviderId ||
+      resource.name !== cfg.secretName) {
+      return c.json({ error: `${cfg.label} account not found` }, 404);
     }
     // The login is the owner's own subscription; only they re-authorize it.
     // Account admins can still delete the account.
     if (resource.createdBy !== loaded.userId) {
-      return c.json({ error: 'Only the person who connected this ChatGPT account can reconnect it' }, 403);
+      return c.json({ error: `Only the person who connected this ${cfg.label} account can reconnect it` }, 403);
     }
   }
 
@@ -357,7 +404,7 @@ projectsApp.openapi(
     }
   }
   // A shared credential is a project SECRET WRITE (the device flow persists it
-  // via writeCodexAuthSecret on poll). Gate on the leaf so a custom role can
+  // via writeOAuthLoginSecret on poll). Gate on the leaf so a custom role can
   // withhold it and the agent-grant fold applies — closing the gap where the
   // flow wrote a shared credential behind only loadProjectForUser('read'). A
   // private (owner-only) credential is the member's own, so read still suffices.
@@ -372,16 +419,16 @@ projectsApp.openapi(
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE);
   }
 
-  // Request a device code straight from OpenAI — a couple HTTPS calls, no
+  // Request a device code straight from the provider — a couple HTTPS calls, no
   // subprocess, no server-side flow record. Everything `poll` needs is sealed
   // into the opaque `flow_id` (encrypted with the project key), so any replica
   // can serve any poll and there's nothing to leak or OOM.
   let challenge;
   try {
-    challenge = await startCodexDeviceAuth();
+    challenge = await cfg.start();
   } catch (err) {
     return c.json({
-      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
+      error: err instanceof Error ? err.message : `Failed to start ${cfg.label} authorization`,
     }, 502);
   }
 
@@ -389,13 +436,15 @@ projectsApp.openapi(
   const flowId = encryptProjectSecret(
     projectId,
     JSON.stringify({
-      d: challenge.deviceAuthId,
+      p: provider,
+      d: challenge.handle,
       u: challenge.userCode,
       s: sharing ?? null,
       uid: loaded.userId,
       ...(resourceLabel === null ? {} : { l: resourceLabel, rid: randomUUID() }),
       ...(resourceId === null ? {} : { rid: resourceId, rc: 1 }),
       e: expiresAt,
+      i: Math.max(challenge.intervalMs, OAUTH_POLL_INTERVAL_MS),
     }),
   );
 
@@ -438,18 +487,22 @@ projectsApp.openapi(
 
   const flowId = normalizeString(body.flow_id);
   if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
+  const cfg = oauthProvider(provider);
+  if (!cfg) return c.json({ error: `OAuth device flow is not available for "${provider}"` }, 400);
 
   // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
   // another project — or a tampered one — simply won't decrypt → expired.
-  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number; l?: string; rid?: string; rc?: number };
+  let state: { p?: string; d?: string; u?: string; s?: unknown; uid?: string; e?: number; i?: number; l?: string; rid?: string; rc?: number };
   try {
     state = JSON.parse(decryptProjectSecret(projectId, flowId));
   } catch {
     return c.json({ status: 'expired' });
   }
-  // Only the member who started it may poll it, and only before it expires.
+  // Only the member who started it may poll it, only for the provider it was
+  // started for (handles sealed before `p` existed are ChatGPT), and only
+  // before it expires.
   if (
-    !state.d || !state.u ||
+    !state.d || !state.u || (state.p ?? 'openai') !== provider ||
     state.uid !== loaded.userId ||
     typeof state.e !== 'number' || Date.now() > state.e
   ) {
@@ -461,9 +514,11 @@ projectsApp.openapi(
     if (!member) return c.json({ status: 'failed', error: 'Account membership is required' });
   }
 
-  const result = await pollCodexDeviceAuth({ deviceAuthId: state.d, userCode: state.u });
+  const result = await cfg.poll(state.d, state.u);
   if (result.status === 'pending') {
-    return c.json({ status: 'pending', next_poll_ms: OAUTH_POLL_INTERVAL_MS });
+    // Never ask a client to poll faster than the provider's own interval: the
+    // CLI adopts next_poll_ms, and 3 s against OpenCode's 5 s broke dev sign-in.
+    return c.json({ status: 'pending', next_poll_ms: Math.max(state.i ?? 0, OAUTH_POLL_INTERVAL_MS) });
   }
   if (result.status === 'failed') {
     return c.json({ status: 'failed', error: result.error });
@@ -474,15 +529,15 @@ projectsApp.openapi(
       !projectLlmGatewayEnabled(loaded.row.metadata)) {
       return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
     }
-    const reconnected = await reconnectCodexAccountResource({
+    const reconnected = await reconnectAccountResource({
       secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
-      projectId, value: result.authJson,
+      projectId, value: result.authJson, cfg,
     });
     if (!reconnected) {
-      return c.json({ status: 'failed', error: 'This ChatGPT account is no longer available. Add it again.' });
+      return c.json({ status: 'failed', error: `This ${cfg.label} account is no longer available. Add it again.` });
     }
     return c.json({ status: 'success', credential: {
-      provider_id: 'codex', secret_id: reconnected.secretId, label: reconnected.label,
+      provider_id: cfg.resourceProviderId, secret_id: reconnected.secretId, label: reconnected.label,
       expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
     } });
   }
@@ -494,23 +549,24 @@ projectsApp.openapi(
       !projectLlmGatewayEnabled(loaded.row.metadata)) {
       return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
     }
-    const secretId = await writeCodexAccountResource({
+    const secretId = await writeAccountResource({
       secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
-      label: state.l, value: result.authJson, projectId,
+      label: state.l, value: result.authJson, projectId, cfg,
       sharing: state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined,
     });
     return c.json({ status: 'success', credential: {
-      provider_id: 'codex', secret_id: secretId, label: state.l,
+      provider_id: cfg.resourceProviderId, secret_id: secretId, label: state.l,
       expires_in_ms: authExpiresInMs(result.authJson), updated_at: new Date().toISOString(),
     } });
   }
 
   // Legacy project login remains available when no resource label was sent.
   const sharing = state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined;
-  await writeCodexAuthSecret({
+  await writeOAuthLoginSecret({
     projectId,
     accountId: loaded.row.accountId,
     userId: loaded.userId,
+    secretName: cfg.secretName,
     value: result.authJson,
     sharing,
   });
@@ -548,7 +604,9 @@ projectsApp.openapi(
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_READ);
 
   const items: Array<{ provider_id: string; expires_in_ms: number | null; updated_at: string }> = [];
-  for (const [providerId, cfg] of Object.entries(OAUTH_PROVIDERS)) {
+  for (const providerId of ['openai', ...Object.keys(OPENCODE_CONSOLE_PROVIDERS)]) {
+    const cfg = oauthProvider(providerId);
+    if (!cfg) continue;
     const credential = await resolveProjectSecretForConsumer({
       projectId,
       accountId: loaded.row.accountId,
@@ -557,7 +615,8 @@ projectsApp.openapi(
       name: cfg.secretName,
       consumer: 'llm_gateway',
     });
-    if (!credential) continue;
+    // An OpenCode key secret holding a plain API key is not a login.
+    if (!credential || !cfg.isLogin(credential.value)) continue;
     items.push({
       provider_id: providerId,
       expires_in_ms: authExpiresInMs(credential.value),
@@ -596,7 +655,7 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
-  const cfg = OAUTH_PROVIDERS[provider];
+  const cfg = oauthProvider(provider);
   if (!cfg) return c.json({ error: 'Not found' }, 404);
 
   // Same test the GET secrets route uses for `can_manage_shared`.

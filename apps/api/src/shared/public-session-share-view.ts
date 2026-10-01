@@ -60,7 +60,7 @@ export async function getPublicSessionInfo(sessionId: string): Promise<PublicSes
     .select({
       sessionId: projectSessions.sessionId,
       status: projectSessions.status,
-      opencodeSessionId: projectSessions.opencodeSessionId,
+      opencodeSessionId: projectSessions.runtimeSessionId,
       metadata: projectSessions.metadata,
       createdAt: projectSessions.createdAt,
       updatedAt: projectSessions.updatedAt,
@@ -255,10 +255,10 @@ export async function getPublicSessionMessages(
 
   // The box owns its root conversation id; the row's pin is the fallback for
   // a daemon that has not adopted one yet.
-  let rootId = projectionIdentity(state.doc).opencode_session_id;
+  let rootId = projectionIdentity(state.doc).runtime_session_id;
   if (!rootId) {
     const [sessionRow] = await db
-      .select({ opencodeSessionId: projectSessions.opencodeSessionId })
+      .select({ opencodeSessionId: projectSessions.runtimeSessionId })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, row.sessionId))
       .limit(1);

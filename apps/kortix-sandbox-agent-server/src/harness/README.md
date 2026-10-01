@@ -44,8 +44,8 @@ session (a restart or resume re-reads the selection).
 | `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
-| `pi/wire.ts`, `pi/transcript.ts` | pi events → OpenCode wire frames; the transcript store |
-| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts` | Permissions/questions, workspace tools, gateway model |
+| `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
+| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
 
 ## One host relay (E12)
@@ -73,8 +73,8 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 (`HarnessDiagnosticsService.health`; OpenCode's pid/port and pi's model and
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
-`config.release.v1`, and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities`: all nine on OpenCode,
+`config.release.v1` (both harnesses), and the session features the runtime serves
+(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode,
 `session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
@@ -119,14 +119,60 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
 
+### Config releases
+
+With the project's `config_releases` flag on, pi runs the base branch's
+current config release, exactly as OpenCode does (`pi/config-release.ts`,
+contract in `services/config-release/`). A release is the same archive under
+`/opt/kortix/config/<release_id>`, verified against its Git blob IDs and
+sealed read-only. pi reads three things from it: the compiled governance
+(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/`, and `pi/`, its own
+config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`: skills,
+extensions, prompts, `settings.json`), which the API composes into the release.
+The rest of the archive (`opencode.json`, `tools/`, `plugins/`) is OpenCode's
+and pi ignores it, so a commit that breaks only those files is a working config
+on pi.
+
+- **Boot.** `runPi` starts the choice beside the repository checkout, and
+  `lifecycle.start()` waits for it: the desired release, then the last release
+  this box proved (`current.json`), then the image default (managed skills and
+  the provisioned governance). `/workspace` is read only while the flag is off.
+- **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
+  one pass after ready). pi applies a release in place: the governance goes
+  into the runtime's env, the skill directory moves to `<release>/skills`, and
+  `PiRuntime.reconfigure()` re-reads both. A release that changes anything
+  under `pi/` other than its skills (extensions, prompts, settings, which only
+  a start reads) restarts the runtime in place instead: the same root, the
+  transcript restored. Nothing else restarts, and the answer carries
+  `reload: null` either way. A turn in flight, or one admitted behind it
+  (`PiRuntime.idle()`), defers the apply; it is asked again after the download,
+  right before the swap. A runtime that refuses the config keeps the previous
+  one, and the release is quarantined on the box.
+- **Reporting.** Health carries the same `config` block and `config_dir_sha`
+  as OpenCode, and `harness.ready` requires `config.proven`. While a release
+  owns the governance, a `/kortix/env` push of `KORTIX_COMPILED_AGENT_CONFIG`
+  is dropped. The session notice (`/tmp/kortix/config-release.md`) is part of
+  pi's system prompt while a release runs.
+- **Not in a release.** npm pi packages (`harnesses.pi.packages`) and pi's own
+  `<workspace>/.pi/extensions` discovery load when the runtime starts, as
+  before. A change to them reaches a session at its next boot or restart.
+
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
 
-Permission rules follow OpenCode's semantics (`pi/interactions.ts`): a per-tool
-action, or a glob-pattern -> action map matched against the `bash` command line
-or a workspace tool's path, with the longest matching pattern winning and `*`
-the weakest. A pattern map is never collapsed to its `*` entry, and a `deny`
-outranks an earlier "always" reply on the same tool.
+A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
+`@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
+one harness's tool. Each adapter maps its tools onto them: pi's `write` is
+`edit` (`pi/interactions.ts`); OpenCode's `pty_*` tools follow `bash`, and the
+template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
+and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). Those tools
+cannot ask, so they run only when the capability is `allow`. A rule is an
+action, or a glob-pattern -> action map matched against the `bash` command
+line or a workspace tool's path, with the longest matching pattern winning and
+`*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
+request names the capability and the call's subject (`patterns`); an "always"
+reply allows the capability for the session, and a `deny` still outranks it.
+The reply is `RUNTIME_PERMISSION_REPLIES` (`once`, `always`, `reject`).
 
 ### Extensions
 

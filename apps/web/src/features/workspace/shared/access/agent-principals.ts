@@ -18,6 +18,7 @@
 import {
   getRolePermissions,
   listAgentIdentities,
+  listProjectAgentIdentities,
   listAssignments,
   listRoles,
   type AgentIdentity,
@@ -147,10 +148,24 @@ export function rolePermissionsId(
 export const agentIdentitiesQueryKey = (accountId: string | undefined) =>
   ['iam-agent-identities', accountId] as const;
 
+export const projectAgentIdentitiesQueryKey = (projectId: string | undefined) =>
+  ['project-agent-identities', projectId] as const;
+
 /**
  * The account's agent identities. Admin-only: the route asserts `policy.read`,
  * and a 403 is an answer ("you cannot see the ceiling"), not an error to toast.
  */
+/** One project's agent identities — readable by any project member. */
+export function useProjectAgentIdentities(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: projectAgentIdentitiesQueryKey(projectId),
+    queryFn: () => listProjectAgentIdentities(projectId as string),
+    enabled: enabled && !!projectId,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function useAgentIdentities(accountId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: agentIdentitiesQueryKey(accountId),
