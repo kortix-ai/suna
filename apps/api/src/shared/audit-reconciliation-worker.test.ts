@@ -1,9 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type AuditReconciliationFailureState,
+  describeAuditReconciliationFailure,
   nextAuditReconciliationCursor,
   nextAuditReconciliationFailureDecision,
 } from './audit-reconciliation-worker';
+
+describe('reconciliation failure warning', () => {
+  test('reports the driver SQLSTATE without leaking SQL or bound account IDs', () => {
+    const cause = Object.assign(new Error('relation does not exist'), { code: '42P01' });
+    const wrapper = Object.assign(new Error('Failed query: SELECT secret params: account-id'), {
+      cause,
+    });
+    expect(describeAuditReconciliationFailure(wrapper)).toBe(
+      'sqlstate=42P01 relation does not exist',
+    );
+  });
+  test('degrades safely without a driver cause', () => {
+    expect(describeAuditReconciliationFailure(null)).toBe('no error message available');
+  });
+});
 
 describe('nextAuditReconciliationCursor', () => {
   test('repeats an account until every bounded source page is complete', () => {

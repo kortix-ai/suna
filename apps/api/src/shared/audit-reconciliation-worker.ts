@@ -1,8 +1,11 @@
 import { sql } from 'drizzle-orm';
 import { recordAuditEvent } from './audit';
+import { describeAuditWriteFailure } from './audit-queue';
 import { type AuditReconciliationResult, reconcileAuditEvents } from './audit-reconciliation';
-import { db } from './db';
 import { runWorkerTick } from './audit-scope';
+import { db } from './db';
+
+export const describeAuditReconciliationFailure = describeAuditWriteFailure;
 
 const PAGE_SIZE = 1_000;
 const ACTIVE_DELAY_MS = 100;
@@ -20,7 +23,10 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let stopped = true;
 let active: Promise<void> | null = null;
 let lastScannedAccountId: string | null = null;
-let failureState: AuditReconciliationFailureState = { consecutiveFailures: 0, failingAccountId: null };
+let failureState: AuditReconciliationFailureState = {
+  consecutiveFailures: 0,
+  failingAccountId: null,
+};
 
 /** Raised by {@link runAuditReconciliationPage} so the caller knows which
  * account was being reconciled when the page failed, without changing the
@@ -82,8 +88,7 @@ export function nextAuditReconciliationFailureDecision(
     failedAccountId !== null && failedAccountId === previousState.failingAccountId;
   const consecutiveFailures = sameAccount ? previousState.consecutiveFailures + 1 : 1;
   const skip = failedAccountId !== null && consecutiveFailures >= MAX_CONSECUTIVE_ACCOUNT_FAILURES;
-  const delayMs =
-    ERROR_DELAYS_MS[Math.min(consecutiveFailures - 1, ERROR_DELAYS_MS.length - 1)];
+  const delayMs = ERROR_DELAYS_MS[Math.min(consecutiveFailures - 1, ERROR_DELAYS_MS.length - 1)];
   return {
     state: skip
       ? { consecutiveFailures: 0, failingAccountId: null }
@@ -165,10 +170,7 @@ async function tick(): Promise<void> {
       );
       lastScannedAccountId = decision.skipToAccountId;
     }
-    console.warn(
-      '[audit-reconciliation] page failed',
-      error instanceof Error ? error.message : String(error),
-    );
+    console.warn('[audit-reconciliation] page failed', describeAuditReconciliationFailure(error));
     schedule(decision.delayMs);
   }
 }
