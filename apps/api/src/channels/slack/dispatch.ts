@@ -802,6 +802,19 @@ export async function spawnAgentTurn(
     actorUserId = owner;
   }
 
+  await routeSlackThread(projectId, envelope, event, opts, project, actorUserId, teamId, threadId);
+}
+
+async function routeSlackThread(
+  projectId: string,
+  envelope: SlackEnvelope,
+  event: SlackEvent,
+  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean; authorizedResume?: boolean },
+  project: { accountId: string; metadata: typeof projects.$inferSelect.metadata },
+  actorUserId: string,
+  teamId: string,
+  threadId: string,
+): Promise<void> {
   let revived = false;
   if (teamId && threadId) {
     const thread = { platform: 'slack', workspaceId: teamId, threadId };
@@ -841,92 +854,9 @@ export async function spawnAgentTurn(
         });
         if (!allowed) return;
       }
-      // A known thread maps PERMANENTLY to exactly one session. Route the message
-      // into that session and NEVER create a second one — the session is durable
-      // and resurrects its own sandbox (resume / reprovision) underneath; the
-      // channel never touches the sandbox. The only stream-level decision here is
-      // "is a turn already streaming?": if so, don't open a competing stream, just
-      // hand the message to the running session.
-      const inflight = await loadTurn(existing.sessionId);
-      const turnInFlight = !!inflight && !inflight.finalized;
-
-      const handle = turnInFlight
-        ? null
-        : await startTurn(projectId, teamId, event, 'On it');
-      if (handle) {
-        handle.sessionId = existing.sessionId;
-        await saveTurn(handle);
-      }
-      // Per-Slack-user identity: once a thread participant is authorized, deliver
-      // their follow-up as that validated Kortix user. The thread/session gate
-      // above decides whether they are allowed to join this conversation at all.
-      const outcome = await deliverSlackFollowUpToSession({
-        sessionId: existing.sessionId,
-        text: renderFollowUpPrompt(envelope, event),
-        userId: actorUserId,
-        // An image on a text-only model, a pin the session can no longer run.
-        model: await slackFollowUpModel({
-          project: { projectId, accountId: project.accountId, metadata: project.metadata },
-          userId: actorUserId,
-          sessionId: existing.sessionId,
-          event,
-          session: {
-            createdBy: existing.createdBy ?? null,
-            metadata: existing.metadata,
-            agentName: existing.agentName ?? null,
-          },
-        }),
-      });
-
-      if (outcome === 'delivered') {
-        await touchChatThread(thread);
-        return;
-      }
-
-      if (outcome === 'pending') {
-        // The session is ALIVE and owns this thread — it's just still coming up
-        // (provisioning / waking from hibernation). KEEP the mapping; do NOT
-        // recreate (recreating is exactly what orphaned the real session and
-        // produced a second reply from "a session you can never find"). Let the
-        // user know it's waking, only on a stream we own — never clobber an
-        // in-flight turn's stream.
-        if (handle) {
-          await deleteTurn(existing.sessionId);
-          await finalizeTurn(handle, {
-            error: "Still waking this thread's session back up — send that again in a moment.",
-          });
-        }
-        return;
-      }
-
-      if (outcome === 'failed') {
-        // The session is in a genuine terminal error (provisioning failed). This is
-        // the one honest failure — surface it; KEEP the mapping and never recreate
-        // (a new session wouldn't fix a real fault, and silently recreating is what
-        // we're eliminating). The thread stays bound to its session.
-        //
-        // But surface it ONCE. Because we keep the mapping, every later message in
-        // the thread lands right back here (`session.status === 'failed'` is sticky)
-        // and, unguarded, re-posts the identical line — the thread jammed on repeat.
-        // The first failure claims a durable per-thread notice and posts it with a
-        // direct link to open the session in Kortix; every later one just clears its
-        // ⏳ ack and stays silent, so the thread isn't spammed forever.
-        if (handle) {
-          await deleteTurn(existing.sessionId);
-          if (await claimThreadErrorNotice(teamId, threadId)) {
-            const url = sessionWebUrl(config.FRONTEND_URL, projectId, existing.sessionId);
-            await finalizeTurn(handle, {
-              error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
-            });
-          } else {
-            // Suppressing the repeated notice must not turn a failed start
-            // into "Task complete" on the card. Title only — honest, still
-            // silent. Teams carried the identical bug.
-            await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
-          }
-        }
-        return;
-      }
+      const delivery = await deliverToExistingThread(projectId, envelope, event, project, actorUserId, teamId, threadId, thread, existing);
+      if (delivery.handled) return;
+      const { handle } = delivery;
 
       // outcome === 'no-session': the durable projectSessions row itself is gone
       // (deleted; the chat_threads FK cascade should already have dropped this
@@ -951,4 +881,106 @@ export async function spawnAgentTurn(
   // No live mapping for this thread → create the session, or JOIN one that a
   // concurrent handler is creating this very moment. Single atomic create path.
   await createOrJoinThreadSession({ projectId, teamId, threadId, envelope, event, revived, actorUserId });
+}
+
+async function deliverToExistingThread(
+  projectId: string,
+  envelope: SlackEnvelope,
+  event: SlackEvent,
+  project: { accountId: string; metadata: typeof projects.$inferSelect.metadata },
+  actorUserId: string,
+  teamId: string,
+  threadId: string,
+  thread: Parameters<typeof touchChatThread>[0],
+  existing: NonNullable<Awaited<ReturnType<typeof findChatThreadSession>>>,
+) {
+  // A known thread maps PERMANENTLY to exactly one session. Route the message
+  // into that session and NEVER create a second one — the session is durable
+  // and resurrects its own sandbox (resume / reprovision) underneath; the
+  // channel never touches the sandbox. The only stream-level decision here is
+  // "is a turn already streaming?": if so, don't open a competing stream, just
+  // hand the message to the running session.
+  const inflight = await loadTurn(existing.sessionId);
+  const turnInFlight = !!inflight && !inflight.finalized;
+
+  const handle = turnInFlight
+    ? null
+    : await startTurn(projectId, teamId, event, 'On it');
+  if (handle) {
+    handle.sessionId = existing.sessionId;
+    await saveTurn(handle);
+  }
+  // Per-Slack-user identity: once a thread participant is authorized, deliver
+  // their follow-up as that validated Kortix user. The thread/session gate
+  // above decides whether they are allowed to join this conversation at all.
+  const outcome = await deliverSlackFollowUpToSession({
+    sessionId: existing.sessionId,
+    text: renderFollowUpPrompt(envelope, event),
+    userId: actorUserId,
+    // An image on a text-only model, a pin the session can no longer run.
+    model: await slackFollowUpModel({
+      project: { projectId, accountId: project.accountId, metadata: project.metadata },
+      userId: actorUserId,
+      sessionId: existing.sessionId,
+      event,
+      session: {
+        createdBy: existing.createdBy ?? null,
+        metadata: existing.metadata,
+        agentName: existing.agentName ?? null,
+      },
+    }),
+  });
+
+  if (outcome === 'delivered') {
+    await touchChatThread(thread);
+    return { handled: true as const, handle };
+  }
+
+  if (outcome === 'pending') {
+    // The session is ALIVE and owns this thread — it's just still coming up
+    // (provisioning / waking from hibernation). KEEP the mapping; do NOT
+    // recreate (recreating is exactly what orphaned the real session and
+    // produced a second reply from "a session you can never find"). Let the
+    // user know it's waking, only on a stream we own — never clobber an
+    // in-flight turn's stream.
+    if (handle) {
+      await deleteTurn(existing.sessionId);
+      await finalizeTurn(handle, {
+        error: "Still waking this thread's session back up — send that again in a moment.",
+      });
+    }
+    return { handled: true as const, handle };
+  }
+
+  if (outcome === 'failed') {
+    // The session is in a genuine terminal error (provisioning failed). This is
+    // the one honest failure — surface it; KEEP the mapping and never recreate
+    // (a new session wouldn't fix a real fault, and silently recreating is what
+    // we're eliminating). The thread stays bound to its session.
+    //
+    // But surface it ONCE. Because we keep the mapping, every later message in
+    // the thread lands right back here (`session.status === 'failed'` is sticky)
+    // and, unguarded, re-posts the identical line — the thread jammed on repeat.
+    // The first failure claims a durable per-thread notice and posts it with a
+    // direct link to open the session in Kortix; every later one just clears its
+    // ⏳ ack and stays silent, so the thread isn't spammed forever.
+    if (handle) {
+      await deleteTurn(existing.sessionId);
+      if (await claimThreadErrorNotice(teamId, threadId)) {
+        const url = sessionWebUrl(config.FRONTEND_URL, projectId, existing.sessionId);
+        await finalizeTurn(handle, {
+          error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
+        });
+      } else {
+        // Suppressing the repeated notice must not turn a failed start
+        // into "Task complete" on the card. Title only — honest, still
+        // silent. Teams carried the identical bug.
+        await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
+      }
+    }
+    return { handled: true as const, handle };
+  }
+
+
+  return { handled: false as const, handle };
 }
