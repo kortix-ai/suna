@@ -17,7 +17,7 @@ import {
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { useProjectSession, useSessionMessageAuthors } from '@kortix/sdk/react';
+import { useFeatureFlag, useProjectSession, useSessionMessageAuthors } from '@kortix/sdk/react';
 import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
@@ -635,6 +635,8 @@ export function SessionChat({
   // Its bubble still comes from `queuedSyntheticMessages`.
   const agentPrompts = useMemo(() => promptInbox.prompts.filter(awaitsAgent), [promptInbox.prompts]);
   // Ids a server `no_reply` ask prompt shows under: its header is the server's.
+  // `human_messaging` off: asks and from-session messages draw as plain bubbles.
+  const { enabled: messagingCards } = useFeatureFlag(projectId, 'human_messaging');
   const askMessageIds = useMemo(() => {
     const ids = new Set<string>();
     for (const prompt of promptInbox.prompts) {
@@ -1035,8 +1037,8 @@ export function SessionChat({
     const last = list[list.length - 1];
     if (!last || last.info.role !== 'user') return false;
     if (list.filter((m) => m.info.role === 'user').length !== 1) return false;
-    return isUnansweredAsk({ userMessage: last, assistantMessages: [] });
-  }, [messages]);
+    return messagingCards && isUnansweredAsk({ userMessage: last, assistantMessages: [] });
+  }, [messages, messagingCards]);
   const effectiveBusy = resolveEffectiveBusy({
     isServerBusy: isServerBusy && !askAwaitsPeople,
     isOptimisticCompacting,
@@ -4278,6 +4280,7 @@ export function SessionChat({
                                 viewer?.id,
                               )}
                               headerTrusted={askMessageIds.has(turn.userMessage.info.id)}
+                              messagingCards={messagingCards}
                               viewerEmail={viewer?.email}
                               turnOutcome={turnOutcome}
                               isLast={turn.userMessage.info.id === lastUserMessageId}

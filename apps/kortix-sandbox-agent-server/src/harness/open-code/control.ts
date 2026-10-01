@@ -51,6 +51,9 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // drift apart on a live update.
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
   'KORTIX_SECRET_CAPABILITIES',
+  // Enabled feature flags, read by the in-box CLI through agent-env.sh. A push
+  // only moves process.env and the shell file; it needs no reload.
+  'KORTIX_FEATURES',
 ])
 
 /**

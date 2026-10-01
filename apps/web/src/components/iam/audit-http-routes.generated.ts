@@ -368,6 +368,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|access|pending-invites",
   "DELETE|v1|projects|:projectId|access|pending-invites|:inviteId",
   "POST|v1|projects|:projectId|access|pending-invites|:inviteId|resend",
+  "GET|v1|projects|:projectId|agent-identities",
   "GET|v1|projects|:projectId|agents|:agentName|config",
   "PUT|v1|projects|:projectId|agents|:agentName|config",
   "PUT|v1|projects|:projectId|agents|:agentName|scope",

@@ -57,11 +57,11 @@ import {
 } from '../lib/secret-writes';
 import { resolveSecretWriteInput } from '../lib/secret-write-input';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { loadSecretAudience } from '../lib/connection-audience';
 import { loadConnectionSharing } from '../lib/connection-sharing';
 import {
   clearSecretAudience,
-  secretAudiencePerson,
+  loadSecretReach,
+  secretAudienceSubject,
   setSecretAudience,
   type SecretAudiencePrincipal,
 } from '../lib/secret-audience';
@@ -75,7 +75,8 @@ import './secret-personal';
 import './secret-sync';
 
 const SecretSharePrincipalSchema = z.object({
-  principal_type: z.enum(['user', 'group']),
+  /** `agent`: the id is the agent's service account (`/iam/agent-identities`). */
+  principal_type: z.enum(['user', 'group', 'agent']),
   principal_id: z.string().uuid(),
 });
 
@@ -88,7 +89,8 @@ function parseSecretSharedWith(
   if (!parsed.success) {
     return {
       ok: false,
-      error: 'shared_with must be a list of at most 50 { principal_type: "user" | "group", principal_id: <uuid> }',
+      error:
+        'shared_with must be a list of at most 50 { principal_type: "user" | "group" | "agent", principal_id: <uuid> }',
     };
   }
   const unique = new Map(parsed.data.map((p) => [`${p.principal_type}:${p.principal_id}`, p]));
@@ -208,7 +210,8 @@ projectsApp.openapi(
     .filter((item) => !item.system)
     .filter((item) => agentMayUseEnv(agentGrant, item.identifier));
 
-  // Audience of each shared value, for the person this read acts for. A value
+  // Audience of each shared value, for the person and agent this read acts
+  // for. A value
   // narrowed away from the caller stays listed for someone who manages shared
   // secrets from outside a session (so they can widen it again), marked
   // `usable: false`; a session never sees it — it could not use it anyway.
@@ -220,14 +223,12 @@ projectsApp.openapi(
       projectName: loaded.row.name,
       objectType: 'secret',
     }),
-    secretAudiencePerson({
+    secretAudienceSubject({
       projectId,
       accountId: loaded.row.accountId,
       sessionId: callerSessionId,
       actorUserId: loaded.userId,
-    }).then((personId) =>
-      loadSecretAudience({ projectId, accountId: loaded.row.accountId, userId: personId }),
-    ),
+    }).then((subject) => loadSecretReach({ projectId, accountId: loaded.row.accountId, subject })),
   ]);
   const items = viewItems
     .map((item) => ({
@@ -301,7 +302,7 @@ projectsApp.openapi(
                 handle_prefix: z.string().optional().openapi({ description: 'For consumer http_broker only.' }),
                 shared_with: z.array(SecretSharePrincipalSchema).max(50).optional().openapi({
                   description:
-                    'Who can use this value: people and groups. [] = everyone in the project. Omit to keep it unchanged. A person sets it; an agent session gets 403.',
+                    'Who can use this value: people, groups, and agents (their service-account id). [] = everyone in the project. Omit to keep it unchanged. A person sets it; an agent session gets 403.',
                 }),
               }),
             },

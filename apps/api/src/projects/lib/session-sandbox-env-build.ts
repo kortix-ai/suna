@@ -59,6 +59,7 @@ import { sessionChannelEnvFromMetadata } from './session-channel-env';
 
 import { buildSessionRuntimeContextEnv } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { sandboxFeaturesValue } from '../../feature-flags/sandbox-features';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
 import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
@@ -213,6 +214,7 @@ export async function buildSessionSandboxEnvVars(input: {
       sessionAgent: input.agentName,
     });
   }
+  let projectMetadata: unknown;
   if (!input.platformMetaAgent) {
     // One indexed read for the flag: the callers hold the project row in
     // different shapes (or not at all on the reload paths), and the flag must
@@ -222,6 +224,7 @@ export async function buildSessionSandboxEnvVars(input: {
       .from(projects)
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
+    projectMetadata = projectRow?.metadata;
     harness = selectSessionHarness({
       piHarnessFlag: resolveFeatureFlag(projectRow?.metadata, 'pi_harness'),
       runtime: manifestHarness,
@@ -370,6 +373,9 @@ export async function buildSessionSandboxEnvVars(input: {
     ...(config.CONNECTORS_MCP_ENABLED ? { KORTIX_CONNECTORS_MCP_ENABLED: '1' } : {}),
     ...channelEnv,
     ...sessionContextEnv,
+    // The CLI hides a command whose flag is off. The platform coordinator has
+    // no project row here, so it omits the variable and the CLI stays unfiltered.
+    ...(input.platformMetaAgent ? {} : { KORTIX_FEATURES: sandboxFeaturesValue(projectMetadata) }),
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,

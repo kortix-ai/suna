@@ -52,10 +52,20 @@ export function orderAskedYou(
   return [...waiting, ...answered];
 }
 
-/** Who asked. The run's starter is copied onto every child, so this is the person behind the ask. */
+/**
+ * Who asked. The server stamps `metadata.asked_by` on every ask: the asking
+ * session's agent, else its title (`kind: 'session'`), or the person's name. Rows from before it
+ * existed fall back to the run's starter, copied onto every child.
+ */
 export function askedYouAsker(
-  session: Pick<ProjectSession, 'initiator' | 'owner_name' | 'owner_email'>,
+  session: Pick<ProjectSession, 'metadata' | 'initiator' | 'owner_name' | 'owner_email'>,
 ): string | null {
+  const by = session.metadata?.asked_by;
+  if (by && typeof by === 'object') {
+    const { kind, name, email, agent } = by as { kind?: unknown; name?: unknown; email?: unknown; agent?: unknown };
+    const label = kind === 'person' ? name || email : agent || name;
+    if (typeof label === 'string' && label.trim()) return label;
+  }
   return session.initiator?.label || session.owner_name || session.owner_email || null;
 }
 

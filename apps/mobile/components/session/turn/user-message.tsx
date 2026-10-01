@@ -149,7 +149,9 @@ function IncomingMessageCard({ info, dimStyle }: {
   dimStyle: ReturnType<typeof useAnimatedStyle>;
 }) {
   const isAsk = info.type === 'ask';
-  const sender = info.sender.kind === 'session' ? info.sender.title || 'Untitled session' : info.sender.name;
+  const sender = info.sender.kind === 'session'
+    ? info.sender.agent || info.sender.title || 'Untitled session'
+    : info.sender.name;
   const label = isAsk
     ? `${sender} asked ${info.to.map((p) => p.name || p.email).join(', ')}`
     : `From ${sender}`;
@@ -187,6 +189,7 @@ export function UserMessage({
   rewindDisabled,
   queueState,
   uploadStatus,
+  messagingCards = false,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -208,6 +211,8 @@ export function UserMessage({
   /** Dims the column; `interrupted` also shows a status line. */
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /** `human_messaging` is on. Off: a header never makes a card; the text draws as a plain bubble. */
+  messagingCards?: boolean;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -234,7 +239,7 @@ export function UserMessage({
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
   const sessionMessage = useMemo(() => parseSessionMessagePrompt(rawText), [rawText]);
   const incoming =
-    sessionMessage && (sessionMessage.sender.kind === 'session' || sessionMessage.type === 'ask')
+    messagingCards && sessionMessage && (sessionMessage.sender.kind === 'session' || sessionMessage.type === 'ask')
       ? sessionMessage
       : undefined;
 
