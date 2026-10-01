@@ -1,0 +1,70 @@
+import * as P from '../rest/projects-client';
+export function bindAccounts() {
+  return {
+    list: P.listAccounts,
+    get: P.getAccount,
+    create: P.createAccount,
+    secretResources: {
+      list: P.listAccountSecretResources,
+      create: P.createAccountSecretResource,
+      rotate: P.rotateAccountSecretResource,
+      remove: P.deleteAccountSecretResource,
+      grant: P.grantAccountSecretResource,
+      revoke: P.revokeAccountSecretResourceGrant,
+      setAccess: P.setAccountSecretResourceAccess,
+    },
+    updateName: P.updateAccountName,
+    /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
+    branding: {
+      get: P.getAccountBranding,
+      update: P.updateAccountBranding,
+      uploadAsset: P.uploadAccountBrandingAsset,
+      removeAsset: P.removeAccountBrandingAsset,
+      reset: P.resetAccountBranding,
+    },
+    leave: P.leaveAccount,
+    members: P.listAccountMembers,
+    invite: P.inviteAccountMember,
+    removeMember: P.removeAccountMember,
+    updateMemberRole: P.updateAccountMemberRole,
+    invites: P.listAccountInvites,
+    /** Cancel a pending account invite (accountId still known/scoped). */
+    cancelInvite: P.cancelAccountInvite,
+    /** Resend a pending account invite (accountId still known/scoped). */
+    resendInvite: P.resendAccountInvite,
+    /** CLI PAT minting — account-scoped personal access tokens (`kortix_pat_...`). */
+    tokens: {
+      list: P.listAccountTokens,
+      create: P.createAccountToken,
+      revoke: P.revokeAccountToken,
+    },
+    /** Connected apps — the OAuth / MCP clients this person approved, across all accounts. */
+    connectedApps: {
+      list: P.listOAuthGrants,
+      revoke: P.revokeOAuthGrant,
+    },
+    /** Enterprise audit log — events + CSV/JSONL export + SIEM webhooks. */
+    audit: {
+      log: P.listAccountAudit,
+      export: P.exportAccountAudit,
+      webhooks: {
+        list: P.listAccountAuditWebhooks,
+        create: P.createAccountAuditWebhook,
+        update: P.updateAccountAuditWebhook,
+        remove: P.removeAccountAuditWebhook,
+      },
+    },
+  };
+
+  /**
+   * Identity and access — the canonical RBAC surface.
+   *
+   * One vocabulary: a PRINCIPAL (user, group, service account, pending invitee)
+   * holds a ROLE at a SCOPE (the account, or one project), optionally narrowed
+   * to one OBJECT, as one ASSIGNMENT row. A role is a set of PERMISSIONS.
+   *
+   * `assignments` is the only grant store — it replaced the account-role column,
+   * the project-role column, group grants, policies and resource grants. There is
+   * no second way to grant anything, and `can`/`canBatch` is the only way to ask.
+   */
+}
