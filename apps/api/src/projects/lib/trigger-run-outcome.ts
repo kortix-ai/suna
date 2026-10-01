@@ -1,5 +1,5 @@
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
 import { notifySessionEvent } from '../../notifications/session-push';
 import { db } from '../../shared/db';
@@ -15,10 +15,10 @@ import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../ses
  *
  * At the end of a turn in a session a trigger created, this records the run's
  * outcome on the trigger:
- * - failed: `last_status: failed`, the reason in `last_error`, and one push
- *   to the account owner (whom triggers run as), on the healthy → failed
- *   transition only;
- * - succeeded after a failure: back to `fired`, error cleared;
+ * - failed: `last_status: failed`, the reason in `last_error`, and
+ *   `run_failing_since`. The account owner (whom triggers run as) gets one
+ *   push when the streak starts. Later fires keep `failed` (keepRunFailure);
+ * - succeeded after failed runs: back to `fired`, error and streak cleared;
  * - failed because the history no longer fits the model even after
  *   compaction: the session is retired, so the next reuse/keyed fire starts
  *   a fresh session instead of failing into the same one.
@@ -70,8 +70,9 @@ export async function recordTriggerRunEnd(
   if (end.status === 'idle') {
     const recovered = await db
       .update(projectTriggerRuntime)
-      .set({ lastStatus: 'fired', lastError: null, lastAttemptAt: now, updatedAt: now })
-      .where(and(row, eq(projectTriggerRuntime.lastStatus, 'failed')))
+      .set({ lastStatus: 'fired', lastError: null, runFailingSince: null, lastAttemptAt: now, updatedAt: now })
+      // A failed fire is cleared by the next good fire, not by another fire's run.
+      .where(and(row, isNotNull(projectTriggerRuntime.runFailingSince)))
       .returning({ slug: projectTriggerRuntime.slug });
     return recovered.length > 0 ? 'recovered' : 'unchanged';
   }
@@ -88,17 +89,17 @@ export async function recordTriggerRunEnd(
   }
 
   const lastError = triggerRunFailureText(end.error);
-  // One statement decides the transition: concurrent ends of two runs cannot
-  // both see a healthy trigger, so the owner is pushed once.
+  // One statement starts the streak: concurrent ends of two runs cannot both
+  // see it unset, so the owner is pushed once per streak, not once per run.
   const transitioned = await db
     .update(projectTriggerRuntime)
-    .set({ lastStatus: 'failed', lastError, lastAttemptAt: now, updatedAt: now })
-    .where(and(row, sql`${projectTriggerRuntime.lastStatus} is distinct from 'failed'`))
+    .set({ lastStatus: 'failed', lastError, runFailingSince: now, lastAttemptAt: now, updatedAt: now })
+    .where(and(row, isNull(projectTriggerRuntime.runFailingSince)))
     .returning({ slug: projectTriggerRuntime.slug });
   if (transitioned.length === 0) {
     const refreshed = await db
       .update(projectTriggerRuntime)
-      .set({ lastError, lastAttemptAt: now, updatedAt: now })
+      .set({ lastStatus: 'failed', lastError, lastAttemptAt: now, updatedAt: now })
       .where(row)
       .returning({ slug: projectTriggerRuntime.slug });
     return refreshed.length > 0 ? 'still_failed' : 'unchanged';

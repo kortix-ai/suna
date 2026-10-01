@@ -7,6 +7,7 @@ import { createSession, drainSessionLifecycleQueue, enqueueContinueSessionComman
 import type { GitTriggerSpec } from '../triggers';
 import type { ProjectRow, RequestAuditContext } from './serializers';
 import { renderSessionKey } from './trigger-payload';
+import { keepRunFailure } from '../trigger-execution-store';
 import { TRIGGER_REUSE_RETIRED_AT } from './trigger-run-outcome';
 import { disableSessionReminder, reminderPromptText } from './session-reminders';
 import type { TriggerFireSource } from './trigger-webhook-auth';
@@ -101,8 +102,7 @@ export async function markGitTriggerFired(
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: {
         lastFiredAt: when,
-        lastStatus: status,
-        lastError: null,
+        ...keepRunFailure(status),
         lastAttemptAt: when,
         updatedAt: when,
       },

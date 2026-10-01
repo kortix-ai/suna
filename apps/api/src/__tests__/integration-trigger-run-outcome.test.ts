@@ -11,8 +11,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { accountMembers, accounts, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { findKeyedTriggerSession, findReusableTriggerSession } from '../projects/lib/trigger-fire';
+import {
+  findKeyedTriggerSession,
+  findReusableTriggerSession,
+  markGitTriggerAttemptFailed,
+  markGitTriggerFired,
+} from '../projects/lib/trigger-fire';
 import { recordTriggerRunEnd, type TriggerRunEnd } from '../projects/lib/trigger-run-outcome';
+import { markTriggerRuntimeDelivered } from '../projects/trigger-execution-store';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
@@ -75,10 +81,10 @@ beforeEach(async () => {
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
   await db
     .insert(projectTriggerRuntime)
-    .values({ projectId: PROJECT, slug: SLUG, lastStatus: 'fired', lastError: null, updatedAt: new Date() })
+    .values({ projectId: PROJECT, slug: SLUG, lastStatus: 'fired', lastError: null, runFailingSince: null, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
-      set: { lastStatus: 'fired', lastError: null, updatedAt: new Date() },
+      set: { lastStatus: 'fired', lastError: null, runFailingSince: null, updatedAt: new Date() },
     });
 });
 
@@ -120,6 +126,54 @@ describe('a trigger run that fails', () => {
     expect(row.lastError).toBeNull();
     // A good run on a healthy trigger writes nothing.
     expect(await recordTriggerRunEnd(end(sessionId, { status: 'idle', error: null }), notify)).toBe('unchanged');
+  });
+});
+
+// Dev 2026-10-01: the next fire wrote `fired` over a failed run, so the
+// failure vanished and every later failed run pushed the owner again.
+describe('a trigger that keeps firing after a failed run', () => {
+  test('a re-fire and its delivery keep the failure, and the next failed run does not push again', async () => {
+    const sessionId = await seedSession();
+    expect(await recordTriggerRunEnd(end(sessionId), notify)).toBe('failed');
+    const reason = (await trigger()).lastError;
+
+    await markGitTriggerFired(PROJECT, SLUG, new Date(), 'queued');
+    expect(await trigger()).toMatchObject({ lastStatus: 'failed', lastError: reason });
+    await markTriggerRuntimeDelivered({ projectId: PROJECT, slug: SLUG, when: new Date() });
+    expect(await trigger()).toMatchObject({ lastStatus: 'failed', lastError: reason });
+    await markGitTriggerFired(PROJECT, SLUG, new Date());
+    expect(await trigger()).toMatchObject({ lastStatus: 'failed', lastError: reason });
+
+    expect(await recordTriggerRunEnd(end(sessionId), notify)).toBe('still_failed');
+    expect(pushes).toHaveLength(1);
+
+    // Only a run that finishes ends the failure; fires are then `fired` again.
+    expect(await recordTriggerRunEnd(end(sessionId, { status: 'idle', error: null }), notify)).toBe('recovered');
+    await markGitTriggerFired(PROJECT, SLUG, new Date(), 'queued');
+    expect(await trigger()).toMatchObject({ lastStatus: 'queued', lastError: null, runFailingSince: null });
+  });
+
+  test('a failed fire still clears on the next fire', async () => {
+    // A pinned trigger's session carries no trigger metadata, so no run
+    // outcome ever reaches its trigger: only a fire can clear a fire failure.
+    await markGitTriggerAttemptFailed(PROJECT, SLUG, new Date(), 'Session create failed');
+    expect((await trigger()).lastStatus).toBe('failed');
+    await markGitTriggerFired(PROJECT, SLUG, new Date());
+    expect(await trigger()).toMatchObject({ lastStatus: 'fired', lastError: null });
+  });
+
+  test('a run that fails after a failed fire pushes the owner', async () => {
+    const sessionId = await seedSession();
+    await markGitTriggerAttemptFailed(PROJECT, SLUG, new Date(), 'Session create failed');
+    expect(await recordTriggerRunEnd(end(sessionId), notify)).toBe('failed');
+    expect(pushes).toHaveLength(1);
+  });
+
+  test('a good run does not clear a failed fire', async () => {
+    const sessionId = await seedSession();
+    await markGitTriggerAttemptFailed(PROJECT, SLUG, new Date(), 'Session create failed');
+    expect(await recordTriggerRunEnd(end(sessionId, { status: 'idle', error: null }), notify)).toBe('unchanged');
+    expect(await trigger()).toMatchObject({ lastStatus: 'failed', lastError: 'Session create failed' });
   });
 });
 
