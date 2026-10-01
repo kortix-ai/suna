@@ -17323,7 +17323,7 @@
       "texte2b3a36c0979": "Quelle konnte nicht hinzugefügt werden",
       "texte2c604d8e8f9": "Der Monatsabschluss ist nicht wegen der Buchhaltung langsam. Langsam sind die vier Tage, in denen Daten zusammengetragen, abgeglichen, nachverfolgt und formatiert werden, bevor jemand mit entsprechender Qualifikation eine Zahl sieht.",
       "texte2cacf330067": "Bücher abgleichen, Abweichungen markieren, auf Freigabe warten.",
-      "texte2cbafcec553": "Alle Mitglieder dieses Projekts verlieren den Zugriff auf dieses Konto. Sitzungen, die daran gebunden sind, funktionieren nicht mehr.",
+      "texte2cbafcec553": "Alle Mitglieder dieses Projekts verlieren den Zugriff auf dieses Konto. Es kann nicht entfernt werden, solange es an eine Sitzung gebunden ist; löse zuerst die Bindung in der Sitzung.",
       "texte2cbd4618228": "Regel {value0} entfernen",
       "texte2cc5cc46d8e": "Quadratisches Symbol — wenn das breite Logo nicht passt, sowie Touch-Symbol. Steht für das Logo, wenn keines festgelegt ist.",
       "texte2d0a54968ea": "Löschen",

@@ -17323,7 +17323,7 @@
       "texte2b3a36c0979": "No se pudo añadir la fuente",
       "texte2c604d8e8f9": "El cierre mensual no es lento por la contabilidad. Es lento por los cuatro días de extraer, conciliar, perseguir y dar formato antes de que alguien cualificado vea una cifra.",
       "texte2cacf330067": "Concilia los libros, marca las excepciones y espera la aprobación final.",
-      "texte2cbafcec553": "Todos los miembros de este proyecto perderán el acceso a esta cuenta. Las sesiones vinculadas a ella dejarán de funcionar.",
+      "texte2cbafcec553": "Todos los miembros de este proyecto perderán el acceso a esta cuenta. No se puede eliminar mientras esté vinculada a una sesión; desvincúlala primero de la sesión.",
       "texte2cbd4618228": "Eliminar regla {value0}",
       "texte2cc5cc46d8e": "Símbolo cuadrado — cuando el logo horizontal no encaja y para el icono táctil. Sustituye al logo cuando no se ha establecido ninguno.",
       "texte2d0a54968ea": "Eliminar",

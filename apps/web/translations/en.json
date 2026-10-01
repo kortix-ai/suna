@@ -17336,7 +17336,7 @@
       "texte2b3a36c0979": "Could not add source",
       "texte2c604d8e8f9": "Month-end is not slow because of the accounting. It is slow because of four days of pulling, matching, chasing and formatting before anyone qualified sees a number.",
       "texte2cacf330067": "Reconcile the books, flag the exceptions, hold for sign-off.",
-      "texte2cbafcec553": "Everyone on this project loses access to this account. Sessions bound to it will stop working.",
+      "texte2cbafcec553": "Everyone on this project loses access to this account. It cannot be removed while a session is bound to it; unbind it from the session first.",
       "texte2cbd4618228": "Remove rule {value0}",
       "texte2cc5cc46d8e": "Square symbol — where the wide logo does not fit, and the touch icon. Stands in for the logo when none is set.",
       "texte2d0a54968ea": "Delete",

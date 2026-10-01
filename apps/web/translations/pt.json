@@ -17323,7 +17323,7 @@
       "texte2b3a36c0979": "Não foi possível adicionar a fonte",
       "texte2c604d8e8f9": "O fechamento mensal não é lento por causa da contabilidade. É lento por causa de quatro dias extraindo, conciliando, cobrando e formatando dados antes que alguém qualificado veja um número.",
       "texte2cacf330067": "Concilie os livros, sinalize exceções e aguarde a aprovação final.",
-      "texte2cbafcec553": "Todos neste projeto perderão acesso a esta conta. As sessões vinculadas a ela deixarão de funcionar.",
+      "texte2cbafcec553": "Todos neste projeto perderão acesso a esta conta. Ela não pode ser removida enquanto estiver vinculada a uma sessão; desvincule-a da sessão primeiro.",
       "texte2cbd4618228": "Remover regra {value0}",
       "texte2cc5cc46d8e": "Símbolo quadrado — onde o logo largo não cabe e como ícone de toque. Representa o logo quando nenhum está definido.",
       "texte2d0a54968ea": "Excluir",

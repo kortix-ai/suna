@@ -17323,7 +17323,7 @@
       "texte2b3a36c0979": "Impossible d’ajouter la source",
       "texte2c604d8e8f9": "La clôture mensuelle n’est pas lente à cause de la comptabilité. Elle l’est à cause de quatre jours passés à extraire, rapprocher, relancer et mettre en forme avant qu’une personne qualifiée ne voie un chiffre.",
       "texte2cacf330067": "Rapprocher les comptes, signaler les exceptions et attendre la validation.",
-      "texte2cbafcec553": "Tous les membres de ce projet perdront l’accès à ce compte. Les sessions qui lui sont associées cesseront de fonctionner.",
+      "texte2cbafcec553": "Tous les membres de ce projet perdront l’accès à ce compte. Il ne peut pas être supprimé tant qu’il est lié à une session ; détachez-le d’abord de la session.",
       "texte2cbd4618228": "Supprimer la règle {value0}",
       "texte2cc5cc46d8e": "Symbole carré — lorsque le logo large ne convient pas, et pour l’icône tactile. Remplace le logo lorsqu’aucun n’est défini.",
       "texte2d0a54968ea": "Supprimer",
