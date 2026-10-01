@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { AuthVariables } from '../types';
 
 const USER = '00000000-0000-4000-8000-00000000a001';
+const SESSION = '00000000-0000-4000-8000-00000000a002';
 const SECRET = 'synthetic-logout-secret-0123456789';
 process.env.SUPABASE_JWT_SECRET = SECRET;
 process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '0';
@@ -29,7 +30,7 @@ const { authRouter } = await import('../auth');
 const { supabaseAuth } = await import('../middleware/auth');
 
 const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
-const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: USER, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: USER, role: 'authenticated', session_id: SESSION, exp: Math.floor(Date.now() / 1000) + 3600 })}`;
 const bearer = `${unsigned}.${createHmac('sha256', SECRET).update(unsigned).digest('base64url')}`;
 
 const app = new Hono<{ Variables: AuthVariables }>();
@@ -55,7 +56,21 @@ test('POST /v1/auth/logout revokes the bearer used by the next authenticated ide
     const logout = await request('/v1/auth/logout', 'POST');
     expect(logout.status).toBe(200);
     expect((await request('/v1/accounts/me')).status).toBe(401);
-    expect(checks).toBe(3);
+    expect(checks).toBe(2);
+  } finally {
+    __setJwtLivenessLoaderForTests(null);
+    __setGoTrueFetch(null);
+  }
+});
+
+// GoTrue invalidates refresh credentials but can still accept the old access JWT.
+test('logout denies the same access bearer even while GoTrue accepts its signature', async () => {
+  __setJwtLivenessLoaderForTests(async () => ({ id: USER, email: '' }));
+  __setGoTrueFetch(async () => Response.json({}));
+  try {
+    expect((await request('/v1/accounts/me')).status).toBe(200);
+    expect((await request('/v1/auth/logout', 'POST')).status).toBe(200);
+    expect((await request('/v1/accounts/me')).status).toBe(401);
   } finally {
     __setJwtLivenessLoaderForTests(null);
     __setGoTrueFetch(null);

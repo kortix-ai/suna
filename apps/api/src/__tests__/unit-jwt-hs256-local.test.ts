@@ -186,7 +186,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     expect(calls.length).toBe(2);
   });
 
-  test('sign-out drops the cached confirmation, so the next request asks GoTrue again', async () => {
+  test('sign-out denies the previously confirmed bearer without another GoTrue call', async () => {
     let live = true;
     const calls = countingLoader(async () => (live ? { id: USER, email: '' } : null));
     const token = sign({ sub: USER, exp: inAnHour() });
@@ -196,7 +196,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     liveness.forgetJwtLiveness(token);
 
     expect((await verifySupabaseJwt(token)).ok).toBe(false);
-    expect(calls.length).toBe(2);
+    expect(calls.length).toBe(1);
   });
 });
 

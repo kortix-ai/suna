@@ -21,6 +21,8 @@
  *  - For immediate cross-replica logout, production must keep TTL at zero.
  *    `POST /v1/auth/logout` drops the local entry as well.
  *  - TTL 0 disables the cache: every request asks GoTrue (the old behavior).
+ *  - A successful local logout also denies its access bearer until expiry,
+ *    even if GoTrue still accepts its signature. Other replicas need GoTrue.
  *  - Keys are SHA-256 digests of the token; the raw token is never stored.
  *  - Bounded to MAX_ENTRIES; the oldest entry is evicted first.
  *
@@ -45,6 +47,7 @@ interface Entry {
 const MAX_ENTRIES = 10_000;
 const cache = new Map<string, Entry>();
 const inflight = new Map<string, Promise<LiveUser | null>>();
+const revoked = new Map<string, number>();
 
 /** Loader seam for tests; production asks GoTrue. */
 type Loader = (token: string) => Promise<LiveUser | null>;
@@ -83,10 +86,15 @@ function ttlMs(): number {
  * claim; the cached answer never outlives it.
  */
 export async function confirmJwtLive(token: string, expSeconds: number | undefined): Promise<LiveUser | null> {
+  const key = keyFor(token);
+  const expiresAt = revoked.get(key);
+  if (expiresAt !== undefined) {
+    if (expiresAt > Date.now()) return null;
+    revoked.delete(key);
+  }
   const ttl = ttlMs();
   if (ttl === 0) return loader(token);
 
-  const key = keyFor(token);
   const now = Date.now();
   const hit = cache.get(key);
   if (hit) {
@@ -99,6 +107,7 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
 
   const request = loader(token)
     .then((user) => {
+      if (revoked.has(key)) return null;
       if (user) {
         const tokenExpiry = typeof expSeconds === 'number' ? expSeconds * 1000 : Number.POSITIVE_INFINITY;
         const expiresAt = Math.min(Date.now() + ttl, tokenExpiry);
@@ -119,9 +128,25 @@ export async function confirmJwtLive(token: string, expSeconds: number | undefin
   return request;
 }
 
-/** Drop the cached confirmation for `token` (sign-out on this replica). */
+/** Deny a locally logged-out bearer until its access JWT expires. */
 export function forgetJwtLiveness(token: string): void {
-  cache.delete(keyFor(token));
+  const key = keyFor(token);
+  cache.delete(key);
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString());
+    if (typeof payload.exp === 'number' && payload.exp * 1000 > Date.now()) {
+      if (revoked.size >= MAX_ENTRIES) {
+        for (const [digest, expiry] of revoked) {
+          if (expiry <= Date.now()) revoked.delete(digest);
+        }
+      }
+      // The upstream revoke remains authoritative on other replicas. Never
+      // evict a live local denial to admit a newer token.
+      if (revoked.size < MAX_ENTRIES) revoked.set(key, payload.exp * 1000);
+    }
+  } catch {
+    // Invalid JWTs never pass signature verification.
+  }
 }
 
 /** Test seam: replace the GoTrue loader and clear all state. */
@@ -129,6 +154,7 @@ export function __setJwtLivenessLoaderForTests(next: Loader | null): void {
   loader = next ?? askGoTrue;
   cache.clear();
   inflight.clear();
+  revoked.clear();
 }
 
 /** Current entry count (tests and diagnostics). */
