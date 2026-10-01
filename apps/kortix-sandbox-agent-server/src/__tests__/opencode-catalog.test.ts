@@ -812,3 +812,127 @@ describe('on-demand managed catalog converge (post-boot self-heal + wake/refresh
     }
   })
 })
+
+// 2026-10-01 dev: a box created at 23:58 registered the 18:45 image catalog,
+// with codex/gpt-5.4 and without codex/gpt-6.1-sol, while the gateway served
+// gpt-6.1-sol. The managed-only converge never looked at a non-managed id, so
+// the picker offered a model the box would answer `Model not found` for.
+describe('on-demand converge for the ONE model a turn asks for (any provider)', () => {
+  const cfg = loadConfig({ KORTIX_WORKSPACE: '/workspace' } as NodeJS.ProcessEnv)
+  const REAL = {
+    KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
+    KORTIX_LLM_BASE_URL: process.env.KORTIX_LLM_BASE_URL,
+    KORTIX_TOKEN: process.env.KORTIX_TOKEN,
+  }
+  const FULL_LIVE = {
+    models: { ...STALE_BAKED.models, 'codex/gpt-6.1-sol': { name: 'GPT-6.1 Sol (ChatGPT)', provider: 'codex' } },
+  }
+
+  beforeEach(() => {
+    process.env.KORTIX_LLM_BASE_URL = GATEWAY.KORTIX_LLM_BASE_URL
+    process.env.KORTIX_TOKEN = GATEWAY.KORTIX_TOKEN
+  })
+  afterEach(() => {
+    for (const [key, value] of Object.entries(REAL)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  async function bootStale(): Promise<string> {
+    process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
+    await buildOpencodeConfigContent({ ...GATEWAY, KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE } as NodeJS.ProcessEnv)
+    const dir = await mkdtemp(join(tmpdir(), 'kortix-model-'))
+    tempDirs.push(dir)
+    return join(dir, 'kortix-llm-catalog.session.json')
+  }
+
+  function opencode(swaps: { n: number }): Opencode {
+    return {
+      getInternalUrl: () => 'http://127.0.0.1:65535',
+      reloadVerified: async () => {
+        swaps.n++
+        return { outcome: 'swapped', port: 4096, pid: 4242, turnEnded: false, orphanedMessageId: null }
+      },
+    } as unknown as Opencode
+  }
+
+  const gateway = (full: unknown, status = 200) =>
+    (async (input: string) =>
+      String(input).includes('scope=picker')
+        ? new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
+        : new Response(JSON.stringify(full), { status })) as unknown as typeof fetch
+
+  test('a registered model answers unchanged with no network call', async () => {
+    const target = await bootStale()
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls++
+      return new Response('{}')
+    }) as unknown as typeof fetch
+    const swaps = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+      model: 'openai/gpt-5.5',
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+    expect(result).toMatchObject({ outcome: 'unchanged', modelPresent: true })
+    expect(calls).toBe(0)
+    expect(swaps.n).toBe(0)
+  })
+
+  test('a model the box lacks but the gateway serves lands in the file and one verified restart', async () => {
+    const target = await bootStale()
+    globalThis.fetch = gateway(FULL_LIVE)
+    const swaps = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+      model: 'codex/gpt-6.1-sol',
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+    expect(result).toMatchObject({ outcome: 'restarted', missing: ['codex/gpt-6.1-sol'], modelPresent: true })
+    expect(swaps.n).toBe(1)
+    const written = JSON.parse(await readFile(target, 'utf8')) as { models: Record<string, unknown> }
+    expect(written.models['codex/gpt-6.1-sol']).toBeDefined()
+    expect(process.env.KORTIX_LLM_CATALOG_FILE).toBe(target)
+  })
+
+  test('a model the gateway does not serve is not-served: no restart, the turn gets OpenCode\'s own error', async () => {
+    const target = await bootStale()
+    globalThis.fetch = gateway(FULL_LIVE)
+    const swaps = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+      model: 'codex/gpt-9-typo',
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+    expect(result).toMatchObject({ outcome: 'not-served', modelPresent: false })
+    expect(swaps.n).toBe(0)
+  })
+
+  test('a dead full-catalog fetch is no-gateway (retryable), never not-served', async () => {
+    const target = await bootStale()
+    globalThis.fetch = gateway('boom', 500)
+    const swaps = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+      model: 'codex/gpt-6.1-sol',
+      catalogTargetFile: target,
+      turnProbe: async () => false,
+    })
+    expect(result).toMatchObject({ outcome: 'no-gateway', modelPresent: false })
+    expect(swaps.n).toBe(0)
+  }, 20_000)
+
+  test('never restarts across a live turn', async () => {
+    const target = await bootStale()
+    globalThis.fetch = gateway(FULL_LIVE)
+    const swaps = { n: 0 }
+    const result = await convergeManagedModelCatalog(opencode(swaps), cfg, {
+      model: 'codex/gpt-6.1-sol',
+      catalogTargetFile: target,
+      turnProbe: async () => true,
+    })
+    expect(result).toMatchObject({ outcome: 'declined', modelPresent: false })
+    expect(swaps.n).toBe(0)
+  })
+})
