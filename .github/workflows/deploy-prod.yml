@@ -1085,7 +1085,7 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","AUDIT_ARCHIVE_BUCKET":"kortix-prod-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-prod-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
