@@ -90,10 +90,10 @@ describe('useFeatureFlag', () => {
   });
 
   test('one flag never reads another flag`s slot', () => {
-    withDetail({ apps: true, teams: false });
+    withDetail({ apps: true, monitors: false });
 
     expect(useFeatureFlag('p', 'apps').enabled).toBe(true);
-    expect(useFeatureFlag('p', 'teams').enabled).toBe(false);
+    expect(useFeatureFlag('p', 'monitors').enabled).toBe(false);
   });
 
   test('a graduated flag is enabled for every project, whatever the map says', () => {
@@ -133,5 +133,16 @@ describe('useFeatureFlag', () => {
     expect(useFeatureFlag('p', 'session_transcript_history').enabled).toBe(true);
 
     expect(useFeatureFlag(null, 'session_transcript_history').enabled).toBe(true);
+  });
+
+  test('teams graduated: Microsoft Teams is on for every project', () => {
+    // A `false` a project stored while Teams was a flag is inert.
+    withDetail({ teams: false });
+    expect(useFeatureFlag('p', 'teams').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'teams').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'teams').enabled).toBe(true);
   });
 });

@@ -19,7 +19,6 @@ const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
 const BASE_URL = 'https://dev-api.kortix.com';
 const CHANNELS_URL = `https://dev.kortix.com/projects/${PROJECT_ID}/customize/connectors?scope=channels`;
 
-let flagOn = true;
 let tokenExchangeOk = true;
 const saved: Array<Record<string, unknown>> = [];
 const states: Array<{ state: string; error?: string | null }> = [];
@@ -36,10 +35,6 @@ mock.module('../config', () => ({
     FRONTEND_URL: 'https://dev.kortix.com',
     TEAMS_APP_NAME: 'Kortix Dev',
   },
-}));
-
-mock.module('../feature-flags/for-project', () => ({
-  projectFeatureFlagEnabled: async () => flagOn,
 }));
 
 const realInstallStore = await import('../channels/install-store');
@@ -80,7 +75,6 @@ function graphJwt(tid: string): string {
 }
 
 beforeEach(() => {
-  flagOn = true;
   tokenExchangeOk = true;
   saved.length = 0;
   states.length = 0;
@@ -117,7 +111,7 @@ const OTHER_USER_ID = '1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b';
 const OTHER_PROJECT_ID = '7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910';
 
 function state(userId = USER_ID): string {
-  const url = teamsOrgConsentUrl({ projectId: PROJECT_ID, userId, baseUrl: BASE_URL, enabled: true });
+  const url = teamsOrgConsentUrl({ projectId: PROJECT_ID, userId, baseUrl: BASE_URL });
   const s = url && new URL(url).searchParams.get('state');
   if (!s) throw new Error('missing state');
   return s;
@@ -145,7 +139,8 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('Teams one-click install callback', () => {
   test('consent URL asks for the delegated catalog scope and carries the callback', () => {
-    const url = new URL(teamsOrgConsentUrl({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL, enabled: true })!);
+    // Every project can install Teams: no per-project switch is consulted.
+    const url = new URL(teamsOrgConsentUrl({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL })!);
     expect(url.searchParams.get('scope')).toContain('AppCatalog.ReadWrite.All');
     expect(url.searchParams.get('redirect_uri')).toBe(`${BASE_URL}/v1/webhooks/teams/oauth/callback`);
     expect(url.searchParams.get('client_id')).toBe('62b4470a-e8e6-4e13-a73f-363de2209dfc');
@@ -163,13 +158,6 @@ describe('Teams one-click install callback', () => {
     expect(target.searchParams.get('state')).toBe(s);
     expect(saved).toHaveLength(0);
     expect(states).toHaveLength(0);
-  });
-
-  test('flag off for the project → ?teams=disabled, nothing saved', async () => {
-    flagOn = false;
-    const res = await teamsOauthApp.request(`/callback?code=c6&state=${state()}`);
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=disabled`);
-    expect(saved).toHaveLength(0);
   });
 
   test('user declined at Microsoft → ?teams=declined', async () => {
@@ -262,12 +250,6 @@ describe('Teams one-click install completion', () => {
     expect(states).toEqual([{ state: 'publishing' }, { state: 'published' }]);
     expect(catalogIds).toEqual(['cat-late']);
     setTeamsPublishRedirectWaitForTest(null);
-  });
-
-  test('flag off for the project → ?teams=disabled, nothing saved', async () => {
-    flagOn = false;
-    expect(await complete()).toEqual(landed('disabled'));
-    expect(saved).toHaveLength(0);
   });
 
   test('token exchange fails → ?teams=failed, nothing saved', async () => {

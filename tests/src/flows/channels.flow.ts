@@ -826,36 +826,31 @@ flow(
   },
 );
 
-// CHN-T3 — Teams connect (manage ACL). Teams is a per-project feature flag
-// (#5908): disabled projects get the standard 403 feature_disabled before any
-// validation, and once the `teams` flag is on, a bad tenant id is rejected
-// with 400.
+// CHN-T3 — Teams connect (manage ACL). Every project can connect Teams: the
+// `teams` feature flag graduated on 2026-10-01, so a project with no flag set
+// reaches input validation (a bad tenant id is 400), and the old flag key is
+// refused as unknown.
 flow(
   "CHN-T3",
   {
     domain: "channels",
-    routes: ["POST /v1/projects/:projectId/channels/teams/connect"],
+    routes: ["POST /v1/projects/:projectId/channels/teams/connect", "PATCH /v1/projects/:projectId/experimental"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER, teams flag off (default) → 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-      r.body().has("$.feature", "teams");
-    });
     const own = await ctx.fixtures.project();
-    await ctx.step("OWNER enables the teams experiment, invalid tenant_id → 400", async () => {
-      const enabled = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: own.id } });
-      enabled.status(200);
+    await ctx.step("OWNER, a new project with no flag set, invalid tenant_id → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
       r.status(400);
+    });
+    await ctx.step("the graduated `teams` flag key is refused as unknown → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: false }, { params: { projectId: own.id } });
+      r.status(400);
+      r.body().has("$.error", "Unknown feature flag 'teams'");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -899,20 +894,7 @@ flow(
     await team.grantProjectRole(p.id, editor.userId!, "manager");
     const body = { conversation_id: "19:not-bound@thread.tacv2", text: "should never arrive" };
 
-    await ctx.step("teams flag off (default) → 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(editor)
-        .get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-    });
-    await ctx.step("OWNER enables the teams experiment", async () => {
-      const enabled = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: p.id } });
-      enabled.status(200);
-    });
-    await ctx.step("a project with no Teams conversations lists none", async () => {
+    await ctx.step("a project with no Teams conversations lists none, with no flag set", async () => {
       const r = await ctx.client
         .as(editor)
         .get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
@@ -1618,7 +1600,6 @@ flow(
     domain: "channels",
     requires: ["database"],
     routes: [
-      "PATCH /v1/projects/:projectId/experimental",
       "POST /v1/projects/:projectId/channels/teams/connect",
       "GET /v1/projects/:projectId/channels/teams/installation",
       "GET /v1/projects/:projectId/channels/teams/file",
@@ -1627,13 +1608,6 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const tenant = randomUUID();
-
-    await ctx.step("OWNER enables the teams experiment", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: p.id } });
-      r.status(200);
-    });
 
     await ctx.step("manual connect with a tenant id and no bot credentials → 400 TEAMS_TENANT_UNVERIFIED", async () => {
       const r = await ctx.client

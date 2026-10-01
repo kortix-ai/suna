@@ -298,8 +298,8 @@ function EmailSurface() {
         </div>
       </div>
 
-      {/* The channel enum is closed: slack, teams, email. Slack is live,
-          Teams and email are experimental per-project flags.
+      {/* The channel enum is closed: slack, teams, email. Slack and Teams
+          are live; email is an experimental per-project flag.
 
           Hidden on phones. It wraps to three lines there and takes ~56px off a
           frame that could not already fit the Kortix reply — and a rollout

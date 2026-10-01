@@ -117,7 +117,7 @@ capitalized only at the start of a sentence or as a UI label.
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
 | Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
 | more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). |
-| preview, beta (for Teams or email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
+| preview, beta (for email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 
 ### Capitalization and mechanics
 
@@ -363,7 +363,7 @@ Tone: instructional, exact, second person. The reader wants to finish a task.
 
 **Rule.** Use a table for a closed set of options and a callout for one warning. Put the working rule in a callout ("The working rule") at the top of a section that people misread. — *Why:* `secrets.mdx` does this for exposure. — *Where:* docs. — *When silent:* a table when a reader compares; a paragraph when a reader follows.
 
-**Rule.** Mark a feature that is not stable at its first mention: "Teams is experimental — enable Microsoft Teams under Settings → Feature flags." — *Why:* A reader must not build on a flagged feature by accident. — *Where:* docs | CLI help. — *When silent:* name the flag and its default.
+**Rule.** Mark a feature that is not stable at its first mention: "Email is experimental — enable AgentMail Email under Settings → Feature flags." — *Why:* A reader must not build on a flagged feature by accident. — *Where:* docs | CLI help. — *When silent:* name the flag and its default.
 
 **Rule.** Flag a deprecated or legacy surface in the page. Do not describe it as current. — *Why:* CLAUDE.md: "flag legacy/deprecated surfaces in-doc rather than documenting them as current". — *Where:* docs. — *When silent:* "Deprecated. Use {replacement}."
 

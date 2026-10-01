@@ -18,7 +18,6 @@ mock.module('../config', () => ({
   config: { MICROSOFT_APP_ID: 'app-1', MICROSOFT_APP_PASSWORD: 'secret' },
 }));
 mock.module('../channels/teams-auth', () => ({ teamsConfigured: () => true }));
-mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => true }));
 mock.module('../channels/install-store', () => ({ loadTeamsAppIdForProject: async () => 'byo-app' }));
 mock.module('../channels/teams/jwt', () => ({ validateInboundActivityJwt: async () => true }));
 mock.module('../channels/teams/file-proxy', () => ({ handleFileConsentInvoke: async () => {} }));
@@ -58,6 +57,9 @@ mock.module('../channels/teams/dispatch', () => ({
     }),
 }));
 
+/** The bring-your-own path's project: the endpoint answers only for a UUID. */
+const PROJECT = '11111111-2222-4333-8444-555555555555';
+
 await import('../channels/teams/routes');
 const { teamsWebhookApp } = await import('../channels/teams/app');
 
@@ -96,7 +98,7 @@ describe('POST /messages acks before the dispatch finishes', () => {
   });
 
   test('bring-your-own endpoint: same', async () => {
-    const res = await teamsWebhookApp.request('/proj-1/messages', {
+    const res = await teamsWebhookApp.request(`/${PROJECT}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
       body: JSON.stringify({ ...message, id: 'act-2' }),
@@ -121,21 +123,21 @@ describe('POST /messages acks before the dispatch finishes', () => {
 
 describe('the "Open in Kortix" message action', () => {
   test('its fetchTask invoke answers synchronously with the task the handler returns, in the endpoint\'s scope', async () => {
-    const res = await teamsWebhookApp.request('/proj-1/messages', {
+    const res = await teamsWebhookApp.request(`/${PROJECT}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
       body: JSON.stringify({ type: 'invoke', name: 'composeExtension/fetchTask', id: 'inv-9', channelId: 'msteams', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-1' } }),
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ task: { type: 'message', value: 'MESSAGE-ACTION' } });
-    expect(messageActionInbounds).toEqual([{ kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' }]);
+    expect(messageActionInbounds).toEqual([{ kind: 'project', projectId: PROJECT, tenantId: 'tenant-1' }]);
     expect(dispatched).toEqual([]);
   });
 });
 
 describe('the bring-your-own endpoint reaches only its own project and proven tenant', () => {
   test('an activity naming a tenant the install did not prove is refused and never dispatched', async () => {
-    const res = await teamsWebhookApp.request('/proj-1/messages', {
+    const res = await teamsWebhookApp.request(`/${PROJECT}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
       body: JSON.stringify({ ...message, id: 'act-3', conversation: { id: 'a:1', tenantId: 'tenant-other' } }),
@@ -145,7 +147,7 @@ describe('the bring-your-own endpoint reaches only its own project and proven te
   });
 
   test('a card action naming another tenant is refused before any handler runs', async () => {
-    const res = await teamsWebhookApp.request('/proj-1/messages', {
+    const res = await teamsWebhookApp.request(`/${PROJECT}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
       body: JSON.stringify({ type: 'invoke', name: 'adaptiveCard/action', id: 'inv-2', channelId: 'msteams', serviceUrl: message.serviceUrl, conversation: { id: 'a:1', tenantId: 'tenant-other' } }),
@@ -155,13 +157,13 @@ describe('the bring-your-own endpoint reaches only its own project and proven te
   });
 
   test('a proven-tenant activity is dispatched with the project scope', async () => {
-    const res = await teamsWebhookApp.request('/proj-1/messages', {
+    const res = await teamsWebhookApp.request(`/${PROJECT}/messages`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
       body: JSON.stringify({ ...message, id: 'act-4' }),
     });
     expect(res.status).toBe(200);
-    expect(inbounds).toEqual([{ kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' }]);
+    expect(inbounds).toEqual([{ kind: 'project', projectId: PROJECT, tenantId: 'tenant-1' }]);
     release();
   });
 
@@ -182,7 +184,7 @@ describe('only the Teams channel reaches the bot', () => {
   // the client writes `from` and `channelData.tenant` itself.
   for (const channelId of ['directline', 'webchat', undefined]) {
     test(`a ${channelId ?? 'channel-less'} activity is refused on both endpoints and never dispatched`, async () => {
-      for (const path of ['/messages', '/proj-1/messages']) {
+      for (const path of ['/messages', `/${PROJECT}/messages`]) {
         const res = await teamsWebhookApp.request(path, {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
@@ -200,4 +202,18 @@ describe('only the Teams channel reaches the bot', () => {
       expect(cardInbounds).toEqual([]);
     });
   }
+});
+
+describe('the bring-your-own endpoint answers only for a project id', () => {
+  // Teams has no per-project flag any more, so the path is the only gate
+  // before the project's own bot app is looked up.
+  test('a path that cannot name a project is a plain 404, never dispatched', async () => {
+    const res = await teamsWebhookApp.request('/not-a-project/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ ...message, id: 'act-9' }),
+    });
+    expect(res.status).toBe(404);
+    expect(dispatched).toEqual([]);
+  });
 });

@@ -1127,10 +1127,6 @@
           "name": "AgentMail 邮件",
           "description": "分配 AgentMail 收件箱，让传入的邮件会话能够启动和继续 Kortix 会话。"
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "连接 Microsoft Teams 机器人，让聊天和频道能够启动和继续 Kortix 会话。"
-        },
         "llm_gateway": {
           "name": "LLM 网关",
           "description": "通过 Kortix 托管 LLM 网关路由此项目，以使用托管模型、计量和预算。"
@@ -9890,7 +9886,7 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "仅限 {value0}",
       "text0dfd0cbdd238": "这是完整密钥唯一一次显示。请将其安全地存储在其他位置。",
-      "text0e0b01710c4b": "Slack 已上线 · Teams 和电子邮件即将推出 · 或从 API 开始会话",
+      "text0e0b01710c4b": "Slack 和 Teams 已上线 · 电子邮件即将推出 · 或从 API 开始会话",
       "text0e1181a97f66": "真实机器、真实查询、可重新运行的分析",
       "text0e16f24ee012": "· {value0} 由 {value1}",
       "text0e22e022480d": "选择本轮运行的模型",
@@ -14473,7 +14469,6 @@
       "textf5262c55d1be": "已连接 Microsoft Teams，但将应用发布到你的 Teams 目录失败。",
       "text76930360e909": "已连接 Microsoft Teams。正在将应用发布到你的 Teams 目录…",
       "textb8d155eea2ab": "Microsoft 同意已被拒绝。",
-      "textd4b32aea5c4a": "此项目已关闭 Microsoft Teams。",
       "text57ef9e5e8110": "此服务器未配置 Teams 一键安装。",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "邀请成员在此账户中协作。",

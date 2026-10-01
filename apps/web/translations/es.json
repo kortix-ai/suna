@@ -1127,10 +1127,6 @@
           "name": "Correo de AgentMail",
           "description": "Asigna buzones de AgentMail para que los correos entrantes puedan iniciar y continuar sesiones de Kortix."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Conecta un bot de Microsoft Teams para que los chats y canales puedan iniciar y continuar sesiones de Kortix."
-        },
         "llm_gateway": {
           "name": "Puerta de enlace LLM",
           "description": "Dirige este proyecto mediante la puerta de enlace LLM administrada de Kortix para modelos, medición y presupuestos."
@@ -9890,7 +9886,7 @@
       "text0df6f1cad36c": "Mostrar",
       "text0df9df285277": "Solo {value0}",
       "text0dfd0cbdd238": "Esta es la única vez que se muestra la clave completa. Guárdala en un lugar seguro.",
-      "text0e0b01710c4b": "Slack está disponible · Teams y el correo electrónico se están implementando · o inicia sesiones desde la API",
+      "text0e0b01710c4b": "Slack y Teams están disponibles · el correo electrónico se está implementando · o inicia sesiones desde la API",
       "text0e1181a97f66": "Una máquina real, una consulta real y un análisis que puedes volver a ejecutar",
       "text0e16f24ee012": "· {value0} por {value1}",
       "text0e22e022480d": "Elegir qué modelo ejecuta este turno",
@@ -14473,7 +14469,6 @@
       "textf5262c55d1be": "Microsoft Teams conectado, pero falló la publicación de la app en tu catálogo de Teams.",
       "text76930360e909": "Microsoft Teams conectado. Publicando la app en tu catálogo de Teams…",
       "textb8d155eea2ab": "Se rechazó el consentimiento de Microsoft.",
-      "textd4b32aea5c4a": "Microsoft Teams está desactivado para este proyecto.",
       "text57ef9e5e8110": "La instalación en un clic de Teams no está configurada en este servidor.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Invita a personas a trabajar en esta cuenta.",
