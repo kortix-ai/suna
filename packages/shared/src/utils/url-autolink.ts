@@ -69,6 +69,81 @@ function pushInlineMathRanges(text: string, ranges: Array<[number, number]>): vo
 }
 
 /**
+ * Next index of `needle` at or after `from`, reusing the previous answer while
+ * it is still ahead. Each start of a scan below asks for the same next `]`,
+ * `)` or `>`; a fresh `indexOf` per start walks the rest of the text every
+ * time, which is quadratic on a long run of `[` or `<`.
+ */
+function nextIndexer(text: string, needle: string): (from: number) => number {
+  let cached = -2;
+  return (from) => {
+    if (cached === -1 || cached >= from) return cached;
+    cached = text.indexOf(needle, from);
+    return cached;
+  };
+}
+
+/**
+ * Character scan for `[text](url)` — the old
+ * `/\[([^\]]{0,4096})\]\(([^)]{0,8192})\)/g`, whose bounded classes still
+ * rescanned up to 4096 / 8192 characters from every `[` of a run: 0.8 s on
+ * 50k `[` under Hermes. Same matches: the label ends at the first `]` (≤ 4096
+ * characters away), `(` follows, the destination ends at the first `)` (≤ 8192
+ * away).
+ */
+function pushMarkdownLinkRanges(text: string, ranges: Array<[number, number]>): void {
+  const nextClose = nextIndexer(text, ']');
+  const nextParen = nextIndexer(text, ')');
+  let i = text.indexOf('[');
+  while (i !== -1) {
+    const close = nextClose(i + 1);
+    if (close === -1) return;
+    if (close - i - 1 <= 4096 && text[close + 1] === '(') {
+      const end = nextParen(close + 2);
+      if (end === -1) return;
+      if (end - close - 2 <= 8192) {
+        ranges.push([i, end]);
+        i = text.indexOf('[', end + 1);
+        continue;
+      }
+    }
+    i = text.indexOf('[', i + 1);
+  }
+}
+
+/**
+ * Character scan for `<https://…>`, `<http://…>` and `<mailto:…>` — the old
+ * `/<(?:https?:\/\/|mailto:)[^>\n]{1,8192}>/g`, which rescanned up to 8192
+ * characters from every `<` of a run (0.5 s on 15k `<http://` under Hermes).
+ */
+function pushAngleLinkRanges(text: string, ranges: Array<[number, number]>): void {
+  const nextGt = nextIndexer(text, '>');
+  const nextNewline = nextIndexer(text, '\n');
+  let i = text.indexOf('<');
+  while (i !== -1) {
+    const bodyStart = angleLinkBodyStart(text, i);
+    if (bodyStart !== -1) {
+      const end = nextGt(bodyStart);
+      if (end === -1) return;
+      const newline = nextNewline(bodyStart);
+      if (end - bodyStart >= 1 && end - bodyStart <= 8192 && (newline === -1 || newline > end)) {
+        ranges.push([i, end]);
+        i = text.indexOf('<', end + 1);
+        continue;
+      }
+    }
+    i = text.indexOf('<', i + 1);
+  }
+}
+
+function angleLinkBodyStart(text: string, i: number): number {
+  for (const prefix of ['<https://', '<http://', '<mailto:']) {
+    if (text.startsWith(prefix, i)) return i + prefix.length;
+  }
+  return -1;
+}
+
+/**
  * Checks if a given character index inside `text` is within a "protected" zone —
  * i.e. already inside a markdown link, code span, code block, or LaTeX math.
  *
@@ -101,10 +176,7 @@ function buildProtectedRanges(text: string): Array<[number, number]> {
 
   // ── Markdown links  [text](url) ─────────────────────────────────────────
   // Protect BOTH the link-text part AND the url part so we never re-process them.
-  const linkRe = /\[([^\]]{0,4096})\]\(([^)]{0,8192})\)/g;
-  while ((m = linkRe.exec(text)) !== null) {
-    ranges.push([m.index, m.index + m[0].length - 1]);
-  }
+  pushMarkdownLinkRanges(text, ranges);
 
   // ── Link reference definitions  [label]: https://… ──────────────────────
   // The target of every `[text][label]`. Wrapping its URL corrupts the
@@ -116,10 +188,7 @@ function buildProtectedRanges(text: string): Array<[number, number]> {
   }
 
   // ── Bare markdown link references  <url> ────────────────────────────────
-  const angleRe = /<(?:https?:\/\/|mailto:)[^>\n]{1,8192}>/g;
-  while ((m = angleRe.exec(text)) !== null) {
-    ranges.push([m.index, m.index + m[0].length - 1]);
-  }
+  pushAngleLinkRanges(text, ranges);
 
   // ── A link still being written at the very end  [text](url… ─────────────
   const openLink = openMarkdownLinkAtEnd(text);
