@@ -106,7 +106,7 @@ describe('pending panel requests', () => {
   for (const mode of ['easy', 'advanced'] as const) {
     test(`${mode} preference opens the primary deliverable and palette quick views`, async () => {
       useKortixComputerStore.getState().reset();
-      useUserPreferencesStore.getState().setPanelMode(mode);
+      useUserPreferencesStore.getState().patchPreferences({ panelMode: mode });
       const opened: string[] = [];
       function Observe() {
         const panel = useOptionalSessionPanel();
