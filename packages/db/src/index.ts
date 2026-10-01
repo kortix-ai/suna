@@ -6,6 +6,7 @@ export * as schema from './schema';
 export {
   // Schema namespace
   kortixSchema,
+  usedRefreshTokens,
   // Enums
   sandboxStatusEnum,
   projectStatusEnum,
