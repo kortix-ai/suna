@@ -20357,6 +20357,15 @@
       "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself.",
       "doneTitle": "Your computer is ready",
       "doneHint": "Kortix has every permission it needs. Agents can use this computer now."
+    },
+    "thisComputerBadge": "This computer",
+    "actionsFor": "Actions for {name}",
+    "older": {
+      "title": "Older connections",
+      "hint": "Made by an older Kortix version that could not tell computers apart. None of them is online.",
+      "removeAll": "Remove all",
+      "confirmTitle": "Remove all older connections?",
+      "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
     }
   },
   "messageFrom": {

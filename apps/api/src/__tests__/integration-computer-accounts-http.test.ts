@@ -54,7 +54,7 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
-import { createConnectionsRouter } from '../tunnel/routes/connections';
+import { createConnectionsRouter, retireSupersededRegistrations } from '../tunnel/routes/connections';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
 import { generateTunnelToken, hashSecretKey } from '../shared/crypto';
@@ -1197,6 +1197,51 @@ describe('one machine, one registration', () => {
     expect(active).toHaveLength(1);
     expect(active[0]).toMatchObject({ owner_type: 'member' });
     expect(active[0]!.connection_id).not.toBe(carolConnection);
+  });
+
+  test('one registration per machine: an offline older registration of the same hardware is removed with its accounts', async () => {
+    const SAME = 'e'.repeat(64);
+    // Two registrations made before machine ids, whose agents later reported the same hardware.
+    const older = await pairCarol({}, { name: 'Carol Old A' });
+    const newer = await pairCarol({}, { name: 'Carol Old B' });
+    await db
+      .update(tunnelConnections)
+      .set({ machineInfo: sql`${tunnelConnections.machineInfo} || ${JSON.stringify({ machineId: SAME })}::jsonb` })
+      .where(inArray(tunnelConnections.tunnelId, [older.tunnelId, newer.tunnelId]));
+
+    // Pairing the hardware again reuses the newest and retires the other.
+    const again = await pairCarol({ machine_id: SAME });
+    expect(again.tunnelId).toBe(newer.tunnelId);
+    const left = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.ownerUserId, CAROL), sql`${tunnelConnections.machineInfo}->>'machineId' = ${SAME}`));
+    expect(left.map((row) => row.tunnelId)).toEqual([newer.tunnelId]);
+    expect(await computerConnection(older.connectionId)).toMatchObject({ status: 'revoked' });
+  });
+
+  test('a live duplicate is never cut off: only offline ones are retired', async () => {
+    const SAME = 'f'.repeat(64);
+    const a = await pairCarol({ machine_id: SAME });
+    const b = await pairCarol({}, { name: 'Carol Second Agent' });
+    await db
+      .update(tunnelConnections)
+      .set({
+        status: 'online',
+        lastHeartbeatAt: new Date(),
+        ...relayOwnerPatch(),
+        machineInfo: sql`${tunnelConnections.machineInfo} || ${JSON.stringify({ machineId: SAME })}::jsonb`,
+      })
+      .where(eq(tunnelConnections.tunnelId, b.tunnelId));
+    // `a` is offline: `b` reporting the hardware retires it. `b` is live: `a` cannot retire it.
+    expect(await retireSupersededRegistrations(a.tunnelId, SAME)).toEqual([]);
+    expect(await retireSupersededRegistrations(b.tunnelId, SAME)).toEqual([a.tunnelId]);
+    // Another person's registration of the same hardware is never touched.
+    const bob = await startPairing({ machineHostname: 'carol-mac.local', machine_id: SAME });
+    const bobMachine = (await (await approve(BOB, bob.deviceCode, { capabilities: ['shell'] })).json()) as { tunnelId: string };
+    expect(await retireSupersededRegistrations(b.tunnelId, SAME)).toEqual([]);
+    const [bobRow] = await db.select({ tunnelId: tunnelConnections.tunnelId }).from(tunnelConnections).where(eq(tunnelConnections.tunnelId, bobMachine.tunnelId));
+    expect(bobRow?.tunnelId).toBe(bobMachine.tunnelId);
   });
 
   test('only the owner, as a human, may share a computer', async () => {

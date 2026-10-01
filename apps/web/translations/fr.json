@@ -20357,6 +20357,15 @@
       "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cette vue se met à jour seule.",
       "doneTitle": "Votre ordinateur est prêt",
       "doneHint": "Kortix a toutes les autorisations nécessaires. Les agents peuvent maintenant utiliser cet ordinateur."
+    },
+    "thisComputerBadge": "Cet ordinateur",
+    "actionsFor": "Actions pour {name}",
+    "older": {
+      "title": "Anciennes connexions",
+      "hint": "Créées par une ancienne version de Kortix qui ne distinguait pas les ordinateurs. Aucune n’est en ligne.",
+      "removeAll": "Tout supprimer",
+      "confirmTitle": "Supprimer toutes les anciennes connexions ?",
+      "confirmDescription": "Kortix les supprime avec leurs comptes de tous les projets. Un ordinateur qui en utilise encore une peut se reconnecter."
     }
   },
   "messageFrom": {

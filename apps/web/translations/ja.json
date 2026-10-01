@@ -20357,6 +20357,15 @@
       "settingsHint": "システム設定が開いたら、一覧で Kortix をオンにしてください。この画面は自動で更新されます。",
       "doneTitle": "コンピューターの準備ができました",
       "doneHint": "Kortix に必要な権限がすべてそろいました。エージェントがこのコンピューターを使えます。"
+    },
+    "thisComputerBadge": "このコンピューター",
+    "actionsFor": "{name} の操作",
+    "older": {
+      "title": "以前の接続",
+      "hint": "コンピューターを区別できなかった以前のバージョンの Kortix で作成されました。どれもオンラインではありません。",
+      "removeAll": "すべて削除",
+      "confirmTitle": "以前の接続をすべて削除しますか？",
+      "confirmDescription": "Kortix はそれらとそのアカウントをすべてのプロジェクトから削除します。まだ使用しているコンピューターは再接続できます。"
     }
   },
   "messageFrom": {
