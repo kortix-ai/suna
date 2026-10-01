@@ -71,6 +71,7 @@ mock.module('../../routes/shared', () => ({
 
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
+  invalidateSandbox: () => {},
   // Complete-module stand-ins: every export the (growing) import graph
   // reaches must exist, or the whole file dies with "Export named X not
   // found". `resolveServiceKey` is reached via runtime-client.ts → opencode-mapping.

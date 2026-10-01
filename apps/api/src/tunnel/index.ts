@@ -28,7 +28,7 @@ import { tunnelConnections, tunnelPermissions, tunnelDeviceAuthRequests } from '
 import { config } from '../config';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
-import { createConnectionsRouter } from './routes/connections';
+import { createConnectionsRouter, retireSupersededRegistrations } from './routes/connections';
 import { createRpcRouter } from './routes/rpc';
 import { createDeviceAuthRouter } from './routes/device-auth';
 import { tunnelRelay } from './core/relay';
@@ -383,6 +383,14 @@ function startTunnelService(): void {
           updatedAt: new Date(),
         })
         .where(eq(tunnelConnections.tunnelId, tunnelId));
+
+      // The first heartbeat that names the hardware supersedes the owner's
+      // offline registrations of the same machine (one machine, one entry).
+      const machineId = typeof reported.machineId === 'string' ? reported.machineId : '';
+      const knownId = (connection.machineInfo as Record<string, unknown> | null)?.machineId;
+      if (/^[a-f0-9]{64}$/.test(machineId) && knownId !== machineId) {
+        await retireSupersededRegistrations(tunnelId, machineId);
+      }
 
       if (
         previousCapabilities.length !== capabilities.length ||

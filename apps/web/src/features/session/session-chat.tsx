@@ -17,7 +17,7 @@ import {
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { useFeatureFlag, useProjectSession, useSessionMessageAuthors, useSessionParticipants } from '@kortix/sdk/react';
+import { useProjectSession, useSessionMessageAuthors, useSessionParticipants } from '@kortix/sdk/react';
 import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
@@ -28,7 +28,6 @@ import {
   AUTHOR_RETRY_DELAYS_MS,
   authorForTurn,
   awaitsAgent,
-  isUnansweredAsk,
   missingAuthorKey,
   resolveTranscriptAuthors,
   showAuthorName,
@@ -632,9 +631,8 @@ export function SessionChat({
   // crash cannot lose it, and the server — not this component — decides whether
   // it runs now or waits for the turn in flight.
   const promptInbox = useSessionPrompts(projectId, projectSessionId);
-  // A `no_reply` prompt (an ask's first message) is delivered to people, not
-  // queued for the agent: it draws no Sending/Queued chip and no Thinking row.
-  // Its bubble still comes from `queuedSyntheticMessages`.
+  // A `no_reply` prompt runs no turn: it draws no Sending/Queued chip and no
+  // Thinking row. Its bubble still comes from `queuedSyntheticMessages`.
   const agentPrompts = useMemo(() => promptInbox.prompts.filter(awaitsAgent), [promptInbox.prompts]);
   // Every user message and queued prompt on screen wants an author. The ledger
   // records a delivered id a moment after the runtime shows it, and a prompt
@@ -656,19 +654,6 @@ export function SessionChat({
     }, delay);
     return () => clearTimeout(timer);
   }, [missingAuthors, messageAuthors, refetchMessageAuthors]);
-  // Ids a server `no_reply` ask prompt shows under: its header is the server's.
-  // `human_messaging` off: asks and from-session messages draw as plain bubbles.
-  const { enabled: messagingCards } = useFeatureFlag(projectId, 'human_messaging');
-  const askMessageIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const prompt of promptInbox.prompts) {
-      if (!prompt.no_reply) continue;
-      if (prompt.message_id) ids.add(prompt.message_id);
-      if (prompt.wire_message_id) ids.add(prompt.wire_message_id);
-      ids.add(`queued-${prompt.prompt_id}`);
-    }
-    return ids;
-  }, [promptInbox.prompts]);
   /**
    * What the first prompt's attachment strip should say before runtime delivery.
    *
@@ -1051,18 +1036,8 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
-  // An ask nobody answered yet went to people, not to the agent: the runtime
-  // reads busy for a moment after delivering it, but nothing is working. Folded
-  // in HERE so Stop and Thinking still read one value.
-  const askAwaitsPeople = useMemo(() => {
-    const list = messages ?? [];
-    const last = list[list.length - 1];
-    if (!last || last.info.role !== 'user') return false;
-    if (list.filter((m) => m.info.role === 'user').length !== 1) return false;
-    return messagingCards && isUnansweredAsk({ userMessage: last, assistantMessages: [] });
-  }, [messages, messagingCards]);
   const effectiveBusy = resolveEffectiveBusy({
-    isServerBusy: isServerBusy && !askAwaitsPeople,
+    isServerBusy,
     isOptimisticCompacting,
     hasRetryingAssistant,
   });
@@ -4306,9 +4281,6 @@ export function SessionChat({
                               turn={turn}
                               author={turnAuthor}
                               showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
-                              headerTrusted={askMessageIds.has(turn.userMessage.info.id)}
-                              messagingCards={messagingCards}
-                              viewerEmail={viewer?.email}
                               turnOutcome={turnOutcome}
                               isLast={turn.userMessage.info.id === lastUserMessageId}
                               ownsPlan={turn.userMessage.info.id === planAnchorId}

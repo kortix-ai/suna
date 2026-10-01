@@ -1179,10 +1179,6 @@
           "name": "Server MCP",
           "description": "Collega Claude, ChatGPT, Cursor, Codex o qualsiasi client MCP a questo progetto tramite OAuth. Il client accede a tuo nome e chiama Kortix con i tuoi permessi. Trovi l’URL in Connetti MCP, nel menu dello spazio di lavoro."
         },
-        "human_messaging": {
-          "name": "Messaggi alle persone",
-          "description": "Consente agli agenti di scrivere a persone e ad altre sessioni. `kortix send alice@example.com` apre una conversazione che inizia con il messaggio dell'agente e compare in Ti chiedono nella barra laterale del destinatario. Più indirizzi aprono una chat di gruppo. I messaggi tra sessioni indicano la sessione mittente, così il suo agente può rispondere."
-        },
         "reminders": {
           "name": "Promemoria",
           "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Promemoria, l’indicatore dei promemoria della sessione e `kortix remind`."
@@ -1595,17 +1591,6 @@
       "failed": "Impossibile salvare le etichette",
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
-    },
-    "askedYou": {
-      "title": "Ti hanno chiesto",
-      "from": "da {name}",
-      "arrival": "{name} ti ha fatto una domanda",
-      "arrivalUnknown": "Qualcuno ti ha fatto una domanda",
-      "open": "Apri",
-      "withOne": "Conversazione con 1 persona",
-      "withMany": "Conversazione con {count} persone",
-      "askedFrom": "Chiesto da {title}",
-      "inConversation": "In questa conversazione"
     }
   },
   "dashboard": {
@@ -19081,6 +19066,8 @@
       "text9c84d6622566": "Detta un messaggio",
       "textf164e4b031dc": "Presenza nella sessione aggiornata",
       "text9e6a0b0a06c2": "Ha visualizzato gli autori dei messaggi della sessione",
+      "textea2f51bfe21c": "Ha visualizzato i partecipanti della sessione",
+      "text37e6441aa695": "Acquisizioni di un membro visualizzate",
       "text5f58426c214e": "Stiamo costruendo l’AI Management System open-source. Ogni azienda dovrebbe possederlo per intero.",
       "textf729ef1ea584": "Riconciliazione di licenze e postazioni",
       "text7912f8e97c06": "Un trigger cron apre la revisione trimestrale degli accessi e la riconciliazione mensile delle licenze. I trigger indicano l'agente con cui vengono eseguiti, così la sessione automatica ha esattamente lo stesso livello di accesso di quella assistita, non di più.",
@@ -19110,6 +19097,7 @@
       "textcd2c4b26eedd": "Kortix non ha traccia della versione dell'app nel tuo catalogo Teams. La versione {value0} include tutti i comandi e le autorizzazioni che il tuo agente usa in Teams. Un amministratore Teams pubblica l'aggiornamento. Poi un proprietario del team aggiorna l'app in ogni team in cui Teams la propone: il team → ⋯ → Gestisci team → App → Aggiorna.",
       "texte15f213fa506": "Pubblica l'aggiornamento dell'app",
       "textcafd830fcf85": "Identità degli agenti del progetto elencate",
+      "text7f755292bf51": "Impossibile scaricare l'allegato",
       "text2283675ad723": "Dati di acquisizione personali eliminati",
       "text1ba9cde823f2": "Dispositivi di acquisizione elencati",
       "textffbadd3c8c4f": "Video di acquisizione aperto",
@@ -19121,9 +19109,7 @@
       "text00b79206c9c4": "Impostazioni di acquisizione aggiornate",
       "text177ca40772f2": "Fotogramma di acquisizione visualizzato",
       "text396a3d705dfe": "Impostazioni di acquisizione visualizzate",
-      "textd5c256691c77": "Cronologia di acquisizione visualizzata",
-      "textea2f51bfe21c": "Partecipanti della sessione visualizzati",
-      "text37e6441aa695": "Acquisizioni di un membro visualizzate"
+      "textd5c256691c77": "Cronologia di acquisizione visualizzata"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20356,7 +20342,8 @@
       "desktop": "Schermo e tastiera",
       "desktopDescription": "Vedere e usare le tue app",
       "allowed": "Consentito",
-      "notAllowed": "Non consentito"
+      "notAllowed": "Non consentito",
+      "needsSetup": "Da configurare"
     },
     "runInBackground": "Esegui in background",
     "runInBackgroundDescription": "Se disattivato, la connessione resta in pausa anche dopo un riavvio.",
@@ -20370,12 +20357,35 @@
     "alreadyConnectedHint": "Approva per ricollegarlo con una nuova chiave e l’accesso che scegli. Progetti e condivisioni restano.",
     "alreadyConnectedLive": "È online ora. Approva per spostarlo su questa richiesta: la connessione attuale si interrompe. Progetti e condivisioni restano.",
     "reconnect": "Ricollega",
-    "accessHint": "L’accesso selezionato resta attivo finché non lo revochi."
+    "accessHint": "L’accesso selezionato resta attivo finché non lo revochi.",
+    "setup": {
+      "title": "Completa la configurazione del computer",
+      "hint": "macOS chiede una volta ogni autorizzazione qui sotto. Vanno a Kortix, così nulla chiede di nuovo mentre un agente lavora.",
+      "files": "Scrivania, Documenti e Download",
+      "filesDescription": "Leggere e scrivere file in queste cartelle",
+      "accessibility": "Accessibilità",
+      "accessibilityDescription": "Usare tastiera e mouse nelle tue app",
+      "screenRecording": "Registrazione schermo",
+      "screenRecordingDescription": "Vedere cosa c’è sullo schermo",
+      "needed": "Non ancora consentito",
+      "waiting": "In attesa di te",
+      "allowAll": "Consenti tutto",
+      "settingsHint": "Se si apre Impostazioni di Sistema, attiva Kortix nell’elenco. Questa vista si aggiorna da sola.",
+      "doneTitle": "Il tuo computer è pronto",
+      "doneHint": "Kortix ha tutte le autorizzazioni necessarie. Gli agenti possono usare questo computer."
+    },
+    "thisComputerBadge": "Questo computer",
+    "actionsFor": "Azioni per {name}",
+    "older": {
+      "title": "Connessioni precedenti",
+      "hint": "Create da una versione precedente di Kortix che non distingueva i computer. Nessuna è online.",
+      "removeAll": "Rimuovi tutte",
+      "confirmTitle": "Rimuovere tutte le connessioni precedenti?",
+      "confirmDescription": "Kortix le rimuove insieme ai loro account da tutti i progetti. Un computer che ne usa ancora una può riconnettersi."
+    }
   },
   "messageFrom": {
     "from": "Da",
-    "asked": "ha chiesto a",
-    "replyHint": "Rispondi qui sotto. L'agente lo raccoglierà.",
     "untitledSession": "Sessione senza titolo"
   },
   "sessionParticipants": {

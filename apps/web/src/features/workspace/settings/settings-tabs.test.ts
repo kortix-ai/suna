@@ -10,6 +10,19 @@ import {
   resolveSettingsOverlayHref,
 } from './settings-tabs';
 
+describe('standalone account settings destinations', () => {
+  test('connected opens the selected account Git pane without a project', () => {
+    expect(legacySectionRedirect('', 'connected', 'acc1')).toBe(
+      '/projects?accountId=acc1&accountTab=git',
+    );
+  });
+
+  test('waits for the account rather than guessing a destination', () => {
+    expect(isAccountGraduatedSection('connected')).toBe(true);
+    expect(legacySectionRedirect('', 'connected')).toBeNull();
+  });
+});
+
 describe('SETTINGS_TABS', () => {
   test('holds every tab exactly once', () => {
     expect(new Set(SETTINGS_TABS).size).toBe(SETTINGS_TABS.length);

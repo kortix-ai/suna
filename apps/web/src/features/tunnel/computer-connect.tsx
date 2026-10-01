@@ -44,6 +44,9 @@ import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
 export const DESKTOP_STATUS_KEY = ['desktop-computer-status'] as const;
 
+/** Fired after this desktop pairs: the workspace menu opens computer setup. */
+export const COMPUTER_SETUP_EVENT = 'kortix:computer-setup';
+
 /** Same key and fetcher as `ConnectionsList`, so both share one cache entry. */
 function connectionsQueryOptions(projectId: string) {
   return {
@@ -123,6 +126,40 @@ export function useProjectComputerAccounts(
   };
 }
 
+/**
+ * The caller's machines as people think of them: one entry per physical
+ * computer. `computers`: registrations that name their hardware (one per
+ * hardware id, the live or most recently seen one), plus any online now.
+ * `older`: registrations from agents older than hardware ids that are offline;
+ * nothing can tell which computer they were, so they are listed apart. Both
+ * live first, then most recently seen.
+ */
+export function groupOwnedComputers(machines: readonly TunnelConnection[]): {
+  computers: TunnelConnection[];
+  older: TunnelConnection[];
+} {
+  const seen = (machine: TunnelConnection) =>
+    machine.isLive ? Number.MAX_SAFE_INTEGER : Date.parse(machine.lastHeartbeatAt ?? machine.createdAt) || 0;
+  const byRecency = [...machines].sort((a, b) => seen(b) - seen(a));
+  const hardware = (machine: TunnelConnection) =>
+    typeof machine.machineInfo?.machineId === 'string' ? machine.machineInfo.machineId : null;
+  const counted = new Set<string>();
+  const computers: TunnelConnection[] = [];
+  const older: TunnelConnection[] = [];
+  for (const machine of byRecency) {
+    const id = hardware(machine);
+    if (id) {
+      if (!counted.has(id)) computers.push(machine);
+      counted.add(id);
+    } else if (machine.isLive) {
+      computers.push(machine);
+    } else {
+      older.push(machine);
+    }
+  }
+  return { computers, older };
+}
+
 /** True once the caller owns a paired machine, in any project. Polls once a
  *  minute until they do: the sidebar promo mounts it for every signed-in user
  *  and hides for good once they own one, so polling then would be waste. The
@@ -185,7 +222,11 @@ export function useConnectDesktopComputer(projectId?: string) {
       return result;
     },
     onSuccess: (result) => {
-      if (result.ok) successToast(t('connected'));
+      if (!result.ok) return;
+      successToast(t('connected'));
+      // Setup comes next, on the spot: the "Your computer" dialog asks macOS
+      // for every permission the approved access needs.
+      window.dispatchEvent(new Event(COMPUTER_SETUP_EVENT));
     },
     onError: (error: Error) => errorToast(error.message || t('connectFailed')),
     onSettled: () => {
@@ -330,12 +371,20 @@ const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Ic
  * What Kortix can use on a computer. With `granted` (the capabilities approved
  * at pairing) each row says Allowed / Not allowed; without it, it is a preview.
  */
-export function ComputerCapabilities({ granted }: { granted?: readonly string[] }) {
+export function ComputerCapabilities({
+  granted,
+  needsSetup,
+}: {
+  granted?: readonly string[];
+  /** Approved, but the macOS permission it needs is still missing (setup). */
+  needsSetup?: readonly string[];
+}) {
   const t = useTranslations('computers');
   return (
     <ul className="divide-border divide-y">
       {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
-        const allowed = granted?.includes(key);
+        const allowed = granted?.includes(key) && !needsSetup?.includes(key);
+        const pending = granted?.includes(key) && needsSetup?.includes(key);
         return (
           <li key={key} className="flex items-center gap-3 py-3">
             <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-sm">
@@ -355,7 +404,11 @@ export function ComputerCapabilities({ granted }: { granted?: readonly string[] 
                 )}
               >
                 {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
-                {allowed ? t('capability.allowed') : t('capability.notAllowed')}
+                {allowed
+                  ? t('capability.allowed')
+                  : pending
+                    ? t('capability.needsSetup')
+                    : t('capability.notAllowed')}
               </span>
             ) : null}
           </li>

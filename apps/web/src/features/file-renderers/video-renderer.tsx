@@ -49,6 +49,10 @@ const VIDEO_SLIDER = cn(
   '[&_[data-slot=slider-thumb]]:focus:ring-offset-black/60',
 );
 
+export async function requestVideoFullscreen(element: { requestFullscreen?: () => Promise<void> }) {
+  await element.requestFullscreen?.();
+}
+
 export function VideoRenderer({
   url,
   className,
@@ -213,7 +217,7 @@ export function VideoRenderer({
     if (isFullscreen) {
       await document.exitFullscreen();
     } else {
-      await containerRef.current.requestFullscreen();
+      await requestVideoFullscreen(containerRef.current);
     }
   };
 

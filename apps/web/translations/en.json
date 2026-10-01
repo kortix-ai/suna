@@ -1005,10 +1005,6 @@
           "name": "MCP server",
           "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
         },
-        "human_messaging": {
-          "name": "Human Messaging",
-          "description": "Let agents message people and other sessions. `kortix send alice@example.com` opens a conversation that starts with the agent's message and shows under Asked you in the recipient's sidebar. Several addresses open a group chat. Messages between sessions name the sending session, so its agent can reply."
-        },
         "reminders": {
           "name": "Reminders",
           "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
@@ -1595,17 +1591,6 @@
       "failed": "Could not save the labels",
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
-    },
-    "askedYou": {
-      "title": "Asked you",
-      "from": "from {name}",
-      "arrival": "{name} asked you",
-      "arrivalUnknown": "Someone asked you",
-      "open": "Open",
-      "withOne": "Conversation with 1 person",
-      "withMany": "Conversation with {count} people",
-      "askedFrom": "Asked from {title}",
-      "inConversation": "In this conversation"
     }
   },
   "dashboard": {
@@ -19094,6 +19079,12 @@
       "text9c84d6622566": "Dictate message",
       "textf164e4b031dc": "Updated session presence",
       "text9e6a0b0a06c2": "Viewed session message authors",
+      "textea2f51bfe21c": "Viewed session participants",
+      "text37e6441aa695": "Viewed captures of a member",
+      "textd67effc1b5f2": "Agent or CLI viewed a capture frame",
+      "textb1237b04cc12": "Agent or CLI searched captures",
+      "textf7878f9754cf": "Agent or CLI viewed the capture timeline",
+      "textdb0ea4023dff": "An agent session read the captures of the person it acts for",
       "text5f58426c214e": "We are building the open-source AI Management System. Every company should own all of it.",
       "textf729ef1ea584": "License and seat reconciliation",
       "text7912f8e97c06": "A cron trigger opens the quarterly access review and the monthly license reconciliation. Triggers name the agent they run as, so the unattended session has exactly the reach the attended one has — no more.",
@@ -19123,6 +19114,7 @@
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "texte15f213fa506": "Publish app update",
       "textcafd830fcf85": "Listed project agent identities",
+      "text7f755292bf51": "Could not download attachment",
       "text2283675ad723": "Deleted own capture data",
       "text1ba9cde823f2": "Listed capture devices",
       "textffbadd3c8c4f": "Opened a capture video",
@@ -19134,13 +19126,7 @@
       "text00b79206c9c4": "Updated capture settings",
       "text177ca40772f2": "Viewed a capture frame",
       "text396a3d705dfe": "Viewed capture settings",
-      "textd5c256691c77": "Viewed capture timeline",
-      "textea2f51bfe21c": "Viewed session participants",
-      "text37e6441aa695": "Viewed captures of a member",
-      "textd67effc1b5f2": "Agent or CLI viewed a capture frame",
-      "textb1237b04cc12": "Agent or CLI searched captures",
-      "textf7878f9754cf": "Agent or CLI viewed the capture timeline",
-      "textdb0ea4023dff": "An agent session read the captures of the person it acts for"
+      "textd5c256691c77": "Viewed capture timeline"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20360,7 +20346,8 @@
       "desktop": "Screen & keyboard",
       "desktopDescription": "See and use your apps",
       "allowed": "Allowed",
-      "notAllowed": "Not allowed"
+      "notAllowed": "Not allowed",
+      "needsSetup": "Needs setup"
     },
     "runInBackground": "Run in the background",
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
@@ -20374,12 +20361,35 @@
     "alreadyConnectedHint": "Approve to reconnect it with a new key and the access you select. Its projects and shares stay.",
     "alreadyConnectedLive": "It is online now. Approve to move it to this request: the current connection stops. Its projects and shares stay.",
     "reconnect": "Reconnect",
-    "accessHint": "Selected access stays active until you revoke it."
+    "accessHint": "Selected access stays active until you revoke it.",
+    "setup": {
+      "title": "Finish setting up your computer",
+      "hint": "macOS asks once for each permission below. They go to Kortix, so nothing asks again while an agent works.",
+      "files": "Desktop, Documents, and Downloads",
+      "filesDescription": "Read and write files in these folders",
+      "accessibility": "Accessibility",
+      "accessibilityDescription": "Use the keyboard and mouse in your apps",
+      "screenRecording": "Screen Recording",
+      "screenRecordingDescription": "See what is on the screen",
+      "needed": "Not allowed yet",
+      "waiting": "Waiting for you",
+      "allowAll": "Allow all",
+      "settingsHint": "If System Settings opens, turn on Kortix in the list. This updates by itself.",
+      "doneTitle": "Your computer is ready",
+      "doneHint": "Kortix has every permission it needs. Agents can use this computer now."
+    },
+    "thisComputerBadge": "This computer",
+    "actionsFor": "Actions for {name}",
+    "older": {
+      "title": "Older connections",
+      "hint": "Made by an older Kortix version that could not tell computers apart. None of them is online.",
+      "removeAll": "Remove all",
+      "confirmTitle": "Remove all older connections?",
+      "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."
+    }
   },
   "messageFrom": {
     "from": "From",
-    "asked": "asked",
-    "replyHint": "Reply below. The agent picks it up.",
     "untitledSession": "Untitled session"
   },
   "sessionParticipants": {

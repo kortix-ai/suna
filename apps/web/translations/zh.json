@@ -1179,10 +1179,6 @@
           "name": "MCP 服务器",
           "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
         },
-        "human_messaging": {
-          "name": "向人发消息",
-          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。会话之间的消息会注明发送方会话，以便其智能体回复。"
-        },
         "reminders": {
           "name": "提醒",
           "description": "让代理和用户在会话上安排一次性或重复的检查。每次触发都会重新提示该会话。新增提醒页面、会话提醒标记和 `kortix remind`。"
@@ -1595,17 +1591,6 @@
       "failed": "无法保存标签",
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
-    },
-    "askedYou": {
-      "title": "向你提问",
-      "from": "来自 {name}",
-      "arrival": "{name} 向你提问",
-      "arrivalUnknown": "有人向你提问",
-      "open": "打开",
-      "withOne": "与 1 人的对话",
-      "withMany": "与 {count} 人的对话",
-      "askedFrom": "来自 {title} 的提问",
-      "inConversation": "对话参与者"
     }
   },
   "dashboard": {
@@ -19081,6 +19066,8 @@
       "text9c84d6622566": "语音输入消息",
       "textf164e4b031dc": "已更新会话在线状态",
       "text9e6a0b0a06c2": "查看了会话消息作者",
+      "textea2f51bfe21c": "查看了会话参与者",
+      "text37e6441aa695": "已查看成员的捕获内容",
       "text5f58426c214e": "我们正在构建开源的 AI Management System。每家公司都应完整拥有它。",
       "textf729ef1ea584": "许可证与席位对账",
       "text7912f8e97c06": "cron 触发器会启动季度访问审查和每月许可证核对。触发器会指定运行它的代理，因此无人值守会话拥有与有人值守会话完全相同的权限范围——不会更多。",
@@ -19110,6 +19097,7 @@
       "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "texte15f213fa506": "发布应用更新",
       "textcafd830fcf85": "已列出项目代理身份",
+      "text7f755292bf51": "无法下载附件",
       "text2283675ad723": "已删除自己的捕获数据",
       "text1ba9cde823f2": "已列出捕获设备",
       "textffbadd3c8c4f": "已打开捕获视频",
@@ -19121,9 +19109,7 @@
       "text00b79206c9c4": "已更新捕获设置",
       "text177ca40772f2": "已查看捕获帧",
       "text396a3d705dfe": "已查看捕获设置",
-      "textd5c256691c77": "已查看捕获时间线",
-      "textea2f51bfe21c": "已查看会话参与者",
-      "text37e6441aa695": "已查看成员的捕获内容"
+      "textd5c256691c77": "已查看捕获时间线"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20356,7 +20342,8 @@
       "desktop": "屏幕和键盘",
       "desktopDescription": "查看并使用你的应用",
       "allowed": "已允许",
-      "notAllowed": "未允许"
+      "notAllowed": "未允许",
+      "needsSetup": "需要设置"
     },
     "runInBackground": "在后台运行",
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
@@ -20370,12 +20357,35 @@
     "alreadyConnectedHint": "批准后将使用新密钥和你选择的权限重新连接。其项目和共享保持不变。",
     "alreadyConnectedLive": "它当前在线。批准后将转移到此请求：当前连接会停止。其项目和共享保持不变。",
     "reconnect": "重新连接",
-    "accessHint": "选定的访问权限会一直有效，直到你撤销。"
+    "accessHint": "选定的访问权限会一直有效，直到你撤销。",
+    "setup": {
+      "title": "完成电脑设置",
+      "hint": "macOS 会对下面每项权限询问一次。权限授予 Kortix，因此代理工作时不会再询问。",
+      "files": "桌面、文稿和下载",
+      "filesDescription": "读写这些文件夹中的文件",
+      "accessibility": "辅助功能",
+      "accessibilityDescription": "在你的应用中使用键盘和鼠标",
+      "screenRecording": "屏幕录制",
+      "screenRecordingDescription": "查看屏幕上的内容",
+      "needed": "尚未允许",
+      "waiting": "等待你操作",
+      "allowAll": "全部允许",
+      "settingsHint": "如果打开了系统设置，请在列表中开启 Kortix。此页面会自动更新。",
+      "doneTitle": "你的电脑已准备就绪",
+      "doneHint": "Kortix 已获得所需的全部权限。代理现在可以使用这台电脑。"
+    },
+    "thisComputerBadge": "这台电脑",
+    "actionsFor": "{name} 的操作",
+    "older": {
+      "title": "旧连接",
+      "hint": "由无法区分电脑的旧版 Kortix 创建。它们都不在线。",
+      "removeAll": "全部移除",
+      "confirmTitle": "移除所有旧连接？",
+      "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
+    }
   },
   "messageFrom": {
     "from": "来自",
-    "asked": "询问了",
-    "replyHint": "在下方回复，智能体会接手处理。",
     "untitledSession": "未命名会话"
   },
   "sessionParticipants": {

@@ -332,7 +332,7 @@ describe('runtimeWakeInProgress — hard ceiling', () => {
     ['1 ms past the lease', wake(RUNTIME_WAKE_LEASE_MS), RUNTIME_WAKE_LEASE_MS + 1, false],
     // Past the 240 s age fallback, so only the extended lease answers true.
     ['past the age fallback, inside an extended lease', wake(60 * 60_000), 5 * 60_000, true],
-    ['inside the ceiling on an hour-long lease', wake(60 * 60_000), 11 * 60_000, true],
+    ['inside the ceiling on an hour-long lease', wake(60 * 60_000), 9 * 60_000, true],
     ['past the ceiling on an hour-long lease', wake(60 * 60_000), RUNTIME_WAKE_HARD_MS + 1, false],
   ] as const)('%s: %p', (_label, metadata, elapsedMs, open) => {
     expect(runtimeWakeInProgress(metadata, at(elapsedMs))).toBe(open);

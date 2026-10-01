@@ -33,3 +33,11 @@ require('../src/computer').ensureDevAgentCli();
 
 // Kortix Capture (apps/capture) is optional: stage it when built, skip when not.
 require('./stage-capture').stageCapture();
+
+// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js).
+require('./fetch-cua-driver')
+  .fetchCuaDriver()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

@@ -151,7 +151,7 @@ token the CLI uses. Create one with `kortix tokens new <name>` or in
 | --- | --- | --- |
 | `list_projects` | none | Lists every project you can open, across all your accounts, with its `project_id` and your role. |
 | `start_session` | `project_id`*, `prompt`*, `name`, `agent` | Starts a session in a project with a first prompt. Returns the `session_id`. |
-| `send_message` | `session_id` or `to`*, `text`*, `project_id` | Queues a message for a session and starts the session if it is stopped. With `to` (an array of emails) and `project_id`, it opens a conversation with those project members instead. See [Messaging people and sessions](/docs/connect/messaging). |
+| `send_message` | `session_id`*, `text`* | Queues a message for a session and starts the session if it is stopped. |
 | `read_session` | `session_id`*, `limit`, `wait_seconds` | Returns a session's status, whether its turn is `idle`, `booting`, `running` or `queued`, and its latest messages with each tool call's input and output. `limit` is 10 by default, 100 at most. `wait_seconds` (up to 45) waits for the turn to end. |
 | `list_sessions` | `project_id`*, `limit`, `cursor` | Lists the sessions you can see in a project: id, title, status, agent, owner, branch, dates. `limit` is 20 by default, 200 at most. |
 | `run_command` | `session_id`*, `command`, `cwd`, `timeout_seconds`, `job_id`, `cancel` | Runs a bash command in a session's sandbox and returns stdout, stderr and the exit code. A long command returns a `job_id` to keep waiting on. |

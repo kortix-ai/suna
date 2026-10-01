@@ -19,17 +19,13 @@ export interface SessionPushEvent {
   projectId: string;
   /** First question text, for `question` events. */
   question?: string;
-  /** Notify these users instead of the session creator: the people a
-   *  conversation was opened with (`POST /sessions` `participants`). */
+  /** Notify these users instead of the session creator. */
   recipients?: string[];
 }
 
 export interface SessionPushTarget {
   createdBy: string | null;
   title: string | null;
-  /** The people a conversation was opened with: they, not the creator, are
-   *  the ones in it, so every push of that session goes to them. */
-  participants?: string[];
 }
 
 export interface SessionPushDeps {
@@ -138,8 +134,7 @@ export function createSessionNotifier(deps: SessionPushDeps) {
       if (!deps.enabled) return { sent: 0, reason: 'disabled' };
       const session = await deps.loadSession(event.sessionId, event.projectId);
       if (!session) return { sent: 0, reason: 'no_session' };
-      const recipients = event.recipients
-        ?? (session.participants?.length ? session.participants : session.createdBy ? [session.createdBy] : []);
+      const recipients = event.recipients ?? (session.createdBy ? [session.createdBy] : []);
       if (recipients.length === 0) return { sent: 0, reason: 'no_recipient' };
       const messages: ExpoPushMessage[] = [];
       let present = 0;
@@ -172,10 +167,7 @@ async function loadSessionTarget(sessionId: string, projectId: string): Promise<
   // `metadata.name` is the session title (owned by session-title-generate.ts).
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string');
-  const participants = Array.isArray(meta.participants)
-    ? meta.participants.filter((id): id is string => typeof id === 'string')
-    : [];
-  return { createdBy: row.createdBy, title: title ?? null, participants };
+  return { createdBy: row.createdBy, title: title ?? null };
 }
 
 let defaultNotifier: ReturnType<typeof createSessionNotifier> | null = null;
