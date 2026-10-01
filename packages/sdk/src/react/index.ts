@@ -45,6 +45,7 @@ export {
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
   type OpenCodeEvent,
