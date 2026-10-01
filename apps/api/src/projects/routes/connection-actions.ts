@@ -306,7 +306,7 @@ projectsApp.openapi(
     });
     if (!removed) return c.json({ error: 'This account is bound to a session or no longer exists.' }, 409);
     // Cascading deletion removes stored OAuth credentials with the account.
-    return c.json({ ok: true });
+    return c.json({ ok: true }, 200);
   },
 );
 
