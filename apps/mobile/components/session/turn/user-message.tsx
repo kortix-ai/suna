@@ -149,7 +149,9 @@ function IncomingMessageCard({ info, dimStyle }: {
   dimStyle: ReturnType<typeof useAnimatedStyle>;
 }) {
   const isAsk = info.type === 'ask';
-  const sender = info.sender.kind === 'session' ? info.sender.title || 'Untitled session' : info.sender.name;
+  const sender = info.sender.kind === 'session'
+    ? info.sender.agent || info.sender.title || 'Untitled session'
+    : info.sender.name;
   const label = isAsk
     ? `${sender} asked ${info.to.map((p) => p.name || p.email).join(', ')}`
     : `From ${sender}`;

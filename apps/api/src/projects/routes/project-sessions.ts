@@ -235,10 +235,10 @@ projectsApp.openapi(
       participants: participantIds,
       awaiting_reply_from: participantIds,
       awaiting_reply: true,
-      // Who asked, as the people see it: the asking session for an agent's
-      // ask (its owner's name read as "a message from yourself"), else the person.
+      // Who asked, as the people see it: the asking agent for an agent's ask
+      // (its owner's name read as "a message from yourself"), else the person.
       asked_by: sender.kind === 'session'
-        ? { kind: 'session', session_id: sender.sessionId, name: sender.title }
+        ? { kind: 'session', session_id: sender.sessionId, name: sender.title, ...(sender.agent ? { agent: sender.agent } : {}) }
         : { kind: 'person', name: sender.name, email: sender.email },
     };
     // An agent that re-runs `kortix send` after a timeout must not open a

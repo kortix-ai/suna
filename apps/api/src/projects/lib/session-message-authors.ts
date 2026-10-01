@@ -7,11 +7,12 @@
 import { projectSessions, sessionLifecycleCommands, sessionTurns } from '@kortix/db';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { namedAgent } from './session-participants';
 import { resolveUserIdentities } from './user-identity';
 
 export type SessionMessageAuthor =
   | { kind: 'member'; user_id: string; name: string; email: string | null }
-  | { kind: 'session'; session_id: string; name: string };
+  | { kind: 'session'; session_id: string; name: string; agent?: string };
 
 export interface SessionMessageAuthors {
   /** Keyed by every runtime message id the prompt travelled under. */
@@ -58,15 +59,18 @@ export async function sessionMessageAuthors(session: {
   const [titles, identities] = await Promise.all([
     sessionIds.size > 0
       ? db
-          .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+          .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata, agentName: projectSessions.agentName })
           .from(projectSessions)
           .where(and(inArray(projectSessions.sessionId, [...sessionIds]), eq(projectSessions.projectId, session.projectId)))
       : Promise.resolve([]),
     resolveUserIdentities([...userIds]),
   ]);
-  const titleById = new Map(titles.map((row) => [row.sessionId, sessionTitle(row.metadata)]));
-  const sessionAuthor = (id: string): SessionMessageAuthor | null =>
-    titleById.has(id) ? { kind: 'session', session_id: id, name: titleById.get(id)! } : null;
+  const sessionById = new Map(titles.map((row) => [row.sessionId, row]));
+  const sessionAuthor = (id: string): SessionMessageAuthor | null => {
+    const row = sessionById.get(id);
+    if (!row) return null;
+    return { kind: 'session', session_id: id, name: sessionTitle(row.metadata), ...(namedAgent(row.agentName) ? { agent: row.agentName } : {}) };
+  };
 
   const authors: Record<string, SessionMessageAuthor> = {};
   for (const row of rows) {

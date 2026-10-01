@@ -78,7 +78,7 @@ The same sender, people, and question within 2 minutes is the same ask: a retry 
 
 ## What the people see
 
-- **The sidebar.** The conversation appears under **Asked you**. Each row shows where the question came from.
+- **The sidebar.** The conversation appears under **Asked you**. Each row names who asked: the agent (for example `from kortix`), or the person.
 - **A push notification.** Each person receives a `question` notification.
 - **The conversation card.** The first message shows the asking agent's name and the question.
 - **Authors.** Every message in a conversation shows its author, like a group chat.
@@ -96,7 +96,7 @@ kortix sessions ls --asked [--json]
 3. The asking session receives the answer as a prompt that starts with a header:
 
 ```text
-[MESSAGE from session 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f "Which region should I deploy to?" — sent by another agent, not by a person. Reply with `kortix send 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f "…"`.]
+[MESSAGE from session 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f "Which region should I deploy to?" (agent kortix) — sent by another agent, not by a person. Reply with `kortix send 8c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f "…"`.]
 
 Deploy to eu-west. Sam agrees.
 ```

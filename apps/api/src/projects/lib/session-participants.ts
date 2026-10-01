@@ -90,17 +90,27 @@ export async function sessionMessageSender(
 ): Promise<SessionMessageSender> {
   if (callerSessionId) {
     const [row] = await db
-      .select({ metadata: projectSessions.metadata })
+      .select({ metadata: projectSessions.metadata, agentName: projectSessions.agentName })
       .from(projectSessions)
       .where(and(eq(projectSessions.sessionId, callerSessionId), eq(projectSessions.projectId, projectId)))
       .limit(1);
     const meta = (row?.metadata ?? {}) as Record<string, unknown>;
     const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim());
-    return { kind: 'session', sessionId: callerSessionId, title: title ?? 'Untitled session' };
+    return {
+      kind: 'session',
+      sessionId: callerSessionId,
+      title: title ?? 'Untitled session',
+      ...(namedAgent(row?.agentName) ? { agent: row!.agentName } : {}),
+    };
   }
   const identity = (await resolveUserIdentities([userId])).get(userId);
   const email = identity?.email ?? '';
   return { kind: 'person', name: identity?.displayName?.trim() || email || 'A member', email };
+}
+
+/** The agent a session runs, unless it is the column's `'default'` placeholder. */
+export function namedAgent(agentName: string | null | undefined): agentName is string {
+  return !!agentName && agentName !== 'default';
 }
 
 /**
