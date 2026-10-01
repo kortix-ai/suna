@@ -154,6 +154,31 @@ describe('access split characterization — visibility decisions', () => {
   });
 });
 
+describe('access split characterization — an agent session reads itself', () => {
+  const agentActor = { credential: { kind: 'agent_session', agentPrincipal: true } };
+
+  test('a trigger session whose created_by is the agent service account still opens itself', async () => {
+    dbResults = [[sessionRow({ createdBy: OWNER_ID, origin: 'trigger', initiatorType: 'trigger' })]];
+    shareSubject = { userId: USER_ID, groupIds: [] };
+    sessionGrants = new Map();
+
+    const result = await loadVisibleSession(loaded({ actor: agentActor }), SESSION_ID, SESSION_ID, SESSION_ID);
+
+    expect(result).not.toBeNull();
+    expect(result?.isOwner).toBe(true);
+  });
+
+  test('the same agent token still cannot open a private sibling session', async () => {
+    dbResults = [[sessionRow({ createdBy: OWNER_ID, origin: 'trigger', initiatorType: 'trigger' })]];
+    shareSubject = { userId: USER_ID, groupIds: [] };
+    sessionGrants = new Map();
+
+    const result = await loadVisibleSession(loaded({ actor: agentActor }), SESSION_ID, OTHER_ID, OTHER_ID);
+
+    expect(result).toBeNull();
+  });
+});
+
 describe('access split characterization — capability denial', () => {
   test('a member whose IAM verdict denies gets the project 403', async () => {
     dbResults = [[projectRow]];

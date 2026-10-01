@@ -86,10 +86,15 @@ data retention, and never falls back to another provider.
 | GLM 5.3 Flash | `glm-5.3-flash` |
 
 Kortix does not offer OpenAI or Anthropic models as managed models. Use them
-through a BYOK key or a ChatGPT plan. A ChatGPT plan adds `codex/gpt-6-astra`,
-`codex/gpt-6-sol`, and `codex/gpt-6-luna` (plus the GPT-5.x models). A BYOK
-key offers its provider's whole catalog, for example
-`anthropic/claude-opus-5-5` with an Anthropic key. The picker shows the newest model of each family by default.
+through a BYOK key or a ChatGPT plan. A BYOK key offers its provider's whole
+catalog, for example `anthropic/claude-opus-5-5` with an Anthropic key. A
+ChatGPT plan offers every model Codex offers a ChatGPT account, for example
+`codex/gpt-6.1-sol`. The picker shows the newest model of each family by default.
+
+Both lists update automatically. The API reads [models.dev](https://models.dev)
+and the Codex CLI's published model list every hour, so a new release appears
+within an hour of its listing, without a Kortix release. When you connect a
+provider, its newest stable model with tool calling becomes the default.
 
 ## Disable providers or models
 

@@ -133,11 +133,17 @@
     "enableGateway": "キープールを使用するには、プロジェクト設定で LLM ゲートウェイを有効にしてください。",
     "selectedOneForSession": "このセッションで {count} 個のキーを選択済み",
     "selectedOne": "{count} 個のキーを選択済み",
-    "opencodeSignIn": "OpenCode でサインイン",
-    "opencodeSignInDescription": "API キーの代わりに OpenCode ワークスペースを使用します。",
     "opencodeDeviceDescription": "このコードをコピーしてから OpenCode のページを開き、入力してワークスペースを接続します。",
     "opencodeStarting": "OpenCode に接続しています…",
-    "opencodeConnected": "OpenCode でサインインしました"
+    "opencodeConnected": "OpenCode でサインインしました",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "OpenCode アカウントでサインインします。ログインは暗号化されたプロジェクトシークレットとして保存され、今後のセッションで再利用されます。",
+    "opencodeGoConnectedBanner": "OpenCode Go が接続されました。",
+    "opencodeGoDisconnected": "OpenCode Go の接続を解除しました",
+    "opencodeGoConnect": "OpenCode Go を接続",
+    "opencodeGoReconnect": "OpenCode Go を再接続",
+    "opencodeGoDisconnect": "OpenCode Go の接続を解除",
+    "opencodeGoFailed": "OpenCode Go に接続できませんでした"
   },
   "useCases": {
     "headline": "会社を動かすループ"

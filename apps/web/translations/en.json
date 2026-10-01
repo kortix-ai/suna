@@ -133,11 +133,17 @@
     "projectDefaultShort": "Project default",
     "rateLimitDescription": "The gateway rotates through selected keys when a provider reports a rate limit.",
     "enableGateway": "Enable LLM gateway in project settings to use pooled keys.",
-    "opencodeSignIn": "Sign in with OpenCode",
-    "opencodeSignInDescription": "Use your OpenCode workspace instead of an API key.",
     "opencodeDeviceDescription": "Copy this code. Then open the OpenCode page and enter it to connect your workspace.",
     "opencodeStarting": "Connecting to OpenCode…",
-    "opencodeConnected": "Signed in with OpenCode"
+    "opencodeConnected": "Signed in with OpenCode",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Sign in with your OpenCode account. We save the login as an encrypted project secret so future sessions reuse it.",
+    "opencodeGoConnectedBanner": "OpenCode Go connected.",
+    "opencodeGoDisconnected": "OpenCode Go disconnected",
+    "opencodeGoConnect": "Connect OpenCode Go",
+    "opencodeGoReconnect": "Reconnect OpenCode Go",
+    "opencodeGoDisconnect": "Disconnect OpenCode Go",
+    "opencodeGoFailed": "Failed to connect OpenCode Go"
   },
   "useCases": {
     "headline": "The loops that run a company"

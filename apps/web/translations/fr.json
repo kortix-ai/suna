@@ -133,11 +133,17 @@
     "enableGateway": "Activez la passerelle LLM dans les paramètres du projet pour utiliser les groupes de clés.",
     "selectedOneForSession": "{count} clé sélectionnée pour cette session",
     "selectedOne": "{count} clé sélectionnée",
-    "opencodeSignIn": "Se connecter avec OpenCode",
-    "opencodeSignInDescription": "Utilisez votre espace de travail OpenCode au lieu d’une clé API.",
     "opencodeDeviceDescription": "Copiez ce code. Ouvrez ensuite la page OpenCode et saisissez-le pour connecter votre espace de travail.",
     "opencodeStarting": "Connexion à OpenCode…",
-    "opencodeConnected": "Connecté avec OpenCode"
+    "opencodeConnected": "Connecté avec OpenCode",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Connectez-vous avec votre compte OpenCode. Nous enregistrons la connexion comme secret de projet chiffré afin que les sessions futures la réutilisent.",
+    "opencodeGoConnectedBanner": "OpenCode Go connecté.",
+    "opencodeGoDisconnected": "OpenCode Go déconnecté",
+    "opencodeGoConnect": "Connecter OpenCode Go",
+    "opencodeGoReconnect": "Reconnecter OpenCode Go",
+    "opencodeGoDisconnect": "Déconnecter OpenCode Go",
+    "opencodeGoFailed": "Impossible de connecter OpenCode Go"
   },
   "useCases": {
     "headline": "Les boucles qui font fonctionner une entreprise"

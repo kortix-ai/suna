@@ -622,7 +622,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         removePersonal: (name: string) => P.deletePersonalProjectSecret(projectId, name),
         setGitCredential: (input: Parameters<typeof P.upsertProjectGitCredential>[1]) =>
           P.upsertProjectGitCredential(projectId, input),
-        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT). */
+        /** The provider logins saved on this project (ChatGPT, OpenCode Zen, OpenCode Go). */
+        listProviderOAuth: () => P.listProjectProviderOAuth(projectId),
+        /** Device-code OAuth flow to connect a subscription-backed provider (e.g. ChatGPT, opencode-go). */
         startProviderOAuth: (...a: DropFirst<Parameters<typeof P.startProjectProviderOAuth>>) =>
           P.startProjectProviderOAuth(projectId, ...a),
         pollProviderOAuth: (...a: DropFirst<Parameters<typeof P.pollProjectProviderOAuth>>) =>

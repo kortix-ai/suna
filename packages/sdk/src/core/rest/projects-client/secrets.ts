@@ -1,6 +1,7 @@
 // Secrets — project/shared + personal secret overrides, provider OAuth, git creds.
 
 import { backendApi } from '../../http/api-client';
+import type { ConnectionShare, ConnectionSharePrincipal } from './connectors';
 import { type ConnectorSharing, type ProjectGitConnection, unwrap } from './shared';
 
 export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
@@ -59,9 +60,10 @@ export interface SecretBrokerResponse {
  * `identifier` is unique per project — the handle an agent's `secrets` grant
  * references and the UI shows. `name` (the KEY) is NOT unique — multiple
  * identifiers may share one (e.g. GMAPS-primary / GMAPS-backup, both
- * GOOGLE_MAPS_API_KEY). Authorization is centralized on the agent grant (by
- * identifier); every project member with read access sees every secret — there
- * is no per-secret member/group sharing and no resource-side agent allow-list.
+ * GOOGLE_MAPS_API_KEY). Which AGENT may receive a secret is the agent grant
+ * (by identifier). Which PEOPLE may use its shared value is its audience
+ * (`shared_with`): everyone in the project by default, or specific people and
+ * groups — then only directly, or in their own private sessions.
  */
 export interface ProjectSecret {
   /** Unique per project. The handle an agent's `secrets` grant references. */
@@ -111,6 +113,12 @@ export interface ProjectSecret {
   last_rotated_at?: string | null;
   /** The stored value may have entered an earlier sandbox and must be replaced. */
   requires_rotation?: boolean;
+  /** Who can use the shared value. Empty = everyone in the project. Absent on
+   *  older servers. */
+  shared_with?: ConnectionShare[];
+  /** False when the value is shared with specific people and the caller is not
+   *  one of them. Absent on older servers. */
+  usable?: boolean;
 }
 
 export interface ProjectSecretsResponse {
@@ -175,6 +183,10 @@ export async function upsertProjectSecret(
     handle_prefix?: string;
     /** Omit to leave an existing secret's value untouched (e.g. a no-op touch). */
     value?: string;
+    /** Who can use the shared value: people and groups. `[]` = everyone in the
+     *  project. Omit to leave it unchanged. A person sets it; an agent session
+     *  gets 403. */
+    shared_with?: ConnectionSharePrincipal[];
   },
 ) {
   return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
@@ -236,6 +248,12 @@ export type ProviderOAuthPoll =
   | { status: 'success'; credential: ProviderOAuthCredential }
   | { status: 'expired' }
   | { status: 'failed'; error: string };
+
+/** The provider logins (ChatGPT, OpenCode Zen, OpenCode Go) saved on a project. */
+export async function listProjectProviderOAuth(projectId: string): Promise<ProviderOAuthCredential[]> {
+  const result = unwrap(await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/projects/${projectId}/oauth`));
+  return result.items ?? [];
+}
 
 export async function startProjectProviderOAuth(
   projectId: string,

@@ -553,6 +553,15 @@ describe('canSaveSecretDelivery', () => {
     enforcedPolicyValid: false,
   };
 
+  test('an edit that changes only who can use it can be saved; an unchanged edit cannot', () => {
+    expect(canSaveSecretDelivery(base)).toBe(false);
+    expect(canSaveSecretDelivery({ ...base, audienceChanged: true })).toBe(true);
+    // The other guards still hold: a rotation-required value needs a new value.
+    expect(
+      canSaveSecretDelivery({ ...base, audienceChanged: true, requiresRotation: true }),
+    ).toBe(false);
+  });
+
   test('requires a replacement value before restoring environment exposure', () => {
     expect(
       canSaveSecretDelivery({

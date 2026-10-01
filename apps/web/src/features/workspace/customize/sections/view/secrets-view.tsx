@@ -67,7 +67,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useAuth } from '@/features/providers/auth-provider';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { AudienceFields } from '@/features/workspace/customize/sections/add-account-fields';
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
 import {
@@ -80,6 +82,8 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
+  type ConnectionShare,
+  type ConnectionSharePrincipal,
   type ProjectSecret,
   type ProjectSecretsResponse,
   type SecretConsumer,
@@ -101,6 +105,7 @@ import {
   qk,
   refreshProjectProviderState,
   useFeatureFlag,
+  useProjectAccountId,
   useProjectConfig,
 } from '@kortix/sdk/react';
 import {
@@ -146,16 +151,26 @@ import {
   rollbackOptimisticProjectSecretSave,
 } from './secret-optimistic-cache';
 
+import { AudienceBadge } from './audience-badge';
+import { audienceVisibility } from './connector-connections';
+import {
+  type SecretAudienceDraft,
+  audienceDraftFrom,
+  sameSharedWith,
+  sharedWithFrom,
+} from './secret-audience';
+
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 const IDENTIFIER_REGEX = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 
 type Requirement = 'required' | 'optional' | null;
 
 /**
- * A project secret is `{ identifier, key, value }` — authorization is
- * centralized on the agent grant (by identifier, in kortix.yaml); this page is
- * project-wide create/configure/value only. `identifier` is the unique handle;
- * `key` (the env var name) is NOT unique — two identifiers may share one.
+ * A project secret is `{ identifier, key, value }`. Which AGENT receives it is
+ * the agent grant (by identifier, in kortix.yaml); which PEOPLE may use the
+ * value is its audience (`sharedWith`, the same "Who can use it" as a connector
+ * account). `identifier` is the unique handle; `key` (the env var name) is NOT
+ * unique — two identifiers may share one.
  */
 export interface SecretRow {
   identifier: string;
@@ -174,6 +189,10 @@ export interface SecretRow {
   requiresRotation: boolean;
   /** 'no_agent_grant' only when the API is certain. Null covers "unknown" too. */
   deliveryBlockedReason: SecretDeliveryBlockedReason | null;
+  /** Who can use the shared value. Empty = everyone in the project. */
+  sharedWith: ConnectionShare[];
+  /** False when it is shared with specific people and the viewer is not one of them. */
+  usable: boolean;
 }
 
 type SecretSavePlan = {
@@ -186,6 +205,8 @@ type SecretSavePlan = {
   shouldSetStrategy: boolean;
   egressPolicy: SecretEgressPolicy | undefined;
   bindingChanges: { bind: string[]; unbind: string[] };
+  /** The new audience; absent when Save leaves it unchanged. */
+  sharedWith?: ConnectionSharePrincipal[];
   optimistic: OptimisticProjectSecretInput;
 };
 
@@ -225,6 +246,8 @@ export function SecretsView({ projectId }: { projectId: string }) {
   // read-only page, and one denied the leaf saw editable controls that 403.
   const canManage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
+  const viewerId = useAuth().user?.id ?? null;
+  const tSharing = useI18nTranslations('accessSharing');
 
   // A legacy/enforced row keeps its "Enforce at the network" badge even with the
   // flag off, so the legend must still explain that value when one exists.
@@ -406,6 +429,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <TableHead>{tI18nComplete.raw('text9b10587f84a2')}</TableHead>
                     <TableHead>{tI18nComplete.raw('text8e37953d23da')}</TableHead>
                     <TableHead>{tI18nComplete.raw('textec5ba0abb717')}</TableHead>
+                    <TableHead>{tSharing('whoCanUse')}</TableHead>
                     <TableHead className="w-[52px]">
                       <span className="sr-only">{tI18nComplete.raw('textff8059dc6752')}</span>
                     </TableHead>
@@ -418,6 +442,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                       row={row}
                       llmGatewayEnabled={llmGatewayEnabled}
                       canManage={canManage}
+                      viewerId={viewerId}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
                       onEdit={() => openEdit(row)}
                       onDelete={() => setDeleteRow(row)}
@@ -616,6 +641,8 @@ export function buildRows(
     egressPolicy: item.egress_policy ?? null,
     requiresRotation: Boolean(item.requires_rotation),
     deliveryBlockedReason: secretDeliveryBlockedReason(item),
+    sharedWith: item.shared_with ?? [],
+    usable: item.usable ?? true,
   });
 
   const rows: SecretRow[] = [];
@@ -645,6 +672,8 @@ export function buildRows(
       egressPolicy: null,
       requiresRotation: false,
       deliveryBlockedReason: null,
+      sharedWith: [],
+      usable: true,
     });
   }
 
@@ -716,6 +745,7 @@ function SecretTableRow({
   row,
   llmGatewayEnabled,
   canManage,
+  viewerId,
   busy,
   onEdit,
   onDelete,
@@ -723,12 +753,14 @@ function SecretTableRow({
   row: SecretRow;
   llmGatewayEnabled: boolean;
   canManage: boolean;
+  viewerId: string | null;
   busy: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tSharing = useI18nTranslations('accessSharing');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
   const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
@@ -771,6 +803,19 @@ function SecretTableRow({
             </span>
           )}
         </div>
+      </TableCell>
+      <TableCell className="align-middle">
+        {row.configured ? (
+          <div className="flex flex-col items-start gap-1">
+            <AudienceBadge
+              visibility={audienceVisibility(row.sharedWith, viewerId)}
+              labels={row.sharedWith.map((share) => share.label)}
+            />
+            {row.usable ? null : (
+              <span className="text-muted-foreground text-xs">{tSharing('notSharedWithYou')}</span>
+            )}
+          </div>
+        ) : null}
       </TableCell>
       <TableCell>
         {!canManageShared ? null : (
@@ -897,6 +942,18 @@ function SecretDialog({
   const [identifier, setIdentifier] = useState(row?.identifier ?? '');
   const [key, setKey] = useState(row?.key ?? '');
   const [value, setValue] = useState('');
+  // Who can use the value. A new secret defaults to everyone, as every secret
+  // did before audiences existed; editing opens on the stored audience.
+  const viewerId = useAuth().user?.id ?? null;
+  const accountId = useProjectAccountId(projectId);
+  const tSharing = useI18nTranslations('accessSharing');
+  const projectName =
+    useQuery({ queryKey: qk.project.detail(projectId), queryFn: () => getProjectDetail(projectId), ...contract('config') })
+      .data?.project?.name ?? '';
+  const [audience, setAudience] = useState<SecretAudienceDraft>(() =>
+    audienceDraftFrom(row?.sharedWith ?? [], viewerId),
+  );
+  const nextSharedWith = sharedWithFrom(audience, viewerId);
   /**
    * What the system makes of the name and value typed so far (spec §7). It is
    * recomputed on every keystroke rather than latched on blur: a user who
@@ -952,6 +1009,7 @@ function SecretDialog({
     setSelectedConnectorSlugs(null);
     setEditedHosts(null);
     setLegacyInject(currentPolicy?.inject ?? null);
+    setAudience(audienceDraftFrom(row?.sharedWith ?? [], viewerId));
   };
 
   const requiresValue = !row?.configured;
@@ -988,6 +1046,17 @@ function SecretDialog({
     if (row?.consumer === 'connector' && nextConnectorSlugs.length === 0) {
       throw new Error('Select at least one connector.');
     }
+    if (!nextSharedWith) {
+      throw new Error('Pick who can use it.');
+    }
+    // Sent only when it changes: a new secret narrowed to someone, or an edit.
+    const sharedWith = row
+      ? sameSharedWith(row.sharedWith, nextSharedWith)
+        ? undefined
+        : nextSharedWith
+      : nextSharedWith.length > 0
+        ? nextSharedWith
+        : undefined;
 
     const hasValueChange = Boolean(value.trim()) || !row?.configured;
     const egressPolicy = needsHosts ? (enforcedPolicy ?? undefined) : undefined;
@@ -1006,6 +1075,7 @@ function SecretDialog({
       shouldSetStrategy,
       egressPolicy,
       bindingChanges,
+      sharedWith,
       optimistic: {
         projectId,
         identifier: finalIdentifier,
@@ -1031,7 +1101,17 @@ function SecretDialog({
         shouldSetStrategy,
         egressPolicy,
         bindingChanges,
+        sharedWith,
       } = plan;
+      // Who can use it, on its own: the value and delivery stay as they are.
+      const shareOnly = () =>
+        sharedWith
+          ? upsertProjectSecret(projectId, {
+              name: finalKey,
+              identifier: finalIdentifier,
+              shared_with: sharedWith,
+            })
+          : null;
 
       if (!(strategy === 'broker' && nextConsumer === 'connector')) {
         await Promise.all(
@@ -1047,6 +1127,7 @@ function SecretDialog({
           strategy,
           consumer: nextConsumer,
           ...(egressPolicy ? { egress_policy: egressPolicy } : {}),
+          ...(sharedWith ? { shared_with: sharedWith } : {}),
         });
         if (strategy === 'broker' && nextConsumer === 'connector') {
           await Promise.all([
@@ -1075,9 +1156,9 @@ function SecretDialog({
             ),
           ]);
         }
-        return result;
+        return (await shareOnly()) ?? result;
       }
-      return null;
+      return shareOnly();
     },
     onMutate: async (plan) => {
       const queryKey = qk.project.secrets(projectId);
@@ -1200,7 +1281,9 @@ function SecretDialog({
   const selectedGrantHint = selectedGrantCandidate
     ? agentGrantCandidateHint(selectedGrantCandidate)
     : null;
-  const canSave = canSaveSecretDelivery({
+  const canSave =
+    nextSharedWith !== null &&
+    canSaveSecretDelivery({
     isEdit,
     key,
     value,
@@ -1211,6 +1294,8 @@ function SecretDialog({
     nextConsumer,
     enforcedPolicyValid: enforcedPolicy !== null,
     selectedConnectorCount: effectiveSelectedConnectorSlugs.length,
+    audienceChanged:
+      row !== null && nextSharedWith !== null && !sameSharedWith(row.sharedWith, nextSharedWith),
   });
 
   return (
@@ -1294,6 +1379,16 @@ function SecretDialog({
                   {tI18nComplete.raw('text51b5970e84eb')}
                 </p>
               )}
+
+              <AudienceFields
+                projectId={projectId}
+                value={audience}
+                onChange={setAudience}
+                canShare
+                accountId={accountId}
+                everyoneLabel={tSharing('everyone', { project: projectName })}
+                disabled={save.isPending}
+              />
 
               {/* The two things the system recognized, said once, where the
                   user can act on them. Both only ever change a DEFAULT — the
