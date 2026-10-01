@@ -186,6 +186,7 @@ export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';
 export * from './use-project-sessions';
+export * from './use-sessions-needing-input';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';

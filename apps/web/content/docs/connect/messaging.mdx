@@ -65,12 +65,15 @@ A people target prints:
 
 ## Who can be asked
 
-An email must belong to a project member who may run sessions. List them with `kortix access ls`. The limit is 1 to 20 people per conversation.
+An email must belong to a project member who may run sessions and who may use the conversation's agent: a person who cannot use the agent could not reply. List members with `kortix access ls`. The limit is 1 to 20 people per conversation. A message to people is text only.
+
+The same sender, people, and question within 2 minutes is the same ask: a retry after a timeout returns the first conversation and notifies nobody twice.
 
 | Error | Meaning |
 | --- | --- |
 | `400` `INVALID_PARTICIPANTS` | The list is empty, has more than 20 addresses, or has an invalid address. |
-| `404` `PARTICIPANT_NOT_FOUND` | An address is not a project member who may run sessions. |
+| `400` `INVALID_PARTICIPANTS` | The message has files (`pending_prompt.parts`), or no text. |
+| `404` `PARTICIPANT_NOT_FOUND` | An address is not a project member who may run sessions, or the person cannot use the conversation's agent. The message names each address. |
 | `403` `feature_disabled` | The project flag is off. |
 
 ## What the people see
@@ -80,7 +83,7 @@ An email must belong to a project member who may run sessions. List them with `k
 - **The conversation card.** The first message shows the asking agent's name and the question.
 - **Authors.** Every message in a conversation shows its author, like a group chat.
 
-The conversation stays under **Asked you** until a person replies. List the same conversations from the CLI:
+The conversation waits on each person until that person replies. In a group, one reply does not clear the others. Later notifications of the conversation (the agent finishes, the agent asks a question) go to its people, not to its owner. List the same conversations from the CLI:
 
 ```sh
 kortix sessions ls --asked [--json]
@@ -98,7 +101,7 @@ kortix sessions ls --asked [--json]
 Deploy to eu-west. Sam agrees.
 ```
 
-A session may message its parent, and may reply to a session that messaged it, even when it cannot otherwise see that session.
+With the flag on, a session may message its parent, and may reply to a session that messaged it, even when it cannot otherwise see that session. That message runs the receiving session's own agent and model, and it is delivered as that session's owner. The sender is still recorded as its author.
 
 In a group conversation, each human message reaches the agent with a header that names the author: `[MESSAGE from Avery Lee <avery@example.com>]`. The agent asks the group, collects the answers, and then reports once.
 
@@ -121,7 +124,7 @@ An agent deploys a service and needs a region.
 
 A conversation with people is shared with the named people and with the owner of the session that asked. Other project members cannot open it. Its session is `restricted`, with a member grant for each person named.
 
-`participants` and `awaiting_reply` are server-managed metadata keys. A client that writes them gets `400`.
+`participants`, `awaiting_reply`, and `awaiting_reply_from` are server-managed metadata keys. A client that writes them gets `400`.
 
 ## From the hosted MCP server
 

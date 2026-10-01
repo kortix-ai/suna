@@ -230,6 +230,12 @@ describe('createSessionNotifier', () => {
     expect(h.sent[0]![0]!.body).toBe('Kortix has a question: Which region?');
   });
 
+  test('a conversation with people pushes to its participants, not its creator', async () => {
+    const h = harness({ session: { createdBy: USER, title: 'Which region?', participants: ['user-a', 'user-b'] } });
+    expect((await h.notify(event)).reason).toBe('sent');
+    expect(h.listed).toEqual(['user-a', 'user-b']);
+  });
+
   test('every recipient present → no push', async () => {
     const h = harness({ isPresent: async () => true });
     expect(await h.notify({ ...event, recipients: ['user-a', 'user-b'] })).toEqual({ sent: 0, reason: 'present' });

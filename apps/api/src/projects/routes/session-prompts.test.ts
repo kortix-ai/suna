@@ -635,6 +635,8 @@ describe('GET .../prompts', () => {
         // A text-only prompt names no files. The list is always present so a
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
+        // Only the first message of a conversation with people is noReply.
+        no_reply: false,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },
@@ -1068,6 +1070,18 @@ describe('POST .../prompts sender header (human_messaging)', () => {
       expect((await send({ flag: true, fromSession: OWN_SESSION })).status).toBe(202);
       expect(enqueued[0].actorUserId).toBe(OWNER);
       expect(enqueued[0].authorSessionId).toBe(OWN_SESSION);
+    } finally {
+      messagedSession = null;
+      visibleSessionOverride = undefined;
+    }
+  });
+
+  test('flag off: a session cannot reach one it cannot open, even its parent (404)', async () => {
+    messagedSession = { sessionId: SESSION_ID, createdBy: '88888888-8888-4888-8888-888888888888', metadata: {}, agentName: null };
+    visibleSessionOverride = null;
+    try {
+      expect((await send({ flag: false, fromSession: OWN_SESSION })).status).toBe(404);
+      expect(enqueued).toHaveLength(0);
     } finally {
       messagedSession = null;
       visibleSessionOverride = undefined;

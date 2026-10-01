@@ -112,6 +112,11 @@ export interface ProjectSession {
   owner_email?: string | null;
   owner_name?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
+  /**
+   * The people a conversation was opened with (`metadata.participants`),
+   * resolved to names. Served on the single-session read only; `[]` elsewhere.
+   */
+  participant_people?: { user_id: string; name: string | null; email: string | null }[];
   visibility?: 'private' | 'project' | 'restricted';
   /** How the session was started — a policy class derived from the caller's
    *  token kind, not the surface. A backend (PAT/service-account) create is
@@ -1171,6 +1176,10 @@ export interface SessionPrompt {
    *  cannot tell a stuck upload from a prompt that never had attachments.
    *  Absent from servers older than this field. */
   attachments?: Array<{ filename: string; mime: string }>;
+  /** Posted without a turn — the first message of a conversation with people
+   *  (`participants`). No agent answers it, so show no "thinking" state.
+   *  Absent from servers older than this field. */
+  no_reply?: boolean;
   created_at: string;
   available_at: string;
 }

@@ -60,6 +60,7 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // value would add itself to a conversation or silence one.
   'participants',
   'awaiting_reply',
+  'awaiting_reply_from',
 ] as const;
 
 /**

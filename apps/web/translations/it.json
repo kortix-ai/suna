@@ -1591,6 +1591,17 @@
       "failed": "Impossibile salvare le etichette",
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
+    },
+    "askedYou": {
+      "title": "Ti hanno chiesto",
+      "from": "da {name}",
+      "arrival": "{name} ti ha fatto una domanda",
+      "arrivalUnknown": "Qualcuno ti ha fatto una domanda",
+      "open": "Apri",
+      "withOne": "Conversazione con 1 persona",
+      "withMany": "Conversazione con {count} persone",
+      "askedFrom": "Chiesto da {title}",
+      "inConversation": "In questa conversazione"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "In ascolto…",
       "text7458028e0d1d": "Termina dettatura",
       "text9c84d6622566": "Detta un messaggio",
-      "textf164e4b031dc": "Presenza nella sessione aggiornata"
+      "textf164e4b031dc": "Presenza nella sessione aggiornata",
+      "text9e6a0b0a06c2": "Ha visualizzato gli autori dei messaggi della sessione"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "Se disattivato, la connessione resta in pausa anche dopo un riavvio.",
     "manageInProject": "Gestisci nel progetto",
     "disconnectEllipsis": "Disconnetti…"
+  },
+  "messageFrom": {
+    "from": "Da",
+    "asked": "ha chiesto a",
+    "replyHint": "Rispondi qui sotto. L'agente lo raccoglierà.",
+    "untitledSession": "Sessione senza titolo"
   }
 }

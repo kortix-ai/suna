@@ -1591,6 +1591,17 @@
       "failed": "无法保存标签",
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
+    },
+    "askedYou": {
+      "title": "向你提问",
+      "from": "来自 {name}",
+      "arrival": "{name} 向你提问",
+      "arrivalUnknown": "有人向你提问",
+      "open": "打开",
+      "withOne": "与 1 人的对话",
+      "withMany": "与 {count} 人的对话",
+      "askedFrom": "来自 {title} 的提问",
+      "inConversation": "对话参与者"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "正在聆听…",
       "text7458028e0d1d": "完成听写",
       "text9c84d6622566": "语音输入消息",
-      "textf164e4b031dc": "已更新会话在线状态"
+      "textf164e4b031dc": "已更新会话在线状态",
+      "text9e6a0b0a06c2": "查看了会话消息作者"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "关闭后连接会暂停，重启后也保持暂停。",
     "manageInProject": "在项目中管理",
     "disconnectEllipsis": "断开连接…"
+  },
+  "messageFrom": {
+    "from": "来自",
+    "asked": "询问了",
+    "replyHint": "在下方回复，智能体会接手处理。",
+    "untitledSession": "未命名会话"
   }
 }

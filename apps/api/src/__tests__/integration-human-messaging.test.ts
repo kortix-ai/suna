@@ -18,6 +18,7 @@ import {
   projectSessions,
   projects,
   sessionLifecycleCommands,
+  sessionTurns,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
@@ -261,6 +262,17 @@ describe('sessionMessageAuthors', () => {
     expect((await authorsOf('spawned-no-prompt')).initial_author).toBeNull();
     expect((await authorsOf('lead')).initial_author).toBeNull();
     expect((await authorsOf('lead')).authors).toEqual({});
+  });
+
+  test('once the first turn has a message id, the parent is attributed on that message, not as a guess', async () => {
+    await session({ id: 'spawned-turned', parent: 'lead', metadata: { name: 'Turned', initial_prompt: 'go' } });
+    await db.insert(sessionTurns).values({
+      turnToken: crypto.randomUUID(), sessionId: sid('spawned-turned'), sandboxId: crypto.randomUUID(),
+      projectId: PROJECT, accountId: ACCOUNT, messageId: 'msg_initial_turn',
+    });
+    const result = await authorsOf('spawned-turned');
+    expect(result.authors.msg_initial_turn).toEqual({ kind: 'session' as const, session_id: sid('lead'), name: 'Lead session' });
+    expect(result.initial_author).toBeNull();
   });
 });
 

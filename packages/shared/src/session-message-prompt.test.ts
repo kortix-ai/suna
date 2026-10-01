@@ -40,6 +40,19 @@ describe('session message prompt', () => {
     expect(parsed?.prompt).toBe('Which region?\nSecond line.');
   });
 
+  test('a comma in a name cannot split the list of people', () => {
+    const text = sessionMessagePromptText({
+      type: 'ask',
+      sender: { kind: 'person', name: 'Avery', email: 'avery@example.com' },
+      to: [{ name: 'Doe, Jane', email: 'jane@example.com' }, { name: 'Blake', email: 'blake@example.com' }],
+      prompt: 'Ok?',
+    });
+    expect(parseSessionMessagePrompt(text)?.to).toEqual([
+      { name: 'Doe Jane', email: 'jane@example.com' },
+      { name: 'Blake', email: 'blake@example.com' },
+    ]);
+  });
+
   test('a person message carries no reply instruction', () => {
     const text = sessionMessagePromptText({
       type: 'message',

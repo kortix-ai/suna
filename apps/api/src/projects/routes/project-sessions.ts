@@ -18,6 +18,7 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
 import { projectSessions } from '@kortix/db';
 import { SessionUpdateInputSchema } from '@kortix/api-contract';
 import { and, eq, or, sql } from 'drizzle-orm';
@@ -176,15 +177,23 @@ projectsApp.openapi(
   // A conversation with people: the first message goes to them, not to the
   // agent. See lib/session-participants.ts.
   let participantMetadata: Record<string, unknown> | undefined;
+  let askIdempotencyKey: string | null = null;
   if (body.participants !== undefined) {
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
     if (gate) return gate;
     const pending = body.pending_prompt as Record<string, unknown> | undefined;
-    const question = normalizeString(body.initial_prompt) ?? normalizeString(pending?.text);
+    // The ask header lives in the text; parts (files) would replace it.
+    if (Array.isArray(pending?.parts) && pending.parts.length > 0) {
+      return c.json({ error: 'A message to people is text only: drop pending_prompt.parts', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const question =
+      normalizeString(body.initial_prompt) ?? normalizeString(body.initialPrompt) ?? normalizeString(pending?.text);
     if (!question) {
       return c.json({ error: 'participants needs initial_prompt: the message to send them', code: 'INVALID_PARTICIPANTS' }, 400);
     }
-    const resolved = await resolveSessionParticipants(loaded.row.accountId, projectId, body.participants);
+    const resolved = await resolveSessionParticipants(loaded.row.accountId, projectId, body.participants, {
+      name: normalizeString(body.agent_name) ?? agentAccess.agentName ?? null,
+    });
     if ('error' in resolved) return c.json({ error: resolved.error, code: resolved.code }, resolved.status);
     const sender = await sessionMessageSender(loaded.userId, callerKortixSessionId(c), projectId);
     body.pending_prompt = {
@@ -196,11 +205,26 @@ projectsApp.openapi(
         prompt: question,
       }),
     };
+    // Both spellings: either one would boot the sandbox with an agent turn.
     delete body.initial_prompt;
+    delete body.initialPrompt;
     delete body.participants;
     // The question names the conversation; the header never becomes a title.
     body.name ??= question.split('\n')[0]!.slice(0, 80);
-    participantMetadata = { participants: resolved.people.map((p) => p.userId), awaiting_reply: true };
+    const participantIds = resolved.people.map((p) => p.userId);
+    participantMetadata = { participants: participantIds, awaiting_reply_from: participantIds, awaiting_reply: true };
+    // An agent that re-runs `kortix send` after a timeout must not open a
+    // second conversation and notify the same people twice. Without a
+    // caller key, the same sender + people + question within the hour is the
+    // same ask. A deliberate follow-up minutes later is a new one.
+    // ponytail: 2-minute bucket, a retry across the boundary duplicates.
+    askIdempotencyKey = `ask:${createHash('sha256').update(JSON.stringify([
+      callerKortixSessionId(c) ?? loaded.userId,
+      projectId,
+      [...(participantMetadata.participants as string[])].sort(),
+      question,
+      Math.floor(Date.now() / 120_000),
+    ])).digest('hex')}`;
   }
   const result = await createSession({
     source: 'ui',
@@ -219,7 +243,7 @@ projectsApp.openapi(
     inSession: isProjectSessionPrincipal(c),
     callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
-    idempotencyKey,
+    idempotencyKey: idempotencyKey ?? askIdempotencyKey,
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
@@ -264,6 +288,7 @@ projectsApp.openapi(
     runtime_context: 'INVALID_SESSION_RUNTIME_CONTEXT',
     connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
     secrets: 'INVALID_SESSION_SECRETS',
+    participants: 'INVALID_PARTICIPANTS',
   };
   const issues: Array<{ path?: Array<string | number>; message?: string }> =
     result.error?.issues ?? [];
@@ -271,7 +296,9 @@ projectsApp.openapi(
   if (coded.length === 0) return;
   return c.json(
     {
-      error: coded.map((issue) => issue.message).join('; '),
+      error: coded[0]!.path![0] === 'participants'
+        ? 'participants must be 1-20 email addresses'
+        : coded.map((issue) => issue.message).join('; '),
       code: codes[String(coded[0]!.path![0])],
     },
     400,
@@ -453,7 +480,17 @@ projectsApp.openapi(
   const owner = visible.row.createdBy
     ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
     : undefined;
+  // The people of a conversation, so the header can name who is in it.
+  const participantIds = Array.isArray(visible.row.metadata?.participants)
+    ? (visible.row.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const participantIdentities = await resolveSessionOwnerIdentities(participantIds, loaded.row.accountId);
   return c.json(serializeSession(visible.row, {
+    participants: participantIds.map((id) => ({
+      user_id: id,
+      name: participantIdentities.get(id)?.name ?? null,
+      email: participantIdentities.get(id)?.email ?? null,
+    })),
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,

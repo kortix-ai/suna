@@ -35,7 +35,7 @@ export interface SessionMessagePromptInfo {
 
 /** Header fields are single-line and cannot close the header or a quote. */
 function clean(value: string, max = 80): string {
-  return value.replace(/[\r\n[\]"<>—]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  return value.replace(/[\r\n[\]"<>—,]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 function person(p: SessionMessagePerson): string {

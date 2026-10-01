@@ -272,6 +272,15 @@ flow(
       }
       (await ctx.client.as(asked).get(SESSION, { params: { projectId: project.id, sessionId } })).status(200);
     });
+
+    await ctx.step('the same ask sent again (a retry after a timeout) returns the same conversation, not a second one', async () => {
+      const r = await owner.post(
+        SESSIONS,
+        { participants: [asked.email], initial_prompt: 'Which vendor should we pick?\nBy Friday.' },
+        { params },
+      );
+      r.status(201).body().has('$.session_id', sessionId);
+    });
   },
 );
 

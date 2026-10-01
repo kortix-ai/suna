@@ -1591,6 +1591,17 @@
       "failed": "No se pudieron guardar las etiquetas",
       "tooLong": "Una etiqueta tiene como máximo 64 caracteres.",
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
+    },
+    "askedYou": {
+      "title": "Te preguntaron",
+      "from": "de {name}",
+      "arrival": "{name} te preguntó algo",
+      "arrivalUnknown": "Alguien te preguntó algo",
+      "open": "Abrir",
+      "withOne": "Conversación con 1 persona",
+      "withMany": "Conversación con {count} personas",
+      "askedFrom": "Preguntado desde {title}",
+      "inConversation": "En esta conversación"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "Escuchando…",
       "text7458028e0d1d": "Terminar dictado",
       "text9c84d6622566": "Dictar mensaje",
-      "textf164e4b031dc": "Presencia en la sesión actualizada"
+      "textf164e4b031dc": "Presencia en la sesión actualizada",
+      "text9e6a0b0a06c2": "Vio los autores de los mensajes de la sesión"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
     "manageInProject": "Gestionar en el proyecto",
     "disconnectEllipsis": "Desconectar…"
+  },
+  "messageFrom": {
+    "from": "De",
+    "asked": "preguntó a",
+    "replyHint": "Responde abajo. El agente lo recogerá.",
+    "untitledSession": "Sesión sin título"
   }
 }

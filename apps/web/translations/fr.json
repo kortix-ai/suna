@@ -1591,6 +1591,17 @@
       "failed": "Impossible d’enregistrer les libellés",
       "tooLong": "Un libellé compte au plus 64 caractères.",
       "tooMany": "Une session a au plus 20 libellés."
+    },
+    "askedYou": {
+      "title": "Vous a demandé",
+      "from": "de {name}",
+      "arrival": "{name} vous a posé une question",
+      "arrivalUnknown": "Quelqu'un vous a posé une question",
+      "open": "Ouvrir",
+      "withOne": "Conversation avec 1 personne",
+      "withMany": "Conversation avec {count} personnes",
+      "askedFrom": "Demandé depuis {title}",
+      "inConversation": "Dans cette conversation"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "Écoute en cours…",
       "text7458028e0d1d": "Terminer la dictée",
       "text9c84d6622566": "Dicter un message",
-      "textf164e4b031dc": "Présence dans la session mise à jour"
+      "textf164e4b031dc": "Présence dans la session mise à jour",
+      "text9e6a0b0a06c2": "A consulté les auteurs des messages de la session"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
     "manageInProject": "Gérer dans le projet",
     "disconnectEllipsis": "Déconnecter…"
+  },
+  "messageFrom": {
+    "from": "De",
+    "asked": "a demandé à",
+    "replyHint": "Répondez ci-dessous. L'agent le reprendra.",
+    "untitledSession": "Session sans titre"
   }
 }

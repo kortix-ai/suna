@@ -195,7 +195,10 @@ projectsApp.openapi(
       isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
     const ordinary = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
     // Its parent, or a session that messaged it first — see sessionMayMessage.
-    const messaged = !ordinary && authorSessionId ? await sessionMayMessage(authorSessionId, sessionId, projectId) : null;
+    const messaged =
+      !ordinary && authorSessionId && resolveFeatureFlag(loaded.row.metadata, 'human_messaging')
+        ? await sessionMayMessage(authorSessionId, sessionId, projectId)
+        : null;
     const visible = ordinary ?? (messaged ? { row: messaged } : null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
@@ -272,19 +275,24 @@ projectsApp.openapi(
     // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
     // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
     // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
-    const overrides = {
-      agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
-      model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
-      variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
-      directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
-    };
+    // A message into a session the sender cannot open (`messaged`) runs that
+    // session's own agent and model, chosen by its owner: the sender picks
+    // nothing, so there is no agent of the sender's to authorize.
+    const overrides = messaged
+      ? { agent: null, model: promptModelOverride(null, messaged.metadata as Record<string, unknown> | null), variant: null, directory: null }
+      : {
+          agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
+          model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
+          variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
+          directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
+        };
 
     // Every prompt re-asks, because a prompt is what spends the money and a
     // prompt can SWITCH agent mid-session via `overrides.agent`. Checking only
     // at create would let a member send the first message as their granted
     // agent and every one after it as any other agent in the manifest. Falls
     // back to the session's own agent when the prompt names none.
-    await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
+    if (!messaged) await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
@@ -392,11 +400,15 @@ projectsApp.openapi(
       observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
-    // A participant answered: the conversation leaves their "Asked you" list.
+    // A participant answered: the conversation leaves THEIR "Asked you" list.
+    // In a group the others are still owed an answer until each replies.
     if (!authorSessionId && metadata.awaiting_reply === true && participants.includes(loaded.userId)) {
+      const left = sql`coalesce(${projectSessions.metadata}->'awaiting_reply_from', '[]'::jsonb) - ${loaded.userId}::text`;
       await db
         .update(projectSessions)
-        .set({ metadata: sql`${projectSessions.metadata} || '{"awaiting_reply": false}'::jsonb` })
+        .set({
+          metadata: sql`${projectSessions.metadata} || jsonb_build_object('awaiting_reply_from', ${left}, 'awaiting_reply', jsonb_array_length(${left}) > 0)`,
+        })
         .where(eq(projectSessions.sessionId, sessionId));
     }
 

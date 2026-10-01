@@ -485,3 +485,12 @@ describe('qk.project.sessionsPaged label filter', () => {
     expect(qk.project.sessionsPaged('P1', 'visible', { labels: [] })).toEqual(plain);
   });
 });
+
+describe('qk.project.sessionsPaged participant filter', () => {
+  test('the asked-into list gets its own cache slot', () => {
+    const plain = qk.project.sessionsPaged('P1');
+    const asked = qk.project.sessionsPaged('P1', 'visible', { participant: 'me' });
+    expect(asked).not.toEqual(plain);
+    expect(asked).not.toEqual(qk.project.sessionsPaged('P1', 'visible', { parent: 'root' }));
+  });
+});

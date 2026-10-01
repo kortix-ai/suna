@@ -4,8 +4,8 @@
  * person or an agent sent through `POST .../prompts` (or a create's first
  * prompt) carries the authenticated sender. Never inferred from the owner.
  */
-import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { projectSessions, sessionLifecycleCommands, sessionTurns } from '@kortix/db';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { resolveUserIdentities } from './user-identity';
 
@@ -90,5 +90,18 @@ export async function sessionMessageAuthors(session: {
       ...(Array.isArray(payload.redeliveredMessageIds) ? payload.redeliveredMessageIds : [])];
     for (const id of ids) if (typeof id === 'string' && id) authors[id] = author;
   }
-  return { authors, initial_author: initialFromParent ? sessionAuthor(session.parentSessionId!) : null };
+  if (!initialFromParent) return { authors, initial_author: null };
+  // The `initial_prompt` turn is the session's first: its message id is known.
+  const [first] = await db
+    .select({ messageId: sessionTurns.messageId })
+    .from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, session.sessionId), isNotNull(sessionTurns.messageId)))
+    .orderBy(asc(sessionTurns.createdAt))
+    .limit(1);
+  const parent = sessionAuthor(session.parentSessionId!);
+  if (first?.messageId && parent && !authors[first.messageId]) {
+    authors[first.messageId] = parent;
+    return { authors, initial_author: null };
+  }
+  return { authors, initial_author: parent };
 }

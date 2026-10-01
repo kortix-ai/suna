@@ -1591,6 +1591,17 @@
       "failed": "Die Labels konnten nicht gespeichert werden",
       "tooLong": "Ein Label hat höchstens 64 Zeichen.",
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
+    },
+    "askedYou": {
+      "title": "Hat dich gefragt",
+      "from": "von {name}",
+      "arrival": "{name} hat dich etwas gefragt",
+      "arrivalUnknown": "Jemand hat dich etwas gefragt",
+      "open": "Öffnen",
+      "withOne": "Unterhaltung mit 1 Person",
+      "withMany": "Unterhaltung mit {count} Personen",
+      "askedFrom": "Gefragt von {title}",
+      "inConversation": "In dieser Unterhaltung"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "Hört zu…",
       "text7458028e0d1d": "Diktat beenden",
       "text9c84d6622566": "Nachricht diktieren",
-      "textf164e4b031dc": "Sitzungspräsenz aktualisiert"
+      "textf164e4b031dc": "Sitzungspräsenz aktualisiert",
+      "text9e6a0b0a06c2": "Nachrichtenautoren der Sitzung angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
     "manageInProject": "Im Projekt verwalten",
     "disconnectEllipsis": "Trennen…"
+  },
+  "messageFrom": {
+    "from": "Von",
+    "asked": "fragte",
+    "replyHint": "Antworte unten. Der Agent nimmt es auf.",
+    "untitledSession": "Unbenannte Sitzung"
   }
 }

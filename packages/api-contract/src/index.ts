@@ -1079,6 +1079,10 @@ export const ProjectSessionSchema = z.object({
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
+  /** The people a conversation was opened with, resolved to names. Single-session read only; `[]` elsewhere. */
+  participant_people: z
+    .array(z.object({ user_id: z.string(), name: z.string().nullable(), email: z.string().nullable() }))
+    .optional(),
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),

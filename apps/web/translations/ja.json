@@ -1591,6 +1591,17 @@
       "failed": "ラベルを保存できませんでした",
       "tooLong": "ラベルは 64 文字以内です。",
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
+    },
+    "askedYou": {
+      "title": "あなたへの質問",
+      "from": "{name} から",
+      "arrival": "{name} さんから質問が届きました",
+      "arrivalUnknown": "質問が届きました",
+      "open": "開く",
+      "withOne": "1人との会話",
+      "withMany": "{count}人との会話",
+      "askedFrom": "{title} からの質問",
+      "inConversation": "この会話の参加者"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "聞き取り中…",
       "text7458028e0d1d": "音声入力を完了",
       "text9c84d6622566": "メッセージを音声入力",
-      "textf164e4b031dc": "セッションのプレゼンスを更新しました"
+      "textf164e4b031dc": "セッションのプレゼンスを更新しました",
+      "text9e6a0b0a06c2": "セッションのメッセージ作成者を表示しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "オフにすると、再起動後も接続は一時停止のままです。",
     "manageInProject": "プロジェクトで管理",
     "disconnectEllipsis": "接続を解除…"
+  },
+  "messageFrom": {
+    "from": "送信元",
+    "asked": "が質問:",
+    "replyHint": "下で返信してください。エージェントが引き継ぎます。",
+    "untitledSession": "無題のセッション"
   }
 }

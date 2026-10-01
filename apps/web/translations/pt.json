@@ -1591,6 +1591,17 @@
       "failed": "Não foi possível salvar os rótulos",
       "tooLong": "Um rótulo tem no máximo 64 caracteres.",
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
+    },
+    "askedYou": {
+      "title": "Perguntaram a você",
+      "from": "de {name}",
+      "arrival": "{name} fez uma pergunta a você",
+      "arrivalUnknown": "Alguém fez uma pergunta a você",
+      "open": "Abrir",
+      "withOne": "Conversa com 1 pessoa",
+      "withMany": "Conversa com {count} pessoas",
+      "askedFrom": "Perguntado a partir de {title}",
+      "inConversation": "Nesta conversa"
     }
   },
   "dashboard": {
@@ -19069,7 +19080,8 @@
       "textbbb4106e8144": "Ouvindo…",
       "text7458028e0d1d": "Concluir ditado",
       "text9c84d6622566": "Ditar mensagem",
-      "textf164e4b031dc": "Presença na sessão atualizada"
+      "textf164e4b031dc": "Presença na sessão atualizada",
+      "text9e6a0b0a06c2": "Visualizou os autores das mensagens da sessão"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20303,5 +20315,11 @@
     "runInBackgroundDescription": "Desligado pausa a conexão, mesmo depois de reiniciar.",
     "manageInProject": "Gerenciar no projeto",
     "disconnectEllipsis": "Desconectar…"
+  },
+  "messageFrom": {
+    "from": "De",
+    "asked": "perguntou a",
+    "replyHint": "Responda abaixo. O agente dará seguimento.",
+    "untitledSession": "Sessão sem título"
   }
 }
