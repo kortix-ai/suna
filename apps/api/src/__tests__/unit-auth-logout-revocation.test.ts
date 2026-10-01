@@ -2,6 +2,7 @@ import { expect, mock, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import type { AuthVariables } from '../types';
 
 const USER = '00000000-0000-4000-8000-00000000a001';
 const SECRET = 'synthetic-logout-secret-0123456789';
@@ -31,7 +32,7 @@ const encode = (value: object) => Buffer.from(JSON.stringify(value)).toString('b
 const unsigned = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: USER, role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })}`;
 const bearer = `${unsigned}.${createHmac('sha256', SECRET).update(unsigned).digest('base64url')}`;
 
-const app = new Hono();
+const app = new Hono<{ Variables: AuthVariables }>();
 app.route('/v1/auth', authRouter);
 app.use('/v1/accounts/me', supabaseAuth);
 app.get('/v1/accounts/me', (c) => c.json({ user_id: c.get('userId') }));

@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import type { AuthVariables } from '../types';
 
 /**
  * Local HS256 verification + the GoTrue liveness cache (2026-09-23).
@@ -131,7 +132,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     let live = true;
     countingLoader(async () => live ? { id: USER, email: 'synthetic@example.test' } : null);
     const token = sign({ sub: USER, exp: inAnHour() });
-    const app = new Hono();
+    const app = new Hono<{ Variables: AuthVariables }>();
     app.use('/v1/accounts/me', supabaseAuth);
     app.get('/v1/accounts/me', (c) => c.json({ user_id: c.get('userId') }));
     app.onError((error, c) => error instanceof HTTPException ? c.json({ error: error.message }, error.status) : c.json({ error: 'unexpected' }, 500));
