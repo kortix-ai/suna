@@ -12,14 +12,14 @@ Every project can connect Teams. There is no feature flag to turn on.
 
 ## Connect
 
-Two ways, both from **Settings → Channels**:
+Two ways, both from the project's **Connectors → Channels** page:
 
 - **One click (managed).** A Teams **tenant admin** clicks **Add to Teams**,
   signs in, and consents. Kortix publishes the app to your org's Teams catalog
   automatically — there is nothing to build or paste. The row then offers
   **Add to Teams** (a deep link into the Teams client) so anyone can add the
-  bot to a chat or channel. If a later version of the app changes, click
-  **Publish to your Teams catalog** again to push the update.
+  bot to a chat or channel. When Kortix ships a newer version of the app,
+  see [Update the app](#update-the-app).
 - **Bring your own bot.** Click **Use your own Microsoft Teams app** for a
   three-step wizard: register an Azure Bot, connect it to Kortix with its app
   id, client secret and tenant id, then download the generated app package and
@@ -34,9 +34,33 @@ The CLI mirrors the dashboard:
 
 ```bash
 kortix channels connect --platform teams      # prints the admin-consent URL
-kortix channels status --platform teams        # tenant + catalog + publish state
+kortix channels status --platform teams        # tenant, catalog, publish state, app version
 kortix channels disconnect --platform teams
 ```
+
+## Update the app
+
+Kortix adds permissions to its Teams app over time. App version 1.1.0 added
+`ChannelMessage.Read.Group`, which the agent needs to read a channel thread.
+Version 1.3.0 added `ChatMessage.Read.Chat`, so a group-chat reply continues
+a session without a mention. A team still on 1.0.0 refuses every thread read,
+and the refusal the agent receives names who fixes it.
+
+Two people update the app, in this order:
+
+1. **A Teams admin publishes the update.** When your org catalog has an older
+   version, the Channels page shows **Update the Kortix app in Teams**, and the
+   Teams row's button reads **Publish app update**. The admin clicks it and
+   signs in with Microsoft. `kortix channels status --platform teams` prints
+   both versions, and `kortix channels connect --platform teams` prints the
+   sign-in link.
+2. **A team owner updates the app in each team where Teams offers it.** In
+   Teams, open the team, then **⋯ → Manage team → Apps**, select **Update** on
+   the Kortix app, and accept it. Teams installs an update on its own unless it
+   adds a permission or a message action; those wait for a team owner.
+
+Kortix records the app version at each publish. An install published before
+Kortix recorded versions shows the notice until its next publish.
 
 ## Chats, channels, and mentions
 
@@ -46,8 +70,8 @@ kortix channels disconnect --platform teams
   **without** one, the way a Slack thread does. That needs the app's
   `ChannelMessage.Read.Group` (channels) and `ChatMessage.Read.Chat` (group
   chats) permissions, which the tenant admin consents to when the app is added.
-  If the app was added before these were requested, remove and re-add it to
-  pick up the new consent.
+  If the app was added before these were requested, a team owner updates it:
+  see [Update the app](#update-the-app).
 
 Each chat or channel conversation is its own session. The first message creates
 it; later messages continue it, even after the sandbox stops and resumes. A
@@ -299,8 +323,8 @@ it was asked about is not in its session. When it needs that context, the agent
 reads the thread it was mentioned in, or the channel's recent posts, through
 the `ChannelMessage.Read.Group` permission the app requests when it is added to
 a team. A team that added the app before that permission was requested must
-remove and re-add it. In a personal chat every message already reaches the
-session, so there is nothing earlier to read.
+update it: see [Update the app](#update-the-app). In a personal chat every
+message already reaches the session, so there is nothing earlier to read.
 
 Every project connected to the same Microsoft 365 tenant uses the same app, so
 Kortix keeps each read inside the project's own conversations. In a channel,
