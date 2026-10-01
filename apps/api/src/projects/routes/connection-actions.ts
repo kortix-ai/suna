@@ -4,7 +4,7 @@ import {
   RenameConnectionInputSchema,
   UpdateConnectionCredentialInputSchema,
 } from '@kortix/api-contract';
-import { connectorConnections, tunnelConnections } from '@kortix/db';
+import { connectorConnections, projectSessionConnectorBindings, tunnelConnections } from '@kortix/db';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   connectionIsEffectiveProjectDefault,
@@ -262,6 +262,53 @@ for (const [method, path] of [
     renameConnectionHandler,
   );
 }
+
+// Removing an account is distinct from revoking its authorization: a revoked
+// row remains in the account list and can be reactivated.
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/connections/{connectionId}',
+    tags: ['connectors'],
+    summary: 'Disconnect and remove a connection',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }) },
+    responses: { 200: json(z.object({ ok: z.literal(true) }), 'Removed'), ...errors(403, 404, 409) },
+  }),
+  async (c) => {
+    const projectId = c.req.valid('param').projectId;
+    const connectionId = c.req.valid('param').connectionId;
+    const mutable = await loadMutableConnection(c, projectId, connectionId);
+    if (!mutable) return c.json({ error: 'Not found' }, 404);
+    if (mutable.connection.providerType === 'computer') {
+      return c.json({ error: 'Unpair this computer using the computers route' }, 409);
+    }
+    // FOR UPDATE conflicts with the FK's KEY SHARE lock on the parent row.
+    // A concurrent binding cannot slip between the check and deletion.
+    const removed = await db.transaction(async (tx) => {
+      const [locked] = await tx.select({ connectionId: connectorConnections.connectionId })
+        .from(connectorConnections)
+        .where(and(
+          eq(connectorConnections.connectionId, connectionId),
+          eq(connectorConnections.projectId, projectId),
+          eq(connectorConnections.accountId, mutable.loaded.row.accountId),
+        ))
+        .for('update');
+      if (!locked) return false;
+      const [binding] = await tx
+        .select({ sessionId: projectSessionConnectorBindings.sessionId })
+        .from(projectSessionConnectorBindings)
+        .where(eq(projectSessionConnectorBindings.connectionId, connectionId))
+        .limit(1);
+      if (binding) return false;
+      await tx.delete(connectorConnections).where(eq(connectorConnections.connectionId, connectionId));
+      return true;
+    });
+    if (!removed) return c.json({ error: 'This account is bound to a session or no longer exists.' }, 409);
+    // Cascading deletion removes stored OAuth credentials with the account.
+    return c.json({ ok: true as const }, 200);
+  },
+);
 
 for (const operation of ['credential', 'revoke', 'activate', 'default'] as const) {
   projectsApp.openapi(

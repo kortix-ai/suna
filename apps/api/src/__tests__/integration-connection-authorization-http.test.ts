@@ -25,6 +25,7 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import pg from 'pg';
 import {
   completeAuthorizationCodeSession,
   discoverConnectionOAuth2Resource,
@@ -357,6 +358,85 @@ describe('connection owner authorization over HTTP', () => {
     expect(new Set(ids)).toEqual(
       new Set([DEFAULT_CONNECTION, USER_STRATEGY_PROJECT_CONNECTION, ALICE_CONNECTION]),
     );
+  });
+
+  test('disconnect removes an owned account, but not another member account', async () => {
+    const id = crypto.randomUUID();
+    const token = await mint(ALICE);
+    await db.insert(connectorConnections).values({
+      connectionId: id, accountId: ACCOUNT, projectId: PROJECT,
+      connectorId: USER_CONNECTOR, ownerType: 'member', ownerId: ALICE,
+      label: 'Temporary account',
+    });
+    expect((await request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, await mint(BOB))).status).toBe(404);
+    const removed = await request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token);
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ ok: true });
+    const listed = await request('GET', `/v1/projects/${PROJECT}/connections`, token);
+    expect(listed.status).toBe(200);
+    expect(((await listed.json()) as { connections: Array<{ connection_id: string }> }).connections
+      .some((row) => row.connection_id === id)).toBe(false);
+    expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, id))).length).toBe(0);
+    expect((await request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token)).status).toBe(404);
+  });
+
+  test('disconnect refuses an account bound to a session', async () => {
+    const response = await request('DELETE', `/v1/projects/${PROJECT}/connections/${ALICE_CONNECTION}`, await mint(ALICE));
+    expect(response.status).toBe(409);
+    expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, ALICE_CONNECTION))).length).toBe(1);
+  });
+
+  test('disconnect cannot remove an account while a concurrent binding is committed', async () => {
+    const id = crypto.randomUUID();
+    const token = await mint(ALICE);
+    await db.insert(connectorConnections).values({
+      connectionId: id, accountId: ACCOUNT, projectId: PROJECT,
+      connectorId: USER_CONNECTOR, ownerType: 'member', ownerId: ALICE,
+      label: 'Racing account',
+    });
+    let releaseBinding!: () => void;
+    const held = new Promise<void>((resolve) => { releaseBinding = resolve; });
+    let bindingInserted!: () => void;
+    const inserted = new Promise<void>((resolve) => { bindingInserted = resolve; });
+    const binding = db.transaction(async (tx) => {
+      await tx.insert(projectSessionConnectorBindings).values({
+        sessionId: DEFAULT_SCOPE_SESSION, accountId: ACCOUNT, projectId: PROJECT,
+        connectorAlias: 'racing_account', connectorId: USER_CONNECTOR,
+        connectionId: id, source: 'request', createdBy: ALICE,
+      });
+      bindingInserted();
+      await held;
+    });
+    await inserted;
+    const deletion = request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token);
+    const probe = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    try {
+      await probe.connect();
+      // The insert holds a KEY SHARE lock. Prove DELETE reached FOR UPDATE
+      // while that lock is held, rather than merely starting its promise.
+      const deadline = Date.now() + 10_000;
+      while (true) {
+        const waiting = await probe.query(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+             AND query ILIKE '%connector_connections%'
+             AND query ILIKE '%for update%'`,
+        );
+        if (waiting.rows[0].n > 0) break;
+        if (Date.now() > deadline) throw new Error('DELETE did not wait on the binding lock');
+        await Bun.sleep(20);
+      }
+      releaseBinding();
+      await binding;
+      expect((await deletion).status).toBe(409);
+      expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, id))).length).toBe(1);
+    } finally {
+      releaseBinding();
+      await binding;
+      await probe.end();
+      await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.connectionId, id));
+      await db.delete(connectorConnections).where(eq(connectorConnections.connectionId, id));
+    }
   });
 
   test('managers administer system connections but cannot enumerate personal connections', async () => {

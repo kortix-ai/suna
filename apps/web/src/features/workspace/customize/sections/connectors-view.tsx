@@ -115,6 +115,7 @@ import {
   reconcileConnection,
   reconcileMemberConnection,
   registerConnectionOAuth2Client,
+  removeConnection,
   renameConnection,
   revokeConnection,
   setConnectorCredential,
@@ -577,7 +578,7 @@ export function ConnectionsList({
   // removes the machine from Kortix (every project), not one account.
   const unpairComputer = useDeleteTunnelConnection();
   const disconnect = useMutation({
-    mutationFn: (connectionId: string) => revokeConnection(projectId, connectionId),
+    mutationFn: (connectionId: string) => removeConnection(projectId, connectionId),
     onSuccess: () => {
       successToast(tI18nComplete.raw('text04dfac3671b4'));
       setConfirmDisconnect(null);

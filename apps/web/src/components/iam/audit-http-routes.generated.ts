@@ -446,6 +446,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|projects|:projectId|connect-requests",
   "GET|v1|projects|:projectId|connections",
   "POST|v1|projects|:projectId|connections",
+  "DELETE|v1|projects|:projectId|connections|:connectionId",
   "PATCH|v1|projects|:projectId|connections|:connectionId",
   "PUT|v1|projects|:projectId|connections|:connectionId|activate",
   "POST|v1|projects|:projectId|connections|:connectionId|connect",

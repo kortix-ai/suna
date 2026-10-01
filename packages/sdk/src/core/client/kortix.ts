@@ -507,6 +507,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         P.reconcileMemberConnection(projectId, ...a),
       updateCredential: (...a: DropFirst<Parameters<typeof P.updateConnectionCredential>>) =>
         P.updateConnectionCredential(projectId, ...a),
+      remove: (...a: DropFirst<Parameters<typeof P.removeConnection>>) =>
+        P.removeConnection(projectId, ...a),
       revoke: (...a: DropFirst<Parameters<typeof P.revokeConnection>>) =>
         P.revokeConnection(projectId, ...a),
       activate: (...a: DropFirst<Parameters<typeof P.activateConnection>>) =>

@@ -19106,7 +19106,8 @@
       "text80043b03898d": "Actualiza la app de Kortix en Teams",
       "textdf757dbe33eb": "Tu catálogo de Teams tiene la versión {value0} de la app de Kortix. La versión {value1} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
       "textcd2c4b26eedd": "Kortix no tiene registro de la versión de la app en tu catálogo de Teams. La versión {value0} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
-      "texte15f213fa506": "Publicar actualización de la app"
+      "texte15f213fa506": "Publicar actualización de la app",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

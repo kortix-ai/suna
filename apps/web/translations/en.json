@@ -12897,7 +12897,7 @@
       "text64cc97c96c03": "Disconnect anytime with",
       "text64cfa6cc8752": "The shipped default is permissive: an action runs unless you have said otherwise. Reads are usually fine that way. Writes to a warehouse are not, and setting them to Ask is a configuration change you make, not one that was made for you.",
       "text64cff1319d2f": "Action",
-      "text64db32d83da9": "Your own connection is removed. Sessions bound to it will stop working.",
+      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
       "text64e8222cd578": "Where Kortix lives",
       "text64e855d33cce": "Access request declined",
       "text64f160413fef": "Use the provided SVG/PNG files",
@@ -17335,7 +17335,7 @@
       "texte2b3a36c0979": "Could not add source",
       "texte2c604d8e8f9": "Month-end is not slow because of the accounting. It is slow because of four days of pulling, matching, chasing and formatting before anyone qualified sees a number.",
       "texte2cacf330067": "Reconcile the books, flag the exceptions, hold for sign-off.",
-      "texte2cbafcec553": "Everyone on this project loses access to this account. Sessions bound to it will stop working.",
+      "texte2cbafcec553": "Everyone on this project loses access to this account. It cannot be removed while a session is bound to it; unbind it from the session first.",
       "texte2cbd4618228": "Remove rule {value0}",
       "texte2cc5cc46d8e": "Square symbol — where the wide logo does not fit, and the touch icon. Stands in for the logo when none is set.",
       "texte2d0a54968ea": "Delete",
@@ -19119,7 +19119,8 @@
       "text80043b03898d": "Update the Kortix app in Teams",
       "textdf757dbe33eb": "Your Teams catalog has version {value0} of the Kortix app. Version {value1} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
-      "texte15f213fa506": "Publish app update"
+      "texte15f213fa506": "Publish app update",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

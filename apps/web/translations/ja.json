@@ -19106,7 +19106,8 @@
       "text80043b03898d": "Teams の Kortix アプリを更新",
       "textdf757dbe33eb": "Teams カタログの Kortix アプリはバージョン {value0} です。バージョン {value1} には、エージェントが Teams で使うすべてのコマンドと権限が含まれます。Teams 管理者が更新を公開します。その後、Teams が更新を表示しているチームで、チームの所有者がアプリを更新します: チーム → ⋯ → チームを管理 → アプリ → 更新。",
       "textcd2c4b26eedd": "Teams カタログのアプリのバージョンは Kortix に記録されていません。バージョン {value0} には、エージェントが Teams で使うすべてのコマンドと権限が含まれます。Teams 管理者が更新を公開します。その後、Teams が更新を表示しているチームで、チームの所有者がアプリを更新します: チーム → ⋯ → チームを管理 → アプリ → 更新。",
-      "texte15f213fa506": "アプリの更新を公開"
+      "texte15f213fa506": "アプリの更新を公開",
+      "text092e391cacdb": "Removed connector account"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

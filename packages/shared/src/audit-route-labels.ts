@@ -477,6 +477,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/connect-requests': { action: 'connector.setup_link.create', title: 'Created connector setup link' },
   'GET /v1/projects/:projectId/connections': { action: 'connector.connection.list', title: 'Listed project connector accounts' },
   'POST /v1/projects/:projectId/connections': { action: 'connector.connection.create', title: 'Created connector account' },
+  'DELETE /v1/projects/:projectId/connections/:connectionId': { action: 'connector.connection.remove', title: 'Removed connector account' },
   'PUT /v1/projects/:projectId/connections/:connectionId/activate': { action: 'connector.connection.activate', title: 'Activated connector account' },
   'POST /v1/projects/:projectId/connections/:connectionId/connect': { action: 'connector.connection.connect.start', title: 'Started connector account connection' },
   'POST /v1/projects/:projectId/connections/:connectionId/connect/finalize': { action: 'connector.connection.connect.finalize', title: 'Finalized connector account connection' },
