@@ -206,7 +206,7 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
 /** Resolve the selected agent's project file delivery mode without repository I/O. */
 export function repositoryAccessFromLoadedAgents(agentName: string, loaded: LoadedAgents): boolean {
   const name = agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent ? loaded.defaultAgent : agentName;
-  return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.repositoryAccess ?? (loaded.specs.length === 0 && loaded.errors.length === 0);
+  return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.repositoryAccess ?? true;
 }
 
 /** Legacy read remains unavailable until its owner explicitly chooses a boolean policy. */
