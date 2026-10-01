@@ -27,6 +27,7 @@ import {
 
 import type { MessageWithParts } from '@/lib/opencode/types';
 import { withoutTrailingSlashes } from '@kortix/shared/tool-output';
+import { parseUserMessageText } from './user-message';
 import { partInput, partMetadata } from './tool-part-accessors';
 import { parseImageOutput, parseVideoOutput } from './tools/web-media';
 import { parseShowItems } from './tools/web-show';
@@ -228,6 +229,17 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
   messages.forEach((message, messageIndex) => {
     const isLatest = messageIndex >= latestStart;
     for (const part of message.parts ?? []) {
+      if (message.info.role === 'user' && part.type === 'text') {
+        for (const file of parseUserMessageText(part.text).files) {
+          const item = candidate(part.id, file.path, { shown: true, kind: kindOfName(file.filename || file.path) });
+          if (!item) continue;
+          const key = pathKey(item.path);
+          if (!indexByKey.has(key)) {
+            indexByKey.set(key, files.length);
+            files.push({ ...item, key, ...(isLatest ? { fresh: 'new' } : {}) });
+          }
+        }
+      }
       if (!isToolPart(part as never)) continue;
       for (const item of candidatesOf(part as unknown as ToolPart)) {
         const key = pathKey(item.path);

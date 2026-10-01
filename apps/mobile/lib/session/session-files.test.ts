@@ -54,6 +54,14 @@ describe('deriveSessionFiles', () => {
     expect(files).toEqual([]);
   });
 
+  test('lists uploaded files shared in a user message for preview', () => {
+    const files = deriveSessionFiles([
+      msg('user', [{ type: 'text', text: 'Look at <file path="/workspace/uploads/brief.pdf" filename="brief.pdf">content</file>' }]),
+    ]);
+    expect(files).toMatchObject([{ name: 'brief.pdf', path: '/workspace/uploads/brief.pdf', shown: true }]);
+    expect(deriveSessionFiles([msg('user', [{ type: 'text', text: '<file filename="missing.pdf">x</file>' }])])).toEqual([]);
+  });
+
   test('skips files the agent only read', () => {
     const files = deriveSessionFiles([
       msg('assistant', [tool('read', { filePath: '/workspace/a.md' })]),
