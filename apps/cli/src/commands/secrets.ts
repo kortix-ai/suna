@@ -125,6 +125,10 @@ Subcommands:
   share IDENTIFIER                  Set WHO CAN USE the value (replaces it).
     --user <email|id|me>            A person. Repeat for more.
     --group <id>                    A group. Repeat for more.
+    --agent <name>                  An agent of this project. It uses the
+                                    value in every one of its sessions,
+                                    triggers included — anyone who can run
+                                    the agent can use it through the agent.
     --everyone                      Everyone in the project (the default).
                                     Shared with specific people, the value
                                     reaches only them — directly, or in their
@@ -1087,24 +1091,26 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
   const everyone = takeFlagBool(args, ['--everyone']);
   let users: string[];
   let groups: string[];
+  let agents: string[];
   try {
     users = takeFlagValues(args, ['--user']);
     groups = takeFlagValues(args, ['--group']);
+    agents = takeFlagValues(args, ['--agent']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
   const identifier = args[0]?.trim();
   if (!identifier) {
-    process.stderr.write(`${status.err('Usage: kortix secrets share IDENTIFIER --user <email|id|me> | --group <id> | --everyone')}\n`);
+    process.stderr.write(`${status.err('Usage: kortix secrets share IDENTIFIER --user <email|id|me> | --group <id> | --agent <name> | --everyone')}\n`);
     return 2;
   }
-  if (everyone && users.length + groups.length > 0) {
-    process.stderr.write(`${status.err('--everyone shares it with the whole project; drop --user and --group.')}\n`);
+  if (everyone && users.length + groups.length + agents.length > 0) {
+    process.stderr.write(`${status.err('--everyone shares it with the whole project; drop --user, --group and --agent.')}\n`);
     return 2;
   }
-  if (!everyone && users.length + groups.length === 0) {
-    process.stderr.write(`${status.err('Say who can use it: --user <email|id|me>, --group <id>, or --everyone.')}\n`);
+  if (!everyone && users.length + groups.length + agents.length === 0) {
+    process.stderr.write(`${status.err('Say who can use it: --user <email|id|me>, --group <id>, --agent <name>, or --everyone.')}\n`);
     return 2;
   }
 
@@ -1117,7 +1123,7 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
       process.stderr.write(`${status.err(`No secret with identifier "${identifier}". See: kortix secrets ls`)}\n`);
       return 1;
     }
-    const principals: Array<{ principal_type: 'user' | 'group'; principal_id: string }> = groups.map((id) => ({
+    const principals: Array<{ principal_type: 'user' | 'group' | 'agent'; principal_id: string }> = groups.map((id) => ({
       principal_type: 'group',
       principal_id: id,
     }));
@@ -1133,6 +1139,22 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
       if (!userId) return 1;
       principals.push({ principal_type: 'user', principal_id: userId });
     }
+    if (agents.length > 0) {
+      // An agent is its service account, one per (project, agent).
+      const identities = (
+        await ctx.client.get<{ agents: Array<{ service_account_id: string; agent_name: string | null }> }>(
+          `/projects/${ctx.projectId}/agent-identities`,
+        )
+      ).agents;
+      for (const name of agents) {
+        const hit = identities.find((agent) => agent.agent_name === name);
+        if (!hit) {
+          process.stderr.write(`${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`);
+          return 1;
+        }
+        principals.push({ principal_type: 'agent', principal_id: hit.service_account_id });
+      }
+    }
     const response = await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
       name: target.name,
       identifier: target.identifier,
@@ -1146,9 +1168,14 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
       ? 'everyone in the project'
       : `${principals.length} ${principals.length === 1 ? 'person or group' : 'people and groups'}`;
     process.stdout.write(`${status.ok(`${target.identifier}: ${audience}`)}\n`);
-    if (!everyone) {
+    if (!everyone && users.length + groups.length > 0) {
       process.stdout.write(
-        `  ${C.dim}It reaches them directly or in their own private sessions — never a shared session or a trigger.${C.reset}\n`,
+        `  ${C.dim}People reach it directly or in their own private sessions — never a shared session or a trigger.${C.reset}\n`,
+      );
+    }
+    if (agents.length > 0) {
+      process.stdout.write(
+        `  ${C.dim}An agent uses it in every session of the agent, triggers included: anyone who can run it can use the value through it.${C.reset}\n`,
       );
     }
     return 0;

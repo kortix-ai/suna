@@ -14,6 +14,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountGroupMembers,
+  accountTokens,
   accountGroups,
   accountMembers,
   accounts,
@@ -59,7 +60,22 @@ const entitled = async (userId: string, visibility: 'private' | 'project', servi
     })
   ).map((connection) => connection.connectionId);
 
-const grant = (principal: { type: 'group' | 'project'; id: string }) =>
+/** The accounts an AGENT-principal session reaches: no person (a trigger or a
+ *  shared session), acting as `agentId`. */
+const entitledAsAgent = async (agentId: string, visibility: 'private' | 'project') =>
+  (
+    await listEntitledConnectorConnections({
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      alias: 'crm',
+      actingUserId: agentId,
+      actingPrincipalIsServiceAccount: true,
+      visibility,
+      agentPrincipal: { onBehalfOfUserId: null, agentId },
+    })
+  ).map((connection) => connection.connectionId);
+
+const grant = (principal: { type: 'group' | 'project' | 'service_account'; id: string }) =>
   assignRole(SYSTEM_ACTOR, ACCOUNT, {
     principal,
     roleKey: 'agent-user',
@@ -194,6 +210,36 @@ describe('a shared connector account narrowed to an audience', () => {
       await sessionHasPersonalConnectorBinding({ accountId: ACCOUNT, projectId: PROJECT, sessionId: SESSION }),
     ).toBe(true);
 
+    await revokeAssignment(SYSTEM_ACTOR, ACCOUNT, row.assignmentId);
+    expect(await entitled(NOT_IN_SALES, 'project')).toEqual([SHARED]);
+  });
+
+  test('a grant to an AGENT: every session of that agent reaches it, shared or unattended; nobody else does', async () => {
+    const row = await grant({ type: 'service_account', id: SERVICE_ACCOUNT });
+    // The agent itself, in a shared session and with no human at all.
+    expect(await entitledAsAgent(SERVICE_ACCOUNT, 'project')).toEqual([SHARED]);
+    expect(await entitledAsAgent(SERVICE_ACCOUNT, 'private')).toEqual([SHARED]);
+    // Another agent, and a person outside the audience.
+    expect(await entitledAsAgent(crypto.randomUUID(), 'project')).toEqual([]);
+    expect(await entitled(IN_SALES, 'private')).toEqual([]);
+    // Reach does not depend on a person, so a session bound to it may be shared
+    // only when the binding is this session's own agent's — SESSION's token
+    // names no agent, so its binding still counts as personal.
+    expect(
+      await sessionHasPersonalConnectorBinding({ accountId: ACCOUNT, projectId: PROJECT, sessionId: SESSION }),
+    ).toBe(true);
+    // Once SESSION runs as that agent, sharing it hands nobody a person's account.
+    const [token] = await db
+      .insert(accountTokens)
+      .values({
+        accountId: ACCOUNT, userId: IN_SALES, name: 'agent session', projectId: PROJECT, sessionId: SESSION,
+        serviceAccountId: SERVICE_ACCOUNT, publicKey: `pk_${SESSION.slice(0, 12)}`, secretKeyHash: `h_${SESSION}`,
+      })
+      .returning({ tokenId: accountTokens.tokenId });
+    expect(
+      await sessionHasPersonalConnectorBinding({ accountId: ACCOUNT, projectId: PROJECT, sessionId: SESSION }),
+    ).toBe(false);
+    await db.delete(accountTokens).where(eq(accountTokens.tokenId, token!.tokenId));
     await revokeAssignment(SYSTEM_ACTOR, ACCOUNT, row.assignmentId);
     expect(await entitled(NOT_IN_SALES, 'project')).toEqual([SHARED]);
   });
