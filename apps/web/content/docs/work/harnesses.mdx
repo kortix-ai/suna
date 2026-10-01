@@ -61,7 +61,9 @@ array of `GET /kortix/health`. A client hides a control when the session's
 The web tools follow the `websearch` (`web_search`, `image_search`) and
 `webfetch` (`scrape_webpage`) permission keys on both harnesses. On OpenCode
 these tools cannot ask: an `ask` rule denies them. On pi an `ask` rule raises
-a permission request.
+a permission request. On pi a `memory` command that changes a file follows
+`edit` and `view` follows `read`; on OpenCode only a `memory` rule governs
+the tool.
 
 ### OpenCode only today
 
