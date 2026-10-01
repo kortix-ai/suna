@@ -3,18 +3,15 @@
  *
  * `flushAuditEvents()` is the read-your-writes barrier of every audit read
  * route (`GET /v1/accounts/:id/audit`, the export, the project/session audit
- * lists). The queue's per-session serialize waits WITHOUT a timeout, so under
- * the per-session write convoy (the sandbox ingest vs the queue, see
- * audit-session-serial.ts) an unbounded barrier parked a read route for the
- * whole 25s request deadline: prod 2026-09-28, `GET /v1/accounts/:id/audit`
- * answered 16× 503 deadline aborts and 3× 57014 statement timeouts in one
- * minute while its workspace's audit ingest was contended (KRTX-631). The
- * barrier's INSERT started seconds into the request and then rode the audit
- * pool's 10s statement_timeout — the route's own SELECT never ran.
+ * lists). A flush chains onto the in-flight one and the audit pool's INSERT can
+ * run for its whole 10s statement_timeout under cold-cache IO, so an unbounded
+ * barrier parked a read route for the whole 25s request deadline: prod
+ * 2026-09-28, `GET /v1/accounts/:id/audit` answered 16× 503 deadline aborts and
+ * 3× 57014 statement timeouts in one minute (KRTX-631).
  *
  * The fix: read routes pass `waitMs`. These tests pin both sides:
- *   - bounded: a read route answers while the write convoy holds the session
- *     lock, and the row still lands later (completeness survives);
+ *   - bounded: a read route answers while the INSERT is slow, and the row still
+ *     lands later (completeness survives);
  *   - healthy: a bounded barrier still waits for a fast flush, so
  *     read-your-writes holds when the database is fine;
  *   - default (no options): the drain still waits for the queue — the
@@ -27,10 +24,19 @@ import {
   type AuditInsertClient,
   type AuditRow,
 } from './audit-queue';
-import { resetAuditSessionLocksForTest, withAuditSessionLock } from './audit-session-serial';
 
 const writtenBatches: AuditRow[][] = [];
-let gated = false;
+/** While set, an INSERT starts but does not complete until `releaseGate()`. */
+let gate: Promise<void> | null = null;
+let releaseGate: () => void = () => {};
+const holdInserts = () => {
+  gate = new Promise<void>((resolve) => {
+    releaseGate = () => {
+      gate = null;
+      resolve();
+    };
+  });
+};
 
 // The minimal surface the flush path touches. A cast: the real client is a
 // Drizzle builder whose shape the queue never needs (see audit-queue.test.ts).
@@ -38,10 +44,9 @@ const gateableClient = {
   insert: () => ({
     values: (rows: AuditRow[]) => ({
       onConflictDoNothing: async () => {
+        // A slow INSERT: the rows are only written once the gate opens.
+        if (gate) await gate;
         writtenBatches.push([...rows]);
-        // `gated` holds the statement like a convoyed INSERT: it starts
-        // (pushing its rows) and never settles.
-        if (gated) await new Promise<void>(() => {});
       },
     }),
   }),
@@ -65,42 +70,30 @@ describe('the audit read barrier', () => {
   beforeEach(() => {
     process.env.KORTIX_AUDIT_SYNC = '0';
     resetAuditQueueForTests();
-    resetAuditSessionLocksForTest();
     writtenBatches.length = 0;
-    gated = false;
+    gate = null;
   });
 
   afterEach(() => {
     delete process.env.KORTIX_AUDIT_SYNC;
     resetAuditQueueForTests();
-    resetAuditSessionLocksForTest();
   });
 
-  test('a bounded barrier answers while a convoy holds the session lock, and the row still lands later', async () => {
-    // Hold the in-process session lock like a contended ingest does, and make
-    // the queue's INSERT wait for the same convoy.
-    let releaseHolder!: () => void;
-    void withAuditSessionLock('audit-session-1', () => new Promise<void>((r) => {
-      releaseHolder = r;
-    }));
+  test('a bounded barrier answers while the INSERT is slow, and the row still lands later', async () => {
     getAuditQueue(gateableClient).enqueue(rowForSession('audit-session-1'));
-    gated = true;
+    holdInserts();
 
     const started = Date.now();
     await flushAuditEvents({ waitMs: 100 });
     const elapsed = Date.now() - started;
 
-    // The read proceeds within the bound instead of riding the convoy to the
-    // 25s deadline. (Unbounded, this barrier only resolved when the holder
-    // released AND the 10s statement finished — the prod 503 shape.)
+    // The read proceeds within the bound instead of riding the slow INSERT to the
+    // 25s deadline.
     expect(elapsed).toBeLessThan(1_000);
     expect(writtenBatches).toHaveLength(0);
 
-    // Completeness survives: release the convoy, and the abandoned barrier's
-    // own drain writes the row in the background.
-    gated = false;
-    releaseHolder();
-    getAuditQueue(gateableClient).flush();
+    // Completeness survives: the abandoned barrier's own drain writes the row.
+    releaseGate();
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
     expect(writtenBatches).toHaveLength(1);
   });
@@ -118,13 +111,9 @@ describe('the audit read barrier', () => {
     expect(writtenBatches[0]).toHaveLength(1);
   });
 
-  test('the default drain still waits for a contended queue (shutdown and test paths)', async () => {
-    let releaseHolder!: () => void;
-    void withAuditSessionLock('audit-session-3', () => new Promise<void>((r) => {
-      releaseHolder = r;
-    }));
+  test('the default drain still waits for a slow queue (shutdown and test paths)', async () => {
     getAuditQueue(gateableClient).enqueue(rowForSession('audit-session-3'));
-    gated = true;
+    holdInserts();
 
     let unboundedSettled = false;
     void flushAuditEvents().then(() => {
@@ -134,8 +123,7 @@ describe('the audit read barrier', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 400));
     expect(unboundedSettled).toBe(false);
 
-    gated = false;
-    releaseHolder();
+    releaseGate();
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
     expect(unboundedSettled).toBe(true);
     expect(writtenBatches).toHaveLength(1);
