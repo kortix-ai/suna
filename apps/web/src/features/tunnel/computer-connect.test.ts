@@ -1,10 +1,12 @@
 import type { Connection } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
+import type { TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import type { DesktopComputerStatus } from '@/lib/desktop';
 import {
   computerDisplayName,
   computerState,
+  groupOwnedComputers,
   platformName,
   projectComputerAccounts,
   yourComputerMenu,
@@ -183,4 +185,39 @@ test('capabilitiesNeedingSetup: a capability waits on the macOS grants it needs'
     'filesystem',
     'desktop',
   ]);
+});
+
+describe('groupOwnedComputers', () => {
+  const machine = (tunnelId: string, over: Partial<TunnelConnection> = {}): TunnelConnection =>
+    ({
+      tunnelId,
+      name: tunnelId,
+      isLive: false,
+      lastHeartbeatAt: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      machineInfo: {},
+      capabilities: [],
+      ...over,
+    }) as TunnelConnection;
+  const hw = (id: string) => ({ machineId: id.repeat(64) });
+
+  test('one entry per hardware, live first, then most recently seen', () => {
+    const { computers, older } = groupOwnedComputers([
+      machine('old-same-hw', { machineInfo: hw('a'), lastHeartbeatAt: '2026-08-01T00:00:00.000Z' }),
+      machine('other-hw', { machineInfo: hw('b'), lastHeartbeatAt: '2026-09-01T00:00:00.000Z' }),
+      machine('live-same-hw', { machineInfo: hw('a'), isLive: true }),
+    ]);
+    expect(computers.map((m) => m.tunnelId)).toEqual(['live-same-hw', 'other-hw']);
+    expect(older).toEqual([]);
+  });
+
+  test('a registration without a hardware id is an older connection unless it is online now', () => {
+    const { computers, older } = groupOwnedComputers([
+      machine('legacy-offline-1', { lastHeartbeatAt: '2026-08-09T00:00:00.000Z' }),
+      machine('legacy-online', { isLive: true }),
+      machine('legacy-offline-2', { lastHeartbeatAt: '2026-08-13T00:00:00.000Z' }),
+    ]);
+    expect(computers.map((m) => m.tunnelId)).toEqual(['legacy-online']);
+    expect(older.map((m) => m.tunnelId)).toEqual(['legacy-offline-2', 'legacy-offline-1']);
+  });
 });

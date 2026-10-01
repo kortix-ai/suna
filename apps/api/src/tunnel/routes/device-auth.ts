@@ -40,6 +40,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { tunnelRelay } from '../core/relay';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
+import { retireSupersededRegistrations } from './connections';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**
@@ -604,6 +605,7 @@ export function createDeviceAuthRouter() {
       const { reused, ...result } = paired;
       // The agent still running on the old credential yields to the new one.
       if (reused) tunnelRelay.disconnectAgent(result.tunnelId, 4003, 'setup token rotated');
+      if (row.machineId) await retireSupersededRegistrations(result.tunnelId, row.machineId);
 
       return c.json({ success: true, ...result });
     },

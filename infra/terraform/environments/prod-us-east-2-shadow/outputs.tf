@@ -50,3 +50,8 @@ output "project_snapshot_bucket" {
   description = "Value for KORTIX_PROJECT_SNAPSHOT_S3_BUCKET in this environment's non-secret task env overrides."
   value       = module.project_snapshots.bucket_name
 }
+
+output "capture_bucket" {
+  description = "Value for KORTIX_CAPTURE_S3_BUCKET in this environment's non-secret task env overrides."
+  value       = module.capture.bucket_name
+}

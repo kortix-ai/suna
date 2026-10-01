@@ -781,6 +781,18 @@ Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire onc
 
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 
+### Capture
+
+Kortix Capture is a person's own screen history: apps, window titles, URLs, on-screen text and timestamps. These commands read the history of the person you act for. Inside a session that is the person the private session runs for. Logged in as a user, it is you. They never read another member's history. A run with no person (a trigger, a shared session) gets `403 CAPTURE_NO_HUMAN`. Capture off for that person gets `403 CAPTURE_NOT_ENABLED`.
+
+| Command | Effect |
+| --- | --- |
+| `kortix capture search <query> [--from] [--to] [--app] [--domain] [--limit] [--json]` | Full-text search over window titles and on-screen text, newest first. |
+| `kortix capture timeline [--day YYYY-MM-DD] [--from] [--to] [--json]` | Recorded spans and minutes per app. Default: today. |
+| `kortix capture frame <id> [--json]` | One frame with its full on-screen text. |
+
+Other options: `--project <id>`, `--host <name>`. Agents load the `kortix-capture` skill before they use these commands.
+
 ### Access
 
 The CLI face of the one grant table. Every row is an **assignment**: one

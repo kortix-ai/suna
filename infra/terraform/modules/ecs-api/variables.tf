@@ -268,6 +268,24 @@ variable "project_snapshot_kms_key_arn" {
   default     = ""
 }
 
+variable "capture_enabled" {
+  description = "Grant the TASK role access to capture_bucket_arn. A literal bool so the grant's count is known at plan time even when the bucket is created in the same apply."
+  type        = bool
+  default     = false
+}
+
+variable "capture_bucket_arn" {
+  description = <<-EOT
+    ARN of the environment's Kortix Capture bucket (modules/project-snapshots-bucket).
+    Grants the TASK role s3:PutObject, s3:GetObject and s3:DeleteObject on its
+    objects (presigned recorder uploads and user downloads are minted by this
+    role; the retention sweep and delete-own-data delete), plus s3:ListBucket so
+    a missing key is a 404. Used only when capture_enabled.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "ses_send_region" {
   description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
   type        = string
