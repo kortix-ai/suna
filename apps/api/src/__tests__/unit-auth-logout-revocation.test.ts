@@ -76,3 +76,19 @@ test('logout denies the same access bearer even while GoTrue accepts its signatu
     __setGoTrueFetch(null);
   }
 });
+
+test('local logout denial survives more than 10,000 live tokens', async () => {
+  const { forgetJwtLiveness, confirmJwtLive } = await import('../shared/jwt-liveness');
+  __setJwtLivenessLoaderForTests(async () => ({ id: USER, email: '' }));
+  try {
+    const expiry = Math.floor(Date.now() / 1000) + 3600;
+    const tokenFor = (i: number) => {
+      const unsignedToken = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: USER, role: 'authenticated', session_id: SESSION, exp: expiry, nonce: i })}`;
+      return `${unsignedToken}.${createHmac('sha256', SECRET).update(unsignedToken).digest('base64url')}`;
+    };
+    for (let i = 0; i <= 10_000; i++) forgetJwtLiveness(tokenFor(i));
+    expect(await confirmJwtLive(tokenFor(10_000), expiry)).toBeNull();
+  } finally {
+    __setJwtLivenessLoaderForTests(null);
+  }
+});

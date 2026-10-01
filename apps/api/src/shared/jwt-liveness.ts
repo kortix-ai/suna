@@ -24,7 +24,7 @@
  *  - A successful local logout also denies its access bearer until expiry,
  *    even if GoTrue still accepts its signature. Other replicas need GoTrue.
  *  - Keys are SHA-256 digests of the token; the raw token is never stored.
- *  - Bounded to MAX_ENTRIES; the oldest entry is evicted first.
+ *  - Positive entries are bounded to MAX_ENTRIES; local revocations remain until expiry.
  *
  * Kept apart from `jwt-verify.ts` because five test files replace that module
  * wholesale; the logout route imports `forgetJwtLiveness` from here.
@@ -140,9 +140,8 @@ export function forgetJwtLiveness(token: string): void {
           if (expiry <= Date.now()) revoked.delete(digest);
         }
       }
-      // The upstream revoke remains authoritative on other replicas. Never
-      // evict a live local denial to admit a newer token.
-      if (revoked.size < MAX_ENTRIES) revoked.set(key, payload.exp * 1000);
+      // Never drop a live denial: GoTrue can still accept the old access JWT.
+      revoked.set(key, payload.exp * 1000);
     }
   } catch {
     // Invalid JWTs never pass signature verification.
