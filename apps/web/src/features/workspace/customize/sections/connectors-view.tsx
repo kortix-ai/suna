@@ -63,7 +63,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
-import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
+import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
@@ -311,10 +311,13 @@ function ConnectionRow({
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
           {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
-          {/* A computer account whose machine is not connected right now. */}
-          {active && connection.machine && !connection.machine.online
-            ? tComputers('offline')
-            : null}
+          {/* A computer account: whether its machine is connected right now. */}
+          {active && connection.machine ? (
+            <span className="inline-flex items-center gap-1.5">
+              <ComputerStateDot state={connection.machine.online ? 'online' : 'offline'} />
+              {tComputers(connection.machine.online ? 'online' : 'offline')}
+            </span>
+          ) : null}
           {/* WHO the account was authorized as. Hidden when the label already
               says it (finalize names a default-labelled account after it). */}
           {connection.connected_as && connection.connected_as !== connection.label
@@ -497,6 +500,8 @@ export function ConnectionsList({
     queryKey: ['connections', projectId],
     queryFn: () => listConnections(projectId),
     staleTime: 30_000,
+    // A computer goes online and offline on its own: keep its status current.
+    refetchInterval: isComputer ? 15_000 : false,
   });
   const refresh = () => {
     void connectionsQuery.refetch();

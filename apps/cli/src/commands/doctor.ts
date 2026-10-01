@@ -2,7 +2,8 @@ import type { ProjectSession } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
+import { sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -139,8 +140,9 @@ export async function runDoctor(argv: string[]): Promise<number> {
     process.stdout.write(`  ${C.dim}prompt: "${flags.prompt}"${C.reset}\n`);
     const sendStart = Date.now();
     try {
-      const reply = await withKortixScope(auth, async () =>
-        unwrapRuntime(await handle.send(flags.prompt)),
+      const reply = await sendAndWaitForReply(
+        { auth, handle, opencodeSessionId: runtimeSessionId },
+        flags.prompt,
       );
       const text = reply.parts
         .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))

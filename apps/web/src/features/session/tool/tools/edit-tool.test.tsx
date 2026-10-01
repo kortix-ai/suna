@@ -148,3 +148,29 @@ describe('EditTool, for the part that never got its diff', () => {
     expect(html).not.toContain('Waiting for file content');
   });
 });
+
+// pi's edit tool names the file `path` (not `filePath`), sends `edits[]`, and
+// returns a unified patch in its details. The card must name the file and
+// count the patch — it rendered neither before the SDK's `toToolView`.
+describe('EditTool on pi', () => {
+  test('names the file from input.path and counts the unified patch', () => {
+    const part = {
+      type: 'tool',
+      tool: 'edit',
+      callID: 'call-pi',
+      state: {
+        status: 'completed',
+        input: { path: 'src/app.py', edits: [{ oldText: 'b', newText: 'x\ny' }] },
+        output: 'Successfully replaced 1 block(s) in src/app.py.',
+        metadata: {
+          diff: ' 1 a\n-2 b\n+2 x\n+3 y',
+          patch: '--- src/app.py\n+++ src/app.py\n@@ -1,2 +1,3 @@\n a\n-b\n+x\n+y\n',
+        },
+      },
+    } as unknown as ToolPart;
+    const html = renderToStaticMarkup(withProviders(<EditTool part={part} />));
+    expect(html).toContain('app.py');
+    expect(html).toContain('>+2<');
+    expect(html).toContain('>−1<');
+  });
+});

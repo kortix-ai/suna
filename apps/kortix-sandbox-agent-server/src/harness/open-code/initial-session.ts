@@ -24,14 +24,14 @@ export function initialSessionRetryDelayMs(attempt: number): number {
 /** The subset of `SandboxBootState` the initial-session finalizer touches. */
 type InitialSessionBootState = Pick<
   SandboxBootState,
-  'initialOpenCodeSessionId' | 'initialOpenCodeSessionError' | 'initialOpenCodeSessionRequired'
+  'initialRuntimeSessionId' | 'initialRuntimeSessionError' | 'initialRuntimeSessionRequired'
 >
 
 /**
  * Record that the initial OpenCode session is established under `sessionId`,
  * and release a poisoned failure flag left by an earlier attempt.
  *
- * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
+ * `initialRuntimeSessionError` describes ONE attempt of the retry ladder,
  * not the box. `proxy.ts` (`initial_opencode_session_failed`, 503) and
  * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
  * because until now nothing ever cleared it: it was written on a caught
@@ -42,8 +42,8 @@ type InitialSessionBootState = Pick<
  * stops answering `initial_opencode_session_failed` once this runs.
  */
 export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
-  bootState.initialOpenCodeSessionId = sessionId
-  bootState.initialOpenCodeSessionError = null
+  bootState.initialRuntimeSessionId = sessionId
+  bootState.initialRuntimeSessionError = null
 }
 
 /**
@@ -199,12 +199,12 @@ export async function maybeCreateInitialOpencodeSession(
     bootMark('initial-prompt-delivered')
     logger.info('[boot] initial prompt delivered', { sessionId })
   } else if (prompt) {
-    bootState.initialOpenCodeSessionId = sessionId
+    bootState.initialRuntimeSessionId = sessionId
     logger.info('[boot] initial prompt already delivered to reused root; not re-running', {
       sessionId,
     })
   } else {
-    bootState.initialOpenCodeSessionId = sessionId
+    bootState.initialRuntimeSessionId = sessionId
     logger.info('[boot] opencode root ready (bootstrap, no prompt)', { sessionId })
   }
   bootMark('opencode-session-created')
@@ -213,7 +213,7 @@ export async function maybeCreateInitialOpencodeSession(
 /**
  * Publish the boot root only after OpenCode accepts the initial prompt.
  *
- * The event-loop reconciliation timer reads `initialOpenCodeSessionId` as its
+ * The event-loop reconciliation timer reads `initialRuntimeSessionId` as its
  * acceptance gate. Publishing the id before `prompt_async` returns lets that
  * timer promote a `delivering` database record while the request is still in
  * flight, including before OpenCode has received one byte.
@@ -225,7 +225,7 @@ export async function publishInitialOpenCodeSessionAfterPrompt(
 ): Promise<void> {
   await deliver()
   bootState.initialPromptDeliveredAtMs = Date.now()
-  bootState.initialOpenCodeSessionId = sessionId
+  bootState.initialRuntimeSessionId = sessionId
 }
 
 /**

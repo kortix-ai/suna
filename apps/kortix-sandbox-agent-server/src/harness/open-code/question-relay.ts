@@ -1,7 +1,7 @@
+import type { RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import { relayQuestion } from '../shared/turn-relay'
 import type { OpenCodeConfig as Config } from './config'
-import type { QuestionRequest } from './events'
 import type { Opencode } from './lifecycle'
 
 /**
@@ -20,7 +20,7 @@ import type { Opencode } from './lifecycle'
  * (it was not) and stopped using the `question` tool.
  */
 export async function relayQuestionToApi(
-  req: QuestionRequest,
+  req: RuntimeQuestionRequest,
   cfg: Config,
   opencode: Pick<Opencode, 'getInternalUrl'>,
 ): Promise<void> {

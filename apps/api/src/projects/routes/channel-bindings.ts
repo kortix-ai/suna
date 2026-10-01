@@ -34,7 +34,6 @@ import {
   type ModelSource,
   chooseEffectiveAgent,
   chooseEffectiveModel,
-  toOpencodeModelRef,
   toWireModel,
 } from "../../llm-gateway/resolution/effective";
 import { type AccountModelDefaults, getAccountModelDefaults } from "../../repositories/model-preferences";
@@ -403,7 +402,7 @@ projectsApp.openapi(
           );
         }
         // Same two-path gate as session create (lib/sessions.ts): gateway ON
-        // validates via the gateway resolver and stores `kortix/<wire>`;
+        // validates via the gateway resolver and stores the wire id;
         // gateway OFF (native OpenCode) enforces the native `provider/model`
         // shape and stores the ref verbatim.
         if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
@@ -431,7 +430,7 @@ projectsApp.openapi(
             409,
           );
         }
-        stored = toOpencodeModelRef(trimmed);
+        stored = toWireModel(trimmed);
         }
       }
       const ok = await setChannelModel(ctx, stored);

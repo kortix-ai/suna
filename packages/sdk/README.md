@@ -2,8 +2,9 @@
 
 The **single, opinionated data layer** for the Kortix API. One typed
 client wraps both the **Kortix REST API** and the **agent runtime** so a
-host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
-`@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule
+host app — web, mobile, reference — imports **only `@kortix/sdk`**. The SDK
+owns its types: the transcript is Kortix's own format (`kortix.transcript.v1`),
+and the package depends on no harness SDK. (The no-raw-`backendApi`/`authenticatedFetch` rule
 below is the target state, not yet fully true of apps/web — see Rules of the
 road.)
 
@@ -324,17 +325,19 @@ await s.send("Build me a widget"); // provisions/resumes if needed, then prompts
 await s.rewind(userMessageId); // stages a reversible rollback on this session
 await s.restoreRewind(); // restores the removed path before the next prompt
 await s.previews();
+await s.participants(); // who can open the session
 await s.reloadConfig({ refresh_repo: false });
 await s.reloadConfigStream(
   { refresh_repo: false },
   (event) => event.type === "phase" && console.log(event.phase),
 );
 
-// Lower level: the typed OpenCode REST compatibility client for THIS sandbox.
-// `.runtime` throws until the runtime is resolved, and the runtime is keyed by
-// the OpenCode session id (NOT the Kortix `sid`) — resolve both via ensureReady.
-const { runtimeSessionId } = await s.ensureReady();
-await s.runtime.session.prompt({ sessionID: runtimeSessionId, parts });
+// The session verbs, bound to THIS session's own runtime (each provisions it first).
+const { messages, hasMore } = await s.messages({ limit: 50 }); // { info, parts }[], oldest first
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, "once"); // "once" | "always" | "reject"
+await s.answerQuestion(questions[0].id, [["Yes"]]); // null dismisses it
+await s.compact(); // only when health() lists `session.compact`
 ```
 
 React consumers use `useAccountSecretResources(accountId)` and
@@ -398,7 +401,7 @@ from the caller with no agent turn; the agent runs when a participant replies.
 `listProjectSessions(projectId, { participant: 'me' })` lists the conversations you were asked into.
 `kortix.session(projectId, sessionId).messageAuthors()` (or `getSessionMessageAuthors`) returns
 `{ authors, initial_author }`: `authors` maps a runtime message id to a `SessionMessageAuthor`,
-`{ kind: 'member', user_id, name, email }` or `{ kind: 'session', session_id, name }`.
+`{ kind: 'member', user_id, name, email, avatar_url }` or `{ kind: 'session', session_id, name }`.
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the same data.
 Authorship works without the flag. See `apps/web/content/docs/connect/messaging.mdx`.
 
@@ -479,7 +482,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
 | `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
@@ -635,7 +638,8 @@ mode — see its README.
 
 Everything needed to render an agent transcript without adopting any Kortix
 UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
-normalize all twelve opencode part types (text, reasoning, tool, file,
+normalize all twelve part types of the Kortix transcript format
+(`kortix.transcript.v1`; both harnesses emit it) (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
 turn's `info.error` into a `{ name, message }` `TurnError` — so "assistant
@@ -699,7 +703,8 @@ the root import — offers the same agents and models and sends the same pick.
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
 | `pickerProviderList({ gatewayEnabled, modelPicker, runtimeProviders, llmCatalogProviders, secretNames })` | raw sources → provider list |
-| `flattenModels(providers, { providerMode })` | provider list → `FlatModel[]` |
+| `flattenModels(providers, { providerMode })` | provider list → `ModelOption[]` (a `FlatModel` plus `id`, the ref a pick stores) |
+| `modelRefToKey(ref, gatewayEnabled)` | a stored ref (session pin, channel binding, trigger, agent `model`) → `ModelKey`; `kortix/x` and `x` are one gateway model |
 | `createModelVisibility({ catalogModels, pins?, connectedProviderIds?, freeTier? })` | → default-visibility predicate |
 | `modelInDefaultView(model, { search, isStoreVisible, selected })` | → whether the empty-search picker shows the model |
 | `resolveModelDefault(modelDefaults, agentName)` | `/model-defaults` → agent → project → account → platform default |
@@ -779,7 +784,7 @@ That is the whole map — learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` (each pre-W4 `useOpenCode*` name is a deprecated alias), `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId`, `mintWireMessageIdAbove`, `newestWireIdClock`, `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf` — the OpenCode wire message-id clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
@@ -850,9 +855,10 @@ Native cannot consume the SDK's fetch-based SSE stream.
 
 ## Rules of the road
 
-- **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk`. The SDK is the sole owner of that dependency.
-  (Holds today — no host imports it.)
+- **No harness SDK in host code.** Import transcript and runtime types from
+  `@kortix/sdk`, and reach the runtime through the session verbs. `session.runtime`
+  (the raw REST compatibility client) is deprecated.
+  (Holds today — no host imports `@opencode-ai/sdk`, and neither does the SDK.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its
   `@/lib/api-client` re-export in ~30 files and keeps a parallel

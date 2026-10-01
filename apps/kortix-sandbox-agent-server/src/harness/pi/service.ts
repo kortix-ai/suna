@@ -20,6 +20,7 @@ import { createPiQueryService } from './queries'
 import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
+import { createPiTurnService } from './turns'
 
 export interface PiHarnessService extends HarnessService {
   readonly id: 'pi'
@@ -93,13 +94,13 @@ export function createPiHarnessService(
         }
         if (current.autoClone && !(await isRepoMaterialized(current.projectTarget))) return notReady('repo_not_materialized', { reason: 'repo_not_materialized' })
         if (state.workspaceReady === false) return notReady('workspace_not_ready', { reason: 'workspace_not_ready' })
-        if (state.initialOpenCodeSessionError) {
-          return notReady('initial_session_failed', { reason: 'initial_runtime_session_failed', message: state.initialOpenCodeSessionError })
+        if (state.initialRuntimeSessionError) {
+          return notReady('initial_session_failed', { reason: 'initial_runtime_session_failed', message: state.initialRuntimeSessionError })
         }
-        if (state.initialOpenCodeSessionRequired && !state.initialOpenCodeSessionId) {
+        if (state.initialRuntimeSessionRequired && !state.initialRuntimeSessionId) {
           return notReady('initial_session_pending', { reason: 'initial_runtime_session_pending' })
         }
-        if (runtime.getState() !== 'ok' || !started) return notReady('pi_not_ready', { reason: 'pi_not_ready', opencode: runtime.getState() })
+        if (runtime.getState() !== 'ok' || !started) return notReady('pi_not_ready', { reason: 'pi_not_ready', runtime: runtime.getState() })
         return { ready: true }
       },
       forward: (input) => surface.handle(input),
@@ -107,6 +108,7 @@ export function createPiHarnessService(
     control: createPiControlService(live, releases, () => pushProjection('kortix-env-applied')),
     diagnostics: createPiDiagnosticsService(live, () => runtime.lastStartError, releases),
     queries: createPiQueryService(live),
+    turns: createPiTurnService(live),
     background: { start: (currentCfg) => startPiBackground(live, currentCfg) },
     assets: createPiAssetsService(),
   }
@@ -124,9 +126,9 @@ export const piDefinition: HarnessDefinition = {
   createBootState: (): PiBootState => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1',
-    initialOpenCodeSessionId: null,
-    initialOpenCodeSessionError: null,
+    initialRuntimeSessionRequired: (process.env.KORTIX_BOOTSTRAP_RUNTIME_SESSION ?? '').trim() === '1',
+    initialRuntimeSessionId: null,
+    initialRuntimeSessionError: null,
   }),
   bootDetails: (cfg) => {
     const native = requirePiConfig(cfg)

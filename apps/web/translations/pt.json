@@ -8950,7 +8950,6 @@
     "autoComponentsProjectsCustomizeSectionsCommandsViewJsxTextCreateA28cc596f": "Crie um comando",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2": "Escolha um conector",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e": "Escolha um à esquerda ou adicione um aplicativo.",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558": "Não é necessária autenticação",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49": "Precisa de configuração",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa": "Adicionar aplicativo",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrPlaceholderSearch833758cc": "Pesquisar conectores…",
@@ -11997,7 +11996,7 @@
       "text4b3bf58beb3e": "O banco de dados Postgres, como um diretório do qual você pode fazer backup",
       "text4b4c31294fb5": "Executar às",
       "text4b51686b2606": "Nada aguardando revisão",
-      "text4b5274edd83f": "Inspecionar e controlar apps locais do desktop pelo CUA Driver",
+      "text72cfe7efa2b5": "Ver a tela e usar os apps deste computador",
       "text4b5bf8bae40d": "Serviços externos que este agente pode chamar.",
       "text4b6617d27a7f": "Detalhes do provedor de serviços",
       "text4b68ab3847fe": "X",
@@ -13735,7 +13734,6 @@
       "text7d68a1835cee": "A voz vive em",
       "text7d7a2199230e": "- Extraia o ticket + histórico do cliente",
       "text7d870610b59d": "Conector adicionado, mas a autorização falhou: {value0}",
-      "text7d899c8ca569": "Nada é selecionado por padrão. O acesso selecionado permanece ativo até que você o revogue.",
       "text7d92aa0e75c4": "Chave do operador",
       "text7d9eb7acb13e": "Fechar",
       "text7da07ad47ba0": "Conecte suas ferramentas e dê uma tarefa real a um agente Kortix. Grátis para começar, grátis para hospedar por conta própria.",
@@ -19106,7 +19104,8 @@
       "text80043b03898d": "Atualize o app Kortix no Teams",
       "textdf757dbe33eb": "Seu catálogo do Teams tem a versão {value0} do app Kortix. A versão {value1} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "textcd2c4b26eedd": "O Kortix não tem registro da versão do app no seu catálogo do Teams. A versão {value0} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
-      "texte15f213fa506": "Publicar atualização do app"
+      "texte15f213fa506": "Publicar atualização do app",
+      "textcafd830fcf85": "Identidades de agente do projeto listadas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20344,12 +20343,37 @@
     "runInBackground": "Executar em segundo plano",
     "runInBackgroundDescription": "Desligado pausa a conexão, mesmo depois de reiniciar.",
     "manageInProject": "Gerenciar no projeto",
-    "disconnectEllipsis": "Desconectar…"
+    "disconnectEllipsis": "Desconectar…",
+    "yourComputersTitle": "Seus computadores",
+    "pairedWith": "Conectado à sua conta, {email}.",
+    "connectAnother": "Conectar outro computador",
+    "approvingAs": "Você aprova como {email}. O computador fica vinculado a esta conta.",
+    "alreadyConnected": "{name} já está conectado à sua conta",
+    "alreadyConnectedHint": "Aprove para reconectá-lo com uma nova chave e o acesso escolhido. Seus projetos e compartilhamentos permanecem.",
+    "alreadyConnectedLive": "Ele está online agora. Aprove para movê-lo para esta solicitação: a conexão atual para. Seus projetos e compartilhamentos permanecem.",
+    "reconnect": "Reconectar",
+    "accessHint": "O acesso selecionado permanece ativo até que você o revogue.",
+    "grants": {
+      "title": "Permita que o Kortix veja sua tela e use seus apps",
+      "hint": "O macOS pede duas permissões, ambas para o Kortix. O Computer Use funciona assim que você permitir.",
+      "accessibility": "Acessibilidade",
+      "screenRecording": "Gravação de tela",
+      "allowed": "permitido",
+      "missing": "não permitido",
+      "allow": "Permitir acesso"
+    }
   },
   "messageFrom": {
     "from": "De",
     "asked": "perguntou a",
     "replyHint": "Responda abaixo. O agente dará seguimento.",
     "untitledSession": "Sessão sem título"
+  },
+  "sessionParticipants": {
+    "title": "Pessoas",
+    "sentBy": "Enviado por {name}",
+    "people": "Pessoas nesta sessão: {names}",
+    "peopleMore": "Pessoas nesta sessão: {names} e mais {count}",
+    "more": "Mais {count} podem abrir esta sessão"
   }
 }

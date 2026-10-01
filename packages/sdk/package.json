@@ -10,11 +10,10 @@
     "url": "git+https://github.com/kortix-ai/suna.git",
     "directory": "packages/sdk"
   },
-  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming", "opencode"],
+  "keywords": ["kortix", "agent", "sdk", "sessions", "streaming"],
   "sideEffects": false,
   "dependencies": {
     "@kortix/llm-catalog": "workspace:*",
-    "@opencode-ai/sdk": "1.18.23",
     "zustand": "^5.0.3"
   },
   "peerDependencies": {

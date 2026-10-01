@@ -26,6 +26,14 @@ export function toWireModel(ref: string): string {
  * The OPENCODE ref form: every gateway model is registered under OpenCode's
  * `kortix` provider. The remaining path is the gateway wire model, including
  * nested provider paths such as `codex/gpt-5.6-sol`.
+ *
+ * Every other stored model is the wire id (`toWireModel`): channel bindings,
+ * triggers, account and agent defaults. Only a session's
+ * `metadata.opencode_model` keeps this form, because released clients (the
+ * CLI, `@kortix/sdk` `send()`) split it on the first `/` into the prompt's
+ * `{providerID, modelID}`; a bare wire id there would send no model, and a
+ * BYOK id the wrong provider. It goes when those clients read the model from
+ * the API instead of parsing the pin.
  */
 export function toOpencodeModelRef(model: string): string {
   return `${KORTIX_PREFIX}${toWireModel(model)}`;

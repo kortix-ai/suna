@@ -97,15 +97,18 @@ describe('messages with a platform header', () => {
     );
   });
 
-  test('a message from a person stays a bubble, header stripped, author named on demand', () => {
+  test('a message from a person stays a bubble, header stripped, author drawn on demand as an avatar', () => {
     const plain = renderText(personMessage, { author: blair });
     expect(plain).not.toContain('session-message-card');
     expect(plain).not.toContain('[MESSAGE');
     expect(plain).toContain('Looks good to me.');
-    expect(plain).not.toContain('data-testid="message-author"');
-    const named = renderText(personMessage, { author: blair, showAuthor: true });
-    expect(named).toContain('data-testid="message-author"');
-    expect(named).toContain('Blair');
+    expect(plain).not.toContain('Sent by');
+    // A member author is the avatar above the bubble (screen readers get the
+    // name), never the named label line.
+    const shown = renderText(personMessage, { author: blair, showAuthor: true });
+    expect(shown).toContain('data-slot="avatar"');
+    expect(shown).toContain('Sent by Blair');
+    expect(shown).not.toContain('data-testid="message-author"');
   });
 
   // A typed header is hidden like any header, and claims nothing: no card,

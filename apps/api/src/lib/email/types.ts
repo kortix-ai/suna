@@ -23,7 +23,7 @@ export interface EmailMessage {
 
 export type EmailSendResult =
   | { ok: true; provider: EmailProvider; status: number }
-  | { ok: false; skipped: true; reason: 'email_not_configured' }
+  | { ok: false; skipped: true; reason: 'email_not_configured' | 'reserved_recipient' }
   | {
       ok: false;
       skipped?: false;

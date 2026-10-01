@@ -17,6 +17,7 @@ import type {
   TurnQuestionRelayBody,
   TurnStreamRelayBody,
 } from '@kortix/api-contract/runtime-relay'
+import type { RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
@@ -213,7 +214,31 @@ export interface TurnEndFrame {
     statusCode?: number
     isRetryable?: boolean
     providerID?: string
+    /** Set by an adapter that knows better than `turnErrorCode` (pi's context overflow). */
+    code?: TurnErrorCode
   }
+}
+
+/**
+ * Why a turn failed, from a message error's name and HTTP status. `unknown`
+ * covers every other failure, including an abort nobody asked for
+ * (`RuntimeAbortedTurn`) and a timeout.
+ */
+export function turnErrorCode(error: { name?: string; statusCode?: number }): TurnErrorCode {
+  switch (error.name) {
+    case 'ProviderAuthError':
+      return 'auth'
+    case 'MessageAbortedError':
+      return 'aborted'
+    case 'ContextOverflowError':
+      return 'context_length'
+    case 'MessageOutputLengthError':
+      return 'output_length'
+  }
+  if (error.statusCode === 401 || error.statusCode === 403) return 'auth'
+  if (error.statusCode === 402) return 'credits'
+  if (error.statusCode === 429) return 'rate_limit'
+  return 'unknown'
 }
 
 function turnEndBody(frame: TurnEndFrame): TurnStreamFrame {
@@ -230,6 +255,7 @@ function turnEndBody(frame: TurnEndFrame): TurnStreamFrame {
           error_status: error.statusCode,
           error_retryable: error.isRetryable,
           error_provider: error.providerID,
+          error_code: error.code ?? turnErrorCode(error),
         }
       : {}),
   }
@@ -319,6 +345,7 @@ export async function relayMemoryGuardTurnEnd(input: {
         turn_message_id: turnMessageId ?? undefined,
         error_name: 'SandboxMemoryGuard',
         error_message: input.reason,
+        error_code: 'unknown',
         // An aborted turn is over. apps/api reads `true` as "a retry, still
         // running" and drops the frame as `non_terminal`; that is the truth
         // only when the abort did not land.
@@ -342,14 +369,6 @@ export async function relayMemoryGuardTurnEnd(input: {
 
 // ── Interactions ──────────────────────────────────────────────────────────
 
-/** A runtime question, as both adapters hold it. */
-export interface RelayedQuestionRequest {
-  id: string
-  /** The runtime session that asked. */
-  sessionID: string
-  questions: unknown[]
-}
-
 /**
  * Persist an asked question server-side, so it survives the box being parked.
  * Best-effort. Returns the answer that releases the blocking question tool in a
@@ -357,7 +376,7 @@ export interface RelayedQuestionRequest {
  * in a web session, where the question stays open for the UI. The adapter
  * delivers that answer to its runtime.
  */
-export async function relayQuestion(request: RelayedQuestionRequest): Promise<string[][] | null> {
+export async function relayQuestion(request: Pick<RuntimeQuestionRequest, 'id' | 'sessionID' | 'questions'>): Promise<string[][] | null> {
   const ctx = sandboxRelayContext()
   if (!ctx) return null
   logger.info('[turn-relay] relaying an asked question', { requestId: request.id, questions: request.questions.length })
@@ -390,22 +409,13 @@ export async function relayQuestion(request: RelayedQuestionRequest): Promise<st
   return request.questions.map(() => [sentinel])
 }
 
-/** The fields of a permission request the approval push needs; both adapters' requests carry them. */
-export interface RelayedPermissionRequest {
-  id: string
-  /** The runtime session the request belongs to. */
-  sessionID: string
-  permission: string
-  patterns?: string[]
-}
-
 /**
  * Report a permission request, so apps/api sends the session creator a "needs
  * your approval" push. REPORT ONLY: the request stays open until the user
  * answers it in the session UI. `metadata` is not sent (an edit carries its
  * full diff, and the push does not use it). apps/api dedupes a repeated id.
  */
-export async function relayPermission(request: RelayedPermissionRequest): Promise<void> {
+export async function relayPermission(request: Pick<RuntimePermissionRequest, 'id' | 'sessionID' | 'permission' | 'patterns'>): Promise<void> {
   const ctx = sandboxRelayContext()
   if (!ctx) return
   logger.info('[turn-relay] relaying a permission request', { requestId: request.id, permission: request.permission })

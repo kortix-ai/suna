@@ -7,6 +7,7 @@ import {
   computerState,
   platformName,
   projectComputerAccounts,
+  yourComputerMenu,
 } from './computer-connect';
 import { activeGrant } from './local-computer-modal';
 
@@ -138,4 +139,37 @@ test('platformName names the three desktop platforms and nothing else', () => {
   expect(platformName('linux')).toBe('Linux');
   expect(platformName('freebsd')).toBeNull();
   expect(platformName(undefined)).toBeNull();
+});
+
+describe('yourComputerMenu', () => {
+  const live = { isLive: true };
+  const down = { isLive: false };
+
+  test('a paired desktop opens its own machine, with its own state', () => {
+    expect(
+      yourComputerMenu({ tunnelId: 't-1', state: 'paused', oneClickHere: true, owned: [down] }),
+    ).toEqual({ dialog: 'this', dot: 'paused' });
+  });
+
+  test('a browser with paired machines lists them; the dot is online when any is', () => {
+    expect(yourComputerMenu({ oneClickHere: false, owned: [down, live] })).toEqual({
+      dialog: 'mine',
+      dot: 'online',
+    });
+    expect(yourComputerMenu({ oneClickHere: false, owned: [down] })).toEqual({
+      dialog: 'mine',
+      dot: 'offline',
+    });
+  });
+
+  test('nothing paired, or a desktop that can pair itself, opens the connect dialog', () => {
+    expect(yourComputerMenu({ oneClickHere: false, owned: [] })).toEqual({
+      dialog: 'connect',
+      dot: null,
+    });
+    expect(yourComputerMenu({ oneClickHere: true, owned: [live] })).toEqual({
+      dialog: 'connect',
+      dot: null,
+    });
+  });
 });

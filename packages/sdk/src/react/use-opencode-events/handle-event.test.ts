@@ -7,7 +7,7 @@ import type {
   Session,
   ToolPart,
   UserMessage,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 // Mock the notification sink BEFORE importing the module under test, so

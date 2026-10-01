@@ -29,7 +29,8 @@ import {
 } from '@earendil-works/pi-agent-core'
 import { BACKGROUND_CONTEXT, withAbortSignal } from '@earendil-works/pi-agent-core/harness/context'
 import { Type } from 'typebox'
-import type { QuestionBroker, QuestionInfo } from './interactions'
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
+import type { QuestionBroker } from './interactions'
 
 const globSchema = Type.Object({
   pattern: Type.String({ minLength: 1, description: 'Glob pattern to match, such as **/*.ts or src/**/test-*.tsx' }),
@@ -139,7 +140,7 @@ export function createGrepTool(): Harness {
 export function createQuestionTool(
   questions: QuestionBroker,
   ref: (toolCallId: string) => { messageID: string; callID: string } | undefined,
-): AgentTool<typeof questionSchema, undefined> {
+): AgentTool<typeof questionSchema, { answers: string[][] }> {
   return {
     name: 'question',
     label: 'question',
@@ -147,11 +148,12 @@ export function createQuestionTool(
       'Ask the user one or more questions and wait for the answers. Use it when a decision needs the user, not to narrate progress. Each question has a short header, the full question, and 2-5 options.',
     parameters: questionSchema,
     async execute(toolCallId, params) {
-      const asked = params.questions as QuestionInfo[]
+      const asked = params.questions as RuntimeQuestion[]
       const answers = await questions.ask(asked, ref(toolCallId))
       if (answers === null) throw new Error('The user dismissed the question.')
       const text = asked.map((q, i) => `${q.header}: ${(answers[i] ?? []).join(', ') || '(no answer)'}`).join('\n')
-      return { content: [{ type: 'text', text: `User answered:\n${text}` }], details: undefined }
+      // `details` becomes the part's `state.metadata`: the answers a client shows.
+      return { content: [{ type: 'text', text: `User answered:\n${text}` }], details: { answers } }
     },
   }
 }

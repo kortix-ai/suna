@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { Agent } from '@opencode-ai/sdk/v2/client';
+import type { Agent } from '../runtime/runtime-types';
 
 import { configureKortix } from '../http/config';
 import type { ProjectConfigSummary } from '../rest/projects-client';

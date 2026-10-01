@@ -15,6 +15,7 @@ import {
   PERMISSION_KEY_LABEL,
   PERMISSION_RULE_GROUPS,
   PERMISSION_RULE_KEYS,
+  behaviorBlock,
   stableStringify,
   THEME_COLOR_SWATCH,
   THEME_COLORS,
@@ -29,6 +30,21 @@ const grantFieldSource = read('./grant-mode-field.tsx');
 const permissionEditorSource = read('./permission-editor.tsx');
 const sectionSources = [accessFieldsSource, basicsFieldsSource, permissionEditorSource];
 const allEditorSources = [...sectionSources, editorSource, primitivesSource, grantFieldSource];
+
+describe('behaviorBlock', () => {
+  test('the draft carries the behavior once, as `behavior`, never the pre-W4 `opencode` alias', () => {
+    const served = { secrets: 'all', behavior: { mode: 'primary' }, opencode: { mode: 'primary' } } as never;
+    expect(behaviorBlock(served)).toEqual({ secrets: 'all', behavior: { mode: 'primary' } } as never);
+  });
+
+  test('an API that answers only `opencode` still fills `behavior`', () => {
+    expect(behaviorBlock({ opencode: { steps: 3 } } as never)).toEqual({ behavior: { steps: 3 } } as never);
+  });
+
+  test('a block without behavior stays without it', () => {
+    expect(behaviorBlock({ secrets: 'all' } as never)).toEqual({ secrets: 'all' } as never);
+  });
+});
 
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {

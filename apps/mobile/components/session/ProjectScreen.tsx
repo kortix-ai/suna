@@ -69,7 +69,6 @@ import {
 } from '@/lib/session/session-sandbox';
 import { ProjectHome } from '@/components/session/ProjectHome';
 import {
-  projectSessionForOpenCodeId,
   resolveSessionTitle,
   sessionDisplayTitle,
   subsessionTitle,
@@ -93,6 +92,7 @@ import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import {
   countReviewItemsBySegment,
+  runtimeSessionsOf,
   SESSION_NOTICE,
   sessionConnectionLabel,
   sessionParentId,
@@ -258,8 +258,10 @@ export function ProjectScreen() {
   // session) is off.
   const activeSubsession = useMemo(
     () =>
-      activeProjectSession && activeSessionId && activeSessionId !== activeProjectSession.opencode_session_id
-        ? ((activeProjectSession.opencode_sessions ?? []).find((item) => item.id === activeSessionId) ?? null)
+      activeProjectSession &&
+      activeSessionId &&
+      activeSessionId !== (activeProjectSession.runtime_session_id ?? activeProjectSession.opencode_session_id)
+        ? (runtimeSessionsOf(activeProjectSession).find((item) => item.id === activeSessionId) ?? null)
         : null,
     [activeProjectSession, activeSessionId]
   );
@@ -632,6 +634,13 @@ export function ProjectScreen() {
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
               onSend={canQueueWhileWaking ? handleWakingSend : undefined}
+              projectId={projectId}
+              projectSessionId={
+                activeProjectSession?.session_id ??
+                connectingProjectSessionId ??
+                (activeSessionId ? openedProjectSessionIdsRef.current[activeSessionId] : undefined) ??
+                undefined
+              }
             />
           </View>
         ) : null}

@@ -16,8 +16,14 @@
  *   MessageOutputLengthError | UnknownError) and `statusCode` is the upstream HTTP
  *   status for an APIError (402, 429, 401, 5xx, …).
  *
+ * A daemon built for W5 also sends `code` (`TurnErrorCode`), its own
+ * classification of the failure. A specific code decides the bucket; `unknown`
+ * or no code falls back to the name, status and text checks, which is what an
+ * older daemon still needs.
+ *
  * Pure + dependency-free so it's unit-tested in isolation (no Slack, no DB).
  */
+import type { TurnErrorCode } from '@kortix/api-contract/transcript';
 
 /** Flattened opencode error detail relayed from the sandbox. */
 export interface TurnErrorInfo {
@@ -31,6 +37,8 @@ export interface TurnErrorInfo {
   isRetryable?: boolean;
   /** `ProviderAuthError.data.providerID` — names the provider in the copy. */
   providerID?: string;
+  /** The daemon's classification (`TurnErrorCode`), when it sends one. */
+  code?: TurnErrorCode;
 }
 
 /** How the platform tells a user to fix a turn error, in its own markup. */
@@ -258,14 +266,16 @@ export function classifyTurnError(
   const isRetryable = info?.isRetryable;
   const providerID = (info?.providerID ?? '').trim();
   const lower = message.toLowerCase();
+  // A specific daemon code replaces the heuristic of each bucket it names.
+  const code = info?.code && info.code !== 'unknown' ? info.code : undefined;
 
   // 1. User stopped the run (or a follow-up superseded it) — quiet, not a failure.
-  if (isAbort(name, status, lower)) {
+  if (code ? code === 'aborted' : isAbort(name, status, lower)) {
     return { title: 'Run stopped', text: '_Run stopped._', aborted: true };
   }
 
   // 2. Out of credits — the single most common "looks broken but isn't" case.
-  if (isInsufficientCredits(status, lower)) {
+  if (code ? code === 'credits' : isInsufficientCredits(status, lower)) {
     const balance = parseBalance(message);
     const tail = balance ? ` Current balance: *${balance}*.` : '';
     return {
@@ -278,7 +288,7 @@ export function classifyTurnError(
   }
 
   // 3. Usage / rate limit — provider throttling or a plan cap.
-  if (isUsageLimit(status, lower)) {
+  if (code ? code === 'rate_limit' : isUsageLimit(status, lower)) {
     return {
       title: 'Usage limit reached',
       text:
@@ -290,7 +300,11 @@ export function classifyTurnError(
 
   // 4. Output hit the model's max length — the reply was cut off, not "no reply".
   //    (opencode's MessageOutputLengthError carries no message.)
-  if (name === 'MessageOutputLengthError' || lower.includes('output length') || lower.includes('max_tokens')) {
+  if (
+    code
+      ? code === 'output_length'
+      : name === 'MessageOutputLengthError' || lower.includes('output length') || lower.includes('max_tokens')
+  ) {
     return {
       title: 'Response too long',
       text:
@@ -303,7 +317,7 @@ export function classifyTurnError(
   // 5. Conversation outgrew the context window. OpenCode compacts a session
   //    on overflow by itself, so this reaches a thread only when that failed.
   //    A request to summarize needs the same full history and fails the same way.
-  if (isContextWindow(name, lower)) {
+  if (code ? code === 'context_length' : isContextWindow(name, lower)) {
     return {
       title: 'Conversation too long',
       text:
@@ -352,7 +366,7 @@ export function classifyTurnError(
   }
 
   // 9. Provider auth / config — bad or expired key, billing not set up.
-  if (isProviderConfig(name, status)) {
+  if (code ? code === 'auth' : isProviderConfig(name, status)) {
     const who = providerID ? `the ${providerID} provider` : 'the model provider';
     return {
       title: 'Provider rejected the request',
