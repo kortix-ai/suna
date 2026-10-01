@@ -211,9 +211,15 @@ export interface MintWireMessageIdAboveInput {
   random?: () => number;
 }
 
-/** A uniform value in [0, 1) from the platform CSPRNG (CodeQL js/insecure-randomness). */
-function cryptoRandom(): number {
-  return crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+/** A 14-char base62 tail from the platform CSPRNG, unbiased (rejection sampling: 248 = 4 * 62). */
+function cryptoTail(): string {
+  let tail = '';
+  const bytes = new Uint8Array(32);
+  while (tail.length < 14) {
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) if (b < 248 && tail.length < 14) tail += BASE62[b % 62];
+  }
+  return tail;
 }
 
 /**
@@ -228,7 +234,7 @@ function cryptoRandom(): number {
  * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function mintWireMessageIdAbove(input: MintWireMessageIdAboveInput): MintedWireMessageId {
-  const random = input.random ?? cryptoRandom;
+  const random = input.random;
   let time = wireIdClockAt(input.nowMs - (input.backdateMs ?? WIRE_ID_BACKDATE_MS));
   const floor = input.newestKnownTime ?? null;
   if (floor !== null) {
@@ -236,7 +242,8 @@ export function mintWireMessageIdAbove(input: MintWireMessageIdAboveInput): Mint
     if (ahead >= BigInt(0) && ahead <= WIRE_ID_CLOCK_TOLERANCE) time = (floor + BigInt(1)) & WIRE_ID_TIME_MASK;
   }
   let tail = '';
-  for (let i = 0; i < 14; i++) tail += BASE62[Math.min(61, Math.floor(random() * 62))];
+  if (random) for (let i = 0; i < 14; i++) tail += BASE62[Math.min(61, Math.floor(random() * 62))];
+  else tail = cryptoTail();
   return { id: `msg_${time.toString(16).padStart(12, '0')}${tail}`, time };
 }
 
