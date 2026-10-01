@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "毎日午前9時",
     "weekdaysAt9AM": "平日午前9時",
     "weeklyOnMonday": "毎週月曜日",
-    "monthlyOn1st": "毎月1日"
+    "monthlyOn1st": "毎月1日",
+    "runFailed": {
+      "label": "最終実行は完了しませんでした",
+      "nextRun": "次回の実行で再試行します。"
+    }
   },
   "sidebar": {
     "referAndEarn": "紹介して獲得",
@@ -19081,7 +19085,28 @@
       "text7458028e0d1d": "音声入力を完了",
       "text9c84d6622566": "メッセージを音声入力",
       "textf164e4b031dc": "セッションのプレゼンスを更新しました",
-      "text9e6a0b0a06c2": "セッションのメッセージ作成者を表示しました"
+      "text9e6a0b0a06c2": "セッションのメッセージ作成者を表示しました",
+      "text5f58426c214e": "私たちはオープンソースの AI Management System を構築しています。すべての企業がそのすべてを所有すべきです。",
+      "textf729ef1ea584": "ライセンスとシートの照合",
+      "text7912f8e97c06": "cronトリガーで、四半期のアクセスレビューと月次のライセンス照合を開始します。トリガーには実行するエージェント名が含まれるため、無人セッションの権限範囲は有人セッションと完全に同じです。それ以上ではありません。",
+      "textbc0deb1bab41": "Kortix はオープンソースの AI Management System です。セルフホスト可能で、あらゆるモデルに対応。まずは1プロジェクトを無料で開始。",
+      "text0c5b38410c06": "Kortixの紹介：オープンソースの AI Management System",
+      "textf216fe1b31a2": "1つの部門から始め、既存のツールを接続し、ワークフローをクライアントが所有できる git ベースのプロジェクトに変えましょう。",
+      "textdcb3e70ce4dc": "Kortix – オープンソースの AI Management System。",
+      "text1345783053b5": "Kortix vs Claude Cowork：デスクトップアシスタントか、企業のためのAI Management Systemか？",
+      "textd90da51ca5c2": "Claude CoworkはAnthropicのモデルのみを、AnthropicのクラウドまたはBedrock、Google Cloud、Microsoft Foundryのアカウントで実行し、セルフホストはできません。企業がそれでは足りなくなるのはここです。",
+      "text0216eab899cb": "コンサルティング会社には、クライアントのエージェントをまとめる1つのリポジトリが必要",
+      "text3059f4c530b3": "コンサルティング会社に、クライアントのエージェント、メモリ、コネクタ、ポリシー、監査可能な作業をまとめる1つのgitリポジトリが必要な理由。",
+      "textad70f35eaccc": "私たちのミッション：企業を人間からAGIへと導き、その道のりで自らのすべてのバイトを持ち続けられるようにすること。",
+      "text66b6392a2418": "実際の仕事をするAIエージェントの構築、運用、管理に関する現場ノート。Kortixを作るチームから。",
+      "text809a706ff256": "アクセントとステータス",
+      "text5ed8e8176c1d": "プロダクトUIで使う唯一の色相です。グリフ、ドット、ティント、チャートを彩ります。隣のラベルはforegroundまたはmuted-foregroundのままにします。どのアクセントも白地の本文ではAAを満たさないためです。アイドルには色相がありません：muted-foreground。",
+      "text1b730c5151b5": "チャートランプ",
+      "text7ac77b03cfd2": "データ可視化専用です。ユーティリティではなく var(--chart-n) で読み取ります。",
+      "textf25fe860a82d": "10種類のバリアント、8種類のサイズ。ボタンは<code>rounded-md</code>です。パネル、カード、行もrounded-md、フローティングパネルはrounded-lg、rounded-2xlはマーケティング専用です。<code>destructive</code>バリアントは、取り消せない唯一の確認操作のためのものです。",
+      "textc94e8cb68cba": "禁止パターン",
+      "text9bb4af3b0beb": "これらはコードベースに残っていますが、ブランドキットで禁止されています。新たに使わないでください。",
+      "text1aff73a5df45": "{why} 代わりに{instead}を使います。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

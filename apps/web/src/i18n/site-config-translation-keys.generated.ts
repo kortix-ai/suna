@@ -58,4 +58,5 @@ export const SITE_CONFIG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'The close, the reconciliation and the variance note': 'textaab4e49e9274',
   X: 'text4b68ab3847fe',
   'Your own VPC or your own on-prem network': 'textfe7fcc4818d3',
+  'Kortix – the open-source AI Management System.': 'textdcb3e70ce4dc',
 };
