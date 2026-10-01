@@ -8,7 +8,7 @@
  * consume `readBlob`/`list` from here.
  */
 import { getClient, RuntimeNotReadyError } from '../runtime/client';
-import { getActiveOpenCodeUrl } from '../session/server-store/active';
+import { getActiveRuntimeUrl } from '../session/server-store/active';
 import { authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
 import type {
@@ -16,7 +16,7 @@ import type {
   FileNode,
   FindMatch,
   GitFileStatus,
-  OpenCodeProjectInfo,
+  RuntimeProjectInfo,
   ServerHealth,
   UploadResult,
   WriteFileResult,
@@ -59,7 +59,7 @@ async function errorMessage(res: Response): Promise<string> {
 /**
  * Resolve the daemon base url for ONE operation — or refuse to run it.
  *
- * `getActiveOpenCodeUrl()` returns `''` on a billing-enabled deployment until a
+ * `getActiveRuntimeUrl()` returns `''` on a billing-enabled deployment until a
  * session runtime is bound (`session/server-store/active.ts`). Interpolating
  * that `''` into a template makes the request URL RELATIVE, so the browser sent
  * the user's file AND their bearer token to the WEB origin
@@ -78,7 +78,7 @@ async function errorMessage(res: Response): Promise<string> {
  * be impossible from this file.
  */
 function requireBaseUrl(baseUrl?: string): string {
-  const resolved = (baseUrl ?? getActiveOpenCodeUrl()).trim();
+  const resolved = (baseUrl ?? getActiveRuntimeUrl()).trim();
   if (!resolved) throw new RuntimeNotReadyError();
   return resolved;
 }
@@ -489,8 +489,8 @@ export async function uploadFile(
  *
  * Goes through `authenticatedFetch` like every other write. It used to call a
  * bare `fetch()` with a hand-rolled `Authorization` header, which silently
- * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, the
- * `X-Kortix-Client` header, and `platformConfig().fetch` — so every host that
+ * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, and
+ * `platformConfig().fetch` — so every host that
  * injects its own fetch (mobile, whitelabel) was bypassed on this one path.
  */
 function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promise<UploadResult[]> {
@@ -763,8 +763,8 @@ async function moveFile(from: string, to: string, base: string, overwrite: boole
 }
 
 // ── project / health (via opencode client) ────────────────────────────────────
-export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
-  return unwrap(await getClient().project.current()) as OpenCodeProjectInfo;
+export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
+  return unwrap(await getClient().project.current()) as RuntimeProjectInfo;
 }
 
 export async function getServerHealth(): Promise<ServerHealth> {

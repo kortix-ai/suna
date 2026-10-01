@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { Connection } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import {
   accountVisibility,
   connectorConnectionRows,
@@ -26,7 +26,9 @@ describe('the Add account draft', () => {
     expect(newAccountLabelTaken(draft({ label: ' work ' }), rows)).toBe(true);
     // A shared account and a private one are different rows: no clash.
     expect(newAccountLabelTaken(draft({ label: 'Work', audience: 'project' }), rows)).toBe(false);
-    expect(newAccountLabelTaken(draft({ label: 'team INBOX', audience: 'members' }), rows)).toBe(true);
+    expect(newAccountLabelTaken(draft({ label: 'team INBOX', audience: 'members' }), rows)).toBe(
+      true,
+    );
     expect(newAccountLabelTaken(draft({ label: '' }), rows)).toBe(false);
   });
 
@@ -37,13 +39,21 @@ describe('the Add account draft', () => {
     expect(newAccountReady(draft({ label: 'work' }), rows, can)).toBe(false);
     expect(newAccountReady(draft({ label: 'Shared', audience: 'project' }), rows, can)).toBe(true);
     expect(
-      newAccountReady(draft({ label: 'Shared', audience: 'project' }), rows, { ...can, canManageConnections: false }),
+      newAccountReady(draft({ label: 'Shared', audience: 'project' }), rows, {
+        ...can,
+        canManageConnections: false,
+      }),
     ).toBe(false);
     expect(newAccountReady(draft({ label: 'Sales', audience: 'members' }), rows, can)).toBe(false);
     const picked = { memberIds: [], groupIds: ['g-1'] };
-    expect(newAccountReady(draft({ label: 'Sales', audience: 'members', picked }), rows, can)).toBe(true);
+    expect(newAccountReady(draft({ label: 'Sales', audience: 'members', picked }), rows, can)).toBe(
+      true,
+    );
     expect(
-      newAccountReady(draft({ label: 'Sales', audience: 'members', picked }), rows, { ...can, accountId: null }),
+      newAccountReady(draft({ label: 'Sales', audience: 'members', picked }), rows, {
+        ...can,
+        accountId: null,
+      }),
     ).toBe(false);
   });
 
@@ -93,6 +103,18 @@ describe('connectorConnectionRows', () => {
     expect(rows.map((r) => r.connection_id)).toEqual(['project']);
   });
 
+  test('drops disconnected (revoked) accounts: a disconnected account is gone', () => {
+    const rows = connectorConnectionRows(
+      [
+        { ...connection('computer', 'member', 'unpaired'), status: 'revoked' },
+        { ...connection('computer', 'member', 'live'), status: 'active' },
+        { ...connection('computer', 'project', 'broken'), status: 'error' },
+      ],
+      'computer',
+    );
+    expect(rows.map((r) => r.connection_id)).toEqual(['live', 'broken']);
+  });
+
   test('treats a missing list as empty, so the tab count never renders NaN', () => {
     expect(connectorConnectionRows(undefined, 'gmail')).toEqual([]);
   });
@@ -135,13 +157,17 @@ describe('accountVisibility', () => {
   });
 
   test('a shared account narrowed to the viewer alone is only you', () => {
-    expect(accountVisibility(account('project', [share('member', 'u-1', 'me@x.test')]), 'u-1')).toEqual({
+    expect(
+      accountVisibility(account('project', [share('member', 'u-1', 'me@x.test')]), 'u-1'),
+    ).toEqual({
       kind: 'you',
     });
   });
 
   test('the same account seen by someone else names its one person', () => {
-    expect(accountVisibility(account('project', [share('member', 'u-1', 'me@x.test')]), 'u-2')).toEqual({
+    expect(
+      accountVisibility(account('project', [share('member', 'u-1', 'me@x.test')]), 'u-2'),
+    ).toEqual({
       kind: 'named',
       names: ['me@x.test'],
       more: 0,
@@ -149,7 +175,10 @@ describe('accountVisibility', () => {
   });
 
   test('groups lead, and the viewer comes last: "Sales +1", not their own address', () => {
-    const shared = account('project', [share('member', 'u-1', 'me@x.test'), share('group', 'sales', 'Sales')]);
+    const shared = account('project', [
+      share('member', 'u-1', 'me@x.test'),
+      share('group', 'sales', 'Sales'),
+    ]);
     expect(accountVisibility(shared, 'u-1')).toEqual({ kind: 'named', names: ['Sales'], more: 1 });
   });
 

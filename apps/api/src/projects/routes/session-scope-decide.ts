@@ -26,6 +26,7 @@ import {
 } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
+import { secretAudiencePerson } from '../lib/secret-audience';
 import { resolveSessionAgentGrant } from '../lib/secret-grant';
 import {
   invalidateSessionConnectorLookup,
@@ -282,7 +283,10 @@ export async function decideSecretsRescope({
         accountId: loaded.row.accountId,
         legacyUserId: visible.row.createdBy ?? loaded.userId,
       });
-      const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal);
+      // A value narrowed to an audience counts only for the SESSION's person.
+      const sessionAudiencePerson = () =>
+        secretAudiencePerson({ projectId, accountId: loaded.row.accountId, sessionId: visible.row.sessionId });
+      const availableSecrets = await listResolvedProjectSecrets(projectId, secretsPrincipal, sessionAudiencePerson);
       const available = new Set(
         availableSecrets.map((secret) => secret.identifier.toUpperCase()),
       );

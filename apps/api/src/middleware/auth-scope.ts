@@ -92,6 +92,12 @@ export async function enforceTokenProjectScope(
   // "what project/session/agent am I bound to?".
   if (path === '/v1/accounts/me') return;
 
+  // Cost routes enforce the project binding and usage leaf in their handlers.
+  if (
+    c.req.method === 'GET' &&
+    (path === '/v1/usage/cost-summary' || path === '/v1/usage/cost-by-project')
+  ) return;
+
   // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
   // This function is default-deny, and the in-sandbox `KORTIX_TOKEN` is
   // exactly a project+session-scoped PAT, so without this branch the ONE caller

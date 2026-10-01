@@ -25,7 +25,7 @@
  * the count straight off the inbox; there is no local queue here.
  */
 
-import type { SessionPromptOverrides, SessionPromptPart } from '@kortix/sdk';
+import { type SessionPromptOverrides, type SessionPromptPart, runtimeSupports } from '@kortix/sdk';
 import {
   type UseSessionResult,
   mintSessionWireMessageId,
@@ -72,6 +72,8 @@ export interface ComposerProps {
    * on mount and whenever the count changes; the host must memoize it.
    */
   onMetrics?(metrics: { rows: number; overlayOpen: boolean }): void;
+  /** The runtime's `/kortix/health` capabilities; null until read (hides nothing). */
+  capabilities?: readonly string[] | null;
 }
 
 type Overlay = 'commands' | 'model' | 'effort' | 'agent' | null;
@@ -89,6 +91,7 @@ export function Composer({
   onToast,
   onRequestFocus,
   onMetrics,
+  capabilities = null,
 }: ComposerProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
   const [draft, setDraft] = useState('');
@@ -223,7 +226,9 @@ export function Composer({
     const typed = splitCommandInput(text);
     if (typed) {
       const builtin = BUILTIN_COMMANDS.find((entry) => entry.name === typed.name);
-      const runtime = (session.commands ?? []).find((entry) => entry.name === typed.name);
+      const runtime = runtimeSupports(capabilities, 'session.commands')
+        ? (session.commands ?? []).find((entry) => entry.name === typed.name)
+        : undefined;
       if (builtin || runtime) {
         setText('');
         if (builtin?.target === 'picker') {
@@ -236,7 +241,7 @@ export function Composer({
     }
     setText('');
     sendText(text);
-  }, [session.commands, setText, sendText, runAppCommand, runRuntimeCommand]);
+  }, [session.commands, capabilities, setText, sendText, runAppCommand, runRuntimeCommand]);
 
   // ── keys ──────────────────────────────────────────────────────────────────
 
@@ -351,7 +356,7 @@ export function Composer({
       {overlay === 'commands' ? (
         <InlinePicker
           title="Commands"
-          items={commandItems(session.commands)}
+          items={commandItems(session.commands, capabilities)}
           width={pickerWidth}
           onClose={closeOverlay}
           onPick={(item) => {

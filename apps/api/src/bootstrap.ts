@@ -208,6 +208,9 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
+  const { startOAuthSweeper } = await import('./oauth/sweeper');
+  startOAuthSweeper();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -225,6 +228,8 @@ async function stopSingletonWorkers() {
   await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
+  const { stopOAuthSweeper } = await import('./oauth/sweeper');
+  stopOAuthSweeper();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

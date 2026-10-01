@@ -4,7 +4,7 @@
  * A customer session (2026-08-26): a resumed box's opencode answered the
  * root list too slowly, `resolveExistingRoot` returned `defer` (correct — a
  * prior root was pinned), and NOTHING retried. `runtimeReady` stayed false
- * forever, every proxied request 503'd `initial_opencode_session_pending`, and
+ * forever, every proxied request 503'd `initial_runtime_session_pending`, and
  * the UI spun "Waking the agent" for 10+ minutes until a human clicked
  * Restart. The retry loop turns that dead end into an eventual recovery.
  */

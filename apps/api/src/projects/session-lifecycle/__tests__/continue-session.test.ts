@@ -17,6 +17,13 @@ let boxRow: Record<string, unknown> | null = null;
 let actor: string | null = 'automation-user-1';
 let titleCalls: Array<Record<string, unknown>> = [];
 let forwardedAccess: Array<Record<string, unknown>> = [];
+let opens = 0;
+let openedStage: 'ready' | 'stopped' | null = null;
+let syncs = 0;
+let transitions: string[] = [];
+/** Turn-identity writes and the prompt forward, in the order they happened. */
+let identityEvents: string[] = [];
+let bindFails = false;
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://kortix.test' },
@@ -60,6 +67,7 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     _body: ArrayBuffer,
   ) => {
     forwardedAccess.push(access as Record<string, unknown>);
+    identityEvents.push('forward');
     return new Response(null, { status: 204 });
   },
 }));
@@ -72,7 +80,34 @@ mock.module('../../lib/sessions', () => ({
 
 mock.module('../../routes/shared', () => ({
   openSession: async () => {
+    opens++;
+    if (openedStage) return { stage: openedStage, sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' }, opencode_session_id: OC_SESSION_ID };
     throw new Error('openSession: reached');
+  },
+}));
+
+mock.module('../status-transitions', () => ({
+  sessionTransitionLeaves: (_action: string, status: string) => status === 'stopped',
+  transitionSession: async (action: string) => { transitions.push(action); return true; },
+}));
+mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => 'key' }));
+mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), resolveServiceKey: async () => 'key' }));
+mock.module('../../lib/sandbox-env-sync', () => ({ syncSandboxEnvForPrompt: async () => { syncs++; } }));
+
+mock.module('../../lib/on-behalf-of', () => ({
+  // The pure source rule, reduced to the sources these cases send.
+  channelPrompterForOnBehalfOf: (input: { source: string; userId: string | null }) =>
+    input.source?.startsWith('trigger:') ? null : input.source === 'slack' ? input.userId : undefined,
+  clearSessionOnBehalfOfForPrompt: async (input: { prompterUserId: string | null }) => {
+    identityEvents.push(`clear:${input.prompterUserId}`);
+    return true;
+  },
+  bindSessionTurnIdentity: async (input: { prompterUserId: string }) => {
+    identityEvents.push(`bind:start:${input.prompterUserId}`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    if (bindFails) throw new Error('db down');
+    identityEvents.push(`bind:done:${input.prompterUserId}`);
+    return true;
   },
 }));
 
@@ -120,6 +155,38 @@ beforeEach(() => {
   actor = 'automation-user-1';
   titleCalls = [];
   forwardedAccess = [];
+  opens = 0;
+  openedStage = null;
+  syncs = 0;
+  transitions = [];
+  identityEvents = [];
+  bindFails = false;
+});
+
+describe('wake delivery characterization', () => {
+  test('awake box delivers without opening or waking', async () => {
+    sessionRow = { ...sessionRow, opencodeSessionId: OC_SESSION_ID };
+    boxRow = { status: 'active', externalId: EXTERNAL_ID };
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('delivered');
+    expect(opens).toBe(0);
+    expect(transitions).toEqual([]);
+  });
+  test('stopped runtime returns unreachable and undoes wake', async () => {
+    sessionRow = { ...sessionRow, status: 'stopped' };
+    openedStage = 'stopped';
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('unreachable');
+    expect(opens).toBe(1);
+    expect(transitions).toEqual(['wake', 'unwake']);
+    expect(forwardedAccess).toHaveLength(0);
+  });
+  test('woken runtime syncs before delivery', async () => {
+    sessionRow = { ...sessionRow, status: 'stopped' };
+    openedStage = 'ready';
+    expect(await continueSession({ sessionId: SESSION_ID, text: 'hello' } as never)).toBe('delivered');
+    expect(syncs).toBe(1);
+    expect(transitions).toEqual(['wake']);
+    expect(forwardedAccess).toHaveLength(1);
+  });
 });
 
 // The title fires before the runtime opens; these cases stop at the open.
@@ -187,5 +254,53 @@ describe('continueSession — trigger delivery access carries no agent binding',
       // Not a sandbox/agent token: the null binding keeps the manager override.
       boundCredentialSessionId: null,
     });
+  });
+});
+
+// The session token acts as the person who starts the turn. The bind lands
+// before the prompt is forwarded; a non-person clears `on_behalf_of` only and is
+// never bound, so a trigger never runs as the account owner.
+describe('continueSession — turn identity', () => {
+  const awake = () => {
+    sessionRow = { ...sessionRow, opencodeSessionId: OC_SESSION_ID };
+    boxRow = { status: 'active', externalId: EXTERNAL_ID };
+  };
+
+  test('a prompt the route marked as a person binds that person before the forward', async () => {
+    awake();
+    const outcome = await continueSession({
+      source: 'ui', sessionId: SESSION_ID, text: 'hi', userId: 'member-b', bindTurnIdentity: true,
+    } as never);
+    expect(outcome).toBe('delivered');
+    expect(identityEvents).toEqual(['bind:start:member-b', 'bind:done:member-b', 'forward']);
+  });
+
+  test('an unmarked prompt (agent session, or a row older than the flag) keeps the identity', async () => {
+    awake();
+    await continueSession({ source: 'ui', sessionId: SESSION_ID, text: 'hi', userId: 'member-b' } as never);
+    expect(identityEvents).toEqual(['forward']);
+  });
+
+  test('a trigger fire clears on_behalf_of and never binds the automation actor', async () => {
+    awake();
+    actor = 'account-owner-1';
+    await continueSession({ source: 'trigger:cron', sessionId: SESSION_ID, text: 'tick' } as never);
+    expect(identityEvents).toEqual(['clear:null', 'forward']);
+  });
+
+  test('a linked Slack sender is a person: their turn binds them', async () => {
+    awake();
+    await continueSession({ source: 'slack', sessionId: SESSION_ID, text: 'hi', userId: 'member-c' } as never);
+    expect(identityEvents).toEqual(['bind:start:member-c', 'bind:done:member-c', 'forward']);
+  });
+
+  test('a failed bind fails the delivery: the turn is never forwarded', async () => {
+    awake();
+    bindFails = true;
+    const outcome = await continueSession({
+      source: 'ui', sessionId: SESSION_ID, text: 'hi', userId: 'member-b', bindTurnIdentity: true,
+    } as never).catch(() => 'threw');
+    expect(outcome).not.toBe('delivered');
+    expect(identityEvents).not.toContain('forward');
   });
 });

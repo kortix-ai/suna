@@ -7,10 +7,14 @@
  */
 
 import { CopyButton } from '@/components/markdown/copy-button';
+import { Badge } from '@/components/ui/badge';
 import Loading from '@/components/ui/loading';
+import { successToast } from '@/components/ui/toast';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { CheckCircleIcon, MinusCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 
 /** Session checks and initial fetches — the frame with a quiet spinner. */
 export function AuthPendingScreen({
@@ -66,6 +70,66 @@ export function CopyCommand({ command }: { command: string }) {
   );
 }
 
+/**
+ * A command named inside a sentence ("Disconnect anytime with `/kortix logout`"),
+ * as a badge that copies itself on click. The badge base is uppercase with
+ * tight tracking, which is wrong for a command someone will type: it keeps its
+ * own case, in mono at normal tracking.
+ *
+ * No copy or check glyph: the badge reads as the command and nothing else. A
+ * toast says the copy happened, so the feedback is not lost with the icon.
+ */
+export function CopyCommandBadge({ command }: { command: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      successToast(tI18nComplete.raw('text8d525e5f158b'));
+    } catch {
+      // A blocked clipboard leaves the command readable in place.
+    }
+  };
+  return (
+    <Badge asChild variant="secondary">
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={`${tI18nComplete.raw('texte21f935f11d7')} ${command}`}
+        className="hover:bg-secondary focus-visible:ring-ring align-baseline font-mono tracking-normal normal-case transition-[background-color,scale] outline-none focus-visible:ring-2 active:scale-[0.96]"
+      >
+        {command}
+      </button>
+    </Badge>
+  );
+}
+
+const OUTCOME_MARK = {
+  success: { icon: CheckCircleIcon, className: 'text-kortix-green' },
+  destructive: { icon: XCircleIcon, className: 'text-kortix-red' },
+  muted: { icon: MinusCircleIcon, className: 'text-muted-foreground' },
+} as const;
+
+/**
+ * A title that states an outcome ("Action approved", "GitHub connected"): the
+ * words at the leading edge, the mark at the trailing edge. The words carry the
+ * meaning; the mark and its colour repeat it.
+ */
+export function OutcomeTitle({
+  tone,
+  children,
+}: {
+  tone: keyof typeof OUTCOME_MARK;
+  children: React.ReactNode;
+}) {
+  const { icon: Icon, className } = OUTCOME_MARK[tone];
+  return (
+    <span className="flex items-center justify-between gap-3">
+      <span className="min-w-0">{children}</span>
+      <Icon weight="fill" aria-hidden className={cn('size-6 shrink-0', className)} />
+    </span>
+  );
+}
+
 /** Flat bordered list for the facts behind a consent decision. */
 export function DetailPanel({
   className,
@@ -94,7 +158,12 @@ export function DetailRow({
   return (
     <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
       <dt className="text-muted-foreground shrink-0 text-sm">{label}</dt>
-      <dd className={cn('text-foreground truncate text-sm', mono && 'font-mono text-xs')}>
+      <dd
+        className={cn(
+          'text-foreground truncate text-sm',
+          mono && 'font-mono text-xs tracking-normal',
+        )}
+      >
         {value}
       </dd>
     </div>

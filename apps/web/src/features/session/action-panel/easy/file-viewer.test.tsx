@@ -49,6 +49,42 @@ function count(haystack: string, needle: string): number {
 }
 
 describe('file kind predicates', () => {
+  test('source viewer retains its extension language and rendered-kind contract', () => {
+    const languages = {
+      md: 'markdown',
+      mdx: 'markdown',
+      ts: 'typescript',
+      tsx: 'tsx',
+      js: 'javascript',
+      jsx: 'jsx',
+      json: 'json',
+      py: 'python',
+      rb: 'ruby',
+      go: 'go',
+      rs: 'rust',
+      sh: 'bash',
+      bash: 'bash',
+      yml: 'yaml',
+      yaml: 'yaml',
+      toml: 'toml',
+      css: 'css',
+      html: 'html',
+      htm: 'html',
+      svg: 'xml',
+      sql: 'sql',
+      mmd: 'mermaid',
+      mermaid: 'mermaid',
+    };
+    for (const [ext, language] of Object.entries(languages)) {
+      const name = `file.${ext}`;
+      expect(languageFor(name)).toBe(language);
+      expect(isMarkdown(name)).toBe(ext === 'md' || ext === 'mdx');
+      expect(isHtml(name)).toBe(getFileCategory(name) === 'html');
+    }
+    expect(languageFor('file.unknown')).toBe('text');
+    expect(isSvg('x.svg')).toBe(true);
+  });
+
   test('svg is recognised, and is not confused with the other rendered kind', () => {
     expect(isSvg('logo.svg')).toBe(true);
     expect(isSvg('LOGO.SVG')).toBe(true);

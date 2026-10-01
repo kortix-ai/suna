@@ -36,6 +36,7 @@ import { decryptProjectSecret, intersectSecretGrants } from '../projects/secrets
 import { ACTIVE_SESSION_STATUSES } from '../projects/lib/session-status';
 import { db } from '../shared/db';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
+import { filterSecretRowsByAudience, secretAudiencePerson } from '../projects/lib/secret-audience';
 import type { SessionHandleFacts } from './handle-substitution';
 import type { SecretBrokerError, SecretSubstitution } from './http-broker';
 import { networkBoundaryPolicyError } from './network-boundary';
@@ -119,9 +120,16 @@ export async function resolveSpendableHandles(input: {
   // policy the handle was minted from, the member's own active row carries the
   // value that was actually delivered to the sandbox. Substituting the shared
   // value for a member who overrides it would send the wrong credential.
-  type SecretRow = (typeof secretRows)[number];
+  // Re-checked per request: a narrowed value stops being spendable the moment
+  // this is no longer its person's private session (secret-audience.ts).
+  const reachableRows = await filterSecretRowsByAudience({
+    projectId: input.projectId,
+    personId: () => secretAudiencePerson({ projectId: input.projectId, sessionId: input.sessionId }),
+    rows: secretRows,
+  });
+  type SecretRow = (typeof reachableRows)[number];
   const byIdentifier = new Map<string, { shared?: SecretRow; personal?: SecretRow }>();
-  for (const row of secretRows) {
+  for (const row of reachableRows) {
     const slot = byIdentifier.get(row.identifier) ?? {};
     if (row.ownerUserId === null) slot.shared = row;
     else if (row.active) slot.personal = row;
@@ -301,7 +309,20 @@ export async function authorizeSecretRelay(
           : isNull(projectSecrets.ownerUserId),
       ),
     );
-  const shared = rows.find((row) => row.ownerUserId === null);
+  // A narrowed value outside this session's audience answers exactly like a
+  // missing one: the relay never confirms that a value exists for someone else.
+  const reachable = await filterSecretRowsByAudience({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    personId: () =>
+      secretAudiencePerson({
+        projectId: input.projectId,
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+      }),
+    rows,
+  });
+  const shared = reachable.find((row) => row.ownerUserId === null);
   const personal = personalUserId
     ? rows.find((row) => row.ownerUserId === personalUserId && row.active)
     : undefined;

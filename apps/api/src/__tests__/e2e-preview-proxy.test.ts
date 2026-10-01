@@ -204,6 +204,15 @@ mock.module('../projects/sandbox-turn-lifecycle', () => ({
   abandonSandboxTurn: async () => true,
 }));
 
+// The turn-identity bind is one conditional UPDATE through `db.execute`, which
+// this file's `db` stub does not build. Its SQL is pinned by
+// integration-session-turn-identity.test.ts; here it only has to succeed.
+const realOnBehalfOf = await import('../projects/lib/on-behalf-of');
+mock.module('../projects/lib/on-behalf-of', () => ({
+  ...realOnBehalfOf,
+  bindSessionTurnIdentity: async () => true,
+}));
+
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
 // `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
@@ -736,14 +745,14 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
 
   // Both sides of one contract in two packages: the daemon's health payload
   // must publish the field the lookup reads.
-  test('the daemon health payload publishes opencode_port', async () => {
+  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
     const health = await Bun.file(
       new URL(
         '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
         import.meta.url,
       ).pathname,
     ).text();
-    expect(health).toContain('opencode_port:');
+    expect(health).toContain('port: opencode.getActivePort()');
   });
 });
 
@@ -921,6 +930,8 @@ describe('Preview proxy: forwarding', () => {
       },
       llmGatewayEnabled: false,
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
+      // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
+      runtimeEnv: {},
       opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
@@ -996,15 +1007,10 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // In-session agent switching is allowed, unconditionally — there is no flag
-  // and no refusal. A concrete agent is forwarded untouched whatever the
-  // session booted with; only the literal 'default' sentinel is stripped. A new
-  // session is stored with the sentinel, and the client echoes back the
-  // concrete name it resolved "the default" to (the reported "agent switch
-  // requires a new session" false positive).
+  // A concrete agent is forwarded when it matches the session's agent or
+  // resolves the legacy default sentinel. Switching concrete agents is refused.
   test.each([
     ['the agent the session runs', 'reviewer', 'reviewer'],
-    ['a different concrete agent', 'reviewer', 'researcher'],
     ['a concrete agent in a default session', 'default', 'kortix'],
   ])('prompt_async naming %s is forwarded untouched', async (_label, sessionAgent, requested) => {
     mockDbSandbox = { ...mockDbSandbox, agentName: sessionAgent };
@@ -1028,6 +1034,20 @@ describe('Preview proxy: forwarding', () => {
       agent: requested,
       parts: [{ type: 'text', text: 'hi' }],
     });
+  });
+
+  test('refuses a different concrete agent before forwarding prompt_async', async () => {
+    mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+    expect(mockFetchCalls).toEqual([]);
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {

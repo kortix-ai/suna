@@ -27,6 +27,7 @@ import {
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
+import { SessionAskedFromLink, SessionPeopleIndicator } from './session-people';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
 import { directSubsessions } from '@/components/projects/session-label';
@@ -47,7 +48,7 @@ import {
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
 import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
-import { qk, useProjectSession } from '@kortix/sdk/react';
+import { qk, useProjectSession, useRuntimeSupports } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -117,6 +118,8 @@ export function SessionSiteHeader({
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
+  // E1: a runtime without on-demand compaction (pi) offers no Compact item.
+  const canCompact = useRuntimeSupports('session.compact');
   const [shareOpen, setShareOpen] = useState(false);
   // The name edits in place: the name button swaps for a field. The menu's
   // Rename item opens the same field, so there is one rename surface.
@@ -325,13 +328,15 @@ export function SessionSiteHeader({
         {tI18nHardcoded.raw('i18nComplete.text5d974f9e80c3')}
       </DropdownMenuItem>
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setCompactOpen(true)}
-      >
-        <Layers />
-        {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
-      </DropdownMenuItem>
+      {canCompact && (
+        <DropdownMenuItem
+          className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+          onClick={() => setCompactOpen(true)}
+        >
+          <Layers />
+          {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
+        </DropdownMenuItem>
+      )}
 
       {isProjectSession && (
         <>
@@ -485,6 +490,10 @@ export function SessionSiteHeader({
               </DropdownMenu>
             </div>
 
+            {isProjectSession && !parent ? (
+              <SessionAskedFromLink projectId={projectId!} session={projectSession} />
+            ) : null}
+
             {leadingAction}
           </div>
 
@@ -497,6 +506,10 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {isProjectSession && !parent ? (
+              <SessionPeopleIndicator projectId={projectId!} session={projectSession} />
+            ) : null}
 
             {isProjectSession ? <SessionRemindersIndicator runtimeSessionId={sessionId} /> : null}
 

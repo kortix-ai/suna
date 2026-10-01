@@ -377,7 +377,13 @@ async function costsCommand(ctx: AccountContext, f: Flags): Promise<number> {
     const kind = by === 'project' ? 'projects' : 'sessions';
     const options =
       kind === 'projects'
-        ? { accountId: ctx.accountId, from: f.since, to: f.until, sort: f.sort as never }
+        ? {
+            accountId: ctx.accountId,
+            projectId: f.project,
+            from: f.since,
+            to: f.until,
+            sort: f.sort as never,
+          }
         : {
             accountId: ctx.accountId,
             projectId: f.project,
@@ -410,7 +416,7 @@ async function costsCommand(ctx: AccountContext, f: Flags): Promise<number> {
 
   if (by === 'project') {
     const page = await ctx.client.get<ProjectCostView>(
-      `/usage/cost-by-project${query({ ...window, ...paging })}`,
+      `/usage/cost-by-project${query({ ...window, ...paging, project_id: f.project })}`,
     );
     if (f.json) {
       emitJson(page);

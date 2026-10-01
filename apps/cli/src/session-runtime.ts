@@ -181,8 +181,25 @@ export async function resolveSessionRuntime(
     handle,
     runtime: handle.runtime,
     runtimeUrl: ready.runtimeUrl,
-    opencodeSessionId: ready.opencodeSessionId,
+    opencodeSessionId: ready.runtimeSessionId,
   };
+}
+
+/**
+ * The session features this runtime serves: the `capabilities` of its
+ * `GET /kortix/health`, read once. Pass the result to `runtimeSupports`. A
+ * failed read answers undefined, which `runtimeSupports` treats as "serves
+ * everything": the feature call then reports its own error.
+ */
+export async function readRuntimeCapabilities(
+  runtime: Pick<SessionRuntime, 'auth' | 'handle'>,
+): Promise<readonly string[] | undefined> {
+  try {
+    const probe = await withKortixScope(runtime.auth, () => runtime.handle.health());
+    return probe.health?.capabilities;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Fetch one Kortix session row, failing as a `SessionRuntimeError`. */

@@ -10,18 +10,12 @@
  *   heaviest thing this row can render) holding the transcript as markdown;
  *   the compression note; "No messages in this session" when there is neither
  *   a conversation nor todos. Error payloads → `ToolOutputFallback`.
- *
- * `SessionGetExpandedContent` / `parseSessionGet` / `SessionGetData` below are
- * the previous mobile body, kept because `tool-part-renderer.tsx` imports them.
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
-import { THEME, withAlpha } from '@/lib/utils/theme';
-import type { ToolPart } from '@/lib/opencode/types';
-import { stripAnsi } from '@kortix/sdk';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import {
   ArrowClockwiseIcon,
@@ -45,10 +39,10 @@ import {
   partOutput,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
+import { OutputBlock } from '../shared/output-block';
 import { ToolCaret, ToolScroll } from '../shared/surface';
 import type { ToolProps } from '../shared/types';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, fg, monoFont, muted, mutedStrong, useTurnPalette } from '../shared/styles';
-import { MonoBlock, OutputBlock } from '../shared/output-block';
 
 /** `text-xs leading-snug`. */
 const SNUG = { fontSize: TURN_TYPE.xs.fontSize, lineHeight: TURN_TYPE.xs.fontSize * 1.375 };
@@ -272,232 +266,3 @@ export function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolPro
   );
 }
 ToolRegistry.register('session-get', SessionGetTool);
-
-// ─── Legacy body (imported by tool-part-renderer.tsx) ────────────────────────
-
-export interface SessionGetData {
-  title: string;
-  id: string;
-  created: string;
-  updated: string;
-  changes: string;
-  parent: string | null;
-  todos: Array<{ status: 'completed' | 'in_progress' | 'pending'; text: string }>;
-  messageCount: string;
-  toolCallCount: string;
-  compressionNote: string | null;
-  hasConversation: boolean;
-}
-
-export function parseSessionGet(output: string): SessionGetData | null {
-  if (!output || typeof output !== 'string') return null;
-  const titleMatch = output.match(/^=== SESSION:\s*(.+?)\s*===$/m);
-  if (!titleMatch) return null;
-
-  const idMatch = output.match(/^ID:\s*(ses_\S+)/m);
-  const createdMatch = output.match(/Created:\s*(\S+ \S+)/);
-  const updatedMatch = output.match(/Updated:\s*(\S+ \S+)/);
-  const changesMatch = output.match(/Changes:\s*(.+)/m);
-  const parentMatch = output.match(/Parent:\s*(ses_\S+)/m);
-
-  // Todos
-  const todosSection = output.match(/^Todos:\n([\s\S]*?)(?=\n(?:Lineage|Storage|===))/m);
-  const todos: SessionGetData['todos'] = [];
-  if (todosSection) {
-    for (const line of todosSection[1].split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed === '(none)') continue;
-      const statusMatch = trimmed.match(/^\[(\w+)\]\s*(.*)/);
-      if (statusMatch) {
-        const s = statusMatch[1] as string;
-        const status = s === 'completed' ? 'completed' : s === 'in_progress' ? 'in_progress' : 'pending';
-        todos.push({ status, text: statusMatch[2] });
-      } else {
-        todos.push({ status: 'pending', text: trimmed });
-      }
-    }
-  }
-
-  // Conversation header
-  const convHeader = output.match(/=== CONVERSATION \((\d+) msgs?, (\d+) tool calls?/);
-  const compressionMatch = output.match(/=== COMPRESSION ===\n(.+)/m);
-
-  return {
-    title: titleMatch[1],
-    id: idMatch?.[1] ?? '',
-    created: createdMatch?.[1] ?? '',
-    updated: updatedMatch?.[1] ?? '',
-    changes: changesMatch?.[1] ?? 'no changes',
-    parent: parentMatch?.[1] ?? null,
-    todos,
-    messageCount: convHeader?.[1] ?? '0',
-    toolCallCount: convHeader?.[2] ?? '0',
-    compressionNote: compressionMatch?.[1]?.trim() ?? null,
-    hasConversation: !!convHeader,
-  };
-}
-
-export function SessionGetExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const output = useMemo(() => {
-    if (tool.state.status === 'completed' && 'output' in tool.state && tool.state.output) {
-      return stripAnsi(tool.state.output).trim();
-    }
-    return '';
-  }, [tool.state]);
-
-  const data = useMemo(() => parseSessionGet(output), [output]);
-
-  if (!data) {
-    // Fallback to generic
-    return output ? (
-      <View style={{ paddingHorizontal: 12, paddingVertical: 10, maxHeight: 250 }}>
-        <MonoBlock isDark={isDark} maxLines={30}>
-          {output.length > 3000 ? output.slice(0, 3000) + '\n...' : output}
-        </MonoBlock>
-      </View>
-    ) : null;
-  }
-
-  const metaColor = muted(isDark);
-  const metaFs = 11;
-
-  return (
-    <ToolScroll maxHeight={400} showsVerticalScrollIndicator>
-      <View style={{ padding: 12, gap: 10 }}>
-        {/* Session title */}
-        <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg(isDark), lineHeight: 20 }}>
-          {data.title}
-        </Text>
-
-        {/* Metadata grid */}
-        <View style={{ gap: 4 }}>
-          {/* ID */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 9, fontFamily: monoFont, color: metaColor, opacity: 0.7 }}>
-              {data.id}
-            </Text>
-          </View>
-
-          {/* Timestamps */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Text style={{ fontSize: metaFs, fontFamily: 'Roobert', color: metaColor }}>
-              Created {data.created}
-            </Text>
-            {data.updated && data.updated !== data.created && (
-              <Text style={{ fontSize: metaFs, fontFamily: 'Roobert', color: metaColor }}>
-                Updated {data.updated}
-              </Text>
-            )}
-          </View>
-
-          {/* Changes + Messages */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Text style={{ fontSize: metaFs, fontFamily: 'Roobert', color: metaColor }}>
-              {data.changes}
-            </Text>
-            {data.hasConversation && (
-              <Text style={{ fontSize: metaFs, fontFamily: 'Roobert', color: metaColor }}>
-                {data.messageCount} msgs · {data.toolCallCount} tool calls
-              </Text>
-            )}
-          </View>
-
-          {/* Parent */}
-          {data.parent && (
-            <Text style={{ fontSize: metaFs, fontFamily: 'Roobert', color: metaColor }}>
-              Parent: <Text style={{ fontFamily: monoFont, fontSize: 10 }}>{data.parent}</Text>
-            </Text>
-          )}
-        </View>
-
-        {/* Todos */}
-        {data.todos.length > 0 && (
-          <View
-            style={{
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.06),
-              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015),
-              padding: 10,
-              gap: 6,
-            }}
-          >
-            <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: mutedStrong(isDark), textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              Todos ({data.todos.length})
-            </Text>
-            {data.todos.map((todo, i) => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-                <View
-                  style={{
-                    width: 14,
-                    height: 14,
-                    borderRadius: 3,
-                    borderWidth: 1.5,
-                    marginTop: 1,
-                    borderColor: todo.status === 'completed'
-                      ? (THEME.accent.green)
-                      : todo.status === 'in_progress'
-                      ? (THEME.accent.blue)
-                      : (isDark ? THEME.dark.border : THEME.light.border),
-                    backgroundColor: todo.status === 'completed'
-                      ? (isDark ? withAlpha(THEME.accent.green, 0.15) : withAlpha(THEME.accent.green, 0.1))
-                      : 'transparent',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {todo.status === 'completed' && (
-                    <Text style={{ fontSize: 9, color: THEME.accent.green, fontWeight: '700' }}>✓</Text>
-                  )}
-                  {todo.status === 'in_progress' && (
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: THEME.accent.blue }} />
-                  )}
-                </View>
-                <Text
-                  style={{
-                    flex: 1,
-                    fontSize: 12,
-                    fontFamily: 'Roobert',
-                    lineHeight: 17,
-                    color: todo.status === 'completed' ? muted(isDark) : fg(isDark),
-                    textDecorationLine: todo.status === 'completed' ? 'line-through' : 'none',
-                  }}
-                >
-                  {todo.text}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Compression badge */}
-        {data.compressionNote && (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <View
-              style={{
-                paddingHorizontal: 6,
-                paddingVertical: 2,
-                borderRadius: 4,
-                backgroundColor: isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.08),
-              }}
-            >
-              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>
-                Compressed
-              </Text>
-            </View>
-            <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: muted(isDark) }}>
-              {data.compressionNote}
-            </Text>
-          </View>
-        )}
-
-        {/* No messages indicator */}
-        {!data.hasConversation && (
-          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted(isDark), fontStyle: 'italic' }}>
-            No messages in this session
-          </Text>
-        )}
-      </View>
-    </ToolScroll>
-  );
-}

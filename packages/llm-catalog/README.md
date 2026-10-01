@@ -32,9 +32,9 @@ For a quick route change, set `MORPH_MANAGED_MODELS` in the deployment environme
 
 Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected models require `MORPH_API_KEY` or `OPENROUTER_API_KEY`.
 
-### Overflow: OpenCode Zen
+### OpenCode Zen first
 
-`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that fail over to [OpenCode Zen](https://opencode.ai/docs/zen) after the OpenRouter pool. Its default is `glm-5.3-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
+`OPENCODE_ZEN_MANAGED_MODELS` lists the managed model IDs that [OpenCode Zen](https://opencode.ai/docs/zen) serves first. The OpenRouter pool is their fallback: a 429, 5xx, or network error on Zen moves the request to the pool, and the reverse. Its default is `glm-5.3-flash`. The candidate exists only when `OPENCODE_ZEN_API_KEY` is set. An empty list is the kill switch. `OPENCODE_ZEN_API_URL` defaults to `https://opencode.ai/zen/v1`.
 
 1. Zen states that it hosts every model in the US and that its providers keep zero data retention. The exceptions are OpenAI, Anthropic, and free models. No managed model is one of them.
 2. Zen serves the managed IDs unchanged (`glm-5.3-flash`, `kimi-k3`, `deepseek-v4.1-flash`) on `/chat/completions`.
@@ -43,6 +43,16 @@ Without `OPENROUTER_API_KEY`, GLM is unavailable by default. Other selected mode
 5. `usage_events.metadata.upstreamProvider` is `opencode` for a request that Zen served. The client sees only Kortix.
 
 Why: from 2026-09-22 to 2026-09-29, 0.7% of prod GLM requests (287 of 40,861) returned `429 model_busy`. OpenRouter reported `limit_source: upstream_provider_shared_pool`: Decart and CoreWeave serve non-BYOK traffic from a pool shared with every OpenRouter customer. The 429 rate did not rise with Kortix load (1.1% at under 20 requests per minute, 0.2% at 200 or more). `fireworks/us` returned 429 on every probe on 2026-09-29, so it adds no capacity. Zen is capacity outside that shared pool.
+
+Why first, measured on 2026-09-29 at the prod request shape (about 160k-token prompts, 4 turns per session, cached follow-ups):
+
+| Route | Concurrent sessions | Result |
+| --- | --- | --- |
+| Zen | 60 | 239 of 240 OK, 404 requests/min, 65.7M input tokens/min, 96% cache hits, first token p50 3.7 s |
+| Zen | 120 | 37% HTTP 429 |
+| OpenRouter pool (Decart, CoreWeave) | 60 | 167 OK, 17 HTTP 429, 56 timeouts; 43 requests/min, 74% cache hits |
+
+Prod GLM peaked at 262 requests/min and 37M input tokens/min on 2026-09-29.
 
 ### OpenRouter endpoint pools
 
@@ -71,6 +81,29 @@ Excluded on 2026-09-24:
 ### Why GLM-5.3-Flash failed before 2026-09-24
 
 The route pinned one endpoint (`only: ['coreweave/nvfp4']`, `allow_fallbacks: false`). CoreWeave serves OpenRouter's non-BYOK traffic from a shared pool. On 2026-09-24 that pool returned HTTP 429 `rate_limit_exceeded` (`limit_source: upstream_provider_shared_pool`) for 11 of 15 requests that OpenRouter routed to it. With a single pin and no fallback, every such 429 reached the user. The same 429 was recorded on 2026-09-18.
+
+### Context windows
+
+Every managed model publishes `limit: { context: 1_000_000, output: 16_384 }`. OpenCode compacts a session after a step that used `context - min(output, 32_000)` tokens, which is 983,616. It sends `max_tokens` = 16,384.
+
+Measured on 2026-09-30 with synthetic prompts at the edge of each window:
+
+| Model | Route | Largest request accepted | Check | Overflow reply |
+| --- | --- | --- | --- | --- |
+| GLM-5.3-Flash | Zen | prompt 1,048,573 | prompt only | HTTP 400 "The prompt is too long" |
+| GLM-5.3-Flash | OpenRouter `decart/fp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 200, then an in-band 400 frame |
+| GLM-5.3-Flash | OpenRouter `coreweave/nvfp4` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
+| GLM-5.3-Flash | Morph | prompt 1,036,630 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
+| DeepSeek V4.1 Flash | Morph | prompt 1,047,041 with `max_tokens` 16 | combined | HTTP 400 "Invalid request" |
+| DeepSeek V4.1 Flash | OpenRouter `coreweave/fp8` | prompt + `max_tokens` 1,048,576 | combined | HTTP 400 "combined input and output tokens" |
+| Kimi K3 | OpenRouter `fireworks/us` | prompt 1,048,575 | prompt only | HTTP 400 "prompt is too long" |
+| Kimi K3 | Morph | not measured: HTTP 429 `service_overloaded` on every probe | | |
+
+A route that checks prompt + `max_tokens` rejects a prompt above 1,032,192. The 48,576-token gap between the compaction point and that limit is the room one more step has: a new message plus tool results. `src/managed.test.ts` fails when a managed model's `limit` leaves less than 32,768 tokens, or when a managed model has no measured window.
+
+The gateway answers every rejection above as HTTP 400 `context_length_exceeded`, including OpenRouter's in-band frame: an error as the first `data:` frame of a direct stream is a failed attempt, not a response (`packages/llm-gateway/src/http/call-upstream.ts`). OpenCode reads that code as a context overflow and compacts. A managed candidate fails over on any error, so Morph's unexplained 400 moves the request to the next route, whose reply explains it.
+
+Before 2026-09-30 the limit was 1,048,576. OpenCode compacted only at 1,032,192, which is where the combined routes reject, and OpenRouter's in-band rejection reached OpenCode as an `UnknownError`. A trigger that re-prompted one GLM session every few minutes failed every turn with `context_length_exceeded`.
 
 ### OpenAI and Anthropic models are not managed
 

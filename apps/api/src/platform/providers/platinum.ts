@@ -104,11 +104,9 @@ function stopConfirmPollMs(): number {
 // create() does for its 60 s long-poll.
 export const START_CALL_TIMEOUT_MS = 60_000;
 // How long start() carries a box through a restore from cold storage. A 6 GB
-// session box restores in ~100 s alone on dev and past 150 s with a second
-// restore on the same host (2026-09-25); the slowest prod unarchive that day
-// took 546 s. The session wake must still confirm the box inside its
-// RUNTIME_WAKE_HARD_MS (10 min), after this and one last /start.
-export const START_RESTORE_BUDGET_MS = 8 * 60_000;
+// session box restores in ~100 s alone on dev; observed slow restores take
+// 546 s. Allow those restores to finish before the bounded wake expires.
+export const START_RESTORE_BUDGET_MS = 10 * 60_000;
 // How often a caller's lease is renewed (opts.onProgress) while a restore is
 // seen in progress. The wake and restart leases run 240 s.
 export const START_PROGRESS_INTERVAL_MS = 30_000;
@@ -872,6 +870,12 @@ export class PlatinumProvider implements SandboxProvider {
    * still on.
    */
   async stop(externalId: string): Promise<void> {
+    // Auto-resume off BEFORE the stop: Platinum resumed a box on a stray request
+    // 1.3 s after `stop.done`, with its row already stopped and its token dead.
+    await disableAutoResume(
+      externalId,
+      await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`).catch(() => null),
+    );
     await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST' });
     const deadlineMs = stopConfirmDeadlineMs();
     const pollMs = stopConfirmPollMs();

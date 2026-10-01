@@ -29,6 +29,8 @@ function deps(over: Partial<ModelCatalogTurnStartDeps> = {}): ModelCatalogTurnSt
     lastKnown: () => undefined,
     probe: async () => undefined,
     convergeCatalog: async () => null,
+    modelConfirmation: () => undefined,
+    noteModelConfirmation: () => {},
     ...over,
   };
 }
@@ -45,20 +47,68 @@ describe('convergeModelCatalogBeforeTurnStart', () => {
     expect(probed).toBe(false);
   });
 
-  test('skips instantly for a non-managed (BYOK) model id — zero calls', async () => {
-    let probed = false;
-    let converged = false;
-    const result = await convergeModelCatalogBeforeTurnStart(
+  // 2026-10-01 dev: a fresh box registered the image catalog baked at 18:45,
+  // without codex/gpt-6.1-sol, while the picker offered it. A non-managed id
+  // used to skip this lane entirely — the bug. It now asks the box about that
+  // ONE model; a confirmed answer is remembered so later turns cost nothing.
+  test('a non-managed model asks the box about that one model, then remembers a confirmed answer', async () => {
+    const asked: Array<string | undefined> = [];
+    const confirmed = new Map<string, Set<string> | null>();
+    const d = deps({
+      modelConfirmation: (sid, model) => {
+        const known = confirmed.get(sid);
+        return known === null ? 'legacy' : known?.has(model) ? 'present' : undefined;
+      },
+      noteModelConfirmation: (sid, model) => {
+        if (model === null) return void confirmed.set(sid, null);
+        confirmed.set(sid, new Set([...(confirmed.get(sid) ?? []), model]));
+      },
+      convergeCatalog: async (_sid, model) => {
+        asked.push(model);
+        return { outcome: 'restarted', modelPresent: true };
+      },
+    });
+    expect(await convergeModelCatalogBeforeTurnStart('sess-1', 'codex/gpt-6.1-sol', d)).toEqual({
+      decision: 'converged',
+      daemonOutcome: 'restarted',
+    });
+    expect(await convergeModelCatalogBeforeTurnStart('sess-1', 'codex/gpt-6.1-sol', d)).toEqual({ decision: 'current' });
+    expect(asked).toEqual(['codex/gpt-6.1-sol']);
+  });
+
+  test('a daemon that predates per-model converge is skipped, and never asked again', async () => {
+    let calls = 0;
+    const confirmed = new Map<string, null>();
+    const d = deps({
+      modelConfirmation: (sid) => (confirmed.has(sid) ? 'legacy' : undefined),
+      noteModelConfirmation: (sid, model) => {
+        if (model === null) confirmed.set(sid, null);
+      },
+      // An old daemon ignores `model` and answers its managed converge — even
+      // `no-gateway`, which must NOT refuse a BYOK turn that would have run.
+      convergeCatalog: async () => {
+        calls++;
+        return { outcome: 'no-gateway' };
+      },
+    });
+    expect(await convergeModelCatalogBeforeTurnStart('sess-1', 'openai/gpt-6.1-sol', d)).toEqual({ decision: 'skipped' });
+    expect(await convergeModelCatalogBeforeTurnStart('sess-1', 'openai/gpt-6.1-sol', d)).toEqual({ decision: 'skipped' });
+    expect(calls).toBe(1);
+  });
+
+  test('not-served forwards the turn (OpenCode names the unknown model); declined still refuses', async () => {
+    const notServed = await convergeModelCatalogBeforeTurnStart(
       'sess-1',
-      'claude-sonnet-4-6',
-      deps({
-        probe: async () => { probed = true; return undefined; },
-        convergeCatalog: async () => { converged = true; return null; },
-      }),
+      'codex/gpt-9-typo',
+      deps({ convergeCatalog: async () => ({ outcome: 'not-served', modelPresent: false }) }),
     );
-    expect(result).toEqual({ decision: 'skipped' });
-    expect(probed).toBe(false);
-    expect(converged).toBe(false);
+    expect(modelCatalogRepairIncomplete(notServed)).toBe(false);
+    const declined = await convergeModelCatalogBeforeTurnStart(
+      'sess-1',
+      'codex/gpt-6.1-sol',
+      deps({ convergeCatalog: async () => ({ outcome: 'declined', modelPresent: false }) }),
+    );
+    expect(modelCatalogRepairIncomplete(declined)).toBe(true);
   });
 
   test('a warm memo that already has the model is current — no probe, no converge', async () => {
@@ -226,6 +276,22 @@ describe('convergeSandboxModelCatalog', () => {
     expect(calls[0]!.url).toBe('https://box.test/kortix/catalog/converge');
     expect(calls[0]!.init?.method).toBe('POST');
     expect((calls[0]!.init?.headers as Record<string, string>).Authorization).toBe('Bearer svc-key');
+  });
+
+  test('names the one model in the body and reads model_present back', async () => {
+    let body: unknown;
+    const result = await convergeSandboxModelCatalog(
+      'sess-1',
+      daemonDeps({
+        fetch: async (_url, init) => {
+          body = JSON.parse(String(init?.body));
+          return new Response(JSON.stringify({ outcome: 'unchanged', missing: [], model_present: true }), { status: 200 });
+        },
+      }),
+      'codex/gpt-6.1-sol',
+    );
+    expect(body).toEqual({ model: 'codex/gpt-6.1-sol' });
+    expect(result).toEqual({ outcome: 'unchanged', missing: [], modelPresent: true });
   });
 
   test('no active sandbox for this session — null, no fetch attempted', async () => {

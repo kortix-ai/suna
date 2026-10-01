@@ -482,7 +482,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('updated')
+    expect(result.harness?.opencode).toBe('updated')
     expect(installs).toEqual(['1.18.19'])
     // Same step, always: a binary and a plugin that disagree is the stall this
     // pairing exists to prevent.
@@ -516,7 +516,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toBe('a turn is in flight')
     expect(installs).toEqual([])
     expect(restarts).toEqual([])
@@ -546,7 +546,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toBe('turn state unreadable')
     expect(installs).toEqual([])
   })
@@ -570,7 +570,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('current')
+    expect(result.harness?.opencode).toBe('current')
     expect(installs).toEqual([])
   })
 
@@ -593,7 +593,7 @@ describe('opencode convergence — idle only', () => {
       installPluginDeps: async () => {},
     })
 
-    expect(result.opencode).toBe('updated')
+    expect(result.harness?.opencode).toBe('updated')
     expect(installs).toEqual([])
     // The plugin is read when opencode boots, so the refreshed pin takes effect
     // on its own. Cutting a session short for it would buy nothing.
@@ -616,7 +616,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toBe('manifest opencode version is malformed')
     expect(installs).toEqual([])
   })
@@ -638,7 +638,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('updated')
+    expect(result.harness?.opencode).toBe('updated')
     expect(result.reasons?.opencode).toBeUndefined()
     expect(installs).toEqual(['1.18.19'])
   })
@@ -659,7 +659,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toBe('opencode did not report its version')
     expect(installs).toEqual([])
   })
@@ -681,7 +681,7 @@ describe('opencode convergence — idle only', () => {
       },
     })
 
-    expect(result.opencode).toBe('failed')
+    expect(result.harness?.opencode).toBe('failed')
     expect(restarts).toEqual([])
     const pkg = JSON.parse(await readFile(join(ws.depsDir, 'package.json'), 'utf8')) as {
       dependencies: Record<string, string>
@@ -699,7 +699,7 @@ describe('opencode convergence — idle only', () => {
 
     const result = await run(ws, stubFetch())
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toBe('no opencode runtime in this process')
   })
 })
@@ -719,7 +719,7 @@ describe('v1 compatibility', () => {
     // An API that has never heard of `components` says nothing about the agent
     // or opencode — which is different from saying "skip them".
     expect(result.agent).toBeUndefined()
-    expect(result.opencode).toBeUndefined()
+    expect(result.harness?.opencode).toBeUndefined()
     expect(result.build).toBeUndefined()
     // And nothing was staged from a manifest that never described an agent.
     expect(await stat(ws.agentNext).catch(() => null)).toBeNull()
@@ -838,7 +838,7 @@ describe('runtime convergence report', () => {
       cli: 'current',
       skills: 'current',
       agent: 'staged',
-      opencode: 'updated',
+      harness: { opencode: 'updated' },
       build: 1787241641,
       agentSwapPending: true,
     })
@@ -878,7 +878,8 @@ describe('runtime convergence report', () => {
         agent_sha256: 'c'.repeat(64),
         agent_path: '/opt/kortix/agent.current',
         staged_agent_sha256: 'd'.repeat(64),
-        opencode_version: '1.18.23',
+        harness: 'opencode',
+        harness_version: '1.18.23',
         build: 1787241641,
       }),
     )
@@ -891,7 +892,8 @@ describe('runtime convergence report', () => {
       agent_sha256: 'c'.repeat(64),
       agent_path: '/opt/kortix/agent.current',
       staged_agent_sha256: 'd'.repeat(64),
-      opencode_version: '1.18.23',
+      harness: 'opencode',
+      harness_version: '1.18.23',
       build: 1787241641,
       // Never on disk — this call supplied no `catalogSnapshot`, so it reads
       // as "unconfirmed", the same as an older daemon with no such concept.
@@ -912,7 +914,8 @@ describe('runtime convergence report', () => {
       agent_sha256: null,
       agent_path: null,
       staged_agent_sha256: null,
-      opencode_version: null,
+      harness: null,
+      harness_version: null,
       build: null,
       managed_model_ids: null,
       managed_catalog_fallback_reason: null,
@@ -1298,7 +1301,7 @@ describe('opencode rollback', () => {
         events.push('deps')
       },
     })
-    expect(result.opencode).toBe('failed')
+    expect(result.harness?.opencode).toBe('failed')
     expect(result.reasons?.opencode).toContain('rolled back')
     expect(events).toEqual(['install', 'deps', 'restart', 'restart'])
     expect(await readlink(ws.opencodeCurrent)).toBe(ws.opencodePrev)
@@ -1331,7 +1334,7 @@ describe('opencode rollback', () => {
         events.push('deps')
       },
     })
-    expect(result.opencode).toBe('failed')
+    expect(result.harness?.opencode).toBe('failed')
     expect(result.reasons?.opencode).toContain('install failed')
     expect(events).toEqual([])
     expect(
@@ -1362,7 +1365,7 @@ describe('opencode rollback', () => {
       installPluginDeps: async () => {},
     })
 
-    expect(result.opencode).toBe('failed')
+    expect(result.harness?.opencode).toBe('failed')
     expect(result.reasons?.opencode).toContain('rolled back')
     // Two restarts: the one that failed, and the one onto the previous version.
     expect(restarts).toEqual(['restart', 'restart'])
@@ -1401,7 +1404,7 @@ describe('opencode rollback', () => {
       },
     })
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toContain('pinned')
     expect(installed).toEqual([])
   })
@@ -1425,7 +1428,7 @@ describe('opencode rollback', () => {
       installPluginDeps: async () => {},
     })
 
-    expect(result.opencode).toBe('updated')
+    expect(result.harness?.opencode).toBe('updated')
     // The predecessor is RETAINED on disk BEFORE the install — its own bytes,
     // not a link to a path pnpm is about to delete.
     expect(await readFile(oc.prevPath, 'utf8')).toBe(await readFile(oc.installed, 'utf8'))
@@ -1462,7 +1465,7 @@ describe('opencode rollback', () => {
       },
     })
 
-    expect(result.opencode).toBe('skipped')
+    expect(result.harness?.opencode).toBe('skipped')
     expect(result.reasons?.opencode).toContain('no rollback target')
     expect(installed).toEqual([])
   })
@@ -1492,7 +1495,7 @@ describe('opencode rollback', () => {
       installPluginDeps: async () => {},
     })
 
-    expect(result.opencode).toBe('failed')
+    expect(result.harness?.opencode).toBe('failed')
     expect(result.reasons?.opencode).toContain('rollback could not be applied')
     expect(
       await stat(oc.pinnedPath).then(
@@ -1547,7 +1550,7 @@ describe('opencode rollback', () => {
       installPluginDeps: async () => {},
     })
 
-    expect(result.opencode).toBe('failed')
+    expect(result.harness?.opencode).toBe('failed')
     expect(result.reasons?.opencode).toContain('rolled back')
     // The box is SERVING again. `readFile` follows the link and throws ENOENT on
     // a dangling one, so reading the bytes proves BOTH that the link resolves
@@ -1584,7 +1587,7 @@ describe('opencode rollback', () => {
       installPluginDeps: async () => {},
     })
 
-    expect(result.opencode).toBe('updated')
+    expect(result.harness?.opencode).toBe('updated')
     expect(installed).toEqual(['1.18.19'])
   })
 })

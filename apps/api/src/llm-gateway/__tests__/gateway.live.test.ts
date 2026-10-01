@@ -92,14 +92,22 @@ const UPSTREAM_IDENTITY =
 const RED_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR4nO3NsQ0AAAzCMP5/un0CNkuZ41wybXsHAAAAAAAAAAAAxR4yw/wuPL6QkAAAAABJRU5ErkJggg==';
 
-describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => {
+// The first GLM upstream: OpenCode Zen when its key is set (OPENCODE_ZEN_MANAGED_MODELS), else OpenRouter.
+async function glmFirstUpstream(): Promise<string> {
+  const { config } = await import('../../config');
+  return config.OPENCODE_ZEN_API_KEY && config.OPENCODE_ZEN_MANAGED_MODELS.includes('glm-5.3-flash') ? 'opencode' : 'openrouter';
+}
+
+describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter + OpenCode Zen', () => {
   async function managedGateway(mutate: (candidates: UpstreamDescriptor[]) => UpstreamDescriptor[] = (c) => c) {
     const { managedCandidates } = await import('../resolution/descriptors');
     const { getManagedModel } = await import('@kortix/llm-catalog');
     const recorded: UsageEvent[] = [];
     const hooks: GatewayHooks = {
       authenticate: async () => ({ userId: 'live-user', accountId: 'live-acct' }),
-      resolveUpstream: async (_principal, model) => mutate(managedCandidates(getManagedModel(model)!)),
+      // resolve-candidates.ts adds these to an opencode.ai candidate in production.
+      resolveUpstream: async (_principal, model) => mutate(managedCandidates(getManagedModel(model)!).map((c) =>
+        c.provider === 'opencode' ? { ...c, headers: { 'x-opencode-session': 'kortix-live-test', 'User-Agent': 'Kortix (https://kortix.com)' } } : c)),
       assertBillingActive: async () => {},
       recordUsage: async (event) => { recorded.push(event); },
     };
@@ -116,6 +124,7 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
     test(`${model.id}: configured upstream serves the turn; the client sees only Kortix`, async () => {
       const { config } = await import('../../config');
       const morphSelected = config.MORPH_MANAGED_MODELS.includes(model.id) && !!config.MORPH_API_KEY;
+      const zenSelected = config.OPENCODE_ZEN_MANAGED_MODELS.includes(model.id) && !!config.OPENCODE_ZEN_API_KEY;
       const { gateway, recorded } = await managedGateway();
       const res = await gateway.chatCompletions({
         authorization: 'Bearer live',
@@ -129,7 +138,7 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
       expect(json.choices[0].message.content.toLowerCase()).toContain('red');
       await settle();
       expect(recorded[0]).toMatchObject({ provider: 'kortix', model: model.id });
-      expect(morphSelected ? ['morph', 'openrouter'] : ['openrouter'])
+      expect([...(zenSelected ? ['opencode'] : []), ...(morphSelected ? ['morph'] : []), 'openrouter'])
         .toContain(recorded[0].upstream?.provider ?? '');
       expect(recorded[0].finalCost).toBeGreaterThan(0);
     }, 120_000);
@@ -164,11 +173,11 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
     expect(text).toContain('data: [DONE]');
     expect(text).not.toMatch(UPSTREAM_IDENTITY);
     await settle();
-    expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'openrouter' } });
+    expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: await glmFirstUpstream() } });
     expect(recorded[0].completionTokens).toBeGreaterThan(0);
   }, 120_000);
 
-  test('glm-5.3-flash: a non-streamed turn uses OpenRouter', async () => {
+  test('glm-5.3-flash: a non-streamed turn uses its first upstream', async () => {
     const { gateway, recorded } = await managedGateway();
     const res = await gateway.chatCompletions({
       authorization: 'Bearer live',
@@ -179,35 +188,37 @@ describeManagedLive('Kortix-managed routing — LIVE Morph + OpenRouter', () => 
     expect(res.status).toBe(200);
     expect(text).not.toMatch(UPSTREAM_IDENTITY);
     await settle();
-    expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'openrouter' } });
+    expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: await glmFirstUpstream() } });
     expect(recorded[0].upstreamCost).toBeGreaterThan(0);
   }, 120_000);
 
   // Needs OPENCODE_ZEN_API_KEY. OPENCODE_ZEN_API_URL may name OpenCode Go: same wire.
-  for (const stream of [false, true]) {
-    test(`glm-5.3-flash: an OpenRouter shared-pool 429 fails over to OpenCode Zen (stream=${stream})`, async () => {
-      const { config } = await import('../../config');
-      if (!config.OPENCODE_ZEN_API_KEY) return;
-      const busy = Bun.serve({ port: 0, fetch: () => Response.json({ error: { code: 429, message: 'Provider returned error',
-        metadata: { provider_name: 'CoreWeave', limit_source: 'upstream_provider_shared_pool' } } },
-        { status: 429, headers: { 'retry-after': '5' } }) });
-      try {
-        const { gateway, recorded } = await managedGateway((candidates) => candidates.map((c) =>
-          c.provider === 'openrouter' ? { ...c, baseUrl: `http://localhost:${busy.port}` }
-            : { ...c, headers: { 'x-opencode-session': 'kortix-live-test', 'User-Agent': 'Kortix (https://kortix.com)' } }));
-        const res = await gateway.chatCompletions({
-          authorization: 'Bearer live',
-          rawBody: JSON.stringify({ model: 'glm-5.3-flash', stream, max_tokens: 2000,
-            messages: [{ role: 'user', content: 'Reply with the single word: ok' }] }),
-        });
-        const text = await res.text();
-        expect(res.status).toBe(200);
-        expect(text).not.toMatch(UPSTREAM_IDENTITY);
-        await settle();
-        expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: 'opencode' } });
-        expect(recorded[0].upstreamCost).toBeGreaterThan(0);
-      } finally { busy.stop(true); }
-    }, 120_000);
+  // A 429 from either GLM upstream moves the turn to the other one.
+  for (const busyProvider of ['opencode', 'openrouter']) {
+    for (const stream of [false, true]) {
+      test(`glm-5.3-flash: a ${busyProvider} 429 fails over to the other upstream (stream=${stream})`, async () => {
+        const { config } = await import('../../config');
+        if (!config.OPENCODE_ZEN_API_KEY) return;
+        const busy = Bun.serve({ port: 0, fetch: () => Response.json({ error: { code: 429, message: 'Rate limit exceeded.' } },
+          { status: 429, headers: { 'retry-after': '5' } }) });
+        try {
+          const { gateway, recorded } = await managedGateway((candidates) => candidates.map((c) =>
+            c.provider === busyProvider ? { ...c, baseUrl: `http://localhost:${busy.port}` } : c));
+          const res = await gateway.chatCompletions({
+            authorization: 'Bearer live',
+            rawBody: JSON.stringify({ model: 'glm-5.3-flash', stream, max_tokens: 2000,
+              messages: [{ role: 'user', content: 'Reply with the single word: ok' }] }),
+          });
+          const text = await res.text();
+          expect(res.status).toBe(200);
+          expect(text).not.toMatch(UPSTREAM_IDENTITY);
+          await settle();
+          const served = busyProvider === 'opencode' ? 'openrouter' : 'opencode';
+          expect(recorded[0]).toMatchObject({ provider: 'kortix', model: 'glm-5.3-flash', upstream: { provider: served } });
+          expect(recorded[0].upstreamCost).toBeGreaterThan(0);
+        } finally { busy.stop(true); }
+      }, 120_000);
+    }
   }
 
   test('glm-5.3-flash: when every provider rejects the key, the client gets a Kortix 503', async () => {

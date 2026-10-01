@@ -30,6 +30,11 @@ import type { GitTriggerSpec } from '../triggers';
 export const REMINDER_MIN_INTERVAL_SECONDS = 300;
 /** Active (scheduled) reminders one session may hold. */
 export const REMINDER_MAX_ACTIVE_PER_SESSION = 20;
+/** Active reminders one project may hold, across all its sessions. */
+export const REMINDER_MAX_ACTIVE_PER_PROJECT = 200;
+/** No first fire, `at`, or `every` beyond a year: a larger value overflows `Date` (HTTP 500). */
+const REMINDER_MAX_HORIZON_SECONDS = 366 * 86400;
+const HORIZON_LIMIT = `must be at most ${formatDurationSeconds(REMINDER_MAX_HORIZON_SECONDS)}`;
 export const REMINDER_PROMPT_MAX_LENGTH = 10_000;
 const REMINDER_NAME_MAX_LENGTH = 120;
 
@@ -79,10 +84,12 @@ export function parseReminderDraft(body: Record<string, unknown>, now: Date): Re
   if (has('at')) {
     const ms = typeof body.at === 'string' ? Date.parse(body.at) : Number.NaN;
     if (Number.isNaN(ms)) return { error: 'at must be an ISO-8601 instant, e.g. 2026-10-01T09:00:00Z' };
+    if (ms - now.getTime() > REMINDER_MAX_HORIZON_SECONDS * 1000) return { error: `at ${HORIZON_LIMIT} from now` };
     start = new Date(ms);
   } else if (has('in')) {
     const seconds = durationSeconds(body.in);
     if (!seconds) return { error: 'in must be a duration like 30m, 24h, or 2d' };
+    if (seconds > REMINDER_MAX_HORIZON_SECONDS) return { error: `in ${HORIZON_LIMIT}` };
     start = new Date(now.getTime() + seconds * 1000);
   }
   if (start && start.getTime() <= now.getTime()) return { error: 'at must be in the future' };
@@ -95,6 +102,7 @@ export function parseReminderDraft(body: Record<string, unknown>, now: Date): Re
   if (has('every')) {
     everySeconds = durationSeconds(body.every);
     if (!everySeconds) return { error: 'every must be a duration like 30m, 1h, or 1d' };
+    if (everySeconds > REMINDER_MAX_HORIZON_SECONDS) return { error: `every ${HORIZON_LIMIT}` };
     if (everySeconds < REMINDER_MIN_INTERVAL_SECONDS) {
       return { error: `every must be at least ${formatDurationSeconds(REMINDER_MIN_INTERVAL_SECONDS)}` };
     }
@@ -259,20 +267,52 @@ export async function getSessionReminder(
   return row ?? null;
 }
 
-export async function countActiveSessionReminders(projectId: string, sessionId: string): Promise<number> {
-  const [row] = await db
+type Db = Pick<typeof db, 'select' | 'insert'>;
+
+const activeReminder = [
+  eq(projectTriggerRuntime.enabled, true),
+  isNotNull(projectTriggerRuntime.nextFireAt),
+  isReminderRow,
+] as const;
+
+export async function countActiveSessionReminders(projectId: string, sessionId: string, q: Db = db): Promise<number> {
+  const [row] = await q
     .select({ n: count() })
     .from(projectTriggerRuntime)
     .where(
-      and(
-        eq(projectTriggerRuntime.projectId, projectId),
-        eq(projectTriggerRuntime.sessionId, sessionId),
-        eq(projectTriggerRuntime.enabled, true),
-        isNotNull(projectTriggerRuntime.nextFireAt),
-        isReminderRow,
-      ),
+      and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.sessionId, sessionId), ...activeReminder),
     );
   return Number(row?.n ?? 0);
+}
+
+async function countActiveProjectReminders(projectId: string, q: Db): Promise<number> {
+  const [row] = await q
+    .select({ n: count() })
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), ...activeReminder));
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Insert a reminder unless the session or the project is at its cap. The count and
+ * the insert run under one per-project advisory lock: without it, concurrent creates
+ * all read the same count and step past the cap (40 parallel POSTs stored 40).
+ */
+export async function insertSessionReminderWithinCaps(
+  input: Parameters<typeof insertSessionReminder>[0],
+): Promise<{ row: RuntimeRow } | { error: string }> {
+  const { projectId } = input;
+  const sessionId = input.spec.pinnedSessionId as string;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`reminders:${projectId}`}, 0))`);
+    if ((await countActiveSessionReminders(projectId, sessionId, tx)) >= REMINDER_MAX_ACTIVE_PER_SESSION) {
+      return { error: `This session already has ${REMINDER_MAX_ACTIVE_PER_SESSION} active reminders. Stop one first.` };
+    }
+    if ((await countActiveProjectReminders(projectId, tx)) >= REMINDER_MAX_ACTIVE_PER_PROJECT) {
+      return { error: `This project already has ${REMINDER_MAX_ACTIVE_PER_PROJECT} active reminders. Stop one first.` };
+    }
+    return { row: await insertSessionReminder(input, tx) };
+  });
 }
 
 export async function insertSessionReminder(input: {
@@ -281,9 +321,9 @@ export async function insertSessionReminder(input: {
   createdBy: string;
   firstFireAt: Date;
   now: Date;
-}): Promise<RuntimeRow> {
+}, q: Db = db): Promise<RuntimeRow> {
   const { spec } = input;
-  const [row] = await db
+  const [row] = await q
     .insert(projectTriggerRuntime)
     .values({
       projectId: input.projectId,

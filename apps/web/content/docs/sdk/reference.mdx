@@ -149,6 +149,7 @@ filters. Without them the list stays flat and unchanged.
 | `parent: 'root'` | Top-level sessions only. Each row carries `child_count`. |
 | `parent: '<sessionId>'` | That session's children, newest first. |
 | `startedBy: 'me' \| 'others' \| 'automated'` | Filter by `initiator`, relative to the caller. |
+| `participant: 'me'` | Conversations the caller was asked into (`human_messaging`), at any depth. |
 | `q` | Case-insensitive search over title, starter label, trigger slug, and session id prefix, across every session the caller may open. With `parent: 'root'`, a root that matched through a child has `search_match: 'child'`. |
 
 Every session row has `parent_session_id` and `initiator`
@@ -758,14 +759,14 @@ import {
   flattenModels,
   modelInDefaultView,
   pickerProviderList,
-  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
   resolveComposerAgent,
   resolveComposerModel,
   resolveModelDefault,
 } from '@kortix/sdk';
 
 // Agents: the roster, the picker list, and the agent the send carries.
-const roster = projectConfigAgentsToOpenCodeAgents(detail.config);
+const roster = projectConfigAgentsToRuntimeAgents(detail.config);
 const pickerAgents = composerSelectableAgents(roster, { enableProjects: false });
 const agent = resolveComposerAgent({
   agents: roster,

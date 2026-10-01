@@ -5,7 +5,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { listProjectSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { configKeys } from './use-opencode-config';
-import { clearProjectProviderCache, opencodeKeys } from './use-opencode-sessions';
+import { clearProjectProviderCache, runtimeKeys } from './use-opencode-sessions';
 import { qk } from './query-keys';
 
 type RefreshProjectProviderStateOptions = {
@@ -85,7 +85,7 @@ function invalidateProviderQueries(
     fetchOptions,
   );
   void queryClient.refetchQueries({ queryKey: projectProviderKey, type: 'all' }, fetchOptions);
-  void queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() }, fetchOptions);
+  void queryClient.invalidateQueries({ queryKey: runtimeKeys.providers() }, fetchOptions);
   void queryClient.invalidateQueries({ queryKey: configKeys.all }, fetchOptions);
 }
 

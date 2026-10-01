@@ -27,7 +27,8 @@
  * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
  * has closed, then calls `useCompactSession`; the thread's compaction divider
  * is the progress, and only a failure toasts (web `compact-modal.tsx`).
- * Disabled while the session works. View changes and Compact need the live
+ * Disabled while the session works, hidden when the runtime does not serve
+ * `session.compact` (pi). View changes and Compact need the live
  * runtime, so they show only for the thread on screen; a drawer long press on
  * another session shows none of the three. Rules:
  * `lib/session/session-actions.ts`. Export transcript and Archive are not on
@@ -39,7 +40,9 @@
  */
 import * as React from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import { SessionDeleteDialog, type SessionDeleteDialogRef } from './SessionDeleteDialog';
+import { useSessionCompactConfirm } from './SessionCompactConfirm';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import Animated from 'react-native-reanimated';
 import { View } from 'react-native';
@@ -54,22 +57,10 @@ import {
   TrashIcon as Trash2,
 } from '@/lib/icons';
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useCloseThen } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
-import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
 import { SessionChangeFileView, SessionChangesList } from '@/components/session/SessionChangesView';
 import { SessionRenameForm } from '@/components/session/SessionRenameForm';
@@ -81,7 +72,7 @@ import {
 } from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
+import { useRuntimeSupports } from '@/lib/opencode/runtime-capabilities';
 import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import {
@@ -94,17 +85,11 @@ import {
 import { useCompactionStore } from '@/stores/compaction-store';
 import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import {
-  deleteProjectSession,
   restartProjectSession,
   stopProjectSession,
   type ProjectSession,
 } from '@/lib/projects/projects-client';
 import { sessionDisplayStatus, sessionDisplayTitle } from '@/lib/session/session-list';
-import {
-  applyToSessionCache,
-  withoutSession,
-  writeSessionLists,
-} from '@/lib/session/session-cache-write';
 import { useTabStore } from '@/stores/tab-store';
 
 /**
@@ -184,10 +169,10 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const [menuSession, setMenuSession] = React.useState<ProjectSession | null>(null);
     // The file pushed over the changes list (View changes → a file).
     const [changeFile, setChangeFile] = React.useState<ChangedFile | null>(null);
-    // Set before the sheet closes; read when its close animation ends.
     // Delete and Compact confirm in a dialog, and Open change request is its
-    // own sheet: each opens only after this sheet has closed.
-    const afterCloseRef = React.useRef<AfterClose>(null);
+    // own sheet: each opens only after this sheet has closed (`useCloseThen`,
+    // the shared slot — set before the sheet closes, taken when it has).
+    const { deferAfterClose, takeAfterClose } = useCloseThen<Exclude<AfterClose, null>>();
 
     // ── COR-148: Open change request · View changes · Compact ──
     const { sandboxUrl } = useSandboxContext();
@@ -201,10 +186,8 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const isCompacting = useCompactionStore((s) =>
       liveSessionId ? Boolean(s.compactingBySession[liveSessionId]) : false
     );
-    const compactSession = useCompactSession();
-    const { confirm, dialog: confirmDialog } = useConfirmDialog();
-    // The session and runtime a Compact tap was for, kept past the sheet's close.
-    const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
+    const { compactTargetRef, confirm, confirmDialog, runCompact } = useSessionCompactConfirm();
+    const canCompact = useRuntimeSupports(sandboxUrl, 'session.compact');
 
     const present = React.useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
       haptics.medium();
@@ -224,47 +207,17 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       // its own (Back, a normal push) must not re-trigger `.present()`.
     }, [menuSession]);
 
-    const [confirmDelete, setConfirmDelete] = React.useState<ProjectSession | null>(null);
-    // The title of the last delete target. It is not cleared on close, so the
-    // dialog keeps its text while its close animation runs.
-    const [deleteTitle, setDeleteTitle] = React.useState('');
-    const [deleteFailed, setDeleteFailed] = React.useState(false);
-
-    const runCompact = React.useCallback(() => {
-      const target = compactTargetRef.current;
-      compactTargetRef.current = null;
-      if (!target) return;
-      // The session may have started working while the dialog was up.
-      const status = useSyncStore.getState().sessionStatus[target.sessionId];
-      if (status?.type === 'busy' || status?.type === 'retry') {
-        haptics.warning();
-        toast.error('The session is working. Compact it when it stops.');
-        return;
-      }
-      haptics.medium();
-      // No progress or success toast: the thread's compaction divider mounts
-      // at once (`startCompaction`) and becomes the server's compaction turn.
-      compactSession.mutate(target, {
-        onError: (error) => {
-          haptics.warning();
-          toast.error(error instanceof Error && error.message ? error.message : 'Unable to compact the session. Try again.');
-        },
-      });
-    }, [compactSession, toast]);
-
+    const deleteDialogRef = React.useRef<SessionDeleteDialogRef>(null);
     const handleSheetDismiss = React.useCallback(() => {
       const session = menuSession;
-      const next = afterCloseRef.current;
-      afterCloseRef.current = null;
+      const next = takeAfterClose();
       setMenuSession(null);
       setSheetView('options');
       setReturning(false);
       setChangeFile(null);
       if (!session || !next) return;
       if (next === 'delete') {
-        setDeleteFailed(false);
-        setDeleteTitle(sessionDisplayTitle(session));
-        setConfirmDelete(session);
+        deleteDialogRef.current?.present(session);
       } else if (next === 'open-cr') {
         if (!liveSessionId) return;
         useSessionPromptRequestStore
@@ -281,7 +234,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           onConfirm: runCompact,
         });
       }
-    }, [menuSession, confirm, runCompact, liveSessionId, toast]);
+    }, [menuSession, confirm, runCompact, liveSessionId, toast, takeAfterClose]);
 
     const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
       haptics.tap();
@@ -307,10 +260,13 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       },
       [pushView]
     );
-    const closeThen = React.useCallback((next: Exclude<AfterClose, null>) => {
-      afterCloseRef.current = next;
-      actionSheetRef.current?.dismiss();
-    }, []);
+    const closeThen = React.useCallback(
+      (next: Exclude<AfterClose, null>) => {
+        deferAfterClose(next);
+        actionSheetRef.current?.dismiss();
+      },
+      [deferAfterClose]
+    );
     const closeSheet = React.useCallback(() => actionSheetRef.current?.dismiss(), []);
 
     // Restart and Stop open no overlay: close the sheet and run at once.
@@ -360,57 +316,6 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       });
     }, [menuSession, runLifecycle]);
 
-    // ── Delete ──
-    const deleteSession = useMutation({
-      mutationFn: (session: ProjectSession) => deleteProjectSession(projectId, session.session_id),
-    });
-
-    // Set from the tap: `isPending` flips only once the request starts, after
-    // the list write below, and a second tap in between would delete twice.
-    const deletingRef = React.useRef(false);
-    const confirmDeleteSession = React.useCallback(async () => {
-      if (!confirmDelete || deletingRef.current) return;
-      deletingRef.current = true;
-      haptics.medium();
-      setDeleteFailed(false);
-      let undo = () => {};
-      try {
-        // The row leaves the drawer and the Sessions page behind the dialog
-        // now, and comes back if the server refuses. A refetch in flight would
-        // put it back first, so it is cancelled. The paged list only: the flat
-        // one names the open thread, which keeps its title until the delete
-        // succeeds.
-        // Paged lists and children only (keys longer than the flat list's).
-        const listKeys = sessionListKeys(queryClient, projectId).filter((key) => key.length > 2);
-        await queryClient.cancelQueries({ queryKey: projectKeys.projectSessions(projectId) });
-        undo = writeSessionLists(queryClient, listKeys, (cached) =>
-          applyToSessionCache<ProjectSession>(cached, (rows) =>
-            withoutSession(rows, confirmDelete.session_id)
-          )
-        );
-        await deleteSession.mutateAsync(confirmDelete);
-        // Drop the session's tab, so the store never points at a deleted
-        // session and no dead tab survives — matters most when this was the
-        // open thread: closing its tab clears `activeSessionId`, and the
-        // project stack's view route pops itself back to home.
-        const tabs = useTabStore.getState();
-        if (confirmDelete.opencode_session_id) {
-          tabs.closeTab(confirmDelete.opencode_session_id);
-        } else if (tabs.activeSessionId === confirmDelete.session_id) {
-          tabs.navigateToSession(null);
-        }
-        haptics.success();
-        toast.success('Session deleted');
-        setConfirmDelete(null);
-      } catch {
-        undo();
-        haptics.warning();
-        setDeleteFailed(true);
-      } finally {
-        deletingRef.current = false;
-        void invalidateSessions();
-      }
-    }, [confirmDelete, deleteSession, projectId, queryClient, toast, invalidateSessions]);
 
     const menuStatus = menuSession ? sessionDisplayStatus(menuSession) : null;
     const canManageLifecycle = menuSession?.can_manage_lifecycle !== false;
@@ -419,6 +324,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       isOpenThread,
       hasRuntime: !!sandboxUrl,
       canManageLifecycle,
+      canCompact,
       changes: {
         pending: changesQuery.isPending,
         error: changesQuery.isError,
@@ -590,39 +496,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           </BottomSheetScrollView>
         </KortixBottomSheetModal>
 
-        <AlertDialog
-          open={!!confirmDelete}
-          onOpenChange={(open) => {
-            // Keep the dialog up until an in-flight delete settles.
-            if (!open && !deleteSession.isPending) setConfirmDelete(null);
-          }}>
-          <AlertDialogContent className="rounded-3xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete session</AlertDialogTitle>
-              <AlertDialogDescription className={deleteFailed ? 'text-destructive' : undefined}>
-                {deleteFailed
-                  ? 'Unable to delete. Check your connection and try again.'
-                  : `Delete “${deleteTitle}”? Its sandbox is destroyed. This cannot be undone.`}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel asChild disabled={deleteSession.isPending}>
-                <Button variant="secondary" size="lg" className="rounded-full">
-                  <Text>Cancel</Text>
-                </Button>
-              </AlertDialogCancel>
-              <Button
-                variant="destructive"
-                size="lg"
-                className="rounded-full"
-                disabled={deleteSession.isPending}
-                onPress={confirmDeleteSession}>
-                <Text>{deleteSession.isPending ? 'Deleting…' : 'Delete session'}</Text>
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
+        <SessionDeleteDialog ref={deleteDialogRef} projectId={projectId} invalidateSessions={invalidateSessions} />
         {/* Compact's confirm. */}
         {confirmDialog}
       </>

@@ -157,16 +157,15 @@ describe('a review card acts on the project of the session that posted it', () =
   });
 });
 
-describe('turning Teams off for a project stops its cards', () => {
-  test("a manager's review press changes nothing once the project's teams flag is off", async () => {
+describe('Teams has no per-project switch', () => {
+  test("a manager's review press applies whatever a project stored for the old `teams` flag", async () => {
+    // The flag graduated on 2026-10-01: card actions never consult it.
     teamsOn = false;
     const { handleAdaptiveCardAction } = await load();
 
-    const res = await handleAdaptiveCardAction(activity as never);
+    await handleAdaptiveCardAction(activity as never);
 
-    expect(flagChecks).toEqual([`${PROJECT}:teams`]);
-    expect(verdicts).toEqual([]);
-    expect(actorCalls).toEqual([]);
-    expect(JSON.stringify(res.value)).toContain('turned off');
+    expect(flagChecks).toEqual([]);
+    expect(verdicts).toHaveLength(1);
   });
 });

@@ -1,3 +1,4 @@
+import '@/features/session/tool/tools/register';
 import { TurnLiveContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

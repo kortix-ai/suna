@@ -1,5 +1,5 @@
 import { type ProviderKind, providerKindForNpm } from '@kortix/llm-gateway';
-import type { Catalog } from '@kortix/llm-catalog';
+import { type Catalog, primaryAuthEnvVars } from '@kortix/llm-catalog';
 import { runtimeModelCatalog } from './runtime-catalog';
 
 const BASE_URL_FALLBACKS: Record<string, string> = {
@@ -98,7 +98,9 @@ export function resolveCatalogUpstream(
   // hardcoded endpoint remains as the fallback for exactly that case.
   const baseUrl = override?.api || provider.api ||
     (kind === 'anthropic' ? ANTHROPIC_BASE_URL : BASE_URL_FALLBACKS[providerId]);
-  const envVar = provider.env?.[0];
+  // The same key name the connect form writes: a provider sharing a models.dev
+  // env var with another reads its own name (providerAuthRequirement).
+  const envVar = primaryAuthEnvVars(provider)[0];
   if (!baseUrl || !envVar) return null;
 
   return { baseUrl, envVar, kind, npm };

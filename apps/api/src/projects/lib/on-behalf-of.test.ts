@@ -3,7 +3,7 @@
  * a human-initiated session, NULL for every unattended run.
  */
 import { describe, expect, test } from 'bun:test';
-import { channelPrompterForOnBehalfOf, decideSessionOnBehalfOf, promptClearsOnBehalfOf } from './on-behalf-of';
+import { channelPrompterForOnBehalfOf, decideSessionOnBehalfOf } from './on-behalf-of';
 
 const HUMAN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -64,17 +64,6 @@ describe('decideSessionOnBehalfOf', () => {
 
   test('a value cleared by another human prompt is never restored by a re-mint', () => {
     expect(decideSessionOnBehalfOf({ ...base, metadata: { on_behalf_of_cleared_at: '2026-09-22T00:00:00Z' } })).toBeNull();
-  });
-});
-
-describe('promptClearsOnBehalfOf', () => {
-  test('a prompt from a human other than on_behalf_of clears it', () => {
-    expect(promptClearsOnBehalfOf({ onBehalfOfUserId: HUMAN, prompterUserId: OTHER, prompterIsHuman: true })).toBe(true);
-  });
-  test('the same human, an unset value, or a non-human prompter does not', () => {
-    expect(promptClearsOnBehalfOf({ onBehalfOfUserId: HUMAN, prompterUserId: HUMAN, prompterIsHuman: true })).toBe(false);
-    expect(promptClearsOnBehalfOf({ onBehalfOfUserId: null, prompterUserId: OTHER, prompterIsHuman: true })).toBe(false);
-    expect(promptClearsOnBehalfOf({ onBehalfOfUserId: HUMAN, prompterUserId: OTHER, prompterIsHuman: false })).toBe(false);
   });
 });
 

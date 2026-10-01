@@ -78,6 +78,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     session_id: 'session-1',
     actor_type: 'agent',
     source: 'connector',
+    credential_kind: 'oauth_app',
     outcome: 'success',
   });
 
@@ -87,6 +88,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     session_id: 'session-1',
     actor_type: 'agent',
     source: 'connector',
+    credential_kind: 'oauth_app',
     outcome: 'success',
   });
 });
@@ -121,6 +123,9 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
     event.agent_id,
     event.authoritative_source,
     event.client_reported_source,
+    event.credential_kind,
+    event.credential_id,
+    event.credential_name,
     event.phase,
     event.causation_id,
     event.source_ledger,
@@ -128,7 +133,7 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
     event.input_sha256,
     event.integrity_hash,
   ];
-  expect(fields).toHaveLength(16);
+  expect(fields).toHaveLength(19);
 });
 
 test('AuditEvent carries on_behalf_of_user_id (agents as principals, spec 2026-09-22 §2)', () => {

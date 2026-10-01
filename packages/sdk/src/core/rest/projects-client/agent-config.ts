@@ -1,4 +1,5 @@
 import { backendApi } from '../../http/api-client';
+import { canonicalizeRequiredConnectors } from './agent-connectors';
 import { unwrap } from './shared';
 
 // ── Full v2 agent-config editor (the "agent builder", agent-first spec §2.2,
@@ -27,9 +28,9 @@ export type PermissionRule = PermissionAction | Record<string, PermissionAction>
 /** The OpenCode `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
-/** The OpenCode BEHAVIOR half — everything that lives in the agent's own
+/** The agent's BEHAVIOR half — everything that lives in the agent's own
  *  `.md` frontmatter (+ `prompt`, the file's BODY text, not a path). */
-export interface OpencodeAgentConfig {
+export interface RuntimeAgentConfig {
   description?: string;
   mode?: 'primary' | 'subagent' | 'all';
   model?: string;
@@ -46,10 +47,13 @@ export interface OpencodeAgentConfig {
   permission?: PermissionConfig;
 }
 
+/** @deprecated Renamed to `RuntimeAgentConfig`. Removed in the next major. */
+export type OpencodeAgentConfig = RuntimeAgentConfig;
+
 /** The full agent block on the wire — mirrors `AgentBlockV2` in
- *  @kortix/manifest-schema PLUS the merged `opencode` behavior half (a wire-
- *  only convenience; kortix.yaml itself never nests `opencode` — see the
- *  module doc above). */
+ *  @kortix/manifest-schema PLUS the merged `behavior` half (a wire-only
+ *  convenience; kortix.yaml itself never nests it — see the module doc
+ *  above). */
 export interface AgentConfigBlock {
   /** Repo-relative path of the agent's `.md` (e.g. `agents/support.md`). The
    *  server owns it: it records the path it read or wrote. Send back the value
@@ -78,7 +82,15 @@ export interface AgentConfigBlock {
   repository_access?: boolean;
   /** @deprecated Use repository_access. Legacy read requires an explicit choice. */
   workspace?: 'runtime' | 'read' | 'branch';
-  opencode?: OpencodeAgentConfig;
+  /** The agent's behavior half: its `.md` frontmatter, plus the body as `prompt`. */
+  behavior?: RuntimeAgentConfig;
+  /**
+   * @deprecated The pre-W4 name of `behavior`; servers answer both with one
+   * value. Send the behavior once, as `behavior`: a body that carries both
+   * with different values keeps the one that differs from the stored
+   * behavior, and two different edits are refused. Removed in the next major.
+   */
+  opencode?: RuntimeAgentConfig;
 }
 
 export interface AgentConfigResponse {
@@ -137,39 +149,6 @@ function canonicalizeAgentBlock(block: AgentConfigBlock, writing = false): Agent
   }
   next.repository_access ??= legacyAccess;
   delete next.workspace;
-  return next;
-}
-
-function normalizeConnectorList(values: string[]): string[] {
-  const normalized: string[] = [];
-  for (const value of values) {
-    const slug = value.trim();
-    if (slug && !normalized.includes(slug)) normalized.push(slug);
-  }
-  return normalized;
-}
-
-function equalConnectorSets(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) return false;
-  const rightSet = new Set(right);
-  return left.every((slug) => rightSet.has(slug));
-}
-
-function canonicalizeRequiredConnectors(block: AgentConfigBlock): AgentConfigBlock {
-  const canonical = block.connectors_required
-    ? normalizeConnectorList(block.connectors_required)
-    : undefined;
-  const legacy = block.connectors_personal
-    ? normalizeConnectorList(block.connectors_personal)
-    : undefined;
-  if (canonical && legacy && !equalConnectorSets(canonical, legacy)) {
-    throw new Error('connectors_personal must match connectors_required when both fields are present');
-  }
-  const next = { ...block };
-  delete next.connectors_personal;
-  if (canonical !== undefined || legacy !== undefined) {
-    next.connectors_required = canonical ?? legacy;
-  }
   return next;
 }
 

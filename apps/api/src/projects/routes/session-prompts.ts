@@ -6,11 +6,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
-import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { projectsApp } from '../lib/app';
+import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
+import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -24,7 +25,7 @@ import {
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
-import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -37,6 +38,12 @@ import {
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
+import { projectSessions } from '@kortix/db';
+import { parseSessionMessagePrompt, sessionMessagePromptText } from '@kortix/shared';
+import { eq, sql } from 'drizzle-orm';
+import { db } from '../../shared/db';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { sessionMayMessage, sessionMessageSender } from '../lib/session-participants';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -74,6 +81,7 @@ const SessionPromptSchema = z.object({
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  no_reply: z.boolean(),
   created_at: z.string(),
   available_at: z.string(),
 });
@@ -180,13 +188,44 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    // The session whose agent sends this, when it is not the target itself.
+    // From the credential, never the body: it becomes the message's author.
+    const callerSessionId = callerKortixSessionId(c);
+    const authorSessionId =
+      isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
+    const ordinary = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // Its parent, or a session that messaged it first — see sessionMayMessage.
+    const messaged =
+      !ordinary && authorSessionId && resolveFeatureFlag(loaded.row.metadata, 'human_messaging')
+        ? await sessionMayMessage(authorSessionId, sessionId, projectId)
+        : null;
+    const visible = ordinary ?? (messaged ? { row: messaged } : null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
     const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
     if (typeof metadata.deletedAt === 'string') {
       return c.json({ error: 'Session is deleted' }, 409);
+    }
+    // Shared local DB (projects/instance-scope.ts). The drain never claims a
+    // command for a sandbox another API instance provisioned, so a prompt
+    // accepted here would stay `queued` for ever when that instance is down.
+    // Refuse it while the sender can still read why. The lookup runs only when
+    // `KORTIX_INSTANCE_ID` is set.
+    const thisInstance = currentInstanceId();
+    if (thisInstance) {
+      const box = (await loadSandboxMetadataForSessions([sessionId])).get(sessionId);
+      if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
+        const owner = sandboxInstanceId(box);
+        const message =
+          `This session's computer belongs to the local API instance "${owner}". ` +
+          `This instance ("${thisInstance}") cannot deliver prompts to it. ` +
+          'Send from that stack, or start a new session.';
+        return c.json(
+          { error: message, message, code: 'SESSION_OWNED_BY_OTHER_INSTANCE', owner_instance: owner },
+          409,
+        );
+      }
     }
 
     const body = await readJsonObject(c);
@@ -207,12 +246,27 @@ projectsApp.openapi(
     }
     const sanitized = sanitizeInboxPromptParts(rawParts);
     if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
-    const parts = sanitized.parts;
+    let parts = sanitized.parts;
     for (const part of parts) {
       const attachment = parseSessionAttachmentRef(part.url);
       if (attachment && (attachment.projectId !== projectId || attachment.sessionId !== sessionId)) {
         return c.json({ error: 'Attachment belongs to another session' }, 400);
       }
+    }
+    // Say who is speaking when it is not the session's own person: another
+    // session's agent, or one of several people in a conversation.
+    const participants = Array.isArray(metadata.participants) ? (metadata.participants as unknown[]) : [];
+    if (resolveFeatureFlag(loaded.row.metadata, 'human_messaging') && (authorSessionId || participants.length > 0)) {
+      const sender = await sessionMessageSender(loaded.userId, authorSessionId, projectId);
+      const firstText = parts.findIndex((part) => part.type === 'text');
+      const typed = firstText >= 0 ? String(parts[firstText]!.text ?? '') : '';
+      // A header already on the text (an undo re-sending a stored prompt, or
+      // one typed to impersonate) is replaced, never stacked.
+      const body = parseSessionMessagePrompt(typed)?.prompt ?? typed;
+      const header = sessionMessagePromptText({ type: 'message', sender, to: [], prompt: body });
+      parts = firstText >= 0
+        ? parts.map((part, i) => (i === firstText ? { ...part, text: header } : part))
+        : [{ type: 'text', text: header }, ...parts];
     }
     const text = flattenPromptText(parts);
 
@@ -221,32 +275,24 @@ projectsApp.openapi(
     // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
     // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
     // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
-    const overrides = {
-      agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
-      model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
-      variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
-      directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
-    };
+    // A message into a session the sender cannot open (`messaged`) runs that
+    // session's own agent and model, chosen by its owner: the sender picks
+    // nothing, so there is no agent of the sender's to authorize.
+    const overrides = messaged
+      ? { agent: null, model: promptModelOverride(null, messaged.metadata as Record<string, unknown> | null), variant: null, directory: null }
+      : {
+          agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
+          model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
+          variant: typeof overridesInput.variant === 'string' ? overridesInput.variant : null,
+          directory: typeof overridesInput.directory === 'string' ? overridesInput.directory : null,
+        };
 
     // Every prompt re-asks, because a prompt is what spends the money and a
     // prompt can SWITCH agent mid-session via `overrides.agent`. Checking only
     // at create would let a member send the first message as their granted
     // agent and every one after it as any other agent in the manifest. Falls
     // back to the session's own agent when the prompt names none.
-    await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
-
-    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
-    // the session's `on_behalf_of` clears it permanently. The agent keeps its
-    // own authority; it loses the creator's personal resources, so the person
-    // prompting never acts through another person's accounts. An agent-session
-    // credential is not a human prompter and clears nothing.
-    if (!isProjectSessionPrincipal(c)) {
-      await clearSessionOnBehalfOfForPrompt({
-        accountId: loaded.row.accountId,
-        sessionId,
-        prompterUserId: loaded.userId,
-      });
-    }
+    if (!messaged) await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
@@ -292,7 +338,16 @@ projectsApp.openapi(
       projectId,
       accountId: loaded.row.accountId,
       sessionId,
-      actorUserId: loaded.userId,
+      // Delivery signs as this person, and the target's sandbox admits only
+      // people who may open it. A session reaching one it cannot open (its
+      // parent, a reply) therefore delivers as that session's owner; the
+      // sender stays recorded as `authorSessionId`.
+      actorUserId: messaged ? (messaged.createdBy ?? loaded.userId) : loaded.userId,
+      // Spec 2026-09-22 §2.3 (closes V6): the session token acts as the person
+      // who sent this prompt, from the moment its turn is delivered — not now,
+      // while it may still wait behind another member's turn. An agent-session
+      // credential is not a person and never changes the token's identity.
+      bindTurnIdentity: !isProjectSessionPrincipal(c),
       text,
       idempotencyKey,
       clientMessageId,
@@ -321,6 +376,7 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
+      authorSessionId,
     };
     const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
       enqueueContinueSessionCommand({ ...send, ...hold }),
@@ -344,6 +400,17 @@ projectsApp.openapi(
       observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
+    // A participant answered: the conversation leaves THEIR "Asked you" list.
+    // In a group the others are still owed an answer until each replies.
+    if (!authorSessionId && metadata.awaiting_reply === true && participants.includes(loaded.userId)) {
+      const left = sql`coalesce(${projectSessions.metadata}->'awaiting_reply_from', '[]'::jsonb) - ${loaded.userId}::text`;
+      await db
+        .update(projectSessions)
+        .set({
+          metadata: sql`${projectSessions.metadata} || jsonb_build_object('awaiting_reply_from', ${left}, 'awaiting_reply', jsonb_array_length(${left}) > 0)`,
+        })
+        .where(eq(projectSessions.sessionId, sessionId));
+    }
 
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
@@ -625,7 +692,7 @@ projectsApp.openapi(
     // the proxy stamp. The write never throws.
     if (body.held) {
       await markTurnStopRequested(sessionId, 'UserStop', {
-        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+        opencodeSessionId: visible.row.runtimeSessionId ?? null,
       });
     }
     await holdInboxPrompts(sessionId, body.held);

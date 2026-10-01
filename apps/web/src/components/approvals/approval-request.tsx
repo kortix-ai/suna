@@ -2,11 +2,11 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
-import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon, XIcon } from '@phosphor-icons/react';
+import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
@@ -114,7 +114,10 @@ function renderArgValue(value: unknown): string {
   return String(value);
 }
 
-function resolvedLabel(request: ApprovalRequestData, outcome?: ApprovalDecisionValue | null) {
+export function resolvedLabel(
+  request: Pick<ApprovalRequestData, 'resolution' | 'status'>,
+  outcome?: ApprovalDecisionValue | null,
+) {
   const decision = outcome ?? request.resolution;
   if (decision === 'approve') return 'Approved';
   if (decision === 'deny') return 'Denied';
@@ -124,7 +127,7 @@ function resolvedLabel(request: ApprovalRequestData, outcome?: ApprovalDecisionV
   return 'Completed';
 }
 
-function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
+export function resolvedTone(label: string): 'success' | 'destructive' | 'muted' {
   if (label === 'Approved' || label === 'Allowed') return 'success';
   if (label === 'Denied' || label === 'Failed') return 'destructive';
   return 'muted';
@@ -184,10 +187,12 @@ export function ApprovalParameters({
                 'border-border grid gap-1 border-b last:border-b-0 sm:gap-3',
                 dense
                   ? 'px-3 py-2 sm:grid-cols-[6rem_minmax(0,1fr)]'
-                  : 'px-4 py-3 sm:grid-cols-[8rem_minmax(0,1fr)]',
+                  : 'px-4 py-2 sm:grid-cols-[8rem_minmax(0,1fr)]',
               )}
             >
-              <dt className="text-muted-foreground font-mono text-xs break-all">{key}</dt>
+              <dt className="text-muted-foreground font-mono text-xs tracking-normal break-all">
+                {key}
+              </dt>
               <dd
                 className={cn(
                   'text-foreground min-w-0 wrap-break-word whitespace-pre-wrap',
@@ -284,8 +289,16 @@ export function ApprovalDecisionActions({
   busyDecision = null,
   approvable = true,
   dense = false,
+  stretch = false,
+  sessionId,
   className,
 }: DenseProp & {
+  /** Picks the session's own busy mark, the one its busy indicator shows.
+   *  Without it the default mark is used. */
+  sessionId?: string | null;
+  /** The two decisions share the row in equal halves (the standalone page's
+   *  narrow column), instead of sitting at its trailing edge. */
+  stretch?: boolean;
   onDecision: ApprovalDecisionHandler;
   busyDecision?: ApprovalDecisionValue | null;
   /** False only when the call shows nothing to review — Approve is then not
@@ -311,7 +324,12 @@ export function ApprovalDecisionActions({
         maxHeight={160}
         className={cn('font-normal', dense ? 'text-xs' : 'text-sm')}
       />
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div
+        className={cn(
+          'flex gap-2',
+          stretch ? '[&>button]:flex-1' : 'flex-col-reverse sm:flex-row sm:justify-end',
+        )}
+      >
         <Button
           type="button"
           size={size}
@@ -319,11 +337,7 @@ export function ApprovalDecisionActions({
           disabled={busyDecision !== null}
           onClick={() => decide('deny')}
         >
-          {busyDecision === 'deny' ? (
-            <Loading className="size-4 shrink-0" />
-          ) : (
-            <XIcon className="size-4 shrink-0" />
-          )}
+          {busyDecision === 'deny' ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
           {tI18nComplete.raw('text05a2d7332eb9')}
         </Button>
         {approvable ? (
@@ -334,10 +348,8 @@ export function ApprovalDecisionActions({
             onClick={() => decide('approve')}
           >
             {busyDecision === 'approve' ? (
-              <Loading className="size-4 shrink-0" />
-            ) : (
-              <CheckCircleIcon className="size-4 shrink-0" />
-            )}
+              <SessionDotMatrix size={14} className="shrink-0" />
+            ) : null}
             {tI18nComplete.raw('texta1982c442ca3')}
           </Button>
         ) : null}

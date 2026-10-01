@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -75,7 +76,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { canOverride, inheritParentOrigin, resolveSessionOrigin } from './session-origin';
 import { resolveRootSessionInitiator, type SessionInitiator } from './session-initiator';
 import { sessionCreatedAuditAttribution } from './session-audit';
@@ -289,6 +290,15 @@ export async function createProjectSession(input: {
     input.visibility,
     parentSharing,
   );
+  // A conversation with people (`POST /sessions` `participants`, set only by
+  // the server): each participant is a member grant, and the first message is
+  // posted without a turn — the people answer it, not the agent.
+  const participantIds = Array.isArray(input.metadata?.participants)
+    ? (input.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const sessionGrants: SecretGrant[] = participantIds.length > 0
+    ? participantIds.map((principalId) => ({ principalType: 'member' as const, principalId }))
+    : inheritedGrants;
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -367,7 +377,9 @@ export async function createProjectSession(input: {
   }
   const secretsAllowlist = parsedSecrets.value ?? null;
   if (secretsAllowlist && secretsAllowlist.length > 0) {
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // The creator's own audience: a value shared only with them is a valid
+    // allowlist entry. Delivery re-applies the session's audience at boot.
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, userId);
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
@@ -502,7 +514,7 @@ export async function createProjectSession(input: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
   if (requestedModel) {
@@ -902,6 +914,8 @@ export async function createProjectSession(input: {
         accountId,
         sessionId,
         actorUserId: userId,
+        authorSessionId: input.callerSessionId ?? null,
+        noReply: participantIds.length > 0,
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -944,7 +958,6 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     origin,
     invocationSource,
-    clientReportedSource: input.request?.clientReportedSource ?? null,
     callerSessionId: input.callerSessionId,
     agentName,
     visibility,
@@ -953,16 +966,11 @@ export async function createProjectSession(input: {
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
   // The surface the create came through. The route stamps every HTTP create
-  // `ui`; a spawn from another session's credential is an `agent`, and the CLI
-  // and MCP name themselves in X-Kortix-Client. Informational only: no policy
-  // reads these values (origin keys on `trigger:`/`system:` and channels).
+  // `ui`; a spawn from another session's credential is an `agent`. Derived from
+  // the authenticated credential, never a client header. Informational only:
+  // no policy reads these values (origin keys on `trigger:`/`system:` and channels).
   const sessionSource =
-    invocationSource === 'ui' && input.callerSessionId
-      ? 'agent'
-      : invocationSource === 'ui' &&
-          (input.request?.clientReportedSource === 'cli' || input.request?.clientReportedSource === 'mcp')
-        ? input.request.clientReportedSource
-        : invocationSource;
+    invocationSource === 'ui' && input.callerSessionId ? 'agent' : invocationSource;
   const initiator: SessionInitiator =
     parentSession?.initiator ??
     resolveRootSessionInitiator({
@@ -1005,7 +1013,6 @@ export async function createProjectSession(input: {
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
-      client_reported_source: auditAttribution.clientReportedSource,
       initiator_actor_type: auditAttribution.initiatorActorType,
       initiator_actor_id: auditAttribution.initiatorActorId,
       delegation_depth: auditAttribution.delegationDepth,
@@ -1060,6 +1067,7 @@ export async function createProjectSession(input: {
         initiatorType: initiator.type,
         initiatorId: initiator.id,
         secretsAllowlist,
+        labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
@@ -1142,9 +1150,9 @@ export async function createProjectSession(input: {
           )
           .returning({ sessionId: projectSessionConnectorBindings.sessionId });
       }
-      if (inheritedGrants.length > 0) {
+      if (sessionGrants.length > 0) {
         await tx.insert(projectSessionGrants).values(
-          inheritedGrants.map((g) => ({
+          sessionGrants.map((g) => ({
             sessionId,
             principalType: g.principalType,
             principalId: g.principalId,
@@ -1342,7 +1350,6 @@ export async function createProjectSession(input: {
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             repositoryAccess,

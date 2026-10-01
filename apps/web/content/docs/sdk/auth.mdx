@@ -18,9 +18,9 @@ const kortix = createKortix({
 `backendUrl` and `getToken` are required. The SDK caches nothing: it calls
 `getToken` on every request, so your app owns token storage and refresh.
 
-Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
-separate source in the centralized audit log. This value identifies the client
-surface. It does not change the authenticated actor or their permissions.
+The audit log records the credential your `getToken` returns (a browser
+session, a personal access token, a connected app), not a label your host
+reports. `clientSource` is deprecated and does nothing.
 
 ## Personal access tokens
 

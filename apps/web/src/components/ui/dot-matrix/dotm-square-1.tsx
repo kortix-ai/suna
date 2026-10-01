@@ -3,8 +3,7 @@
 import type { CSSProperties } from 'react';
 
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase, trBlPathNormFromIndex } from '@/lib/dotmatrix-core';
-import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component, trBlPathNormFromIndex } from '@/lib/dotmatrix-core';
 
 export type DotmSquare1Props = DotMatrixCommonProps;
 
@@ -40,37 +39,8 @@ const animationResolver: DotAnimationResolver = ({
   return { className: 'dmx-diagonal-alt-sweep', style };
 };
 
-export function DotmSquare1({
-  speed = 1.1,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare1Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={animationResolver}
-    />
-  );
+function makeResolver(): DotAnimationResolver {
+  return animationResolver;
 }
+
+export const DotmSquare1 = createDotm5x5Component('DotmSquare1', makeResolver, { speed: 1.1 });

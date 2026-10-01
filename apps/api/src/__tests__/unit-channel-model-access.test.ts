@@ -359,8 +359,15 @@ describe('planChannelSessionStart — the model and keys a new chat session star
   test('an agent that may not use the keys gets none, and the model is checked without them', async () => {
     usableKeys = [{ secretId: 'k1', providerId: 'codex', name: 'CODEX_AUTH_JSON', label: 'Team', accessMode: 'project' }];
     const plan = await start({ chosenModel: 'codex/gpt-6-astra', agentGrantEnv: async () => ['GITHUB_TOKEN'] });
-    expect(plan).toEqual({ model: 'codex/gpt-6-astra' });
+    expect(plan).toEqual({ model: 'codex/gpt-6-astra', unavailableModel: 'codex/gpt-6-astra' });
     expect(turnCalls[0]).not.toHaveProperty('providerSecretPools');
+  });
+
+  test('an unavailable choice with no replacement is reported before session creation', async () => {
+    servable = false;
+    expect(await start({ chosenModel: 'synthetic/missing-model' })).toEqual({
+      model: 'synthetic/missing-model', unavailableModel: 'synthetic/missing-model',
+    });
   });
 
   test('a replacement on another provider does not carry the chosen model`s keys', async () => {

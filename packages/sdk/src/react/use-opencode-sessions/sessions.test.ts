@@ -64,8 +64,8 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
   ),
 }));
 
-const { useSummarizeOpenCodeSession, useInitSession } = await import('./sessions');
-const { opencodeKeys } = await import('./keys');
+const { useSummarizeRuntimeSession, useInitSession } = await import('./sessions');
+const { runtimeKeys } = await import('./keys');
 const { NoCompactionModelError } = await import('./no-compaction-model-error');
 
 beforeEach(() => {
@@ -74,11 +74,11 @@ beforeEach(() => {
 });
 
 // ============================================================================
-// useSummarizeOpenCodeSession — the 3-tier model-resolution fallback chain
+// useSummarizeRuntimeSession — the 3-tier model-resolution fallback chain
 // (config default → last assistant message → first connected provider/model)
 // ============================================================================
 
-describe('useSummarizeOpenCodeSession — model resolution fallback chain', () => {
+describe('useSummarizeRuntimeSession — model resolution fallback chain', () => {
   test('tier 1: uses the config default model when neither providerID nor modelID is given', async () => {
     let summarizeArgs: unknown;
     clientImpl = {
@@ -94,7 +94,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     const result = await mutationFn({ sessionId: 'ses_1' });
@@ -122,7 +122,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -156,7 +156,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -184,7 +184,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         }),
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -214,7 +214,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: {
         sessionId: string;
         providerID?: string;
@@ -241,7 +241,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       session: { messages: async () => ({ data: [] }) },
       provider: { list: async () => ({ data: {} }) },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     // The expected "no model configured" state throws the sentinel-marked
@@ -282,7 +282,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -299,7 +299,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       session: { messages: async () => ({ data: [] }) },
       provider: { list: async () => ({ data: {} }) },
     };
-    const hook = useSummarizeOpenCodeSession() as unknown as {
+    const hook = useSummarizeRuntimeSession() as unknown as {
       onMutate: (args: { sessionId: string }) => void;
       onError: (err: unknown, args: { sessionId: string }) => void;
     };
@@ -332,7 +332,7 @@ describe('useInitSession', () => {
 
     hook.onSuccess('ses_1');
     expect(fakeQueryClient.refetchCalls).toEqual([
-      { queryKey: opencodeKeys.runtimeMessages('ses_1') },
+      { queryKey: runtimeKeys.runtimeMessages('ses_1') },
     ]);
   });
 

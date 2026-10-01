@@ -30,15 +30,15 @@
  * could lose.
  */
 
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   NON_TURN_DEADLINE_CAP_MS,
   idleGraceMs,
   isTerminalTurnEnd,
   isWarmPoolBox,
-  turnGrantMs,
   turnDeliveryGraceMs,
+  turnGrantMs,
   turnUnconfirmedDripMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
@@ -131,6 +131,28 @@ function extendStatement(target: DeadlineTarget, grantMs: number) {
  * sandbox-deadline-call-sites.test.ts):
  *   if (!isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c))) …
  */
+/**
+ * Contract the deadline to the idle grace unless some turn is still live.
+ * `remaining` is the POST-write metadata: this end shortens the deadline only
+ * when it was the session's last live turn.
+ */
+export function contractIdleDeadline(remaining: SQL, graceMs: number): SQL {
+  return sql`CASE
+             WHEN EXISTS (
+               SELECT 1
+                 FROM jsonb_each(CASE
+                   WHEN jsonb_typeof(${remaining}->'activeTurns') = 'object'
+                     THEN ${remaining}->'activeTurns'
+                   ELSE '{}'::jsonb
+                 END) remaining
+                WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs => ${secs(graceMs)}))
+           END`;
+}
+
 export async function extendSandboxDeadline(
   target: DeadlineTarget,
   grantMs: number = turnGrantMs(),

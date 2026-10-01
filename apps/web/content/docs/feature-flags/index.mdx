@@ -33,7 +33,7 @@ The same switches are available to scripts and agents through `kortix projects f
 ```bash
 kortix projects features            # every flag: key, state, origin, stability
 kortix projects features enable apps
-kortix projects features disable teams
+kortix projects features disable reminders
 kortix projects features reset apps  # drop the override; follow the platform default
 kortix projects features --json      # the full catalog as JSON
 ```
@@ -115,12 +115,12 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `marketplace` | Marketplace | Beta | On | `routes` |
 | `connectors_api_discover` | Connectors API Discover | Experimental | Off | `routes` |
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
-| `teams` | Microsoft Teams | Experimental | Off | `routes` |
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `reminders` | Reminders | Beta | Off | `routes` |
+| `human_messaging` | Human Messaging | Experimental | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_worker` | Pi Worker Runtime (compiled) | Experimental | Off | `routes` |
@@ -141,8 +141,6 @@ refs). An explicit project choice always wins.
   [Connectors](/docs/connect/connectors).
 - **`agentmail_email`** — assign AgentMail inbox connections so inbound email
   starts and continues sessions.
-- **`teams`** — connect a Microsoft Teams bot so chats and channels start and
-  continue sessions. See [Slack & channels](/docs/connect/slack).
 - **`llm_gateway`** — route the project through the managed Kortix LLM
   gateway. See [Models](/docs/project/models).
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
@@ -154,6 +152,9 @@ refs). An explicit project choice always wins.
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or
   on repeat. Off, the reminder routes answer `feature_disabled` and existing
   reminders do not fire. See [Reminders](/docs/connect/reminders).
+- **`human_messaging`** — agents ask people by email and message other
+  sessions. Off, a request that names people answers `feature_disabled`.
+  See [Messaging people and sessions](/docs/connect/messaging).
 - **`warm_sessions`** — keep one sandbox booted while a project is open, so a
   new session starts without a cold boot.
 - **`secrets_egress`** — offer network enforcement for a secret: the sandbox
@@ -199,6 +200,12 @@ A graduated feature is on for every project and has no switch.
   `TUNNEL_ENABLED` setting is the only gate. `agent_tunnel` is no longer a flag
   key: `PATCH /v1/projects/:id/features` answers `400` `Unknown feature flag`.
   See [Computers](/docs/connect/computers).
+- **Microsoft Teams** graduated out of the flag system. Every project can
+  connect Teams from **Settings → Channels**; a tenant admin still consents
+  once, or the project brings its own bot. `teams` is no longer a flag key:
+  `PATCH /v1/projects/:id/features` answers `400` `Unknown feature flag`. A
+  stored override from before graduation has no effect. See
+  [Microsoft Teams](/docs/connect/teams).
 
 ## Side effects of a toggle
 
@@ -206,7 +213,7 @@ Some flags converge platform state after the write commits.
 
 | Flag | Effect after the toggle |
 |---|---|
-| `teams`, `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
+| `agentmail_email` | Kortix re-runs channel-connector materialization, so the connector appears or disappears with the flag. |
 | `llm_gateway` | Kortix propagates the new provider mode to active sandboxes. |
 
 Effects are convergence work, not part of the toggle's success. The API

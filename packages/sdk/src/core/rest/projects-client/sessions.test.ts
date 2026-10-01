@@ -32,6 +32,7 @@ import {
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
+  getSessionMessageAuthors,
   listProjectSessions,
   listProjectSessionsPage,
   listSessionPrompts,
@@ -46,6 +47,7 @@ import {
   setProjectSessionSharing,
   stopProjectSession,
   updateProjectSession,
+  type UpdateProjectSessionInput,
 } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -663,6 +665,14 @@ test('updateProjectSession PATCHes the name/metadata input', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ name: 'Renamed' });
+});
+
+test('updateProjectSession PATCHes labels and a null metadata value (removes the key)', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', labels: ['bug'] } };
+  const input: UpdateProjectSessionInput = { labels: ['bug'], metadata: { ticket: 'T-1', stale: null } };
+  await updateProjectSession('P1', 'S1', input);
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ labels: ['bug'], metadata: { ticket: 'T-1', stale: null } });
 });
 
 test('deleteProjectSession DELETEs the session', async () => {
@@ -1504,6 +1514,14 @@ test('listProjectSessions omits filter params that are absent or blank', async (
   expect(last().url).not.toContain('started_by=');
 });
 
+test('listProjectSessionsPage repeats label once per label, free-form text intact', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessionsPage('P1', { labels: ['bug', 'customer: acme/eu'] });
+  expect(new URL(last().url).searchParams.getAll('label')).toEqual(['bug', 'customer: acme/eu']);
+  await listProjectSessions('P1', { labels: [] });
+  expect(last().url).not.toContain('label=');
+});
+
 test('sessionParentId prefers parent_session_id over metadata.spawned_by_session', () => {
   const row = { session_id: 'c', parent_session_id: 'p-new', metadata: { spawned_by_session: 'p-old' } };
   expect(sessionParentId(row as unknown as ProjectSession)).toBe('p-new');
@@ -1514,4 +1532,29 @@ test('sessionParentId falls back to metadata when parent_session_id is null or s
   expect(sessionParentId(nullRow as unknown as ProjectSession)).toBe('p-old');
   const selfRow = { session_id: 'c', parent_session_id: 'c', metadata: {} };
   expect(sessionParentId(selfRow as unknown as ProjectSession)).toBeNull();
+});
+
+test('listProjectSessions sends participant=me for the "Asked you" list', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { participant: 'me' });
+  expect(new URL(last().url).searchParams.get('participant')).toBe('me');
+});
+
+test('createProjectSession sends participants for a conversation with people', async () => {
+  nextResponse = { status: 201, body: { session_id: 'ASK-1' } };
+  await createProjectSession('P1', { participants: ['avery@example.com'], initial_prompt: 'Which region?' });
+  expect(last().body).toEqual({ participants: ['avery@example.com'], initial_prompt: 'Which region?' });
+});
+
+test('getSessionMessageAuthors reads members and sessions keyed by message id', async () => {
+  const body = {
+    authors: {
+      msg_a: { kind: 'member', user_id: 'U1', name: 'Avery', email: 'avery@example.com' },
+      msg_b: { kind: 'session', session_id: 'S0', name: 'Deploy pipeline' },
+    },
+    initial_author: null,
+  };
+  nextResponse = { status: 200, body };
+  expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
+  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
 });

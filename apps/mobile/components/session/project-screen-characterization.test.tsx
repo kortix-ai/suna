@@ -3,7 +3,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(import.meta.dir + '/ProjectScreen.tsx', 'utf8') + readFileSync(import.meta.dir + '/../../lib/session/project-connect.ts', 'utf8');
+const source = readFileSync(import.meta.dir + '/ProjectScreen.tsx', 'utf8') + readFileSync(import.meta.dir + '/../../lib/session/project-connect.ts', 'utf8') + readFileSync(import.meta.dir + '/use-project-stack.ts', 'utf8') + readFileSync(import.meta.dir + '/use-project-home-send.ts', 'utf8');
 const calls: { name: string; args: any[] }[] = [];
 const spy = (name: string) => (...args: any[]) => { calls.push({ name, args }); };
 const seen = (name: string) => calls.filter((call) => call.name === name);
@@ -45,7 +45,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
   '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate') }) },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: [] }) },
-  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' } },
+  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
+    getSessionHealth: async (url: string, init?: RequestInit) => { const res = await globalThis.fetch(`${url}/kortix/health`, init); return { status: res.status, ok: res.ok, health: await res.json(), body: '' }; } },
   '@/components/kortix/toast-provider': { useToast: () => ({ error: spy('toast') }) },
   '@/lib/billing/upgrade-gate': { getUpgradeGate: (error: any) => error?.upgrade ? { reason: 'upgrade' } : null },
   '@/lib/platform/client': { getSandboxUrl: (id: string) => `https://sandbox.test/p/${id}/8000` },
@@ -66,7 +67,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
 };
 
 for (const [, name] of source.matchAll(/from ['"]([^'"]+)['"]/g)) {
-  if (name === 'react' || name === '@/lib/session/project-connect' || name.startsWith('@/lib/session/') && ['project-stack', 'connect-step'].some((part) => name.endsWith(part))) continue;
+  if (name === 'react' || name === '@/lib/session/project-connect' || name.startsWith('@/lib/session/') && ['project-stack', 'connect-step'].some((part) => name.endsWith(part)) || name === '@/components/session/use-project-stack' || name === '@/components/session/use-project-home-send') continue;
   const values = moduleMocks[name] ?? {};
   if (name !== 'react-native' && name !== 'expo-router' && name !== 'expo-router/react-navigation') {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -146,7 +147,7 @@ describe('ProjectScreen connect and stack', () => {
     response = async () => ({ stage: 'starting', retriable: true, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1' } });
     health = async () => ({ ok: true, status: 200, json: async () => ({ boot_error: 'runtime failed' }) });
     await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-2' }));
-    expect(connecting.error).toMatchObject({ title: 'OpenCode runtime is not ready', detail: 'runtime failed' });
+    expect(connecting.error).toMatchObject({ title: 'Session runtime is not ready', detail: 'runtime failed' });
     expect(seen('switchSandbox')).toHaveLength(0);
   });
 

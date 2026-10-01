@@ -459,8 +459,9 @@ export function BrokerDiagram({ step }: { step: number }) {
 
 /* ── 3 · how work lands ─────────────────────────────────────────────────────
    The git graph. Steps: 0 main · 1 the session's branch · 2 the change request
-   · 3 a person merges — and merging is a capability of its own, refused to
-   every agent unless an admin grants `project.cr.merge` (landing.steps). */
+   · 3 a person approves — merge is default-deny for agents, and an admin can
+   grant the merge capability `project.gitops.merge` (landing.steps). Captions
+   take claims.md rows word for word (kortix-brand, Q28, Q46). */
 
 /** A commit on the graph. Declared at module scope on purpose — a component
     created inside the render would be a new type on every build step, so React
@@ -483,10 +484,10 @@ function Dot({ on, tone = 'idle' }: { on: boolean; tone?: Tone }) {
 export function ChangeRequestDiagram({ step }: { step: number }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const captions = [
-    'main is your live company. Everything anyone relies on is here.',
-    'The session works on its own branch. Every edit it makes lands here and is invisible to main and to every other session.',
-    'To keep anything, it commits and opens a change request pointed at main. That is the only door.',
-    'A person reads the diff and merges. Merging is a separate capability, refused to every agent unless an admin grants it — and that grant is itself a change request someone else approves.',
+    'Session work reaches main through a change request.',
+    'Each session has its own isolated machine and branch.',
+    'When the session wants to keep something, it opens a change request.',
+    'Nothing merges itself: work reaches main through a change request a person approves, unless an admin granted the merge capability.',
   ];
 
   return (

@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 
-const source = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
+// The page owns the flow; the consent screens live in the shared view (#8421).
+const source =
+  readFileSync(new URL('./page.tsx', import.meta.url), 'utf8') +
+  readFileSync(new URL('../../../../../features/auth/github-setup-view.tsx', import.meta.url), 'utf8');
 
 describe('GitHub installation setup', () => {
   test('requires a GitHub user proof before saving the installation', () => {
@@ -34,7 +37,7 @@ describe('GitHub installation setup', () => {
   });
 
   test('the error state offers Back to where the flow started, not only the app root', () => {
-    expect(source).toContain('href={backHref} replace prefetch onClick={clearGitHubSetupReturn}');
+    expect(source).toContain('href={backHref} replace prefetch onClick={onBack}');
   });
 
   test('never prints the raw reason slug — every branch is a sentence', () => {

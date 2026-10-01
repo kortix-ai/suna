@@ -23,12 +23,13 @@
  * ordinary typing is exact and only the overlay case is an estimate.
  */
 
-import { type MessageWithParts, classifyTurn } from '@kortix/sdk';
+import { type MessageWithParts, type SessionHealthResult, classifyTurn } from '@kortix/sdk';
 import { useSession } from '@kortix/sdk/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
 import { hintFor } from '../../keymap.ts';
+import { kortix } from '../../kortix.ts';
 import { extractUrls, extractUrlsFromScreen } from '../../lib/links.ts';
 import { glyph, theme } from '../../theme.ts';
 import { Panel, type ToastKind } from '../../ui/index.ts';
@@ -136,6 +137,11 @@ export interface SessionViewProps {
   onPortsApi?: (api: UsePortsResult) => void;
   /** Links panel (`Alt+L`) rows, hoisted for the same reason. Newest first. */
   onLinks?: (rows: LinkRow[]) => void;
+  /** What the runtime serves (`/kortix/health` `capabilities`), hoisted so the
+   *  app can refuse `Alt+O` attach. Null until read. */
+  onCapabilities?: (capabilities: readonly string[] | null) => void;
+  /** Test seam for the one `/kortix/health` read. */
+  readHealth?: (projectId: string, sessionId: string) => Promise<SessionHealthResult>;
   /**
    * Test seam. Production passes nothing and the real `useSession` runs; a test
    * passes a fake so the focus and layout contract can be asserted without an
@@ -161,11 +167,34 @@ export function SessionView({
   onToast,
   onPortsApi,
   onLinks,
+  onCapabilities,
+  readHealth = readSessionHealth,
   useSessionImpl = useSession,
 }: SessionViewProps) {
   // The one call. Every child reads this object; none of them calls a hook.
   const session = useSessionImpl(projectId, sessionId);
   const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, overlayOpen: false });
+
+  // What this runtime serves (a pi session has no project commands and no
+  // attach): one `/kortix/health` read once the runtime is up. Null — not read
+  // yet, or the read failed — hides nothing.
+  const [capabilities, setCapabilities] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    setCapabilities(null);
+    if (!session.switched) return;
+    let live = true;
+    readHealth(projectId, sessionId)
+      .then((probe) => {
+        if (live) setCapabilities(probe.health?.capabilities ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [projectId, sessionId, session.switched, readHealth]);
+  useEffect(() => {
+    onCapabilities?.(capabilities);
+  }, [capabilities, onCapabilities]);
 
   const ports = usePorts({ host, projectId, sessionId, onToast });
   useEffect(() => {
@@ -286,6 +315,7 @@ export function SessionView({
               onToast={onToast}
               onRequestFocus={focusComposer}
               onMetrics={onMetrics}
+              capabilities={capabilities}
             />
           </box>
         </Panel>
@@ -309,6 +339,11 @@ export function SessionView({
       ) : null}
     </>
   );
+}
+
+/** `GET /kortix/health` through the session handle. Async so a throw is a rejection. */
+async function readSessionHealth(projectId: string, sessionId: string): Promise<SessionHealthResult> {
+  return kortix().session(projectId, sessionId).health();
 }
 
 /** The terminal's share of a wide layout: 40%, floored so a shell stays usable. */

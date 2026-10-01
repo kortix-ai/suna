@@ -560,7 +560,10 @@ export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent)
   const user = event.user ?? 'unknown';
   const text = event.text ?? '';
   return [
-    `New message from ${user} in the same Slack thread:`,
+    `New message from ${user} in Slack channel ${event.channel ?? 'unknown'}, thread ${event.thread_ts ?? event.ts ?? 'unknown'}:`,
+    'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
+    `slack send --channel ${event.channel ?? 'unknown'} --thread ${event.thread_ts ?? event.ts ?? 'unknown'} --text "<answer>"`,
+    'The live slack step stream follows this message automatically. Do not use the session\'s original Slack thread for this reply.',
     '',
     text,
     renderFileInfo(event),

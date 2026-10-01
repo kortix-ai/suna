@@ -8,6 +8,7 @@ export const DESIGN_SYSTEM_TRANSLATION_KEYS: Readonly<Record<string, string>> = 
   'Anti-Patterns': 'text8d2be39d6187',
   Avatars: 'textfedfdc14d4f7',
   Badge: 'text002474e36821',
+  'Banned patterns': 'textc94e8cb68cba',
   Breadcrumb: 'text2bd873d6c734',
   Button: 'text707eab0c23ec',
   Calendar: 'textd5d0a30b517e',

@@ -58,14 +58,14 @@ export async function recordPendingQuestion(input: {
       projectId: input.projectId,
       sessionId: input.sessionId,
       requestId: input.requestId,
-      opencodeSessionId: input.opencodeSessionId ?? null,
+      runtimeSessionId: input.opencodeSessionId ?? null,
       questions: input.questions as never,
     })
     .onConflictDoUpdate({
       target: [sessionPendingQuestions.sessionId, sessionPendingQuestions.requestId],
       set: {
         questions: input.questions as never,
-        opencodeSessionId: input.opencodeSessionId ?? null,
+        runtimeSessionId: input.opencodeSessionId ?? null,
         updatedAt: new Date().toISOString(),
       },
     })
@@ -73,7 +73,7 @@ export async function recordPendingQuestion(input: {
       id: sessionPendingQuestions.id,
       sessionId: sessionPendingQuestions.sessionId,
       requestId: sessionPendingQuestions.requestId,
-      opencodeSessionId: sessionPendingQuestions.opencodeSessionId,
+      opencodeSessionId: sessionPendingQuestions.runtimeSessionId,
       questions: sessionPendingQuestions.questions,
       askedAt: sessionPendingQuestions.askedAt,
       // PostgreSQL leaves xmax at 0 on a freshly inserted row version and sets
@@ -105,7 +105,7 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
       id: sessionPendingQuestions.id,
       sessionId: sessionPendingQuestions.sessionId,
       requestId: sessionPendingQuestions.requestId,
-      opencodeSessionId: sessionPendingQuestions.opencodeSessionId,
+      opencodeSessionId: sessionPendingQuestions.runtimeSessionId,
       questions: sessionPendingQuestions.questions,
       askedAt: sessionPendingQuestions.askedAt,
     })
