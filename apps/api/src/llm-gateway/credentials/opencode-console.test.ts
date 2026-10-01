@@ -38,6 +38,12 @@ describe('OpenCode Console device flow', () => {
     }
   });
 
+  test('poll stays pending through a transient console fault', async () => {
+    for (const [status, body] of [[400, { error: 'server_error' }], [503, { error: 'temporarily_unavailable' }], [502, {}]] as const) {
+      expect(await pollOpencodeDeviceAuth('dev', async () => json(status, body))).toEqual({ status: 'pending' });
+    }
+  });
+
   test('poll fails on any other refusal', async () => {
     expect(await pollOpencodeDeviceAuth('dev', async () => json(400, { error: 'expired_token' })))
       .toEqual({ status: 'failed', error: 'OpenCode authorization failed (expired_token)' });
