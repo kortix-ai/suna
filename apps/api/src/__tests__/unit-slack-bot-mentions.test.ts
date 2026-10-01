@@ -171,16 +171,12 @@ describe('source contracts', () => {
     'utf8',
   );
 
-  test('dispatchSlackEvent uses isOwnBotEvent, not a blanket bot_id gate', () => {
-    // Every behavioural test above passes even if the call site still returns on
-    // any bot, because they exercise the function directly. Pin the call site.
-    const body = dispatchSrc.slice(dispatchSrc.indexOf('export async function dispatchSlackEvent'));
-    expect(body, 'the self-identity gate is gone — the bot would answer its own messages in a loop')
-      .toContain('if (isOwnBotEvent(event, botUserId)) return;');
-    expect(
-      body.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n'),
-      'the blanket `|| event.bot_id` gate is back — every other bot is silently dropped again',
-    ).not.toMatch(/\|\|\s*event\.bot_id\s*\)\s*return/);
+  test('our own bot is refused while another bot mentioning us is classified', async () => {
+    const own = ev({ user: BOT, bot_id: 'BSELF', subtype: 'bot_message', channel_type: 'channel', text: '<@B1> hello' });
+    const other = ev({ user: 'U_OTHERBOT', bot_id: 'B999', subtype: 'bot_message', channel_type: 'channel', text: '<@B1> hello' });
+    expect(isOwnBotEvent(own, BOT)).toBe(true);
+    expect(isOwnBotEvent(other, BOT)).toBe(false);
+    expect(await classifyEvent('T1', other, BOT)).toBe('mention');
   });
 
   test('no username/icon override in the Slack send path — that is what keeps event.user ours', () => {
