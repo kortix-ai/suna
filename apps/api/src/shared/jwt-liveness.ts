@@ -14,6 +14,10 @@
  * `getUser` does see it, so it stays in the loop — but at most once per token
  * per `SUPABASE_JWT_LIVENESS_TTL_MS` (default 0: no cache) per replica.
  *
+ * 2026-10-01: the ES256 (JWKS) path in `jwt-verify.ts` confirms liveness here
+ * too. Before, an ES256 token survived logout, a ban or a deleted user until
+ * `exp`.
+ *
  * Security contract (explicit):
  *  - Only a POSITIVE GoTrue answer is cached. A rejection or a GoTrue failure is
  *    never cached, so the next request asks again.
