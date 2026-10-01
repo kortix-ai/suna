@@ -1,7 +1,5 @@
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
-import { getSupabase } from '../../shared/supabase';
-import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
@@ -98,12 +96,6 @@ export async function cancelAccountDeletion(accountId: string) {
 export async function deleteAccountImmediately(accountId: string, userId?: string) {
   const request = await getActiveDeletionRequest(accountId);
   await performDeletion(accountId, userId ?? request?.userId);
-  const deletingUserId = userId ?? request?.userId;
-  if (deletingUserId) {
-    const { error } = await getSupabase().auth.admin.deleteUser(deletingUserId);
-    if (error) throw error;
-    forgetUserJwtLiveness(deletingUserId);
-  }
   if (request) {
     await markDeletionCompleted(request.id);
   }

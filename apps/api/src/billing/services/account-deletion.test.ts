@@ -26,21 +26,6 @@ let reconciledRemoved: string[] = [];
 let reconciledStopped: string[] = [];
 let removedReconcileErrorByExternal: Record<string, Error> = {};
 let creditAccount: Record<string, unknown> | null = null;
-let activeRequest: { id: string; userId: string } | null = null;
-let scheduledRequests: Array<{ id: string; accountId: string; userId: string }> = [];
-let completedRequests: string[] = [];
-let deletedUsers: string[] = [];
-let deleteUserError: Error | null = null;
-const { config } = await import('../../config');
-config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
-const liveness = await import('../../shared/jwt-liveness');
-mock.module('../../shared/supabase', () => ({
-  getSupabase: () => ({ auth: { admin: { deleteUser: async (id: string) => {
-    if (deleteUserError) return { error: deleteUserError };
-    deletedUsers.push(id);
-    return { error: null };
-  } } } }),
-}));
 
 /**
  * The fake keys off the drizzle table object handed to `.from()` / `.update()`,
@@ -135,14 +120,14 @@ mock.module('../wallet', () => ({
 }));
 
 mock.module('../repositories/account-deletion', () => ({
-  getActiveDeletionRequest: async () => activeRequest,
+  getActiveDeletionRequest: async () => null,
   createDeletionRequest: async () => ({ id: 'req-1' }),
   cancelDeletionRequest: async () => undefined,
-  markDeletionCompleted: async (id: string) => { completedRequests.push(id); },
-  getScheduledDeletions: async () => scheduledRequests,
+  markDeletionCompleted: async () => undefined,
+  getScheduledDeletions: async () => [],
 }));
 
-const { deleteAccountImmediately, reclaimableAccountIds, processScheduledDeletions } = await import('./account-deletion');
+const { deleteAccountImmediately, reclaimableAccountIds } = await import('./account-deletion');
 
 /**
  * The bound parameters of a drizzle WHERE condition, in order, rendered by the
@@ -173,12 +158,6 @@ beforeEach(() => {
   reconciledStopped = [];
   removedReconcileErrorByExternal = {};
   creditAccount = null;
-  deletedUsers = [];
-  activeRequest = null;
-  scheduledRequests = [];
-  completedRequests = [];
-  deleteUserError = null;
-  liveness.__setJwtLivenessLoaderForTests(null);
 });
 
 describe('reclaimableAccountIds', () => {
@@ -359,96 +338,4 @@ describe('deleteAccountImmediately — session settle', () => {
 
     expect(result.success).toBe(true);
   });
-});
-
-describe('account deletion — auth lifecycle', () => {
-  test('deletes the auth user and rejects all previously cached tokens promptly', async () => {
-    liveness.__setJwtLivenessLoaderForTests(async () =>
-      deletedUsers.includes('user-1') ? null : { id: 'user-1', email: '' });
-    const exp = Math.floor(Date.now() / 1000) + 3600;
-    expect(await liveness.confirmJwtLive('old-token-1', exp)).not.toBeNull();
-    expect(await liveness.confirmJwtLive('old-token-2', exp)).not.toBeNull();
-    await deleteAccountImmediately('acct-1', 'user-1');
-    expect(deletedUsers).toEqual(['user-1']);
-    expect(await liveness.confirmJwtLive('old-token-1', exp)).toBeNull();
-    expect(await liveness.confirmJwtLive('old-token-2', exp)).toBeNull();
-  });
-
-  test('does not report success when GoTrue refuses deletion', async () => {
-    deleteUserError = new Error('auth deletion failed');
-    await expect(deleteAccountImmediately('acct-1', 'user-1')).rejects.toThrow('auth deletion failed');
-  });
-});
-
-test('immediate deletion uses the pending requester when no user id is supplied', async () => {
-  activeRequest = { id: 'req-1', userId: 'user-1' };
-  await deleteAccountImmediately('acct-1');
-  expect(deletedUsers).toEqual(['user-1']);
-  expect(completedRequests).toEqual(['req-1']);
-});
-
-test('scheduled account deletion does not delete its historical requester identity', async () => {
-  scheduledRequests = [{ id: 'req-1', accountId: 'acct-1', userId: 'user-1' }];
-  expect(await processScheduledDeletions()).toEqual({ processed: 1, errors: [] });
-  expect(deletedUsers).toEqual([]);
-  expect(completedRequests).toEqual(['req-1']);
-});
-
-test('failed auth deletion leaves the pending request incomplete', async () => {
-  activeRequest = { id: 'req-1', userId: 'user-1' };
-  deleteUserError = new Error('auth deletion failed');
-  await expect(deleteAccountImmediately('acct-1')).rejects.toThrow('auth deletion failed');
-  expect(completedRequests).toEqual([]);
-});
-
-test('a GoTrue confirmation racing deletion cannot restore cached liveness', async () => {
-  let release: (user: { id: string; email: string }) => void = () => {};
-  const pendingAnswer = new Promise<{ id: string; email: string }>((resolve) => { release = resolve; });
-  let calls = 0;
-  liveness.__setJwtLivenessLoaderForTests(async () => {
-    calls++;
-    return calls === 1 ? pendingAnswer : null;
-  });
-  const pending = liveness.confirmJwtLive('racing-token', Math.floor(Date.now() / 1000) + 3600);
-  await deleteAccountImmediately('acct-1', 'user-1');
-  release({ id: 'user-1', email: '' });
-  expect(await pending).toBeNull();
-  expect(liveness.jwtLivenessCacheSize()).toBe(0);
-});
-
-for (const ttl of [0, 30000]) {
-  test(`every GoTrue retry validates two deletion invalidations at TTL ${ttl}`, async () => {
-    config.SUPABASE_JWT_LIVENESS_TTL_MS = ttl;
-    let calls = 0;
-    liveness.__setJwtLivenessLoaderForTests(async () => {
-      calls++;
-      if (calls <= 2) {
-        liveness.forgetUserJwtLiveness('user-1');
-        return { id: 'user-1', email: '' };
-      }
-      return null;
-    });
-    try {
-      expect(await liveness.confirmJwtLive('twice-invalidated-token', Math.floor(Date.now() / 1000) + 3600)).toBeNull();
-      expect(calls).toBe(3);
-      expect(liveness.jwtLivenessCacheSize()).toBe(0);
-    } finally {
-      config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
-      liveness.__setJwtLivenessLoaderForTests(null);
-    }
-  });
-}
-
-test('deletion in the loader completion microtask cannot republish cached liveness', async () => {
-  const answer = Promise.resolve({ id: 'user-1', email: '' });
-  let calls = 0;
-  liveness.__setJwtLivenessLoaderForTests(() => {
-    calls++;
-    return calls === 1 ? answer : Promise.resolve(null);
-  });
-  const pending = liveness.confirmJwtLive('publication-gap-token', Math.floor(Date.now() / 1000) + 3600);
-  await answer.then(() => liveness.forgetUserJwtLiveness('user-1'));
-  await pending;
-  expect(liveness.jwtLivenessCacheSize()).toBe(0);
-  expect(await liveness.confirmJwtLive('publication-gap-token', Math.floor(Date.now() / 1000) + 3600)).toBeNull();
 });
