@@ -49,7 +49,7 @@ Learn this once and most questions answer themselves.
 **The bridge between them is session readiness.** A session runtime does not
 exist until its sandbox is provisioned or resumed. That is what `ensureReady()`
 (and `start()`, and implicitly `send()`) does: boots or resumes the sandbox and
-resolves this session's OpenCode identity.
+resolves this session's runtime identity (`runtime_session_id`).
 
 ```ts
 const kortix = createKortix({ backendUrl, getToken })   // ← one client, one auth seam
@@ -90,7 +90,8 @@ react/                                 ← optional glue. Nothing below this lin
 `./event-stream`, `./server-store`, …). They re-export from `core/` and stay
 until the next major. Add nothing new there.
 
-`core/turns/` deserves a note: the opencode wire format has ~50 part variants.
+`core/turns/` deserves a note: the transcript (`kortix.transcript.v1`, the same
+wire from OpenCode and pi) has ~50 part variants.
 It collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
 renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
 It is framework-free on purpose — `examples/04` renders a transcript to plain
@@ -128,6 +129,15 @@ Follow the grain. Almost every feature is this shape:
 - **Hosts reach the runtime through the session verbs** (`messages`, `pending`,
   `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`,
   `stream`). `session.runtime` is deprecated; no host imports `@opencode-ai/sdk`.
+- **A harness difference is a capability, never a harness check.** The daemon
+  lists what the runtime serves in `GET /kortix/health` `capabilities`
+  (`session.rewind`, `session.compact`, `session.commands`, `session.fork`,
+  `session.subagents`, `session.mcp`, `session.todo`, `session.shell`,
+  `session.attach`, `session.config`). OpenCode lists all ten; pi lists
+  `session.subagents`. A hook or a host gates on
+  `runtimeSupports(capabilities, capability)` (`core/session/health.ts`). New
+  SDK code never branches on the harness id and never assumes an OpenCode
+  route answers.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
   to the SDK.
 - **The core never imports a framework.** Enforced statically. See the tripwire.
