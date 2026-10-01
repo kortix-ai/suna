@@ -155,23 +155,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'teams',
-    name: 'Microsoft Teams',
-    description:
-      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
-    stability: 'experimental',
-    // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
-    // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
-    // offered — `teamsMode().available` reports that separately, and a project
-    // can always bring its own bot app. Gating availability on the credentials
-    // would hide the bring-your-own flow on exactly the deployments that need
-    // it (self-host).
-    available: () => true,
-    // Explicit opt-in: a project turns Teams on in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
@@ -393,6 +376,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // resolveSessionSandboxRegion) and sent as `region` on the Platinum
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
+  },
+  {
+    key: 'human_messaging',
+    name: 'Human Messaging',
+    description:
+      'Let agents message people and other sessions. `kortix send alice@example.com "…"` opens a conversation whose first message comes from the agent; it appears under "Asked you" in the recipient\'s sidebar. Several addresses open a group chat, and a message sent to another session says which session sent it.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    // POST /sessions refuses `participants` with 403 `feature_disabled`; the
+    // prompt route adds the sender envelope only when this is on.
+    enforcement: 'routes',
   },
 ];
 

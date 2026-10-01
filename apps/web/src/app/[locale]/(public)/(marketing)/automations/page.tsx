@@ -35,7 +35,7 @@ function SectionDivider(): ReactNode {
  * `/automations` — the page for work that starts with nobody in the room.
  *
  * Copy lives in `features/marketing/automations/content.ts` and is governed by
- * the `comms` skill. The accuracy gate that bites hardest here: there are two
+ * the `kortix-brand` skill. The accuracy gate that bites hardest here: there are two
  * trigger types and four session modes, and a trigger has no "deliver the
  * result somewhere" field. See the header of `content.ts`.
  */

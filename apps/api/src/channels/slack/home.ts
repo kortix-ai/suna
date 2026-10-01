@@ -75,20 +75,20 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
   blocks.push({
     type: 'image',
     image_url: heroUrl,
-    alt_text: 'Kortix — AI command center for your company',
+    alt_text: 'Kortix — the open-source AI Management System',
   });
   blocks.push({
     type: 'header',
-    text: { type: 'plain_text', text: '👋  Welcome to Kortix', emoji: true },
+    text: { type: 'plain_text', text: 'Welcome to Kortix', emoji: true },
   });
   blocks.push({
     type: 'section',
     text: {
       type: 'mrkdwn',
       text: [
-        '*Your AI command center, right here in Slack.*',
+        '*Start a session from any Slack thread.*',
         '',
-        "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Follow-ups stay in context.",
+        "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Follow-ups stay in the same session.",
       ].join('\n'),
     },
   });

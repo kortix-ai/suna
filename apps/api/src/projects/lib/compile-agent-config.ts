@@ -345,6 +345,7 @@ function compileYamlAgentBlock(
   if (typeof prompt === 'string') compiled.prompt = prompt;
   if (block.enabled === false) compiled.disable = true;
   if (block.skills !== undefined) compiled.permission = applySkillsGovernance(compiled.permission, block.skills);
+  if (compiled.permission !== undefined) compiled.permission = denyToolsBehindDeniedPermission(compiled.permission);
   return compiled;
 }
 
@@ -388,7 +389,37 @@ function compileAgentBlock(
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);
   }
+  if (out.permission !== undefined) out.permission = denyToolsBehindDeniedPermission(out.permission);
 
+  return out;
+}
+
+/** Every action of a rule is `deny`: the tool is off, not just filtered by pattern. */
+function isBlanketDeny(rule: unknown): boolean {
+  if (rule === 'deny') return true;
+  if (!rule || typeof rule !== 'object') return false;
+  const actions = Object.values(rule as Record<string, unknown>);
+  return actions.length > 0 && actions.every((action) => action === 'deny');
+}
+
+/**
+ * The starter's custom tools are not covered by the built-in permission keys:
+ * `pty_*` runs a shell and `memory` writes files, yet OpenCode matches them by
+ * their own name, so `bash: deny` / `edit: deny` left both callable (RUN-10).
+ * A blanket deny of `bash` or `edit` carries over to the tools that do the
+ * same thing. An explicit rule on the tool itself wins.
+ */
+const SHELL_TOOLS = ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list'];
+const FILE_WRITE_TOOLS = ['memory'];
+
+function denyToolsBehindDeniedPermission(permission: PermissionConfigV2 | undefined): PermissionConfigV2 | undefined {
+  if (!permission || typeof permission !== 'object') return permission;
+  const out: PermissionConfigObjectV2 = { ...permission };
+  const deny = (tools: string[]) => {
+    for (const tool of tools) if (out[tool] === undefined) out[tool] = 'deny';
+  };
+  if (isBlanketDeny(permission.bash)) deny(SHELL_TOOLS);
+  if (isBlanketDeny(permission.edit)) deny(FILE_WRITE_TOOLS);
   return out;
 }
 

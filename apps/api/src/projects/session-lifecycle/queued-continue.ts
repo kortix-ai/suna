@@ -105,7 +105,7 @@ export async function executeQueuedContinue(
   // through the same wake a finished turn uses: no turn will end to do it, as
   // a noReply POST opens none. A failed read sends the row normally — at
   // worst the batch is answered in two turns, never wedged.
-  const noReply = await hasLaterReleasedSibling(row).catch((error) => {
+  const noReply = payload.noReply === true || await hasLaterReleasedSibling(row).catch((error) => {
     logger.warn('[session-lifecycle] released-batch read failed; sending with a reply', {
       sessionId: row.sessionId, commandId: row.commandId, error,
     });

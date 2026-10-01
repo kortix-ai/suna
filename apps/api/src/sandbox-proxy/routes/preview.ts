@@ -795,8 +795,9 @@ export async function forwardToSandbox(
     // map is missing the ONE model this turn asks for. AWAITED — unlike the
     // asset lane just above — because the alternative is `Model not found:
     // kortix/<id>` while the control plane serves that model the whole time
-    // (2026-09-26). Skips instantly (no memo read, no network call) for
-    // every non-managed-model request — see `requestedPromptManagedModelId`.
+    // (2026-09-26). Any provider: a `codex/…` or BYOK id the box's image
+    // catalog predates fails the same way (2026-10-01, codex/gpt-6.1-sol).
+    // A model the box already confirmed costs one in-process map read.
     const modelCatalog = await modelCatalogPromise;
     ptl.mark('model-catalog-converge');
     if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {

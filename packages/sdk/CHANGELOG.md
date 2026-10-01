@@ -129,6 +129,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `WIRE_MESSAGE_ID` stay. The clock goes with OpenCode support.
 - `SessionHandle.runtime` (the raw runtime client): use the session verbs.
 - `openEventStream({ client })`: pass `url`.
+- The `teams` member of `FeatureFlagKey`. Microsoft Teams graduated out of the
+  flag system: every project can connect Teams. It is absent from
+  `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'teams')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'teams', …)` answers `400`. Removed in the next major.
 - The `session_transcript_history` member of `FeatureFlagKey`. Saved session
   history graduated out of the flag system: every session saves its transcript
   and shows it while its computer is off. It is absent from

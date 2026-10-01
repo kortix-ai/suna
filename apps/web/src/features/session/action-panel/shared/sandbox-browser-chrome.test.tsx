@@ -19,9 +19,16 @@ import {
   splitUrlForDisplay,
 } from './sandbox-browser-chrome';
 
+const intlErrors: string[] = [];
+
 const render = (node: ReactNode) =>
   renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={enMessages}>
+    <NextIntlClientProvider
+      locale="en"
+      messages={enMessages}
+      timeZone="UTC"
+      onError={(error) => intlErrors.push(error.code)}
+    >
       {node}
     </NextIntlClientProvider>,
   );
@@ -120,7 +127,9 @@ describe('splitUrlForDisplay — the hostname highlight split', () => {
 
 describe('SandboxAddressBar — the shared toolbar', () => {
   test('renders exactly the back / forward / reload controls, in order', () => {
+    intlErrors.length = 0;
     const html = render(bar());
+    expect(intlErrors).toEqual([]);
     const back = icon(<ArrowLeft className="size-4" />);
     const forward = icon(<ArrowRight className="size-4" />);
     const reload = icon(<GrRefresh className="size-4" />);

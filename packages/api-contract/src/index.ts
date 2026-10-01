@@ -53,7 +53,6 @@ export const FeatureFlagMapSchema = z.object({
   marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
-  teams: z.boolean(),
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
@@ -67,6 +66,7 @@ export const FeatureFlagMapSchema = z.object({
   config_releases: z.boolean(),
   agent_principal: z.boolean(),
   us_region: z.boolean(),
+  human_messaging: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -979,6 +979,13 @@ export const SessionCreateInputSchema = z
     opencode_model: z.string().min(1).optional(),
     name: z.string().optional(),
     labels: SessionLabelsSchema.optional(),
+    /**
+     * Email addresses of project members to open a conversation with
+     * (feature flag `human_messaging`). `initial_prompt` is posted to them
+     * from the caller, no turn runs, and the session is shared with them. The
+     * agent runs when one of them replies.
+     */
+    participants: z.array(z.string().min(3).max(254)).min(1).max(20).optional(),
     session_id: z
       .string()
       .regex(
@@ -1071,6 +1078,10 @@ export const ProjectSessionSchema = z.object({
   owner_email: z.string().nullable(),
   owner_name: z.string().nullable().optional(),
   owner_type: z.enum(['user', 'service_account', 'unknown']).nullable().optional(),
+  /** The people a conversation was opened with, resolved to names. Single-session read only; `[]` elsewhere. */
+  participant_people: z
+    .array(z.object({ user_id: z.string(), name: z.string().nullable(), email: z.string().nullable() }))
+    .optional(),
   visibility: SessionVisibilitySchema,
   /** Policy class the session was created under (derived, never client-set). */
   origin: z.enum(['user', 'trigger', 'schedule', 'backend', 'system']),

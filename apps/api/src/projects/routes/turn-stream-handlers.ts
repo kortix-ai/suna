@@ -18,6 +18,7 @@ import {
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { db } from '../../shared/db';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
+import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import {
   abandonSandboxTurn,
@@ -396,6 +397,25 @@ async function publishTurnEnd(
     void notifySessionEvent({ type: pushType, sessionId, projectId }).catch((err) =>
       console.warn('[push] turn-end notification failed', err instanceof Error ? err.message : err),
     );
+  }
+  // A trigger session's creator is the agent's service account, so the push
+  // above reaches nobody. Record the run on its trigger and tell the owner.
+  try {
+    await recordTriggerRunEnd({
+      projectId,
+      accountId: turnStreamSession.accountId,
+      sessionId,
+      metadata: turnStreamMetadata,
+      status,
+      error: errorInfo,
+      outcome: turnCompletion.outcome,
+      childSession,
+    });
+  } catch (err) {
+    console.warn('[turn-stream] trigger run outcome not recorded', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
   }
   // Second-chance auto-title: create-time generation is a single in-memory
   // best-effort call, and a session whose only prompt was baked in-guest

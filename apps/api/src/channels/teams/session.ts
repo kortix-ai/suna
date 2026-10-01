@@ -2,7 +2,6 @@ import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { projectFeatureFlagEnabled } from '../../feature-flags/for-project';
 import {
   continueSession as continueLifecycleSession,
   createSession as createLifecycleSession,
@@ -461,7 +460,6 @@ export async function createOrJoinTeamsConversationSession(input: {
   // project gets the ordinary join-policy check.
   const authorizedResume = Boolean(input.authorizedResume) && route.kind === 'here';
   if (route.kind === 'thread_project') {
-    if (!(await projectFeatureFlagEnabled(route.projectId, 'teams'))) return;
     projectId = route.projectId;
     [project] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
     if (!project) return;

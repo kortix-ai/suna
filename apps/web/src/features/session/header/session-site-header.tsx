@@ -27,6 +27,7 @@ import {
 } from '@/features/session/header/session-config-indicator';
 import { SessionPendingApprovalsIndicator } from '@/features/session/header/session-pending-approvals-indicator';
 import { SessionRemindersIndicator } from './session-reminders-indicator';
+import { SessionAskedFromLink, SessionPeopleIndicator } from './session-people';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
 import { Home } from '@/features/icon/icons/home';
@@ -488,6 +489,10 @@ export function SessionSiteHeader({
               </DropdownMenu>
             </div>
 
+            {isProjectSession && !parent ? (
+              <SessionAskedFromLink projectId={projectId!} session={projectSession} />
+            ) : null}
+
             {leadingAction}
           </div>
 
@@ -500,6 +505,10 @@ export function SessionSiteHeader({
             <SessionChangesIndicator sessionId={sessionId} />
 
             <SessionPendingApprovalsIndicator sessionId={sessionId} />
+
+            {isProjectSession && !parent ? (
+              <SessionPeopleIndicator projectId={projectId!} session={projectSession} />
+            ) : null}
 
             {isProjectSession ? <SessionRemindersIndicator runtimeSessionId={sessionId} /> : null}
 

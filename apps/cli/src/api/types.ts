@@ -212,6 +212,10 @@ export interface ProjectTrigger {
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
   last_fired_at: string | null;
+  /** `queued`, `fired`, or `failed` (the prompt was not delivered, or its run ended with an error). */
+  last_status?: string | null;
+  /** Why the last fire or run failed. */
+  last_error?: string | null;
   webhook_url: string | null;
 }
 

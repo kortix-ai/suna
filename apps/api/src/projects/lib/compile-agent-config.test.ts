@@ -926,3 +926,32 @@ describe('v2 agent tool toggles', () => {
     expect(config?.agent.other.tools).toBeUndefined();
   });
 });
+
+describe('compileAgentConfig — a denied bash/edit also denies the tools that do the same job', () => {
+  const manifest = parseYaml(
+    ['kortix_version: 2', 'default_agent: kortix', 'agents:', '  kortix:', '    skills: all', '  no-edit:', '    skills: all', ''].join('\n'),
+  );
+  const compileNoEdit = (frontmatter: string) =>
+    compileAgentConfig(manifest, 'opencode', {
+      'agents/no-edit.md': supportMd(frontmatter, 'body'),
+    })!.agent['no-edit']!.permission as Record<string, unknown>;
+
+  test('bash: deny and edit: deny deny pty_* and memory', () => {
+    const permission = compileNoEdit('permission:\n  edit: deny\n  bash: deny\n  task: deny');
+    expect(permission).toMatchObject({ edit: 'deny', bash: 'deny', task: 'deny', memory: 'deny' });
+    for (const tool of ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list']) {
+      expect(permission[tool]).toBe('deny');
+    }
+  });
+
+  test('a pattern-scoped bash rule that allows something leaves pty_* alone', () => {
+    const permission = compileNoEdit('permission:\n  bash:\n    "*": deny\n    "ls *": allow');
+    expect(permission.pty_spawn).toBeUndefined();
+  });
+
+  test('an explicit rule on the tool wins', () => {
+    const permission = compileNoEdit('permission:\n  bash: deny\n  pty_list: allow');
+    expect(permission.pty_list).toBe('allow');
+    expect(permission.pty_spawn).toBe('deny');
+  });
+});

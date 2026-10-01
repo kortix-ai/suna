@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
  * number itself carries a verdict — an error count that is zero is not green,
  * it is just a number, so `default` is the honest answer far more often than
  * it looks. `idle` / `neutral` has no hue at all
- * (`kortix-brand-guidelines` → Brand accents).
+ * (`kortix-brand` → `color.md`).
  */
 export type StatTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
 

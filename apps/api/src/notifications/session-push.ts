@@ -19,11 +19,17 @@ export interface SessionPushEvent {
   projectId: string;
   /** First question text, for `question` events. */
   question?: string;
+  /** Notify these users instead of the session creator: the people a
+   *  conversation was opened with (`POST /sessions` `participants`). */
+  recipients?: string[];
 }
 
 export interface SessionPushTarget {
   createdBy: string | null;
   title: string | null;
+  /** The people a conversation was opened with: they, not the creator, are
+   *  the ones in it, so every push of that session goes to them. */
+  participants?: string[];
 }
 
 export interface SessionPushDeps {
@@ -132,10 +138,16 @@ export function createSessionNotifier(deps: SessionPushDeps) {
       if (!deps.enabled) return { sent: 0, reason: 'disabled' };
       const session = await deps.loadSession(event.sessionId, event.projectId);
       if (!session) return { sent: 0, reason: 'no_session' };
-      if (!session.createdBy) return { sent: 0, reason: 'no_recipient' };
-      if (await deps.isPresent?.(session.createdBy, event.sessionId)) return { sent: 0, reason: 'present' };
-      const rows = await deps.store.listByUser(session.createdBy);
-      const messages = buildSessionPushMessages(event, session.title, rows);
+      const recipients = event.recipients
+        ?? (session.participants?.length ? session.participants : session.createdBy ? [session.createdBy] : []);
+      if (recipients.length === 0) return { sent: 0, reason: 'no_recipient' };
+      const messages: ExpoPushMessage[] = [];
+      let present = 0;
+      for (const userId of recipients) {
+        if (await deps.isPresent?.(userId, event.sessionId)) { present += 1; continue; }
+        messages.push(...buildSessionPushMessages(event, session.title, await deps.store.listByUser(userId)));
+      }
+      if (present === recipients.length) return { sent: 0, reason: 'present' };
       if (messages.length === 0) return { sent: 0, reason: 'no_devices' };
       const result = await deps.send(messages, deps.store);
       return { sent: messages.length, reason: 'sent', result };
@@ -158,8 +170,12 @@ async function loadSessionTarget(sessionId: string, projectId: string): Promise<
     .limit(1);
   if (!row) return null;
   // `metadata.name` is the session title (owned by session-title-generate.ts).
-  const name = (row.metadata as Record<string, unknown> | null)?.name;
-  return { createdBy: row.createdBy, title: typeof name === 'string' ? name : null };
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string');
+  const participants = Array.isArray(meta.participants)
+    ? meta.participants.filter((id): id is string => typeof id === 'string')
+    : [];
+  return { createdBy: row.createdBy, title: title ?? null, participants };
 }
 
 let defaultNotifier: ReturnType<typeof createSessionNotifier> | null = null;

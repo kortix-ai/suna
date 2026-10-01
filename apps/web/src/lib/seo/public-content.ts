@@ -96,7 +96,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'about',
     title: 'About Kortix',
     description:
-      'We build self-driving companies. Humans verify, steer, and govern while agent teams do work across engineering, product, operations, finance, support, and growth.',
+      'Our mission: take a company from human to AGI, and let it keep every byte of itself on the way there.',
     htmlPath: '/about',
     markdownPath: '/markdown/about.md',
   },
@@ -145,7 +145,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'blog',
     title: 'Kortix Blog',
     description:
-      'Field notes on building, running, and governing AI agents that do real work — from the team building the Kortix command center.',
+      'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.',
     htmlPath: '/blog',
   },
   {

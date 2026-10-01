@@ -106,3 +106,18 @@ describe('serializeSession redaction', () => {
     expect(out).not.toHaveProperty('origin_ref');
   });
 });
+
+describe('serializeSession participant_people', () => {
+  const people = [{ user_id: 'u1', name: 'Avery Example', email: 'avery@example.com' }];
+
+  test('carries the resolved participants of a conversation', () => {
+    const out = serializeSession(row(), { participants: people }) as Record<string, unknown>;
+    expect(out.participant_people).toEqual(people);
+  });
+
+  test('is empty when none were resolved, and for a row the caller cannot access', () => {
+    expect((serializeSession(row()) as Record<string, unknown>).participant_people).toEqual([]);
+    const hidden = serializeSession(row(), { participants: people, canAccess: false }) as Record<string, unknown>;
+    expect(hidden.participant_people).toEqual([]);
+  });
+});
