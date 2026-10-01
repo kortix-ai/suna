@@ -1889,7 +1889,8 @@ export async function setProjectSessionModel(
 /** Who wrote one message: a project member, or another session's agent. */
 export type SessionMessageAuthor =
   | { kind: 'member'; user_id: string; name: string; email: string | null }
-  | { kind: 'session'; session_id: string; name: string };
+  /** `name` is the session title; `agent` is the agent that session runs. */
+  | { kind: 'session'; session_id: string; name: string; agent?: string };
 
 export interface SessionMessageAuthors {
   /** Keyed by runtime message id. Messages with no known sender are absent. */
