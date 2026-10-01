@@ -21,12 +21,19 @@ export const captureStore = new ObjectStore(() => ({
   secretAccessKey: config.KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY,
 }));
 
+const keyPrefix = () => {
+  const prefix = config.KORTIX_CAPTURE_S3_PREFIX.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  return prefix ? `${prefix}/` : '';
+};
+
+/** Every object key of one account starts with this. */
+export const captureAccountPrefix = (accountId: string) => `${keyPrefix()}capture/${accountId}/`;
+
 /** `<prefix>capture/<account>/<user>/<yyyy>/<mm>/<dd>/<chunk>.mp4`, date in UTC. */
 export function captureVideoKey(input: { accountId: string; userId: string; startedAt: Date; chunkId: string }): string {
-  const prefix = config.KORTIX_CAPTURE_S3_PREFIX.trim().replace(/^\/+/, '').replace(/\/+$/, '');
   const d = input.startedAt.toISOString();
   return (
-    `${prefix ? `${prefix}/` : ''}capture/${input.accountId}/${input.userId}/` +
+    `${captureAccountPrefix(input.accountId)}${input.userId}/` +
     `${d.slice(0, 4)}/${d.slice(5, 7)}/${d.slice(8, 10)}/${input.chunkId}.mp4`
   );
 }

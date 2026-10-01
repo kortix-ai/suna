@@ -225,50 +225,8 @@ export function createCaptureUserRouter() {
     const { ctx } = m;
     const target = c.req.query('user_id') || ctx.userId;
     if (!isUuid(target)) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'user_id must be a UUID');
-    const from = parseDate(c, 'from');
-    const to = parseDate(c, 'to');
-    if (from === 'bad' || to === 'bad') return err(c, 400, 'CAPTURE_BAD_REQUEST', 'from and to must be ISO dates');
-    const limit = Math.min(Math.max(Number.parseInt(c.req.query('limit') ?? '', 10) || 20, 1), 100);
-    const q = (c.req.query('q') ?? '').trim().slice(0, 500);
-    const cursor = decodeCursor(c.req.query('cursor'));
-    if (c.req.query('cursor') && !cursor) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'Invalid cursor');
     if (!(await mayRead(c, ctx, target, 'search'))) return denied(c);
-
-    const query = sql`websearch_to_tsquery('simple', ${q})`;
-    const where: SQL[] = [eq(captureFrames.accountId, ctx.accountId), eq(captureFrames.userId, target)];
-    if (q) where.push(sql`${captureFrames.tsv} @@ ${query}`);
-    if (from) where.push(gte(captureFrames.ts, from));
-    if (to) where.push(lt(captureFrames.ts, to));
-    const app = c.req.query('app');
-    if (app) where.push(sql`lower(${captureFrames.appName}) = lower(${app})`);
-    const domain = c.req.query('domain');
-    if (domain) where.push(sql`lower(${captureFrames.domain}) = lower(${domain})`);
-    if (cursor) where.push(sql`(${captureFrames.ts}, ${captureFrames.id}) < (${cursor.ts.toISOString()}::timestamptz, ${cursor.id}::bigint)`);
-
-    const rows = await db
-      .select({
-        frame_id: captureFrames.id,
-        chunk_id: captureFrames.chunkId,
-        frame_index: captureFrames.frameIndex,
-        ts: captureFrames.ts,
-        app_name: captureFrames.appName,
-        window_title: captureFrames.windowTitle,
-        url: captureFrames.url,
-        domain: captureFrames.domain,
-        snippet: q
-          ? sql<string>`ts_headline('simple', coalesce(${captureFrames.text}, ''), ${query}, 'MaxWords=30, MinWords=10, MaxFragments=1')`
-          : sql<string>`left(coalesce(${captureFrames.text}, ''), 200)`,
-      })
-      .from(captureFrames)
-      .where(and(...where))
-      .orderBy(desc(captureFrames.ts), desc(captureFrames.id))
-      .limit(limit + 1);
-    const page = rows.slice(0, limit);
-    const last = page[page.length - 1];
-    return c.json({
-      items: page.map((r) => ({ ...r, ts: r.ts.toISOString() })),
-      next_cursor: rows.length > limit && last ? encodeCursor(last.ts, last.frame_id) : null,
-    });
+    return searchCaptures(c, ctx.accountId, target);
   });
 
   // ── Timeline ──────────────────────────────────────────────────────────────
@@ -278,59 +236,8 @@ export function createCaptureUserRouter() {
     const { ctx } = m;
     const target = c.req.query('user_id') || ctx.userId;
     if (!isUuid(target)) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'user_id must be a UUID');
-    const fromQ = parseDate(c, 'from');
-    const toQ = parseDate(c, 'to');
-    if (fromQ === 'bad' || toQ === 'bad') return err(c, 400, 'CAPTURE_BAD_REQUEST', 'from and to must be ISO dates');
-    const to = toQ ?? new Date();
-    const from = fromQ ?? new Date(to.getTime() - 24 * 3600_000);
     if (!(await mayRead(c, ctx, target, 'timeline'))) return denied(c);
-
-    const chunks = await db
-      .select({
-        chunk_id: captureChunks.id,
-        started_at: captureChunks.startedAt,
-        ended_at: captureChunks.endedAt,
-        frame_count: captureChunks.frameCount,
-        device_name: tunnelConnections.name,
-      })
-      .from(captureChunks)
-      .innerJoin(captureDevices, eq(captureDevices.id, captureChunks.deviceId))
-      .leftJoin(tunnelConnections, eq(tunnelConnections.tunnelId, captureDevices.tunnelId))
-      .where(
-        and(
-          eq(captureChunks.accountId, ctx.accountId),
-          eq(captureChunks.userId, target),
-          eq(captureChunks.status, 'committed'),
-          lt(captureChunks.startedAt, to),
-          gte(captureChunks.endedAt, from),
-        ),
-      )
-      .orderBy(desc(captureChunks.startedAt))
-      .limit(500);
-    // A frame stands for chunk duration / frame count seconds of its app.
-    const apps = await db
-      .select({
-        app_name: captureFrames.appName,
-        seconds: sql<number>`sum(extract(epoch from (${captureChunks.endedAt} - ${captureChunks.startedAt})) / greatest(${captureChunks.frameCount}, 1))::float8`,
-      })
-      .from(captureFrames)
-      .innerJoin(captureChunks, eq(captureChunks.id, captureFrames.chunkId))
-      .where(
-        and(
-          eq(captureFrames.accountId, ctx.accountId),
-          eq(captureFrames.userId, target),
-          gte(captureFrames.ts, from),
-          lte(captureFrames.ts, to),
-          sql`${captureFrames.appName} is not null`,
-        ),
-      )
-      .groupBy(captureFrames.appName)
-      .orderBy(sql`2 desc`)
-      .limit(50);
-    return c.json({
-      chunks: chunks.map((r) => ({ ...r, started_at: r.started_at.toISOString(), ended_at: r.ended_at.toISOString() })),
-      apps: apps.map((r) => ({ app_name: r.app_name, seconds: Math.round(r.seconds) })),
-    });
+    return captureTimeline(c, ctx.accountId, target);
   });
 
   // ── Video ─────────────────────────────────────────────────────────────────
@@ -356,27 +263,7 @@ export function createCaptureUserRouter() {
     const m = await member(c);
     if ('response' in m) return m.response;
     const { ctx } = m;
-    const frameId = Number(c.req.param('frameId'));
-    if (!Number.isSafeInteger(frameId) || frameId < 1) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'frameId must be a positive integer');
-    const [f] = await db
-      .select()
-      .from(captureFrames)
-      .where(and(eq(captureFrames.id, frameId), eq(captureFrames.accountId, ctx.accountId)));
-    if (!f) return err(c, 404, 'CAPTURE_FRAME_NOT_FOUND', 'Frame not found');
-    if (!(await mayRead(c, ctx, f.userId, 'frame'))) return denied(c);
-    return c.json({
-      frame_id: f.id,
-      chunk_id: f.chunkId,
-      user_id: f.userId,
-      frame_index: f.frameIndex,
-      ts: f.ts.toISOString(),
-      app_bundle: f.appBundle,
-      app_name: f.appName,
-      window_title: f.windowTitle,
-      url: f.url,
-      domain: f.domain,
-      text: f.text,
-    });
+    return captureFrame(c, ctx.accountId, (ownerId) => mayRead(c, ctx, ownerId, 'frame'));
   });
 
   // ── Delete own data ───────────────────────────────────────────────────────
@@ -416,4 +303,132 @@ function decodeCursor(raw: string | undefined): { ts: Date; id: number } | null 
   const ts = new Date(iso ?? '');
   const n = Number(id);
   return Number.isNaN(ts.getTime()) || !Number.isSafeInteger(n) ? null : { ts, id: n };
+}
+
+/** Search `target`'s frames in `accountId`. The caller has already decided `target` may be read. */
+export async function searchCaptures(c: any, accountId: string, target: string) {
+  const from = parseDate(c, 'from');
+  const to = parseDate(c, 'to');
+  if (from === 'bad' || to === 'bad') return err(c, 400, 'CAPTURE_BAD_REQUEST', 'from and to must be ISO dates');
+  const limit = Math.min(Math.max(Number.parseInt(c.req.query('limit') ?? '', 10) || 20, 1), 100);
+  const q = (c.req.query('q') ?? '').trim().slice(0, 500);
+  const cursor = decodeCursor(c.req.query('cursor'));
+  if (c.req.query('cursor') && !cursor) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'Invalid cursor');
+
+  const query = sql`websearch_to_tsquery('simple', ${q})`;
+  const where: SQL[] = [eq(captureFrames.accountId, accountId), eq(captureFrames.userId, target)];
+  if (q) where.push(sql`${captureFrames.tsv} @@ ${query}`);
+  if (from) where.push(gte(captureFrames.ts, from));
+  if (to) where.push(lt(captureFrames.ts, to));
+  const app = c.req.query('app');
+  if (app) where.push(sql`lower(${captureFrames.appName}) = lower(${app})`);
+  const domain = c.req.query('domain');
+  if (domain) where.push(sql`lower(${captureFrames.domain}) = lower(${domain})`);
+  if (cursor) where.push(sql`(${captureFrames.ts}, ${captureFrames.id}) < (${cursor.ts.toISOString()}::timestamptz, ${cursor.id}::bigint)`);
+
+  const rows = await db
+    .select({
+      frame_id: captureFrames.id,
+      chunk_id: captureFrames.chunkId,
+      frame_index: captureFrames.frameIndex,
+      ts: captureFrames.ts,
+      app_name: captureFrames.appName,
+      window_title: captureFrames.windowTitle,
+      url: captureFrames.url,
+      domain: captureFrames.domain,
+      snippet: q
+        ? sql<string>`ts_headline('simple', coalesce(${captureFrames.text}, ''), ${query}, 'MaxWords=30, MinWords=10, MaxFragments=1')`
+        : sql<string>`left(coalesce(${captureFrames.text}, ''), 200)`,
+    })
+    .from(captureFrames)
+    .where(and(...where))
+    .orderBy(desc(captureFrames.ts), desc(captureFrames.id))
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return c.json({
+    items: page.map((r) => ({ ...r, ts: r.ts.toISOString() })),
+    next_cursor: rows.length > limit && last ? encodeCursor(last.ts, last.frame_id) : null,
+  });
+}
+
+/** Timeline of `target`'s chunks and app time in `accountId`. The caller has already decided `target` may be read. */
+export async function captureTimeline(c: any, accountId: string, target: string) {
+  const fromQ = parseDate(c, 'from');
+  const toQ = parseDate(c, 'to');
+  if (fromQ === 'bad' || toQ === 'bad') return err(c, 400, 'CAPTURE_BAD_REQUEST', 'from and to must be ISO dates');
+  const to = toQ ?? new Date();
+  const from = fromQ ?? new Date(to.getTime() - 24 * 3600_000);
+
+  const chunks = await db
+    .select({
+      chunk_id: captureChunks.id,
+      started_at: captureChunks.startedAt,
+      ended_at: captureChunks.endedAt,
+      frame_count: captureChunks.frameCount,
+      device_name: tunnelConnections.name,
+    })
+    .from(captureChunks)
+    .innerJoin(captureDevices, eq(captureDevices.id, captureChunks.deviceId))
+    .leftJoin(tunnelConnections, eq(tunnelConnections.tunnelId, captureDevices.tunnelId))
+    .where(
+      and(
+        eq(captureChunks.accountId, accountId),
+        eq(captureChunks.userId, target),
+        eq(captureChunks.status, 'committed'),
+        lt(captureChunks.startedAt, to),
+        gte(captureChunks.endedAt, from),
+      ),
+    )
+    .orderBy(desc(captureChunks.startedAt))
+    .limit(500);
+  // A frame stands for chunk duration / frame count seconds of its app.
+  const apps = await db
+    .select({
+      app_name: captureFrames.appName,
+      seconds: sql<number>`sum(extract(epoch from (${captureChunks.endedAt} - ${captureChunks.startedAt})) / greatest(${captureChunks.frameCount}, 1))::float8`,
+    })
+    .from(captureFrames)
+    .innerJoin(captureChunks, eq(captureChunks.id, captureFrames.chunkId))
+    .where(
+      and(
+        eq(captureFrames.accountId, accountId),
+        eq(captureFrames.userId, target),
+        gte(captureFrames.ts, from),
+        lte(captureFrames.ts, to),
+        sql`${captureFrames.appName} is not null`,
+      ),
+    )
+    .groupBy(captureFrames.appName)
+    .orderBy(sql`2 desc`)
+    .limit(50);
+  return c.json({
+    chunks: chunks.map((r) => ({ ...r, started_at: r.started_at.toISOString(), ended_at: r.ended_at.toISOString() })),
+    apps: apps.map((r) => ({ app_name: r.app_name, seconds: Math.round(r.seconds) })),
+  });
+}
+
+/** One frame with its text. `allow` decides, per owner, whether the caller may read it; a refusal is `allowDenied`. */
+export async function captureFrame(c: any, accountId: string, allow: (ownerId: string) => Promise<boolean>, allowDenied: (c: any) => Response = denied) {
+  const frameId = Number(c.req.param('frameId'));
+  if (!Number.isSafeInteger(frameId) || frameId < 1) return err(c, 400, 'CAPTURE_BAD_REQUEST', 'frameId must be a positive integer');
+  const [f] = await db
+    .select()
+    .from(captureFrames)
+    .where(and(eq(captureFrames.id, frameId), eq(captureFrames.accountId, accountId)));
+  if (!f) return err(c, 404, 'CAPTURE_FRAME_NOT_FOUND', 'Frame not found');
+  if (!(await allow(f.userId))) return allowDenied(c);
+  return c.json({
+    frame_id: f.id,
+    chunk_id: f.chunkId,
+    user_id: f.userId,
+    frame_index: f.frameIndex,
+    ts: f.ts.toISOString(),
+    app_bundle: f.appBundle,
+    app_name: f.appName,
+    window_title: f.windowTitle,
+    url: f.url,
+    domain: f.domain,
+    text: f.text,
+  });
 }

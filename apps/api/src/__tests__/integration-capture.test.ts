@@ -5,9 +5,11 @@
  * Run: pnpm test -- --db-only integration-capture
  */
 import { afterAll, describe, expect, test } from 'bun:test';
-import { DeleteObjectsCommand, type S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, ListObjectsV2Command, type S3Client } from '@aws-sdk/client-s3';
 import { captureAccountSettings, captureChunks, captureDevices, captureFrames } from '@kortix/db';
 import { eq, inArray, sql } from 'drizzle-orm';
+import { purgeCapture } from '../capture/chunks';
+import { captureAccountPrefix } from '../capture/store';
 import { runCaptureRetentionOnce } from '../capture/sweeper';
 import { ObjectStore } from '../object-store/s3';
 import { db } from '../shared/db';
@@ -143,5 +145,54 @@ describe('capture retention sweep', () => {
       .where(sql`${captureFrames.accountId} = ${accountId} and ${captureFrames.tsv} @@ websearch_to_tsquery('simple', 'synthetic window')`);
     expect(hit).toHaveLength(1);
     expect(miss).toHaveLength(1);
+  });
+});
+
+describe('capture purge on account and user deletion', () => {
+  /** An in-memory bucket behind the S3 client: list by prefix, delete by key. */
+  function memoryStore(keys: string[]) {
+    const objects = new Set(keys);
+    const client = {
+      send: async (command: unknown) => {
+        if (command instanceof ListObjectsV2Command) {
+          const prefix = command.input.Prefix ?? '';
+          return { Contents: [...objects].filter((k) => k.startsWith(prefix)).map((Key) => ({ Key, Size: 1 })), IsTruncated: false };
+        }
+        if (command instanceof DeleteObjectsCommand) {
+          const gone = (command.input.Delete?.Objects ?? []).map((o) => o.Key!);
+          for (const k of gone) objects.delete(k);
+          return { Deleted: gone.map((Key) => ({ Key })) };
+        }
+        return {};
+      },
+    } as unknown as S3Client;
+    return { objects, store: new ObjectStore(() => ({ name: 'capture-test', bucket: 'b' }), { client }) };
+  }
+
+  test('removes the deleted account, the deleted user in other accounts, their objects and devices; keeps everyone else', async () => {
+    const [u1, u2, u3] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+    const a = await seedAccount('capture-purge-a');
+    const b = await seedAccount('capture-purge-b');
+    accountIds.push(a, b);
+    const [dA1] = await db.insert(captureDevices).values({ accountId: a, userId: u1 }).returning();
+    const [dA2] = await db.insert(captureDevices).values({ accountId: a, userId: u2 }).returning();
+    const [dB1] = await db.insert(captureDevices).values({ accountId: b, userId: u1 }).returning();
+    const [dB3] = await db.insert(captureDevices).values({ accountId: b, userId: u3 }).returning();
+    const a1 = await seedChunk(a, u1, dA1!.id, { ageDays: 1 });
+    const a2 = await seedChunk(a, u2, dA2!.id, { ageDays: 1 });
+    const b1 = await seedChunk(b, u1, dB1!.id, { ageDays: 1 });
+    const b3 = await seedChunk(b, u3, dB3!.id, { ageDays: 1 });
+    const key = (acct: string, id: string) => `capture/${acct}/${id}.mp4`;
+    const orphan = `${captureAccountPrefix(a)}${u2}/orphan.mp4`;
+    const { store, objects } = memoryStore([key(a, a1), key(a, a2), key(b, b1), key(b, b3), orphan]);
+
+    await purgeCapture({ accountIds: [a], userId: u1 }, store);
+
+    expect(await remaining([a1, a2, b1, b3])).toEqual(new Set([b3]));
+    expect([...objects]).toEqual([key(b, b3)]);
+    const frames = await db.select({ chunkId: captureFrames.chunkId }).from(captureFrames).where(inArray(captureFrames.chunkId, [a1, a2, b1, b3]));
+    expect(frames.map((f) => f.chunkId)).toEqual([b3]);
+    const devices = await db.select({ id: captureDevices.id }).from(captureDevices).where(inArray(captureDevices.id, [dA1!.id, dA2!.id, dB1!.id, dB3!.id]));
+    expect(devices.map((d) => d.id)).toEqual([dB3!.id]);
   });
 });

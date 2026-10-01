@@ -15,6 +15,7 @@ import {
 } from '../../projects/sandbox-reaper';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { wallet } from '../wallet';
+import { purgeCapture } from '../../capture/chunks';
 import {
   getActiveDeletionRequest,
   createDeletionRequest,
@@ -387,7 +388,8 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
 }
 
 async function performDeletion(accountId: string, userId?: string) {
-  await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
+  const accountIds = await reclaimableAccountIds(accountId, userId);
+  await reclaimAccountSandboxes(accountIds);
 
   const account = await getCreditAccount(accountId);
 
@@ -409,6 +411,9 @@ async function performDeletion(accountId: string, userId?: string) {
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',
   } as any);
+
+  // Last, so a store failure fails the deletion and the next run retries it.
+  await purgeCapture({ accountIds, userId });
 
   console.log(`[AccountDeletion] Account deleted: ${accountId}`);
 }
