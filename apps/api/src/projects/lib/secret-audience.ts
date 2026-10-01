@@ -257,14 +257,25 @@ async function currentSecretGrants(input: { accountId: string; projectId: string
   ).filter((grant) => grant.resourceType === 'secret' && grant.resourceId === input.secretId);
 }
 
-/** The agent service account a session's live token names, or null. Raw SQL,
- *  for the same stubbed-`@kortix/db` reason as `projectAccountId`. */
+/** The agent service account a session acts as, or null: the one its live
+ *  token names, else the standing identity of the session's `agent_name`. The
+ *  fallback covers the first boot, whose env is built before the token is
+ *  minted. Raw SQL, for the same stubbed-`@kortix/db` reason as `projectAccountId`. */
 export async function sessionAgentId(sessionId: string): Promise<string | null> {
   const result = await db.execute<{ service_account_id: string }>(sql`
-    select service_account_id from kortix.account_tokens
-     where session_id = ${sessionId} and status = 'active' and revoked_at is null
-       and service_account_id is not null
-     order by created_at desc limit 1`);
+    select service_account_id from (
+      select service_account_id, 0 as pick, created_at from kortix.account_tokens
+       where session_id = ${sessionId} and status = 'active' and revoked_at is null
+         and service_account_id is not null
+      union all
+      select sa.service_account_id, 1 as pick, sa.created_at
+        from kortix.project_sessions s
+        join kortix.service_accounts sa
+          on sa.account_id = s.account_id and sa.project_id = s.project_id
+         and sa.agent_name = s.agent_name and sa.status = 'active'
+       where s.session_id = ${sessionId}
+    ) candidates
+    order by pick, created_at desc limit 1`);
   const rows = (result as unknown as { rows?: Array<{ service_account_id: string }> }).rows ?? result;
   return (rows as Array<{ service_account_id: string }>)[0]?.service_account_id ?? null;
 }
