@@ -2255,6 +2255,7 @@ flow(
   async (ctx) => {
     const { Client } = await import('pg');
     const project = await ctx.fixtures.project();
+    if (!project.accountId) throw new Error('presence fixture project is missing accountId');
     const sessionId = await createDatabaseSession(ctx.env, {
       projectId: project.id,
       accountId: project.accountId,

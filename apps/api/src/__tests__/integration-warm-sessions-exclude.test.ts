@@ -238,6 +238,24 @@ describe('warm sessions — compute placement', () => {
     accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata, includeProvisioning,
   });
 
+  for (const placement of ['actual', 'pending'] as const) {
+    test(`${placement} US warming remains scoped to account, project, and creator`, async () => {
+      const sessionId = await seedWarmSession(
+        placement === 'actual'
+          ? { boxRegion: 'us-east' }
+          : { status: 'provisioning', boxStatus: 'provisioning', boxRegion: null, requestedLocation: 'us-east' },
+      );
+      for (const dimension of ['accountId', 'projectId', 'userId'] as const) {
+        const scope = {
+          accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: on, includeProvisioning: true,
+        };
+        scope[dimension] = crypto.randomUUID();
+        expect(await findWarmProjectSession(scope)).toBeNull();
+      }
+      expect((await lookup(on, true))?.sessionId).toBe(sessionId);
+    });
+  }
+
   test('selects an older actual US box rather than newer EU or unknown candidates without changing them', async () => {
     const us = await seedWarmSession({ boxRegion: 'us-east', createdAt: new Date(Date.now() - 60_000) });
     const eu = await seedWarmSession({ boxRegion: 'eu-west' });

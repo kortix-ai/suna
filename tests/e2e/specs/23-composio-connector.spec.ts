@@ -720,7 +720,7 @@ test.describe("23 — Composio managed connector", () => {
 
     // ── Specific people or groups: created, then narrowed ────────────────
     await add.getByLabel("Name").fill("Sales CRM");
-    await add.getByRole("radio", { name: /^Specific people or groups/ }).click();
+    await add.getByRole("radio", { name: /^Specific people/ }).click();
     await expect(add.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
     await add.getByRole("button", { name: groupName }).click();
     const sharedRequest = page.waitForRequest(
@@ -889,7 +889,7 @@ test.describe("23 — Composio managed connector", () => {
     // The agent's suggested name and intended audience, both editable.
     await expect(dialog.getByLabel("Name")).toHaveValue("Dad's Gmail");
     await expect(dialog.getByRole("radio", { name: /^Only you/ })).toBeChecked();
-    await dialog.getByRole("radio", { name: /^Specific people or groups/ }).click();
+    await dialog.getByRole("radio", { name: /^Specific people/ }).click();
     await dialog.getByRole("button", { name: groupName }).click();
 
     const createRequest = page.waitForRequest(
