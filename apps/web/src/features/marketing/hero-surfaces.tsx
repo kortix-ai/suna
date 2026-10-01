@@ -307,7 +307,7 @@ function EmailSurface() {
           same status is stated on /channels, which is where a reader who cares
           about it goes. */}
       <div className="border-border text-muted-foreground hidden shrink-0 border-t px-4 py-3 text-center text-xs sm:block">
-        {tI18nComplete.raw('text0e0b01710c4b')}
+        {tI18nComplete.raw('text81b004dc7e0b')}
       </div>
     </div>
   );

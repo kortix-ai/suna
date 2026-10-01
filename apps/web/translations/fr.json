@@ -9886,7 +9886,6 @@
       "text0df6f1cad36c": "Afficher",
       "text0df9df285277": "Uniquement {value0}",
       "text0dfd0cbdd238": "C’est la seule fois où la clé complète est affichée. Conservez-la dans un endroit sûr.",
-      "text0e0b01710c4b": "Slack et Teams sont disponibles · l’e-mail arrive · ou démarrez des sessions depuis l’API",
       "text0e1181a97f66": "Une vraie machine, une vraie requête, une analyse que vous pouvez relancer",
       "text0e16f24ee012": "· {value0} par {value1}",
       "text0e22e022480d": "Choisir le modèle utilisé pour ce tour",
@@ -19101,7 +19100,10 @@
       "textf25fe860a82d": "10 variantes, 8 tailles. Les boutons sont <code>rounded-md</code>. Les panneaux, cartes et lignes sont aussi rounded-md ; les panneaux flottants sont rounded-lg ; rounded-2xl est réservé au marketing. La variante <code>destructive</code> est réservée à l’unique confirmation irréversible.",
       "textc94e8cb68cba": "Modèles interdits",
       "text9bb4af3b0beb": "Ils existent encore dans le code, mais le brand kit les interdit. N’en ajoutez pas de nouvelle utilisation.",
-      "text1aff73a5df45": "{why} Utilisez {instead}."
+      "text1aff73a5df45": "{why} Utilisez {instead}.",
+      "text81b004dc7e0b": "Slack et Teams sont disponibles · l’e-mail arrive · ou démarrez des sessions depuis l’API",
+      "text7d7b98240405": "Deux sont disponibles. Un est expérimental. Nous vous disons lequel.",
+      "textb60c863bbacb": "Actif pour chaque projet, sans flag. Un administrateur du tenant donne son consentement une fois, ou un projet apporte sa propre app de bot. Les mêmes sessions, les mêmes règles d’identité que Slack."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

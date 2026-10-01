@@ -9899,7 +9899,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Only {value0}",
       "text0dfd0cbdd238": "This is the only time the full key is displayed. Store it somewhere safe.",
-      "text0e0b01710c4b": "Slack and Teams are live · email is rolling out · or start sessions from the API",
       "text0e1181a97f66": "A real machine, a real query, an analysis you can re-run",
       "text0e16f24ee012": "· {value0} by {value1}",
       "text0e22e022480d": "Choose which model runs this turn",
@@ -19114,7 +19113,10 @@
       "textf25fe860a82d": "10 variants, 8 sizes. Buttons are <code>rounded-md</code>. Panels, cards and rows are rounded-md too; floating panels are rounded-lg; rounded-2xl is marketing only. The <code>destructive</code> variant is reserved for the one irreversible confirm.",
       "textc94e8cb68cba": "Banned patterns",
       "text9bb4af3b0beb": "These ship in the code base but the brand kit bans them. Do not add a new use.",
-      "text1aff73a5df45": "{why} Use {instead}."
+      "text1aff73a5df45": "{why} Use {instead}.",
+      "text81b004dc7e0b": "Slack and Teams are live · email is rolling out · or start sessions from the API",
+      "text7d7b98240405": "Two are live. One is experimental. We will say which.",
+      "textb60c863bbacb": "On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

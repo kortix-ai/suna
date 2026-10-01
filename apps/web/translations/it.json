@@ -9886,7 +9886,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Solo {value0}",
       "text0dfd0cbdd238": "Questa è l’unica volta in cui viene visualizzata la chiave completa. Conservala in un luogo sicuro.",
-      "text0e0b01710c4b": "Slack e Teams sono disponibili · l’email è in arrivo · oppure avvia sessioni dall’API",
       "text0e1181a97f66": "Una macchina reale, una query reale, un'analisi che puoi rieseguire",
       "text0e16f24ee012": "· {value0} entro {value1}",
       "text0e22e022480d": "Scegli quale modello esegue questo turno",
@@ -19101,7 +19100,10 @@
       "textf25fe860a82d": "10 varianti, 8 dimensioni. I pulsanti sono <code>rounded-md</code>. Anche pannelli, card e righe sono rounded-md; i pannelli flottanti sono rounded-lg; rounded-2xl è solo per il marketing. La variante <code>destructive</code> è riservata all’unica conferma irreversibile.",
       "textc94e8cb68cba": "Pattern vietati",
       "text9bb4af3b0beb": "Sono ancora presenti nel codice, ma il brand kit li vieta. Non aggiungere nuovi utilizzi.",
-      "text1aff73a5df45": "{why} Usa {instead}."
+      "text1aff73a5df45": "{why} Usa {instead}.",
+      "text81b004dc7e0b": "Slack e Teams sono disponibili · l’email è in arrivo · oppure avvia sessioni dall’API",
+      "text7d7b98240405": "Due sono disponibili. Uno è sperimentale. Vi diciamo quale.",
+      "textb60c863bbacb": "Attivo per ogni progetto, senza flag. Un amministratore del tenant dà il consenso una volta, oppure un progetto usa la propria app bot. Le stesse sessioni e le stesse regole di identità di Slack."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -9886,7 +9886,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "仅限 {value0}",
       "text0dfd0cbdd238": "这是完整密钥唯一一次显示。请将其安全地存储在其他位置。",
-      "text0e0b01710c4b": "Slack 和 Teams 已上线 · 电子邮件即将推出 · 或从 API 开始会话",
       "text0e1181a97f66": "真实机器、真实查询、可重新运行的分析",
       "text0e16f24ee012": "· {value0} 由 {value1}",
       "text0e22e022480d": "选择本轮运行的模型",
@@ -19101,7 +19100,10 @@
       "textf25fe860a82d": "10 种变体，8 种尺寸。按钮使用 <code>rounded-md</code>。面板、卡片和行也使用 rounded-md；浮动面板使用 rounded-lg；rounded-2xl 仅用于营销页面。<code>destructive</code> 变体只留给唯一不可撤销的确认操作。",
       "textc94e8cb68cba": "禁用模式",
       "text9bb4af3b0beb": "这些仍存在于代码库中，但品牌规范已禁止使用。不要新增使用。",
-      "text1aff73a5df45": "{why} 请改用 {instead}。"
+      "text1aff73a5df45": "{why} 请改用 {instead}。",
+      "text81b004dc7e0b": "Slack 和 Teams 已上线 · 电子邮件即将推出 · 或从 API 开始会话",
+      "text7d7b98240405": "两个已上线。一个处于实验阶段。我们会说明是哪一个。",
+      "textb60c863bbacb": "对每个项目都已开启，无需开关。租户管理员只需同意一次，或者项目使用自己的机器人应用。会话和身份规则与 Slack 相同。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
