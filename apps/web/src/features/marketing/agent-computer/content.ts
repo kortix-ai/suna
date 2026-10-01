@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  * ACCURACY GATE for this page specifically:
  *  - Say "agent computer" / "cloud computer" / "sandbox". NEVER "container".
  *  - "3,000+ apps" is the only sanctioned number. No benchmarks, no latency,
@@ -28,7 +28,7 @@ import type { UiTranslator } from '@/i18n/translator';
  */
 
 export const hero = {
-  eyebrow: 'Agent computer',
+  eyebrow: 'Agent Computer',
   title: 'Every session gets its own computer.',
   sub: 'Your project and tools are ready from the start, so the agent can work without using your laptop.',
   ctaPrimary: 'Start a session',
@@ -98,7 +98,7 @@ export const control = {
 
 export const parallel = {
   eyebrow: 'Parallelism',
-  title: 'Hundreds of thousands of computers. One main.',
+  title: 'Thousands of computers. One main.',
   sub: 'Run many agents at once without mixing up their work. You review every result before it joins your main project.',
   /** The mono equation under the headline. Keep it three terms. */
   equation: '1 session  =  1 computer  =  1 branch',
@@ -147,7 +147,7 @@ export const declared = {
     ],
   },
   shell: {
-    title: 'inside the agent computer',
+    title: 'inside the cloud computer',
     lines: [
       '# the repo is already here. nothing to set up.',
       '$ pwd',

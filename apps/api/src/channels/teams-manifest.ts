@@ -92,10 +92,10 @@ export interface BuildTeamsManifestConfig {
 }
 
 const SHORT_DESCRIPTION =
-  'Your AI workforce, in Teams — @-mention an agent and it does the real work.';
+  'Open-source AI Management System — start a session from any Teams chat.';
 
 const LONG_DESCRIPTION =
-  'Kortix brings a workforce of AI agents into Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — working across your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same conversation. Managed by Kortix · https://kortix.com';
+  'Kortix is an open-source AI Management System — your agents, skills, company memory, and connectors in one git repo you own. This app starts Kortix sessions from Microsoft Teams. Add the bot to a chat or channel, @-mention it with a task, and an agent gets on it — using your connected tools and replying right here as it goes, with live progress. Follow-ups stay in the same session. Managed by Kortix · https://kortix.com';
 
 function hostOf(baseUrl: string): string {
   try {
@@ -125,7 +125,7 @@ export function buildTeamsManifest(cfg: BuildTeamsManifestConfig): TeamsManifest
       full: cfg.longDescription ?? LONG_DESCRIPTION,
     },
     icons: { color: 'color.png', outline: 'outline.png' },
-    accentColor: '#0A0A0A',
+    accentColor: '#0b0b0b',
     bots: [
       {
         botId: cfg.appId,

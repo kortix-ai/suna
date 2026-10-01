@@ -44,8 +44,6 @@ export const viewport: Viewport = {
   ],
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: 'cover',
 };
 
@@ -98,15 +96,22 @@ const ROOT_METADATA: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/favicon.svg', sizes: '270x270' },
+      { url: '/favicon.ico', sizes: 'any' },
       {
-        url: '/favicon.svg',
-        sizes: '270x270',
+        url: '/icon-light-32.png',
+        sizes: '32x32',
+        type: 'image/png',
+        media: '(prefers-color-scheme: light)',
+      },
+      {
+        url: '/icon-dark-32.png',
+        sizes: '32x32',
+        type: 'image/png',
         media: '(prefers-color-scheme: dark)',
       },
     ],
-    shortcut: '/favicon.svg',
-    apple: [{ url: '/favicon.svg', sizes: '270x270' }],
+    shortcut: '/favicon.ico',
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   manifest: '/manifest.json',
   // No root canonical: Next.js inherits `alternates` into every page that does
@@ -251,7 +256,7 @@ export default async function RootLayout({
               alternateName: [
                 'Kortix',
                 "Kortix AI",
-                "Kortix – The AI Command Center for Your Company",
+                "Kortix – The open-source AI Management System",
               ],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.svg`,

@@ -272,7 +272,11 @@ export function ServicePreviewUrlFallback({ preview }: { preview: ServicePreview
             onClick={handleRefresh}
             className="text-muted-foreground gap-1.5"
           >
-            <ArrowClockwiseIcon className={cn('size-3.5', isLoading && 'animate-spinner-spin')} />
+            {isLoading ? (
+              <Loading className="size-3.5" />
+            ) : (
+              <ArrowClockwiseIcon className="size-3.5" />
+            )}
             {tI18nHardcoded.raw('i18nComplete.textceba35272869')}
           </Button>
         </Hint>

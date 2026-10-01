@@ -38,8 +38,8 @@ pointer; `tests/unit/cursor-affordance.test.ts` fails on a `cursor-default` in
 
 ## Design references
 
-Before changing UI, read `.agents/skills/kortix-brand-guidelines/SKILL.md` for
-the value allowlist and `.agents/skills/kortix-design-system/SKILL.md` for the
+Before changing UI, read `.agents/skills/kortix-brand/SKILL.md` for
+the value allowlist and the voice and `.agents/skills/kortix-design-system/SKILL.md` for the
 component primitives. The canonical table is in the root `AGENTS.md` →
 "Frontend design standard". Implemented sources: `src/app/globals.css` tokens,
 `src/components/ui/`, and the `/design-system` route. The Electron shell
