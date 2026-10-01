@@ -3262,9 +3262,14 @@ export const accountGithubInstallationsRelations = relations(
   }),
 );
 
-export const auditEvents = kortixSchema.table(
-  'audit_events',
-  {
+/**
+ * The columns of an audit event, as fresh builders on every call. One definition
+ * for `audit_events` (the table writers use), `audit_events_legacy` and the read
+ * view `audit_events_all`, so the three can never drift in this file. The database
+ * side is guarded by audit-events-read-view.integration.test.ts.
+ */
+function auditEventColumns() {
+  return {
     // UUIDv7 (migration 20261002..._audit_events_uuid_v7): the leading 48 bits are the
     // creation time in ms, so new ids append at the right edge of the pkey btree
     // instead of landing on a random cold page. Rows written before it keep their v4 id.
@@ -3332,7 +3337,12 @@ export const auditEvents = kortixSchema.table(
     userAgent: text('user_agent'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
-  },
+  };
+}
+
+export const auditEvents = kortixSchema.table(
+  'audit_events',
+  auditEventColumns(),
   (table) => [
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
@@ -3409,6 +3419,13 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_occurred_at').on(table.occurredAt),
   ],
 );
+
+/**
+ * The relation every audit READ goes through (`SELECT * FROM audit_events` today; after the
+ * partition cutover, the partitioned table UNION ALL `audit_events_legacy`). Writers keep
+ * using `auditEvents`. Migration 20261001225220282_audit_events_all_view.
+ */
+export const auditEventsAll = kortixSchema.view('audit_events_all', auditEventColumns()).existing();
 
 /** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
  *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */

@@ -8,6 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountTokens,
   auditEvents,
+  auditEventsAll,
   projectSessions,
   serviceAccounts,
   sessionSandboxes,
@@ -275,9 +276,9 @@ projectsApp.openapi(
     await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const fetched = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
     const hasMore = fetched.length > limit;
     const rows = hasMore ? fetched.slice(0, limit) : fetched;

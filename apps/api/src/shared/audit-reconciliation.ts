@@ -242,7 +242,7 @@ export async function reconcileAuditEvents(
         -- hash-join the whole audit_events table when it misestimates the
         -- (now small) candidate set.
         LEFT JOIN LATERAL (
-          SELECT a.event_id FROM kortix.audit_events a
+          SELECT a.event_id FROM kortix.audit_events_all a
            WHERE a.source_ledger = c.source_ledger
              AND a.source_record_id = c.source_record_id
              AND a.phase = c.phase

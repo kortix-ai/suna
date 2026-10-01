@@ -4,8 +4,8 @@
 // SKIP LOCKED, so slow or failed receivers never block the audit write path.
 
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { and, eq, getViewSelectedFields, sql } from 'drizzle-orm';
 import { accountHasEntitlement } from '../billing/services/entitlements';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { serializeAuditEvent } from './audit-query';
@@ -113,10 +113,10 @@ function retryDelayMs(attempts: number): number {
 
 async function processDelivery(deliveryId: string): Promise<void> {
   const [row] = await db
-    .select({ delivery: auditWebhookDeliveries, hook: auditWebhooks, event: auditEvents })
+    .select({ delivery: auditWebhookDeliveries, hook: auditWebhooks, event: getViewSelectedFields(auditEventsAll) })
     .from(auditWebhookDeliveries)
     .innerJoin(auditWebhooks, eq(auditWebhooks.webhookId, auditWebhookDeliveries.webhookId))
-    .innerJoin(auditEvents, eq(auditEvents.eventId, auditWebhookDeliveries.eventId))
+    .innerJoin(auditEventsAll, eq(auditEventsAll.eventId, auditWebhookDeliveries.eventId))
     .where(
       and(
         eq(auditWebhookDeliveries.deliveryId, deliveryId),
