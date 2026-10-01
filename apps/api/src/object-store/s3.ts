@@ -125,6 +125,7 @@ export type ObjectBody = string | Buffer | { path: string; bytes: number };
 export class ObjectStore {
   private apiClient: S3Client | null = null;
   private presigningClient: S3Client | null = null;
+  private uploadPresigningClient: S3Client | null = null;
   private modeLogged = false;
 
   /**
@@ -155,7 +156,10 @@ export class ObjectStore {
     return publishOnceMode(this.target().endpoint);
   }
 
-  private build(endpoint: string, opts: { useAccelerateEndpoint?: boolean; forcePathStyle?: boolean } = {}): S3Client {
+  private build(
+    endpoint: string,
+    opts: { useAccelerateEndpoint?: boolean; forcePathStyle?: boolean; noDefaultChecksum?: boolean } = {},
+  ): S3Client {
     const t = this.target();
     const region = (t.region ?? '').trim() || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
     const options: S3ClientConfig = {
@@ -163,6 +167,7 @@ export class ObjectStore {
       forcePathStyle: opts.forcePathStyle ?? Boolean(t.forcePathStyle),
       ...(endpoint ? { endpoint } : {}),
       ...(opts.useAccelerateEndpoint ? { useAccelerateEndpoint: true } : {}),
+      ...(opts.noDefaultChecksum ? { requestChecksumCalculation: 'WHEN_REQUIRED' as const } : {}),
     };
     const accessKeyId = (t.accessKeyId ?? '').trim();
     const secretAccessKey = (t.secretAccessKey ?? '').trim();
@@ -201,10 +206,35 @@ export class ObjectStore {
     return this.presigningClient;
   }
 
+  /**
+   * The client that signs UPLOAD URLs. Same target as {@link presignClient},
+   * but without the SDK's default CRC32: it would sign the checksum of an
+   * empty body into the URL, and the real upload would then fail it.
+   */
+  private uploadPresignClient(): S3Client {
+    if (this.overrides.presignClient) return this.overrides.presignClient;
+    if (this.overrides.client) return this.overrides.client;
+    if (!this.uploadPresigningClient) {
+      const t = this.target();
+      const resolved = resolvePresignTarget({
+        publicEndpoint: t.publicEndpoint ?? '',
+        accelerate: Boolean(t.accelerate),
+        forcePathStyle: Boolean(t.forcePathStyle),
+      });
+      this.uploadPresigningClient = this.build(resolved.sameAsApiClient ? (t.endpoint ?? '').trim() : resolved.endpoint, {
+        useAccelerateEndpoint: resolved.useAccelerateEndpoint,
+        forcePathStyle: resolved.forcePathStyle,
+        noDefaultChecksum: true,
+      });
+    }
+    return this.uploadPresigningClient;
+  }
+
   /** Drop the memoized clients. Tests, and any settings change. */
   reset(): void {
     this.apiClient = null;
     this.presigningClient = null;
+    this.uploadPresigningClient = null;
     this.modeLogged = false;
   }
 
@@ -297,6 +327,42 @@ export class ObjectStore {
       expiresIn,
     });
     return { url, expiresAt: new Date(Date.now() + expiresIn * 1000) };
+  }
+
+  /**
+   * Short-lived URL a recorder PUTs one object to. The signature pins the
+   * content type, the exact byte length, and SSE-S3, so a client cannot
+   * upload a different size or an unencrypted object. The caller sends the
+   * returned `headers` verbatim; the HTTP client sets Content-Length itself.
+   */
+  async presignUpload(
+    key: string,
+    ttlSeconds: number,
+    contentType: string,
+    contentLength: number,
+  ): Promise<{ url: string; headers: Record<string, string>; expiresAt: Date }> {
+    const expiresIn = Math.max(60, Math.min(ttlSeconds, 7 * 24 * 3600));
+    const url = await getSignedUrl(
+      this.uploadPresignClient(),
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+        ContentLength: contentLength,
+        ServerSideEncryption: 'AES256',
+      }),
+      {
+        expiresIn,
+        // Signed headers the client must send, not query parameters.
+        signableHeaders: new Set(['content-type']),
+        unhoistableHeaders: new Set(['x-amz-server-side-encryption']),
+      },
+    );
+    return {
+      url,
+      headers: { 'Content-Type': contentType, 'x-amz-server-side-encryption': 'AES256' },
+      expiresAt: new Date(Date.now() + expiresIn * 1000),
+    };
   }
 
   /** Every object under `prefix`, bounded by `maxPages` requests. */
