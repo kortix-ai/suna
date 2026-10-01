@@ -1,4 +1,4 @@
-import type { SessionMessageAuthor, SessionMessageAuthors } from '@kortix/sdk';
+import { isTextPart, type SessionMessageAuthor, type SessionMessageAuthors } from '@kortix/sdk';
 import { parseSessionMessagePrompt, type SessionMessagePromptInfo } from '@kortix/shared';
 
 /** One author, one key: two members never share it, nor do two sessions. */
@@ -77,6 +77,6 @@ export function isUnansweredAsk(
     | undefined,
 ): boolean {
   if (!turn || turn.assistantMessages.length > 0) return false;
-  const text = turn.userMessage.parts.find((p) => p.type === 'text')?.text;
+  const text = turn.userMessage.parts.find(isTextPart)?.text;
   return parseSessionMessagePrompt(text)?.type === 'ask';
 }

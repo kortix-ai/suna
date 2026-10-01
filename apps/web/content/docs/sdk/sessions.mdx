@@ -229,14 +229,14 @@ retry.
 
 `s.send()` and `s.abort()` call `ensureReady()` for you.
 
-### Seed a server-authorized OpenCode pin
+### Seed a server-authorized runtime session pin
 
-A server-rendered React host can supply the OpenCode pin already persisted for
+A server-rendered React host can supply the runtime session pin already persisted for
 the same Kortix session:
 
 ```tsx
 const session = useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -826,6 +826,9 @@ Call `await session.ensureReady()` first, or call `send()`, which readies the se
 | `parseBillingError(error)`       | `(error) => Error`                  | Wraps a `402` response into a `BillingError`. Returns other errors unchanged                                  |
 | `isBillingError(error)`          | `(error) => boolean`                | Returns `error instanceof BillingError`                                                                       |
 | `formatBillingErrorForUI(error)` | `(error) => BillingErrorUI \| null` | Returns `null` for non-billing errors. Otherwise returns `{ alertTitle, alertSubtitle }` for an upgrade modal |
+| `isRuntimeNotReadyResponse(error)` | `(error) => boolean` | True for the sandbox daemon's `503` while the session runtime cannot take a request yet. The request was not forwarded, so a retry is safe. Same answer on OpenCode and pi |
+| `isSandboxNotReadyError(error)` | `(error) => boolean` | True for the answer above and for a sandbox that is stopped, starting or parked. Render it as "waking" and keep polling |
+| `isRuntimeStartingError(error)` | `(error) => boolean` | True for both answers above and for a runtime URL that is not pinned yet. An error boundary retries on it instead of showing a crash |
 
 ```ts
 import { formatBillingErrorForUI } from '@kortix/sdk';
