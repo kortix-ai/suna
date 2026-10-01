@@ -157,28 +157,6 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
-          "network_egress": {
-            "type": "object",
-            "required": [
-              "version",
-              "default",
-              "rules"
-            ],
-            "properties": {
-              "version": {
-                "const": 1
-              },
-              "default": {
-                "const": "deny"
-              },
-              "rules": {
-                "type": "array",
-                "maxItems": 0
-              }
-            },
-            "additionalProperties": false,
-            "description": "Non-enforcing declaration. Outbound network access remains unrestricted until provider gateway isolation ships."
-          },
           "connectors": {
             "description": "An allowlist of names, or the \"all\" / \"none\" sentinel.",
             "oneOf": [
