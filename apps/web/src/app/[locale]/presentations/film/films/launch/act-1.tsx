@@ -8,8 +8,8 @@ import { ease, fall, interp, rise } from '../../engine/time';
 import { Headline, Words } from './parts';
 
 /**
- * Beat 1 — the problem, in three lines. Every line is the comms skill's
- * problem statement: the models got good, they forget you, and the options
+ * Beat 1 — the problem, in three lines. Every line is the kortix-brand
+ * kit's problem statement (`concepts.md`): the models got good, they forget you, and the options
  * are "a toy or a cage".
  */
 export function ColdOpen() {

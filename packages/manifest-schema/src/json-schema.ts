@@ -858,9 +858,37 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
   };
 }
 
+/** v3 keeps v2 governance but puts agent behavior in YAML. */
+export function buildManifestV3Schema(): JsonSchemaFragment {
+  const v2 = buildManifestV2Schema();
+  const agent = agentBlockV2Schema();
+  const behavior = agentMdFrontmatterSchema();
+  delete agent.properties.file;
+  agent.properties = {
+    ...agent.properties,
+    ...behavior.properties,
+    prompt: { type: 'string' },
+    prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN },
+  };
+  delete agent.properties.disable;
+  agent.allOf.push({ not: { required: ['prompt', 'prompt_file'] } });
+  return {
+    ...v2,
+    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json`,
+    title: 'Kortix manifest (kortix_version 3)',
+    description: 'YAML-only agent behavior with inline prompt or prompt_file; no native harness agent config required.',
+    properties: {
+      ...v2.properties,
+      kortix_version: { const: 3 },
+      opencode: false,
+      agents: { ...v2.properties.agents, additionalProperties: agent },
+    },
+  };
+}
+
 /**
  * The combined document: ONE stable URL that validates a manifest of
- * EITHER known version, dispatched by an `if/then` on `kortix_version`
+ * any known version, dispatched by an `if/then` on `kortix_version`
  * (spec ask: "one single validator reference"). Each branch inlines the
  * SAME body a standalone `kortix.v1`/`kortix.v2` document would use (the
  * builder functions above are the single source for both), so this document
@@ -870,27 +898,30 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
 export function buildManifestSchema(): JsonSchemaFragment {
   const v1 = buildManifestV1Schema();
   const v2 = buildManifestV2Schema();
+  const v3 = buildManifestV3Schema();
   // Strip the per-document $id/$schema/title/description from the inlined
   // bodies — only the combined document's own carry those.
   const { $schema: _s1, $id: _i1, title: _t1, description: _d1, ...v1Body } = v1;
   const { $schema: _s2, $id: _i2, title: _t2, description: _d2, ...v2Body } = v2;
+  const { $schema: _s3, $id: _i3, title: _t3, description: _d3, ...v3Body } = v3;
   return {
     $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.schema.json`,
     title: 'Kortix manifest',
     description:
       'kortix.toml / kortix.yaml — combined schema covering every published `kortix_version`. ' +
-      'Dispatches to the v1 or v2 shape by `kortix_version`. Prefer this URL when the version is ' +
-      `not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json\` (or v1) ` +
+      'Dispatches to the v1, v2 or v3 shape by `kortix_version`. Prefer this URL when the version is ' +
+      `not known ahead of time; pin \`${KORTIX_SCHEMA_BASE_URL}/kortix.v3.schema.json\` (or v1/v2) ` +
       'when it is.',
     type: 'object',
     required: ['kortix_version'],
     properties: {
-      kortix_version: { type: 'integer', enum: [1, 2] },
+      kortix_version: { type: 'integer', enum: [1, 2, 3] },
     },
     allOf: [
       { if: { properties: { kortix_version: { const: 1 } } }, then: v1Body },
       { if: { properties: { kortix_version: { const: 2 } } }, then: v2Body },
+      { if: { properties: { kortix_version: { const: 3 } } }, then: v3Body },
     ],
   };
 }
@@ -900,13 +931,15 @@ export function buildManifestSchema(): JsonSchemaFragment {
  *  static files, the kortix-system skill) reads from. */
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
 export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
+export const KORTIX_V3_JSON_SCHEMA: JsonSchemaFragment = buildManifestV3Schema();
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or
  *  `'combined'`) for the single URL that dispatches on `kortix_version`. */
-export function manifestJsonSchema(version: 1 | 2 | 'combined' = 'combined'): JsonSchemaFragment {
+export function manifestJsonSchema(version: 1 | 2 | 3 | 'combined' = 'combined'): JsonSchemaFragment {
   if (version === 1) return KORTIX_V1_JSON_SCHEMA;
   if (version === 2) return KORTIX_V2_JSON_SCHEMA;
+  if (version === 3) return KORTIX_V3_JSON_SCHEMA;
   return KORTIX_JSON_SCHEMA;
 }

@@ -630,6 +630,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/sessions/:sessionId/start': { action: 'session.start', title: 'Started session' },
   'POST /v1/projects/:projectId/sessions/:sessionId/stop': { action: 'session.stop', title: 'Stopped session' },
   'GET /v1/projects/:projectId/sessions/:sessionId/transcript': { action: 'session.transcript.read', title: 'Viewed session transcript' },
+  'GET /v1/projects/:projectId/sessions/:sessionId/message-authors': { action: 'session.message_authors.read', title: 'Viewed session message authors' },
   'GET /v1/projects/:projectId/sessions/:sessionId/turn': { action: 'session.turn.read', title: 'Viewed session turn state' },
   'POST /v1/projects/:projectId/sessions/warm': { action: 'session.warm.create', title: 'Warmed session sandbox' },
   'POST /v1/projects/:projectId/sessions/warm/claim': { action: 'session.warm.claim', title: 'Claimed warm session sandbox' },

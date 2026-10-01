@@ -93,3 +93,10 @@ describe('worker claims are not delivery', () => {
     } })).toEqual({ state: 'delivering', reason: null });
   });
 });
+
+// The first message of a conversation with people goes out without a turn:
+// a host must not show the agent "thinking" about it.
+test('a noReply prompt says so; every other prompt says false', () => {
+  expect(serializePrompt(row({ text: 'Which region?', noReply: true })).no_reply).toBe(true);
+  expect(serializePrompt(row({ text: 'hi' })).no_reply).toBe(false);
+});

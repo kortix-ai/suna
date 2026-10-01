@@ -1230,6 +1230,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** Who wrote each message: a member, or another session's agent. */
+      messageAuthors: () => P.getSessionMessageAuthors(projectId, sessionId),
       /** The DURABLE server-side transcript mirror, in sync-store shape
        *  (OpenCode message envelopes verbatim, attachment bytes and tool
        *  inputs/outputs stripped). This is the read that answers while the

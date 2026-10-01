@@ -129,12 +129,15 @@ export interface HarnessCatalogConvergeResult {
    *  answer, including 'declined', which the caller must still read the reason
    *  of rather than treat as a failure. */
   ok: boolean
-  outcome: 'unchanged' | 'file-updated' | 'restarted' | 'declined' | 'no-gateway'
+  outcome: 'unchanged' | 'file-updated' | 'restarted' | 'declined' | 'no-gateway' | 'not-served'
   /** Managed ids the live gateway serves that this box's booted config lacked,
    *  as of the fresh fetch this call made. */
   missing: string[]
   managed: number
   reason: string | null
+  /** Present when the request named a `model`: whether the running OpenCode
+   *  registers it now. Absent from older daemons, which ignore `model`. */
+  model_present?: boolean
 }
 
 export interface HarnessControlOperations {
@@ -152,7 +155,7 @@ export interface HarnessControlOperations {
    * when idle, never across a running turn. Absent on a runtime that has no
    * gateway-model concept (pi). See `convergeManagedModelCatalog`.
    */
-  convergeCatalog?(): Promise<HarnessCatalogConvergeResult>
+  convergeCatalog?(options?: { model?: string }): Promise<HarnessCatalogConvergeResult>
   abort(): Promise<HarnessAbortResult>
   armAbortAfterTool(input: HarnessAbortAfterToolInput): Promise<void>
   /** Without a prompt id, disarm every pending interrupt. */

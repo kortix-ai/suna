@@ -604,14 +604,15 @@ export function createOpenCodeControlService(
         // daemon's own fetch-and-diff; the API decides WHETHER to call this at
         // all, this call decides HOW to repair). One attempt, idle-gated,
         // never ends a running turn — see `convergeManagedModelCatalog`.
-        async convergeCatalog() {
-          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true })
+        async convergeCatalog(options) {
+          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true, model: options?.model })
           return {
             ok: result.outcome !== 'no-gateway',
             outcome: result.outcome,
             missing: result.missing,
             managed: result.managed,
             reason: result.reason ?? null,
+            ...(result.modelPresent !== undefined ? { model_present: result.modelPresent } : {}),
           }
         },
         async abort() {

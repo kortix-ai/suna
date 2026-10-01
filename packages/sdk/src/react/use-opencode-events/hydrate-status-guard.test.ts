@@ -23,6 +23,12 @@ function hydrateStatusBlock(): string {
 }
 
 describe('hydrateCore session-status snapshot', () => {
+  test('a revived stream re-reads held transcripts lost while its previous handle was parked', () => {
+    // The replacement handle has no pendingGap from the old handle. Without
+    // this call, a completed response remains truncated until a hard refresh.
+    expect(SOURCE).toContain('hydrateCore({ rehydrateMessages: streamGeneration > 0 })');
+  });
+
   test('the fill decision routes through shouldSkipStatusFill with the slot stamp', () => {
     // The WHICH-slots rule (fresh wire owns; stale wire and local do not) is
     // unit-tested on the pure `shouldSkipStatusFill` in `helpers.test.ts` —

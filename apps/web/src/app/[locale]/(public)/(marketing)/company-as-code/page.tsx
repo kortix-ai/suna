@@ -25,7 +25,7 @@ function SectionDivider(): ReactNode {
  * diffable, revertable, clonable, and able to patch itself.
  *
  * Copy lives in `features/marketing/company-as-code/content.ts` and is governed
- * by the `comms` skill. Three rules bite hardest here: every YAML key and path
+ * by the `kortix-brand` skill. Three rules bite hardest here: every YAML key and path
  * on this page is real (schema version 2 — see
  * `packages/manifest-schema/src/index.v2.ts`), `channels:` is NOT a manifest
  * key in that schema, and nothing merges itself — work reaches `main` through a

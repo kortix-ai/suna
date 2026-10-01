@@ -34,7 +34,7 @@ contract.
 </live-skills>
 
 <overview>
-A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one conversation = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
+A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one unit of agent work = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
 
 The repo keeps harness-neutral content at the root and harness-specific files
 under `harnesses/`:
@@ -67,10 +67,10 @@ OpenCode REST.
 <capabilities>
 ## What Kortix can do
 
-Kortix is an AI command center where a workforce of agents does real work —
-and the whole thing is **code you own**: a project is a git repo with a
-`kortix.yaml` at its root; a session is one conversation in its own
-disposable sandbox on its own branch; work becomes permanent only via a
+Kortix is an open-source AI Management System. Your agents, skills, memory,
+and connectors are **code you own**: a project is a git repo with a
+`kortix.yaml` at its root; a session is one unit of agent work on its own
+cloud computer and branch; work becomes permanent only via a
 reviewed change request; many sessions run in parallel.
 
 Twelve capabilities, at a glance: **research** (live web + cited
@@ -157,6 +157,8 @@ Kortix cloud state — not just files in the repo. Examples:
 | "label / classify a session, or find sessions by label" | `kortix sessions new --label <l> --meta k=v …` · `kortix sessions update [<id>] --label <l> --unlabel <l> --meta k=v --unmeta k` *(no id = this session)* · `kortix sessions ls --label <l>` |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
+| "I need a person to decide / answer something" | `kortix access ls` (find the email) → `kortix send <email> "<self-contained question>"` *(needs the `human_messaging` flag)* |
+| "message another session's agent / reply to one that messaged me" | `kortix send <session-id> "…"` |
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
@@ -461,6 +463,35 @@ watching — usually via `slack send`, silent otherwise), and it must be
 </scheduling>
 
 <continual-harness>
+## Messaging people and other sessions
+
+Behind the per-project `human_messaging` feature flag (off by default; the
+user turns it on: `kortix projects features enable human_messaging`).
+
+| Command | What it does |
+| --- | --- |
+| `kortix send <email> "<text>"` | Ask one project member. Opens a NEW conversation; it shows under "Asked you" for them. |
+| `kortix send <email> <email> "<text>"` | Group conversation with several members. |
+| `kortix send <session-id> "<text>"` | Message that session's agent (queued; wakes a stopped session). |
+| `kortix sessions ls --asked` | Conversations people asked you into. |
+
+- **A decision needs a human:** find the email with `kortix access ls`, then
+  `kortix send <email> "<question>"`. The people and the conversation's agent
+  CANNOT read your session. Put every fact, option and deadline in the text.
+- **One ask per decision.** Never spam: no repeat asks, no status pings.
+- **You get the answer later** as a `[MESSAGE from session <id> …]` prompt.
+  End your turn or do other work. Do not poll.
+- **Your first message is `[ASK from session <id> …]`:** you are the agent in
+  a conversation with people. Help them answer, then send the answer back with
+  `kortix send <id> "…"`.
+- **You receive `[MESSAGE from session <id> …]`:** reply with
+  `kortix send <id> "…"`.
+- **Group chat:** human messages carry `[MESSAGE from Name <email>]`. Address
+  people by name.
+- Errors: `feature_disabled` (tell the user how to enable it; do not enable it
+  yourself), `PARTICIPANT_NOT_FOUND` (not a project member; check
+  `kortix access ls`).
+
 ## Continual harness — the project refines its own scaffolding
 
 Everything that shapes agent behavior in this project — agent prompts,
@@ -494,7 +525,7 @@ Kortix session: if you want your work to land on `main`, you MUST open
 a change request (CR).**
 
 Sessions run on ephemeral branches (`session-<id>`). The session VM
-dies when the conversation ends; the branch persists in git, but
+dies when the session ends; the branch persists in git, but
 **nothing on it reaches `main` automatically.** A session-branch
 commit is invisible to every future session — they all boot from
 `main`. The only sanctioned merge path is a CR — the user reviews

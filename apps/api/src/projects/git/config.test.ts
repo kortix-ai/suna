@@ -140,7 +140,7 @@ describe('loadProjectConfig characterization', () => {
     expect(config.manifest_raw).toBe(ROOT);
     expect(config.manifest_version).toEqual({
       version: 2,
-      latest_version: 2,
+      latest_version: 3,
       migration_offered: false,
       target_version: null,
       unknown_reason: null,
