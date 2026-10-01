@@ -204,6 +204,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `narrateStep('edit', …)` counts files, not tool calls. A write then an
+  edit of one file reads "Updated hello.py", not "Updated 2 files"; a group
+  without file paths still counts its calls.
 - `safeGetItem`, `safeSetItem`, `ScopedCache` and `pruneAllRegisteredCaches`
   no longer throw when `window.localStorage` resolves to `null` (some
   embedded WebViews do this instead of throwing) or when a resolved storage

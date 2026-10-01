@@ -18,7 +18,7 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
-import { type ToolKind, toolKind } from '../tool-kind';
+import { inputPath, type ToolKind, toolKind } from '../tool-kind';
 import { getToolPrimaryArg, normalizeName } from '../tools/tool-meta';
 import { parseWebSearchOutput, wsDomain } from '../tools/web-helpers';
 import { stripTrailingSlashes } from '../text-scan';
@@ -596,12 +596,11 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
       return `Looked through your files · ${reads} read`;
     }
     case 'edit': {
-      if (n === 1) {
-        const verb = normalizeName(parts[0].tool) === 'write' ? 'Wrote' : 'Updated';
-        return arg ? `${verb} ${arg}` : `${verb} a file`;
-      }
-      const writes = parts.filter((p) => normalizeName(p.tool) === 'write').length;
-      return writes === n ? `Wrote ${n} files` : `Updated ${n} files`;
+      // Count files, not calls: a write then an edit of one file is one file.
+      const files = new Set(parts.map((p) => inputPath(rawInput(p))).filter(Boolean)).size || n;
+      const verb = parts.every((p) => normalizeName(p.tool) === 'write') ? 'Wrote' : 'Updated';
+      if (files === 1) return arg ? `${verb} ${arg}` : `${verb} a file`;
+      return `${verb} ${files} files`;
     }
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
