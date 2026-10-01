@@ -46,7 +46,8 @@ cd my-app
 ```
 
 `kortix init` creates a project directory with the general-purpose starter. Its
-`kortix.yaml` declares `kortix_version: 2` and runs OpenCode.
+`kortix.yaml` declares `kortix_version: 2` and runs the OpenCode
+[harness](/docs/work/harnesses).
 
 To link an existing cloned repo to a project you already created:
 
@@ -90,6 +91,10 @@ The CLI manages the `opencode` binary for you: on first connect it downloads
 the exact version the session's server runs and caches it under
 `~/.kortix/opencode/<version>/`, so the TUI and server never skew. Set
 `KORTIX_OPENCODE_BIN` to force your own binary.
+
+A session on the pi [harness](/docs/work/harnesses) has no OpenCode server.
+`kortix connect` exits 1 for it with the message `This session's runtime does
+not support attaching a terminal client.`
 
 For a lighter-weight line-based chat instead of the full TUI, run:
 

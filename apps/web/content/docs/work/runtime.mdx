@@ -221,7 +221,7 @@ The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves
 
 ## The agent runtime
 
-The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `harnesses/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
+A session runs one [harness](/docs/work/harnesses). pi runs inside the daemon process: it has no child process and no port. For an OpenCode session, the daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the config the box currently runs. With config releases on, that is the read-only release directory under `/opt/kortix/config`. With the feature off, it is the project's config directory (default `harnesses/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
 ## Transcript attachments and memory
 
@@ -233,11 +233,11 @@ OpenCode stores tool screenshots as base64 `data:` URLs inside its SQLite transc
 
 ## The daemon control surface
 
-The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_TOKEN`.
+The `kortix-agent` binary runs as PID 1's child and fronts the session's harness on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_TOKEN`.
 
 | Path | Purpose |
 | --- | --- |
-| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and OpenCode state, repo, branch, commit. |
+| `GET /kortix/health` | Liveness check (no auth required). Reports daemon and harness state (`harness.id` is `opencode` or `pi`), `capabilities`, repo, branch, commit. |
 | `POST /kortix/refresh` | Re-pull the session branch and restart OpenCode in place. |
 | `POST /kortix/config/converge` | Fetch the desired config release from the API and apply it. The request carries no config content. A second request while one runs returns `409`. |
 | `POST /kortix/abort` | Abort the current run. |
@@ -247,7 +247,7 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | `GET /kortix/part/:sessionID/:messageID/:partID` | Attachment bytes on demand — a top-level file part or a tool result's `state.attachments[]` entry. Bytes the daemon offloaded to a sidecar file are served from there. |
 | `GET /kortix/diag` | One JSON error report: OpenCode state/pid/port/port pair, boot timeline, a fresh resource snapshot (memory, cgroup limit, load, disk, RSS, duplicate opencode processes), the runtime-assets report, and the tail of both logs (`?tail=N`, default 200). Same auth as `/kortix/logs`. |
 | `/proxy/{port}/*` | Reverse-proxy to another port inside the sandbox. The daemon's own port is blocked. |
-| `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096`. Returns `503` while OpenCode boots. |
+| `*` | Catch-all to the harness: a reverse-proxy to OpenCode on `127.0.0.1:4096`, or pi's in-process routes. Returns `503` while the harness boots. |
 
 Run `/kortix/refresh` to apply an out-of-band change, such as a manifest edit committed from a parallel session, without re-provisioning the sandbox.
 
