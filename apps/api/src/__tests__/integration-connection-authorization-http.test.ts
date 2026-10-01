@@ -25,6 +25,7 @@ import {
   projects,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
+import pg from 'pg';
 import {
   completeAuthorizationCodeSession,
   discoverConnectionOAuth2Resource,
@@ -408,8 +409,22 @@ describe('connection owner authorization over HTTP', () => {
     });
     await inserted;
     const deletion = request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token);
+    const probe = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
     try {
-      // The insert holds a KEY SHARE lock until commit; deletion must wait.
+      await probe.connect();
+      // The insert holds a KEY SHARE lock. Prove DELETE reached FOR UPDATE
+      // while that lock is held, rather than merely starting its promise.
+      const deadline = Date.now() + 10_000;
+      while (true) {
+        const waiting = await probe.query(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE wait_event_type = 'Lock' AND query ILIKE '%connector_connections%'
+             AND query ILIKE '%for update%'`,
+        );
+        if (waiting.rows[0].n > 0) break;
+        if (Date.now() > deadline) throw new Error('DELETE did not wait on the binding lock');
+        await Bun.sleep(20);
+      }
       releaseBinding();
       await binding;
       expect((await deletion).status).toBe(409);
@@ -417,6 +432,7 @@ describe('connection owner authorization over HTTP', () => {
     } finally {
       releaseBinding();
       await binding;
+      await probe.end();
       await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.connectionId, id));
       await db.delete(connectorConnections).where(eq(connectorConnections.connectionId, id));
     }
