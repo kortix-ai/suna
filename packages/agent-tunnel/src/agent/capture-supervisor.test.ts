@@ -20,7 +20,7 @@ function fakeBinary(dir: string, body: string) {
   const bin = join(dir, 'kortix-capture');
   writeFileSync(
     bin,
-    `#!/bin/sh\necho "$1 $KORTIX_CAPTURE_DIR $AGENT_TUNNEL_HOME" >> "${dir}/starts.log"\n${body}\n`,
+    `#!/bin/sh\necho "$1 $KORTIX_CAPTURE_DIR $AGENT_TUNNEL_HOME $KORTIX_CAPTURE_PARENT_PID" >> "${dir}/starts.log"\n${body}\n`,
   );
   chmodSync(bin, 0o755);
   return bin;
@@ -45,7 +45,7 @@ describe('capture supervisor', () => {
     const bin = fakeBinary(dir, 'echo hello-from-recorder; sleep 30');
     const sup = startCaptureSupervisor({ bin, home });
     await until(() => starts(dir).length === 1);
-    expect(starts(dir)[0]).toBe(`record ${join(home, 'capture')} ${home}`);
+    expect(starts(dir)[0]).toBe(`record ${join(home, 'capture')} ${home} ${process.pid}`);
     await until(() => existsSync(join(home, 'logs', 'capture.log')) && readFileSync(join(home, 'logs', 'capture.log'), 'utf8').includes('hello-from-recorder'));
     sup.stop();
   });
