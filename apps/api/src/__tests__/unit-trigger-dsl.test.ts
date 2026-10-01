@@ -49,11 +49,11 @@ describe('kortix manifest — schema versioning', () => {
     expect(parsed.schemaVersion).toBe(2);
   });
 
-  // V2 is the current ceiling. Any later schema version must stay rejected.
+  // V3 is the current ceiling (#8406). Any later schema version must stay rejected.
   test('the current ceiling parses and anything above it is still rejected', () => {
-    expect(parseManifestString(`kortix_version = 2\n${MIN_PROJECT}`).schemaVersion).toBe(2);
-    expect(() => parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`)).toThrow(
-      /schema version 3/,
+    expect(parseManifestString(`kortix_version = 3\n${MIN_PROJECT}`).schemaVersion).toBe(3);
+    expect(() => parseManifestString(`kortix_version = 4\n${MIN_PROJECT}`)).toThrow(
+      /schema version 4/,
     );
   });
 
