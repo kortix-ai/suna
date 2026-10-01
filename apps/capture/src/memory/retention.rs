@@ -16,6 +16,8 @@ use std::time::Duration;
 pub const STATUS_FULL: i64 = 0;
 pub const STATUS_DOWNSCALED: i64 = 1;
 pub const STATUS_DELETED: i64 = 2;
+/// Un-uploaded videos older than this are freed (capture was disabled or the account is gone).
+pub const UNSENT_MAX_AGE_MS: i64 = 7 * 86_400_000;
 
 #[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct Usage {
@@ -69,11 +71,15 @@ struct VideoRow {
 
 fn oldest_videos(conn: &Connection, max_status: i64, older_than_ms: Option<i64>, limit: i64) -> Result<Vec<VideoRow>> {
     let mut stmt = conn.prepare(
+        // A video that has not reached the cloud yet is never freed to make room,
+        // unless it is older than UNSENT_MAX_AGE_MS; a full disk pauses capture instead.
         "SELECT id, path, num_frames, status, COALESCE(size_bytes, 0) FROM video
          WHERE status <= ?1 AND (?2 IS NULL OR COALESCE(end_timestamp, 0) < ?2)
+           AND (uploaded_at IS NOT NULL OR COALESCE(end_timestamp, 0) < ?4)
          ORDER BY id LIMIT ?3",
     )?;
-    let rows = stmt.query_map(params![max_status, older_than_ms, limit], |r| {
+    let unsent_cutoff = now_ms() - UNSENT_MAX_AGE_MS;
+    let rows = stmt.query_map(params![max_status, older_than_ms, limit, unsent_cutoff], |r| {
         Ok(VideoRow { id: r.get(0)?, path: r.get(1)?, num_frames: r.get(2)?, size: r.get(4)? })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -207,6 +213,22 @@ pub fn preview(conn: &Connection, paths: &MemoryPaths, s: &Settings) -> Result<s
 mod tests {
     use super::*;
     use crate::memory::store;
+
+    #[test]
+    fn cap_never_frees_recent_unsent_videos() {
+        let dir = std::env::temp_dir().join(format!("kcap-unsent-{}", std::process::id()));
+        let paths = MemoryPaths::at(&dir);
+        let conn = store::open(&paths).unwrap();
+        let now = now_ms();
+        conn.execute("INSERT INTO video(height, width, path, num_frames, size_bytes, end_timestamp) VALUES (1,1,'recent-unsent',1,9,?1)", [now]).unwrap();
+        conn.execute("INSERT INTO video(height, width, path, num_frames, size_bytes, end_timestamp, uploaded_at) VALUES (1,1,'recent-sent',1,9,?1,?1)", [now]).unwrap();
+        conn.execute("INSERT INTO video(height, width, path, num_frames, size_bytes, end_timestamp) VALUES (1,1,'stale-unsent',1,9,?1)", [now - UNSENT_MAX_AGE_MS - 1]).unwrap();
+        let picked: Vec<String> = oldest_videos(&conn, STATUS_DOWNSCALED, None, 10).unwrap().into_iter().map(|v| v.path).collect();
+        assert!(picked.contains(&"recent-sent".to_string()));
+        assert!(picked.contains(&"stale-unsent".to_string()));
+        assert!(!picked.contains(&"recent-unsent".to_string()), "{picked:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn delete_keeps_text_and_marks_video() {
