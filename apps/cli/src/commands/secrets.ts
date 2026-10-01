@@ -1164,9 +1164,15 @@ async function secretsShare(args: string[], opts: CtxOpts, json = false): Promis
       emitJson(response);
       return 0;
     }
+    const count = (type: string, one: string, many: string) => {
+      const n = principals.filter((p) => p.principal_type === type).length;
+      return n === 0 ? null : `${n} ${n === 1 ? one : many}`;
+    };
     const audience = everyone
       ? 'everyone in the project'
-      : `${principals.length} ${principals.length === 1 ? 'person or group' : 'people and groups'}`;
+      : [count('user', 'person', 'people'), count('group', 'group', 'groups'), count('agent', 'agent', 'agents')]
+          .filter(Boolean)
+          .join(', ');
     process.stdout.write(`${status.ok(`${target.identifier}: ${audience}`)}\n`);
     if (!everyone && users.length + groups.length > 0) {
       process.stdout.write(

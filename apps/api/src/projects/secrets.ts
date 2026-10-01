@@ -61,6 +61,8 @@ export async function writeSharedProjectSecret(input: {
       consumer: serverSide ? 'connector' : 'sandbox',
       strategyLocked: serverSide,
       createdBy: input.createdBy ?? null,
+      // A value a person just typed was never exposed: it is a fresh rotation.
+      rotatedAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -77,6 +79,7 @@ export async function writeSharedProjectSecret(input: {
               strategyLocked: true,
             }
           : {}),
+        rotatedAt: now,
         updatedAt: now,
       },
     })

@@ -1222,6 +1222,7 @@ describe('kortix secrets — who can use a value', () => {
         { principal_type: 'user', principal_id: 'user_2' },
       ],
     });
+    expect(stripAnsi(stdout)).toContain('deel-marko: 2 people, 1 group');
   });
 
   test('share --agent <name> names that agent of THIS project as principal_type agent', async () => {
@@ -1233,6 +1234,7 @@ describe('kortix secrets — who can use a value', () => {
       identifier: 'NIGHTLY_REPORT_KEY',
       shared_with: [{ principal_type: 'agent', principal_id: 'sa_reporter' }],
     });
+    expect(stripAnsi(stdout)).toContain('NIGHTLY_REPORT_KEY: 1 agent');
     expect(stripAnsi(stdout)).toContain('every session of the agent');
   });
 
