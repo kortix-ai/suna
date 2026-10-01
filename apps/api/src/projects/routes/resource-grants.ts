@@ -73,10 +73,7 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const started = performance.now();
-    const stages: Record<string, number> = {};
     const loaded = await loadProjectForUser(c, projectId, 'read');
-    stages.project = Math.round(performance.now() - started);
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Manager-only: this is the grant PICKER — it returns the FULL agent/skill
     // catalogue + granted-member emails, so it must NOT be readable by a scoped
@@ -89,7 +86,6 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     );
-    stages.capability = Math.round(performance.now() - started);
 
     // Enumerate grantable resources from the project config (best-effort: a repo
     // that won't load just yields empty lists — the existing grants still show).
@@ -125,7 +121,6 @@ projectsApp.openapi(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    stages.config = Math.round(performance.now() - started);
     // Grants key on the agent NAME / skill SLUG. A rename or delete of the
     // underlying resource leaves the grant ORPHANED — and since an unscoped
     // resource is project-wide, the restriction silently evaporates. Flag
@@ -153,7 +148,6 @@ projectsApp.openapi(
       (g) => g.resourceType === 'agent' || g.resourceType === 'skill',
     );
 
-    stages.grants = Math.round(performance.now() - started);
     // Resolve principal labels in two batched lookups.
     const memberIds = [
       ...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId)),
@@ -178,16 +172,6 @@ projectsApp.openapi(
       for (const g of groupRows) groupNameById.set(g.groupId, g.name);
     }
 
-    const elapsed = Math.round(performance.now() - started);
-    if (elapsed >= 3_000) {
-      console.warn('[resource-grants] slow read', {
-        project_ms: stages.project,
-        capability_ms: stages.capability - stages.project,
-        config_ms: stages.config - stages.capability,
-        grants_ms: stages.grants - stages.config,
-        labels_ms: elapsed - stages.grants,
-      });
-    }
     return c.json({
       resources,
       grants: grants.map((g) => ({
