@@ -88,7 +88,7 @@ import { Pressable, View } from 'react-native';
 import type { ToolOutcome } from '@kortix/sdk';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
-import { DisclosureContent } from '@/components/session/chain-of-thought';
+import { DisclosureContent, useReportOpen } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { CheckIcon, MagnifyingGlassIcon, WarningCircleIcon, WarningIcon } from '@/lib/icons';
 import { useDisclosureState } from '@/lib/session/disclosure-store';
@@ -417,6 +417,7 @@ export function BasicTool({
   const press = onPress ?? onClick;
   const activates = Boolean(activate) && !locked && !forceOpen && !defaultOpen;
 
+  useReportOpen(open && hasBody && !press && !activates);
 
   const rowStyle = useMemo(
     () => ({
