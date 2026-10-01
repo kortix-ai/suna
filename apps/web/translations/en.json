@@ -20382,7 +20382,7 @@
     "actionsFor": "Actions for {name}",
     "older": {
       "title": "Older connections",
-      "hint": "Made by an older Kortix version that could not tell computers apart. None of them is online.",
+      "hint": "Made by an older Kortix version that could not tell computers apart. None of them is online. Kortix removes each one after 30 days without a sign of life.",
       "removeAll": "Remove all",
       "confirmTitle": "Remove all older connections?",
       "confirmDescription": "Kortix removes them and their accounts from every project. A computer that still uses one can connect again."

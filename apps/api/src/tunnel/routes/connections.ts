@@ -190,6 +190,39 @@ export async function retireSupersededRegistrations(tunnelId: string, machineId:
   return retired;
 }
 
+/** A registration without a hardware id is removed after this long without a sign of life. */
+export const UNIDENTIFIED_RETENTION_DAYS = 30;
+
+/**
+ * Registrations made by agents older than hardware ids cannot be matched to a
+ * computer. Once one has shown no sign of life for 30 days (no heartbeat, no
+ * update, no relay ownership), it is unpaired with its accounts. A computer
+ * that comes back pairs again; its agent says how. Runs on the tunnel cleanup
+ * tick, at most `limit` per run. Returns the removed tunnel ids.
+ */
+export async function retireStaleUnidentifiedRegistrations(limit = 100): Promise<string[]> {
+  const stale = await db
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(
+      and(
+        sql`${tunnelConnections.machineInfo}->>'machineId' is null`,
+        sql`greatest(
+          ${tunnelConnections.lastHeartbeatAt},
+          ${tunnelConnections.relayOwnerHeartbeatAt},
+          ${tunnelConnections.updatedAt},
+          ${tunnelConnections.createdAt}
+        ) < now() - make_interval(days => ${UNIDENTIFIED_RETENTION_DAYS})`,
+      ),
+    )
+    .limit(limit);
+  const retired: string[] = [];
+  for (const { tunnelId } of stale) {
+    if (await unpairMachine(tunnelId)) retired.push(tunnelId);
+  }
+  return retired;
+}
+
 export function createConnectionsRouter() {
   const router = makeOpenApiApp<AppEnv>();
 
