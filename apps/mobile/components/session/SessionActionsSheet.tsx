@@ -167,6 +167,11 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     React.useEffect(
       () =>
         queryClient.getQueryCache().subscribe((event) => {
+          // Data writes only (a fetch result, `setQueryData`). Observer events
+          // fire while ProjectScreen and the drawer render, and every poll
+          // tick emits several: a bump on those re-rendered this sheet on each
+          // and set state during another component's render.
+          if (event.type !== 'updated' || event.action.type !== 'success') return;
           if (event.query.queryKey[0] === 'project-sessions') bumpLists();
         }),
       [queryClient]
