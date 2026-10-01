@@ -430,11 +430,11 @@ the paged session list. Both are per user and bounded; clear both on sign-out. S
 states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
 `sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
-A server-rendered host can seed a known OpenCode pin while `/start` runs:
+A server-rendered host can seed a known runtime session pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 

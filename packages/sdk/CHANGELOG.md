@@ -6,6 +6,22 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `isRuntimeNotReadyResponse(error)`: true for the daemon's 503 while the
+  session runtime cannot take a request, on both harnesses. It matches the
+  `code: "runtime_not_ready"` a current daemon sends and the two `error` texts
+  of an older one (`sandbox runtime not ready`, `opencode not ready`).
+  `RUNTIME_NOT_READY_MARKERS` lists the same three spellings as lower-case
+  substrings, for a host that needs a string list (a telemetry ignore list).
+- `isRuntimeStartingError(error)`: the answer above, plus a sandbox that is
+  not ready and a runtime URL that is not pinned yet. An error boundary
+  retries on it instead of showing a crash.
+- `resetRuntimeQueries(queryClient)` (`@kortix/sdk/react`): drops every cached
+  runtime query. Call it after the session's runtime is replaced (a restart, a
+  config reload).
+- `runtimeKeys.sessionTodo(sessionId)`: the todo-list cache key.
+- `isStepPart(part)`: true for `step-start` and `step-finish` parts.
+- `useSession` option `initialRuntimeSessionId`, and `runtimeSessionId` on the
+  `useSessionMessages` source.
 - `modelRefToKey(ref, gatewayEnabled)`: one parser for a stored model ref
   (session pin, channel binding, trigger, agent `model`). Gateway on, `kortix/x`
   and `x` both name the gateway model `x`; gateway off, the ref splits on its
@@ -126,6 +142,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `id` stays the host's local correlation key and no longer goes on the wire.
 
 ### Deprecated
+- `useSession` option `initialOpenCodeSessionId` (use
+  `initialRuntimeSessionId`) and `opencodeSessionId` on the
+  `useSessionMessages` source (use `runtimeSessionId`). Both keep working; the
+  neutral name wins when both are set.
 - The message-id clock arithmetic (`wireIdClock`, `wireIdClockAt`,
   `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`,
   `newestWireIdClock`, `mintWireMessageIdAbove`, `MintedWireMessageId`,
@@ -215,6 +235,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `isSandboxNotReadyError` now classifies `sandbox runtime not ready`, the
+  text a pi runtime (and OpenCode's boot steps) answers with. Before, only
+  `opencode not ready` read as "waking", so a pi session that was still
+  booting showed an error.
+- `useRuntimeSessionTodo` asks only a runtime that lists `session.todo`. A pi
+  runtime is not asked.
 - `narrateStep('edit', …)` counts files, not tool calls. A write then an
   edit of one file reads "Updated hello.py", not "Updated 2 files"; a group
   without file paths still counts its calls.
