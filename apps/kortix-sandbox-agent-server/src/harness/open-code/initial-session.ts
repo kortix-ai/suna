@@ -1,3 +1,4 @@
+import { relayOrphanedTurnEndToApi } from './turn-relay'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger } from '@/lib/log/logger'
@@ -287,6 +288,11 @@ export async function finalizeOrphanedTurn(
   // opencode took to the grave and interrupting one that was about to finish.
   if (!(await confirmTurnOrphaned(baseUrl, workspace, sessionId, inspection))) return false
   await abortOpencodeTurn(baseUrl, workspace, sessionId)
+  if (inspection.lastTurnParentId) {
+    await relayOrphanedTurnEndToApi(sessionId, inspection.lastTurnParentId).catch((err) =>
+      logger.warn('[boot] orphaned-turn relay failed', { sessionId, err: (err as Error).message }),
+    )
+  }
   return true
 }
 
@@ -643,6 +649,7 @@ interface RootInspection {
   /** Identity of the last message, so a re-check can tell "same turn, still
    *  unfinished" from "a different turn has since started". */
   lastMessageId: string | null
+  lastTurnParentId: string | null
   /**
    * False when the read failed — opencode unreachable, non-2xx, the 5s
    * timeout a cold post-resume opencode routinely hits, or an unparseable
@@ -762,18 +769,18 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
     // Non-2xx (opencode answering but unhappy — e.g. mid-restart) is a read
     // failure, not "no messages": `known: false`.
     if (!res.ok) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, lastTurnParentId: null, known: false }
     }
     const msgs = (await res.json()) as Array<{
-      info?: { id?: string; role?: string; error?: unknown; time?: { completed?: number } }
+      info?: { id?: string; role?: string; error?: unknown; parentID?: string; time?: { completed?: number } }
     }>
     // An unparseable shape is also a read failure, not a genuinely empty root
     // — only an actual `[]` counts as a confirmed-empty root.
     if (!Array.isArray(msgs)) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, lastTurnParentId: null, known: false }
     }
     if (msgs.length === 0) {
-      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: true }
+      return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, lastTurnParentId: null, known: true }
     }
     const last = msgs[msgs.length - 1]
     const incomplete = last?.info?.role === 'assistant' && !last?.info?.time?.completed
@@ -782,12 +789,13 @@ async function inspectRoot(baseUrl: string, workspace: string, sessionId: string
       lastTurnIncomplete: Boolean(incomplete),
       lastTurnHasError: Boolean(last?.info?.error),
       lastMessageId: last?.info?.id ?? null,
+      lastTurnParentId: incomplete ? last?.info?.parentID ?? null : null,
       known: true,
     }
   } catch {
     // Unreachable, or the 5s AbortSignal.timeout above fired — the exact "cold
     // post-resume opencode" hazard this whole tri-state exists for.
-    return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, known: false }
+    return { hasMessages: false, lastTurnIncomplete: false, lastTurnHasError: false, lastMessageId: null, lastTurnParentId: null, known: false }
   }
 }
 

@@ -1,4 +1,4 @@
-import { relayTurnBegin, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
+import { relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
@@ -292,6 +292,22 @@ export async function relayTurnEndToApi(
     if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
   }
   logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+}
+
+/** Settle an orphan by its own message identity even when OpenCode never stamped completion. */
+export async function relayOrphanedTurnEndToApi(opencodeSessionId: string, turnMessageId: string): Promise<void> {
+  const dedupSig = `orphan:${opencodeSessionId}:${turnMessageId}`
+  if (relayedTurnSignatures.has(dedupSig)) return
+  const relayed = await relayTurnEnd({
+    runtimeSessionId: opencodeSessionId,
+    messageId: turnMessageId,
+    status: 'error',
+    error: {
+      name: 'RuntimeAbortedTurn',
+      message: 'The agent runtime restarted mid-turn. Send your message again.',
+    },
+  })
+  if (relayed) relayedTurnSignatures.add(dedupSig)
 }
 
 interface RootTurnState {
