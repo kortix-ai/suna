@@ -20352,7 +20352,16 @@
     "alreadyConnectedHint": "Approuvez pour le reconnecter avec une nouvelle clé et l’accès choisi. Ses projets et partages sont conservés.",
     "alreadyConnectedLive": "Il est en ligne. Approuvez pour le transférer vers cette demande : la connexion actuelle s’arrête. Ses projets et partages sont conservés.",
     "reconnect": "Reconnecter",
-    "accessHint": "Les accès sélectionnés restent actifs jusqu’à leur révocation."
+    "accessHint": "Les accès sélectionnés restent actifs jusqu’à leur révocation.",
+    "grants": {
+      "title": "Autoriser Kortix à voir votre écran et à utiliser vos apps",
+      "hint": "macOS demande deux autorisations, toutes deux pour Kortix. Computer Use fonctionne dès que vous les accordez.",
+      "accessibility": "Accessibilité",
+      "screenRecording": "Enregistrement de l’écran",
+      "allowed": "autorisé",
+      "missing": "non autorisé",
+      "allow": "Autoriser l’accès"
+    }
   },
   "messageFrom": {
     "from": "De",

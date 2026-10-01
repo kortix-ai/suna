@@ -511,3 +511,23 @@ describe('desktop wiring', () => {
     }
   });
 });
+
+describe('Computer Use onboarding (macOS grants for Kortix)', () => {
+  test('asks for the grants only when the pairing approved Computer Use, and only for missing ones', () => {
+    const home = tempDir();
+    const config = (capabilities) =>
+      fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ enabledCapabilities: capabilities }));
+    const none = { accessibility: false, screenRecording: false };
+
+    expect(computer.missingComputerUseGrants(home, none)).toEqual([]); // not paired
+    config(['filesystem', 'shell']);
+    expect(computer.missingComputerUseGrants(home, none)).toEqual([]);
+    config(['filesystem', 'desktop']);
+    expect(computer.missingComputerUseGrants(home, none)).toEqual(['accessibility', 'screenRecording']);
+    expect(
+      computer.missingComputerUseGrants(home, { accessibility: true, screenRecording: false }),
+    ).toEqual(['screenRecording']);
+    expect(computer.missingComputerUseGrants(home, { accessibility: true, screenRecording: true })).toEqual([]);
+    expect(computer.missingComputerUseGrants(home, null)).toEqual([]); // not macOS
+  });
+});
