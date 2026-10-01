@@ -23,7 +23,7 @@ let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [
 // to observe and control it without a real network call.
 let callOrder: string[] = [];
 /** What scope each awaited stop-time capture asked for. */
-let captureOptions: Array<{ scope?: string; actorUserId?: string } | undefined> = [];
+let captureScopes: Array<string | undefined> = [];
 let abortServiceKey: string | null = 'daemon-service-key';
 let abortFetchCalls: Array<{ url: string; init: Record<string, unknown> }> = [];
 let abortFetchImpl: (url: string, init: Record<string, unknown>) => Promise<Response> = async () =>
@@ -127,10 +127,10 @@ mock.module('../../lib/session-transcript-capture', () => ({
   captureSessionTranscriptMirror: async (
     sessionId: string,
     _deps?: unknown,
-    options?: { scope?: string; actorUserId?: string },
+    options?: { scope?: string },
   ) => {
     callOrder.push(`capture:${sessionId}`);
-    captureOptions.push(options);
+    captureScopes.push(options?.scope);
     if (captureGate) await captureGate;
     return null;
   },
@@ -158,7 +158,7 @@ beforeEach(() => {
   updateCalls = [];
 
   callOrder = [];
-  captureOptions = [];
+  captureScopes = [];
   abortServiceKey = 'daemon-service-key';
   abortFetchCalls = [];
   abortFetchImpl = async () => new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -434,9 +434,8 @@ describe('stopSession', () => {
       // And it asks for a TAIL. This capture is AWAITED with the user holding
       // the Stop button; the default scope is a 60s pagination with three
       // retries. The whole copy is maintained at every turn end, so the only
-      // gap a stop can close is the turn that just ended. The authenticated stopper may be different from
-      // the session creator (who may no longer belong to this account).
-      expect(captureOptions).toEqual([{ scope: 'tail', actorUserId: 'user-1' }]);
+      // gap a stop can close is the turn that just ended.
+      expect(captureScopes).toEqual(['tail']);
     });
   });
 });

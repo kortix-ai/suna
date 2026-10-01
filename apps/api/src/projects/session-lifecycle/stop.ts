@@ -133,7 +133,6 @@ export async function stopSession(input: {
     await within(
       captureSessionTranscriptMirror(sessionId, undefined, {
         scope: 'tail',
-        actorUserId: userId,
       }),
       Math.min(TRANSCRIPT_TAIL_MAX_MS, budgetEndsAt - Date.now()),
     );

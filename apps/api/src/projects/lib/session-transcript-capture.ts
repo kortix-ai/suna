@@ -63,8 +63,6 @@ export interface CaptureOptions {
    * "not read that far".
    */
   scope?: 'auto' | 'tail';
-  /** Use the authenticated caller for a manual stop, not a possibly revoked creator. */
-  actorUserId?: string;
 }
 
 export interface CaptureDeps {
@@ -73,7 +71,6 @@ export interface CaptureDeps {
     options?: {
       fullHistory: boolean;
       projectId?: string;
-      actorUserId?: string;
     },
   ) => Promise<{
     opencodeSessionId: string;
@@ -102,7 +99,7 @@ const OPENCODE_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
 
 const liveCaptureDeps: CaptureDeps = {
   async readMessages(sessionId, options) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId, options?.actorUserId);
+    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return null;
     const deadline = AbortSignal.timeout(options?.fullHistory ? 60_000 : CAPTURE_TIMEOUT_MS);
     // Every stored row of this session: the root's, and each saved sub-agent's.
@@ -305,7 +302,6 @@ async function captureSessionTranscript(
       const read = await deps.readMessages(sessionId, {
         fullHistory,
         projectId: session.projectId,
-        actorUserId: options?.actorUserId,
       });
       if (!read) return null;
       const rows = mirrorRowsFromOpencodePayload(read.payload);
