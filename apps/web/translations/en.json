@@ -19119,7 +19119,8 @@
       "text80043b03898d": "Update the Kortix app in Teams",
       "textdf757dbe33eb": "Your Teams catalog has version {value0} of the Kortix app. Version {value1} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
-      "texte15f213fa506": "Publish app update"
+      "texte15f213fa506": "Publish app update",
+      "textcafd830fcf85": "Listed project agent identities"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

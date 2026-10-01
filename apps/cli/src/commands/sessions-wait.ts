@@ -126,19 +126,9 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
     while (Date.now() < deadline) {
       let state: WaitPollState | null = null;
       try {
-        const [statuses, permissions, questions] = await Promise.all([
-          handle.runtime.session.status().then((r) => r.data ?? {}),
-          handle.runtime.permission
-            .list()
-            .then((r) => (r.data ?? []) as Array<{ sessionID?: string }>)
-            .catch(() => []),
-          handle.runtime.question
-            .list()
-            .then((r) => (r.data ?? []) as Array<{ sessionID?: string }>)
-            .catch(() => []),
-        ]);
+        const { statuses, permissions, questions } = await handle.pending();
         state = classifyWaitPoll(
-          statuses as Record<string, { type?: string }>,
+          statuses,
           ready.opencodeSessionId,
           {
             permissions: permissions.filter((p) => p.sessionID === ready.opencodeSessionId).length,

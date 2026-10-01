@@ -9,7 +9,7 @@
  * duplicate overwrite a user rename. These tests pin both halves: the WHERE
  * clause (first-writer-wins) and the merge expression (no key loss).
  */
-import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, projectSessions, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
@@ -23,16 +23,14 @@ import { persistTitle } from '../projects/session-title-generate';
 import { db } from '../shared/db';
 import { getPublicSessionInfo } from '../shared/public-session-share-view';
 
-// The OpenCode session list a running sandbox returns to the snapshot pass.
-const realOpencodeMapping = await import('../projects/opencode-mapping');
-mock.module('../projects/opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  listSandboxOpencodeSessions: async () => ({
-    ok: true,
-    sessions: [{ id: 'ses_root', title: 'Runtime Title', parentID: null }],
-  }),
-}));
 const { syncOpencodeSessionSnapshot } = await import('../projects/opencode-session-snapshot');
+
+// The runtime projection a running sandbox reported to the snapshot pass.
+const runtimeLeg = (async () => ({
+  known: true,
+  identity: { opencode_session_id: 'ses_root' },
+  state: { sessions: { known: true, value: [{ id: 'ses_root', title: 'Runtime Title', parent_id: null }] } },
+})) as never;
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -203,10 +201,10 @@ describe('persistTitle — compare-and-set', () => {
   // read the row before the title landed; its write must not drop that title.
   test('no clobber: the opencode_sessions snapshot keeps a title committed after its read', async () => {
     const row = await seed({ runtime_transport: 'rest' });
-    const staleRead = { ...row, opencodeSessionId: 'ses_root' } as ProjectSessionRow;
+    const staleRead = { ...row, runtimeSessionId: 'ses_root' } as ProjectSessionRow;
     await persistTitle(row, 'Generated Title');
 
-    await syncOpencodeSessionSnapshot({ row: staleRead, externalId: 'sbx-snapshot' });
+    await syncOpencodeSessionSnapshot({ row: staleRead }, { readLeg: runtimeLeg });
 
     const metadata = await metadataOf(row.sessionId);
     expect(metadata.name).toBe('Generated Title');

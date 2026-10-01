@@ -10,7 +10,7 @@
  */
 
 import { useContext, useMemo } from 'react';
-import { getFilename, isErrorOutput } from '@kortix/sdk';
+import { inputPath, getFilename, isErrorOutput } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { PencilSimpleIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
@@ -47,7 +47,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
   const status = partStatus(part);
-  const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
+  const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = useMemo(() => getFilename(filePath) || '', [filePath]);
   const content = (input.content as string) || (streamingInput.content as string) || '';
   const ext = useMemo(() => filename.split('.').pop() || '', [filename]);

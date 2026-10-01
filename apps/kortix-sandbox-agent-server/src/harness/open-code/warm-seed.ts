@@ -264,7 +264,7 @@ export async function runWarmSeedMode(
       // Rebuild the proxy/control surface with the fork's cfg; the seed booted
       // tokenless or with seed-only credentials.
       server.reload(cfg2)
-      bootState.initialOpenCodeSessionRequired =
+      bootState.initialRuntimeSessionRequired =
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adopting forked session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
@@ -406,7 +406,7 @@ export function armSeedAdoption(
       // Re-arm the proxy with the session's tokens — the seed booted with the
       // deriving session's credentials, which must never serve this fork.
       server.reload(cfg2)
-      bootState.initialOpenCodeSessionRequired =
+      bootState.initialRuntimeSessionRequired =
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
       logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}

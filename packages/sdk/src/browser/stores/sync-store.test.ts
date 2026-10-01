@@ -7,7 +7,7 @@ import type {
 	SessionStatus,
 	TextPart,
 	UserMessage,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../core/runtime/runtime-types";
 import { projectWorking } from "../../core/session/working";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
 import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";

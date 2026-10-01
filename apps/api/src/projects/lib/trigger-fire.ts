@@ -1,3 +1,4 @@
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
@@ -228,11 +229,18 @@ export async function findKeyedTriggerSession(
  * session must carry it on the prompt itself, or the prompt silently runs on
  * whatever default the session was created with — on prod that was a July
  * session pinned to a managed model the account can no longer use.
+ *
+ * The one place a stored ref becomes the runtime's `{providerID, modelID}`:
+ * with the LLM gateway every model is the `kortix` provider's; without it the
+ * ref is the native `provider/model`, and a managed id has no provider.
  */
-export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
+export function triggerModelOverride(
+  model: string | null | undefined,
+  gatewayEnabled = true,
+): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = toOpencodeModelRef(trimmed);
+  const ref = gatewayEnabled ? toOpencodeModelRef(trimmed) : trimmed.replace(/^kortix\//, '');
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -279,7 +287,7 @@ async function enqueueTriggerPrompt(input: {
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
-    overrides: triggerModelOverride(input.model),
+    overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});

@@ -23,7 +23,6 @@ function runtimeFor(overrides: Partial<SessionRuntime> = {}): SessionRuntime {
     session,
     auth,
     handle: {} as SessionRuntime['handle'],
-    runtime: {} as SessionRuntime['runtime'],
     runtimeUrl: 'https://runtime.example.test/p/ext/8000',
     opencodeSessionId: OPENCODE_SESSION_ID,
     ...overrides,

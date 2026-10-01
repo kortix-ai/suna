@@ -100,7 +100,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       void relayTurnBegin(rootId, messageId)
     },
     onTurnEnd: ({ rootId, messageId, status, error }) => {
-      kortixEventBus().publishDaemon('kortix.turn', { opencode_session_id: rootId, verdict: status, error: error ?? null }, rootId)
+      kortixEventBus().publishDaemon('kortix.turn', { runtime_session_id: rootId, verdict: status, error: error ?? null }, rootId)
       if (relayedTurnEnds.has(messageId)) return
       void relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error }).then((settled) => {
         if (settled) relayedTurnEnds.add(messageId)
@@ -240,17 +240,17 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       // Published AFTER admission, like OpenCode's publish-after-prompt: the
       // control plane must never promote a `delivering` record for a turn the
       // runtime has not accepted.
-      bootState.initialOpenCodeSessionId = runtime.rootId
+      bootState.initialRuntimeSessionId = runtime.rootId
       void relayTurnAccepted(runtime.rootId, admitted.messageId, claim.turnToken)
         .then(() => bootMark('initial-turn-accepted'))
         .catch((err) => logger.warn('[boot] initial turn acceptance relay failed', { err: (err as Error).message }))
     } catch (err) {
-      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
-      logger.error('[boot] initial prompt admission failed', { err: bootState.initialOpenCodeSessionError })
+      bootState.initialRuntimeSessionError = err instanceof Error ? err.message : String(err)
+      logger.error('[boot] initial prompt admission failed', { err: bootState.initialRuntimeSessionError })
       return
     }
   } else {
-    bootState.initialOpenCodeSessionId = runtime.rootId
+    bootState.initialRuntimeSessionId = runtime.rootId
   }
   bootMark('runtime-ready')
   logger.info('[boot] pi session ready', { rootId: runtime.rootId, timeline: bootState.timeline })

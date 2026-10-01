@@ -5,7 +5,7 @@ import { isConfigured } from '../http/config';
 import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
-let calls: { url: string; method: string; body?: unknown }[] = [];
+let calls: { url: string; method: string; body?: any }[] = [];
 beforeEach(() => {
   calls = [];
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
@@ -910,16 +910,15 @@ test('two session handles resolve independent sandboxes: A.send never crosses to
   await a.ensureReady();
   await b.ensureReady(); // resolves AFTER a — guards against shared sandbox state
 
+  // A prompt is a durable row in the session's own inbox (W5 E4).
   await a.send('hello from A');
-  const aPromptCall = calls.find((c) => c.url.includes('/message'));
-  expect(aPromptCall?.url).toContain('/p/sb-A/8000');
-  expect(aPromptCall?.url).not.toContain('sb-B');
+  const aPromptCall = calls.find((c) => c.url.endsWith('/prompts'));
+  expect(aPromptCall?.url).toContain('/projects/PROJ/sessions/SESS-A/prompts');
 
   calls.length = 0;
   await b.send('hello from B');
-  const bPromptCall = calls.find((c) => c.url.includes('/message'));
-  expect(bPromptCall?.url).toContain('/p/sb-B/8000');
-  expect(bPromptCall?.url).not.toContain('sb-A');
+  const bPromptCall = calls.find((c) => c.url.endsWith('/prompts'));
+  expect(bPromptCall?.url).toContain('/projects/PROJ/sessions/SESS-B/prompts');
 
   calls.length = 0;
   await a.abort();
@@ -958,15 +957,16 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
   await k.session('PROJ', 'SESS-INHERITED').send('hello from inherited state');
 
   const promptCall = calls.find(
-    (call) =>
-      call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-INHERITED/prompts') && call.method === 'POST',
   );
   expect(promptCall?.body).toMatchObject({
-    agent: 'kortix',
-    model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
+    overrides: { agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } },
     parts: [{ type: 'text', text: 'hello from inherited state' }],
+    // Minted here with no transcript to place it against: the server places it.
+    remint_on_delivery: true,
   });
+  expect(promptCall?.body.message_id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+  expect(typeof promptCall?.body.client_message_id).toBe('string');
 });
 
 test('changeModel invalidates the persisted default before the next send', async () => {
@@ -1011,17 +1011,11 @@ test('changeModel invalidates the persisted default before the next send', async
   await handle.send('after change');
 
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/prompts') && call.method === 'POST',
   );
-  expect(prompts.map((call) => call.body)).toEqual([
-    expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
-    }),
-    expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
-    }),
+  expect(prompts.map((call) => call.body.overrides)).toEqual([
+    expect.objectContaining({ model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } }),
+    expect.objectContaining({ model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' } }),
   ]);
 });
 
@@ -1085,23 +1079,12 @@ test('per-call and handle prompt choices override persisted session defaults', a
   });
 
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES/prompts') && call.method === 'POST',
   );
-  expect(prompts.map((call) => call.body)).toEqual([
-    expect.objectContaining({
-      model: { providerID: 'persisted', modelID: 'model' },
-      agent: 'persisted-agent',
-    }),
-    expect.objectContaining({
-      model: { providerID: 'sticky', modelID: 'model' },
-      agent: 'sticky-agent',
-    }),
-    expect.objectContaining({
-      model: { providerID: 'per-call', modelID: 'model' },
-      agent: 'per-call-agent',
-    }),
+  expect(prompts.map((call) => call.body.overrides)).toEqual([
+    { model: { providerID: 'persisted', modelID: 'model' }, agent: 'persisted-agent' },
+    { model: { providerID: 'sticky', modelID: 'model' }, agent: 'sticky-agent' },
+    { model: { providerID: 'per-call', modelID: 'model' }, agent: 'per-call-agent' },
   ]);
   expect(
     calls.filter(
@@ -1147,14 +1130,11 @@ test('a failed persisted-default read is retried by the next send', async () => 
 
   expect(sessionReads).toBe(4);
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-DEFAULT-RETRY/prompts') && call.method === 'POST',
   );
   expect(prompts).toHaveLength(1);
   expect(prompts[0]?.body).toMatchObject({
-    model: { providerID: 'persisted', modelID: 'model' },
-    agent: 'persisted-agent',
+    overrides: { model: { providerID: 'persisted', modelID: 'model' }, agent: 'persisted-agent' },
     parts: [{ type: 'text', text: 'second' }],
   });
 });
@@ -1289,8 +1269,8 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
 
   calls.length = 0;
   await handle.send('hello again');
-  const promptCall = calls.find((c) => c.url.includes('/message'));
-  expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
+  expect(calls.some((c) => c.url.endsWith('/projects/PROJ/sessions/SESS-REG-2/prompts'))).toBe(true);
+  // `send` resolves the runtime first, so the restarted session re-resolves.
   expect(startCount).toBe(2);
 });
 

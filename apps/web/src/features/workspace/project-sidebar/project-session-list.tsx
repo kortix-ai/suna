@@ -4,7 +4,6 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import {
-  directSubsessions,
   isMetaCoordinatorSession,
   matchesSourceFilters,
   matchesStatusFilters,
@@ -90,6 +89,7 @@ import {
 } from '@/stores/session-filter-store';
 import { shouldBeginSessionSwitch, useSessionSwitchStore } from '@/stores/session-switch-store';
 import {
+  directSubsessions,
   listChangeRequests,
   restartProjectSession,
   sessionParentId,

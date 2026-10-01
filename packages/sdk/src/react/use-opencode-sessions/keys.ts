@@ -21,7 +21,7 @@ import type {
   WorktreeCreateInput,
   WorktreeRemoveInput,
   WorktreeResetInput,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Re-export SDK types for consumers

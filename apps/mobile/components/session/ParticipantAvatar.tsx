@@ -1,8 +1,9 @@
 /**
  * ParticipantAvatar — a person in a shared session, drawn like web's
- * `UserAvatar`: two initials on the person's chalk colours, a 1px chalk
- * border, `rounded-sm` corners, and the profile photo over it when one loads.
- * Used beside a user message and in the header stack.
+ * `UserAvatar`: two initials on the person's chalk colours, `rounded-sm`
+ * corners, and the profile photo over it when one loads. No border (Jay,
+ * 2026-10-01). Used above a user message, in the header stack and in the
+ * people sheet.
  */
 import * as React from 'react';
 import { Text, type StyleProp, type ViewStyle } from 'react-native';
@@ -48,8 +49,6 @@ export function ParticipantAvatar({ person, size = PARTICIPANT_AVATAR_SIZE, styl
           width: size,
           height: size,
           borderRadius: RADIUS,
-          borderWidth: 1,
-          borderColor: chalk.border,
           backgroundColor: chalk.background,
         },
         style,
