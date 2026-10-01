@@ -167,7 +167,11 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     React.useEffect(
       () =>
         queryClient.getQueryCache().subscribe((event) => {
-          if (event.query.queryKey[0] === 'project-sessions') bumpLists();
+          // A list WRITE only (`updated`). The cache also reports observers
+          // attaching and changing options, and it does so while the screen
+          // that owns the query is rendering: a state update here on those
+          // is a setState during another component's render.
+          if (event.type === 'updated' && event.query.queryKey[0] === 'project-sessions') bumpLists();
         }),
       [queryClient]
     );
