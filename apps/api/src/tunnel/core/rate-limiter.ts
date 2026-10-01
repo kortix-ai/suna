@@ -30,10 +30,6 @@ class TunnelRateLimiter {
     deviceAuthApprove: { limit: 10, windowMs: 60_000 },
     deviceAuthDeny: { limit: 10, windowMs: 60_000 },
     selfUnpair: { limit: 10, windowMs: 60_000 },
-    // Kortix Capture recorder: config polls every 60 s; a chunk is minutes of video.
-    captureConfig: { limit: 20, windowMs: 60_000 },
-    captureChunk: { limit: 30, windowMs: 60_000 },
-    captureCommit: { limit: 30, windowMs: 60_000 },
   };
 
   check(endpoint: string, key: string): { allowed: boolean; retryAfterMs?: number } {

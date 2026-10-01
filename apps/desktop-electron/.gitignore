@@ -6,6 +6,3 @@ vendor
 # The repo-root .gitignore ignores `build/`, but this app's electron-builder
 # resources (icons + entitlements) live in build/ and MUST be committed.
 !/build
-
-# Staged by scripts/stage-capture.js
-capture-stage

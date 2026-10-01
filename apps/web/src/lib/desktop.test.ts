@@ -6,10 +6,6 @@ import {
   desktopComputerAccessSet,
   desktopComputerConnect,
   desktopComputerDisconnect,
-  desktopCaptureStatus,
-  desktopCapturePause,
-  desktopCaptureResume,
-  desktopCaptureRequestPermission,
   desktopComputerOpenLogs,
   desktopComputerPause,
   desktopComputerStatus,
@@ -237,36 +233,6 @@ describe('desktop computer commands', () => {
       'computer_open_logs',
     ]);
     expect(calls[0]![1]).toEqual(input);
-  });
-
-  test('capture commands pass their arguments and return null in a browser', async () => {
-    Object.defineProperty(globalThis, 'window', { value: {}, configurable: true, writable: true });
-    expect(await desktopCaptureStatus()).toBeNull();
-    const calls: Array<[string, unknown]> = [];
-    Object.defineProperty(globalThis, 'window', {
-      value: {
-        __TAURI__: {
-          core: {
-            invoke: async (cmd: string, args?: unknown) => {
-              calls.push([cmd, args]);
-              return cmd === 'capture_request_permission' ? { ok: true, opened: true } : { state: 'paused', label: 'Capture: Paused' };
-            },
-          },
-        },
-      },
-      configurable: true,
-      writable: true,
-    });
-    expect(await desktopCaptureStatus()).toMatchObject({ state: 'paused' });
-    await desktopCapturePause({ minutes: 30 });
-    await desktopCaptureResume();
-    expect(await desktopCaptureRequestPermission()).toEqual({ ok: true, opened: true });
-    expect(calls).toEqual([
-      ['capture_status', undefined],
-      ['capture_pause', { minutes: 30 }],
-      ['capture_resume', undefined],
-      ['capture_request_permission', undefined],
-    ]);
   });
 
   test('pause and resume reject with the reason when the desktop app reports a failure (X5)', async () => {

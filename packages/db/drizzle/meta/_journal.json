@@ -740,13 +740,6 @@
     {
       "idx": 105,
       "version": "7",
-      "when": 1790881834294,
-      "tag": "20261001191034_capture",
-      "breakpoints": true
-    },
-    {
-      "idx": 106,
-      "version": "7",
       "when": 1790891254334,
       "tag": "20261001214734_drop_unused_audit_events_indexes_snapshot",
       "breakpoints": true

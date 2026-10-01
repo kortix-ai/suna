@@ -211,9 +211,6 @@ async function startSingletonWorkers() {
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
   const { startOAuthSweeper } = await import('./oauth/sweeper');
   startOAuthSweeper();
-  // Kortix Capture retention: chunks past the account's retention_days.
-  const { startCaptureSweeper } = await import('./capture/sweeper');
-  startCaptureSweeper();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -233,8 +230,6 @@ async function stopSingletonWorkers() {
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./oauth/sweeper');
   stopOAuthSweeper();
-  const { stopCaptureSweeper } = await import('./capture/sweeper');
-  stopCaptureSweeper();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

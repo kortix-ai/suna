@@ -239,11 +239,6 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
           },
-          {
-            name: 'capture',
-            args: '<subcommand>',
-            blurb: "Search the screen history of the person you act for (search, timeline, frame)",
-          },
         ],
       },
       {

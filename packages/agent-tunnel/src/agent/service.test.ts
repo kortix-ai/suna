@@ -188,20 +188,6 @@ describe('service runner', () => {
     });
   });
 
-  test('an Electron runner carries KORTIX_CAPTURE_BIN from the installing app into the service env', () => {
-    const before = process.env.KORTIX_CAPTURE_BIN;
-    process.env.KORTIX_CAPTURE_BIN = '/Applications/Kortix.app/Contents/Resources/capture/kortix-capture';
-    try {
-      const runner = runnerPartsFor('/a/agent-cli.js', { execPath: '/a/Kortix', electron: '39.8.1' }, devPaths);
-      expect(runner.env?.KORTIX_CAPTURE_BIN).toBe('/Applications/Kortix.app/Contents/Resources/capture/kortix-capture');
-      // A plain Node runner never gets it.
-      expect(runnerPartsFor('/a/agent-cli.js', { execPath: 'node' }, devPaths).env).toEqual({ AGENT_TUNNEL_HOME: '/tmp/kortix-dev/agent-tunnel' });
-    } finally {
-      if (before === undefined) delete process.env.KORTIX_CAPTURE_BIN;
-      else process.env.KORTIX_CAPTURE_BIN = before;
-    }
-  });
-
   test('a Linux AppImage runs the AppImage file with a vendored bundle', () => {
     const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-appimage-'));
     try {

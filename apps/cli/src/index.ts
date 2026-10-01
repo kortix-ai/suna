@@ -40,7 +40,6 @@ import { runShip } from './commands/ship.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
-import { runCapture } from './commands/capture.ts';
 import { runReminders } from './commands/reminders.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
@@ -315,9 +314,6 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
   }
-  if (argv[0] === 'capture') {
-    return runCapture(argv.slice(1));
-  }
   if (argv[0] === 'reminders') {
     return runReminders(argv.slice(1));
   }
@@ -423,7 +419,6 @@ const KNOWN_COMMANDS = [
   'triggers',
   'reminders',
   'remind',
-  'capture',
   'connectors',
   'secrets',
   'providers',
