@@ -969,11 +969,13 @@ flow(
 );
 
 // CHN-T4 — Teams inbound webhook (public, JWT-gated). Unconfigured → 503; configured + no/invalid token → 401.
+// The bring-your-own path answers only for a project with its own bot app:
+// anything else is a plain 404, never a 5xx Bot Framework would retry.
 flow(
   "CHN-T4",
   {
     domain: "channels",
-    routes: ["POST /v1/webhooks/teams/messages"],
+    routes: ["POST /v1/webhooks/teams/messages", "POST /v1/webhooks/teams/:projectId/messages"],
   },
   async (ctx) => {
     await ctx.step("ANON unsigned activity → 503 (unconfigured) or 401 (no/invalid token)", async () => {
@@ -981,6 +983,19 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/webhooks/teams/messages", { type: "message", text: "hi" });
       r.status([401, 503]);
+    });
+    const p = await ctx.fixtures.project();
+    await ctx.step("ANON activity to a project that brings no bot of its own → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/:projectId/messages", { type: "message", text: "hi" }, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    await ctx.step("ANON activity to a path that names no project → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/:projectId/messages", { type: "message", text: "hi" }, { params: { projectId: "not-a-project" } });
+      r.status(404);
     });
   },
 );

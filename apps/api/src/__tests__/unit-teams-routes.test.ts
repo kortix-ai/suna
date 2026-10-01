@@ -18,7 +18,9 @@ mock.module('../config', () => ({
   config: { MICROSOFT_APP_ID: 'app-1', MICROSOFT_APP_PASSWORD: 'secret' },
 }));
 mock.module('../channels/teams-auth', () => ({ teamsConfigured: () => true }));
-mock.module('../channels/install-store', () => ({ loadTeamsAppIdForProject: async () => 'byo-app' }));
+// The project's own bot app id; null = the project brings no bot.
+let byoAppId: string | null = 'byo-app';
+mock.module('../channels/install-store', () => ({ loadTeamsAppIdForProject: async () => byoAppId }));
 mock.module('../channels/teams/jwt', () => ({ validateInboundActivityJwt: async () => true }));
 mock.module('../channels/teams/file-proxy', () => ({ handleFileConsentInvoke: async () => {} }));
 // The tenants the BYO project's install proved (chat_installs).
@@ -64,6 +66,7 @@ await import('../channels/teams/routes');
 const { teamsWebhookApp } = await import('../channels/teams/app');
 
 beforeEach(() => {
+  byoAppId = 'byo-app';
   dispatchDone = false;
   dispatched.length = 0;
   inbounds.length = 0;
@@ -207,6 +210,19 @@ describe('only the Teams channel reaches the bot', () => {
 describe('the bring-your-own endpoint answers only for a project id', () => {
   // Teams has no per-project flag any more, so the path is the only gate
   // before the project's own bot app is looked up.
+  test('a project that brings no bot of its own is a plain 404, never a 503 and never dispatched', async () => {
+    // Anonymous callers: a 5xx here makes Bot Framework retry and pages on
+    // scanner noise, and the answer is the same for a project that does not exist.
+    byoAppId = null;
+    const res = await teamsWebhookApp.request(`/${PROJECT}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+      body: JSON.stringify({ ...message, id: 'act-10' }),
+    });
+    expect(res.status).toBe(404);
+    expect(dispatched).toEqual([]);
+  });
+
   test('a path that cannot name a project is a plain 404, never dispatched', async () => {
     const res = await teamsWebhookApp.request('/not-a-project/messages', {
       method: 'POST',
