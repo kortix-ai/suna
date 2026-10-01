@@ -130,6 +130,7 @@ module "capture" {
   tags                    = local.tags
   expiration_days         = 3660
   noncurrent_version_days = 1
+  force_destroy           = true # lets the pending removal of Kortix Capture delete the bucket
 }
 
 module "api" {
