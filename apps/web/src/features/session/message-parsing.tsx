@@ -217,8 +217,6 @@ export {
 export { parseTriggerEvent, type TriggerEventInfo } from '@kortix/shared';
 // The reminder fire header, also shared with the API that writes it.
 export { parseReminderPrompt, type ReminderPromptInfo } from '@kortix/shared';
-// The header on a message from another session or a person in a group chat.
-export { parseSessionMessagePrompt, type SessionMessagePromptInfo } from '@kortix/shared';
 
 // ── Generic XML notification parsing ──────────────────────────────────
 //

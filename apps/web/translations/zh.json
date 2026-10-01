@@ -1175,10 +1175,6 @@
           "name": "MCP 服务器",
           "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
         },
-        "human_messaging": {
-          "name": "向人发消息",
-          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。会话之间的消息会注明发送方会话，以便其智能体回复。"
-        },
         "reminders": {
           "name": "提醒",
           "description": "让代理和用户在会话上安排一次性或重复的检查。每次触发都会重新提示该会话。新增提醒页面、会话提醒标记和 `kortix remind`。"
@@ -1591,17 +1587,6 @@
       "failed": "无法保存标签",
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
-    },
-    "askedYou": {
-      "title": "向你提问",
-      "from": "来自 {name}",
-      "arrival": "{name} 向你提问",
-      "arrivalUnknown": "有人向你提问",
-      "open": "打开",
-      "withOne": "与 1 人的对话",
-      "withMany": "与 {count} 人的对话",
-      "askedFrom": "来自 {title} 的提问",
-      "inConversation": "对话参与者"
     }
   },
   "dashboard": {
@@ -19106,7 +19091,9 @@
       "textdf757dbe33eb": "你的 Teams 目录中的 Kortix 应用是 {value0} 版。{value1} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "texte15f213fa506": "发布应用更新",
-      "textcafd830fcf85": "已列出项目代理身份"
+      "textcafd830fcf85": "已列出项目代理身份",
+      "textea2f51bfe21c": "查看了会话参与者",
+      "text7f755292bf51": "无法下载附件"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20374,8 +20361,6 @@
   },
   "messageFrom": {
     "from": "来自",
-    "asked": "询问了",
-    "replyHint": "在下方回复，智能体会接手处理。",
     "untitledSession": "未命名会话"
   },
   "sessionParticipants": {

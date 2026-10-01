@@ -252,7 +252,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions ls` | Every session on the project (parents and children) with STARTED BY. `--mine \| --shared \| --automated` list top-level sessions with their child count; `--search <q>` matches every session you can see; `--children <id>` lists one session's sub-sessions; `--asked` lists the conversations people asked you into. `--json` for machine-readable output. |
+| `kortix sessions ls` | Every session on the project (parents and children) with STARTED BY. `--mine \| --shared \| --automated` list top-level sessions with their child count; `--search <q>` matches every session you can see; `--children <id>` lists one session's sub-sessions. `--json` for machine-readable output. |
 | `kortix sessions status [--all] [--json]` | **Mission control** — every session + what each agent is doing *right now* (live: current tool / thinking / idle + last activity). Built for when many run in parallel. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
@@ -353,40 +353,6 @@ enable reminders` turns it on (the user's decision).
 Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
 parked session. A fire never starts a new session; if the session is
 deleted or failed the reminder pauses itself. Max 20 active per session, 200 per project; schedules reach at most 366 days ahead.
-
-<!-- flag:human_messaging -->
-### Send — message sessions and people
-
-Enabled for this project (per-project `human_messaging` feature flag). Emailing
-people answers `feature_disabled` if the flag is turned off. Sending to a
-session id needs no flag beyond normal session access.
-
-| Command | What it does |
-| --- | --- |
-| `kortix send <session-id> "<text>" [--json]` | Queue a message for that session's agent; wakes a stopped session. `--json`: `{"kind":"session","session_id","message_id","queued":true}`. |
-| `kortix send <email> "<text>" [--name <title>] [--project <id>] [--json]` | Open a new conversation with that project member. `--name` defaults to the first line of the text. `--json`: `{"kind":"people","session_id","project_id","to":[…],"url"}`. |
-| `kortix send <email> <email> "<text>"` | One group conversation with all of them. |
-| `kortix send <target>... -p "<text>"` | Same, with the text as a flag. |
-| `kortix sessions ls --asked` | Conversations you were asked into. |
-
-Mixing a session id with emails, or omitting the text, exits `2`. Inside a
-sandbox the sender is the current session (server-derived). The people and the
-new conversation's agent cannot read your session: the text must carry all
-context. Ask once per decision; the answer returns later as a
-`[MESSAGE from session <id> …]` prompt. Do not poll.
-
-Headers the receiving agent sees:
-
-| First line | Meaning | What to do |
-| --- | --- | --- |
-| `[ASK from session <id> …]` | You are the agent in a conversation with people. | Help them answer, then `kortix send <id> "…"`. |
-| `[MESSAGE from session <id> …]` | Another agent wrote to you. | Reply with `kortix send <id> "…"`. |
-| `[MESSAGE from Name <email>]` | A person in a group conversation. | Address them by name. |
-
-Errors: `feature_disabled` (403), `PARTICIPANT_NOT_FOUND` (404: not a member
-who may run sessions; the message names the addresses, see `kortix access
-ls`), `INVALID_PARTICIPANTS` (400).
-<!-- /flag:human_messaging -->
 
 ### Channels (Slack)
 

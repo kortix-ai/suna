@@ -1175,10 +1175,6 @@
           "name": "Servidor MCP",
           "description": "Conecte Claude, ChatGPT, Cursor, Codex ou qualquer cliente MCP a este projeto via OAuth. O cliente entra como você e chama o Kortix com as suas permissões. A URL fica em Conectar MCP, no menu do espaço de trabalho."
         },
-        "human_messaging": {
-          "name": "Mensagens para pessoas",
-          "description": "Permite que agentes enviem mensagens a pessoas e a outras sessões. `kortix send alice@example.com` abre uma conversa que começa com a mensagem do agente e aparece em Perguntaram a você, na barra lateral do destinatário. Vários endereços abrem um chat em grupo. As mensagens entre sessões indicam a sessão que as enviou, para que o agente dela possa responder."
-        },
         "reminders": {
           "name": "Lembretes",
           "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona a página Lembretes, o indicador de lembretes da sessão e `kortix remind`."
@@ -1591,17 +1587,6 @@
       "failed": "Não foi possível salvar os rótulos",
       "tooLong": "Um rótulo tem no máximo 64 caracteres.",
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
-    },
-    "askedYou": {
-      "title": "Perguntaram a você",
-      "from": "de {name}",
-      "arrival": "{name} fez uma pergunta a você",
-      "arrivalUnknown": "Alguém fez uma pergunta a você",
-      "open": "Abrir",
-      "withOne": "Conversa com 1 pessoa",
-      "withMany": "Conversa com {count} pessoas",
-      "askedFrom": "Perguntado a partir de {title}",
-      "inConversation": "Nesta conversa"
     }
   },
   "dashboard": {
@@ -19106,7 +19091,9 @@
       "textdf757dbe33eb": "Seu catálogo do Teams tem a versão {value0} do app Kortix. A versão {value1} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "textcd2c4b26eedd": "O Kortix não tem registro da versão do app no seu catálogo do Teams. A versão {value0} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "texte15f213fa506": "Publicar atualização do app",
-      "textcafd830fcf85": "Identidades de agente do projeto listadas"
+      "textcafd830fcf85": "Identidades de agente do projeto listadas",
+      "textea2f51bfe21c": "Visualizou os participantes da sessão",
+      "text7f755292bf51": "Não foi possível baixar o anexo"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20374,8 +20361,6 @@
   },
   "messageFrom": {
     "from": "De",
-    "asked": "perguntou a",
-    "replyHint": "Responda abaixo. O agente dará seguimento.",
     "untitledSession": "Sessão sem título"
   },
   "sessionParticipants": {

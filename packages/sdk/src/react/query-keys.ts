@@ -53,25 +53,19 @@
  */
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
-type SessionListFilters = Pick<
-  ListProjectSessionsOptions,
-  'parent' | 'startedBy' | 'q' | 'labels' | 'participant'
->;
+type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels'>;
 
 /** The filter fields that change the server response, or undefined when none is set. */
 function normalizeSessionListFilters(filters?: SessionListFilters) {
   const q = filters?.q?.trim();
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
-  if (!filters?.parent && !filters?.startedBy && !filters?.participant && !q && !labels) {
-    return undefined;
-  }
+  if (!filters?.parent && !filters?.startedBy && !q && !labels) return undefined;
   return {
     parent: filters?.parent ?? null,
     startedBy: filters?.startedBy ?? null,
     q: q ?? null,
-    // Only present when set, so pre-label and pre-participant keys stay byte-identical.
+    // Only present when set, so pre-label keys stay byte-identical.
     ...(labels ? { labels } : {}),
-    ...(filters?.participant ? { participant: filters.participant } : {}),
   };
 }
 
