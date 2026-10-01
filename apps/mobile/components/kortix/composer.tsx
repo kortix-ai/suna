@@ -62,6 +62,13 @@ import { useDictation } from '@/hooks/useDictation';
 export const COMPOSER_CONTROL_HIT_SLOP = 4;
 
 /**
+ * The composer card's surface: corners, hairline border, page colour, inset.
+ * A view that takes the composer's slot (the session failure card) uses it so
+ * the two never drift.
+ */
+export const COMPOSER_CARD_CLASS = 'rounded-3xl border border-border bg-background p-2';
+
+/**
  * The control row and the listening row swap with a crossfade in the same
  * 36pt slot: the new row fades in over 160 ms, the old one out in 120 ms.
  */
@@ -158,7 +165,7 @@ export function Composer({
   }, [disabled, dictating, finishDictation]);
 
   return (
-    <View className={cn('rounded-3xl border border-border bg-background p-2', className)}>
+    <View className={cn(COMPOSER_CARD_CLASS, className)}>
       {header ? <View className="px-2 pb-1 pt-1">{header}</View> : null}
 
       {attachments.length > 0 ? (

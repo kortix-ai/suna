@@ -1288,21 +1288,9 @@ describe('SessionConnecting saved thread', () => {
     ]);
   });
 
-  test('the waking composer takes a message and hands it to onSend', async () => {
-    const sent: string[] = [];
-    await renderSavedThread({
-      onSend: (text: string) => {
-        sent.push(text);
-      },
-    });
-    await act(async () => {
-      wakingComposerProps.onChangeText?.('wake-up ping');
-    });
-    await act(async () => {
-      wakingComposerProps.onSubmit?.();
-    });
-    expect(sent).toEqual(['wake-up ping']);
-    // The composer resets after the submit.
+  test('the waking composer is disabled: no text, no send', async () => {
+    await renderSavedThread({});
+    expect(wakingComposerProps.disabled).toBe(true);
     expect(wakingComposerProps.value).toBe('');
   });
 
@@ -1314,7 +1302,9 @@ describe('SessionConnecting saved thread', () => {
     });
     // The thread is still rendered; the failure replaced only the composer slot.
     expect(turnProps.length).toBe(2);
-    const restartButton = buttons.find((props) => props.onPress && props.variant === 'outline');
+    // Restart is the default (primary) pill; Back to project is secondary.
+    const restartButton = buttons.find((props) => props.onPress && props.variant === 'default');
+    expect(buttons.some((props) => props.onPress && props.variant === 'secondary')).toBe(true);
     expect(restartButton).toBeTruthy();
     await act(async () => {
       restartButton.onPress();
