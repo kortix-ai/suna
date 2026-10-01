@@ -241,6 +241,7 @@ export { loadTokenBinding };
 
 /**
  * Is this service account ACTIVATED — has an admin bound it to any live role?
+ * Object grants (a secret or an account shared with the agent) do not count.
  *
  * Deliberately an existence probe, not "does it hold any action": binding an
  * agent to a zero-permission role is how an admin pins it to deny-by-default,
@@ -273,6 +274,10 @@ const loadServiceAccountActivation = ttlMemo({
           eq(roleAssignments.principalType, 'service_account'),
           eq(roleAssignments.principalId, serviceAccountId),
           eq(roleAssignments.accountId, accountId),
+          // A role binding, not an object grant: sharing a secret or an account
+          // with the agent must not swap its default ceiling for bound roles
+          // that never include object grants (authorize.ts step 5a).
+          isNull(roleAssignments.objectType),
           or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
         ),
       )
