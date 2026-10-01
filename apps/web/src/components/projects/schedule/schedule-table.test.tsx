@@ -52,7 +52,7 @@ function row(trigger: ProjectTrigger): string {
 // showed it as an ordinary active schedule.
 describe('a trigger whose last run failed', () => {
   test('shows the failure on its row', () => {
-    const out = row({ ...base, last_status: 'failed', last_error: 'Out of credits: Payment Required' });
+    const out = row({ ...base, last_status: 'failed', last_error: 'Provider unavailable: socket hang up' });
     expect(out).toContain('Last run didn’t finish');
     expect(out).toContain('bg-kortix-red/15');
   });
