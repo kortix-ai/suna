@@ -34,6 +34,8 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
 import { db } from '../../shared/db';
@@ -1003,6 +1005,10 @@ export async function createProjectSession(input: {
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     ...(input.metadata ?? {}),
+    // Server-owned creation intent, never caller metadata or actual placement.
+    ...((input.metadata?.[WARM_SESSION_METADATA_KEY] ?? requestMetadata[WARM_SESSION_METADATA_KEY]) === true
+      ? { [WARM_SESSION_LOCATION_KEY]: resolveSessionSandboxRegion(project.metadata) ?? 'home' }
+      : {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.

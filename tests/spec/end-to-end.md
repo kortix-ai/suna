@@ -355,8 +355,9 @@ The session payload reports both verdicts, and a client must not read one for th
 
 
 `SESS-27` Durable session attachments. A first prompt containing a ZIP, a text or
-source file, and an image persists before runtime readiness. After readiness, the
-control plane writes every non-native file to a deterministic
+source file, and an image persists before runtime readiness. A warm-session claim
+requires known compute placement matching the project's current region flag, not
+runtime readiness. After readiness, the control plane writes every non-native file to a deterministic
 `/workspace/uploads/.kortix-inbox/{command_id}/...` path and forwards text file
 references; only images and PDFs remain OpenCode file parts. One failed write
 forwards no prompt and keeps the inbox row retryable. A later retry reuses the same

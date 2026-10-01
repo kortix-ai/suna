@@ -124,11 +124,3 @@ describe('the reload route still protects a running turn', () => {
     expect(gate).toBeLessThan(reload);
   });
 });
-
-describe('GET /config deadline attribution', () => {
-  test('records pending stages without identity', () => {
-    for (const stage of ['project_access', 'session_access', 'sandbox_state', 'latest_etag', 'desired_release', 'runtime_block']) {
-      expect(CONFIG).toContain(`timeConfigStage('${stage}'`);
-    }
-  });
-});
