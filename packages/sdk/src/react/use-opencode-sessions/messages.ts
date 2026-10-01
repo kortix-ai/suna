@@ -267,7 +267,12 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   let rand = '';
-  for (let i = 0; i < 14; i++) rand += chars[Math.floor(Math.random() * 62)];
+  // Rejection sampling keeps the 62 characters uniform (248 = 4 * 62).
+  const bytes = new Uint8Array(32);
+  while (rand.length < 14) {
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) if (b < 248 && rand.length < 14) rand += chars[b % 62];
+  }
   return `${prefix}_${hex}${rand}`;
 }
 
