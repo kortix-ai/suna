@@ -212,6 +212,24 @@ describe('secret audience — who may use one value', () => {
     expect((await envFor(trigger.personId, trigger.agentId)).NIGHTLY_KEY).toBe('nightly-agent');
   });
 
+  test('a session whose token is not minted yet (first boot env) acts as its agent from agent_name', async () => {
+    const reporterSa = crypto.randomUUID();
+    const booting = crypto.randomUUID();
+    const metaBooting = crypto.randomUUID();
+    await db.insert(serviceAccounts).values({
+      serviceAccountId: reporterSa, accountId: ACCOUNT, name: `agent-${reporterSa}`,
+      secretHash: `sa-${reporterSa}`, publicPrefix: 'kortix_sa_audience', createdBy: OWNER,
+      projectId: PROJECT, agentName: 'reporter',
+    });
+    await db.insert(projectSessions).values([
+      { sessionId: booting, accountId: ACCOUNT, projectId: PROJECT, branchName: booting, createdBy: OWNER, visibility: 'project', origin: 'trigger', agentName: 'reporter' },
+      { sessionId: metaBooting, accountId: ACCOUNT, projectId: PROJECT, branchName: metaBooting, createdBy: OWNER, visibility: 'project', origin: 'trigger', agentName: 'meta' },
+    ]);
+    expect(await secretAudienceSubject({ projectId: PROJECT, sessionId: booting })).toEqual({ personId: null, agentId: reporterSa });
+    // An agent with no standing identity (the platform meta agent) is nobody.
+    expect(await secretAudienceSubject({ projectId: PROJECT, sessionId: metaBooting })).toEqual({ personId: null, agentId: null });
+  });
+
   test('one KEY, three values: the person value beats the agent value beats the team value', async () => {
     await writeSharedProjectSecret({ projectId: PROJECT, name: 'RANKED_KEY', value: 'ranked-team' });
     await writeSharedProjectSecret({ projectId: PROJECT, name: 'RANKED_KEY', identifier: 'RANKED_KEY-agent', value: 'ranked-agent' });
