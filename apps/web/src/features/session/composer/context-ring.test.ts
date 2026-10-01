@@ -113,5 +113,5 @@ test('unknown model and streaming assistant retain the last cached snapshot', ()
 test('ring reading and card breakdown agree for cached streaming usage', () => {
   const messages = [assistantWithTokens(100_000, { read: 20_000, write: 10_000 }, 10_000), assistantWithTokens(0)];
   expect(getContextReading(messages)).toEqual({ percent: 70, tone: 'warning' });
-  expect(getLastAssistantTokenBreakdown(messages)).toEqual(getContextUsage(messages).breakdown);
+  expect(getLastAssistantTokenBreakdown(messages)).toEqual({ input: 100_000, output: 10_000, reasoning: 0, cache: 30_000, total: 140_000 });
 });
