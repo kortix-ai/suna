@@ -1103,9 +1103,10 @@ function registerIpc() {
         return null;
       }
       default:
-        // computer_status / _connect / _pause / _resume / _disconnect / _open_logs.
+        // computer_status / _connect / _pause / _resume / _disconnect / _open_logs,
+        // and capture_status / _pause / _resume / _request_permission.
         // Same trusted-sender gate as every command above.
-        if (typeof cmd === 'string' && cmd.startsWith('computer_') && computerShell) {
+        if (typeof cmd === 'string' && (cmd.startsWith('computer_') || cmd.startsWith('capture_')) && computerShell) {
           return computerShell.invoke(cmd, args);
         }
         throw new Error(`Unknown command: ${cmd}`);

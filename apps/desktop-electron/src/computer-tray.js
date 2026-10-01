@@ -111,9 +111,12 @@ function setupComputer(deps) {
     return ctx?.appOrigin === appOrigin ? ctx : resolveBackend(appOrigin);
   }
 
+  /** The recorder the service supervises. Null when this build has none. */
+  const captureBin = () => computer.captureBinPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+
   const run = async (args) => {
     const { home } = await context();
-    return computer.runAgent(args, { cli: cli(), home });
+    return computer.runAgent(args, { cli: cli(), home, captureBin: captureBin() });
   };
 
   /* ─── Status ─────────────────────────────────────────────────────────── */
@@ -126,7 +129,7 @@ function setupComputer(deps) {
     try {
       const { home } = await context();
       access = computer.readAccess(home);
-      return await computer.computerStatus({ cli: cli(), home });
+      return await computer.computerStatus({ cli: cli(), home, captureBin: captureBin() });
     } catch (error) {
       return computer.unavailable(error instanceof Error ? error.message : String(error));
     }
@@ -186,10 +189,42 @@ function setupComputer(deps) {
     }
   }
 
+  /* ─── Kortix Capture ─────────────────────────────────────────────────── */
+
+  /** @type {ReturnType<typeof computer.captureStatus> | null} */
+  let capture = null;
+
+  /** Re-reads recorder.json; the tray is rebuilt only when its line changes (a rebuild closes an open menu). */
+  function refreshCapture() {
+    if (!ctx) return null;
+    const next = computer.captureStatus(ctx.home);
+    const changed = next.label !== capture?.label || next.state !== capture?.state;
+    capture = next;
+    if (changed) renderTraySafely();
+    return next;
+  }
+
+  function setCapturePause(untilMs) {
+    if (!ctx) throw new Error('Kortix is not connected to an instance yet.');
+    computer.writeCapturePause(ctx.home, untilMs);
+    return refreshCapture();
+  }
+
+  const capturePause = (minutes = 60) => setCapturePause(computer.capturePauseUntil(minutes));
+  const captureResume = () => setCapturePause(null);
+
+  /** macOS: only the person can grant Screen Recording; open the pane. Other systems need no grant. */
+  async function captureRequestPermission() {
+    if (process.platform !== 'darwin') return { ok: true, opened: false };
+    await shell.openExternal(computer.SCREEN_RECORDING_PANE);
+    return { ok: true, opened: true };
+  }
+
   // fs.watch reports a change at once where the platform supports it; the
   // mtime poll covers the rest, including a directory that does not exist yet.
   function checkFiles() {
     if (!ctx) return;
+    refreshCapture();
     let changed = false;
     for (const name of WATCHED_FILES) {
       let mtime = 0;
@@ -352,6 +387,9 @@ function setupComputer(deps) {
     setMode: (mode) => void setAccess({ mode }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
     revoke: () => void setAccess({ revoke: true }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
     toggleKeepAwake: () => void setAccess({ keepAwake: !access.keepAwake }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
+    capturePause: () => void Promise.resolve().then(() => capturePause(60)).catch((e) => dialog.showErrorBox('Kortix', String(e))),
+    captureResume: () => void Promise.resolve().then(captureResume).catch((e) => dialog.showErrorBox('Kortix', String(e))),
+    capturePermission: () => void captureRequestPermission().catch((e) => dialog.showErrorBox('Kortix', String(e))),
     logs: () => void openLogs().catch((e) => dialog.showErrorBox('Kortix', String(e))),
     toggleLogin: () => {
       app.setLoginItemSettings({ openAtLogin: !app.getLoginItemSettings().openAtLogin });
@@ -400,6 +438,7 @@ function setupComputer(deps) {
             openAtLogin: app.getLoginItemSettings().openAtLogin,
             loginItemSupported: process.platform === 'darwin' || process.platform === 'win32',
             keepAwakeSupported: computer.keepAwakeSupported(process.platform),
+            capture,
           },
           actions,
         ),
@@ -598,6 +637,7 @@ function setupComputer(deps) {
       .connectComputer({
         cli: cli(),
         home,
+        captureBin: captureBin(),
         apiUrl: `${backendUrl}/tunnel`,
         projectId,
         reauth: args.reauth === true,
@@ -656,6 +696,17 @@ function setupComputer(deps) {
         return computer.accessView((await context()).home);
       case 'computer_access_set':
         return setAccessFromPage(args);
+      case 'capture_status':
+        await context();
+        return refreshCapture();
+      case 'capture_pause':
+        await context();
+        return capturePause(args.minutes ?? 60);
+      case 'capture_resume':
+        await context();
+        return captureResume();
+      case 'capture_request_permission':
+        return captureRequestPermission();
       default:
         throw new Error(`Unknown command: ${cmd}`);
     }

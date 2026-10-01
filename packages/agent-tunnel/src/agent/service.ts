@@ -122,7 +122,12 @@ export function runnerPartsFor(
     return {
       command: runtime.appImage || runtime.execPath,
       args: [runtime.appImage ? vendor(script, paths) : script, 'run', '--service'],
-      env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+      // KORTIX_CAPTURE_BIN: the desktop app tells the service where its recorder is.
+      env: {
+        ...env,
+        ELECTRON_RUN_AS_NODE: '1',
+        ...(process.env.KORTIX_CAPTURE_BIN ? { KORTIX_CAPTURE_BIN: process.env.KORTIX_CAPTURE_BIN } : {}),
+      },
     };
   }
   return { command: runtime.execPath, args: [vendor(script, paths), 'run', '--service'], env };
