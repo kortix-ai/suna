@@ -16,7 +16,7 @@ import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-set
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -59,14 +59,18 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  * actually received, so a slow `/effective` never blanks the bar for a
  * manager mid-navigation.
  *
- * No tab is flag-gated. Review was until Review Center graduated out of the
- * flag system; it now follows its read leaf like every other tab.
+ * One tab is flag-gated: Drives, behind the project's `drives` flag. Review
+ * was until Review Center graduated out of the flag system; it now follows
+ * its read leaf like every other tab.
  */
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
+  flags: { drives?: boolean } = {},
 ): readonly CapabilityTab[] {
   if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
   return CAPABILITY_TABS.filter((tab) => {
+    // Drives is the one flagged tab: a project without Kortix Drive has nothing to show there.
+    if (tab.key === 'drives' && !flags.drives) return false;
     const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
     return pref ? caps[pref.action]?.allowed !== false : true;
   });
@@ -186,7 +190,8 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const tabs = useLocalizedUiCatalog(visibleCapabilityTabs(caps));
+  const drives = useFeatureFlag(projectId, 'drives').enabled;
+  const tabs = useLocalizedUiCatalog(visibleCapabilityTabs(caps, { drives }));
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));

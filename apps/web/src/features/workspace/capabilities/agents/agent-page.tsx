@@ -109,6 +109,7 @@ import {
   DotsThreeIcon,
   FileTextIcon,
   GlobeIcon,
+  HardDrivesIcon,
   type Icon,
   KeyIcon,
   PlayIcon,
@@ -146,6 +147,8 @@ import {
   SkillsGrantPage,
 } from './agent-grant-pages';
 import { AgentAuthorityCard } from './agent-authority-card';
+import { AgentDriveSection } from '@/features/drives/agent-drive-section';
+
 import { AgentPeopleSection } from './agent-people-section';
 import { AgentShareControl } from './agent-share-control';
 import { AgentTriggersSection } from './agent-triggers-section';
@@ -159,6 +162,7 @@ const SECTION_ICON: Record<AgentConfigSectionKey, Icon> = {
   people: UsersIcon,
   basics: SlidersHorizontalIcon,
   triggers: TimerIcon,
+  drive: HardDrivesIcon,
   skills: BookOpenTextIcon,
   connectors: PlugsConnectedIcon,
   secrets: KeyIcon,
@@ -652,14 +656,17 @@ const EDITABLE_SECTIONS: readonly AgentConfigSectionKey[] = AGENT_CONFIG_SECTION
  * `?section=apps` link falls back to Overview instead of rendering an empty
  * pane.
  */
-export function editableAgentSections(appsEnabled: boolean): readonly AgentConfigSectionKey[] {
-  return appsEnabled ? EDITABLE_SECTIONS : EDITABLE_SECTIONS.filter((key) => key !== 'apps');
+export function editableAgentSections(appsEnabled: boolean, drivesEnabled = false): readonly AgentConfigSectionKey[] {
+  return EDITABLE_SECTIONS.filter(
+    (key) => (appsEnabled || key !== 'apps') && (drivesEnabled || key !== 'drive'),
+  );
 }
 /** What a v1 project, or a reader without write, can still see. */
 const READ_ONLY_SECTIONS: readonly AgentConfigSectionKey[] = [
   'overview',
   'people',
   'triggers',
+  'drive',
   'actions',
   'model',
 ];
@@ -687,7 +694,8 @@ function EditableAgentPage({
   }));
   const pathname = usePathname();
   const appsEnabled = useFeatureFlag(projectId, 'apps').enabled;
-  const sections = useMemo(() => editableAgentSections(appsEnabled), [appsEnabled]);
+  const drivesEnabled = useFeatureFlag(projectId, 'drives').enabled;
+  const sections = useMemo(() => editableAgentSections(appsEnabled, drivesEnabled), [appsEnabled, drivesEnabled]);
   const section = useAgentSection(sections);
 
   const onSave = useCallback(async () => {
@@ -744,6 +752,7 @@ function EditableAgentPage({
             />
           }
           people={<AgentPeopleSection projectId={projectId} agentName={agent.name} />}
+          drive={<AgentDriveSection projectId={projectId} agentName={agent.name} />}
           authority={
             <AgentAuthorityCard
               projectId={projectId}
@@ -1055,7 +1064,12 @@ function ReadOnlyAgentPage({
     staleTime: 30_000,
   });
   const pathname = usePathname();
-  const section = useAgentSection(READ_ONLY_SECTIONS);
+  const drivesEnabled = useFeatureFlag(projectId, 'drives').enabled;
+  const readOnlySections = useMemo(
+    () => READ_ONLY_SECTIONS.filter((key) => drivesEnabled || key !== 'drive'),
+    [drivesEnabled],
+  );
+  const section = useAgentSection(readOnlySections);
 
   const source = (
     <section className="bg-popover rounded-md border">
@@ -1125,7 +1139,7 @@ function ReadOnlyAgentPage({
         </AgentHeader>
       }
       section={section}
-      sections={READ_ONLY_SECTIONS}
+      sections={readOnlySections}
       sectionHref={sectionHrefFor(pathname)}
       pane={
         <EditorSectionStyleProvider value="panel">
@@ -1150,6 +1164,8 @@ function ReadOnlyAgentPage({
                 agentName={agent.name}
                 defaultAgent={config.open_code_default_agent}
               />
+            ) : section === 'drive' ? (
+              <AgentDriveSection projectId={projectId} agentName={agent.name} />
             ) : section === 'actions' ? (
               <AgentAuthorityCard
                 projectId={projectId}

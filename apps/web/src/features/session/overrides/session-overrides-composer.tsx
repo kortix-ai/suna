@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 
+import { SessionDrivesChip } from '@/features/drives/session-drives-chip';
 import type { SessionScopeCommit } from '@/features/session/scope/session-scope-model';
 import { useProjectSession } from '@kortix/sdk/react';
 
@@ -73,6 +74,9 @@ export function SessionOverridesComposer({
 
   return (
     <ProviderPoolDraftBoundary identity={`${projectId}/${sessionId ?? 'new'}`}>
+      {/* Drives are mounted when the sandbox is created, so an unsent
+          session has none to show yet. */}
+      {sessionId ? <SessionDrivesChip projectId={projectId} sessionId={sessionId} /> : null}
       <SessionOverridesToolbar
         key={`${projectId}/${sessionId ?? 'new'}`}
         projectId={projectId}

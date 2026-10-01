@@ -1,7 +1,9 @@
 'use client';
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { formatBytes } from '@/features/drives/drive-model';
+import { useDrives } from '@/hooks/drives/use-drives';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +40,7 @@ import {
   type ProjectConfigSummary,
   updateProjectDefaultAgent,
 } from '@kortix/sdk';
-import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { capitalizeWords } from '@kortix/shared';
 import {
   CaretRightIcon,
@@ -142,6 +144,19 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   }, [grantsQuery.data]);
 
   const agents = useMemo(() => toArray(config?.agents), [config]);
+
+  // Kortix Drive: each agent's own drive size, a card fact while the flag is on.
+  const drivesFlag = useFeatureFlag(projectId, 'drives');
+  const agentDrives = useDrives(projectId, drivesFlag.enabled);
+  const driveSizes = useMemo(() => {
+    const sizes = new Map<string, number>();
+    for (const drive of agentDrives.data ?? []) {
+      if (drive.kind === 'agent' && drive.agentName && typeof drive.sizeBytes === 'number') {
+        sizes.set(drive.agentName, drive.sizeBytes);
+      }
+    }
+    return sizes;
+  }, [agentDrives.data]);
 
   // No mode filter (Marko, 2026-09-03): the list is the manifest's `agents:`
   // map, and whether one is a subagent is a chip on its card, not a lens on
@@ -252,6 +267,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                 agent={agent}
                 triggerCount={triggerCounts.get(agent.name) ?? 0}
                 peopleCount={canManageMembers ? (grantCounts.get(agent.name) ?? 0) : null}
+                driveBytes={drivesFlag.enabled ? (driveSizes.get(agent.name) ?? null) : undefined}
               />
             }
             trailing={
@@ -279,12 +295,17 @@ function AgentCardFacts({
   agent,
   triggerCount,
   peopleCount,
+  driveBytes,
 }: {
   agent: Agent;
   triggerCount: number;
   peopleCount: number | null;
+  /** The agent's drive size; null while it has none yet, undefined without Kortix Drive. */
+  driveBytes?: number | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tDrives = useI18nTranslations('drives');
+  const locale = useLocale();
   const model = agent.model ? agent.model.split('/').pop() : null;
   const sep = (
     <span aria-hidden className="text-muted-foreground/40">
@@ -307,6 +328,14 @@ function AgentCardFacts({
             {peopleCount === 0
               ? tI18nComplete.raw('textb6c70926c1aa')
               : `${peopleCount} ${peopleCount === 1 ? 'grant' : 'grants'}`}
+          </span>
+        </>
+      ) : null}
+      {driveBytes !== undefined ? (
+        <>
+          {sep}
+          <span className="tabular-nums">
+            {tDrives('agentCardDrive', { size: formatBytes(driveBytes ?? 0, locale) })}
           </span>
         </>
       ) : null}
