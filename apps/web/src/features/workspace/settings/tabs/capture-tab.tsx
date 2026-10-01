@@ -38,6 +38,8 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { dayBounds, deviceStatus, localDay } from '@/features/capture/capture-model';
 import { ThisComputer } from '@/features/capture/desktop-recorder';
+import { useConnectDesktopComputer } from '@/features/tunnel/computer-connect';
+import { isDesktop } from '@/lib/desktop';
 import { captureKeys, useCaptureAccount, useCaptureDevices } from '@/features/capture/use-capture';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
@@ -179,12 +181,36 @@ function ComputersSection() {
             <Loading className="size-4" />
           </div>
         ) : (devices.data ?? []).length === 0 ? (
-          <SettingsRow label={t('noDevices')} description={t('noDevicesHint')} />
+          isDesktop() ? (
+            <ConnectThisComputerRow />
+          ) : (
+            <SettingsRow label={t('noDevices')} description={t('noDevicesHint')} />
+          )
         ) : (
           devices.data!.map((device) => <DeviceRow key={device.id} device={device} />)
         )}
       </SettingsRowGroup>
     </section>
+  );
+}
+
+/** Inside the desktop app an unpaired computer is one click away from recording. */
+function ConnectThisComputerRow() {
+  const t = useTranslations('capture');
+  const qc = useQueryClient();
+  const connect = useConnectDesktopComputer();
+  return (
+    <SettingsRow label={t('noDevicesDesktop')} description={t('noDevicesDesktopHint')}>
+      <Button
+        size="sm"
+        disabled={connect.isPending}
+        onClick={() =>
+          connect.mutate(undefined, { onSuccess: () => qc.invalidateQueries({ queryKey: captureKeys.devices }) })
+        }
+      >
+        {t('connectThisComputer')}
+      </Button>
+    </SettingsRow>
   );
 }
 
