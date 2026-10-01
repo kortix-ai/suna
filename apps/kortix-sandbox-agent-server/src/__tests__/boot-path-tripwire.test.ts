@@ -193,7 +193,7 @@ describe('the one boot path is enforced, not merely intended', () => {
     ])
     // And the candidates are built in exactly one function.
     expect([...callers(sources, 'bootCandidates').keys()]).toEqual([BOOT_PATH_FILE])
-    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts'])
+    expect([...callers(sources, 'bootOpenCodeConfig').keys()].sort()).toEqual(['harness/open-code/boot.ts', 'harness/open-code/warm-seed.ts'])
   })
 
   test('the five rules pass as one verdict list, which is what the proof script prints', () => {

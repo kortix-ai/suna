@@ -1,6 +1,5 @@
+import { pluginFilesInDir, toolNamesInDir } from './config-directory-inventory'
 import { existsSync } from 'node:fs'
-import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
@@ -150,16 +149,6 @@ function boundedReason(reasons: readonly string[]): string | null {
   const reason = reasons.filter(Boolean).join('; ')
   if (!reason) return null
   return reason.length > MAX_FALLBACK_REASON ? `${reason.slice(0, MAX_FALLBACK_REASON - 1)}…` : reason
-}
-
-async function pluginFilesInDir(dir: string): Promise<string[]> {
-  const entries = await readdir(join(dir, 'plugins'), { withFileTypes: true }).catch(() => [])
-  return pluginFilesFrom(entries.filter((entry) => entry.isFile()).map((entry) => `plugins/${entry.name}`))
-}
-
-async function toolNamesInDir(dir: string): Promise<string[]> {
-  const entries = await readdir(join(dir, 'tools'), { withFileTypes: true }).catch(() => [])
-  return toolNamesFromFiles(entries.filter((entry) => entry.isFile()).map((entry) => `tools/${entry.name}`))
 }
 
 /**
