@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 688,
+  "count": 719,
   "routes": [
     {
       "method": "GET",
@@ -1140,6 +1140,78 @@
     },
     {
       "method": "GET",
+      "path": "/v1/drives"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/drives/:driveId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/drives/:driveId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/conflicts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/conflicts/:conflictId/dismiss"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/drives/:driveId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/files/content"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/drives/:driveId/files/content"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/mkdir"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/move"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/drives/:driveId/grants"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/drives/:driveId/grants/:grantId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/versions"
+    },
+    {
+      "method": "GET",
       "path": "/v1/edge/tls-check"
     },
     {
@@ -2204,6 +2276,22 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drives"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drives"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drives/:driveId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drives/:driveId"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
     },
     {
@@ -2553,6 +2641,42 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
     },
     {
       "method": "GET",
