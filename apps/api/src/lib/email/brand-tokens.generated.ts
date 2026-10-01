@@ -33,5 +33,15 @@ export const EMAIL_LAYOUT = {
     "body": 14,
     "kicker": 13,
     "small": 12
+  },
+  "lineHeight": {
+    "title": 1.25,
+    "body": 1.6
+  },
+  "gap": {
+    "kicker_before": 24,
+    "kicker_after": 8,
+    "title_after": 12,
+    "block_after": 24
   }
 } as const;
