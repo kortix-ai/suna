@@ -22,7 +22,12 @@ concurrency:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     defaults:
       run:
@@ -143,7 +148,12 @@ jobs:
           if-no-files-found: ignore
 
   macos:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - os: macos
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     defaults:
       run:
