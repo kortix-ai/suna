@@ -315,6 +315,13 @@ test("limits preview response before materializing oversized bytes, even without
   expect(cancelled).toBe(true);
 });
 
+test("rejects oversized preview by content-length without materializing the response", async () => {
+  globalThis.fetch = (async () => new Response("image", {
+    headers: { "content-length": "15728641", "content-type": "image/png" },
+  })) as typeof fetch;
+  await expect(fetchSessionAttachment(ref, undefined, 15 * 1024 * 1024)).rejects.toThrow("too large");
+});
+
 test("reads bounded preview bytes with their content type", async () => {
   globalThis.fetch = (async () => new Response("image", {
     headers: { "content-type": "image/png", "content-length": "5" },
