@@ -88,6 +88,15 @@ export function markOptimisticAccepted(sessionId: string, messageId: string): vo
   useSessionStateStore.getState().markOptimisticInboxBacked(sessionId, messageId);
 }
 
+/**
+ * The server holds this prompt and this device does not know the id the
+ * runtime will give it (a session's first prompt, handed over at create). The
+ * next user message the runtime reports is its echo and replaces it.
+ */
+export function markSeededPrompt(sessionId: string, messageId: string): void {
+  useSessionStateStore.getState().markOptimisticDispatched(sessionId, messageId);
+}
+
 /** Drop an optimistic message that was never accepted (a refused or failed send). */
 export function removeOptimisticMessage(sessionId: string, messageId: string): void {
   useSessionStateStore.getState().optimisticRemove(sessionId, messageId);

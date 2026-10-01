@@ -95,6 +95,7 @@ import {
   useRuntimeSessions,
   useSessionMessages,
   useSessionSync,
+  useSessionWorkingStore,
 } from '@kortix/sdk/react';
 import {
   compactionTurnInfo,
@@ -377,7 +378,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const pendingQuestions = usePendingQuestions(sessionId);
   const pendingPermissions = usePendingPermissions(sessionId);
 
-  const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  // Is the thread working? The session's own thread reads the SDK's projection
+  // over the server's turn (`useSession().isBusy`, the rule web uses): a status
+  // frame lost while the app was in the background cannot leave it working. A
+  // sub-agent thread has no turn of its own, so its stream status decides, as
+  // it does before the runtime is bound.
+  const streamBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const isBusy = runtime && !isSubThread ? runtime.isBusy : streamBusy;
   // The SDK tracks compaction for the session's root (a compaction this device
   // started, or one the runtime reports).
   const isCompacting = !isSubThread && !!runtime?.isCompacting;
@@ -536,6 +543,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         parts: optimisticUserParts(finalText, attachments?.files ?? [], sentAtMs),
       } as unknown as MessageWithParts);
       setLocalSessionStatus(sessionId, { type: 'busy' });
+      // The receipt holds the session's thread on "working" from this instant
+      // until the server's turn answers for the send (`useSession().isBusy`).
+      const receiptSessionId = isSubThread ? null : (projectSessionId ?? null);
+      if (receiptSessionId) {
+        useSessionWorkingStore.getState().noteSendReceipt(receiptSessionId, { messageId, turnId: messageId, atMs: sentAtMs });
+      }
       void playSound('send');
 
       // The prompt never reached the runtime: the message leaves the
@@ -544,6 +557,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       const markFailed = () => {
         userSentRef.current = false;
         setLocalSessionStatus(sessionId, { type: 'idle' });
+        if (receiptSessionId) useSessionWorkingStore.getState().clearSendReceipt(receiptSessionId, messageId);
         removeOptimisticMessage(sessionId, messageId);
         useFailedSendStore.getState().markFailed(sessionId, messageId, {
           text,
@@ -611,6 +625,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         if (result.state === 'failed') throw new Error('Prompt delivery was refused');
         // The inbox holds it: the bubble stays until the delivered echo.
         markOptimisticAccepted(sessionId, messageId);
+        useSessionWorkingStore.getState().acceptSendReceipt(projectSessionId, messageId, Date.now());
         log.log('[SessionPage] Prompt accepted');
         // The first send asks for notification permission, once per install.
         void requestPushPermissionOnce();

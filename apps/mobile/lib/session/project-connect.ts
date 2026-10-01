@@ -22,7 +22,7 @@ import { createSessionCommitted } from '@/lib/session/create-session';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
 import {
   addOptimisticMessage,
-  markOptimisticAccepted,
+  markSeededPrompt,
   sessionMessageIds,
   sessionRows,
   sessionStatus,
@@ -142,8 +142,9 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
       });
       if (!seed) return;
       addOptimisticMessage(root, seed);
-      // The server holds the prompt: the seed stays until its echo.
-      markOptimisticAccepted(root, seed.info.id);
+      // The server holds the prompt under an id this device never sees: the
+      // first user message the runtime reports is its echo and replaces it.
+      markSeededPrompt(root, seed.info.id);
       setLocalSessionStatus(root, { type: 'busy' });
       clearTimeout(seedWatchdogsRef.current[root]);
       seedWatchdogsRef.current[root] = setTimeout(() => {

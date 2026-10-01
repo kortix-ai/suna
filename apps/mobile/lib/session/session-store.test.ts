@@ -4,6 +4,7 @@ import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react'
 import {
   addOptimisticMessage,
   markOptimisticAccepted,
+  markSeededPrompt,
   removeOptimisticMessage,
   sessionMessageIds,
   sessionRows,
@@ -48,6 +49,35 @@ describe('session-store', () => {
     markOptimisticAccepted(SID, 'msg_2');
     removeOptimisticMessage(SID, 'msg_1');
     expect(sessionMessageIds(SID)).toEqual(['msg_2']);
+  });
+
+  // The project home hands a session's first prompt to the server at create,
+  // so this device never learns the id the runtime gives it. The echo arrives
+  // under another id and must replace the seed, not sit beside it: a seed that
+  // stays optimistic shows the prompt twice and blocks the idle reconcile.
+  test('a seeded first prompt is replaced by its echo, which has another id', () => {
+    addOptimisticMessage(SID, message('msg_seed', 'first prompt'));
+    markSeededPrompt(SID, 'msg_seed');
+    useSessionStateStore.getState().hydrate(SID, [
+      {
+        info: { id: 'msg_echo', role: 'user', sessionID: SID, time: { created: 2 } },
+        parts: [{ type: 'text', id: 'prt_echo', sessionID: SID, messageID: 'msg_echo', text: 'first prompt' }],
+      },
+    ] as never);
+    expect(sessionMessageIds(SID)).toEqual(['msg_echo']);
+    expect(useSessionStateStore.getState().hasOptimisticMessages(SID)).toBe(false);
+  });
+
+  test('an accepted inbox prompt is NOT replaced by an unrelated user message', () => {
+    addOptimisticMessage(SID, message('msg_mine', 'mine'));
+    markOptimisticAccepted(SID, 'msg_mine');
+    useSessionStateStore.getState().hydrate(SID, [
+      {
+        info: { id: 'msg_other', role: 'user', sessionID: SID, time: { created: 2 } },
+        parts: [{ type: 'text', id: 'prt_other', sessionID: SID, messageID: 'msg_other', text: 'someone else' }],
+      },
+    ] as never);
+    expect(sessionMessageIds(SID).sort()).toEqual(['msg_mine', 'msg_other']);
   });
 
   test('a status set on this device reads back, and an unknown session has none', () => {
