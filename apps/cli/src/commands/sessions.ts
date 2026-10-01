@@ -70,7 +70,7 @@ Subcommands:
   ls [--mine|--shared|--automated]  List sessions with who started each
      [--search <q>]                 (STARTED BY). --mine = you started it,
      [--children <session-id>]      --shared = another member did,
-     [--label <label>]...
+     [--label <label>]... [--asked]
                                     --automated = a trigger, channel or API
                                     key did; each lists top-level sessions
                                     with their child count. --search <q>
@@ -78,7 +78,8 @@ Subcommands:
                                     --children <id> lists one session's
                                     children. --label <l> (repeatable)
                                     lists sessions carrying every given
-                                    label. --json.
+                                    label. --asked lists conversations
+                                    people asked you into. --json.
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
@@ -518,7 +519,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
 
   if (sessions.length === 0) {
-    const filtered = flags.startedBy || flags.search || flags.children || flags.labels?.length;
+    const filtered = flags.startedBy || flags.search || flags.children || flags.labels?.length || flags.asked;
     process.stdout.write(
       `  ${C.dim}${filtered ? 'No matching sessions.' : 'No sessions yet — start one with `kortix sessions new`.'}${C.reset}\n`,
     );

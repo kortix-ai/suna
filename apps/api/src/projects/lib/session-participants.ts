@@ -28,6 +28,9 @@ export async function resolveSessionParticipants(
   accountId: string,
   projectId: string,
   raw: unknown,
+  /** The agent that will answer them. Each person must be allowed to run it,
+   *  or their reply would be refused (`POST .../prompts` checks the agent). */
+  agent?: { name: string | null },
 ): Promise<ResolveResult> {
   const list = typeof raw === 'string' ? [raw] : raw;
   if (!Array.isArray(list) || list.length === 0 || list.length > MAX_SESSION_PARTICIPANTS) {
@@ -46,17 +49,19 @@ export async function resolveSessionParticipants(
     WHERE lower(u.email) = ANY(${`{${emails.join(',')}}`}::text[])
   `)) as unknown as Array<{ id: string; email: string; name: string | null }>;
   const byEmail = new Map(rows.map((row) => [row.email, row]));
-  const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
-    import('../../iam/actor'), import('../../iam/authorize'), import('../../iam/actions'),
+  const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }, { memberMayRunAgent }] = await Promise.all([
+    import('../../iam/actor'), import('../../iam/authorize'), import('../../iam/actions'), import('./agent-access'),
   ]);
   const people: SessionParticipant[] = [];
   const unreachable: string[] = [];
+  const noAgent: string[] = [];
   for (const email of emails) {
     const row = byEmail.get(email);
     const allowed = row
       ? (await authorize(actorForUser(row.id, accountId), PROJECT_ACTIONS.PROJECT_SESSION_START, { type: 'project', id: projectId })).allowed
       : false;
     if (!row || !allowed) unreachable.push(email);
+    else if (agent && !(await memberMayRunAgent(row.id, accountId, projectId, agent.name))) noAgent.push(email);
     else people.push({ userId: row.id, email, name: row.name?.trim() || email });
   }
   if (unreachable.length > 0) {
@@ -64,6 +69,14 @@ export async function resolveSessionParticipants(
       status: 404,
       code: 'PARTICIPANT_NOT_FOUND',
       error: `No member of this project can be reached at ${unreachable.join(', ')}. Find members with \`kortix access ls\`.`,
+    };
+  }
+  if (noAgent.length > 0) {
+    const which = agent?.name ? `the ${agent.name} agent` : 'any agent';
+    return {
+      status: 404,
+      code: 'PARTICIPANT_NOT_FOUND',
+      error: `${noAgent.join(', ')} cannot use ${which} in this project, so they could not reply. Give them access first, or ask someone else.`,
     };
   }
   return { people };
