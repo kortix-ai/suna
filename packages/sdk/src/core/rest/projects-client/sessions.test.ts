@@ -7,6 +7,7 @@ import type {
   RemovedSessionPrompt,
   SessionConfigRelease,
   SessionManagedCatalogState,
+  SessionParticipants,
   SessionPrompt,
   SessionPublicShare,
   SessionReloadResult,
@@ -29,6 +30,7 @@ import {
   getSessionAudit,
   getSessionPreviewCandidates,
   getSessionOpenBundle,
+  getSessionParticipants,
   getSessionTranscript,
   getSessionTranscriptSync,
   getSessionTurn,
@@ -180,6 +182,25 @@ test('setProjectSessionSharing PUTs the sharing intent', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1/sharing');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ mode: 'project' });
+});
+
+const OWNER = { user_id: 'U1', name: 'Owner', email: 'owner@example.test', avatar_url: null, is_viewer: true };
+const MEMBER = { user_id: 'U2', name: null, email: 'member@example.test', avatar_url: null, is_viewer: false };
+const PARTICIPANTS: SessionParticipants = {
+  participants: [OWNER, MEMBER],
+  total: 2,
+  multi_user: true,
+};
+
+test('getSessionParticipants hits GET /participants without raising an error toast', async () => {
+  nextResponse = { status: 200, body: PARTICIPANTS };
+  const result = await getSessionParticipants('P1', 'S1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/participants');
+  expect(last().method).toBe('GET');
+  expect(result).toEqual(PARTICIPANTS);
+  // A missing label is the fallback; a toast here is noise on every session open.
+  nextResponse = { status: 500, body: { error: 'boom' } };
+  await expect(getSessionParticipants('P1', 'S1')).rejects.toBeTruthy();
 });
 
 test('getSessionPreviewCandidates hits the previews endpoint', async () => {

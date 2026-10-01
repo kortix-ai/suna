@@ -116,6 +116,11 @@ export {
   stopProjectSession,
 } from '@kortix/sdk';
 
+// ── Session participants and message authors ───────────────────────────────
+
+export type { SessionMessageAuthor, SessionMessageAuthors, SessionParticipant, SessionParticipants } from '@kortix/sdk';
+export { getSessionMessageAuthors, getSessionParticipants } from '@kortix/sdk';
+
 // ── Session public shares (KRTX-248: the public transcript link) ────────────
 // `createSessionPublicShare(pid, sid, { transcript: true })` returns the live
 // transcript share when one exists (200) or mints one (201).

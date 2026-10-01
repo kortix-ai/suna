@@ -20352,5 +20352,12 @@
     "asked": "fragte",
     "replyHint": "Antworte unten. Der Agent nimmt es auf.",
     "untitledSession": "Unbenannte Sitzung"
+  },
+  "sessionParticipants": {
+    "title": "Personen",
+    "sentBy": "Gesendet von {name}",
+    "people": "Personen in dieser Sitzung: {names}",
+    "peopleMore": "Personen in dieser Sitzung: {names} und {count} weitere",
+    "more": "{count} weitere können diese Sitzung öffnen"
   }
 }

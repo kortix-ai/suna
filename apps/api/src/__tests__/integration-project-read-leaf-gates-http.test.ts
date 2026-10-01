@@ -116,6 +116,7 @@ const CASES: Case[] = [
   { name: 'project session transcript', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/transcript` },
   { name: 'project session audit', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/audit` },
   { name: 'project session scope', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/scope` },
+  { name: 'project session participants', leaf: PROJECT_ACTIONS.PROJECT_SESSION_READ, path: () => `/v1/projects/${PROJECT}/sessions/${crypto.randomUUID()}/participants` },
   { name: 'project access list', leaf: PROJECT_ACTIONS.PROJECT_MEMBERS_READ, path: () => `/v1/projects/${PROJECT}/access` },
   { name: 'review items inbox', leaf: PROJECT_ACTIONS.PROJECT_REVIEW_READ, path: () => `/v1/projects/${PROJECT}/review/items` },
   { name: 'branches', leaf: PROJECT_ACTIONS.PROJECT_GITOPS_READ, path: () => `/v1/projects/${PROJECT}/branches` },

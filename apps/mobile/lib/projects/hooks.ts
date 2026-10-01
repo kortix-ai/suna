@@ -3,7 +3,7 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { pickerProviderList, type PickerProviderListInput } from '@kortix/sdk';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
@@ -65,6 +65,8 @@ import {
   listConnectors,
   listPipedreamApps,
   listProjectAccess,
+  getSessionParticipants,
+  getSessionMessageAuthors,
   listProjectBranches,
   listProjectFiles,
   listProjectPolicies,
@@ -141,6 +143,12 @@ export const projectKeys = {
   sessionChildren: (projectId: string | null | undefined, parentId: string | null | undefined, q?: string) =>
     ['project-sessions', projectId, 'children', parentId, q?.trim() || null] as const,
   /** A session's public shares (KRTX-248: the transcript link). */
+  /** Under `projectSessions`, so a sharing save (which invalidates that key) refetches it. */
+  sessionParticipants: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'participants', sessionId] as const,
+  /** Who wrote each message; under `projectSessions` like `sessionParticipants`. */
+  sessionMessageAuthors: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
+    ['project-sessions', projectId, 'message-authors', sessionId] as const,
   sessionPublicShares: (projectId: string | null | undefined, sessionId: string | null | undefined) =>
     ['session-public-shares', projectId, sessionId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
@@ -390,6 +398,59 @@ export function useProjectAccess(projectId: string | null) {
     enabled: !!projectId,
     staleTime: 30_000,
   });
+}
+
+/**
+ * Who can open a session. Mirrors the SDK's `useSessionParticipants`
+ * (`@kortix/sdk/react`, which mobile does not import).
+ */
+export function useSessionParticipants(projectId: string | null | undefined, sessionId: string | null | undefined) {
+  return useQuery({
+    queryKey: projectKeys.sessionParticipants(projectId, sessionId),
+    queryFn: () => getSessionParticipants(projectId!, sessionId!),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 30_000,
+  });
+}
+
+/** When to ask again for an author that is not recorded yet: 2 s, 5 s, 12 s. */
+const AUTHOR_RETRY_DELAYS_MS = [2000, 5000, 12000];
+
+/**
+ * Who wrote each message of a session (`GET .../message-authors`). The ledger
+ * records a delivered prompt's id a moment after the runtime shows it, and a
+ * prompt someone else just queued is newer than the cached answer. So while
+ * any of `wantedMessageIds` (the transcript's user messages and the queued
+ * prompts) has no author, it asks again on `AUTHOR_RETRY_DELAYS_MS`, per set
+ * of missing ids. A message that never gets an author (a slash command) stops
+ * after the last delay.
+ */
+export function useSessionMessageAuthors(
+  projectId: string | null | undefined,
+  sessionId: string | null | undefined,
+  wantedMessageIds: readonly string[] = [],
+) {
+  const query = useQuery({
+    queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
+    queryFn: () => getSessionMessageAuthors(projectId!, sessionId!),
+    enabled: !!projectId && !!sessionId,
+    staleTime: 30_000,
+  });
+  const { data, refetch } = query;
+  const missing = data ? wantedMessageIds.filter((id) => id && !data.authors[id]).sort().join(',') : '';
+  const attempts = useRef<{ key: string; count: number }>({ key: '', count: 0 });
+  useEffect(() => {
+    if (!missing) return;
+    if (attempts.current.key !== missing) attempts.current = { key: missing, count: 0 };
+    const delay = AUTHOR_RETRY_DELAYS_MS[attempts.current.count];
+    if (delay === undefined) return;
+    const timer = setTimeout(() => {
+      attempts.current.count += 1;
+      void refetch();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [missing, data, refetch]);
+  return query;
 }
 
 // ── Members (web parity: customize/sections/members-view) ─────────────────────
