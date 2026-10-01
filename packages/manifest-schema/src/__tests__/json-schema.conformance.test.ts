@@ -24,7 +24,7 @@ import { describe, expect, test } from 'bun:test';
 import Ajv2020 from 'ajv/dist/2020';
 import { parse as parseToml } from 'smol-toml';
 import { parse as parseYaml } from 'yaml';
-import { KORTIX_JSON_SCHEMA, KORTIX_V1_JSON_SCHEMA, KORTIX_V2_JSON_SCHEMA } from '../json-schema';
+import { KORTIX_JSON_SCHEMA, KORTIX_V1_JSON_SCHEMA, KORTIX_V2_JSON_SCHEMA, KORTIX_V3_JSON_SCHEMA } from '../json-schema';
 import { validateManifest } from '../index';
 
 // `strict: false` — see json-schema.ts's mutual-exclusion `oneOf` branches
@@ -723,6 +723,18 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    workspace: everywhere\n',
   },
   {
+    name: 'v2: declarative agent egress policy accepted (not enforced)',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    network_egress:\n      version: 1\n      default: deny\n      rules: []\n',
+  },
+  {
+    name: 'v2: unknown egress policy version rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    network_egress:\n      version: 2\n      default: deny\n      rules: []\n',
+  },
+  {
     name: 'v2: skills explicit list accepted',
     format: 'yaml',
     valid: true,
@@ -810,6 +822,18 @@ connectors:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: wat\n    provider: made-up\n',
   },
   {
+    name: 'v2: OpenCode plugins per agent',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nharnesses:\n  opencode:\n    plugins: [audit.ts]\nagents:\n  w:\n    harnesses:\n      opencode:\n        exclude: [audit.ts]\n        plugins: [other.js]\n',
+  },
+  {
+    name: 'v2: OpenCode plugin path traversal rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    harnesses:\n      opencode:\n        plugins: [../bad.ts]\n',
+  },
+  {
     name: 'v2: harnesses.pi.packages with npm pins, a filtered entry and a repo path is accepted',
     format: 'yaml',
     valid: true,
@@ -866,6 +890,30 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nharnesses:\n  pi:\n    extensions: [npm:pi-web-access@0.30.0]\n',
   },
   {
+    name: 'v3: inline YAML agent behavior',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    model: test/model\n    prompt: Be brief.\n    permission:\n      bash: deny\n',
+  },
+  {
+    name: 'v2: v3 prompt_file rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    prompt_file: agents/w.md\n',
+  },
+  {
+    name: 'v3: raw OpenCode configuration rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w: {}\nopencode:\n  config_dir: .opencode\n',
+  },
+  {
+    name: 'v3: invalid prompt',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: [bad]\n',
+  },
+  {
     name: 'v2: Kortix Apps map is accepted',
     format: 'yaml',
     valid: true,
@@ -898,6 +946,10 @@ describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles t
     expect(() =>
       new Ajv2020({ strict: false }).compile(KORTIX_V2_JSON_SCHEMA as Record<string, unknown>),
     ).not.toThrow();
+  });
+
+  test('kortix.v3.schema.json compiles', () => {
+    expect(() => new Ajv2020({ strict: false }).compile(KORTIX_V3_JSON_SCHEMA as Record<string, unknown>)).not.toThrow();
   });
 
   test('kortix.schema.json (combined) compiles', () => {

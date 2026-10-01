@@ -20,6 +20,8 @@ export async function sendQuickQueueControl(
   const body = control.kind === 'arm'
     ? {
         prompt_id: control.promptId,
+        runtime_session_id: control.opencodeSessionId,
+        // The pre-W3 name, for a daemon built before W3.
         opencode_session_id: control.opencodeSessionId,
         turn_message_id: control.messageId,
       }

@@ -5,7 +5,7 @@ import { configureKortix } from '../http/config';
 import type { ProjectConfigSummary } from '../rest/projects-client';
 import {
   composerSelectableAgents,
-  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
   resolveComposerAgent,
 } from './composer-agents';
 
@@ -37,9 +37,9 @@ function config(input: {
   } as unknown as ProjectConfigSummary;
 }
 
-describe('projectConfigAgentsToOpenCodeAgents', () => {
+describe('projectConfigAgentsToRuntimeAgents', () => {
   test('default_agent sorts first and wins over the deprecated open_code_default_agent', () => {
-    const agents = projectConfigAgentsToOpenCodeAgents(
+    const agents = projectConfigAgentsToRuntimeAgents(
       config({
         default_agent: 'support',
         open_code_default_agent: 'kortix',
@@ -51,19 +51,19 @@ describe('projectConfigAgentsToOpenCodeAgents', () => {
 
   test('falls back to open_code_default_agent, then manifest order', () => {
     expect(
-      projectConfigAgentsToOpenCodeAgents(
+      projectConfigAgentsToRuntimeAgents(
         config({ open_code_default_agent: 'b', agents: [{ name: 'a' }, { name: 'b' }] }),
       ).map((a) => a.name),
     ).toEqual(['b', 'a']);
     expect(
-      projectConfigAgentsToOpenCodeAgents(config({ agents: [{ name: 'a' }, { name: 'b' }] })).map(
+      projectConfigAgentsToRuntimeAgents(config({ agents: [{ name: 'a' }, { name: 'b' }] })).map(
         (a) => a.name,
       ),
     ).toEqual(['a', 'b']);
   });
 
   test('a disabled manifest agent becomes hidden', () => {
-    const [off, on] = projectConfigAgentsToOpenCodeAgents(
+    const [off, on] = projectConfigAgentsToRuntimeAgents(
       config({ agents: [{ name: 'off', enabled: false }, { name: 'on' }] }),
     );
     expect(off?.hidden).toBe(true);

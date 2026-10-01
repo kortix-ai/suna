@@ -6,6 +6,7 @@ export * as schema from './schema';
 export {
   // Schema namespace
   kortixSchema,
+  usedRefreshTokens,
   // Enums
   sandboxStatusEnum,
   projectStatusEnum,
@@ -73,6 +74,7 @@ export {
   chatEventDedup,
   chatUserIdentities,
   projectSessions,
+  sessionPresenceLeases,
   projectSessionRuntimeContexts,
   accountModelPreferences,
   projectLlmRoutingPolicies,

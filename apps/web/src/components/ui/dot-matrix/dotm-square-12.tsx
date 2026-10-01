@@ -3,8 +3,7 @@
 import type { CSSProperties } from 'react';
 
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase } from '@/lib/dotmatrix-core';
-import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
 export type DotmSquare12Props = DotMatrixCommonProps;
 
@@ -38,37 +37,8 @@ const animationResolver: DotAnimationResolver = ({ isActive, row, col, reducedMo
   return { className: 'dmx-center-origin-ripple', style };
 };
 
-export function DotmSquare12({
-  speed = 1.35,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare12Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={animationResolver}
-    />
-  );
+function makeResolver(): DotAnimationResolver {
+  return animationResolver;
 }
+
+export const DotmSquare12 = createDotm5x5Component('DotmSquare12', makeResolver, { speed: 1.35 });

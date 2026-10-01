@@ -180,7 +180,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
-      opencodeSessionId: 'ses_server_owned',
+      runtimeSessionId: 'ses_server_owned',
       actorType: 'agent',
       agentId: AGENT_ID,
       agentName: 'trusted-agent',
@@ -192,7 +192,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
       metadata: {
         provenance_trust: 'sandbox_reported',
         reported_provenance: {
-          opencode_session_id: 'ses_forged',
+          runtime_session_id: 'ses_forged',
           agent_id: 'forged-agent',
           agent_name: 'forged-agent',
           initiator_actor_type: 'service_account',
@@ -655,6 +655,37 @@ describe('audit ingest contention fallback', () => {
     expect(body).toMatchObject({ accepted: 200, inserted: 0 });
     // 200, then halved 100 -> 50 -> 25, where the floor stops the loop.
     expect(insertStatements.map((batch) => batch.length)).toEqual([200, 100, 50, 25]);
+  });
+
+  test('a small batch never re-runs a byte-identical statement after a timeout', async () => {
+    failStatementFrom = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    // 3 rows is already below the 25-row floor: halving the 200-row chunk size
+    // used to re-send the same 3 rows twice more (each re-send held an
+    // audit-pool backend for the full 10 s statement timeout).
+    const small = await post(3);
+    expect(small.status).toBe(503);
+    expect(insertStatements.map((batch) => batch.length)).toEqual([3]);
+  });
+
+  test('the fallback halves the rows actually sent, not the unused chunk ceiling', async () => {
+    failStatementFrom = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    // 53 rows: 53 -> 26 -> 25 (floor). Halving the 200 ceiling re-sent all 53
+    // rows at 100 before the first smaller statement.
+    const { status } = await post(53);
+    expect(status).toBe(503);
+    expect(insertStatements.map((batch) => batch.length)).toEqual([53, 26, 25]);
   });
 
   test('a request with little budget left still lands rows the full-chunk budget refused', async () => {

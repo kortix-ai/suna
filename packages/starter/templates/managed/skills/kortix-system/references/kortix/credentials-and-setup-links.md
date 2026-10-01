@@ -275,6 +275,31 @@ Agents → `<your agent>` → Secrets → enable the secret** (or, from their ow
 to this session when it is saved. Run `kortix secrets sync` to pull it into
 this session right away, then continue.
 
+### A person's own credential — who can use it
+
+Every secret value has an audience, the same **Who can use it** choice as a
+connector account: everyone in the project (the default), only one person, or
+chosen people and groups. A value shared with specific people reaches only
+them — directly, or in their own **private** session. A shared session, a
+trigger, a schedule, and another member's session never get it.
+
+You cannot set or change the audience (`403`); a person does. When a person
+gives you a credential that acts as THEM or holds sensitive data (payroll, HR,
+bank, a personal login), store it, then tell them the one-line fix:
+*"It is usable by everyone in the project right now. To keep it to you, run
+`kortix secrets share <NAME> --user me` or pick **Only you** in Customize →
+Secrets."* Say it once; do not ask twice.
+
+### `credential_not_shared` — the value exists but not for this session
+
+A connector call that returns `denied` / `credential_not_shared` found the
+secret, and this session does not act for anyone in its audience. Never ask
+for the value again and never tell the person it is missing. Say which case
+it is: the session is shared, it is a trigger or schedule run, or the value is
+shared with someone else. The fix is theirs: run in their own private
+session, or share the value (`kortix secrets share <NAME> --everyone` for
+something a trigger needs).
+
 ---
 
 ## Why this is safe (and why it's the only good way)
@@ -306,6 +331,7 @@ This beats the alternatives you might be tempted by:
 | Ask the human for a secret value you lack | `request_secret` | `kortix secrets request <NAME…>` |
 | Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project]` |
 | Verify a secret arrived | — | `kortix secrets ls` (`not granted` = ask the human to enable it for your agent) |
+| See who can use a value | — | `kortix secrets ls` (WHO CAN USE column; a person changes it with `kortix secrets share`) |
 | Verify a connector connected | `connectors` | `kortix connectors ls` |
 | Which/how many accounts are connected | `accounts` | `kortix connectors accounts <slug>` |
 | Pin the default account for unnamed calls | — | `kortix connectors accounts <slug> --default <label>` |

@@ -14,7 +14,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from '
 import { dirname, join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { runSandboxOnBoot } from '../shared/on-boot'
-import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
+import { bootstrapRuntimeSessionRequested, loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
@@ -39,10 +39,12 @@ import {
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { materializeProject } from '@/services/config-provider/config-provider'
-import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
-import { ConvergeBusyError, convergeConfigRelease } from './config-release'
+import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { ConvergeBusyError } from '@/services/config-release/release'
+import { convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
+import { retryDeferredOpencodeEnvRestart, restoreOpencodeRuntimeEnvSnapshotIfUnset } from './control'
 // Converge `/usr/local/bin/kortix` + the managed-skill overlay on the API this
 // sandbox talks to. Called at BOTH of `startSessionRuntime`'s readiness exits —
 // which is also the warm-fork adoption path, since `adopt()` ends in
@@ -65,8 +67,20 @@ import {
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
-import { auditRelayConfigFromEnv, createAuditRelay } from './opencode-audit-relay'
-import { relayPermissionToApi } from '../shared/permission-relay'
+import { createRuntimeAuditRelay } from '../shared/audit-relay'
+import {
+  claimInitialTurn,
+  claimedRuntimeSessionPin,
+  initialTurnClaim,
+  relayPermission,
+  relayRuntimeSession,
+  relayTurnAbandoned,
+  relayTurnAccepted,
+  relayTurnBegin,
+  relayTurnEnd,
+  resetTurnBeginRelaysForTests,
+  type TurnEndFrame,
+} from '../shared/turn-relay'
 import { relayQuestionToApi } from './question-relay'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeIdleForRunaway } from './runaway-turn-guard'
@@ -74,6 +88,7 @@ import {
   openCodeSeedBakedPinPath,
   openCodeSessionPinPath,
   readOpenCodeSessionPin,
+  migratePreW3AuditSpool,
   resolveOpenCodeAuditSpoolPath,
   writeOpenCodeSeedBakedPin,
   writeOpenCodeSessionPin,
@@ -94,14 +109,30 @@ import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
-import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
+import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { HarnessBootContext } from '../harness'
-import type { InitialTurnClaim } from '@/types/control-plane'
+
+/** The projection relay pushes OpenCode's `/kortix/runtime/state` document. */
+function registerOpenCodeStateReader(): void {
+  registerRuntimeStateReader(async () => {
+    const store = runtimeStateStore()
+    if (!store) return null
+    const { doc, etag } = await store.read()
+    return { doc, etag }
+  })
+}
 
 /** Run the existing OpenCode cold/session boot behind the harness boundary. */
 export async function runOpenCode(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
-  const bootstrapSession = (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+  // FIRST THING, before anything spawns or binds: restore the config-affecting
+  // opencode runtime env this box last applied, so this fresh daemon process
+  // does not read its own restart as a config change. `process.env` is
+  // process-local — see `restoreOpencodeRuntimeEnvSnapshotIfUnset`'s doc for
+  // the 2026-09-29 incident this closes.
+  restoreOpencodeRuntimeEnvSnapshotIfUnset()
+  registerOpenCodeStateReader()
+  const bootstrapSession = bootstrapRuntimeSessionRequested()
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
   } catch (err) {
@@ -225,10 +256,10 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // The initial-turn claim is a read (it returns the API's `delivering` record
   // for this session; nothing server-side changes). It used to run only after
   // OpenCode answered, costing one control-plane round trip on the critical
-  // path. Prefetch it now — memoized in claimInitialTurnFromApi — so the
+  // path. Prefetch it now — memoized in the shared claimInitialTurn — so the
   // initial-session path finds it resolved.
   if (bootstrapSession && (process.env.KORTIX_SESSION_ID ?? '').trim()) {
-    void claimInitialTurnFromApi()
+    void claimInitialTurn()
       .then(() => {
         if (bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) return
         bootMark('initial-turn-claimed')
@@ -639,48 +670,15 @@ async function startSessionRuntime(
   // restart here strands nothing, and the first turn must run on a provider map
   // that has every managed model the picker offers.
   await reconcileManagedModels(opencode, cfg, bootMark)
-  const auditRelay = createAuditRelay(
-    async (events) => {
-      const ctx = sandboxRelayContext()
-      if (!ctx) throw new Error('audit relay context is unavailable')
-      const response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
-          body: JSON.stringify({ events }),
-          signal: AbortSignal.timeout(15_000),
-        },
-      )
-      if (!response.ok) {
-        const body = await response.text().catch(() => '')
-        noteControlPlaneResponse(response.status, body)
-        const error = new Error(
-          `audit batch rejected: ${response.status} ${body.slice(0, 200)}`,
-        ) as Error & { retryAfterMs?: number }
-        // 503 + Retry-After is the API telling us this session's audit sequence
-        // lock is contended. Honour it instead of hammering the convoy.
-        const retryAfter = Number.parseInt(response.headers.get('retry-after') ?? '', 10)
-        if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1_000
-        throw error
-      }
-    },
-    // Batch size, cadence, the dropped classes and the coalesced classes all
-    // come from the environment so an incident can retune the emission
-    // contract without a daemon release. See the contract block in
-    // opencode-audit-relay.ts.
-    {
-      spoolPath: resolveOpenCodeAuditSpoolPath(process.env),
-      ...auditRelayConfigFromEnv(process.env),
-    },
-  )
-  const auditConfig = auditRelayConfigFromEnv(process.env)
-  logger.info('[opencode-events] audit relay emission contract', {
-    batchSize: auditConfig.batchSize,
-    flushMs: auditConfig.flushMs,
-    dropTypes: auditConfig.dropTypes,
-    coalesceTypes: auditConfig.coalesceTypes.length,
-  })
+  // One relay for every harness (shared/audit-relay.ts). A spool an older
+  // daemon left behind is renamed first, or loading it would fail the runtime.
+  const auditSpoolPath = resolveOpenCodeAuditSpoolPath(process.env)
+  try {
+    migratePreW3AuditSpool(auditSpoolPath)
+  } catch (err) {
+    logger.warn('[opencode-events] pre-W3 audit spool migration failed', { err: (err as Error).message })
+  }
+  const auditRelay = createRuntimeAuditRelay('opencode', auditSpoolPath)
   const flushAuditRelay = () => {
     logger.info('[opencode-events] audit relay volume', auditRelay.stats())
     void auditRelay.stop().catch((error) =>
@@ -733,7 +731,7 @@ async function startSessionRuntime(
   // Report only: apps/api pushes "needs your approval". The permission itself
   // stays open for the user (shared/permission-relay.ts).
   const onPermissionAsked = (req: PermissionRequest) => {
-    void relayPermissionToApi(req).catch((err) =>
+    void relayPermission(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
     )
   }
@@ -756,6 +754,10 @@ async function startSessionRuntime(
       // tripwires forbid. `applyStagedAssetsIfIdle` re-asks the turn oracle
       // anyway, so a CHILD session going idle under a live root turn is refused.
       convergeRuntimeAssetsAtTurnEnd(cfg)
+      // Same boundary, same reasoning, for a config-affecting `/kortix/env`
+      // restart `applyEnvironment` deferred while this turn (or an earlier
+      // one) was running. A no-op when nothing is pending.
+      await retryDeferredOpencodeEnvRestart(opencode, cfg.workspace)
     })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
@@ -921,7 +923,7 @@ async function startSessionRuntime(
     // NOT established — a `defer` (opencode slow to answer, prior root pinned)
     // or a claim/setup failure. Until 2026-08-26 this was a dead end: nothing
     // ever retried, `runtimeReady` stayed false forever, the proxy 503'd every
-    // request `initial_opencode_session_pending`, and the session spun "Waking
+    // request `initial_runtime_session_pending`, and the session spun "Waking
     // the agent" until a human clicked Restart (reported session, 10+ min).
     // The runtime is unusable without the root, so retry until established —
     // bounded interval, detached so the rest of boot (readiness probe, event
@@ -960,6 +962,7 @@ async function startSessionRuntime(
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false
   const { cfg, bootState, bootMark, serve } = context
+  registerOpenCodeStateReader()
   await runWarmSeedMode(cfg, bootState, bootMark, serve, startSessionRuntime)
   return true
 }

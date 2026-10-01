@@ -321,6 +321,7 @@ flow(
   "OAU-7",
   {
     domain: "oauth",
+    timeoutMs: 180_000,
     routes: [
       "GET /v1/oauth/authorize",
       "GET /v1/oauth/authorize/consent/:requestId",
@@ -422,18 +423,79 @@ flow(
       info.status(200).body().exists("$.sub").exists("$.email");
     });
 
-    await ctx.step("refresh rotates: the old refresh token dies, the new access token works", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: refreshToken }));
+    let rotatedRefresh = "";
+    const refresh = (token: string) =>
+      ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: token }));
+    const me = (token: string) => ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${token}` } });
+    const mintPair = async () => {
+      const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
+      });
+      const rid = new URL(auth.header("location")!).searchParams.get("request_id")!;
+      const ok = await ctx.client.as(ctx.P.OWNER).post("/v1/oauth/authorize/consent", { request_id: rid, approved: true });
+      const pairCode = new URL(ok.json<any>().redirect_uri).searchParams.get("code")!;
+      const redeem = () =>
+        ctx.client.as(ctx.P.ANON).post(
+          "/v1/oauth/token",
+          form({ grant_type: "authorization_code", client_id: clientId, client_secret: secret, code: pairCode, redirect_uri: redirectUri, code_verifier: verifier }),
+        );
+      const r = await redeem();
       r.status(200);
-      const next = r.json<any>();
-      const reuse = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: refreshToken }));
-      reuse.status(400);
-      const old = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
-      old.status(401);
-      accessToken = next.access_token;
-      refreshToken = next.refresh_token;
-      const fresh = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
-      fresh.status(200);
+      return { access: r.json<any>().access_token as string, refresh: r.json<any>().refresh_token as string, redeem };
+    };
+
+    await ctx.step("refresh rotates: two refreshes inside the grace window both succeed (shared credential store) and every issued access token works", async () => {
+      rotatedRefresh = refreshToken; // rotated by the first call below; replayed after the window
+      const first = await refresh(refreshToken);
+      first.status(200);
+      const second = await refresh(refreshToken); // the racing second process, same old refresh token
+      second.status(200);
+      const a = first.json<any>();
+      const b = second.json<any>();
+      if (a.refresh_token === b.refresh_token || a.access_token === b.access_token) throw new Error("grace refresh must issue a fresh pair");
+      (await me(a.access_token)).status(200);
+      (await me(b.access_token)).status(200);
+      // Old access token stays valid until its own expiry (it is not revoked by rotation).
+      (await me(accessToken)).status(200);
+      // Both new refresh tokens are live: the family survives.
+      const c = await refresh(b.refresh_token);
+      c.status(200);
+      accessToken = c.json<any>().access_token;
+      refreshToken = c.json<any>().refresh_token;
+    });
+
+    await ctx.step("replaying a rotated refresh token after the grace window → invalid_grant AND the whole family for that client+user is revoked", async () => {
+      // The local profile sets KORTIX_OAUTH_REFRESH_GRACE_MS=2000. A deployed API keeps the
+      // 30 s default (the flow cannot set server env), so wait past that.
+      await new Promise((r) => setTimeout(r, ctx.env.target === "local" ? 2_500 : 31_000));
+      const live = await refresh(refreshToken); // still live, not yet rotated
+      live.status(200);
+      const liveNext = live.json<any>();
+      const rotated = await refresh(rotatedRefresh);
+      rotated.status(400).body().has("$.error", "invalid_grant");
+      (await refresh(liveNext.refresh_token)).status(400); // family revoked, including the newest refresh token
+      (await me(liveNext.access_token)).status(401); // ... and its access token
+      (await me(accessToken)).status(401);
+      accessToken = "";
+      refreshToken = "";
+    });
+
+    await ctx.step("re-authorize after a family revocation: a fresh pair works and the old refresh chain stays dead", async () => {
+      const fresh = await mintPair();
+      accessToken = fresh.access;
+      refreshToken = fresh.refresh;
+      (await me(accessToken)).status(200);
+    });
+
+    await ctx.step("authorization-code reuse revokes the tokens issued from that code; tokens issued earlier survive", async () => {
+      const bystander = await mintPair();
+      const victim = await mintPair();
+      (await me(victim.access)).status(200);
+      const replay = await victim.redeem();
+      replay.status(400).body().has("$.error", "invalid_grant");
+      (await me(victim.access)).status(401);
+      (await refresh(victim.refresh)).status(400);
+      (await me(bystander.access)).status(200);
     });
 
     await ctx.step("revoke the refresh token → its access token is dead too; unknown token still 200", async () => {

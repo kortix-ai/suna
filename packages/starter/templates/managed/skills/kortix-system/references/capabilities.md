@@ -23,12 +23,12 @@ question.
 
 ## What Kortix is
 
-Kortix is an AI command center where a workforce of agents does real work —
-and the whole thing is **code you own**. The unit of work is a **project**:
+Kortix is an open-source AI Management System. Your agents, skills, memory,
+and connectors are **code you own**. The unit of work is a **project**:
 a single git repository with a `kortix.yaml` at its root, holding your
 agents, skills, connectors, automations, and memory.
 
-- A **session** is one conversation running in its own disposable cloud
+- A **session** is one unit of agent work running in its own disposable cloud
   Linux sandbox, on its own git branch. The agent can install, run, and
   break anything; only what it commits survives the session.
 - Work becomes permanent only when it lands on `main` through a **change

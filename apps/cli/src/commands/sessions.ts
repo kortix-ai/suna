@@ -58,6 +58,7 @@ import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
+import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
 
 const HELP = help`Usage: kortix sessions <subcommand> [options]
@@ -69,12 +70,16 @@ Subcommands:
   ls [--mine|--shared|--automated]  List sessions with who started each
      [--search <q>]                 (STARTED BY). --mine = you started it,
      [--children <session-id>]      --shared = another member did,
+     [--label <label>]... [--asked]
                                     --automated = a trigger, channel or API
                                     key did; each lists top-level sessions
                                     with their child count. --search <q>
                                     matches every session you can see.
                                     --children <id> lists one session's
-                                    children. --json.
+                                    children. --label <l> (repeatable)
+                                    lists sessions carrying every given
+                                    label. --asked lists conversations
+                                    people asked you into. --json.
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
@@ -112,6 +117,11 @@ Subcommands:
                                     --no-connectors          use no connections.
                                     --context <key>=<value>  runtime context
                                       (repeatable).
+                                    --label <label>          classify the
+                                      session (repeatable; free-form, 1..64
+                                      characters, at most 20).
+                                    --meta <key>=<value>     free-form
+                                      metadata (repeatable; string values).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
                                     --queue stores the prompt in the session's
@@ -216,6 +226,14 @@ Subcommands:
                                     use there.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
+  update [<session-id>]             Change labels and metadata. --label <l>
+                                    adds, --unlabel <l> removes,
+                                    --clear-labels empties the list, --meta
+                                    <key>=<value> sets, --unmeta <key>
+                                    removes (all repeatable). Without an id
+                                    it updates $KORTIX_SESSION_ID — the
+                                    session the agent runs in. --json.
+                                    Alias: label.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
   rm <session-id>...                Stop + delete one or more sessions.
@@ -287,6 +305,9 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'scope' || sub === 'access') {
     return runSessionsScope(argv.slice(1));
   }
+  if (sub === 'update' || sub === 'label' || sub === 'set') {
+    return runSessionsUpdate(argv.slice(1));
+  }
   // Everything below owns its own flag parsing (repeatable flags, positional
   // subcommands, or a stdin body), so route before the shared parse.
   if (sub === 'queue') {
@@ -344,6 +365,17 @@ export async function runSessions(argv: string[]): Promise<number> {
   let agentFlag: string | undefined;
   let withFiles: string[] = [];
   let overrides: SessionOverrides = {};
+  // `ls` flags first: `--label` also exists on `new`, whose override parse
+  // below would otherwise consume it.
+  let listFlags: SessionListFlags | undefined;
+  if (sub === 'ls' || sub === 'list') {
+    try {
+      listFlags = takeSessionListFlags(rest);
+    } catch (err) {
+      process.stderr.write(`${status.err((err as Error).message)}\n`);
+      return 2;
+    }
+  }
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
@@ -363,15 +395,6 @@ export async function runSessions(argv: string[]): Promise<number> {
     return 2;
   }
   const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
-  let listFlags: SessionListFlags | undefined;
-  if (sub === 'ls' || sub === 'list') {
-    try {
-      listFlags = takeSessionListFlags(rest);
-    } catch (err) {
-      process.stderr.write(`${status.err((err as Error).message)}\n`);
-      return 2;
-    }
-  }
 
   switch (sub) {
     case 'ls':
@@ -414,7 +437,10 @@ export type SessionOverrides = {
   secrets?: string[];
   connectors?: Record<string, { connection_id: string }>;
   runtimeContext?: Record<string, string>;
+  labels?: string[];
+  metadata?: Record<string, string>;
 };
+
 
 /** Parse (and consume) the `sessions new` override flags from argv. Repeatable
  *  flags take `key=value` pairs: --connector gmail=<connection-id>, --context k=v. */
@@ -453,6 +479,12 @@ export function parseSessionOverrides(argv: string[]): SessionOverrides {
     }
     (out.runtimeContext ??= {})[pair.slice(0, eq)] = pair.slice(eq + 1);
   }
+  const labels = takeFlagValues(argv, ['--label']);
+  if (labels.length) out.labels = labels;
+  for (const pair of takeFlagValues(argv, ['--meta'])) {
+    const [key, value] = parseMetaPair(pair);
+    (out.metadata ??= {})[key] = value;
+  }
   return out;
 }
 
@@ -487,7 +519,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   }
 
   if (sessions.length === 0) {
-    const filtered = flags.startedBy || flags.search || flags.children;
+    const filtered = flags.startedBy || flags.search || flags.children || flags.labels?.length || flags.asked;
     process.stdout.write(
       `  ${C.dim}${filtered ? 'No matching sessions.' : 'No sessions yet — start one with `kortix sessions new`.'}${C.reset}\n`,
     );
@@ -496,19 +528,21 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
 
   const viewer = ctx.auth.user_id;
   const showChildren = sessions.some((s) => typeof s.child_count === 'number');
+  const showLabels = sessions.some((s) => s.labels?.length);
   const label = (s: ProjectSession) =>
     `${s.name ?? shortId(s.session_id)}${s.search_match === 'child' ? ' (match in child)' : ''}`;
   const labelW = Math.min(Math.max(...sessions.map((s) => label(s).length), 6), 48);
   const byW = Math.min(Math.max(...sessions.map((s) => startedByLabel(s, viewer).length), 10), 24);
   process.stdout.write('\n');
   process.stdout.write(
-    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${C.reset}\n`,
+    `  ${C.dim}${pad('NAME', labelW)}   ${pad('STARTED BY', byW)}   ${showChildren ? 'CHILDREN  ' : ''}STATUS         BRANCH                                    UPDATED${showLabels ? '     LABELS' : ''}${C.reset}\n`,
   );
   for (const s of sessions) {
     process.stdout.write(
       `  ${pad(trimMid(label(s), labelW), labelW)}   ${pad(trimMid(startedByLabel(s, viewer), byW), byW)}   ` +
         `${showChildren ? `${pad(String(s.child_count ?? 0), 8)}  ` : ''}` +
-        `${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(trimMid(s.branch_name, 40), 40)}  ${C.faded}${formatRelative(s.updated_at)}${C.reset}\n`,
+        `${statusColor(s.status)}${pad(s.status, 13)}${C.reset}  ${pad(trimMid(s.branch_name, 40), 40)}  ${C.faded}${showLabels ? pad(formatRelative(s.updated_at), 10) : formatRelative(s.updated_at)}${C.reset}` +
+        `${showLabels ? `  ${(s.labels ?? []).join(', ')}` : ''}\n`,
     );
   }
   process.stdout.write(
@@ -582,6 +616,8 @@ async function sessionsNew(
   if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
   if (overrides.connectors !== undefined) body.connector_bindings = overrides.connectors;
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
+  if (overrides.labels) body.labels = overrides.labels;
+  if (overrides.metadata) body.metadata = overrides.metadata;
 
   const prepared = await prepareClientCreatedBranch(ctx, body);
   if (prepared === 'error') return 1;
@@ -709,6 +745,9 @@ async function sessionsNew(
   const tty = process.stdin.isTTY === true && process.stdout.isTTY === true;
   const decision = resolveConnectAfterCreate({ connect: connectAfter, json, tty });
   if (decision !== 'no') {
+    // A runtime without `session.attach` (pi) makes `connect` exit 1 with the
+    // reason and the shell/chat alternatives; asking first keeps an OpenCode
+    // user who answers "n" from waiting for the sandbox.
     const go =
       decision === 'connect' ||
       (await confirm('  Connect to it now?', true, { onEndOfInput: false }));
@@ -836,6 +875,9 @@ async function sessionsInfo(
   process.stdout.write(`  ${C.dim}base_ref   ${C.reset}${s.base_ref}\n`);
   process.stdout.write(`  ${C.dim}agent      ${C.reset}${s.agent_name}\n`);
   process.stdout.write(`  ${C.dim}provider   ${C.reset}${s.sandbox_provider}\n`);
+  if (s.labels?.length) {
+    process.stdout.write(`  ${C.dim}labels     ${C.reset}${s.labels.join(', ')}\n`);
+  }
   if (s.sandbox_url) {
     process.stdout.write(`  ${C.dim}sandbox    ${C.reset}${s.sandbox_url}\n`);
   }

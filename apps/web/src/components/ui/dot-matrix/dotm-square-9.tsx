@@ -1,10 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
 
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase } from '@/lib/dotmatrix-core';
-import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
 export type DotmSquare9Props = DotMatrixCommonProps;
 
@@ -58,25 +56,8 @@ function resolveBraille(row: number, col: number): { bit: number } | null {
   return null;
 }
 
-export function DotmSquare9({
-  speed = 1.5,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare9Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
+function makeResolver(_cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
         return { className: 'dmx-inactive' };
@@ -119,21 +100,6 @@ export function DotmSquare9({
 
       return { className: `dmx-square9-bit ${bitClass}` };
     };
-  }, [reducedMotion]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmSquare9 = createDotm5x5Component('DotmSquare9', makeResolver, { speed: 1.5 });

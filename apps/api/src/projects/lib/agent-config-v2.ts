@@ -27,6 +27,7 @@ import {
   type ManifestIssue,
 } from '@kortix/manifest-schema';
 import type { ParsedManifest } from '../triggers';
+import { isDeepStrictEqual } from 'node:util';
 
 /** Slug rule for an agent name — same as every other manifest slug. Reuses
  *  `@kortix/manifest-schema`'s exported `SLUG_RE` directly (it used to be
@@ -117,6 +118,31 @@ export function normalizeKortixPermissionAliases(
     };
   }
   return { ok: true, block };
+}
+
+/**
+ * The agent's behavior draft from a PUT body that may name it `behavior` or,
+ * before W4, `opencode`.
+ *
+ * GET answers both names with one value, so a round-trip client sends both
+ * back and edits ONE: an older client edits `opencode`, a newer one
+ * `behavior`. When they differ, the draft is the one that differs from what
+ * GET served (`stored`). Two different edits are refused, never guessed.
+ */
+export function resolveBehaviorDraft<T extends Record<string, unknown>>(
+  names: { behavior?: T; opencode?: T },
+  stored: Record<string, unknown>,
+): { ok: true; draft: T | undefined } | { ok: false; error: string } {
+  const { behavior, opencode } = names;
+  if (behavior === undefined || opencode === undefined || isDeepStrictEqual(behavior, opencode)) {
+    return { ok: true, draft: behavior ?? opencode };
+  }
+  if (isDeepStrictEqual(behavior, stored)) return { ok: true, draft: opencode };
+  if (isDeepStrictEqual(opencode, stored)) return { ok: true, draft: behavior };
+  return {
+    ok: false,
+    error: 'behavior and opencode differ; send the agent behavior once, as behavior (opencode is its deprecated name)',
+  };
 }
 
 function pruneRequiredConnectors(block: Record<string, unknown>): void {

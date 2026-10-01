@@ -202,7 +202,13 @@ async function health(): Promise<{ runtimeReady: boolean; status: string; config
     },
     {},
   )
-  return report as unknown as { runtimeReady: boolean; status: string; config: HarnessConfigReleaseReport }
+  // The adapter's half of the verdict; with no repo to wait for it IS `runtimeReady`.
+  const { harness } = report
+  return {
+    runtimeReady: harness.ready,
+    status: harness.ready ? 'ok' : harness.error ? 'error' : harness.state,
+    config: report.config!,
+  }
 }
 
 function tamper(dir: string) {

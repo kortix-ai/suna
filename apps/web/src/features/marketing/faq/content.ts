@@ -6,7 +6,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * WHY IT EXISTS. Everything above it on the page is an argument. By the time a
  * reader reaches the end they have stopped listening to arguments and started

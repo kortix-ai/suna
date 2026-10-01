@@ -125,10 +125,12 @@ export const MORPH_MANAGED_MODELS_DEFAULT = '';
 
 /**
  * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention) is
- * the overflow candidate after the OpenRouter pool for these managed models.
- * GLM's OpenRouter pool 429s from its providers' shared pools (~0.7% of prod
- * GLM requests 2026-09-22..29). Zen serves the same model ids. Without
- * OPENCODE_ZEN_API_KEY the list has no effect.
+ * the FIRST candidate for these managed models; the OpenRouter pool is the
+ * fallback. At the prod request shape (~160k-token prompts, cached follow-up
+ * turns) Zen served 60 concurrent sessions (239/240, 404 req/min) while the
+ * OpenRouter GLM pool timed out or 429'd on 73/240 (2026-09-29). Zen serves
+ * the same model ids. Without OPENCODE_ZEN_API_KEY the list has no effect;
+ * an empty list is the kill switch.
  */
 export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash';
 
@@ -178,7 +180,7 @@ const envSchema = z.object({
   // signed-out or deleted user's still-unexpired HS256 token keeps working on a
   // replica that already confirmed it. 0 = confirm with GoTrue on every request
   // (the pre-2026-09-23 behavior).
-  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(30_000),
+  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
@@ -445,7 +447,7 @@ const envSchema = z.object({
   MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
   OPENCODE_ZEN_API_KEY: optStr,
-  // Managed model IDs that fail over to OpenCode Zen (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
+  // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the

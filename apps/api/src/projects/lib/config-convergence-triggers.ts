@@ -247,4 +247,10 @@ export function pushedBaseCandidates(updates: ReadonlyArray<{ ref: string; newSh
 /** A push through the git proxy succeeded. Never throws, never waits. */
 export function notifyPushedRefs(projectId: string, updates: ReadonlyArray<{ ref: string; newSha: string }>): void {
   for (const branch of pushedBaseCandidates(updates)) notifyBaseBranchMoved(projectId, branch, 'git-push');
+  // A pushed session branch is not a base move, but a read at that branch must
+  // see it now, not after the 60 s mirror interval. Drop the local marker only:
+  // no broadcast (hot path: every agent push), other replicas use the read fallback.
+  if (updates.some((u) => u.ref.startsWith('refs/heads/') && isUuid(u.ref.slice('refs/heads/'.length)))) {
+    invalidateProjectMirror(projectId);
+  }
 }

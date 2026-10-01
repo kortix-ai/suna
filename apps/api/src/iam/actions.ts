@@ -94,6 +94,7 @@ export const PROJECT_ACTIONS = {
 
   PROJECT_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
   PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
+  PROJECT_USAGE_READ: 'project.usage.read',
   PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
   PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
 

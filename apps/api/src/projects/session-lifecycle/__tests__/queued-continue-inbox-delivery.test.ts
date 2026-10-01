@@ -649,6 +649,15 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       seenKeys.clear();
     }
   });
+  // A conversation with people opens with the asking agent's message: it joins
+  // the transcript and starts no turn — the people answer it.
+  test('a prompt stamped noReply goes out noReply and records it', async () => {
+    const row = baseRow();
+    (row.payload as Record<string, unknown>).noReply = true;
+    expect(await executeQueuedContinue(row)).toBe('succeeded');
+    expect(capturedBodies[0]!.noReply).toBe(true);
+    expect(forwardedCalls[0]!.noReply).toBe(true);
+  });
   // A box whose env cannot be converged would run the prompt against a stale
   // gateway URL, stale secrets and a stale model catalog. It waits instead.
   test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
@@ -672,7 +681,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(quickQueueControlRequests).toEqual([{
       url: 'https://sandbox.test/kortix/abort/after-tool',
       method: 'POST',
-      body: { prompt_id: 'cmd-1', opencode_session_id: OC_SESSION_ID,
+      // W3 name and the pre-W3 name, for a daemon built before W3.
+      body: { prompt_id: 'cmd-1', runtime_session_id: OC_SESSION_ID, opencode_session_id: OC_SESSION_ID,
         turn_message_id: 'msg_other' },
     }]);
     expect(capturedBodies).toHaveLength(0);

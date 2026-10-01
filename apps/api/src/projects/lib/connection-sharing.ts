@@ -1,7 +1,8 @@
 /**
  * The `shared_with` list of every shared account in a project: each
  * `connection` grant with its assignment id (what a revoke takes) and a label
- * a person can read. Only `GET /:projectId/connections` reads it.
+ * a person can read. `GET /:projectId/connections` reads it, and
+ * `GET /:projectId/secrets` reads the same list for `secret` grants.
  */
 import type { ConnectionShare } from '@kortix/api-contract';
 import { accountGroups } from '@kortix/db';
@@ -15,14 +16,17 @@ export async function loadConnectionSharing(input: {
   projectId: string;
   accountId: string;
   projectName: string;
+  /** `secret` lists each project secret value's audience, keyed by `secret_id`. */
+  objectType?: 'connection' | 'secret';
 }): Promise<Map<string, ConnectionShare[]>> {
+  const objectType = input.objectType ?? 'connection';
   const byConnection = new Map<string, ConnectionShare[]>();
   // The memoized map answers the common case — nothing narrowed — without a query.
-  if ((await loadObjectGrants(input.projectId, 'connection')).size === 0) return byConnection;
+  if ((await loadObjectGrants(input.projectId, objectType)).size === 0) return byConnection;
 
   const grants = (
     await objectGrantRows({ accountId: input.accountId, projectId: input.projectId })
-  ).filter((grant) => grant.resourceType === 'connection');
+  ).filter((grant) => grant.resourceType === objectType);
   const memberIds = [
     ...new Set(grants.filter((g) => g.principalType === 'member').map((g) => g.principalId)),
   ];

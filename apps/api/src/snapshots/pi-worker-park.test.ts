@@ -46,7 +46,16 @@ const CLAIM_ENV = {
 let child: ChildProcess | null = null;
 const roots: string[] = [];
 afterEach(async () => {
-  child?.kill('SIGKILL');
+  // SIGKILL the whole group: the claimed worker is a grandchild, and the park
+  // script forwards only SIGTERM/SIGINT. Killing the park pid alone orphaned
+  // one session-worker per run.
+  if (child?.pid) {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
   child = null;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -76,6 +85,7 @@ async function bootPark(): Promise<{ port: number; base: string }> {
       KORTIX_PI_PARK_DIR: root,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 100; i++) {

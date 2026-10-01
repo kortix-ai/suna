@@ -38,27 +38,31 @@ describe('INITIAL_FORM_STATE', () => {
 });
 
 describe('filterCreatableAccounts', () => {
+  test('custom permission can allow a member and deny an admin', () => {
+    expect(filterCreatableAccounts([owner, admin, member], { a1: true, a2: false, a3: true })).toEqual([owner, member]);
+  });
+
   test('keeps owner and admin accounts', () => {
-    expect(filterCreatableAccounts([owner, admin])).toEqual([owner, admin]);
+    expect(filterCreatableAccounts([owner, admin], { a1: true, a2: true })).toEqual([owner, admin]);
   });
 
   test('excludes a member-role account', () => {
     // The regression this whole fix round exists for: POST /provision 403s
     // "Owner or admin role required" for a member, so offering it in the
     // picker is a choice that can only fail.
-    expect(filterCreatableAccounts([owner, member])).toEqual([owner]);
+    expect(filterCreatableAccounts([owner, member], { a1: true })).toEqual([owner]);
   });
 
   test('excludes an account with no account_role at all — fails closed', () => {
-    expect(filterCreatableAccounts([owner, roleless])).toEqual([owner]);
+    expect(filterCreatableAccounts([owner, roleless], { a1: true })).toEqual([owner]);
   });
 
   test('returns empty when nothing is creatable', () => {
-    expect(filterCreatableAccounts([member, roleless])).toEqual([]);
+    expect(filterCreatableAccounts([member, roleless], {})).toEqual([]);
   });
 
   test('one owner + one member account leaves exactly one creatable — AccountPicker (accounts.length < 2) renders nothing', () => {
-    expect(filterCreatableAccounts([owner, member])).toHaveLength(1);
+    expect(filterCreatableAccounts([owner, member], { a1: true })).toHaveLength(1);
   });
 
   test('keeps the possessive suffix — never returns the bare email', () => {
@@ -72,7 +76,7 @@ describe('filterCreatableAccounts', () => {
       name: "a@x.com's Account",
       account_role: 'owner',
     };
-    const [result] = filterCreatableAccounts([personalAccount]);
+    const [result] = filterCreatableAccounts([personalAccount], { [personalAccount.account_id]: true });
     expect(result?.name).toContain("'s Account");
     expect(result?.name).not.toBe('a@x.com');
     expect(result?.name).toBe("a@x.com's Account");
@@ -161,8 +165,8 @@ describe('resolveDefaultCreatableAccountId: order-independent default when a use
       is_primary_owner: true,
     };
 
-    const personalFirst = filterCreatableAccounts([personalAccount, teamAccountUserOwns]);
-    const teamFirst = filterCreatableAccounts([teamAccountUserOwns, personalAccount]);
+    const personalFirst = filterCreatableAccounts([personalAccount, teamAccountUserOwns], { [personalAccount.account_id]: true, [teamAccountUserOwns.account_id]: true });
+    const teamFirst = filterCreatableAccounts([teamAccountUserOwns, personalAccount], { [personalAccount.account_id]: true, [teamAccountUserOwns.account_id]: true });
 
     expect(resolveDefaultCreatableAccountId(personalFirst, userId)).toBe('a-personal-order');
     expect(resolveDefaultCreatableAccountId(teamFirst, userId)).toBe('a-personal-order');

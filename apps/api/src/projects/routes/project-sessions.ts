@@ -18,8 +18,10 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
 import { projectSessions } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { SessionUpdateInputSchema } from '@kortix/api-contract';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
@@ -37,6 +39,9 @@ import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bin
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
+import { sessionMessagePromptText } from '@kortix/shared';
+import { conversationName, resolveSessionParticipants, sessionMessageSender } from '../lib/session-participants';
+import { notifySessionEvent } from '../../notifications/session-push';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
@@ -169,9 +174,62 @@ projectsApp.openapi(
       400,
     );
   }
+  // A conversation with people: the first message goes to them, not to the
+  // agent. See lib/session-participants.ts.
+  let participantMetadata: Record<string, unknown> | undefined;
+  let askIdempotencyKey: string | null = null;
+  if (body.participants !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
+    if (gate) return gate;
+    const pending = body.pending_prompt as Record<string, unknown> | undefined;
+    // The ask header lives in the text; parts (files) would replace it.
+    if (Array.isArray(pending?.parts) && pending.parts.length > 0) {
+      return c.json({ error: 'A message to people is text only: drop pending_prompt.parts', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const question =
+      normalizeString(body.initial_prompt) ?? normalizeString(body.initialPrompt) ?? normalizeString(pending?.text);
+    if (!question) {
+      return c.json({ error: 'participants needs initial_prompt: the message to send them', code: 'INVALID_PARTICIPANTS' }, 400);
+    }
+    const resolved = await resolveSessionParticipants(loaded.row.accountId, projectId, body.participants, {
+      name: normalizeString(body.agent_name) ?? agentAccess.agentName ?? null,
+    });
+    if ('error' in resolved) return c.json({ error: resolved.error, code: resolved.code }, resolved.status);
+    const sender = await sessionMessageSender(loaded.userId, callerKortixSessionId(c), projectId);
+    body.pending_prompt = {
+      ...(pending ?? {}),
+      text: sessionMessagePromptText({
+        type: 'ask',
+        sender,
+        to: resolved.people.map(({ name, email }) => ({ name, email })),
+        prompt: question,
+      }),
+    };
+    // Both spellings: either one would boot the sandbox with an agent turn.
+    delete body.initial_prompt;
+    delete body.initialPrompt;
+    delete body.participants;
+    // The question names the conversation; the header never becomes a title.
+    body.name ??= conversationName(question);
+    const participantIds = resolved.people.map((p) => p.userId);
+    participantMetadata = { participants: participantIds, awaiting_reply_from: participantIds, awaiting_reply: true };
+    // An agent that re-runs `kortix send` after a timeout must not open a
+    // second conversation and notify the same people twice. Without a
+    // caller key, the same sender + people + question within the hour is the
+    // same ask. A deliberate follow-up minutes later is a new one.
+    // ponytail: 2-minute bucket, a retry across the boundary duplicates.
+    askIdempotencyKey = `ask:${createHash('sha256').update(JSON.stringify([
+      callerKortixSessionId(c) ?? loaded.userId,
+      projectId,
+      [...(participantMetadata.participants as string[])].sort(),
+      question,
+      Math.floor(Date.now() / 120_000),
+    ])).digest('hex')}`;
+  }
   const result = await createSession({
     source: 'ui',
     project: loaded.row,
+    ...(participantMetadata ? { metadata: participantMetadata, visibility: 'restricted' as const } : {}),
     userId: loaded.userId,
     requestingPrincipalType:
       c.get('authType') === 'service_account' ? 'service_account' : 'human',
@@ -185,10 +243,19 @@ projectsApp.openapi(
     inSession: isProjectSessionPrincipal(c),
     callerSessionId: callerKortixSessionId(c),
     request: requestAuditContext(c),
-    idempotencyKey,
+    idempotencyKey: idempotencyKey ?? askIdempotencyKey,
     mayManageSystemConnections,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
+  if (participantMetadata && result.sessionId && !result.deduped) {
+    void notifySessionEvent({
+      type: 'question',
+      sessionId: result.sessionId,
+      projectId,
+      question: String(body.name ?? ''),
+      recipients: participantMetadata.participants as string[],
+    });
+  }
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
@@ -221,6 +288,7 @@ projectsApp.openapi(
     runtime_context: 'INVALID_SESSION_RUNTIME_CONTEXT',
     connector_bindings: 'INVALID_SESSION_CONNECTOR_BINDINGS',
     secrets: 'INVALID_SESSION_SECRETS',
+    participants: 'INVALID_PARTICIPANTS',
   };
   const issues: Array<{ path?: Array<string | number>; message?: string }> =
     result.error?.issues ?? [];
@@ -228,7 +296,9 @@ projectsApp.openapi(
   if (coded.length === 0) return;
   return c.json(
     {
-      error: coded.map((issue) => issue.message).join('; '),
+      error: coded[0]!.path![0] === 'participants'
+        ? 'participants must be 1-20 email addresses'
+        : coded.map((issue) => issue.message).join('; '),
       code: codes[String(coded[0]!.path![0])],
     },
     400,
@@ -260,6 +330,12 @@ projectsApp.openapi(
           started_by: z.enum(['me', 'others', 'automated']).optional(),
           // Server-side search over every session the viewer may see.
           q: z.string().trim().min(1).max(200).optional(),
+          // Repeatable; a session must carry every given label. Exact match.
+          label: z
+            .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
+            .optional(),
+          // `me` = conversations the viewer was asked into, at any depth.
+          participant: z.enum(['me']).optional(),
         }),
       },
     responses: {
@@ -288,7 +364,13 @@ projectsApp.openapi(
     orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
-    filter: { parent: query.parent ?? null, startedBy: query.started_by ?? null, q: query.q ?? null },
+    filter: {
+      parent: query.parent ?? null,
+      startedBy: query.started_by ?? null,
+      q: query.q ?? null,
+      labels: query.label === undefined ? null : [query.label].flat(),
+      participant: query.participant ?? null,
+    },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
@@ -398,7 +480,17 @@ projectsApp.openapi(
   const owner = visible.row.createdBy
     ? (await resolveSessionOwnerIdentities([visible.row.createdBy], loaded.row.accountId)).get(visible.row.createdBy)
     : undefined;
+  // The people of a conversation, so the header can name who is in it.
+  const participantIds = Array.isArray(visible.row.metadata?.participants)
+    ? (visible.row.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
+    : [];
+  const participantIdentities = await resolveSessionOwnerIdentities(participantIds, loaded.row.accountId);
   return c.json(serializeSession(visible.row, {
+    participants: participantIds.map((id) => ({
+      user_id: id,
+      name: participantIdentities.get(id)?.name ?? null,
+      email: participantIdentities.get(id)?.email ?? null,
+    })),
     grants: visible.grants,
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
@@ -559,7 +651,8 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
-            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata. Server-managed keys are rejected.' }),
+            labels: z.array(z.string()).optional().openapi({ description: 'Replaces the session labels. Each is trimmed, 1..64 characters; at most 20; duplicates drop. [] clears them.' }),
+            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata; a null value removes that key. Server-managed keys are rejected. At most 16,384 characters of JSON.' }),
           }) } } },
       },
     responses: {
@@ -592,10 +685,15 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata'];
+  const allowedFields = ['name', 'labels', 'metadata'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
+  }
+  const parsed = SessionUpdateInputSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    return c.json({ error: `${issue.path.join('.') || 'body'}: ${issue.message}` }, 400);
   }
 
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
@@ -644,18 +742,24 @@ projectsApp.openapi(
   const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
 
+  if (parsed.data.labels) updates.labels = parsed.data.labels;
+
   if (hasNameField || metadata) {
     // Merge in SQL, never write back the whole object read above: the read and
     // this UPDATE are not atomic, and the first-prompt title generator commits
     // `metadata.name` between them. A read-modify-write here would drop that
     // committed title (or another writer's keys) for a session with no later
     // prompt to re-trigger titling. `||` evaluates after the row lock.
-    const patch: Record<string, unknown> = { ...(metadata ?? {}) };
-    // null (not a deleted key) is the clear signal every reader already treats
-    // as absent: `serializeSession` reads it as no override, `needsTitle` and
-    // the CAS read `metadata->>'custom_name'` as NULL.
+    // A null client value removes that key (JSON merge patch). custom_name
+    // keeps its explicit null: every reader already treats it as no override.
+    const patch: Record<string, unknown> = {};
+    const removed: string[] = [];
+    for (const [key, value] of Object.entries(metadata ?? {})) {
+      if (value === null) removed.push(key);
+      else patch[key] = value;
+    }
     if (hasNameField) patch.custom_name = name || null;
-    updates.metadata = projectSessionMetadataMerge(patch) as unknown as typeof updates.metadata;
+    updates.metadata = sql`(${projectSessionMetadataMerge(patch)}) - array(select jsonb_array_elements_text(${JSON.stringify(removed)}::jsonb))` as unknown as typeof updates.metadata;
   }
 
   const [row] = await db

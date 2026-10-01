@@ -7,11 +7,14 @@ import {
   resolveAttachmentRefs,
 } from './attachment-inline';
 import type { ConnectorAttachmentStore } from './attachments';
+import type { ChannelReadGate, ChannelReadInput } from './channel-read-scope';
+import type { ChannelWriteGate } from './channel-write-scope';
 import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
   channelCatalog,
+  withChannelDefaults,
 } from './channels';
 import {
   type ExecResult,
@@ -199,6 +202,20 @@ export interface GatewayDeps {
     channel: string;
     threadTs: string;
   }): Promise<Record<string, unknown>>;
+  /**
+   * Keeps a Slack or Teams channel read inside the calling project's own
+   * conversations (channel-read-scope.ts). Every project in a workspace or
+   * tenant resolves the same platform token, so the token alone does not.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelRead?(input: ChannelReadInput): Promise<ChannelReadGate>;
+  /**
+   * Keeps a Slack write (post, edit, delete, reaction, join) out of other
+   * projects' channels and threads (channel-write-scope.ts): refused before
+   * the call, and a post that landed elsewhere is taken back after it.
+   * Absent = unconfined: production always wires it (db-deps.ts).
+   */
+  gateChannelWrite?(input: ChannelReadInput): Promise<ChannelWriteGate>;
   /** Email connections represent one installed AgentMail inbox. */
   loadEmailConnectorContext?(
     projectId: string,
@@ -363,7 +380,8 @@ export interface CallResultAccount {
 
 export type CallResult =
   | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
-  | { status: 'denied'; reason: string }
+  /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
+  | { status: 'denied'; reason: string; message?: string }
   | {
       status: 'pending_approval';
       reason: string;
@@ -607,6 +625,23 @@ async function appAuthorizationForCall(
   }
 }
 
+/**
+ * The connector's credential is a project secret whose audience does not
+ * include the person this call acts for (projects/lib/secret-audience.ts).
+ * `resolveCredential` throws it instead of returning null, so the caller is
+ * told the truth — not shared with them — rather than `needs_auth`.
+ */
+export class CredentialNotSharedError extends Error {
+  readonly reason = 'credential_not_shared';
+  constructor(identifier: string) {
+    super(
+      `The credential ${identifier} is shared only with specific people, and this call does not run as one of them. ` +
+        'It works in a private session of someone it is shared with. Ask its owner to share it with you.',
+    );
+    this.name = 'CredentialNotSharedError';
+  }
+}
+
 export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<CallResult> {
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
@@ -646,6 +681,26 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason: 'action_not_found' };
   }
 
+  // Before any credential, approval or provider call: a read of another
+  // project's conversation, or a write into it, never leaves the API.
+  const channelInput: ChannelReadInput = {
+    projectId: input.projectId,
+    platform: connector.platform ?? null,
+    actionPath: input.actionPath,
+    args: input.args ?? {},
+    risk: action.risk,
+  };
+  const channelGate =
+    connector.provider === 'channel' && deps.gateChannelRead ? await deps.gateChannelRead(channelInput) : null;
+  const channelWrite =
+    connector.provider === 'channel' && deps.gateChannelWrite ? await deps.gateChannelWrite(channelInput) : null;
+  const channelRefusal = channelGate?.refusal ?? channelWrite?.refusal ?? null;
+  if (channelRefusal) {
+    const { reason, message } = channelRefusal;
+    await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+    return { status: 'denied', reason, message };
+  }
+
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
   let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
@@ -653,6 +708,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
+    if (error instanceof CredentialNotSharedError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
+      return { status: 'denied', reason: error.reason, message: error.message };
+    }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
@@ -980,7 +1039,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         connectedAccountId,
       });
     } else {
-      let providerArgs = executionArgs;
+      let providerArgs =
+        connector.provider === 'channel'
+          ? withChannelDefaults(connector.platform ?? '', input.actionPath, executionArgs)
+          : executionArgs;
       const scope = {
         accountId: input.accountId,
         projectId: input.projectId,
@@ -1036,6 +1098,42 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
       if (connector.provider === 'channel') result = mapChannelEnvelope(result);
+      // A list can hold other projects' conversations, and a thread read can
+      // answer with a different thread: the gate sees the answer first.
+      const scoped = result.ok && channelGate ? await channelGate.answer(result.data) : null;
+      if (scoped && 'refusal' in scoped) {
+        if (attachmentClaim?.claimToken) {
+          await deps.attachmentStore
+            ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
+            .catch(() => {});
+        }
+        const { reason, message } = scoped.refusal;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message });
+        return { status: 'denied', reason, message };
+      }
+      if (scoped) result = { ...result, data: scoped.data };
+      // A post that Slack delivered somewhere other than the conversation that
+      // was checked (it resolved a name) is taken back, then refused.
+      const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
+      if (misfire) {
+        const undone = misfire.undo
+          ? await executeCall({
+              binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
+              baseUrl: connector.baseUrl,
+              auth: connector.auth,
+              headers: connector.headers,
+              secret: executionSecret,
+              args: misfire.undo.args,
+              fetchImpl: deps.fetchImpl,
+            })
+              .then((undo) => mapChannelEnvelope(undo).ok)
+              .catch(() => false)
+          : false;
+        const { reason } = misfire.refusal;
+        const message = `${misfire.refusal.message} ${undone ? 'Kortix removed it.' : 'Kortix could not remove it: delete it in Slack.'}`;
+        await audit(deps, input, connector, 'denied', action.risk, { reason, message, removed: undone });
+        return { status: 'denied', reason, message };
+      }
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
@@ -1071,9 +1169,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       http_status: result.status,
       reason: reason.slice(0, 500),
     });
-    logger.warn(
-      `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`,
-    );
+    const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
+    if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
+    else logger.warn(message);
     return { status: 'error', reason };
   } catch (e) {
     if (attachmentClaim?.claimToken) {

@@ -1,42 +1,27 @@
+import { KortixLogo } from '@/components/ui/kortix-logo';
+import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
 const SLOT = 'aspect-[16/10] w-full overflow-hidden border-b bg-muted';
 
-const MESH = [
-  'radial-gradient(100% 225% at 100% 0%, #FF0000 0%, #000000 100%)',
-  'linear-gradient(236deg, #00C2FF 0%, #000000 100%)',
-  'linear-gradient(135deg, #CDFFEB 0%, #CDFFEB 36%, #009F9D 36%, #009F9D 60%, #07456F 60%, #07456F 67%, #0F0A3C 67%, #0F0A3C 100%)',
-].join(', ');
-
+/**
+ * The desktop app's art: the same light-beam shader as the "Connect your
+ * computer" modal, with the Kortix brandmark on it. Dark in both themes, so the
+ * slot resolves its tokens under `dark` and the mark renders white. It rounds
+ * its own top corners: the card's `overflow-hidden` does not clip the shader's
+ * WebGL canvas.
+ */
 export function DesktopCardImage() {
   return (
-    <div className={cn(SLOT, 'relative')}>
-      <div
-        style={{
-          background: MESH,
-          backgroundBlendMode: 'overlay, hard-light, normal',
-        }}
-        className="absolute -inset-12 z-0 blur-xl"
-        aria-hidden="true"
-      />
-
-      <Image
-        src="/media/showcase/kortix-showcase-poster.jpg"
-        alt=""
-        fill
-        sizes="(min-width: 768px) 50vw, 100vw"
-        className="m-[1.1rem] rounded-tl-[calc(var(--radius)-0.2rem)] border object-cover shadow dark:hidden"
-        priority
-      />
-      <Image
-        src="/media/showcase/kortix-showcase-dark-poster.jpg"
-        alt=""
-        fill
-        sizes="(min-width: 768px) 50vw, 100vw"
-        className="m-[1.1rem] hidden rounded-tl-[calc(var(--radius)-0.2rem)] border object-cover dark:block"
-        priority
-      />
+    <div
+      className={cn(
+        SLOT,
+        'dark bg-background relative isolate flex items-center justify-center rounded-t-md',
+      )}
+    >
+      <BeamsShader />
+      <KortixLogo variant="brandmark" size={28} className="text-foreground relative" />
     </div>
   );
 }

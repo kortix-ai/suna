@@ -8,9 +8,13 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { inferAuditSource } from '../../shared/audit';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectorCalls, projectSessions } from '@kortix/db';
+import { connectorCalls, projectSessions, sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
-import { mayResolveApproval, maySeeSessionApprovals } from '../lib/approval-authority';
+import {
+  mayResolveApproval,
+  maySeeSessionApprovals,
+  maySeeSessionQuestion,
+} from '../lib/approval-authority';
 import { loadProjectForUser, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { isUuid } from '../../shared/validate';
 import { AnyObject, OkSchema, projectsApp } from '../lib/app';
@@ -113,7 +117,9 @@ projectsApp.openapi(
 // Lightweight per-session summary for the sidebar "needs input" indicator: which
 // sessions have a connector call awaiting a human decision, and how many. A
 // project MANAGER sees every session; everyone else sees only the sessions they
-// LAUNCHED (mirrors who may resolve). Read-gated + cheap enough to poll.
+// LAUNCHED (mirrors who may resolve). Open agent questions count too, for the
+// same principals plus the people a conversation was opened with.
+// Read-gated + cheap enough to poll.
 
 projectsApp.openapi(
   createRoute({
@@ -165,13 +171,32 @@ projectsApp.openapi(
         ),
       );
 
-    // Count per (Kortix) session id.
-    const byKortix: Record<string, number> = {};
+    // Open agent questions (`question` tool) wait on a human too, and survive
+    // their sandbox (`session_pending_questions`). Counted beside approvals.
+    const questionRows = await db
+      .select({ sessionId: sessionPendingQuestions.sessionId })
+      .from(sessionPendingQuestions)
+      .where(
+        and(
+          eq(sessionPendingQuestions.projectId, projectId),
+          isNull(sessionPendingQuestions.answeredAt),
+        ),
+      );
+
+    // Count per (Kortix) session id, apart: who may see a question differs from
+    // who may see an approval (a conversation participant answers questions).
+    const approvalsByKortix: Record<string, number> = {};
     for (const r of pendingRows) {
       const sid = r.sessionId ? String(r.sessionId) : null;
-      if (sid) byKortix[sid] = (byKortix[sid] ?? 0) + 1;
+      if (sid) approvalsByKortix[sid] = (approvalsByKortix[sid] ?? 0) + 1;
     }
-    const kortixIds = Object.keys(byKortix);
+    const questionsByKortix: Record<string, number> = {};
+    for (const r of questionRows) {
+      questionsByKortix[r.sessionId] = (questionsByKortix[r.sessionId] ?? 0) + 1;
+    }
+    const kortixIds = [
+      ...new Set([...Object.keys(approvalsByKortix), ...Object.keys(questionsByKortix)]),
+    ];
     if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
 
     // Look these sessions up to (a) gate non-managers to their own and (b) map to
@@ -180,9 +205,10 @@ projectsApp.openapi(
     const sess = await db
       .select({
         sessionId: projectSessions.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
+        opencodeSessionId: projectSessions.runtimeSessionId,
         createdBy: projectSessions.createdBy,
         origin: projectSessions.origin,
+        metadata: projectSessions.metadata,
       })
       .from(projectSessions)
       .where(
@@ -198,19 +224,25 @@ projectsApp.openapi(
       // created_by is shared across every KaaB session, so it cannot filter
       // one end-user's pending gates from another's — and an execution_id is
       // all the resolve route needs.
-      if (
-        !maySeeSessionApprovals({
-          isManager,
-          targetSessionId: s.sessionId,
-          targetSessionOrigin: s.origin ?? null,
-          targetSessionCreatedBy: s.createdBy,
-          callerUserId: loaded.userId,
-          callerSessionId: callerKortixSessionId(c),
+      const authority = {
+        isManager,
+        targetSessionId: s.sessionId,
+        targetSessionOrigin: s.origin ?? null,
+        targetSessionCreatedBy: s.createdBy,
+        callerUserId: loaded.userId,
+        callerSessionId: callerKortixSessionId(c),
+      };
+      const participants = (s.metadata as { participants?: unknown } | null)?.participants;
+      const n =
+        (maySeeSessionApprovals(authority) ? (approvalsByKortix[s.sessionId] ?? 0) : 0) +
+        (maySeeSessionQuestion({
+          ...authority,
+          participantUserIds: Array.isArray(participants)
+            ? participants.filter((v): v is string => typeof v === 'string')
+            : [],
         })
-      ) {
-        continue;
-      }
-      const n = byKortix[s.sessionId] ?? 0;
+          ? (questionsByKortix[s.sessionId] ?? 0)
+          : 0);
       if (n <= 0) continue;
       sessions[s.sessionId] = n;
       if (s.opencodeSessionId) sessions[s.opencodeSessionId] = n;

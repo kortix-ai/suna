@@ -135,11 +135,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'connectors_api_discover',
     name: 'Connectors API Discover',
     description:
-      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
-    stability: 'experimental',
+      'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
+    stability: 'beta',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
-    platformDefault: () => false,
+    // The direct catalogue is available even when no managed provider is configured.
+    // Explicit project overrides still provide a rollback path.
+    platformDefault: () => true,
     enforcement: 'routes',
   },
   {
@@ -328,7 +329,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'config_releases',
     name: 'Config Releases',
     description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session. Off ⇒ OpenCode reads the session's workspace config dir, as it did before config releases.",
+      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
     stability: 'experimental',
     available: () => true,
     // OFF by default until this is proven on real projects (Marko, 2026-09-24:
@@ -392,6 +393,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // resolveSessionSandboxRegion) and sent as `region` on the Platinum
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
+  },
+  {
+    key: 'human_messaging',
+    name: 'Human Messaging',
+    description:
+      'Let agents message people and other sessions. `kortix send alice@example.com "…"` opens a conversation whose first message comes from the agent; it appears under "Asked you" in the recipient\'s sidebar. Several addresses open a group chat, and a message sent to another session says which session sent it.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    // POST /sessions refuses `participants` with 403 `feature_disabled`; the
+    // prompt route adds the sender envelope only when this is on.
+    enforcement: 'routes',
   },
 ];
 

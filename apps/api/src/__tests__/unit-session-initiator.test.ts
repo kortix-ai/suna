@@ -89,4 +89,8 @@ describe('sessionRowMatchesSearch', () => {
     expect(sessionRowMatchesSearch(row({}), 'ABCDEF')).toBe(true);
     expect(sessionRowMatchesSearch(row({ name: 'Other' }), 'rent')).toBe(false);
   });
+  test('matches a label, case-insensitively', () => {
+    expect(sessionRowMatchesSearch(row({}, { labels: ['Customer: EU'] }), 'customer: eu')).toBe(true);
+    expect(sessionRowMatchesSearch(row({}, { labels: ['bug'] }), 'urgent')).toBe(false);
+  });
 });

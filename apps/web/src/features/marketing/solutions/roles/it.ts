@@ -47,7 +47,7 @@ export const it: RoleContent = {
       },
       {
         id: 'licences',
-        title: 'Licence and seat reconciliation',
+        title: 'License and seat reconciliation',
         body: 'What you pay for against what is assigned against what was opened this quarter. It writes the reclaim list per tool with the last-used date on every row.',
       },
       {
@@ -159,7 +159,7 @@ export const it: RoleContent = {
         id: 'automated',
         label: 'Automated',
         title: 'The review nobody schedules, scheduled',
-        body: 'A cron trigger opens the quarterly access review and the monthly licence reconciliation. Triggers name the agent they run as, so the unattended session has exactly the reach the attended one has — no more.',
+        body: 'A cron trigger opens the quarterly access review and the monthly license reconciliation. Triggers name the agent they run as, so the unattended session has exactly the reach the attended one has — no more.',
       },
     ],
   },

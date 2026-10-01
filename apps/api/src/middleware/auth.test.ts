@@ -194,6 +194,9 @@ function appWithProbe() {
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.get('/v1/usage/cost-summary', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
+  app.get('/v1/usage/cost-by-project', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
+  app.post('/v1/usage/cost-summary', (c) => c.json({ ok: true }));
   // The preview-ownership describe block's one non-sandbox-shaped route: it
   // must NOT be parsed as `/v1/p/:sandboxId/:port` (no ownership check applies).
   app.post('/v1/p/share', (c) => c.json({ ok: true }));
@@ -428,6 +431,17 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(text).toContain('check=token-project-scope:cross-project');
     expect(text).not.toContain('default-deny');
   });
+});
+
+test('project PAT reaches only the two GET cost routes; route handlers still enforce project scope', async () => {
+  const app = appWithProbe();
+  for (const path of ['/v1/usage/cost-summary', '/v1/usage/cost-by-project']) {
+    const response = await app.request(path, { headers: { Authorization: 'Bearer kortix_pat_project_a' } });
+    expect(response.status).toBe(200);
+    expect((await response.json()).projectId).toBe(PROJECT_A);
+  }
+  expect((await app.request('/v1/usage', { headers: { Authorization: 'Bearer kortix_pat_project_a' } })).status).toBe(403);
+  expect((await app.request('/v1/usage/cost-summary', { method: 'POST', headers: { Authorization: 'Bearer kortix_pat_project_a' } })).status).toBe(403);
 });
 
 describe('legacy sandbox credential route allowlist', () => {
