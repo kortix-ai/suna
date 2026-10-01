@@ -28,8 +28,20 @@ const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]{1,64}@[a-zA-Z0-9.-]{1,255}\.[a-zA-Z]{2,2
 // parse-time SyntaxError on Safari <16.4 and kills every chunk importing this
 // module (chat, public share page). The old (?<![/@]) guard on the bare-domain
 // alternative is enforced imperatively in autoLinkUrls via a prev-char check.
+//
+// A bare-domain label is `[a-zA-Z0-9][a-zA-Z0-9-]{0,62}\.`: its class has no
+// `.`, so each label's extent is forced. The old label,
+// `[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?`, let the loop and its last
+// character split a run many ways, inside an optional group inside `{1,64}`.
+// Hermes (the mobile engine) backtracked through every split: 14 s and then
+// `RangeError: Maximum regex stack depth reached` on one 3.8k-character
+// agent reply, which froze the app (V8 never showed it). "A label does not
+// end in `-`" is checked after the match (LABEL_ENDS_IN_HYPHEN).
 const URL_PATTERN =
-  /(?:https?:\/\/(?:www\.)?|www\.)[-a-zA-Z0-9@:%._+~#=]{1,256}(?:\.[a-zA-Z0-9()]{1,6}){1,64}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.){1,64}(?:com|org|net|io|dev|app|ai|co|uk|de|fr|it|es|jp|cn|in|br|au|ca|us|gov|edu|xyz|info|tech|online|site|me|cc|ws|name|mobi|tv|biz|us|eu|academy|agency|blog|chat|cloud|digital|email|finance|global|health|legal|media|money|news|page|shop|store|studio|ventures|vc|world)\b(?:\/[-a-zA-Z0-9()@:%_+.~#?&/=]*)?/g;
+  /(?:https?:\/\/(?:www\.)?|www\.)[-a-zA-Z0-9@:%._+~#=]{1,256}(?:\.[a-zA-Z0-9()]{1,6}){1,64}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)|(?:[a-zA-Z0-9][a-zA-Z0-9-]{0,62}\.){1,64}(?:com|org|net|io|dev|app|ai|co|uk|de|fr|it|es|jp|cn|in|br|au|ca|us|gov|edu|xyz|info|tech|online|site|me|cc|ws|name|mobi|tv|biz|us|eu|academy|agency|blog|chat|cloud|digital|email|finance|global|health|legal|media|money|news|page|shop|store|studio|ventures|vc|world)\b(?:\/[-a-zA-Z0-9()@:%_+.~#?&/=]*)?/g;
+
+/** A bare-domain host with a label that ends in `-` (`foo-.com`) is not a host. */
+const LABEL_ENDS_IN_HYPHEN = /-\./;
 
 /**
  * Character scan for unescaped `$…$` inline-math spans (interior non-empty,
@@ -219,6 +231,7 @@ export function autoLinkUrls(text: string): string {
     // paths or email tails, not links — the old (?<![/@]) lookbehind, applied here.
     const isBareDomain = !/^(?:https?:\/\/|www\.)/i.test(url);
     if (isBareDomain && index > 0 && (text[index - 1] === '/' || text[index - 1] === '@')) continue;
+    if (isBareDomain && LABEL_ENDS_IN_HYPHEN.test(url.split('/', 1)[0])) continue;
     // Skip if overlaps a protected range or an already-claimed email
     if (isInProtectedRange(index, url.length, ranges)) continue;
     // Skip if any char in this match was already claimed by an email replacement
