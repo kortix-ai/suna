@@ -7,7 +7,7 @@
  * and response knowledge inside the SDK.
  */
 
-import { type AuditExportFilter, auditFilterQuery } from '../projects-client/audit-filter';
+import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
 
 export interface HostRequestOptions {
@@ -411,7 +411,7 @@ export interface AccountAuditExport {
 
 export async function downloadAccountAudit(
   accountId: string,
-  query: AuditExportFilter & { format: 'csv' | 'jsonl' },
+  query: Parameters<typeof auditFilterQuery>[0] & { format: 'csv' | 'jsonl' },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
   const response = await fetch(

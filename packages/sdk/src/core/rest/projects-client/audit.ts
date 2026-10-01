@@ -5,7 +5,7 @@
 // `audit.read` + the account's `auditAccess` entitlement server-side.
 
 import { backendApi } from '../../http/api-client';
-import { type AuditExportFilter, auditFilterQuery } from './audit-filter';
+import { auditFilterQuery } from './audit-filter';
 import { unwrap } from './shared';
 
 export interface AuditEvent {
@@ -117,7 +117,7 @@ export interface ListAccountAuditOptions {
  *  is only present on the export path and lands first on the wire. */
 function auditFilter(
   options: ListAccountAuditOptions & { format?: 'csv' | 'jsonl' } = {},
-): AuditExportFilter {
+): Parameters<typeof auditFilterQuery>[0] {
   return {
     format: options.format,
     action: options.action,

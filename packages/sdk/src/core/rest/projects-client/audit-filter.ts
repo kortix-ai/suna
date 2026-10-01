@@ -11,12 +11,10 @@ import type { ListAuditFilter } from './iam';
  * unchanged.
  */
 
-export type AuditExportFilter = ListAuditFilter & { format?: 'csv' | 'jsonl' };
-
 /** Map the wire filter onto the querystring, omitting unset and empty
  *  values. Field order follows the filter object's key order; the SDK
  *  builders construct it in the canonical order. */
-export function auditFilterQuery(filter: AuditExportFilter): URLSearchParams {
+export function auditFilterQuery(filter: ListAuditFilter & { format?: 'csv' | 'jsonl' }): URLSearchParams {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(filter)) {
     if (value != null && value !== '') search.set(key, String(value));
