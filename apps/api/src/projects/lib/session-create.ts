@@ -34,6 +34,8 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
 import { db } from '../../shared/db';
@@ -290,15 +292,6 @@ export async function createProjectSession(input: {
     input.visibility,
     parentSharing,
   );
-  // A conversation with people (`POST /sessions` `participants`, set only by
-  // the server): each participant is a member grant, and the first message is
-  // posted without a turn — the people answer it, not the agent.
-  const participantIds = Array.isArray(input.metadata?.participants)
-    ? (input.metadata.participants as unknown[]).filter((id): id is string => typeof id === 'string')
-    : [];
-  const sessionGrants: SecretGrant[] = participantIds.length > 0
-    ? participantIds.map((principalId) => ({ principalType: 'member' as const, principalId }))
-    : inheritedGrants;
   const parsedRuntimeContext = parseSessionRuntimeContext(body.runtime_context);
   if (!parsedRuntimeContext.ok) {
     return {
@@ -918,7 +911,6 @@ export async function createProjectSession(input: {
         sessionId,
         actorUserId: userId,
         authorSessionId: input.callerSessionId ?? null,
-        noReply: participantIds.length > 0,
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -1003,6 +995,10 @@ export async function createProjectSession(input: {
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     ...(input.metadata ?? {}),
+    // Server-owned creation intent, never caller metadata or actual placement.
+    ...((input.metadata?.[WARM_SESSION_METADATA_KEY] ?? requestMetadata[WARM_SESSION_METADATA_KEY]) === true
+      ? { [WARM_SESSION_LOCATION_KEY]: resolveSessionSandboxRegion(project.metadata) ?? 'home' }
+      : {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
@@ -1153,9 +1149,9 @@ export async function createProjectSession(input: {
           )
           .returning({ sessionId: projectSessionConnectorBindings.sessionId });
       }
-      if (sessionGrants.length > 0) {
+      if (inheritedGrants.length > 0) {
         await tx.insert(projectSessionGrants).values(
-          sessionGrants.map((g) => ({
+          inheritedGrants.map((g) => ({
             sessionId,
             principalType: g.principalType,
             principalId: g.principalId,

@@ -1,8 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { UsersIcon } from '@/lib/icons';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
 import { CONNECTOR_RUN, CONNECTOR_STROKE, SubsessionCountBadge, SubsessionTree, subsessionCountLabel } from '@/components/session/SessionSubsessionTree';
 import { ExpandControl, StarterLabel } from '@/components/session/SessionTreeParts';
@@ -11,7 +9,6 @@ import { directSubsessions } from '@kortix/sdk';
 import { sessionDisplayStatus, sessionDisplayTitle, sessionStatusLabel } from '@/lib/session/session-list';
 import { childCountOf, type SessionStarter } from '@/lib/session/session-tree';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
-import type { AskedYouRow } from '@/lib/session/asked-you';
 import { cn } from '@/lib/utils/index';
 
 // ─── Session row ─────────────────────────────────────────────────────────────
@@ -31,7 +28,6 @@ function ProjectSessionListItem({
   nested = false,
   subsessionCount = 0,
   needsYou,
-  askedYou,
   starter,
   childCount = 0,
   expanded = false,
@@ -50,9 +46,6 @@ function ProjectSessionListItem({
   /** What the session waits on (the Needs you group): a `needs-you` mark and a
    *  one-line reason under the title. */
   needsYou?: SessionNeedsYou;
-  /** A conversation with people (Asked you group): the people glyph, "from <asker>"
-   *  under the title, and the `needs-you` mark while it waits on the viewer. */
-  askedYou?: Pick<AskedYouRow, 'waiting' | 'from'>;
   /** The session on screen: `bg-accent` at rest and the `selected` state. */
   active: boolean;
   /** A sub-agent session, rendered indented under its coordinator with an
@@ -65,11 +58,9 @@ function ProjectSessionListItem({
   onLongPress: (s: ProjectSession) => void;
 }) {
   const title = sessionDisplayTitle(item);
-  const status = sessionDisplayStatus(item, askedYou?.waiting ? 1 : (needsYou?.count ?? 0));
+  const status = sessionDisplayStatus(item, needsYou?.count ?? 0);
   const statusLabel = [
     sessionStatusLabel(status),
-    askedYou ? 'conversation with people' : null,
-    askedYou?.from,
     needsYou?.reason,
     subsessionCount > 0 ? subsessionCountLabel(subsessionCount) : null,
     starter ? `started by ${starter.label}` : null,
@@ -109,14 +100,10 @@ function ProjectSessionListItem({
         />
       )}
       <SessionStatusMark status={status} />
-      {needsYou || starter || askedYou?.from ? (
+      {needsYou || starter ? (
         <View className="min-w-0 flex-1">
           <Text numberOfLines={1}>{title}</Text>
-          {askedYou?.from ? (
-            <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
-              {askedYou.from}
-            </Text>
-          ) : needsYou ? (
+          {needsYou ? (
             <Text variant="muted" style={{ fontSize: 13, lineHeight: 17 }} numberOfLines={1}>
               {needsYou.reason}
             </Text>
@@ -129,7 +116,6 @@ function ProjectSessionListItem({
           {title}
         </Text>
       )}
-      {askedYou ? <Icon as={UsersIcon} size={14} className="text-muted-foreground" /> : null}
       <SubsessionCountBadge count={subsessionCount} />
       {childCount > 0 && onToggleChildren ? (
         <ExpandControl count={childCount} expanded={expanded} onToggle={onToggleChildren} title={title} />
@@ -162,7 +148,6 @@ export function DrawerSessionNode({
   nested = false,
   trunkBelow = false,
   needsYou,
-  askedYou,
   starter,
   expanded = false,
   onToggleChildren,
@@ -183,7 +168,6 @@ export function DrawerSessionNode({
   /** A later sibling sub-agent follows: the trunk runs through this whole node. */
   trunkBelow?: boolean;
   needsYou?: SessionNeedsYou;
-  askedYou?: Pick<AskedYouRow, 'waiting' | 'from'>;
   onPress: (s: ProjectSession) => void;
   onLongPress: (s: ProjectSession) => void;
   onPressSubsession: (parent: ProjectSession, childId: string) => void;
@@ -214,7 +198,6 @@ export function DrawerSessionNode({
         nested={nested}
         subsessionCount={subsessions.length}
         needsYou={needsYou}
-        askedYou={askedYou}
         starter={starter}
         childCount={childCountOf(session)}
         expanded={expanded}

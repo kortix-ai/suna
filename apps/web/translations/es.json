@@ -1175,10 +1175,6 @@
           "name": "Servidor MCP",
           "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
         },
-        "human_messaging": {
-          "name": "Mensajes a personas",
-          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal. Los mensajes entre sesiones indican la sesión que los envía, para que su agente pueda responder."
-        },
         "reminders": {
           "name": "Recordatorios",
           "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."
@@ -1591,17 +1587,6 @@
       "failed": "No se pudieron guardar las etiquetas",
       "tooLong": "Una etiqueta tiene como máximo 64 caracteres.",
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
-    },
-    "askedYou": {
-      "title": "Te preguntaron",
-      "from": "de {name}",
-      "arrival": "{name} te preguntó algo",
-      "arrivalUnknown": "Alguien te preguntó algo",
-      "open": "Abrir",
-      "withOne": "Conversación con 1 persona",
-      "withMany": "Conversación con {count} personas",
-      "askedFrom": "Preguntado desde {title}",
-      "inConversation": "En esta conversación"
     }
   },
   "dashboard": {
@@ -19077,6 +19062,7 @@
       "text9c84d6622566": "Dictar mensaje",
       "textf164e4b031dc": "Presencia en la sesión actualizada",
       "text9e6a0b0a06c2": "Vio los autores de los mensajes de la sesión",
+      "textea2f51bfe21c": "Vio los participantes de la sesión",
       "text5f58426c214e": "Estamos construyendo el AI Management System de código abierto. Toda empresa debería poseerlo por completo.",
       "textf729ef1ea584": "Conciliación de licencias y puestos",
       "text7912f8e97c06": "Un activador cron abre la revisión trimestral de accesos y la conciliación mensual de licencias. Los activadores indican con qué agente se ejecutan, por lo que la sesión desatendida tiene exactamente el mismo alcance que la atendida, ni más ni menos.",
@@ -19105,7 +19091,9 @@
       "textdf757dbe33eb": "Tu catálogo de Teams tiene la versión {value0} de la app de Kortix. La versión {value1} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
       "textcd2c4b26eedd": "Kortix no tiene registro de la versión de la app en tu catálogo de Teams. La versión {value0} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
       "texte15f213fa506": "Publicar actualización de la app",
-      "textcafd830fcf85": "Identidades de agente del proyecto enumeradas"
+      "textcafd830fcf85": "Identidades de agente del proyecto enumeradas",
+      "textea2f51bfe21c": "Vio los participantes de la sesión",
+      "text7f755292bf51": "No se pudo descargar el adjunto"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20338,7 +20326,8 @@
       "desktop": "Pantalla y teclado",
       "desktopDescription": "Ver y usar tus apps",
       "allowed": "Permitido",
-      "notAllowed": "No permitido"
+      "notAllowed": "No permitido",
+      "needsSetup": "Requiere configuración"
     },
     "runInBackground": "Ejecutar en segundo plano",
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
@@ -20353,20 +20342,25 @@
     "alreadyConnectedLive": "Está en línea ahora. Aprueba para pasarla a esta solicitud: la conexión actual se detiene. Sus proyectos y permisos compartidos se mantienen.",
     "reconnect": "Reconectar",
     "accessHint": "El acceso seleccionado seguirá activo hasta que lo revoques.",
-    "grants": {
-      "title": "Permite que Kortix vea tu pantalla y use tus apps",
-      "hint": "macOS pide dos permisos, ambos para Kortix. Computer Use funciona cuando los permites.",
+    "setup": {
+      "title": "Termina de configurar tu computadora",
+      "hint": "macOS pide una vez cada permiso de abajo. Van a Kortix, así nada vuelve a preguntar mientras trabaja un agente.",
+      "files": "Escritorio, Documentos y Descargas",
+      "filesDescription": "Leer y escribir archivos en estas carpetas",
       "accessibility": "Accesibilidad",
+      "accessibilityDescription": "Usar el teclado y el ratón en tus apps",
       "screenRecording": "Grabación de pantalla",
-      "allowed": "permitido",
-      "missing": "no permitido",
-      "allow": "Permitir acceso"
+      "screenRecordingDescription": "Ver lo que hay en la pantalla",
+      "needed": "Aún no permitido",
+      "waiting": "Esperando tu respuesta",
+      "allowAll": "Permitir todo",
+      "settingsHint": "Si se abre Configuración del Sistema, activa Kortix en la lista. Esto se actualiza solo.",
+      "doneTitle": "Tu computadora está lista",
+      "doneHint": "Kortix tiene todos los permisos que necesita. Los agentes ya pueden usar esta computadora."
     }
   },
   "messageFrom": {
     "from": "De",
-    "asked": "preguntó a",
-    "replyHint": "Responde abajo. El agente lo recogerá.",
     "untitledSession": "Sesión sin título"
   },
   "sessionParticipants": {

@@ -101,7 +101,6 @@ import {
 import { buildDrawerItems, isParentExpanded, rootRowsOnly, sessionStarter, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
 import { parentKey, sectionKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { useAuthContext } from '@/contexts';
-import { askedYouState, humanMessagingEnabled } from '@/lib/session/asked-you';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
 import { useTabStore } from '@/stores/tab-store';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
@@ -256,19 +255,6 @@ export function ProjectLeftDrawer({
   const sectionOpen = (id: DrawerSectionId) => choices[sectionKey(projectId, id)] ?? id === 'sessions';
   const sharedOpen = sectionOpen('shared');
   const automatedOpen = sectionOpen('automated');
-  // Conversations with people (`human_messaging`): the ones the viewer was asked
-  // into, at any depth. Dark, and absent from the tree, while the flag is off.
-  const humanMessaging = humanMessagingEnabled(project);
-  const askedQuery = useProjectSessionsPaged(projectId, {
-    poll: false,
-    participant: 'me',
-    limit: SIDE_SECTION_PAGE_SIZE,
-    enabled: humanMessaging,
-  });
-  const asked = useMemo(
-    () => askedYouState(askedQuery.sessions, viewerId, humanMessaging),
-    [askedQuery.sessions, viewerId, humanMessaging]
-  );
   // Polls only while the drawer is open: its content stays mounted while
   // closed, every poll result re-rendered it (~2 renders per 3 s), and the
   // open refetch below already shows a fresh list.
@@ -303,34 +289,30 @@ export function ProjectLeftDrawer({
   const refetchMine = mine.refetch;
   const refetchShared = shared.refetch;
   const refetchAutomated = automated.refetch;
-  const refetchAsked = askedQuery.refetch;
   const refetchAll = useCallback(async () => {
     await Promise.all([
       refetchMine(),
       refetchShared(),
       automatedOpen ? refetchAutomated() : Promise.resolve(),
-      humanMessaging ? refetchAsked() : Promise.resolve(),
     ]);
-  }, [refetchMine, refetchShared, refetchAutomated, refetchAsked, automatedOpen, humanMessaging]);
+  }, [refetchMine, refetchShared, refetchAutomated, automatedOpen]);
   // Sessions that wait on the user, newest wait first: their own group above
   // the list, from every loaded top-level row. A session not loaded yet (an
   // older page, a child) is left to the Review row's count.
   const needsYouSessions = useMemo(
     () =>
       [...mineRoots, ...sharedRoots, ...automatedRoots]
-        .filter((session) => needsYouBySession.has(session.session_id) && !asked.ids.has(session.session_id))
+        .filter((session) => needsYouBySession.has(session.session_id))
         .sort(
           (a, b) =>
             (needsYouBySession.get(b.session_id)?.newestAt ?? 0) -
             (needsYouBySession.get(a.session_id)?.newestAt ?? 0)
         ),
-    [mineRoots, sharedRoots, automatedRoots, needsYouBySession, asked.ids]
+    [mineRoots, sharedRoots, automatedRoots, needsYouBySession]
   );
-  // A row leaves the tree for Needs you, or for Asked you (it would list twice).
   const withoutNeedsYou = useCallback(
-    (rows: ProjectSession[]) =>
-      rows.filter((session) => !needsYouBySession.has(session.session_id) && !asked.ids.has(session.session_id)),
-    [needsYouBySession, asked.ids]
+    (rows: ProjectSession[]) => rows.filter((session) => !needsYouBySession.has(session.session_id)),
+    [needsYouBySession]
   );
   const isExpanded = useCallback(
     (session: ProjectSession) =>
@@ -385,8 +367,7 @@ export function ProjectLeftDrawer({
   const sessionsListState = sessionListState({
     isPending: projectSessionsPending,
     isError: projectSessionsErrored,
-    hasSessions:
-      mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0 || asked.rows.length > 0,
+    hasSessions: mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0,
   });
   // Only a pull shows the refresh spinner; a background poll does not.
   const [refreshing, setRefreshing] = useState(false);
@@ -643,25 +624,6 @@ export function ProjectLeftDrawer({
   const listHeader = useMemo(
     () => (
       <View>
-        {asked.rows.length > 0 ? (
-          <View className="px-2 -mx-1">
-            <Text variant="muted" className="px-4 pb-1 pt-3">
-              Asked you
-            </Text>
-            {asked.rows.map((row) => (
-              <DrawerSessionNode
-                key={row.session.session_id}
-                session={row.session}
-                shown={row.session.session_id === activeProjectSessionId}
-                activeOpenCodeId={activeOpenCodeSessionId}
-                askedYou={row}
-                onPress={handleOpenProjectSession}
-                onLongPress={onSessionActions}
-                onPressSubsession={handleOpenSubsession}
-              />
-            ))}
-          </View>
-        ) : null}
         {needsYouSessions.length > 0 ? (
           <View className="px-2 -mx-1">
             <Text variant="muted" className="px-4 pb-1 pt-3">
@@ -686,7 +648,6 @@ export function ProjectLeftDrawer({
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- stateBlock is derived from the deps below
     [
-      asked.rows,
       needsYouSessions,
       needsYouBySession,
       sessionsListState,

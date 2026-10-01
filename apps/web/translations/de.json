@@ -1175,10 +1175,6 @@
           "name": "MCP-Server",
           "description": "Verbinde Claude, ChatGPT, Cursor, Codex oder einen anderen MCP-Client per OAuth mit diesem Projekt. Der Client meldet sich als du an und ruft Kortix mit deinen Berechtigungen auf. Die URL findest du unter „MCP verbinden“ im Workspace-Menü."
         },
-        "human_messaging": {
-          "name": "Nachrichten an Menschen",
-          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat. Nachrichten zwischen Sitzungen nennen die sendende Sitzung, damit deren Agent antworten kann."
-        },
         "reminders": {
           "name": "Erinnerungen",
           "description": "Agenten und Personen können Rückfragen für eine Sitzung planen, einmalig oder wiederkehrend. Jede Auslösung spricht diese Sitzung erneut an. Fügt die Seite „Erinnerungen“, den Erinnerungs-Chip der Sitzung und `kortix remind` hinzu."
@@ -1591,17 +1587,6 @@
       "failed": "Die Labels konnten nicht gespeichert werden",
       "tooLong": "Ein Label hat höchstens 64 Zeichen.",
       "tooMany": "Eine Sitzung hat höchstens 20 Labels."
-    },
-    "askedYou": {
-      "title": "Hat dich gefragt",
-      "from": "von {name}",
-      "arrival": "{name} hat dich etwas gefragt",
-      "arrivalUnknown": "Jemand hat dich etwas gefragt",
-      "open": "Öffnen",
-      "withOne": "Unterhaltung mit 1 Person",
-      "withMany": "Unterhaltung mit {count} Personen",
-      "askedFrom": "Gefragt von {title}",
-      "inConversation": "In dieser Unterhaltung"
     }
   },
   "dashboard": {
@@ -19077,6 +19062,7 @@
       "text9c84d6622566": "Nachricht diktieren",
       "textf164e4b031dc": "Sitzungspräsenz aktualisiert",
       "text9e6a0b0a06c2": "Nachrichtenautoren der Sitzung angesehen",
+      "textea2f51bfe21c": "Teilnehmer der Sitzung angesehen",
       "text5f58426c214e": "Wir entwickeln das Open-Source-AI Management System. Jedes Unternehmen sollte es vollständig besitzen.",
       "textf729ef1ea584": "Abgleich von Lizenzen und Sitzplätzen",
       "text7912f8e97c06": "Ein Cron-Trigger öffnet die vierteljährliche Zugriffsprüfung und den monatlichen Lizenzabgleich. Trigger benennen den Agenten, unter dem sie laufen. So hat die unbeaufsichtigte Sitzung genau dieselben Zugriffsmöglichkeiten wie die betreute – nicht mehr.",
@@ -19105,7 +19091,9 @@
       "textdf757dbe33eb": "Dein Teams-Katalog hat Version {value0} der Kortix-App. Version {value1} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "texte15f213fa506": "App-Update veröffentlichen",
-      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet"
+      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet",
+      "textea2f51bfe21c": "Teilnehmer der Sitzung angesehen",
+      "text7f755292bf51": "Anhang konnte nicht heruntergeladen werden"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20338,7 +20326,8 @@
       "desktop": "Bildschirm & Tastatur",
       "desktopDescription": "Deine Apps sehen und bedienen",
       "allowed": "Erlaubt",
-      "notAllowed": "Nicht erlaubt"
+      "notAllowed": "Nicht erlaubt",
+      "needsSetup": "Einrichtung nötig"
     },
     "runInBackground": "Im Hintergrund ausführen",
     "runInBackgroundDescription": "Aus pausiert die Verbindung, auch nach einem Neustart.",
@@ -20353,20 +20342,25 @@
     "alreadyConnectedLive": "Er ist gerade online. Bestätige, um ihn auf diese Anfrage zu übertragen: Die aktuelle Verbindung endet. Seine Projekte und Freigaben bleiben.",
     "reconnect": "Neu verbinden",
     "accessHint": "Der ausgewählte Zugriff bleibt aktiv, bis du ihn widerrufst.",
-    "grants": {
-      "title": "Kortix erlauben, deinen Bildschirm zu sehen und deine Apps zu bedienen",
-      "hint": "macOS fragt nach zwei Berechtigungen, beide für Kortix. Computer Use funktioniert, sobald du sie erlaubst.",
+    "setup": {
+      "title": "Richte deinen Computer fertig ein",
+      "hint": "macOS fragt einmal nach jeder Berechtigung unten. Sie gehen an Kortix, damit nichts mehr fragt, während ein Agent arbeitet.",
+      "files": "Schreibtisch, Dokumente und Downloads",
+      "filesDescription": "Dateien in diesen Ordnern lesen und schreiben",
       "accessibility": "Bedienungshilfen",
+      "accessibilityDescription": "Tastatur und Maus in deinen Apps nutzen",
       "screenRecording": "Bildschirmaufnahme",
-      "allowed": "erlaubt",
-      "missing": "nicht erlaubt",
-      "allow": "Zugriff erlauben"
+      "screenRecordingDescription": "Sehen, was auf dem Bildschirm ist",
+      "needed": "Noch nicht erlaubt",
+      "waiting": "Wartet auf dich",
+      "allowAll": "Alle erlauben",
+      "settingsHint": "Wenn sich die Systemeinstellungen öffnen, aktiviere Kortix in der Liste. Diese Ansicht aktualisiert sich selbst.",
+      "doneTitle": "Dein Computer ist bereit",
+      "doneHint": "Kortix hat alle nötigen Berechtigungen. Agenten können diesen Computer jetzt nutzen."
     }
   },
   "messageFrom": {
     "from": "Von",
-    "asked": "fragte",
-    "replyHint": "Antworte unten. Der Agent nimmt es auf.",
     "untitledSession": "Unbenannte Sitzung"
   },
   "sessionParticipants": {

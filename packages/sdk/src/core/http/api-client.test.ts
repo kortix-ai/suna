@@ -359,9 +359,14 @@ describe('makeRequest retries transient transport failures on idempotent reads',
   test('a project secret POST transport failure identifies the endpoint without leaking its value', async () => {
     configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => { throw new TypeError('Failed to fetch'); }) as unknown as typeof fetch;
+    globalThis.fetch = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
     try {
-      const response = await backendApi.post('/projects/p1/secrets', { name: 'SAMPLE', value: 'synthetic-secret' });
+      const response = await backendApi.post('/projects/p1/secrets', {
+        name: 'SAMPLE',
+        value: 'synthetic-secret',
+      });
       expect(response.success).toBe(false);
       expect(response.error?.message).toContain('POST /projects/p1/secrets');
       expect(response.error?.message).not.toContain('synthetic-secret');
@@ -1351,5 +1356,32 @@ describe('makeRequest prefers the human-readable body field over the machine `re
     } finally {
       restore();
     }
+  });
+});
+
+describe('retry and error characterization', () => {
+  test('GET retries a 503 then returns a typed 409 without reporting expected provision race', async () => {
+    const statuses = [503, 409];
+    const reported: unknown[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'token',
+      onError: (error) => {
+        reported.push(error);
+      },
+      fetch: async () =>
+        new Response(
+          JSON.stringify({ message: 'Still provisioning', code: PROVISION_IN_FLIGHT_CODE }),
+          {
+            status: statuses.shift() ?? 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    });
+    const result = await backendApi.get('/projects/provision');
+    expect(statuses).toEqual([]);
+    expect(result.error?.code).toBe(PROVISION_IN_FLIGHT_CODE);
+    expect(result.error?.message).toBe('Still provisioning');
+    expect(reported).toEqual([]);
   });
 });

@@ -13,7 +13,6 @@
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
-import { logger as appLogger } from '../lib/logger';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -74,32 +73,5 @@ describe('the completion log line of a slow request', () => {
         (fields) => fields.server_timing === undefined && Number(fields.duration) < 1_000,
       ),
     ).toBe(true);
-  });
-
-  test('a failed proxy request logs its hop but never its response body', async () => {
-    const { installHttpMiddleware } = await import('../http-middleware');
-    const { runWithContext } = await import('../lib/request-context');
-    const lines: Array<Record<string, unknown>> = [];
-    const original = appLogger.warn;
-    appLogger.warn = (_message, fields) => lines.push(fields ?? {});
-    try {
-      const app = new OpenAPIHono();
-      installHttpMiddleware(app);
-      app.post('/v1/p/:id/:port/kortix/env-rpc', (c) =>
-        c.json({ error: 'synthetic-sensitive-body' }, 503, {
-          'X-Kortix-Proxy-Hop': 'provider_ingress',
-          'X-Kortix-Upstream-Status': '503',
-        }),
-      );
-      await runWithContext('POST', '/v1/p/synthetic/8000/kortix/env-rpc', () =>
-        app.fetch(new Request('http://local/v1/p/synthetic/8000/kortix/env-rpc', { method: 'POST' })),
-      );
-    } finally {
-      appLogger.warn = original;
-    }
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.proxy_hop).toBe('provider_ingress');
-    expect(lines[0]?.upstream_status).toBe('503');
-    expect(JSON.stringify(lines)).not.toContain('synthetic-sensitive-body');
   });
 });

@@ -96,7 +96,8 @@ import {
  *
  *   • `ConnectorModal` reaches it via `connector-accounts.tsx`
  *     (`ConnectionRoster`/`ConnectionSection`/…) and its own
- *     `SetCredentialModal`, and owns the account connection flow on the route.
+ *     `SetCredentialModal`, and owns the only `usePipedreamConnect` call on
+ *     the route.
  *   • `CustomConnectorForm` is the Add modal's body.
  *
  * Neither can render before a click, so neither needs to be parsed before

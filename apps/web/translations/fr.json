@@ -1175,10 +1175,6 @@
           "name": "Serveur MCP",
           "description": "Connectez Claude, ChatGPT, Cursor, Codex ou tout client MCP à ce projet via OAuth. Le client se connecte en votre nom et appelle Kortix avec vos autorisations. L’URL se trouve sous Connecter MCP dans le menu de l’espace de travail."
         },
-        "human_messaging": {
-          "name": "Messages aux personnes",
-          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe. Les messages entre sessions indiquent la session expéditrice, pour que son agent puisse répondre."
-        },
         "reminders": {
           "name": "Rappels",
           "description": "Permet aux agents et aux personnes de planifier des points de contrôle sur une session, une fois ou de façon récurrente. Chaque déclenchement relance cette session. Ajoute la page Rappels, l’indicateur de rappels de la session et `kortix remind`."
@@ -1591,17 +1587,6 @@
       "failed": "Impossible d’enregistrer les libellés",
       "tooLong": "Un libellé compte au plus 64 caractères.",
       "tooMany": "Une session a au plus 20 libellés."
-    },
-    "askedYou": {
-      "title": "Vous a demandé",
-      "from": "de {name}",
-      "arrival": "{name} vous a posé une question",
-      "arrivalUnknown": "Quelqu'un vous a posé une question",
-      "open": "Ouvrir",
-      "withOne": "Conversation avec 1 personne",
-      "withMany": "Conversation avec {count} personnes",
-      "askedFrom": "Demandé depuis {title}",
-      "inConversation": "Dans cette conversation"
     }
   },
   "dashboard": {
@@ -19077,6 +19062,7 @@
       "text9c84d6622566": "Dicter un message",
       "textf164e4b031dc": "Présence dans la session mise à jour",
       "text9e6a0b0a06c2": "A consulté les auteurs des messages de la session",
+      "textea2f51bfe21c": "A consulté les participants de la session",
       "text5f58426c214e": "Nous construisons l’AI Management System open source. Chaque entreprise devrait en posséder la totalité.",
       "textf729ef1ea584": "Rapprochement des licences et des postes",
       "text7912f8e97c06": "Un déclencheur cron ouvre la revue trimestrielle des accès et le rapprochement mensuel des licences. Les déclencheurs indiquent l’agent sous lequel ils s’exécutent : la session sans surveillance dispose donc exactement des mêmes accès que celle supervisée, ni plus ni moins.",
@@ -19105,7 +19091,9 @@
       "textdf757dbe33eb": "Votre catalogue Teams contient la version {value0} de l'application Kortix. La version {value1} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
       "textcd2c4b26eedd": "Kortix ne connaît pas la version de l'application dans votre catalogue Teams. La version {value0} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
       "texte15f213fa506": "Publier la mise à jour de l'application",
-      "textcafd830fcf85": "Identités d’agent du projet répertoriées"
+      "textcafd830fcf85": "Identités d’agent du projet répertoriées",
+      "textea2f51bfe21c": "A consulté les participants de la session",
+      "text7f755292bf51": "Impossible de télécharger la pièce jointe"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -20338,7 +20326,8 @@
       "desktop": "Écran et clavier",
       "desktopDescription": "Voir et utiliser vos apps",
       "allowed": "Autorisé",
-      "notAllowed": "Non autorisé"
+      "notAllowed": "Non autorisé",
+      "needsSetup": "À configurer"
     },
     "runInBackground": "Exécuter en arrière-plan",
     "runInBackgroundDescription": "Désactivé, la connexion est suspendue, même après un redémarrage.",
@@ -20353,20 +20342,25 @@
     "alreadyConnectedLive": "Il est en ligne. Approuvez pour le transférer vers cette demande : la connexion actuelle s’arrête. Ses projets et partages sont conservés.",
     "reconnect": "Reconnecter",
     "accessHint": "Les accès sélectionnés restent actifs jusqu’à leur révocation.",
-    "grants": {
-      "title": "Autoriser Kortix à voir votre écran et à utiliser vos apps",
-      "hint": "macOS demande deux autorisations, toutes deux pour Kortix. Computer Use fonctionne dès que vous les accordez.",
+    "setup": {
+      "title": "Terminez la configuration de votre ordinateur",
+      "hint": "macOS demande une fois chaque autorisation ci-dessous. Elles vont à Kortix, donc rien ne redemande pendant qu’un agent travaille.",
+      "files": "Bureau, Documents et Téléchargements",
+      "filesDescription": "Lire et écrire des fichiers dans ces dossiers",
       "accessibility": "Accessibilité",
+      "accessibilityDescription": "Utiliser le clavier et la souris dans vos apps",
       "screenRecording": "Enregistrement de l’écran",
-      "allowed": "autorisé",
-      "missing": "non autorisé",
-      "allow": "Autoriser l’accès"
+      "screenRecordingDescription": "Voir ce qui est à l’écran",
+      "needed": "Pas encore autorisé",
+      "waiting": "En attente de votre réponse",
+      "allowAll": "Tout autoriser",
+      "settingsHint": "Si Réglages Système s’ouvre, activez Kortix dans la liste. Cette vue se met à jour seule.",
+      "doneTitle": "Votre ordinateur est prêt",
+      "doneHint": "Kortix a toutes les autorisations nécessaires. Les agents peuvent maintenant utiliser cet ordinateur."
     }
   },
   "messageFrom": {
     "from": "De",
-    "asked": "a demandé à",
-    "replyHint": "Répondez ci-dessous. L'agent le reprendra.",
     "untitledSession": "Session sans titre"
   },
   "sessionParticipants": {

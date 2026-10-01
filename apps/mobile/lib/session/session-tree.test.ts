@@ -41,7 +41,6 @@ describe('normalizeSessionListFilter / searchQueryParam', () => {
       startedBy: 'me',
       q: 'x',
     });
-    expect(normalizeSessionListFilter({ participant: 'me' })).toEqual({ participant: 'me' });
     expect(searchQueryParam('a'.repeat(300))).toHaveLength(200);
     expect(searchQueryParam('  ')).toBeUndefined();
   });

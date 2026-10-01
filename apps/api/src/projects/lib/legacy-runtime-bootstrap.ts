@@ -44,7 +44,6 @@ import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtim
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
-import { normalizeRunningSkillsHash } from '../../runtime-assets/managed-skills';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
 
 /**
@@ -256,8 +255,7 @@ export function classifyDaemonHealth(
       ] as const
     ).forEach(([key, wanted]) => {
       if (!wanted) return; // this deploy states nothing to converge this field on
-      const haveRaw = shaField(running, key);
-      const have = key === 'managed_skills_hash' ? normalizeRunningSkillsHash(haveRaw) : haveRaw;
+      const have = shaField(running, key);
       if (!have) return; // the box states nothing comparable for this field
       if (have !== wanted) mismatches.push(key);
     });

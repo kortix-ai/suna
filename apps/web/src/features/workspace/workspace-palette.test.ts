@@ -246,13 +246,25 @@ describe('rootWorkspaceResults', () => {
     expect(names(rootWorkspaceResults(rows, 'notes'))).toEqual(['Notes']);
   });
 
-  test('drops the workspace you are already in', () => {
-    // It matches its own name better than anything else, so leaving it in
-    // makes the top hit a no-op re-navigation to the current page.
+  test('finds the open workspace alongside same-named workspaces in other accounts', () => {
     const rows = rowsWithActive(SITE.project_id);
-    const hits = rootWorkspaceResults(rows, 'site');
-    expect(ids(hits)).toEqual([ACME_SITE.project_id]);
-    expect(ids(hits)).not.toContain(SITE.project_id);
+    expect(ids(rootWorkspaceResults(rows, 'site'))).toEqual([
+      SITE.project_id,
+      ACME_SITE.project_id,
+    ]);
+  });
+
+  test('finds a newly created workspace by its exact name while it is open', () => {
+    const created = workspace('dogfood-palette-search', 'acct-personal');
+    const rows = buildWorkspacePaletteRows({
+      accounts: ACCOUNTS,
+      workspaces: [...ALL, created],
+      activeWorkspaceId: created.project_id,
+    });
+    expect(ids(rootWorkspaceResults(rows, created.name))).toEqual([created.project_id]);
+    expect(ids(rootWorkspaceResults(rows, `  ${created.name.toUpperCase()}  `))).toEqual([
+      created.project_id,
+    ]);
   });
 
   test('returns nothing for an empty query', () => {

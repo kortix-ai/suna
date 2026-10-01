@@ -46,7 +46,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { etagMatches } from '../shared/http-cache';
-import { callerOverlayFlags } from './caller-flags';
 import type { AppEnv } from '../types';
 import {
   managedSkillOverlay,
@@ -65,8 +64,6 @@ import {
 export { runtimeAssetsManifest, warmRuntimeChunkIndex } from './manifest';
 
 export const runtimeAssetsApp = makeOpenApiApp<AppEnv>();
-
-let lastSlowChunkLog = 0;
 
 const BinaryComponentSchema = z.object({
   version: z.string().nullable(),
@@ -134,7 +131,7 @@ runtimeAssetsApp.openapi(
     },
   }),
   async (c) => {
-    const manifest = await runtimeAssetsManifest(await callerOverlayFlags(c));
+    const manifest = await runtimeAssetsManifest();
     // Short max-age + ETag: the payload is immutable for a deploy, but a caller
     // must see a new deploy's digests promptly rather than after a cache TTL.
     c.header('Cache-Control', 'no-cache');
@@ -368,15 +365,7 @@ runtimeAssetsApp.openapi(
     const sha256 = c.req.param('sha256');
     // Read, do not stream: a sliced `Bun.file(...).stream()` served the WHOLE
     // file on the API image's Bun and hung on a newer one. See runtimeChunkBytes.
-    const started = performance.now();
     const bytes = await runtimeChunkBytes(sha256);
-    const readMs = performance.now() - started;
-    if (readMs > 730 && Date.now() - lastSlowChunkLog > 60_000) {
-      lastSlowChunkLog = Date.now();
-      // No digest or caller identifiers: diagnose cold indexing / disk stalls
-      // without turning a fleet convergence burst into a log storm.
-      console.warn('[runtime-assets] slow chunk lookup/read', { readMs: Math.round(readMs) });
-    }
     if (!bytes) {
       return c.json(
         { error: true as const, message: 'No binary in this deploy carries that chunk', status: 404 as const },
@@ -411,8 +400,8 @@ runtimeAssetsApp.openapi(
       ...errors(401),
     },
   }),
-  async (c) => {
-    const overlay = managedSkillOverlay(await callerOverlayFlags(c));
+  (c) => {
+    const overlay = managedSkillOverlay();
     const etag = `"${overlay.hash}"`;
     c.header('ETag', etag);
     c.header('Cache-Control', 'no-cache');

@@ -1175,10 +1175,6 @@
           "name": "MCP server",
           "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
         },
-        "human_messaging": {
-          "name": "Poruke ljudima",
-          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet. Poruke između sesija navode sesiju koja ih šalje, da bi njen agent mogao da odgovori."
-        },
         "reminders": {
           "name": "Подсетници",
           "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
@@ -1591,17 +1587,6 @@
       "failed": "Oznake nije moguće sačuvati",
       "tooLong": "Oznaka ima najviše 64 znaka.",
       "tooMany": "Sesija ima najviše 20 oznaka."
-    },
-    "askedYou": {
-      "title": "Pitali su te",
-      "from": "od {name}",
-      "arrival": "{name} te je pitao/la",
-      "arrivalUnknown": "Neko te je pitao",
-      "open": "Otvori",
-      "withOne": "Razgovor sa 1 osobom",
-      "withMany": "Razgovor sa {count} osoba",
-      "askedFrom": "Pitanje iz sesije {title}",
-      "inConversation": "U ovom razgovoru"
     }
   },
   "dashboard": {
@@ -19077,6 +19062,7 @@
       "text9c84d6622566": "Диктирај поруку",
       "textf164e4b031dc": "Присуство у сесији је ажурирано",
       "text9e6a0b0a06c2": "Pregledao autore poruka sesije",
+      "textea2f51bfe21c": "Прегледани учесници сесије",
       "text5f58426c214e": "Градимо open-source AI Management System. Свака компанија треба да поседује све њене делове.",
       "textf729ef1ea584": "Усаглашавање лиценци и места",
       "text7912f8e97c06": "cron окидач покреће кварталну проверу приступа и месечно усаглашавање лиценци. Окидачи наводе агента под којим се извршавају, па аутоматизована сесија има потпуно исти домет као сесија уз надзор — ни више.",
@@ -19105,7 +19091,9 @@
       "textdf757dbe33eb": "Ваш Teams каталог има верзију {value0} Kortix апликације. Верзија {value1} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
       "textcd2c4b26eedd": "Kortix нема запис о верзији апликације у вашем Teams каталогу. Верзија {value0} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
       "texte15f213fa506": "Објави ажурирање апликације",
-      "textcafd830fcf85": "Идентитети агената пројекта излистани"
+      "textcafd830fcf85": "Идентитети агената пројекта излистани",
+      "textea2f51bfe21c": "Pregledao učesnike sesije",
+      "text7f755292bf51": "Prilog nije moguće preuzeti"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20338,7 +20326,8 @@
       "desktop": "Екран и тастатура",
       "desktopDescription": "Преглед и коришћење апликација",
       "allowed": "Дозвољено",
-      "notAllowed": "Није дозвољено"
+      "notAllowed": "Није дозвољено",
+      "needsSetup": "Потребно подешавање"
     },
     "runInBackground": "Ради у позадини",
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
@@ -20353,20 +20342,25 @@
     "alreadyConnectedLive": "Тренутно је на мрежи. Одобри да га пребациш на овај захтев: тренутна веза се прекида. Пројекти и дељења остају.",
     "reconnect": "Повежи поново",
     "accessHint": "Изабрани приступ остаје активан док га не опозовете.",
-    "grants": {
-      "title": "Дозволи Kortix-у да види екран и користи твоје апликације",
-      "hint": "macOS тражи две дозволе, обе за Kortix. Computer Use ради чим их дозволиш.",
+    "setup": {
+      "title": "Заврши подешавање рачунара",
+      "hint": "macOS једном тражи сваку дозволу испод. Иду Kortix-у, па ништа више не пита док агент ради.",
+      "files": "Радна површина, Документи и Преузимања",
+      "filesDescription": "Читање и писање датотека у овим фасциклама",
       "accessibility": "Приступачност",
+      "accessibilityDescription": "Коришћење тастатуре и миша у апликацијама",
       "screenRecording": "Снимање екрана",
-      "allowed": "дозвољено",
-      "missing": "није дозвољено",
-      "allow": "Дозволи приступ"
+      "screenRecordingDescription": "Приказ онога што је на екрану",
+      "needed": "Још није дозвољено",
+      "waiting": "Чека на тебе",
+      "allowAll": "Дозволи све",
+      "settingsHint": "Ако се отворе Системска подешавања, укључи Kortix на листи. Ово се само ажурира.",
+      "doneTitle": "Рачунар је спреман",
+      "doneHint": "Kortix има све потребне дозволе. Агенти сада могу да користе овај рачунар."
     }
   },
   "messageFrom": {
     "from": "Od",
-    "asked": "je pitao",
-    "replyHint": "Odgovorite ispod. Agent će preuzeti odgovor.",
     "untitledSession": "Sesija bez naslova"
   },
   "sessionParticipants": {

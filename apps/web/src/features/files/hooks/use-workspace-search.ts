@@ -19,7 +19,7 @@ import {
   type WorkspaceSearchEntry,
   parseWorkspacePaths,
   rankWorkspaceSearchEntry,
-} from '@/features/file-browser/search/workspace-search-core';
+} from '@kortix/sdk/workspace-search';
 import type { FindMatch } from '@/features/file-browser/types';
 import { useRuntimeStore } from '@kortix/sdk/react';
 import { useEffect, useMemo, useRef, useState } from 'react';

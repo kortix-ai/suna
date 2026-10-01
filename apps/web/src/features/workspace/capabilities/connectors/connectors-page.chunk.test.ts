@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
  *
  * That has already happened twice. `connector-identity.tsx` was lifted out of
  * `connectors-view.tsx` precisely to avoid it (see its header comment), and
+ * `use-pipedream-connect-app.ts` was lifted out for the same reason — and then
  * `connectors-page.tsx`, `connector-modal.tsx` and `connector-accounts.tsx`
  * each added a fresh static edge straight back to it.
  *

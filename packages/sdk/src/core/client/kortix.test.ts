@@ -550,7 +550,9 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ label: 'Support inbox' });
 
-  await kortix.project('PID123').connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
+  await kortix
+    .project('PID123')
+    .connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
   expect(last().url).toContain('/projects/PID123/computers');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ tunnel_id: 'tunnel-1', share: 'me' });
@@ -1723,4 +1725,15 @@ test('the facade carries the connect owner through to both connect surfaces', as
   await kortix.project('PID123').setupLinks.requestConnector({ slug: 'slack-1', owner: 'me' });
   expect(last().url).toBe('http://test.local/projects/PID123/connect-requests');
   expect(last().body).toEqual({ slug: 'slack-1', owner: 'me' });
+});
+
+test('project-bound session retains both ids for transcript', async () => {
+  await kortix.project('BOUND_PROJECT').session('BOUND_SESSION').transcript();
+  expect(last().url).toContain('/projects/BOUND_PROJECT/sessions/BOUND_SESSION/transcript');
+});
+
+test('project agent identities retains its bound project id', async () => {
+  await kortix.project('BOUND_PROJECT').agentIdentities();
+  expect(last().url).toBe('http://test.local/projects/BOUND_PROJECT/agent-identities');
+  expect(last().method).toBe('GET');
 });
