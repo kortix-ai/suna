@@ -80,6 +80,52 @@ describe('deriveSessionFiles', () => {
     expect(files).toMatchObject([{ name: 'brief.txt', path: url, shown: true, fresh: 'new' }]);
   });
 
+  test('uses private references for text uploads and shown carousel files', () => {
+    const attachment = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    expect(deriveSessionFiles([msg('user', [{ type: 'text', id: 'upload', text: `<file path="/workspace/uploads/brief.pdf" filename="brief.pdf" attachment="${attachment}">content</file>` }])])).toMatchObject([
+      { name: 'brief.pdf', path: attachment, shown: true },
+    ]);
+    for (const items of [[{ path: '/workspace/chart.png', attachment }], JSON.stringify([{ path: '/workspace/chart.png', attachment }])]) {
+      expect(deriveSessionFiles([msg('assistant', [tool('show', { items })])])).toMatchObject([
+        { name: 'chart.png', path: attachment, kind: 'image', shown: true },
+      ]);
+    }
+    expect(deriveSessionFiles([msg('assistant', [tool('show', { path: '/workspace/chart.png', attachment })])])).toMatchObject([
+      { name: 'chart.png', path: attachment, shown: true },
+    ]);
+  });
+
+  test('keeps same-name uploads distinct and ignores quoted attachment references', () => {
+    const a = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    const b = a.replace('33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444');
+    const tag = (path: string, attachment?: string) => `<file path="${path}" filename="report.txt"${attachment ? ` attachment="${attachment}"` : ''}>content</file>`;
+    expect(deriveSessionFiles([msg('user', [{ type: 'text', id: 'upload', text: `${tag('/workspace/a/report.txt', a)}${tag('/workspace/b/report.txt', b)}` }])]).map((file) => file.path)).toEqual([a, b]);
+    expect(deriveSessionFiles([msg('user', [{ type: 'text', id: 'upload', text: `<reply_context>${tag('/workspace/quoted/report.txt', a)}</reply_context>${tag('/workspace/current/report.txt')}` }])]).map((file) => file.path)).toEqual(['/workspace/current/report.txt']);
+  });
+
+  test('a stored show replaces the earlier write of the same workspace file', () => {
+    const attachment = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    const files = deriveSessionFiles([msg('assistant', [tool('write', { filePath: '/workspace/chart.png' }), tool('show', { path: '/workspace/chart.png', attachment })])]);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({ name: 'chart.png', path: attachment, shown: true });
+  });
+
+  test('ignores hidden user text and deduplicates mixed persisted upload representations', () => {
+    const attachment = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    const text = `<file path="/workspace/report.txt" filename="report.txt" attachment="${attachment}">content</file>`;
+    for (const hidden of [{ synthetic: true }, { ignored: true }]) {
+      expect(deriveSessionFiles([msg('user', [{ type: 'text', id: 'hidden', text, ...hidden }])])).toEqual([]);
+    }
+    expect(deriveSessionFiles([msg('user', [{ type: 'file', id: 'file-only', filename: 'report.txt', url: attachment }]), msg('assistant', [tool('show', { path: '/workspace/report.txt', attachment }), tool('show', { path: '/workspace/renamed.txt', attachment })])])).toHaveLength(1);
+    const parts = [{ type: 'text', id: 'text', text }, { type: 'file', id: 'file', filename: 'report.txt', url: attachment }];
+    for (const ordered of [parts, [...parts].reverse()]) {
+      const files = deriveSessionFiles([msg('user', ordered)]);
+      expect(files).toHaveLength(1);
+      expect(files[0].path).toBe(attachment);
+      expect(deriveSessionFiles([msg('user', ordered), msg('assistant', [tool('show', { path: '/workspace/report.txt', attachment })])])).toHaveLength(1);
+    }
+  });
+
   test('skips files the agent only read', () => {
     const files = deriveSessionFiles([
       msg('assistant', [tool('read', { filePath: '/workspace/a.md' })]),

@@ -102,10 +102,10 @@ function kindOfName(name: string): SessionFileKind {
   return 'file';
 }
 
-type Candidate = Omit<SessionFile, 'key' | 'fresh'>;
+type Candidate = Omit<SessionFile, 'key' | 'fresh'> & { key?: string };
 
 function candidate(callID: string, path: string, extra?: Partial<Candidate>): Candidate | null {
-  const name = isSessionAttachmentRef(path) ? '' : basename(path);
+  const name = extra?.name || (isSessionAttachmentRef(path) ? '' : basename(path));
   if (!path || !name) return null;
   return { callID, name, path, kind: 'file', shown: false, ...extra };
 }
@@ -134,7 +134,9 @@ function showCandidates(part: ToolPart): Candidate[] {
     // A URL is web's "app" output: nothing to open by path.
     if (/^https?:\/\//i.test(text(payload?.url))) continue;
     const path = text(payload?.path);
-    const item = candidate(part.callID, path, {
+    const item = candidate(part.callID, isSessionAttachmentRef(payload?.attachment) ? text(payload.attachment) : path, {
+      name: basename(path),
+      key: pathKey(path),
       kind: kindOfName(basename(path)),
       title: text(payload?.title) || undefined,
       shown: true,
@@ -240,18 +242,24 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
           ? { callID: part.id, name: part.filename, path, kind: kindOfName(part.filename), shown: true }
           : candidate(part.id, path, { shown: true, kind: kindOfName(part.filename || path) });
         if (item) {
-          const key = pathKey(item.path);
+          const key = item.key || pathKey(item.path);
+          const existing = files.findIndex((file) => file.path === item.path);
+          if (existing >= 0) indexByKey.set(key, existing);
           if (!indexByKey.has(key)) {
             indexByKey.set(key, files.length);
             files.push({ ...item, key, ...(isLatest ? { fresh: 'new' } : {}) });
           }
         }
       }
-      if (message.info.role === 'user' && part.type === 'text') {
+      if (message.info.role === 'user' && part.type === 'text' && !part.synthetic && !part.ignored) {
         for (const file of parseUserMessageText(part.text).files) {
-          const item = candidate(part.id, file.path, { shown: true, kind: kindOfName(file.filename || file.path) });
+          const name = file.filename || basename(file.path);
+          const path = isSessionAttachmentRef(file.attachment) ? file.attachment || file.path : file.path;
+          const item = candidate(part.id, path, { name, key: pathKey(file.path || path), shown: true, kind: kindOfName(name) });
           if (!item) continue;
-          const key = pathKey(item.path);
+          const key = item.key || pathKey(item.path);
+          const existing = files.findIndex((file) => file.path === item.path);
+          if (existing >= 0) indexByKey.set(key, existing);
           if (!indexByKey.has(key)) {
             indexByKey.set(key, files.length);
             files.push({ ...item, key, ...(isLatest ? { fresh: 'new' } : {}) });
@@ -260,9 +268,10 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
       }
       if (!isToolPart(part as never)) continue;
       for (const item of candidatesOf(part as unknown as ToolPart)) {
-        const key = pathKey(item.path);
-        const existing = indexByKey.get(key);
-        if (existing === undefined) {
+        const key = item.key || pathKey(item.path);
+        const existing = indexByKey.get(key) ?? (isSessionAttachmentRef(item.path) ? files.findIndex((file) => file.path === item.path) : -1);
+        if (existing >= 0) indexByKey.set(key, existing);
+        if (existing < 0) {
           indexByKey.set(key, files.length);
           files.push({ ...item, key, ...(isLatest ? { fresh: 'new' as const } : {}) });
         } else {
