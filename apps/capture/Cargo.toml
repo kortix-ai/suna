@@ -1,0 +1,69 @@
+[package]
+name = "kortix-capture"
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+publish = false
+description = "Kortix Capture recorder: screen text and video, uploaded to the user's Kortix account."
+
+[[bin]]
+name = "kortix-capture"
+path = "src/bin/capture.rs"
+
+# Windows and Linux engine. On macOS the Swift engine (native/macos) replaces it
+# and this binary only prints an error.
+[[bin]]
+name = "kortix-capture-engine"
+path = "src/bin/capture_engine.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+ctrlc = { version = "3", features = ["termination"] }
+directories = "5.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = { version = "2", features = ["json"] }
+zstd = "0.13"
+
+[dev-dependencies]
+tiny_http = "0.12"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+image = { version = "0.24", default-features = false, features = ["jpeg", "png", "ico"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["randr", "screensaver"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dwm",
+    "Win32_Media_MediaFoundation",
+    "Win32_Storage_FileSystem",
+    "Win32_Storage_Packaging_Appx",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_SystemInformation",
+    "Win32_UI_HiDpi",
+    "Foundation",
+    "Foundation_Collections",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
+] }
