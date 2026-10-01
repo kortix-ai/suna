@@ -1036,8 +1036,18 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
+  // An ask nobody answered yet went to people, not to the agent: the runtime
+  // reads busy for a moment after delivering it, but nothing is working. Folded
+  // in HERE so Stop and Thinking still read one value.
+  const askAwaitsPeople = useMemo(() => {
+    const list = messages ?? [];
+    const last = list[list.length - 1];
+    if (!last || last.info.role !== 'user') return false;
+    if (list.filter((m) => m.info.role === 'user').length !== 1) return false;
+    return isUnansweredAsk({ userMessage: last, assistantMessages: [] });
+  }, [messages]);
   const effectiveBusy = resolveEffectiveBusy({
-    isServerBusy,
+    isServerBusy: isServerBusy && !askAwaitsPeople,
     isOptimisticCompacting,
     hasRetryingAssistant,
   });
@@ -2034,11 +2044,7 @@ export function SessionChat({
   // The one working answer the LAST turn card renders (its shimmer). Resolved
   // here, once, so the card never reads the raw slot for a Kortix session —
   // see `resolveLastTurnWorking` for the split and the defect it removes.
-  // An ask nobody answered yet was sent to people: no agent is thinking.
-  const askAwaitsPeople = isUnansweredAsk(turns[turns.length - 1]);
-  const lastTurnWorking =
-    !askAwaitsPeople &&
-    resolveLastTurnWorking({
+  const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
     // same frame instead of the card flickering 300ms earlier. It is the SAME
