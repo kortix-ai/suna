@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "Quotidiennement à 9h",
     "weekdaysAt9AM": "Jours ouvrables à 9h",
     "weeklyOnMonday": "Hebdomadaire le lundi",
-    "monthlyOn1st": "Mensuel le 1er"
+    "monthlyOn1st": "Mensuel le 1er",
+    "runFailed": {
+      "label": "La dernière exécution n’a pas abouti",
+      "nextRun": "La prochaine exécution réessaie."
+    }
   },
   "sidebar": {
     "referAndEarn": "Parrainer et Gagner",
@@ -19081,7 +19085,28 @@
       "text7458028e0d1d": "Terminer la dictée",
       "text9c84d6622566": "Dicter un message",
       "textf164e4b031dc": "Présence dans la session mise à jour",
-      "text9e6a0b0a06c2": "A consulté les auteurs des messages de la session"
+      "text9e6a0b0a06c2": "A consulté les auteurs des messages de la session",
+      "text5f58426c214e": "Nous construisons l’AI Management System open source. Chaque entreprise devrait en posséder la totalité.",
+      "textf729ef1ea584": "Rapprochement des licences et des postes",
+      "text7912f8e97c06": "Un déclencheur cron ouvre la revue trimestrielle des accès et le rapprochement mensuel des licences. Les déclencheurs indiquent l’agent sous lequel ils s’exécutent : la session sans surveillance dispose donc exactement des mêmes accès que celle supervisée, ni plus ni moins.",
+      "textbc0deb1bab41": "Kortix est l’AI Management System open source, auto-hébergeable, avec n’importe quel modèle. Démarrez un projet gratuitement.",
+      "text0c5b38410c06": "Présentation de Kortix : l’AI Management System open source",
+      "textf216fe1b31a2": "Commencez par un département, connectez les outils qu’il utilise déjà et transformez le workflow en un projet adossé à git que le client peut posséder.",
+      "textdcb3e70ce4dc": "Kortix – l’AI Management System open source.",
+      "text1345783053b5": "Kortix contre Claude Cowork : assistant de bureau ou AI Management System pour l’entreprise ?",
+      "textd90da51ca5c2": "Claude Cowork n’exécute que des modèles Anthropic, dans le cloud d’Anthropic ou dans votre compte Bedrock, Google Cloud ou Microsoft Foundry, sans auto-hébergement. Voici où une entreprise le dépasse.",
+      "text0216eab899cb": "Les cabinets de conseil ont besoin d’un seul dépôt pour les agents de leurs clients",
+      "text3059f4c530b3": "Pourquoi les cabinets de conseil ont besoin d’un seul dépôt git pour les agents, la mémoire, les connecteurs, les politiques et le travail auditable de leurs clients.",
+      "textad70f35eaccc": "Notre mission : faire passer une entreprise de l’humain à l’AGI, et lui laisser chaque octet d’elle-même en chemin.",
+      "text66b6392a2418": "Notes de terrain sur la création, l’exécution et la gouvernance d’agents IA qui accomplissent de vraies tâches — par l’équipe qui construit Kortix.",
+      "text809a706ff256": "Accents et statuts",
+      "text5ed8e8176c1d": "Les seules teintes de l’UI produit. Elles colorent les glyphes, les points, les fonds teintés et les graphiques. Le libellé à côté reste foreground ou muted-foreground, car aucun accent n’atteint AA comme texte courant sur fond blanc. L’état inactif n’a pas de teinte : muted-foreground.",
+      "text1b730c5151b5": "Gamme de graphiques",
+      "text7ac77b03cfd2": "Visualisation de données uniquement. Lisez-la via var(--chart-n), pas via une classe utilitaire.",
+      "textf25fe860a82d": "10 variantes, 8 tailles. Les boutons sont <code>rounded-md</code>. Les panneaux, cartes et lignes sont aussi rounded-md ; les panneaux flottants sont rounded-lg ; rounded-2xl est réservé au marketing. La variante <code>destructive</code> est réservée à l’unique confirmation irréversible.",
+      "textc94e8cb68cba": "Modèles interdits",
+      "text9bb4af3b0beb": "Ils existent encore dans le code, mais le brand kit les interdit. N’en ajoutez pas de nouvelle utilisation.",
+      "text1aff73a5df45": "{why} Utilisez {instead}."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
