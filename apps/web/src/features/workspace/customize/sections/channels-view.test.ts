@@ -553,3 +553,34 @@ describe('Channels view — Teams one-click install outcome', () => {
     expect(raw).not.toContain('Publish to your Teams catalog');
   });
 });
+
+/**
+ * A catalog on a Teams app from before the read permission (manifest 1.0.0)
+ * refuses every thread read in a team. On dev (2026-10-01) the test tenant's
+ * catalog had published 1.0.0 ninety minutes before the permission landed,
+ * and nothing on this page said so. The fix takes two people, in order, and
+ * Teams never installs an update that adds a permission on its own, so the
+ * notice names both steps.
+ */
+describe('Channels view — a Teams catalog on an older app', () => {
+  test('the notice renders from the server verdict, as an InfoBanner under the rows', () => {
+    expect(channelsSource).toContain('teamsInstall?.appUpdateAvailable');
+    expect(channelsSource).toContain('<TeamsAppUpdateNotice');
+    expect(channelsSource).toMatch(/<InfoBanner\s+tone="warning"/);
+  });
+
+  test('it names both versions when the catalog version is known, and the latest when not', () => {
+    expect(channelsSource).toContain('install.appVersion');
+    expect(channelsSource).toContain('install.latestAppVersion');
+    expect(channelsSource).toContain('textdf757dbe33eb'); // Your Teams catalog has version {value0} of the Kortix app. …
+    expect(channelsSource).toContain('textcd2c4b26eedd'); // Kortix has no record of the app version in your Teams catalog. …
+    expect(channelsSource).toContain('text80043b03898d'); // Update the Kortix app in Teams
+  });
+
+  test('the row button says it publishes the update', () => {
+    expect(channelsSource).toContain('texte15f213fa506'); // Publish app update
+    const raw = readRawFileSync(join(dir, 'view/channels-view.tsx'), 'utf8');
+    expect(raw).not.toContain('Publish app update');
+    expect(raw).not.toContain('Manage team');
+  });
+});
