@@ -4,9 +4,9 @@ import type { MessageWithParts } from '@kortix/sdk/react';
 
 import { getContextReading, getContextUsage } from './context-ring';
 
-function assistantWithTokens(input: number): MessageWithParts {
+function assistantWithTokens(input: number, cache?: { read: number; write: number }, output?: number): MessageWithParts {
   return {
-    info: { id: 'msg_1', role: 'assistant', tokens: { input } },
+    info: { id: 'msg_1', role: 'assistant', tokens: { input, cache, output } },
     parts: [],
   } as unknown as MessageWithParts;
 }
@@ -96,4 +96,15 @@ describe('getContextUsage', () => {
     const usage = getContextUsage(messages);
     expect(getContextReading(messages)).toEqual({ percent: usage.percent, tone: usage.tone });
   });
+});
+
+test('unknown model and streaming assistant retain the last cached snapshot', () => {
+  const previous = assistantWithTokens(100_000, { read: 20_000, write: 10_000 }, 10_000);
+
+  const streaming = assistantWithTokens(0);
+  const usage = getContextUsage([previous, streaming], [], { providerID: 'missing', modelID: 'missing' });
+  expect(usage.breakdown).toEqual({ input: 100_000, output: 10_000, reasoning: 0, cache: 30_000, total: 140_000 });
+  expect(usage.modelName).toBeNull();
+  expect(usage.limit).toBe(200_000);
+  expect(getContextReading([previous, streaming])).toEqual({ percent: usage.percent, tone: usage.tone });
 });
