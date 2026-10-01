@@ -187,16 +187,18 @@ export async function tokenAgentPrincipalScope(input: {
   tokenId: string | null | undefined;
   agentGrant: AgentGrant | null | undefined;
   onBehalfOfUserId: string | null | undefined;
-}): Promise<{ onBehalfOfUserId: string | null } | null> {
+}): Promise<{ onBehalfOfUserId: string | null; agentId: string | null } | null> {
   if (!input.tokenId || !input.projectId) return null;
+  let agentId: string;
   try {
     const binding = await loadTokenBinding(input.tokenId);
     if (!binding?.serviceAccountId) return null;
     if (!(await agentPrincipalModeFor(input.projectId, input.agentGrant ?? binding.agentGrant))) return null;
+    agentId = binding.serviceAccountId;
   } catch {
     return null;
   }
-  return { onBehalfOfUserId: input.onBehalfOfUserId ?? null };
+  return { onBehalfOfUserId: input.onBehalfOfUserId ?? null, agentId };
 }
 
 /**
@@ -216,13 +218,16 @@ export async function requestAgentPrincipalReach(
   const sessionId =
     (credential?.kind === 'agent_session' ? credential.sessionId : null) ??
     ((c.get('sessionId') as string | undefined) ?? null);
-  if (!scope.onBehalfOfUserId || !sessionId) return { onBehalfOfUserId: null, visibility: null };
+  // The agent's own service account: a shared account whose audience names it
+  // is reachable in every session of that agent (connection-access.ts).
+  const agentId = credential?.kind === 'agent_session' ? credential.serviceAccountId : null;
+  if (!scope.onBehalfOfUserId || !sessionId) return { onBehalfOfUserId: null, visibility: null, agentId };
   const [session] = await db
     .select({ visibility: projectSessions.visibility })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return { onBehalfOfUserId: scope.onBehalfOfUserId, visibility: session?.visibility ?? null };
+  return { onBehalfOfUserId: scope.onBehalfOfUserId, visibility: session?.visibility ?? null, agentId };
 }
 
 /**

@@ -1,12 +1,13 @@
-import type { ConnectionShare, ConnectionSharePrincipal } from '@kortix/sdk';
+import type { ConnectionShare, SecretSharePrincipal } from '@kortix/sdk';
 
 import type { NewAccountDraft } from './connector-connections';
 
 /** The "Who can use it" choice of a secret value — the same three options as a
- *  connector account: only you, everyone in the project, specific people. */
+ *  connector account: only you, everyone in the project, or specific people,
+ *  groups and agents. */
 export type SecretAudienceDraft = Pick<NewAccountDraft, 'audience' | 'picked'>;
 
-const NOBODY = { memberIds: [], groupIds: [] };
+const NOBODY = { memberIds: [], groupIds: [], agentIds: [] };
 
 /** A value's stored audience as the choice the dialog opens with. */
 export function audienceDraftFrom(
@@ -25,6 +26,7 @@ export function audienceDraftFrom(
     picked: {
       memberIds: shares.filter((share) => share.principal_type === 'member').map((share) => share.principal_id),
       groupIds: shares.filter((share) => share.principal_type === 'group').map((share) => share.principal_id),
+      agentIds: shares.filter((share) => share.principal_type === 'agent').map((share) => share.principal_id),
     },
   };
 }
@@ -33,14 +35,15 @@ export function audienceDraftFrom(
 export function sharedWithFrom(
   draft: SecretAudienceDraft,
   viewerId: string | null | undefined,
-): ConnectionSharePrincipal[] | null {
+): SecretSharePrincipal[] | null {
   if (draft.audience === 'project') return [];
   if (draft.audience === 'private') {
     return viewerId ? [{ principal_type: 'user', principal_id: viewerId }] : null;
   }
-  const principals: ConnectionSharePrincipal[] = [
+  const principals: SecretSharePrincipal[] = [
     ...draft.picked.memberIds.map((id) => ({ principal_type: 'user' as const, principal_id: id })),
     ...draft.picked.groupIds.map((id) => ({ principal_type: 'group' as const, principal_id: id })),
+    ...(draft.picked.agentIds ?? []).map((id) => ({ principal_type: 'agent' as const, principal_id: id })),
   ];
   return principals.length > 0 ? principals : null;
 }
@@ -48,7 +51,7 @@ export function sharedWithFrom(
 /** Does `next` name exactly the stored audience? Then Save leaves it alone. */
 export function sameSharedWith(
   stored: readonly ConnectionShare[],
-  next: readonly ConnectionSharePrincipal[],
+  next: readonly SecretSharePrincipal[],
 ): boolean {
   if (stored.some((share) => share.principal_type === 'project')) return next.length === 0;
   const key = (type: string, id: string) => `${type === 'member' ? 'user' : type}:${id}`;

@@ -83,7 +83,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type ConnectionShare,
-  type ConnectionSharePrincipal,
+  type SecretSharePrincipal,
   type ProjectSecret,
   type ProjectSecretsResponse,
   type SecretConsumer,
@@ -206,7 +206,7 @@ type SecretSavePlan = {
   egressPolicy: SecretEgressPolicy | undefined;
   bindingChanges: { bind: string[]; unbind: string[] };
   /** The new audience; absent when Save leaves it unchanged. */
-  sharedWith?: ConnectionSharePrincipal[];
+  sharedWith?: SecretSharePrincipal[];
   optimistic: OptimisticProjectSecretInput;
 };
 
