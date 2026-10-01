@@ -9,7 +9,7 @@ import {
   searchIndexedWorkspaceEntries,
   toWorkspaceSearchEntry,
   workspaceQueryLooksPathLike,
-} from './core';
+} from './core.ts';
 
 export interface WorkspaceSearchRuntimeOptions extends WorkspaceSearchOptions {
   apiLimit?: number;
