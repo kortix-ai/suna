@@ -64,6 +64,7 @@ import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { configureKortix } from '@kortix/sdk';
+import * as ExpoCrypto from 'expo-crypto';
 import { API_URL, getAuthToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
@@ -83,6 +84,15 @@ installHapticsGate();
 // 127.0.0.1, which on a phone is the phone. Open them on the dev host instead.
 if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
   installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
+}
+
+// `@kortix/sdk` mints ids with the Web Crypto global, which Hermes does not
+// provide. `expo-crypto` supplies the two functions it calls.
+if (typeof globalThis.crypto === 'undefined') {
+  (globalThis as { crypto?: unknown }).crypto = {
+    getRandomValues: ExpoCrypto.getRandomValues,
+    randomUUID: ExpoCrypto.randomUUID,
+  };
 }
 
 // Wire the SDK's single app-specific seam once at startup, before any screen
