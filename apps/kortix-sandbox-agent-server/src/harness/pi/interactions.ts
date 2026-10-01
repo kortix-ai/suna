@@ -106,8 +106,13 @@ function resolveRule(config: PermissionRuleConfig | undefined, tool: string, arg
   return config['*']
 }
 
-/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs. */
-const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = { write: 'edit' }
+/** pi's tools whose name is not their capability: `write` writes a file, which `edit` governs; the search and scrape tools reach the web. */
+const TOOL_CAPABILITY: Record<string, RuntimePermissionCapability> = {
+  write: 'edit',
+  web_search: 'websearch',
+  image_search: 'websearch',
+  scrape_webpage: 'webfetch',
+}
 
 /** The capability a permission rule names for this tool (`RUNTIME_PERMISSION_CAPABILITIES`); any other tool is its own. */
 export function toolCapability(tool: string): string {

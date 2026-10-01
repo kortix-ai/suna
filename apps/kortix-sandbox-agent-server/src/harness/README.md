@@ -100,7 +100,15 @@ pi (`@earendil-works/pi-agent-core`) is bundled into the daemon binary and runs
 INSIDE the daemon process. There is no child process, no port, no RPC and no
 second sandbox: pi's built-in `bash`/`read`/`write`/`edit` run on
 `NodeExecutionEnv` over `/workspace`, Kortix adds `glob`/`grep` (ripgrep) and
-`question`. Every model request goes to the Kortix LLM gateway through the
+`question`, and the five Kortix tools a project template gives an OpenCode
+session, compiled into the daemon under the same names, arguments and output
+JSON: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage`
+(Firecrawl), `memory` and `show` (`pi/kortix-web-tools.ts`,
+`pi/kortix-memory-tool.ts`, `pi/kortix-show-tool.ts`). The three web tools call
+the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`) with the
+sandbox token; a box with no control plane calls the upstream with the
+project's own key. A project needs no `harnesses/pi/` file for any of them.
+Every model request goes to the Kortix LLM gateway through the
 daemon's localhost LLM proxy, under the same `kortix` provider id OpenCode uses.
 
 What the product sees is unchanged: pi's events are reshaped into the OpenCode
@@ -163,10 +171,12 @@ Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`
 A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
 `@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
 one harness's tool. Each adapter maps its tools onto them: pi's `write` is
-`edit` (`pi/interactions.ts`); OpenCode's `pty_*` tools follow `bash`, and the
+`edit`, and its `web_search`/`image_search` and `scrape_webpage` follow
+`websearch` and `webfetch` (`pi/interactions.ts` `TOOL_CAPABILITY`); pi asks
+for them like any other tool. OpenCode's `pty_*` tools follow `bash`, and the
 template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
-and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). Those tools
-cannot ask, so they run only when the capability is `allow`. A rule is an
+and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
+tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against the `bash` command
 line or a workspace tool's path, with the longest matching pattern winning and
 `*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
@@ -217,7 +227,7 @@ runs an in-process pi agent in a child session (`parentID` = root), with its
 own wire transcript served by `/session`, `/session/:id`,
 `/session/:id/message`, `/session/:root/children`, the state document and
 `/kortix/runtime/messages/:id`, and persisted in the root's dump so `task_id`
-resumes it after a restart. Types: `general` (all workspace tools), `explore`
+resumes it after a restart. Types: `general` (all workspace and Kortix tools), `explore`
 (`bash`/`read`/`glob`/`grep`), and every compiled agent with `mode: subagent`
 or `all`. A child gets no `task` (no nesting) and no `question`. Several task
 calls in one message run concurrently; a batch that includes any other tool
