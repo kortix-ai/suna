@@ -594,11 +594,22 @@ export function SessionChat({
     () => (messages ?? []).filter((m) => m.info.role === 'user').map((m) => m.info.id),
     [messages],
   );
-  const { data: messageAuthors } = useSessionMessageAuthors(
+  const newestUserMessageId = userMessageIds.at(-1) ?? '';
+  const { data: messageAuthors, refetch: refetchMessageAuthors } = useSessionMessageAuthors(
     projectId,
     projectSessionId,
-    userMessageIds.length,
+    newestUserMessageId,
   );
+  // The ledger records a message's delivered id a moment after the runtime
+  // shows it: ask once more when the newest message is still unattributed.
+  const authorsRetriedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!messageAuthors || !newestUserMessageId || messageAuthors.authors[newestUserMessageId]) return;
+    if (authorsRetriedFor.current === newestUserMessageId) return;
+    authorsRetriedFor.current = newestUserMessageId;
+    const timer = setTimeout(() => void refetchMessageAuthors(), 2000);
+    return () => clearTimeout(timer);
+  }, [messageAuthors, newestUserMessageId, refetchMessageAuthors]);
   const transcriptAuthors = useMemo(
     () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
     [userMessageIds, messageAuthors],

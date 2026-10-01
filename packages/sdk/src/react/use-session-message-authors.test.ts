@@ -15,6 +15,12 @@ describe('useSessionMessageAuthors', () => {
     expect((useSessionMessageAuthors('p1', 's1', 4) as any).queryKey).not.toEqual(query.queryKey);
   });
 
+  test('a revision string (the newest message id) keys the read too', () => {
+    const a = useSessionMessageAuthors('p1', 's1', 'msg_a') as any;
+    expect(a.queryKey).toEqual([...qk.project.sessionMessageAuthors('p1', 's1'), 'msg_a']);
+    expect((useSessionMessageAuthors('p1', 's1', 'msg_b') as any).queryKey).not.toEqual(a.queryKey);
+  });
+
   test('disabled until both ids are known', () => {
     expect((useSessionMessageAuthors(null, 's1', 0) as any).enabled).toBe(false);
     expect((useSessionMessageAuthors('p1', undefined, 0) as any).enabled).toBe(false);

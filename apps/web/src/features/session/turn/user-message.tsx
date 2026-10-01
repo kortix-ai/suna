@@ -1176,16 +1176,16 @@ export function UserMessage({
   // header for the agent. The card or the author label says it instead.
   // Anyone can type a header. Only the server's ledger (`author`) or a server
   // `no_reply` prompt makes it real; without either it stays plain text.
+  // The header line itself is always hidden: it is agent-facing text, and a
+  // typed one claims nothing once it is gone (names come from the ledger).
   const headerConfirmed = !!author || !!headerTrusted;
   const sessionMessage = useMemo(
     () => (headerConfirmed ? parseSessionMessagePrompt(rawText) : undefined),
     [rawText, headerConfirmed],
   );
   const textWithoutHeader = useMemo(
-    () =>
-      (headerConfirmed ? parseSessionMessagePrompt(textAfterFiles)?.prompt : undefined) ??
-      textAfterFiles,
-    [textAfterFiles, headerConfirmed],
+    () => parseSessionMessagePrompt(textAfterFiles)?.prompt ?? textAfterFiles,
+    [textAfterFiles],
   );
   const { cleanText: textAfterProjects } = useMemo(
     () => parseProjectReferences(textWithoutHeader),
@@ -1281,8 +1281,8 @@ export function UserMessage({
       if (stripped.trim()) lines.push(stripped);
     }
     const joined = lines.join('\n').trim();
-    return (headerConfirmed ? parseSessionMessagePrompt(joined)?.prompt : undefined) ?? joined;
-  }, [message.parts, headerConfirmed]);
+    return parseSessionMessagePrompt(joined)?.prompt ?? joined;
+  }, [message.parts]);
 
   const rewindPromptText = useMemo(() => {
     return editablePromptText(copyText, effectiveCommandInfo);

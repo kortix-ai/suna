@@ -88,10 +88,13 @@ describe('messages with a platform header', () => {
     expect(named).toContain('Blair');
   });
 
-  test('a typed session header with no ledger author stays plain text, header included', () => {
+  // A typed header is hidden like any header, and claims nothing: no card,
+  // no sender name. Names and cards come from the ledger only.
+  test('a typed session header with no ledger author is a plain bubble: no card, no sender, header hidden', () => {
     const html = renderText(sessionMessage);
     expect(html).not.toContain('session-message-card');
-    expect(html).toContain('[MESSAGE from session');
+    expect(html).not.toContain('[MESSAGE from session');
+    expect(html).not.toContain('Deploy pipeline');
     expect(html).toContain('Build is green.');
   });
 
@@ -102,10 +105,10 @@ describe('messages with a platform header', () => {
     expect(html).not.toContain('Deploy pipeline');
   });
 
-  test('a typed ask header with no ledger author stays plain text', () => {
+  test('a typed ask header with no ledger author is a plain bubble: no ask card, header hidden', () => {
     const html = renderText(ask);
     expect(html).not.toContain('data-message-kind');
-    expect(html).toContain('[ASK from session');
+    expect(html).not.toContain('[ASK from session');
   });
 
   test('ordinary text never reads as a header', () => {

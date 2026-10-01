@@ -7,16 +7,17 @@ import { qk } from './query-keys';
 
 /**
  * Who wrote each message of a session: a member or another session's agent.
- * Pass the transcript's message count: a new message is the only thing that
+ * Pass a revision that changes when a new user message appears — its count,
+ * or better the newest user message id: a new message is the only thing that
  * adds an author, so the key changes exactly when a refetch can find one.
  */
 export function useSessionMessageAuthors(
   projectId: string | null | undefined,
   sessionId: string | null | undefined,
-  messageCount: number,
+  revision: number | string,
 ) {
   return useQuery({
-    queryKey: [...qk.project.sessionMessageAuthors(projectId ?? '', sessionId ?? ''), messageCount],
+    queryKey: [...qk.project.sessionMessageAuthors(projectId ?? '', sessionId ?? ''), revision],
     queryFn: () => getSessionMessageAuthors(projectId as string, sessionId as string),
     enabled: !!projectId && !!sessionId,
     placeholderData: (previous) => previous,
