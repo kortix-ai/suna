@@ -30,7 +30,7 @@ Canonical files live in `apps/web/public/brandkit/` (D6). Verified to exist at t
 | bundle | `apps/web/public/brandkit/kortix-brand-assets.zip` | | Download for partners. No script regenerates it. It can drift from the loose files. |
 | symbol (app copy) | `apps/web/public/kortix-symbol.svg` | black | Provider branding, docs, tray source. **Off-master proportion**, see below. |
 | symbol (docs) | `apps/web/blume-public/kortix-symbol.svg`, `kortix-symbol-white.svg` | black / white | Docs site. Intentional copies. The white symbol exists nowhere else in `public/`. |
-| favicon (legacy) | `apps/web/public/favicon.svg`, `favicon.png` | dark mark on a light tile | **Off-master.** The tile color is no token. Still referenced by the JSON-LD `logo` in `[locale]/layout.tsx`, the blog and use-case pages and `lib/web-notifications.ts`. Use the files in the app-icon table below in new code (Q39). |
+| favicon (master) | `apps/web/public/favicon.svg`, `favicon.png` | dark mark (`#121215`) on a light tile (`#F8F8F8`), 20/270 corner radius | **The source of every app icon and favicon** (Q39). Also the JSON-LD `logo` in `[locale]/layout.tsx`, the blog and use-case pages and `lib/web-notifications.ts`. |
 | brandmark-bg | `apps/web/public/kortix-brandmark-bg.svg` | white outline, fading | Wallpaper `brandmark`. |
 | OG banner | `apps/web/public/banner.png` | | The one static share image. |
 | wordmark (mobile) | `apps/mobile/assets/brand/Logomark-Text-Black.svg`, `Logomark-Text-White.svg` | black / white | Mobile auth. Not in the brand kit. |
@@ -99,16 +99,18 @@ The email wordmark is the logo PNG, hosted, not bold text. The CLI banner is a b
 
 ## App icons, favicons, share images
 
-**Shipped on this branch (2026-10-01, measured with `sips` and pixel sampling).** A design lead confirms the tile and the scale: they are the shipped values, not a reviewed decision (Q39, OPEN).
+**Decision (Q39, 2026-10-01).** Every app icon and favicon is `favicon.svg`: the dark mark on the light `#F8F8F8` tile. One artwork for both color schemes. The light tile keeps contrast on a light and a dark tab bar.
 
-| File (`apps/web/public/`) | Size | Tile | Symbol | Symbol scale |
-| --- | --- | --- | --- | --- |
-| `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` (180) | 192, 512, 180 | `--background` (dark) | white file | about 58% of the width, 50% of the height |
-| `icon-maskable-512.png` | 512 | `--background` (dark) | white file | about 44% of the width, 38% of the height, inside the 80% safe zone |
-| `icon-dark-32.png` | 32 | `--background` (dark) | white file | about 72% of the width |
-| `icon-light-32.png`, `favicon.ico` (48) | 32, 48 | `--background` (light) | black file | about 71% of the width |
+| File (`apps/web/public/`) | Size | Render |
+| --- | --- | --- |
+| `favicon.svg`, `favicon.png` | 270 (vector), 540 | The master. Rounded tile, transparent corners. |
+| `favicon.ico` | 16, 32, 48 | `favicon.svg` rasterized. |
+| `icon-light-32.png`, `icon-dark-32.png` | 32 | `favicon.svg` rasterized. Identical files, linked per `prefers-color-scheme`. |
+| `icon-192.png`, `icon-512.png` | 192, 512 | `favicon.svg` rasterized. |
+| `apple-touch-icon.png` | 180 | Opaque full-bleed `#F8F8F8` tile, mark at 100%. iOS rounds the corners. |
+| `icon-maskable-512.png` | 512 | Opaque full-bleed `#F8F8F8` tile, mark at 80% around the center so it stays inside the 80% safe zone. |
 
-Every file is opaque (no alpha) and keeps the master ratio of about 1.167. `[locale]/layout.tsx` links `favicon.ico` (any), `icon-light-32.png` and `icon-dark-32.png` by `prefers-color-scheme`, and `apple-touch-icon.png`. `manifest.json` lists the three large PNGs. — *Rule.* Regenerate an icon from the master symbol on the tile above. Do not hand-edit a PNG, and do not take the symbol from `favicon.svg`. — *Why:* the old icons mixed a dark mark on a light tile, a black mark on a warm tile and a white mark on a gradient squircle (Q39). — *Where:* app, marketing. — *When silent:* these files.
+`[locale]/layout.tsx` links `favicon.ico` (any), `favicon.svg`, `icon-light-32.png` and `icon-dark-32.png` by `prefers-color-scheme`, and `apple-touch-icon.png`. `manifest.json` lists `favicon.svg`, the two `any` PNGs and the maskable PNG. — *Rule.* Regenerate every file in this table from `favicon.svg` (an SVG rasterizer such as `sharp`). Do not hand-edit a PNG, and do not draw a second icon artwork. — *Why:* PR #8567 replaced the favicon with a white mark on a dark tile, and Jay reverted every icon to the `favicon.svg` art on 2026-10-01. — *Where:* app, marketing. — *When silent:* these files.
 
 **OPEN (Q39).** `manifest.json` `background_color` and `theme_color` are `#000000`, and the viewport `themeColor` pair is `white` and `black`. The dark canvas is the `--background` token (a near-black), so the splash and the browser chrome differ from the app by a few percent. A person confirms whether to align them to the token. The desktop and mobile icons keep their own artwork: one icon spec across all four is still OPEN.
 

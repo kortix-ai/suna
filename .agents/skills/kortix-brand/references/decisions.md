@@ -121,7 +121,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Source:** surface agents S4 and S6 (2026-10-01).
 
 ### Q39 App icons, manifests and favicons
-- **Decision:** The shipped icon files are the interim spec: a dark `--background` tile with the white symbol for the large icons, the maskable icon and `icon-dark-32`, and a light tile with the black symbol for `icon-light-32` and `favicon.ico`. Symbol scale and file list are in `brandmark.md`, measured with `sips` and pixel sampling on 2026-10-01. `favicon.svg` and `favicon.png` are off-master and stay only where code still references them. A Slack or Teams manifest takes the dark `--background` hex. OPEN: a design lead confirms the tile and scale, and a person aligns `manifest.json` `background_color`, `theme_color` and the viewport `themeColor` pair with the token.
+- **Decision:** `favicon.svg` (dark `#121215` mark on a light `#F8F8F8` tile) is the one web icon artwork, for light and dark color schemes. `favicon.ico`, `favicon.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `icon-light-32.png` and `icon-dark-32.png` are rasterized from it. The file list and render rules are in `brandmark.md`. Jay decided this on 2026-10-01 and reverted the white-on-dark-tile set from PR #8567. A Slack or Teams manifest takes the dark `--background` hex. OPEN: a person aligns `manifest.json` `background_color`, `theme_color` and the viewport `themeColor` pair with the token.
 - **Where:** `visual/brandmark.md`, `visual/color.md`.
 - **Supersedes:** "One icon spec is OPEN" for the web files only. The desktop and mobile icons keep their own artwork.
 - **Source:** surface agents S1 and S7 (2026-10-01).
