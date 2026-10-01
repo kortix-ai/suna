@@ -1,14 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase, isWithinCircularMask, rowMajorIndex } from '@/lib/dotmatrix-core';
-import {
-  useDotMatrixPhases,
-  usePrefersReducedMotion,
-  useSteppedCycle,
-} from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component, isWithinCircularMask, rowMajorIndex } from '@/lib/dotmatrix-core';
 
 export type DotmCircular3Props = DotMatrixCommonProps;
 
@@ -35,79 +28,40 @@ const CIRCULAR_RING_PATH: readonly number[] = [
 ];
 const LOOP_LEN = CIRCULAR_RING_PATH.length;
 
-export function DotmCircular3({
-  speed = 1.6,
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmCircular3Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-  const headStep = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== 'idle',
-    cycleMsBase: 1650,
-    steps: STEP_COUNT,
-    speed,
-    idleStep: 6,
-  });
+function makeResolver(headStep: number, reducedMotion: boolean): DotAnimationResolver {
+  return ({ index, row, col, phase }) => {
+    if (!isWithinCircularMask(row, col)) {
+      return { className: 'dmx-inactive' };
+    }
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
-    return ({ index, row, col, phase }) => {
-      if (!isWithinCircularMask(row, col)) {
-        return { className: 'dmx-inactive' };
+    const pathOrder = CIRCULAR_RING_PATH.indexOf(index);
+    const isCore = row === 2 && col === 2;
+    if (pathOrder === -1) {
+      return { style: { opacity: isCore ? CORE_OPACITY : BASE_OPACITY } };
+    }
+
+    if (reducedMotion || phase === 'idle') {
+      return { style: { opacity: RING_BASE_OPACITY + (pathOrder / (LOOP_LEN - 1)) * 0.56 } };
+    }
+
+    const leadA = Math.floor((headStep / STEP_COUNT) * LOOP_LEN) % LOOP_LEN;
+    const leadB = (leadA + Math.floor(LOOP_LEN / 2)) % LOOP_LEN;
+    let opacity = BASE_OPACITY;
+
+    for (let i = 0; i < COMET_TAIL.length; i += 1) {
+      const weight = COMET_TAIL[i] ?? 0;
+      const tailA = (leadA - i + LOOP_LEN) % LOOP_LEN;
+      const tailB = (leadB - i + LOOP_LEN) % LOOP_LEN;
+      if (pathOrder === tailA) {
+        opacity = Math.max(opacity, weight);
       }
-
-      const pathOrder = CIRCULAR_RING_PATH.indexOf(index);
-      const isCore = row === 2 && col === 2;
-      if (pathOrder === -1) {
-        return { style: { opacity: isCore ? CORE_OPACITY : BASE_OPACITY } };
+      if (pathOrder === tailB) {
+        opacity = Math.max(opacity, weight * SECONDARY_COMET_SCALE);
       }
+    }
 
-      if (reducedMotion || phase === 'idle') {
-        return { style: { opacity: RING_BASE_OPACITY + (pathOrder / (LOOP_LEN - 1)) * 0.56 } };
-      }
-
-      const leadA = Math.floor((headStep / STEP_COUNT) * LOOP_LEN) % LOOP_LEN;
-      const leadB = (leadA + Math.floor(LOOP_LEN / 2)) % LOOP_LEN;
-      let opacity = BASE_OPACITY;
-
-      for (let i = 0; i < COMET_TAIL.length; i += 1) {
-        const weight = COMET_TAIL[i] ?? 0;
-        const tailA = (leadA - i + LOOP_LEN) % LOOP_LEN;
-        const tailB = (leadB - i + LOOP_LEN) % LOOP_LEN;
-        if (pathOrder === tailA) {
-          opacity = Math.max(opacity, weight);
-        }
-        if (pathOrder === tailB) {
-          opacity = Math.max(opacity, weight * SECONDARY_COMET_SCALE);
-        }
-      }
-
-      return { style: { opacity: Math.min(1, opacity) } };
-    };
-  }, [headStep, reducedMotion]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern="full"
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
+    return { style: { opacity: Math.min(1, opacity) } };
+  };
 }
+
+export const DotmCircular3 = createDotm5x5Component('DotmCircular3', makeResolver, { speed: 1.6, lockedPattern: 'full', cycleMsBase: 1650, steps: STEP_COUNT, idleStep: 6 });
