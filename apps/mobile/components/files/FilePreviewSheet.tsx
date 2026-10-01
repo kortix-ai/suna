@@ -171,7 +171,7 @@ export function FilePreviewBody({
     let active = true;
     setStoredContent(undefined);
     if (attachment && stored.data && previewDecision({ size: stored.data.size, previewType: getFilePreviewType(file.name) }) !== 'too-large') {
-      const binary = ['image', 'pdf', 'docx', 'xlsx'].includes(getFilePreviewType(file.name));
+      const binary = getFilePreviewType(file.name) === 'image';
       (binary ? blobToDataURL(stored.data, file.name) : stored.data.text()).then((value) => {
         if (active) setStoredContent(binary ? { url: value } : { text: value });
       }).catch(() => { if (active) setStoredContent({}); });

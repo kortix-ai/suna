@@ -26,7 +26,7 @@ mock.module('@/components/session/tool/shared/tool-icons', () => ({ showFileType
 mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: { children?: React.ReactNode }) => React.createElement('button', props, children) }));
 mock.module('@/components/ui/icon', () => ({ Icon: () => null }));
 mock.module('@/components/ui/text', () => ({ Text: () => null }));
-mock.module('@/lib/session/session-files', () => ({ previewsInline: () => true, sessionFileKindLabel: () => 'Image' }));
+mock.module('@/lib/session/session-files', () => ({ previewsInline: (name: string) => !['pdf', 'docx', 'xlsx'].includes(name.split('.').at(-1) ?? ''), sessionFileKindLabel: () => 'File' }));
 mock.module('@/lib/files/preview-limits', () => ({ previewDecision: () => 'ok' }));
 mock.module('@/lib/files/preview-failure', () => ({ previewFailure: () => null }));
 mock.module('@/lib/files/hooks', () => ({ blobToDataURL: async () => 'data:image/png;base64,aW1hZ2U=', downloadOpenCodeFileToCache: async () => '' }));
@@ -37,11 +37,13 @@ mock.module('@/lib/utils/theme', () => ({ THEME: { light: { background: '#fff' }
 
 // Render the actual body: the query and native leaves are stubbed, not the routing decision.
 describe('stored attachment preview', () => {
-  test.each(['pdf', 'docx', 'xlsx'])('provides binary preview data for %s attachment', async (extension) => {
+  test.each(['pdf', 'docx', 'xlsx'])('shows a download-only card for %s attachment', async (extension) => {
     const { FilePreviewBody } = await import('./FilePreviewSheet');
     let tree: ReactTestRenderer | undefined;
+    const rendered = calls.length;
     await act(async () => { tree = create(<FilePreviewBody file={{ name: `document.${extension}`, path: ref }} sandboxUrl={undefined} onCopyTextChange={() => {}} />); });
-    expect(calls.at(-1)).toMatchObject({ previewType: extension, blobUrl: 'data:image/png;base64,aW1hZ2U=' });
+    expect(calls).toHaveLength(rendered);
+    expect(tree?.root.findByProps({ accessibilityLabel: 'Download file' })).toBeDefined();
     await act(async () => { tree?.unmount(); });
   });
 
