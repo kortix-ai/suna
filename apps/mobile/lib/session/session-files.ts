@@ -251,7 +251,7 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
           }
         }
       }
-      if (message.info.role === 'user' && part.type === 'text' && !part.synthetic && !part.ignored) {
+      if (message.info.role === 'user' && part.type === 'text' && !part.synthetic && !('ignored' in part && part.ignored)) {
         for (const file of parseUserMessageText(part.text).files) {
           const name = file.filename || basename(file.path);
           const path = isSessionAttachmentRef(file.attachment) ? file.attachment || file.path : file.path;
