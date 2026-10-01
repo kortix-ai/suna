@@ -224,7 +224,7 @@ describe('a bot sender is never sent an identity prompt', () => {
     for (const m of sites) {
       const before = src.slice(Math.max(0, m.index! - 400), m.index!);
       expect(before, 'an unlinked BOT gets an ephemeral + a DM it cannot read, and the mention looks ignored')
-        .toContain('if (!event.bot_id) {');
+        .toMatch(/if \(event\.bot_id\) return;|if \(!event\.bot_id\) \{/);
     }
   });
 
