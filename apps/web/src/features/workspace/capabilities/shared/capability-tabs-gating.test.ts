@@ -33,9 +33,12 @@ const stillLoading = () =>
   Object.fromEntries(CAPABILITY_TAB_GATE_ACTIONS.map((action) => [action, { allowed: false }]));
 
 describe('visibleCapabilityTabs', () => {
-  test('a manager sees every tab', () => {
-    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toEqual(
+  test('a manager sees every tab; Drives only where the project has the drives flag', () => {
+    expect(visibleCapabilityTabs(allowExcept(), { drives: true }).map((t) => t.key)).toEqual(
       CAPABILITY_TABS.map((t) => t.key),
+    );
+    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toEqual(
+      CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'drives'),
     );
   });
 
@@ -46,7 +49,7 @@ describe('visibleCapabilityTabs', () => {
     const keys = visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_REVIEW_READ)).map(
       (t) => t.key,
     );
-    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
+    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review' && k !== 'drives'));
   });
 
   // The whole point. A member holds project.read, project.trigger.read and
@@ -116,9 +119,9 @@ describe('CapabilityTabs gate wiring', () => {
     expect(bar).toContain('{library.map(renderTab)}');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
     expect(bar).not.toContain('CAPABILITY_TABS.map');
-    // Permissions are the only gate: no feature flag reaches the bar.
-    expect(bar).toContain('visibleCapabilityTabs(caps)');
-    expect(bar).not.toContain('useFeatureFlag');
+    // Permissions gate every tab; the one flag is `drives`, for the Drives tab.
+    expect(bar).toContain("visibleCapabilityTabs(caps, { drives })");
+    expect(bar).toContain("useFeatureFlag(projectId, 'drives')");
   });
 
   // One list of leaves for the bar, the sidebar row and the Customize index —

@@ -46,6 +46,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const agentPrincipal = useFeatureFlag(projectId, 'agent_principal');
   const mcp = useFeatureFlag(projectId, 'mcp');
   const drives = useFeatureFlag(projectId, 'drives');
+  const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
 
   return {
     flags: {
@@ -68,8 +69,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       agent_principal: agentPrincipal.enabled,
       mcp: mcp.enabled,
       drives: drives.enabled,
+      ephemeral_sandboxes: ephemeralSandboxes.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: drives.isLoading,
+    isLoading: ephemeralSandboxes.isLoading,
   };
 }

@@ -1158,6 +1158,10 @@
         "drives": {
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
+        },
+        "ephemeral_sandboxes": {
+          "name": "Kurzlebige Sandboxes",
+          "description": "Eine gestoppte Session behält ihre Dateien und ihr Gespräch auf einem Volume und gibt ihren Rechner ab. Beim Aufwecken startet ein neuer Rechner mit dem neuesten Image. Laufende Prozesse überstehen einen Stopp nicht."
         }
       }
     },
@@ -19199,7 +19203,28 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "text729fe0e7b138": "Drives",
-      "text6312b4b9baf1": "Drive"
+      "text6312b4b9baf1": "Drive",
+      "text6206cfda1089": "Drive an eine Session angehängt",
+      "text17e39652de9c": "Drive-Ordner durchsucht",
+      "text17ca25e52b74": "Drive-Zugriff einer Session geändert",
+      "textec0529740f3a": "Drive erstellt",
+      "text0a9ffa28699b": "Drive-Ordner erstellt",
+      "textdda2c17f7b6a": "Drive gelöscht",
+      "texta4b104856de3": "Drive-Datei oder -Ordner gelöscht",
+      "text3b4597efa752": "Drive von einer Session entfernt",
+      "text314417423fcc": "Drive-Konflikthinweis ausgeblendet",
+      "texta6d9086e7e87": "Drive-Datei heruntergeladen",
+      "text396202ae2e82": "Drive freigegeben",
+      "textb97ac3f6b2df": "Drives aufgelistet",
+      "textc2f20f412d9e": "Drives einer Session aufgelistet",
+      "text643a5d6f2ae7": "Drive-Datei oder -Ordner verschoben",
+      "text1be29249e43a": "Drive-Freigabe entfernt",
+      "text4aca630290d8": "Drive umbenannt",
+      "text752bef5f7f5d": "Drive-Version wiederhergestellt",
+      "text227965956595": "Drive-Datei hochgeladen",
+      "text2c4914d35c78": "Drive-Konfliktkopien angesehen",
+      "text0fa1b726786e": "Drive-Versionen angesehen",
+      "text5e8541464418": "Freigaben eines Drives angesehen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

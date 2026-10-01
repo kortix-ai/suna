@@ -1158,6 +1158,10 @@
         "drives": {
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."
+        },
+        "ephemeral_sandboxes": {
+          "name": "Sandbox effimere",
+          "description": "Una sessione arrestata conserva file e conversazione su un volume e rilascia la sua macchina. Riattivarla avvia una nuova macchina con l’immagine più recente. I processi in esecuzione non sopravvivono a un arresto."
         }
       }
     },
@@ -19199,7 +19203,28 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "text729fe0e7b138": "Drive",
-      "text6312b4b9baf1": "Drive"
+      "text6312b4b9baf1": "Drive",
+      "text6206cfda1089": "Drive collegato a una sessione",
+      "text17e39652de9c": "Cartella del drive sfogliata",
+      "text17ca25e52b74": "Accesso al drive di una sessione modificato",
+      "textec0529740f3a": "Drive creato",
+      "text0a9ffa28699b": "Cartella del drive creata",
+      "textdda2c17f7b6a": "Drive eliminato",
+      "texta4b104856de3": "File o cartella del drive eliminato",
+      "text3b4597efa752": "Drive scollegato da una sessione",
+      "text314417423fcc": "Avviso di conflitto del drive ignorato",
+      "texta6d9086e7e87": "File del drive scaricato",
+      "text396202ae2e82": "Drive concesso",
+      "textb97ac3f6b2df": "Drive elencati",
+      "textc2f20f412d9e": "Drive della sessione elencati",
+      "text643a5d6f2ae7": "File o cartella del drive spostato",
+      "text1be29249e43a": "Concessione del drive rimossa",
+      "text4aca630290d8": "Drive rinominato",
+      "text752bef5f7f5d": "Versione del drive ripristinata",
+      "text227965956595": "File del drive caricato",
+      "text2c4914d35c78": "Copie in conflitto del drive visualizzate",
+      "text0fa1b726786e": "Versioni del drive visualizzate",
+      "text5e8541464418": "Concessioni di un drive visualizzate"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

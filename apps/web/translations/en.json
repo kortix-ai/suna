@@ -984,6 +984,10 @@
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
+        },
+        "ephemeral_sandboxes": {
+          "name": "Ephemeral sandboxes",
+          "description": "A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop."
         }
       }
     },
@@ -19212,7 +19216,28 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "text729fe0e7b138": "Drives",
-      "text6312b4b9baf1": "Drive"
+      "text6312b4b9baf1": "Drive",
+      "text6206cfda1089": "Attached a drive to a session",
+      "text17e39652de9c": "Browsed a drive folder",
+      "text17ca25e52b74": "Changed a session drive access",
+      "textec0529740f3a": "Created a drive",
+      "text0a9ffa28699b": "Created a drive folder",
+      "textdda2c17f7b6a": "Deleted a drive",
+      "texta4b104856de3": "Deleted a drive file or folder",
+      "text3b4597efa752": "Detached a drive from a session",
+      "text314417423fcc": "Dismissed a drive conflict notice",
+      "texta6d9086e7e87": "Downloaded a drive file",
+      "text396202ae2e82": "Granted a drive",
+      "textb97ac3f6b2df": "Listed drives",
+      "textc2f20f412d9e": "Listed session drives",
+      "text643a5d6f2ae7": "Moved a drive file or folder",
+      "text1be29249e43a": "Removed a drive grant",
+      "text4aca630290d8": "Renamed a drive",
+      "text752bef5f7f5d": "Restored a drive version",
+      "text227965956595": "Uploaded a drive file",
+      "text2c4914d35c78": "Viewed drive conflict copies",
+      "text0fa1b726786e": "Viewed drive versions",
+      "text5e8541464418": "Viewed where a drive is granted"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -1158,6 +1158,10 @@
         "drives": {
           "name": "云盘",
           "description": "与会话保持同步的共享文件夹：你自己的云盘、每个智能体一个云盘，以及管理员关联到项目的公司云盘。新会话可在 /drives 下看到它们。"
+        },
+        "ephemeral_sandboxes": {
+          "name": "临时沙盒",
+          "description": "停止的会话会把文件和对话保存在卷上，并释放其计算机。唤醒时会用最新镜像启动一台新计算机。正在运行的进程不会在停止后保留。"
         }
       }
     },
@@ -19199,7 +19203,28 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "text729fe0e7b138": "云盘",
-      "text6312b4b9baf1": "云盘"
+      "text6312b4b9baf1": "云盘",
+      "text6206cfda1089": "将云盘挂载到会话",
+      "text17e39652de9c": "浏览了云盘文件夹",
+      "text17ca25e52b74": "更改了会话的云盘访问权限",
+      "textec0529740f3a": "创建了云盘",
+      "text0a9ffa28699b": "创建了云盘文件夹",
+      "textdda2c17f7b6a": "删除了云盘",
+      "texta4b104856de3": "删除了云盘文件或文件夹",
+      "text3b4597efa752": "从会话卸载了云盘",
+      "text314417423fcc": "忽略了云盘冲突提醒",
+      "texta6d9086e7e87": "下载了云盘文件",
+      "text396202ae2e82": "授予了云盘",
+      "textb97ac3f6b2df": "列出了云盘",
+      "textc2f20f412d9e": "列出了会话的云盘",
+      "text643a5d6f2ae7": "移动了云盘文件或文件夹",
+      "text1be29249e43a": "移除了云盘授权",
+      "text4aca630290d8": "重命名了云盘",
+      "text752bef5f7f5d": "恢复了云盘版本",
+      "text227965956595": "上传了云盘文件",
+      "text2c4914d35c78": "查看了云盘冲突副本",
+      "text0fa1b726786e": "查看了云盘版本",
+      "text5e8541464418": "查看了云盘的授权对象"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

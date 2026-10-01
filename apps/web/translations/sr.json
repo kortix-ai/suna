@@ -1158,6 +1158,10 @@
         "drives": {
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
+        },
+        "ephemeral_sandboxes": {
+          "name": "Privremeni sandbox-ovi",
+          "description": "Zaustavljena sesija čuva datoteke i razgovor na volumenu i oslobađa svoj računar. Buđenje pokreće novi računar sa najnovijom slikom. Pokrenuti procesi ne preživljavaju zaustavljanje."
         }
       }
     },
@@ -19199,7 +19203,28 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "text729fe0e7b138": "Drajvovi",
-      "text6312b4b9baf1": "Drajv"
+      "text6312b4b9baf1": "Drajv",
+      "text6206cfda1089": "Drajv povezan sa sesijom",
+      "text17e39652de9c": "Pregledana fascikla drajva",
+      "text17ca25e52b74": "Promenjen pristup sesije drajvu",
+      "textec0529740f3a": "Drajv napravljen",
+      "text0a9ffa28699b": "Fascikla drajva napravljena",
+      "textdda2c17f7b6a": "Drajv obrisan",
+      "texta4b104856de3": "Datoteka ili fascikla drajva obrisana",
+      "text3b4597efa752": "Drajv odvojen od sesije",
+      "text314417423fcc": "Odbačeno obaveštenje o konfliktu drajva",
+      "texta6d9086e7e87": "Datoteka drajva preuzeta",
+      "text396202ae2e82": "Drajv dodeljen",
+      "textb97ac3f6b2df": "Drajvovi izlistani",
+      "textc2f20f412d9e": "Drajvovi sesije izlistani",
+      "text643a5d6f2ae7": "Datoteka ili fascikla drajva premeštena",
+      "text1be29249e43a": "Dodela drajva uklonjena",
+      "text4aca630290d8": "Drajv preimenovan",
+      "text752bef5f7f5d": "Verzija drajva vraćena",
+      "text227965956595": "Datoteka drajva otpremljena",
+      "text2c4914d35c78": "Pregledane konfliktne kopije drajva",
+      "text0fa1b726786e": "Pregledane verzije drajva",
+      "text5e8541464418": "Pregledano kome je drajv dodeljen"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

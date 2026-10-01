@@ -1158,6 +1158,10 @@
         "drives": {
           "name": "Drive",
           "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
+        },
+        "ephemeral_sandboxes": {
+          "name": "Sandboxes efémeras",
+          "description": "Uma sessão parada mantém os ficheiros e a conversa num volume e liberta o seu computador. Ao reativá-la arranca um computador novo com a imagem mais recente. Os processos em execução não sobrevivem a uma paragem."
         }
       }
     },
@@ -19199,7 +19203,28 @@
       "textd690dbbd64cb": "Downloaded a runtime-asset chunk",
       "text890355ac3800": "Checked runtime-asset chunks",
       "text729fe0e7b138": "Drives",
-      "text6312b4b9baf1": "Drive"
+      "text6312b4b9baf1": "Drive",
+      "text6206cfda1089": "Drive anexado a uma sessão",
+      "text17e39652de9c": "Pasta do drive explorada",
+      "text17ca25e52b74": "Acesso de uma sessão ao drive alterado",
+      "textec0529740f3a": "Drive criado",
+      "text0a9ffa28699b": "Pasta do drive criada",
+      "textdda2c17f7b6a": "Drive eliminado",
+      "texta4b104856de3": "Ficheiro ou pasta do drive eliminado",
+      "text3b4597efa752": "Drive removido de uma sessão",
+      "text314417423fcc": "Aviso de conflito do drive ignorado",
+      "texta6d9086e7e87": "Ficheiro do drive transferido",
+      "text396202ae2e82": "Drive concedido",
+      "textb97ac3f6b2df": "Drives listados",
+      "textc2f20f412d9e": "Drives da sessão listados",
+      "text643a5d6f2ae7": "Ficheiro ou pasta do drive movido",
+      "text1be29249e43a": "Concessão do drive removida",
+      "text4aca630290d8": "Drive renomeado",
+      "text752bef5f7f5d": "Versão do drive restaurada",
+      "text227965956595": "Ficheiro do drive carregado",
+      "text2c4914d35c78": "Cópias em conflito do drive consultadas",
+      "text0fa1b726786e": "Versões do drive consultadas",
+      "text5e8541464418": "Concessões de um drive consultadas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
