@@ -62,6 +62,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'secret.strategy.changed': 'Updated secret delivery strategy',
   'capture.settings.changed': 'Updated capture settings',
   'capture.member_view': 'Viewed captures of a member',
+  'capture.agent_read': 'An agent session read the captures of the person it acts for',
   'secret.oauth.disconnected': 'Disconnected model provider OAuth login',
   'secret.updated': 'Updated secret',
   'secret.consumer.used': 'Used secret',

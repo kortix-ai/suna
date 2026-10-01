@@ -19132,7 +19132,11 @@
       "text396a3d705dfe": "Viewed capture settings",
       "textd5c256691c77": "Viewed capture timeline",
       "textea2f51bfe21c": "Viewed session participants",
-      "text37e6441aa695": "Viewed captures of a member"
+      "text37e6441aa695": "Viewed captures of a member",
+      "textd67effc1b5f2": "Agent or CLI viewed a capture frame",
+      "textb1237b04cc12": "Agent or CLI searched captures",
+      "textf7878f9754cf": "Agent or CLI viewed the capture timeline",
+      "textdb0ea4023dff": "An agent session read the captures of the person it acts for"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

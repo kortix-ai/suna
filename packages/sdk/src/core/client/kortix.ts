@@ -226,6 +226,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     videoUrl: P.getCaptureVideoUrl,
     frame: P.getCaptureFrame,
     deleteData: P.deleteCaptureData,
+    /** The acting person's captures, from inside a project (agents and the CLI in a sandbox). */
+    projectSearch: P.searchProjectCapture,
+    projectTimeline: P.getProjectCaptureTimeline,
+    projectFrame: P.getProjectCaptureFrame,
   };
 
   /** Account-scoped operations. */

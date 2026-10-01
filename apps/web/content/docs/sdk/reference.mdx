@@ -88,6 +88,7 @@ them; an owner or admin reads another member's only while the owner has enabled
 | `timeline(accountId, { from, to, user_id })` | recorded chunks and seconds per app |
 | `videoUrl(accountId, chunkId)` · `frame(accountId, frameId)` | a 10-minute presigned mp4 URL · one frame with its text |
 | `deleteData(accountId, { from, to })` | delete your own recordings (video and frames) in a range |
+| `projectSearch(projectId, opts)` · `projectTimeline(projectId, { from, to })` · `projectFrame(projectId, frameId)` | the acting person's captures from inside a project. A session token (an agent, or the CLI in a sandbox) acts for the person its private session runs for; a user token acts for that user. Never another member. A caller with no person (trigger, service account, shared session) gets `403 CAPTURE_NO_HUMAN`; capture off for that person gets `403 CAPTURE_NOT_ENABLED`. A session read is audited as `capture.agent_read` |
 
 ### Access assignments
 

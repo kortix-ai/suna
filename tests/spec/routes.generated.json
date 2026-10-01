@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 712,
+  "count": 715,
   "routes": [
     {
       "method": "GET",
@@ -1637,6 +1637,18 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/capture/timeline"
     },
     {
       "method": "GET",

@@ -15,6 +15,9 @@ import {
   listCaptureDevices,
   searchCapture,
   getCaptureTimeline,
+  getProjectCaptureFrame,
+  getProjectCaptureTimeline,
+  searchProjectCapture,
   updateCaptureDevice,
   updateCaptureSettings,
 } from './capture';
@@ -76,4 +79,16 @@ test('video url, frame detail and delete data', async () => {
     url: 'http://test.local/accounts/acc-1/capture/data?to=2026-10-02T00%3A00%3A00Z',
     method: 'DELETE',
   });
+});
+
+test('project routes (agents, CLI in a sandbox): search, timeline, frame for the acting person', async () => {
+  nextBody = { items: [], next_cursor: null };
+  await searchProjectCapture('proj-1', { q: 'invoice', app: 'Notes', limit: 5 });
+  expect(last()).toMatchObject({ url: 'http://test.local/projects/proj-1/capture/search?q=invoice&app=Notes&limit=5', method: 'GET' });
+  nextBody = { chunks: [], apps: [] };
+  await getProjectCaptureTimeline('proj-1', { from: '2026-10-01T00:00:00Z' });
+  expect(last().url).toBe('http://test.local/projects/proj-1/capture/timeline?from=2026-10-01T00%3A00%3A00Z');
+  nextBody = { frame_id: 7 };
+  await getProjectCaptureFrame('proj-1', 7);
+  expect(last().url).toBe('http://test.local/projects/proj-1/capture/frames/7');
 });

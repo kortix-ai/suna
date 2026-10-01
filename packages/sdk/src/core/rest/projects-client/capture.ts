@@ -155,3 +155,21 @@ export async function deleteCaptureData(accountId: string, range: { from?: strin
     await backendApi.delete<{ deleted_chunks: number }>(`${base(accountId)}/data${query(range)}`),
   );
 }
+
+// Project routes: the captures of the person the caller acts for, read from
+// inside a project. A session token (an agent, or the CLI in a sandbox) acts for
+// the person the session runs for; a user token acts for that user. Never another
+// member. A caller with no person gets 403 `CAPTURE_NO_HUMAN`.
+const projectBase = (projectId: string) => `/projects/${projectId}/capture`;
+
+export async function searchProjectCapture(projectId: string, options: Omit<CaptureSearchOptions, 'user_id'> = {}) {
+  return unwrap(await backendApi.get<CaptureSearchPage>(`${projectBase(projectId)}/search${query({ ...options })}`));
+}
+
+export async function getProjectCaptureTimeline(projectId: string, options: { from?: string; to?: string } = {}) {
+  return unwrap(await backendApi.get<CaptureTimeline>(`${projectBase(projectId)}/timeline${query(options)}`));
+}
+
+export async function getProjectCaptureFrame(projectId: string, frameId: number) {
+  return unwrap(await backendApi.get<CaptureFrame>(`${projectBase(projectId)}/frames/${frameId}`));
+}
