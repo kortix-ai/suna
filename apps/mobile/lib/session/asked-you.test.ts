@@ -83,6 +83,15 @@ describe('askedYouAsker', () => {
     expect(askedYouAsker(make({ owner_email: 'b@example.com' }))).toBe('b@example.com');
     expect(askedYouAsker(make())).toBeNull();
   });
+
+  test('metadata.asked_by wins: the asking session reads as its title, never the owner', () => {
+    const by = (asked_by: unknown) => make({ owner_name: 'Bob', metadata: { asked_by } });
+    expect(askedYouAsker(by({ kind: 'session', session_id: 's', name: 'Launch prep' }))).toBe('Launch prep');
+    expect(askedYouAsker(by({ kind: 'person', name: 'Blair', email: 'b@example.com' }))).toBe('Blair');
+    expect(askedYouAsker(by({ kind: 'person', name: '', email: 'b@example.com' }))).toBe('b@example.com');
+    expect(askedYouAsker(by({ kind: 'session', name: '' }))).toBe('Bob');
+    expect(askedYouAsker(by('x'))).toBe('Bob');
+  });
 });
 
 describe('askedYouState', () => {

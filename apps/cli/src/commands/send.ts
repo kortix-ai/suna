@@ -17,6 +17,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { featureHidden } from '../features.ts';
 import { C, help, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import { queueSessionPrompt } from './sessions-queue.ts';
@@ -120,6 +121,13 @@ export function parseSendArgs(argv: string[]): SendArgs | { error: string } {
 }
 
 export async function runSend(argv: string[]): Promise<number> {
+  // Inside a sandbox whose project has the flag off: one line, no usage dump.
+  if (featureHidden('human_messaging')) {
+    process.stderr.write(
+      `${status.err('Human Messaging is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
+    );
+    return 1;
+  }
   if (argv.includes('-h') || argv.includes('--help')) {
     process.stdout.write(HELP);
     return 0;

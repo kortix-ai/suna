@@ -105,7 +105,7 @@ const eslintConfig = [
               // `stores/diagnostics-store.ts`, `lib/storage/managed-storage.ts`)
               // instead, where it is visible in review. Mirrors CANONICAL_SDK_ENTRIES
               // in scripts/sdk-boundary.mjs — keep the two in sync.
-              group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server'],
+              group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server', '!@kortix/sdk/workspace-search'],
               message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',
             },
             {

@@ -61,6 +61,7 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'participants',
   'awaiting_reply',
   'awaiting_reply_from',
+  'asked_by',
 ] as const;
 
 /**

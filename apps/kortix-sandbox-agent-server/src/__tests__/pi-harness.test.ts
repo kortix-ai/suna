@@ -412,6 +412,31 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
+  // OpenCode `noReply` (the first message of a conversation with people, a
+  // released Stop batch): the message joins the conversation and no turn runs.
+  // Dev 2026-10-01: pi ignored it, answered an ask meant for a person, and the
+  // turn was then aborted.
+  test('a noReply prompt joins the conversation without a turn, and the next turn sees it', async () => {
+    const r = await boot({ script: [{ text: 'Noted: green.' }] })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.requests.length
+    const ask = 'msg_0198e2a4b0c1ASKASKASKASKAS'
+    expect((await prompt(r, root, { messageID: ask, noReply: true, parts: [{ type: 'text', text: 'Which color, green or blue?' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(gateway.requests.length).toBe(before)
+    const afterAsk = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string; role: string } }>
+    expect(afterAsk.map((m) => [m.info.id, m.info.role])).toEqual([[ask, 'user']])
+
+    expect((await prompt(r, root, { messageID: 'msg_0198e2a4b0c2REPLYREPLYREPL', parts: [{ type: 'text', text: 'green' }] })).status).toBe(204)
+    await waitFor(() => !r.service.runtime()!.busy())
+    expect(gateway.requests.length).toBe(before + 1)
+    const seen = (r.service.runtime() as unknown as { agent: { state: { messages: Array<{ role: string; content: unknown }> } } }).agent.state.messages
+    expect(seen.filter((m) => m.role === 'user').map((m) => JSON.stringify(m.content))).toEqual([
+      JSON.stringify('Which color, green or blue?'),
+      expect.stringContaining('green'),
+    ])
+  })
+
   test('every raw /event frame carries the id the SDK dedupes deltas on, the same on every connection', async () => {
     // The SDK store keys `message.part.delta` idempotency on the envelope's
     // `id`: a delta with no id, or a different id on redelivery, APPENDS its

@@ -2786,5 +2786,20 @@
     "loadSessionFromIDB",
     "pruneIDBCache",
     "saveSessionToIDB"
+  ],
+  "./workspace-search": [
+    "createWorkspaceSearchClient",
+    "dedupeWorkspaceSearchEntries",
+    "getWorkspaceEntryName",
+    "mergeWorkspaceSearchEntries",
+    "normalizeSearchQuery",
+    "normalizeWorkspacePath",
+    "parseWorkspacePaths",
+    "rankWorkspaceSearchEntry",
+    "searchIndexedWorkspaceEntries",
+    "stripWorkspacePrefix",
+    "toWorkspaceSearchEntry",
+    "workspaceEntryMatchesQuery",
+    "workspaceQueryLooksPathLike"
   ]
 }

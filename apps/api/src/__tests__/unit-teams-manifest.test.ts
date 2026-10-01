@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { buildTeamsManifest } from '../channels/teams-manifest';
 
 describe('buildTeamsManifest', () => {
@@ -59,6 +60,20 @@ describe('buildTeamsManifest', () => {
     const commands = m.bots[0]!.commandLists![0]!.commands;
     expect(commands.map((c) => c.title)).toContain('/sessions');
     expect(commands.length).toBeLessThanOrEqual(10);
+  });
+
+  // Graph refuses an app-definition update that does not raise the version,
+  // and the publish then records the catalog's version as current: the
+  // tenant keeps the old app and no update notice shows. So every manifest
+  // change ships under a new TEAMS_MANIFEST_VERSION. When this fails, bump
+  // the version and ADD its fingerprint; never edit an existing line.
+  test('a manifest change ships under a new version', () => {
+    const { version, ...manifest } = buildTeamsManifest({ appId: 'app-123', baseUrl: 'https://api.kortix.com' });
+    const fingerprint = createHash('sha256').update(JSON.stringify(manifest)).digest('hex').slice(0, 16);
+    const released: Record<string, string> = {
+      '1.6.1': '677e28d110223694',
+    };
+    expect({ version, fingerprint }).toEqual({ version, fingerprint: released[version] ?? 'no fingerprint for this version' });
   });
 });
 

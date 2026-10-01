@@ -90,6 +90,8 @@ export interface PromptInput {
   model?: { providerID: string; modelID: string }
   variant?: string
   system?: string
+  /** OpenCode `noReply`: the message joins the conversation, no turn runs. */
+  noReply?: boolean
 }
 
 export class PromptRejected extends Error {}
@@ -115,6 +117,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
   if (body.agent !== undefined && (typeof body.agent !== 'string' || !body.agent)) throw new PromptRejected('agent must be a non-empty string')
   if (body.variant !== undefined && typeof body.variant !== 'string') throw new PromptRejected('variant must be a string')
   if (body.system !== undefined && typeof body.system !== 'string') throw new PromptRejected('system must be a string')
+  if (body.noReply !== undefined && typeof body.noReply !== 'boolean') throw new PromptRejected('noReply must be a boolean')
   if (!Array.isArray(body.parts) || body.parts.length === 0) throw new PromptRejected('parts must be a non-empty array')
   const text: string[] = []
   const files: PromptInput['files'] = []
@@ -147,6 +150,7 @@ export function parsePromptBody(raw: unknown): PromptInput {
     ...(body.model ? { model: body.model as PromptInput['model'] } : {}),
     ...(typeof body.variant === 'string' ? { variant: body.variant } : {}),
     ...(typeof body.system === 'string' ? { system: body.system } : {}),
+    ...(body.noReply === true ? { noReply: true } : {}),
   }
 }
 
@@ -559,6 +563,21 @@ export class PiRuntime {
       if (modelId && modelId !== this.selected!.modelID) this.selected = this.models!.select(modelId)
     }
     this.publishUserMessage(this.rootId, messageId, input)
+    if (input.noReply) {
+      // OpenCode `noReply`: the next turn's model sees this message, and none
+      // runs now. On the serial queue so it lands between turns, and persisted
+      // so a box that sleeps before anyone answers still has it.
+      const done = (this.queue = this.queue.then(() => {
+        const images = this.images(input)
+        this.agent!.state.messages = [
+          ...this.agent!.state.messages,
+          { role: 'user', content: images.length ? [{ type: 'text', text: input.text }, ...images] : input.text, timestamp: this.now() },
+        ]
+        this.completedTurns.set(messageId, 'idle')
+        this.persist()
+      }).catch(() => {}))
+      return { messageId, done: done.then(() => 'completed' as TurnOutcome) }
+    }
     let resolve!: (outcome: TurnOutcome) => void
     const outcome = new Promise<TurnOutcome>((r) => (resolve = r))
     const turn: Turn = { messageId, input, resolve, outcome }
