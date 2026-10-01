@@ -1475,21 +1475,39 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
 
 describe('event-family routing characterization', () => {
   test('dispatcher delivers each family to its observable side effect after reducer delivery', () => {
-    const { handleEvent, applySyncEvent, queryClient, addPermission, fetchLspDiagnosticsDebounced } =
-      buildHandler();
+    const {
+      handleEvent,
+      applySyncEvent,
+      queryClient,
+      addPermission,
+      fetchLspDiagnosticsDebounced,
+    } = buildHandler();
     const message = {
-      id: 'evt_message', type: 'message.updated',
+      id: 'evt_message',
+      type: 'message.updated',
       properties: { sessionID: 'ses_1', info: assistantMessage('msg_1') },
     } as Parameters<typeof handleEvent>[0];
     const created = {
-      id: 'evt_session', type: 'session.created', properties: { sessionID: 'ses_new', info: session('ses_new') },
+      id: 'evt_session',
+      type: 'session.created',
+      properties: { sessionID: 'ses_new', info: session('ses_new') },
     } as Parameters<typeof handleEvent>[0];
     const permission = {
-      id: 'evt_permission', type: 'permission.asked',
-      properties: { id: 'perm_1', sessionID: 'ses_1', permission: 'bash', patterns: ['*'], metadata: {}, always: [] },
+      id: 'evt_permission',
+      type: 'permission.asked',
+      properties: {
+        id: 'perm_1',
+        sessionID: 'ses_1',
+        permission: 'bash',
+        patterns: ['*'],
+        metadata: {},
+        always: [],
+      },
     } as Parameters<typeof handleEvent>[0];
     const workspace = {
-      id: 'evt_workspace', type: 'lsp.updated', properties: {},
+      id: 'evt_workspace',
+      type: 'lsp.updated',
+      properties: {},
     } as Parameters<typeof handleEvent>[0];
     for (const event of [message, created, permission, workspace]) handleEvent(event);
     expect(applySyncEvent.calls).toEqual([[message], [created], [permission], [workspace]]);

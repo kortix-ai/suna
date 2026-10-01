@@ -79,7 +79,9 @@ test('gap hydration reconciles every loaded transcript, including idle sessions,
   useSyncStore.setState({ messages: { gap_idle_a: [], gap_idle_b: [] } });
   const calls: string[] = [];
   let rejectTail!: (reason: Error) => void;
-  const tail = new Promise<void>((_, reject) => { rejectTail = reject; });
+  const tail = new Promise<void>((_, reject) => {
+    rejectTail = reject;
+  });
   const client = {
     permission: { list: async () => ({ data: [] }) },
     question: { list: async () => ({ data: [] }) },
@@ -88,11 +90,17 @@ test('gap hydration reconciles every loaded transcript, including idle sessions,
   const deps = {
     client: client as unknown as Parameters<typeof hydrateCore>[0]['client'],
     queryClient: new QueryClient(),
-    addPermission: () => {}, addQuestion: () => {},
-    applySyncEvent: (event: Parameters<ReturnType<typeof useSyncStore.getState>['applyEvent']>[0]) => useSyncStore.getState().applyEvent(event),
+    addPermission: () => {},
+    addQuestion: () => {},
+    applySyncEvent: (
+      event: Parameters<ReturnType<typeof useSyncStore.getState>['applyEvent']>[0],
+    ) => useSyncStore.getState().applyEvent(event),
     reconcileMissingBusySessions: { current: () => {} },
     fetchLspDiagnosticsDebounced: { current: () => {} },
-    reconcileSessionTail: async (id: string) => { calls.push(id); await tail; },
+    reconcileSessionTail: async (id: string) => {
+      calls.push(id);
+      await tail;
+    },
     options: { rehydrateMessages: true },
   };
   hydrateCore(deps);
@@ -111,15 +119,30 @@ test('failed snapshot reads do not prevent independent hydration or diagnostics'
   let diagnostics = 0;
   hydrateCore({
     client: {
-      permission: { list: async () => { throw failure; } },
+      permission: {
+        list: async () => {
+          throw failure;
+        },
+      },
       question: { list: async () => ({ data: [{ id: 'q' }] }) },
-      session: { status: async () => { throw failure; } },
+      session: {
+        status: async () => {
+          throw failure;
+        },
+      },
     } as unknown as Parameters<typeof hydrateCore>[0]['client'],
     queryClient: new QueryClient(),
-    addPermission: () => {}, addQuestion: (question) => { questions.push(question); },
+    addPermission: () => {},
+    addQuestion: (question) => {
+      questions.push(question);
+    },
     applySyncEvent: (event) => useSyncStore.getState().applyEvent(event),
     reconcileMissingBusySessions: { current: () => {} },
-    fetchLspDiagnosticsDebounced: { current: () => { diagnostics++; } },
+    fetchLspDiagnosticsDebounced: {
+      current: () => {
+        diagnostics++;
+      },
+    },
     reconcileSessionTail: async () => {},
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
