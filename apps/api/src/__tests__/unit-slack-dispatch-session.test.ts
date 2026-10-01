@@ -556,6 +556,13 @@ describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thre
     expect(finalizeCalls[0]?.error).toContain('/kortix models');
   });
 
+  test('winner with an already published mapping follows up instead of creating', async () => {
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [{ sessionId: 'prior-sess' }]];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0);
+    expect(deliverCalls).toBe(1);
+  });
+
   test('claim WON, no existing mapping → creates EXACTLY one session, no follow-up', async () => {
     dbResults = [
       [project], // spawnAgentTurn project lookup
