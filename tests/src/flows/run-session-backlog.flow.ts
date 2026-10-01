@@ -38,6 +38,7 @@ import {
   runtimePath,
   sandboxIdOf,
   sendPrompt,
+  stopSessionAndWait,
   streamedReplies,
   waitForAssistantText,
   waitForSessionReady,
@@ -808,15 +809,8 @@ harnessFlow(
   },
   async (ctx, harness) => {
     const { projectId, sessionId } = await bootSession(ctx, harness);
-    await ctx.step('stop → 200 status stopped', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
-        {},
-        {
-          params: { projectId, sessionId },
-        },
-      );
-      r.status(200).body().has('$.status', 'stopped');
+    await ctx.step('stop → 200 stopped (or stopping, then stopped)', async () => {
+      await stopSessionAndWait(ctx, projectId, sessionId);
     });
     await ctx.step('stopping an already-stopped session → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
