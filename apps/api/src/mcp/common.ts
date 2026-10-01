@@ -4,9 +4,9 @@ import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
 import { blockedPath, canonicalPath, type Operation } from './shape';
 
-const MAX_RESULT_CHARS = 60_000;
-
 export type Dispatch = (request: Request) => Promise<Response>;
+
+const MAX_RESULT_CHARS = 60_000;
 
 export interface ToolContext {
   authorization: string;
@@ -28,6 +28,8 @@ export const text = (value: string, isError = false): ToolResult => ({
   ...(isError ? { isError: true } : {}),
 });
 
+// ─── The Kortix API, in-process, as the caller ──────────────────────────────
+
 export type ApiReply = {
   status: number;
   body: string;
@@ -45,7 +47,7 @@ export async function callApi(
   ctx: ToolContext,
   method: string,
   path: string,
-  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean } = {},
+  opts: { query?: Record<string, unknown>; body?: unknown; summarizeBinary?: boolean; raw?: { body: Uint8Array; headers: Record<string, string> } } = {},
 ): Promise<ApiReply> {
   const url = new URL(path, ctx.origin);
   // Guard the path the router will see (dot segments, %-escapes), not the caller's spelling.
@@ -66,12 +68,11 @@ export async function callApi(
     headers.delete(name);
   }
   headers.set('authorization', ctx.authorization);
-  // The audit's client_reported_source, as `cli` and `web` set it for theirs.
-  headers.set('x-kortix-client', 'mcp');
   headers.set('accept', 'application/json');
   if (opts.body !== undefined) headers.set('content-type', 'application/json');
+  for (const [k, v] of Object.entries(opts.raw?.headers ?? {})) headers.set(k, v);
   const response = await ctx.dispatch(
-    new Request(url, { method, headers, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
+    new Request(url, { method, headers, body: opts.raw ? (opts.raw.body as BodyInit) : opts.body !== undefined ? JSON.stringify(opts.body) : undefined }),
   );
   const reply: ApiReply = {
     status: response.status,
@@ -95,6 +96,8 @@ export function apiResult(r: ApiReply, label?: string): ToolResult {
   if (r.binary) return text(`${head} ${r.binary.type}, ${r.binary.bytes} bytes (binary, not shown)${retry}`, r.status >= 400);
   return text(`${head}\n${r.body}${retry}`, r.status >= 400);
 }
+
+// ─── The OpenAPI catalog (search_api / describe_api) ────────────────────────
 
 let catalog: Promise<{ ops: Operation[]; doc: any }> | null = null;
 
@@ -138,6 +141,8 @@ export function resolveRefs(node: any, doc: any, depth = 0): any {
   return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, resolveRefs(v, doc, depth + 1)]));
 }
 
+// ─── Sessions and projects by id ────────────────────────────────────────────
+
 export function projectArg(input: Record<string, unknown>): string {
   const projectId = arg(input, 'project_id');
   if (!isUuid(projectId)) throw new ToolInputError('project_id must be a UUID (list_projects shows them)');
@@ -163,6 +168,8 @@ export async function sessionPath(sessionId: string): Promise<string> {
   if (!row) throw new ToolInputError('HTTP 404\n{"error":"Not found"}');
   return `/v1/projects/${row.projectId}/sessions/${sessionId}`;
 }
+
+// ─── Sandboxes (run_command / read_file / write_file / list_files) ──────────
 
 /** Time budget of one MCP request, under the load balancer's 60 s idle cut. */
 export const REQUEST_BUDGET_MS = 55_000;
@@ -243,6 +250,8 @@ export function envRpcResult(r: { status: number; body: string }, render: (value
   return text(render(reply.value));
 }
 
+// ─── Commands as jobs (./jobs.ts) ───────────────────────────────────────────
+
 /** Run a short shell script in the session's sandbox (env-rpc exec). */
 function sandboxScript(ctx: ToolContext, target: string | Sandbox, script: string, env: Record<string, string>, cwd?: string) {
   return callSandbox(ctx, target, 'POST', '/kortix/env-rpc', {
@@ -317,6 +326,8 @@ export function pageLines(content: string, input: Record<string, unknown>): Tool
   return text(page(lines, intArg(input, 'offset') ?? 0, intArg(input, 'limit', 1), 'lines'));
 }
 
+// ─── Sessions ───────────────────────────────────────────────────────────────
+
 /** A session is busy while it boots, runs a turn, or holds queued prompts. */
 const BOOTING = new Set(['queued', 'branching', 'provisioning']);
 
@@ -358,6 +369,7 @@ export function limitArg(input: Record<string, unknown>, key: string, fallback: 
   return Math.min(Math.max(Math.trunc(n), 1), max);
 }
 
+
 export function arg(input: Record<string, unknown>, key: string): string {
   const value = input[key];
   if (typeof value !== 'string' || !value.trim()) throw new ToolInputError(`${key} is required`);
@@ -372,3 +384,85 @@ export function optionalArg(input: Record<string, unknown>, key: string): string
 export const bounded = (value: unknown, fallback: number, max: number) => Math.min(Math.max(Number(value) || fallback, 1), max);
 
 export class ToolInputError extends Error {}
+
+const STARTED_BY = ['me', 'others', 'automated'];
+
+/** Query for the list route: top-level sessions (or one parent's children), optionally filtered. */
+export function listSessionsQuery(input: Record<string, unknown>): Record<string, string | number | string[]> {
+  const query: Record<string, string | number | string[]> = {
+    limit: limitArg(input, 'limit', 20, 200),
+    parent: optionalArg(input, 'parent_session_id') ?? 'root',
+  };
+  const cursor = optionalArg(input, 'cursor');
+  if (cursor !== undefined) query.cursor = cursor;
+  const startedBy = optionalArg(input, 'started_by');
+  if (startedBy !== undefined) {
+    if (!STARTED_BY.includes(startedBy)) throw new ToolInputError('started_by must be me, others or automated');
+    query.started_by = startedBy;
+  }
+  const q = optionalArg(input, 'query');
+  if (q !== undefined) {
+    if (q.length > 200) throw new ToolInputError('query is at most 200 characters');
+    query.q = q;
+  }
+  const labels = labelsArg(input);
+  if (labels?.length) query.label = labels;
+  return query;
+}
+
+export function labelsArg(input: Record<string, unknown>): string[] | undefined {
+  const labels = input.labels;
+  if (labels === undefined) return undefined;
+  if (!Array.isArray(labels) || !labels.every((label) => typeof label === 'string')) {
+    throw new ToolInputError('labels must be a list of strings');
+  }
+  return labels;
+}
+
+/** The POST /sessions body for start_session. */
+export function startSessionBody(input: Record<string, unknown>): Record<string, unknown> {
+  const body: Record<string, unknown> = { initial_prompt: arg(input, 'prompt') };
+  if (optionalArg(input, 'name')) body.name = optionalArg(input, 'name');
+  if (optionalArg(input, 'agent')) body.agent_name = optionalArg(input, 'agent');
+  const labels = labelsArg(input);
+  if (labels) body.labels = labels;
+  const metadata = input.metadata;
+  if (metadata !== undefined) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new ToolInputError('metadata must be a JSON object');
+    }
+    body.metadata = metadata;
+  }
+  return body;
+}
+
+/** One bounded row of `list_sessions` output. */
+export function listSessionRow(s: any) {
+  return {
+    session_id: s.session_id,
+    name: s.name ?? null,
+    labels: s.labels ?? [],
+    status: s.status,
+    agent: s.agent_name,
+    owner: s.owner_name ?? s.owner_email ?? null,
+    started_by: s.initiator?.label ?? null,
+    parent_session_id: s.parent_session_id ?? null,
+    child_count: s.child_count ?? 0,
+    ...(s.search_match ? { search_match: s.search_match } : {}),
+    origin: s.origin,
+    branch: s.branch_name ?? null,
+    created_at: s.created_at,
+    updated_at: s.updated_at,
+  };
+}
+
+/** The project's own skills (`skills/<slug>/SKILL.md`, or the legacy dir) from the same /detail route the web app reads; it honors the caller's per-skill grants. */
+export async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slug: string; name: string; description: string | null; path: string; files: string[] }[] | Error> {
+  const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/detail`);
+  if (r.status >= 400) return new ToolInputError(`HTTP ${r.status} reading project ${projectId}: ${r.body.slice(0, 200)}`);
+  const detail = JSON.parse(r.body) as { config?: { skills?: { name: string; path: string; description: string | null }[] }; files?: { path: string }[] };
+  return (detail.config?.skills ?? []).map((s) => {
+    const dir = s.path.slice(0, s.path.lastIndexOf('/') + 1);
+    return { ...s, slug: dir.split('/').at(-2) ?? s.name, files: (detail.files ?? []).map((f) => f.path).filter((p) => p.startsWith(dir)) };
+  });
+}

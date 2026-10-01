@@ -1,5 +1,4 @@
-import { describe, expect, test } from 'bun:test';
-import { mock } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 mock.module('../middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
 import { createMcpApp } from './index';
 
