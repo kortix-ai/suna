@@ -17,29 +17,18 @@
  */
 
 import { isOpencodePort } from '../shared/opencode-ports';
+import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../sandbox-proxy/runtime-request';
 
-/** The in-box agent that reverse-proxies to opencode. */
+export { stripInBoxProxyPrefix };
+
+/** The in-box agent that reverse-proxies to the runtime. */
 const AGENT_PORT = 8000;
-
-const TURN_START = /^\/session\/[^/]+\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/;
-
-/**
- * Drop the in-box dynamic-port nesting a client may address through, so one
- * path spelling reaches every predicate.
- *
- * `/p/<ext>/8000/proxy/4096/session/<id>/prompt_async` and
- * `/p/<ext>/4096/session/<id>/prompt_async` are the SAME turn. A predicate that
- * strips the prefix and one that does not disagree about that request, and two
- * turn-start preparations disagreeing inside one request is the defect this
- * module exists to make impossible.
- */
-export function stripInBoxProxyPrefix(path: string): string {
-  return path.replace(/^\/proxy\/\d+(?=\/)/, '');
-}
 
 /**
  * Does this proxied request START a turn? Used by the proxy to observe a run
- * beginning without trusting anything the sandbox says about itself.
+ * beginning without trusting anything the sandbox says about itself. The
+ * routes are `classifyRuntimeRequest`'s: the daemon's Kortix prompt route and
+ * OpenCode's four turn routes, with any `/proxy/<port>` prefix dropped.
  *
  * Either half of the opencode pair counts. A verified reload swaps which one is
  * live, and letting the other through here would let the box's own agent
@@ -47,7 +36,6 @@ export function stripInBoxProxyPrefix(path: string): string {
  * exactly the self-renewal bounded lifetimes exist to prevent.
  */
 export function isTurnStartRequest(port: number, method: string, path: string): boolean {
-  if (method.toUpperCase() !== 'POST') return false;
   if (port !== AGENT_PORT && !isOpencodePort(port)) return false;
-  return TURN_START.test(stripInBoxProxyPrefix(path));
+  return classifyRuntimeRequest(method, path).kind === 'turn-start';
 }

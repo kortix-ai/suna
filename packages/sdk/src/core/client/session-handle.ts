@@ -1,7 +1,8 @@
 import { bindSessionDefaults } from './session-defaults';
 import { bindSessionReadiness } from './session-readiness';
 
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import type { RuntimeClient } from '../runtime/client';
+import { bindSessionRuntime } from './session-runtime';
 import { bindSessionActionsResources } from './session-actions-resources';
 import { bindSessionActionsSecurity } from './session-actions-security';
 import { bindSessionActionsServices } from './session-actions-services';
@@ -74,7 +75,14 @@ export function session(
     ...bindSessionActionsSecurity(context),
     ...bindSessionActionsServices(context),
     files: bindSessionFiles(ensureReady),
-    get runtime(): OpencodeClient {
+    ...bindSessionRuntime(context),
+    /**
+     * The raw runtime REST client of THIS session's own sandbox.
+     * @deprecated Use the session verbs (`messages`, `pending`,
+     * `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`,
+     * `rewind`). Removed in the next major.
+     */
+    get runtime(): RuntimeClient {
       return getClientForUrl(requireReady('runtime').runtimeUrl);
     },
   };

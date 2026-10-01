@@ -29,8 +29,8 @@ export function createPiDiagnosticsService(
       const bootState: PiBootState = context.bootState
       const rt = runtime()
       const state = rt?.getState() ?? 'down'
-      const initialSessionReady = !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
-      const error = bootState.initialOpenCodeSessionError ?? startError() ?? bootState.auditRelayError ?? null
+      const initialSessionReady = !bootState.initialRuntimeSessionRequired || !!bootState.initialRuntimeSessionId
+      const error = bootState.initialRuntimeSessionError ?? startError() ?? bootState.auditRelayError ?? null
       const probe = query.turn !== undefined && rt ? rt.turnProbe(query.turn.messageId || null) : null
       const model = rt?.selectedModel()
       // The same read the `config` block reports, so `ready` never disagrees with it.
@@ -42,7 +42,7 @@ export function createPiDiagnosticsService(
           state,
           ready: !error && state === 'ok' && config.proven && initialSessionReady,
           error,
-          session: { id: bootState.initialOpenCodeSessionId ?? null, required: !!bootState.initialOpenCodeSessionRequired },
+          session: { id: bootState.initialRuntimeSessionId ?? null, required: !!bootState.initialRuntimeSessionRequired },
           turn: probe ? { in_flight: probe.inFlight, end: probe.end, orphaned_prompt: probe.orphanedPrompt } : null,
           details: {
             model: model ? `${model.providerID}/${model.modelID}` : null,
@@ -87,7 +87,7 @@ export function createPiDiagnosticsService(
         },
         boot: {
           repo_materialization_error: bootState.repoMaterializationError,
-          initial_session_error: bootState.initialOpenCodeSessionError ?? null,
+          initial_session_error: bootState.initialRuntimeSessionError ?? null,
           timeline: bootState.timeline,
         },
         resources,

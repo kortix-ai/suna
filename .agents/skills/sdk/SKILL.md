@@ -39,11 +39,11 @@ Learn this once and most questions answer themselves.
    and `src/core/rest/platform-client/`, over `src/core/http/api-client.ts`
    (`backendApi`).
 
-2. **The session runtime** — OpenCode running *inside a per-session cloud
+2. **The session runtime** — the harness (OpenCode or pi) running *inside a per-session cloud
    sandbox*. The SDK reaches its REST API through the Kortix API proxy:
 
    ```
-   ${backendUrl}/p/{externalId}/{port}      →  the sandbox's opencode server
+   ${backendUrl}/p/{externalId}/{port}      →  the sandbox's daemon (kortixd)
    ```
 
 **The bridge between them is session readiness.** A session runtime does not
@@ -78,7 +78,7 @@ one.
 ```
 core/http/auth + core/http/api-client  ← transport: token, fetch, ApiError
 core/rest/*-client                     ← typed REST surfaces (one file per domain)
-core/runtime/client                    ← OpenCode REST compatibility client
+core/runtime/client                    ← runtime client cache; runtime-rest-client: the REST compatibility client
 core/stream/event-stream               ← SSE reconnect/backoff/heartbeat/coalesce
 core/client/kortix.ts (createKortix)   ← the facade: binds ids, hides the seam
 core/turns/                            ← normalizes ~50 wire part types → ClassifiedPart
@@ -115,11 +115,19 @@ Follow the grain. Almost every feature is this shape:
 
 - **Session-scoped, never global.** See above. Never resolve a runtime from
   ambient state.
-- **Session-scoped and provider-agnostic.** The sandbox provider is a server-side
-  concern. Every session uses OpenCode REST. Host code must not add a second
+- **Session-scoped and provider-agnostic.** The sandbox provider and the harness
+  (OpenCode, pi) are server-side concerns. Host code must not add a second
   transport.
-- **Hosts never import `@opencode-ai/sdk`.** Not `apps/web`, not the demo. If a
-  host needs runtime access, it goes through `session.runtime`.
+- **The SDK owns its types and depends on no harness SDK.** The transcript is
+  `kortix.transcript.v1` (`core/runtime/transcript-types.ts`, a copy of
+  `@kortix/api-contract/transcript` that a test holds equal). The runtime REST
+  compatibility types (`core/runtime/runtime-types.ts`) and client
+  (`core/runtime/runtime-rest-client.ts`) are frozen copies of what
+  `@opencode-ai/sdk` 1.18.23 had, pinned by a recorded-request fixture. A new
+  runtime call gets a route in `RUNTIME_REST_ROUTES`, never a new dependency.
+- **Hosts reach the runtime through the session verbs** (`messages`, `pending`,
+  `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`,
+  `stream`). `session.runtime` is deprecated; no host imports `@opencode-ai/sdk`.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
   to the SDK.
 - **The core never imports a framework.** Enforced statically. See the tripwire.
@@ -397,22 +405,23 @@ promote them to `dependencies`.
 
 ## Streaming is the fragile part. Treat it as a first-class target.
 
-Live SSE streaming (`session.stream()` → `openEventStream` → `client.global.event()`)
+Live SSE streaming (`session.stream()` → `openEventStream({ url })` → `client.global.event()`)
 is the single most breakable surface in this package, because it is the only one
 that depends on **streaming-body support in the host's `fetch`** — a thing that
 differs across every runtime we claim to support.
 
-The transport is **not** `EventSource`. It is, inside
-`@opencode-ai/sdk/dist/v2/gen/core/serverSentEvents.gen.js`:
+The transport is **not** `EventSource`. It is `eventStream` in
+`src/core/runtime/runtime-rest-client.ts`:
 
 ```js
-const response = await _fetch(request);
+const response = await fetchFn(new Request(url, { method: 'GET', headers, signal }));
 const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 ```
 
 So streaming requires `fetch` with a real `ReadableStream` body, plus
-`TextDecoderStream`. Reconnect, backoff, heartbeat, and event coalescing are
-ours (`src/core/stream/event-stream.ts`); the wire is theirs.
+`TextDecoderStream`. Reconnect, backoff, heartbeat, and event coalescing live in
+`src/core/stream/event-stream.ts`, which asks the transport for exactly one
+connection attempt per connect (`sseMaxRetryAttempts: 1`).
 
 | Target | Streams? | Notes |
 |---|---|---|
@@ -440,15 +449,6 @@ broken change, not a partial one.
 > deferred.
 >
 > **Do not add a third copy.** If a host needs a different wire, build the seam.
-
-**`@opencode-ai/sdk/v2/client` is browser-safe** — its import graph is only
-`error-interceptor`, `client.gen`, `sdk.gen`, `types.gen`. The `node:child_process`
-in that package lives in `dist/process.js`, reachable **only** from `v2/server.js`.
-
-> **Bundler trap.** Never let a build resolve `@opencode-ai/sdk` (root) or
-> `/server` or `/v2/server` into a browser bundle — that drags in
-> `node:child_process` and the build breaks or silently ships a broken global.
-> Import `@opencode-ai/sdk/v2/client` and nothing else.
 
 Streaming is not "done" because a unit test passes. It is done when it has been
 observed delivering events in **each distribution target you claim** — the ESM

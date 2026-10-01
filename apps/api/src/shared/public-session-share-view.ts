@@ -255,7 +255,7 @@ export async function getPublicSessionMessages(
 
   // The box owns its root conversation id; the row's pin is the fallback for
   // a daemon that has not adopted one yet.
-  let rootId = projectionIdentity(state.doc).opencode_session_id;
+  let rootId = projectionIdentity(state.doc).runtime_session_id;
   if (!rootId) {
     const [sessionRow] = await db
       .select({ opencodeSessionId: projectSessions.runtimeSessionId })

@@ -1,6 +1,5 @@
 import { getClientForUrl } from '../runtime/client';
 
-import * as A from '../rest/platform-client/auth';
 
 import { type EventStreamHandle, type RuntimeEvent, openEventStream } from '../stream/event-stream';
 
@@ -57,7 +56,7 @@ export function bindSessionActionsServices(ctx: SessionBindingContext) {
     }): Promise<EventStreamHandle> => {
       const { runtimeUrl } = await ctx.ensureReady();
       return openEventStream({
-        client: getClientForUrl(runtimeUrl),
+        url: runtimeUrl,
         onEvent: opts.onEvent,
         onGapRehydrate: opts.onGapRehydrate,
         signal: opts.signal,

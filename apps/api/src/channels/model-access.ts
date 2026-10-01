@@ -30,7 +30,7 @@ import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
 import { runtimeModelCatalog } from '../llm-gateway/models/runtime-catalog';
 import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway/resolution/default-model';
-import { toOpencodeModelRef } from '../llm-gateway/resolution/effective';
+import { toWireModel } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
 import { channelModelContext, projectModelContext } from './slack/model-gate';
@@ -246,7 +246,7 @@ export async function checkChannelModel(
     personalUserId: scope.personalUserId,
     ...(keys ? { providerSecretPools: selectionPools(keys) } : options.sessionId ? { sessionId: options.sessionId } : {}),
   }).catch(() => false);
-  return servable ? { ok: true, model: toOpencodeModelRef(model), keys } : { ok: false, reason: 'not_servable' };
+  return servable ? { ok: true, model: toWireModel(model), keys } : { ok: false, reason: 'not_servable' };
 }
 
 /**

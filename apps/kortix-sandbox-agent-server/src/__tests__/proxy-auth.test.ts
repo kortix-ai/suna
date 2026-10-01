@@ -200,7 +200,7 @@ describe('daemon proxy auth gate', () => {
         baseConfig({ autoClone: false, projectTarget: target }),
         fakeOpencode('ok'),
         Date.now(),
-        { repoMaterializationError: null, timeline, initialOpenCodeSessionRequired: true, initialOpenCodeSessionId: null },
+        { repoMaterializationError: null, timeline, initialRuntimeSessionRequired: true, initialRuntimeSessionId: null },
       )
       const third = await answering.request('/session?directory=%2Fworkspace', {
         headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
@@ -221,8 +221,8 @@ describe('daemon proxy auth gate', () => {
       {
         repoMaterializationError: null,
         timeline: [],
-        initialOpenCodeSessionRequired: true,
-        initialOpenCodeSessionId: null,
+        initialRuntimeSessionRequired: true,
+        initialRuntimeSessionId: null,
       },
     )
 
@@ -273,9 +273,9 @@ describe('daemon proxy auth gate', () => {
     const bootState = {
       repoMaterializationError: null,
       timeline: [],
-      initialOpenCodeSessionRequired: true,
-      initialOpenCodeSessionId: null as string | null,
-      initialOpenCodeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
+      initialRuntimeSessionRequired: true,
+      initialRuntimeSessionId: null as string | null,
+      initialRuntimeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
     }
     const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
     const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)

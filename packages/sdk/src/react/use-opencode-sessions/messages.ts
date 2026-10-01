@@ -2,7 +2,7 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '../../core/runtime/runtime-types';
 import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
 import { isAbortError } from '../../core/http/abort-error';

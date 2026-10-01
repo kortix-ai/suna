@@ -5,7 +5,7 @@ import { bindPreviewOptions } from './facade-preview';
 import { session } from './session-handle';
 export { SessionNotReadyError } from './session-shared';
 export type { SessionModel } from './session-shared';
-import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import type { RuntimeClient } from '../runtime/client';
 import { bindProjectAccessResources } from './project-access-resources';
 import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
@@ -25,7 +25,8 @@ import { bindProjectPlatformSecurity } from './project-platform-security';
  *   await kortix.project(pid).secrets.upsert({ name, value });
  *   const s = kortix.session(pid, sid);
  *   await s.start();
- *   s.runtime.session.prompt({ sessionID: sid, parts });   // typed opencode, via the SDK
+ *   await s.send('what files are here?');                  // through the prompt inbox
+ *   const { messages } = await s.messages();               // { info, parts }, kortix.transcript.v1
  *
  * REST methods are direct references to the platform client, so they keep their
  * exact types with zero re-typing. The `project()`/`session()` handles bind ids
@@ -37,7 +38,7 @@ import { getClient } from '../runtime/client';
 import { type KortixPlatformConfig, configureKortix } from '../http/config';
 import * as P from '../rest/projects-client';
 
-function runtime(): OpencodeClient {
+function runtime(): RuntimeClient {
   return getClient();
 }
 export function createKortix(config: KortixPlatformConfig, opts?: { global?: boolean }) {

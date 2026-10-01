@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part, SessionStatus } from '../runtime/runtime-types';
 import { SandboxNotReadyError } from '../http/runtime-errors';
 import {
   SESSION_SYNC_PAGE_SIZE,

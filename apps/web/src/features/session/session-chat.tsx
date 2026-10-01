@@ -3634,11 +3634,12 @@ export function SessionChat({
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
-        {/* Opencode tool permissions (bash/edit/…) awaiting a decision —
+        {/* Runtime tool permissions (bash/edit/…) awaiting a decision —
             the turn is blocked inside the runtime and resumes the moment
             a reply lands. Self-hides when nothing's pending. */}
         <SessionPermissionPrompt
           sessionId={sessionId}
+          agentName={sessionScopeAgentName}
           permissions={pendingPermissions}
           onReply={handlePermissionReply}
         />

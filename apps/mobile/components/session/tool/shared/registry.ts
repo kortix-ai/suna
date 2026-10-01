@@ -1,3 +1,4 @@
+import { toolKind } from '@kortix/sdk';
 import { resolveRegisteredKey, toolRegistryCandidates } from '@kortix/shared/tools';
 import type { ToolComponent } from './types';
 
@@ -15,8 +16,9 @@ export const ToolRegistry = {
   keys(): string[] {
     return Array.from(registry.keys());
   },
+  /** The renderer registered for a tool name, else the one registered for its kind (`toolKind`). */
   get(name: string): ToolComponent | undefined {
     const key = resolveRegisteredKey(toolRegistryCandidates(name), registry.keys());
-    return key === undefined ? undefined : registry.get(key);
+    return key === undefined ? registry.get(toolKind(name)) : registry.get(key);
   },
 };

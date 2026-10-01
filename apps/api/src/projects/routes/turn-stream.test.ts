@@ -542,6 +542,14 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     ]);
   });
 
+  test('end forwards a valid error_code as the error code and drops an unknown one (W5 E11)', async () => {
+    await post({ session_id: SESSION_ID, kind: 'end', status: 'error', error_name: 'UnknownError', error_message: '402: pay', error_status: 402, error_code: 'credits' });
+    expect((relayEndArgs[2] as { code?: string }).code).toBe('credits');
+    relayEndArgs = [];
+    await post({ session_id: SESSION_ID, kind: 'end', status: 'error', error_name: 'UnknownError', error_message: 'x', error_code: 'bogus' });
+    expect((relayEndArgs[2] as { code?: string }).code).toBeUndefined();
+  });
+
   // A trigger session's creator is a service account, so the turn-end push
   // reaches nobody; the end is recorded on the trigger instead.
   test('a turn end hands the run outcome to the trigger that created the session', async () => {

@@ -2,7 +2,8 @@
 
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Command } from '@opencode-ai/sdk/v2/client';
+import type { Command } from '../../core/runtime/runtime-types';
+import { useRuntimeSupports } from '../use-runtime-supports';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } from './shared';
 
@@ -21,9 +22,13 @@ import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } fro
  * treats a corrupt localStorage placeholder as a miss, so every consumer
  * (`detectCommandFromText`, the slash menu, command attachments) can iterate
  * the result unconditionally.
+ *
+ * Slash commands are a runtime capability (`session.commands`): a runtime
+ * without them (pi) is never asked, and the list stays empty.
  */
 export function useRuntimeCommands() {
   const runtimeReady = useRuntimeReady();
+  const supported = useRuntimeSupports('session.commands');
   return useQuery<Command[]>({
     queryKey: runtimeKeys.commands(),
     queryFn: async () => {
@@ -34,7 +39,7 @@ export function useRuntimeCommands() {
       return commands;
     },
     placeholderData: () => cachedRuntimeList<Command>(LS_COMMANDS),
-    enabled: runtimeReady,
+    enabled: runtimeReady && supported,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });

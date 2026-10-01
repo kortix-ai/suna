@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/llm-catalog/lite';
-import type { ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type { ProjectLlmCatalogResponse, ProjectLlmCatalogProvidersResponse } from '../rest/projects-client';
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
