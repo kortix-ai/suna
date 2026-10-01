@@ -61,4 +61,8 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   'Self-host Kortix': 'textdc99025834c1',
   'We build self-driving companies. Humans verify, steer, and govern while agent teams do work across engineering, product, operations, finance, support, and growth.':
     'textd7f179da0e70',
+  'Our mission: take a company from human to AGI, and let it keep every byte of itself on the way there.':
+    'textad70f35eaccc',
+  'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix.':
+    'text66b6392a2418',
 };
