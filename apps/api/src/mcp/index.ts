@@ -25,7 +25,7 @@ import { dispatchProjects } from './projects';
 import { dispatchSessions } from './sessions';
 import { dispatchSandbox } from './sandbox';
 import { dispatchPlatform } from './platform';
-export { callSandbox, page, listSessionsQuery, startSessionBody, listSessionRow, type Sandbox, type ToolResult } from './common';
+export { callSandbox, page, listSessionsQuery, startSessionBody, listSessionRow, type Sandbox, type ToolResult, type ApiReply } from './common';
 const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 const SESSION_ID = { type: 'string', description: 'The session_id (UUID).' } as const;
 const PROJECT_ID = { type: 'string', description: 'The project_id (UUID), from list_projects.' } as const;
