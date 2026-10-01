@@ -1289,7 +1289,11 @@ harnessFlow(
       });
       await ctx.step('no file tool ran; on pi the write was attempted and refused', async () => {
         const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
-        const fileTools = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'write' || t.tool === 'edit');
+        // `bash: deny` and `edit: deny` also cover the shell and file-writing
+        // tools that do the same job: pty_* and memory.
+        const fileTools = messages
+          .flatMap((m) => m.tools ?? [])
+          .filter((t) => t.tool === 'write' || t.tool === 'edit' || t.tool === 'memory' || t.tool.startsWith('pty_'));
         const ran = fileTools.filter((t) => t.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
         // OpenCode never offers a tool its policy denies, so its model has no
