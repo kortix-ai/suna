@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
-const page = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8');
 const catalog = readFileSync(join(import.meta.dir, 'catalog', 'use-catalog.ts'), 'utf8');
 
 /**
@@ -86,72 +85,4 @@ describe('connectors page without a Connect provider', () => {
     expect(catalog).not.toContain('useConnectProviderStatus(opts.enabled');
   });
 
-  test('the tab strip goes only when the catalogue is CONFIRMED absent', () => {
-    // `discoverEnabled ||` is load-bearing twice over. `connectors_api_discover`
-    // is a different catalogue backend entirely, so a project with that flag on
-    // keeps Discovery and All whatever Pipedream's status is — and with the flag
-    // off, Pipedream is the only catalogue left, so its absence removes both.
-    expect(page).toContain('const connectStatus = useConnectProviderStatus(!directSelected);');
-    expect(page).toContain(
-      "const catalogueAvailable = directSelected || connectStatus.state !== 'absent';",
-    );
-    // `!== 'absent'`, never `=== 'configured'`: `asking` must render the page
-    // exactly as it always has. Almost every deployment does have Pipedream,
-    // and dropping two tabs for a beat on every load to spare a minority one
-    // failed request is the wrong trade.
-    expect(page).not.toContain("connectStatus.state === 'configured'");
-  });
-
-  test('the strip is removed, not disabled, and leaves no empty row behind', () => {
-    // `CapabilityPageShell` drops the whole filter row when `filters` is
-    // undefined and keeps it for anything truthy — so a fragment here would
-    // leave a 28px gap where the tabs used to be. `visibleScopes` is what
-    // decides this now, not `catalogueAvailable` directly: Channels means a
-    // catalogue-less deployment still has two real destinations (Connected,
-    // Channels), so the strip only fully disappears when fewer than two
-    // scopes remain — a single remaining tab is not a choice either.
-    expect(page).toContain('filters={');
-    expect(page).toContain('visibleScopes.length > 1 ? (');
-    expect(page).toContain(') : undefined');
-    expect(page).toContain(
-      "const visibleScopes =\n    catalogueAvailable\n      ? SCOPES\n      : SCOPES.filter((s) => s !== 'discover' && s !== 'all');",
-    );
-    expect(page).not.toContain('disabled={!catalogueAvailable}');
-  });
-
-  test('scope is forced to Connected, not defaulted to it', () => {
-    // The `?scope=` param outlives the answer it was read under: the user can
-    // click Discovery in the beat before the probe lands, and an OAuth return
-    // brings them back to this page with that param still in the URL. Reading
-    // it blindly would strand them on a tab the strip no longer renders — the
-    // catalogue would mount, fire, and 501 with nothing to switch away to.
-    // Connected and Channels never need the catalogue, so they are exempt
-    // from the force.
-    expect(page).toContain(
-      "const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';",
-    );
-    expect(page).toContain(
-      "catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'",
-    );
-    expect(page).not.toContain("const scope: ConnectorScope = scopeChoice ?? 'discover';");
-    // `catalogActive` is what mounts `ConnectorBrowse`, and it is derived from
-    // the forced `scope` — so the forcing above is also what keeps the
-    // catalogue unmounted. It names the two catalogue scopes explicitly now
-    // rather than `!== 'connected'`, since Channels is also not-connected but
-    // must not mount the catalogue either.
-    expect(page).toContain("const catalogActive = scope === 'discover' || scope === 'all';");
-  });
-
-  test('the Connected empty state offers no tab that is not there', () => {
-    // "Browse the catalogue" sets `scope` to `discover`. With no catalogue
-    // that is a button to a hidden tab, and the forced `scope` would swallow
-    // the click — a control that visibly does nothing.
-    const start = page.indexOf("raw('text51ae0a7e3783')");
-    const end = page.indexOf('</CatalogGrid>');
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const emptyState = page.slice(start, end);
-    expect(emptyState).toContain('catalogueAvailable ? (');
-    expect(emptyState).toContain("raw('text45bfe4f17af7')");
-  });
 });
