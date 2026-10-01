@@ -35,7 +35,7 @@ export const CAPABILITY_REGISTRY: CapabilityInfo[] = [
   {
     key: 'desktop',
     label: 'Computer Use',
-    description: 'Inspect and control local desktop apps through CUA Driver',
+    description: 'See the screen and use the apps on this computer',
     icon: Monitor,
   },
 ];

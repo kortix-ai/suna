@@ -56,6 +56,7 @@ mock.module('@kortix/sdk/react', () => ({
   useProjectConfig: () => ({}),
   useSessionPrompts: () => ({ prompts: inboxPrompts }),
   useSessionMessageAuthors: () => ({ data: undefined }),
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionWorking: () => ({
     state: busy ? 'working' : 'idle',
     turnId: busy ? 'user-fixture' : null,

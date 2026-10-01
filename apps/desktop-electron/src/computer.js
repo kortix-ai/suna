@@ -73,6 +73,28 @@ function effectiveHome(home) {
   return home || path.join(os.homedir(), '.agent-tunnel');
 }
 
+/**
+ * The macOS grants Computer Use still needs, when this machine's pairing
+ * approved it (`desktop` in config.json). `grants` is null off macOS. The
+ * agent runs as this app's binary and the bundled driver runs embedded under
+ * it, so both grants belong to Kortix.
+ *
+ * @param {string | null} home
+ * @param {{ accessibility: boolean, screenRecording: boolean } | null} grants
+ * @returns {('accessibility' | 'screenRecording')[]}
+ */
+function missingComputerUseGrants(home, grants) {
+  if (!grants) return [];
+  let capabilities = [];
+  try {
+    capabilities = JSON.parse(fs.readFileSync(path.join(effectiveHome(home), 'config.json'), 'utf8')).enabledCapabilities ?? [];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(capabilities) || !capabilities.includes('desktop')) return [];
+  return /** @type {const} */ (['accessibility', 'screenRecording']).filter((grant) => !grants[grant]);
+}
+
 function agentEnv(home, base = process.env) {
   const env = { ...base, ELECTRON_RUN_AS_NODE: '1', KORTIX_AGENT_TUNNEL_NO_BROWSER: '1' };
   if (home) env.AGENT_TUNNEL_HOME = home;
@@ -550,6 +572,7 @@ function keepRunningInTray(status) {
 }
 
 module.exports = {
+  missingComputerUseGrants,
   accessPrompt,
   accessView,
   agentCliPath,

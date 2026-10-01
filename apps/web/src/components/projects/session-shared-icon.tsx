@@ -22,7 +22,7 @@ export function SessionSharedIcon({
   return (
     <span
       className={cn(
-        'text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center',
+        'text-muted-foreground flex size-5 shrink-0 items-center justify-center',
         className,
       )}
       role="img"
@@ -30,7 +30,7 @@ export function SessionSharedIcon({
       title={label}
       data-session-shared="true"
     >
-      <ShareNetworkIcon className="size-3" />
+      <ShareNetworkIcon className="size-3.5" />
     </span>
   );
 }

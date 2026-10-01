@@ -8894,7 +8894,6 @@
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleFailed959d47d5": "Failed to load connectors",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2": "Pick a connector",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e": "Choose one on the left, or add an app.",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558": "No auth needed",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49": "Needs setup",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextUnsavedChanges4682b870": "Unsaved changes",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa": "Add app",
@@ -11995,7 +11994,7 @@
       "text4b3bf58beb3e": "The Postgres database, as a directory you can back up",
       "text4b4c31294fb5": "Run at",
       "text4b51686b2606": "Nothing waiting for review",
-      "text4b5274edd83f": "Inspect and control local desktop apps through CUA Driver",
+      "text72cfe7efa2b5": "See the screen and use the apps on this computer",
       "text4b5bf8bae40d": "Outside services this agent can call.",
       "text4b6617d27a7f": "Service provider details",
       "text4b68ab3847fe": "X",
@@ -13733,7 +13732,6 @@
       "text7d68a1835cee": "Voice lives in",
       "text7d7a2199230e": "- Pull the ticket + customer history",
       "text7d870610b59d": "Added the connector, but authorization failed: {value0}",
-      "text7d899c8ca569": "Nothing is selected by default. Selected access remains active until you revoke it.",
       "text7d92aa0e75c4": "Operator switch",
       "text7d9eb7acb13e": "Close",
       "text7da07ad47ba0": "Connect your tools and hand a Kortix agent a real task. Free to start, free to self-host.",
@@ -19104,7 +19102,8 @@
       "text80043b03898d": "Update the Kortix app in Teams",
       "textdf757dbe33eb": "Your Teams catalog has version {value0} of the Kortix app. Version {value1} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
-      "texte15f213fa506": "Publish app update"
+      "texte15f213fa506": "Publish app update",
+      "textcafd830fcf85": "Listed project agent identities"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20329,10 +20328,35 @@
     "runInBackground": "Run in the background",
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
     "manageInProject": "Manage in project",
-    "disconnectEllipsis": "Disconnect…"
+    "disconnectEllipsis": "Disconnect…",
+    "yourComputersTitle": "Your computers",
+    "pairedWith": "Connected to your account, {email}.",
+    "connectAnother": "Connect another computer",
+    "approvingAs": "You approve as {email}. The computer joins this account.",
+    "alreadyConnected": "{name} is already connected to your account",
+    "alreadyConnectedHint": "Approve to reconnect it with a new key and the access you select. Its projects and shares stay.",
+    "alreadyConnectedLive": "It is online now. Approve to move it to this request: the current connection stops. Its projects and shares stay.",
+    "reconnect": "Reconnect",
+    "accessHint": "Selected access stays active until you revoke it.",
+    "grants": {
+      "title": "Allow Kortix to see your screen and use your apps",
+      "hint": "macOS asks for two permissions, both for Kortix. Computer Use works once you allow them.",
+      "accessibility": "Accessibility",
+      "screenRecording": "Screen Recording",
+      "allowed": "allowed",
+      "missing": "not allowed",
+      "allow": "Allow access"
+    }
   },
   "messageFrom": {
     "from": "From",
     "untitledSession": "Untitled session"
+  },
+  "sessionParticipants": {
+    "title": "People",
+    "sentBy": "Sent by {name}",
+    "people": "People in this session: {names}",
+    "peopleMore": "People in this session: {names} and {count} more",
+    "more": "{count} more can open this session"
   }
 }

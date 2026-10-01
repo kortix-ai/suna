@@ -31,12 +31,13 @@ const render = (props: Record<string, unknown> = {}) =>
   );
 
 describe('message author label', () => {
-  test('a bubble names its author only when asked to', () => {
-    expect(render({ author: blair })).not.toContain('data-testid="message-author"');
-    const named = render({ author: blair, showAuthor: true });
-    expect(named).toContain('data-testid="message-author"');
-    expect(named).toContain('Blair');
-    expect(named).toContain('Looks good to me.');
+  test('a member author is drawn as an avatar, only when asked to', () => {
+    expect(render({ author: blair })).not.toContain('Sent by');
+    const shown = render({ author: blair, showAuthor: true });
+    expect(shown).toContain('data-slot="avatar"');
+    expect(shown).toContain('Sent by Blair');
+    expect(shown).not.toContain('data-testid="message-author"');
+    expect(shown).toContain('Looks good to me.');
   });
 
   test('a message from another session names its agent, not the session title', () => {

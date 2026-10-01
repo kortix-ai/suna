@@ -20,7 +20,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { Download } from '@/features/icon/icons/download';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
-import { tunnelKeys, useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { tunnelKeys, useTunnelConnections, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import {
@@ -127,14 +127,21 @@ export function useProjectComputerAccounts(
  *  minute until they do: the sidebar promo mounts it for every signed-in user
  *  and hides for good once they own one, so polling then would be waste. The
  *  connect dialog's own 5 s observer takes over while it is open. */
-export function useOwnsPairedComputer(): { isSuccess: boolean; owns: boolean } {
+export function useOwnsPairedComputer(): {
+  isSuccess: boolean;
+  owns: boolean;
+  /** The machines the caller paired, the live ones first. */
+  owned: TunnelConnection[];
+} {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const ownsAny = (machines: readonly { ownerUserId?: string | null }[] | undefined) =>
-    Boolean(user && machines?.some((machine) => machine.ownerUserId === user.id));
-  const known = ownsAny(queryClient.getQueryData(tunnelKeys.connections()));
+  const ownedBy = (machines: readonly TunnelConnection[] | undefined) =>
+    user ? (machines ?? []).filter((machine) => machine.ownerUserId === user.id) : [];
+  const known =
+    ownedBy(queryClient.getQueryData<TunnelConnection[]>(tunnelKeys.connections())).length > 0;
   const machines = useTunnelConnections({ refetchInterval: known ? false : 60_000 });
-  return { isSuccess: machines.isSuccess, owns: ownsAny(machines.data) };
+  const owned = ownedBy(machines.data).sort((a, b) => Number(b.isLive) - Number(a.isLive));
+  return { isSuccess: machines.isSuccess, owns: owned.length > 0, owned };
 }
 
 /**
@@ -244,6 +251,32 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
     oneClick: Boolean(status?.available && !tunnelId),
     state: tunnelId ? computerState(status, machine?.isLive) : null,
   };
+}
+
+/**
+ * What the workspace menu's "Your computer" row opens, and its dot:
+ * - `this`: this desktop's own paired machine, with its own state.
+ * - `mine`: the machines the caller paired, where this machine cannot pair in
+ *   one click (a browser, or a desktop build without the agent). The dot is
+ *   online when any of them is.
+ * - `connect`: the connect dialog, when there is nothing to show yet.
+ */
+export function yourComputerMenu({
+  tunnelId,
+  state,
+  oneClickHere,
+  owned,
+}: {
+  tunnelId?: string;
+  state?: ComputerState | null;
+  oneClickHere: boolean;
+  owned: readonly { isLive: boolean }[];
+}): { dialog: 'this' | 'mine' | 'connect'; dot: ComputerState | null } {
+  if (tunnelId) return { dialog: 'this', dot: state ?? null };
+  if (!oneClickHere && owned.length > 0) {
+    return { dialog: 'mine', dot: owned.some((machine) => machine.isLive) ? 'online' : 'offline' };
+  }
+  return { dialog: 'connect', dot: null };
 }
 
 /** Status dot, e.g. in the workspace menu, the "Your computer" dialog, account rows. */
@@ -468,10 +501,26 @@ function ComputerConnectOptions({
             {t('downloadDesktop')}
           </Button>
         ) : null}
-        <Button variant="secondary" size="lg" className="w-full" onClick={copyCliCommand}>
-          {copied ? <SolidCheckIcon /> : null}
-          {copied ? t('commandCopied') : t('copyCliCommand')}
-        </Button>
+        {/* The CLI is the alternative: a quiet text action under the primary
+            one. It is the only action where the desktop app cannot pair. */}
+        {oneClick || inBrowser ? (
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground gap-1.5"
+              onClick={copyCliCommand}
+            >
+              {copied ? <SolidCheckIcon /> : <TerminalWindowIcon className="size-3.5 shrink-0" />}
+              {copied ? t('commandCopied') : t('copyCliCommand')}
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" size="lg" className="w-full" onClick={copyCliCommand}>
+            {copied ? <SolidCheckIcon /> : null}
+            {copied ? t('commandCopied') : t('copyCliCommand')}
+          </Button>
+        )}
       </div>
     </>
   );

@@ -8881,7 +8881,6 @@
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitleFailed959d47d5": "Учитавање конектора није успело",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrTitlePickd2faa3e2": "Изаберите конектор",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxAttrDescriptionChoose1df54e4e": "Изаберите једну са леве стране или додајте апликацију.",
-    "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNoAuth45c43558": "Аутификација није потребна",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextNeedsSetupbefdbc49": "Потребно је подешавање",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextUnsavedChanges4682b870": "Несачуване промене",
     "autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextAddAppb53818fa": "Додај апликацију",
@@ -11982,7 +11981,7 @@
       "text4b3bf58beb3e": "Postgres база, као директоријум који можете да копирате",
       "text4b4c31294fb5": "Покрени у",
       "text4b51686b2606": "Ништа не чека на преглед",
-      "text4b5274edd83f": "Преглед и управљање локалним десктоп апликацијама преко CUA Driver-а",
+      "text72cfe7efa2b5": "Гледање екрана и коришћење апликација на овом рачунару",
       "text4b5bf8bae40d": "Спољне услуге које овај агент може да позове.",
       "text4b6617d27a7f": "Детаљи провајдера услуге",
       "text4b68ab3847fe": "X",
@@ -13720,7 +13719,6 @@
       "text7d68a1835cee": "Глас се налази у",
       "text7d7a2199230e": "- Преузми тикет + историју клијента",
       "text7d870610b59d": "Конектор је додат, али ауторизација није успела: {value0}",
-      "text7d899c8ca569": "Подразумевано ништа није изабрано. Изабрани приступ остаје активан док га не опозовете.",
       "text7d92aa0e75c4": "Прекидач оператера",
       "text7d9eb7acb13e": "Затвори",
       "text7da07ad47ba0": "Повежите алате и поверите Kortix агенту стварни задатак. Бесплатан почетак, бесплатно самостално хостовање.",
@@ -19091,7 +19089,8 @@
       "text80043b03898d": "Ажурирајте Kortix апликацију у Teams-у",
       "textdf757dbe33eb": "Ваш Teams каталог има верзију {value0} Kortix апликације. Верзија {value1} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
       "textcd2c4b26eedd": "Kortix нема запис о верзији апликације у вашем Teams каталогу. Верзија {value0} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
-      "texte15f213fa506": "Објави ажурирање апликације"
+      "texte15f213fa506": "Објави ажурирање апликације",
+      "textcafd830fcf85": "Идентитети агената пројекта излистани"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20329,10 +20328,35 @@
     "runInBackground": "Ради у позадини",
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
     "manageInProject": "Управљај у пројекту",
-    "disconnectEllipsis": "Прекини везу…"
+    "disconnectEllipsis": "Прекини везу…",
+    "yourComputersTitle": "Твоји рачунари",
+    "pairedWith": "Повезано са твојим налогом, {email}.",
+    "connectAnother": "Повежи други рачунар",
+    "approvingAs": "Одобраваш као {email}. Рачунар се везује за овај налог.",
+    "alreadyConnected": "{name} је већ повезан са твојим налогом",
+    "alreadyConnectedHint": "Одобри да га поново повежеш са новим кључем и приступом који изабереш. Пројекти и дељења остају.",
+    "alreadyConnectedLive": "Тренутно је на мрежи. Одобри да га пребациш на овај захтев: тренутна веза се прекида. Пројекти и дељења остају.",
+    "reconnect": "Повежи поново",
+    "accessHint": "Изабрани приступ остаје активан док га не опозовете.",
+    "grants": {
+      "title": "Дозволи Kortix-у да види екран и користи твоје апликације",
+      "hint": "macOS тражи две дозволе, обе за Kortix. Computer Use ради чим их дозволиш.",
+      "accessibility": "Приступачност",
+      "screenRecording": "Снимање екрана",
+      "allowed": "дозвољено",
+      "missing": "није дозвољено",
+      "allow": "Дозволи приступ"
+    }
   },
   "messageFrom": {
     "from": "Od",
     "untitledSession": "Sesija bez naslova"
+  },
+  "sessionParticipants": {
+    "title": "Особе",
+    "sentBy": "Послао: {name}",
+    "people": "Особе у овој сесији: {names}",
+    "peopleMore": "Особе у овој сесији: {names} и још {count}",
+    "more": "Još {count} može da otvori ovu sesiju"
   }
 }

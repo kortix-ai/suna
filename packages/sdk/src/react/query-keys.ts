@@ -326,6 +326,9 @@ export const qk = {
      */
     sessionSandbox: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'sandbox'] as const,
+    /** `getSessionParticipants` — who can open the session and who sent each prompt. */
+    sessionParticipants: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'participants'] as const,
     /** `listSessionPrompts` — the session's server-side prompt inbox. */
     sessionPrompts: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'prompts'] as const,

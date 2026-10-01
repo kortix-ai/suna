@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import {
   CaretDownIcon,
@@ -40,6 +41,7 @@ import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@/lib/session/image-load';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
+import { participantName, type AvatarPerson } from '@/lib/session/participants';
 import {
   isPreviewableImage,
   localOrResolvedSource,
@@ -80,6 +82,8 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHe
 const BUBBLE_PADDING_X = webSpace(3.5);
 const BUBBLE_PADDING_Y = webSpace(2.5);
 const BUBBLE_RADIUS = 10;
+/** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
+const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
 /** `h-10` fade. */
@@ -96,6 +100,29 @@ const CHANNEL_BRAND_COLOR = {
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
   return THEME[isDark ? 'dark' : 'light'];
+}
+
+/**
+ * A message in a shared session: its sender's avatar above the bubble, on
+ * the right edge, your own included (web `MessageSenderAbove`).
+ */
+function MessageSenderAbove({
+  sender,
+  children,
+}: {
+  sender: AvatarPerson | null | undefined;
+  children: React.ReactNode;
+}) {
+  if (!sender) return <>{children}</>;
+  return (
+    <View
+      className="items-end"
+      style={{ gap: webSpace(1.5) }}
+      accessibilityLabel={`Sent by ${participantName(sender)}`}>
+      <ParticipantAvatar person={sender} />
+      <View className="max-w-full">{children}</View>
+    </View>
+  );
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -154,6 +181,7 @@ export function UserMessage({
   rewindDisabled,
   queueState,
   uploadStatus,
+  sender,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -175,6 +203,11 @@ export function UserMessage({
   /** Dims the column; `interrupted` also shows a status line. */
   queueState?: QueuedPromptState | null;
   uploadStatus?: UserMessageUploadStatus;
+  /**
+   * Who sent this message, in a shared session, the viewer included. Drawn
+   * as their avatar above the bubble. Null when no sender is recorded.
+   */
+  sender?: AvatarPerson | null;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -235,11 +268,7 @@ export function UserMessage({
     onEdit: canEdit ? () => onEditStart?.(messageId, promptText) : undefined,
   };
 
-  const actions = selecting ? (
-    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
-      <Text>Done</Text>
-    </Button>
-  ) : statusLabel ? (
+  const status = statusLabel ? (
     <Text
       variant="muted"
       numberOfLines={1}
@@ -247,6 +276,13 @@ export function UserMessage({
       {statusLabel}
     </Text>
   ) : null;
+  const actions = selecting ? (
+    <Button variant="ghost" size="sm" className="rounded-full" onPress={() => setSelecting(false)}>
+      <Text>Done</Text>
+    </Button>
+  ) : (
+    status
+  );
 
   // Editing replaces the whole column with the full-width editor.
   if (editingText != null && onEditSend && onEditCancel) {
@@ -326,29 +362,32 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          // A failed send greys its bubble; "Try again" above stays full strength.
-          <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
-            <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
-              <UserMessageBubble
-                isDark={isDark}
-                quotes={content.quotes}
-                // While selecting, a long press belongs to the text selection.
-                onLongPress={selecting ? undefined : openMenu}>
-                {selecting ? (
-                  <SelectableMessageText text={promptText} isDark={isDark} />
-                ) : bodyText || commandInfo ? (
-                  <MessageBody
-                    text={bodyText}
-                    command={commandInfo?.name}
-                    sessions={content.sessions}
-                    agentNames={agentNames}
-                    onFileMention={onFileMention}
-                    onSessionMention={onSessionMention}
-                  />
-                ) : null}
-              </UserMessageBubble>
-            </View>
-          </MessageMenu>
+          <MessageSenderAbove sender={sender}>
+            {/* A failed send greys its bubble; "Try again" above stays full strength. */}
+            <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
+              <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
+                <UserMessageBubble
+                  isDark={isDark}
+                  tail={!!sender}
+                  quotes={content.quotes}
+                  // While selecting, a long press belongs to the text selection.
+                  onLongPress={selecting ? undefined : openMenu}>
+                  {selecting ? (
+                    <SelectableMessageText text={promptText} isDark={isDark} />
+                  ) : bodyText || commandInfo ? (
+                    <MessageBody
+                      text={bodyText}
+                      command={commandInfo?.name}
+                      sessions={content.sessions}
+                      agentNames={agentNames}
+                      onFileMention={onFileMention}
+                      onSessionMention={onSessionMention}
+                    />
+                  ) : null}
+                </UserMessageBubble>
+              </View>
+            </MessageMenu>
+          </MessageSenderAbove>
         ) : null}
 
         {actions}
@@ -534,8 +573,11 @@ export function UserMessageBubble({
   quotes = [],
   children,
   onLongPress,
+  tail = false,
 }: {
   isDark: boolean;
+  /** The sender's avatar sits above: the top-right corner, under it, is 4pt, as web. */
+  tail?: boolean;
   /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
   quotes?: string[];
   children?: React.ReactNode;
@@ -573,6 +615,7 @@ export function UserMessageBubble({
         maxWidth: '100%',
         backgroundColor: surface,
         borderRadius: BUBBLE_RADIUS,
+        ...(tail ? { borderTopRightRadius: BUBBLE_TAIL_RADIUS } : null),
         paddingHorizontal: BUBBLE_PADDING_X,
         paddingVertical: BUBBLE_PADDING_Y,
         overflow: 'hidden',
