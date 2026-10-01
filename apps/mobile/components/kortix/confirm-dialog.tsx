@@ -25,6 +25,7 @@
  */
 
 import * as React from 'react';
+import { Keyboard } from 'react-native';
 
 import {
   AlertDialog,
@@ -59,6 +60,8 @@ export function useConfirmDialog(options?: { portalHost?: string }): {
   const [request, setRequest] = React.useState<ConfirmRequest | null>(null);
 
   const confirm = React.useCallback((next: ConfirmRequest) => {
+    // A confirm has no text field, and the keyboard would cover it.
+    Keyboard.dismiss();
     setRequest(next);
     setOpen(true);
   }, []);
