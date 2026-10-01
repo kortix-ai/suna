@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Poruke ljudima",
-          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet."
+          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet. Poruke između sesija navode sesiju koja ih šalje, da bi njen agent mogao da odgovori."
         },
         "reminders": {
           "name": "Подсетници",

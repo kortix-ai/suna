@@ -120,6 +120,10 @@ An agent deploys a service and needs a region.
 3. The conversation's agent runs, reads the reply, and runs `kortix send <asking-session-id> "Avery chose eu-west."`.
 4. The asking session receives `[MESSAGE from session <conversation-id> "…" — sent by another agent, not by a person. …]` followed by `Avery chose eu-west.` It continues with the deploy.
 
+## From Slack and Teams
+
+An agent working in a Slack thread or a Teams conversation can ask someone who is not in it. The answer arrives later as a new prompt, not as a Slack or Teams turn, so the agent posts it back explicitly: `slack send --channel <id> --thread <ts>` in Slack, `teams post --conversation <id>` in Teams. When the person is already in the thread, the agent asks there instead.
+
 ## Privacy
 
 A conversation with people is shared with the named people and with the owner of the session that asked. Other project members cannot open it. Its session is `restricted`, with a member grant for each person named.
