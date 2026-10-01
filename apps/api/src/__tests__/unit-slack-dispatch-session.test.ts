@@ -62,7 +62,7 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
-  filterAccessibleObjects: async (_actor: unknown, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  filterAccessibleObjects: async (_actor: unknown, _p: string, _t: string, ids: readonly string[]) => accessibleAgents ? [...ids] : [],
   unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
   hasAnyResourceGrants: async () => false,
 }));
@@ -77,6 +77,8 @@ mock.module('../projects/git', () => ({
 // must not touch the FIFO of query results the thread routing is tested with.
 const followUpPlans: Array<Record<string, unknown>> = [];
 let unavailableModel: string | undefined;
+let accessibleAgents = true;
+let startResult: { status: 'created' | 'queued'; sessionId?: string; reason?: string; error?: { status: number; body: { code: string } } } | null = null;
 mock.module('../channels/model-access', () => ({
   agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
@@ -212,6 +214,8 @@ beforeEach(() => {
   messages = [];
   createSessionCalls = 0;
   unavailableModel = undefined;
+  accessibleAgents = true;
+  startResult = null;
   createSessionInputs = [];
   deliverCalls = 0;
   setSlackSessionLifecycleForTest({
@@ -222,7 +226,7 @@ beforeEach(() => {
     createSession: async (input: any) => {
       createSessionInputs.push(input);
       createSessionCalls++;
-      return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
+      return startResult ?? { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
     },
     resolveProjectAutomationActor: async () => 'user-1',
   });
@@ -556,6 +560,37 @@ describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thre
     expect(finalizeCalls[0]?.error).toContain('/kortix models');
   });
 
+  test('unavailable agent refuses before lifecycle creation', async () => {
+    accessibleAgents = false;
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0);
+    expect(finalizeCalls[0]?.error).toContain('access');
+  });
+
+  test('queued launch reports the queue without creating another session', async () => {
+    startResult = { status: 'queued', reason: 'concurrent_limit' };
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(1);
+    expect(finalizeCalls[0]?.answer).toContain('queued');
+  });
+
+  test('failed launch surfaces the lifecycle error without retrying', async () => {
+    startResult = { status: 'created', error: { status: 503, body: { code: 'UNAVAILABLE' } } };
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(1);
+    expect(finalizeCalls[0]?.error).toBeTruthy();
+  });
+
+  test('winner with an already published mapping follows up instead of creating', async () => {
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [{ sessionId: 'prior-sess' }]];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0);
+    expect(deliverCalls).toBe(1);
+  });
+
   test('claim WON, no existing mapping → creates EXACTLY one session, no follow-up', async () => {
     dbResults = [
       [project], // spawnAgentTurn project lookup
@@ -765,4 +800,46 @@ describe('spawnAgentTurn — a thread owned by another project', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].text).toContain('belongs to a different Kortix project');
   });
+});
+
+
+describe('dispatchSlackEvent — bot sender boundary', () => {
+  test('own bot is refused before claiming or delivering its message', async () => {
+    dbResults = [[], [{ eventId: 'claim' }], [project], [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], []];
+    await dispatchSlackEvent('proj-1', {
+      type: 'event_callback', team_id: 'T1',
+      event: { type: 'message', subtype: 'bot_message', channel_type: 'channel', channel: 'C1', ts: '400.1', user: 'B1', bot_id: 'BSELF', text: '<@B1> hello' },
+    });
+    expect(deliverCalls).toBe(0);
+    expect(createSessionCalls).toBe(0);
+    expect(finalizeCalls).toHaveLength(0);
+    expect(messages).toHaveLength(0);
+    expect(ephemerals).toHaveLength(0);
+  });
+
+  test('another bot mentioning us reaches the existing session', async () => {
+    dbResults = [[], [{ eventId: 'claim' }], [project], [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: {} }], []];
+    await dispatchSlackEvent('proj-1', {
+      type: 'event_callback', team_id: 'T1',
+      event: { type: 'message', subtype: 'bot_message', channel_type: 'channel', channel: 'C1', ts: '400.2', user: 'U_OTHERBOT', bot_id: 'BOTHER', text: '<@B1> hello' },
+    });
+    expect(deliverCalls).toBe(1);
+    expect(createSessionCalls).toBe(0);
+  });
+
+  for (const text of ['<@B1>', '<@B1> hello']) {
+    test(`unlinked bot receives no identity prompt for ${text}`, async () => {
+      config.SLACK_REQUIRE_USER_IDENTITY = true;
+      dbResults = [[], [{ eventId: 'claim' }], [project], []];
+      await dispatchSlackEvent('proj-1', {
+        type: 'event_callback', team_id: 'T1',
+        event: { type: 'app_mention', channel: 'C1', ts: '400.3', user: 'U_OTHERBOT', bot_id: 'BOTHER', text },
+      });
+      expect(deliverCalls).toBe(0);
+      expect(createSessionCalls).toBe(0);
+      expect(messages).toHaveLength(0);
+      expect(ephemerals).toHaveLength(0);
+      expect(finalizeCalls).toHaveLength(0);
+    });
+  }
 });

@@ -20359,5 +20359,12 @@
     "asked": "が質問:",
     "replyHint": "下で返信してください。エージェントが引き継ぎます。",
     "untitledSession": "無題のセッション"
+  },
+  "sessionParticipants": {
+    "title": "参加者",
+    "sentBy": "送信者: {name}",
+    "people": "このセッションの参加者: {names}",
+    "peopleMore": "このセッションの参加者: {names} ほか{count}人",
+    "more": "ほか{count}人がこのセッションを開けます"
   }
 }

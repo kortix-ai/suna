@@ -20359,5 +20359,12 @@
     "asked": "je pitao",
     "replyHint": "Odgovorite ispod. Agent će preuzeti odgovor.",
     "untitledSession": "Sesija bez naslova"
+  },
+  "sessionParticipants": {
+    "title": "Особе",
+    "sentBy": "Послао: {name}",
+    "people": "Особе у овој сесији: {names}",
+    "peopleMore": "Особе у овој сесији: {names} и још {count}",
+    "more": "Još {count} može da otvori ovu sesiju"
   }
 }

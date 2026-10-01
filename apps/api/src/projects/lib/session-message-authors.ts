@@ -11,7 +11,7 @@ import { namedAgent } from './session-participants';
 import { resolveUserIdentities } from './user-identity';
 
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null }
+  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url: string | null }
   | { kind: 'session'; session_id: string; name: string; agent?: string };
 
 export interface SessionMessageAuthors {
@@ -86,6 +86,7 @@ export async function sessionMessageAuthors(session: {
           user_id: row.userId,
           name: identity.displayName?.trim() || identity.email || 'Member',
           email: identity.email,
+          avatar_url: identity.avatarUrl ?? null,
         };
       }
     }

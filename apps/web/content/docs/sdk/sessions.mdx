@@ -31,6 +31,7 @@ ID, and the branch name are the same value. See
 | `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
+| `s.participants()` | `GET …/sessions/:sid/participants` | Reads who can open the session and who sent each prompt |
 | `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
 | `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
@@ -133,6 +134,13 @@ if (release?.fallback_reason) {
 `stale` is tri-state. `null` means Kortix could not tell. Test `stale === true`,
 never `!stale`. An older API omits `release`. See
 [Config convergence](/docs/work/runtime#config-convergence).
+
+`s.participants()` returns `{ participants, total, multi_user }`. `participants`
+lists the people who can open the session now, owner first, at most 20, each
+`{ user_id, name, email, avatar_url, is_viewer }`; `total` is the full count.
+`multi_user` is `true` when two or more people can open the session. In React,
+`useSessionParticipants(projectId, sessionId)` reads the same data. Who wrote
+each message is `s.messageAuthors()`.
 
 Three more read methods round out the handle:
 

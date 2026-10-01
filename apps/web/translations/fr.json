@@ -20359,5 +20359,12 @@
     "asked": "a demandé à",
     "replyHint": "Répondez ci-dessous. L'agent le reprendra.",
     "untitledSession": "Session sans titre"
+  },
+  "sessionParticipants": {
+    "title": "Personnes",
+    "sentBy": "Envoyé par {name}",
+    "people": "Personnes dans cette session : {names}",
+    "peopleMore": "Personnes dans cette session : {names} et {count} de plus",
+    "more": "{count} autres peuvent ouvrir cette session"
   }
 }

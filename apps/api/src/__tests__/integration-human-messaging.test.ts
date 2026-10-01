@@ -97,7 +97,7 @@ beforeAll(async () => {
     sql`(${id}::uuid, ${email(label)}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', ${JSON.stringify(meta)}::jsonb)`;
   await db.execute(sql`
     insert into auth.users (id, email, instance_id, aud, role, raw_user_meta_data) values
-      ${user(OWNER, 'owner')}, ${user(AVERY, 'avery', { full_name: 'Avery Example' })},
+      ${user(OWNER, 'owner')}, ${user(AVERY, 'avery', { full_name: 'Avery Example', avatar_url: 'https://img.example.test/avery.png' })},
       ${user(BLAKE, 'blake')}, ${user(NO_ROLE, 'norole')}, ${user(STRANGER, 'stranger')}
   `);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: `human-messaging-${tag}` });
@@ -239,8 +239,14 @@ describe('sessionMessageAuthors', () => {
 
   test('a member is attributed under every id the prompt travelled under', async () => {
     const { authors } = await authorsOf('chat');
-    const avery = { kind: 'member' as const, user_id: AVERY, name: 'Avery Example', email: email('avery') };
-    const blake = { kind: 'member' as const, user_id: BLAKE, name: email('blake'), email: email('blake') };
+    const avery = {
+      kind: 'member' as const,
+      user_id: AVERY,
+      name: 'Avery Example',
+      email: email('avery'),
+      avatar_url: 'https://img.example.test/avery.png',
+    };
+    const blake = { kind: 'member' as const, user_id: BLAKE, name: email('blake'), email: email('blake'), avatar_url: null };
     expect(authors.msg_wire_a).toEqual(avery);
     for (const id of ['msg_wire_b', 'msg_redelivered_b', 'msg_redelivered_b2', 'msg_forwarded_b']) {
       expect(authors[id]).toEqual(blake);

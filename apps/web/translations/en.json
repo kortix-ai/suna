@@ -20359,5 +20359,12 @@
     "asked": "asked",
     "replyHint": "Reply below. The agent picks it up.",
     "untitledSession": "Untitled session"
+  },
+  "sessionParticipants": {
+    "title": "People",
+    "sentBy": "Sent by {name}",
+    "people": "People in this session: {names}",
+    "peopleMore": "People in this session: {names} and {count} more",
+    "more": "{count} more can open this session"
   }
 }

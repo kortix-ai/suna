@@ -1218,6 +1218,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
+      participants: () => P.getSessionParticipants(projectId, sessionId),
       commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
         P.commitSessionChanges(projectId, sessionId, input),
       publicShares: {
