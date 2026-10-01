@@ -1175,10 +1175,6 @@
           "name": "Server MCP",
           "description": "Collega Claude, ChatGPT, Cursor, Codex o qualsiasi client MCP a questo progetto tramite OAuth. Il client accede a tuo nome e chiama Kortix con i tuoi permessi. Trovi l’URL in Connetti MCP, nel menu dello spazio di lavoro."
         },
-        "human_messaging": {
-          "name": "Messaggi alle persone",
-          "description": "Consente agli agenti di scrivere a persone e ad altre sessioni. `kortix send alice@example.com` apre una conversazione che inizia con il messaggio dell'agente e compare in Ti chiedono nella barra laterale del destinatario. Più indirizzi aprono una chat di gruppo. I messaggi tra sessioni indicano la sessione mittente, così il suo agente può rispondere."
-        },
         "reminders": {
           "name": "Promemoria",
           "description": "Consente ad agenti e persone di programmare controlli su una sessione, una volta o in modo ricorrente. Ogni attivazione richiama quella sessione. Aggiunge la pagina Promemoria, l’indicatore dei promemoria della sessione e `kortix remind`."
@@ -1591,17 +1587,6 @@
       "failed": "Impossibile salvare le etichette",
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
-    },
-    "askedYou": {
-      "title": "Ti hanno chiesto",
-      "from": "da {name}",
-      "arrival": "{name} ti ha fatto una domanda",
-      "arrivalUnknown": "Qualcuno ti ha fatto una domanda",
-      "open": "Apri",
-      "withOne": "Conversazione con 1 persona",
-      "withMany": "Conversazione con {count} persone",
-      "askedFrom": "Chiesto da {title}",
-      "inConversation": "In questa conversazione"
     }
   },
   "dashboard": {
@@ -20348,8 +20333,6 @@
   },
   "messageFrom": {
     "from": "Da",
-    "asked": "ha chiesto a",
-    "replyHint": "Rispondi qui sotto. L'agente lo raccoglierà.",
     "untitledSession": "Sessione senza titolo"
   }
 }

@@ -377,18 +377,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
   },
-  {
-    key: 'human_messaging',
-    name: 'Human Messaging',
-    description:
-      'Let agents message people and other sessions. `kortix send alice@example.com "…"` opens a conversation whose first message comes from the agent; it appears under "Asked you" in the recipient\'s sidebar. Several addresses open a group chat, and a message sent to another session says which session sent it.',
-    stability: 'experimental',
-    available: () => true,
-    platformDefault: () => false,
-    // POST /sessions refuses `participants` with 403 `feature_disabled`; the
-    // prompt route adds the sender envelope only when this is on.
-    enforcement: 'routes',
-  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

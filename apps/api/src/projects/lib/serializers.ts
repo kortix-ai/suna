@@ -121,8 +121,6 @@ export function serializeSession(
     ownerName?: string | null;
     /** Display name of a member/service-account initiator that is not the owner. */
     initiatorName?: string | null;
-    /** Resolved people of a conversation (`metadata.participants`), single-session read only. */
-    participants?: Array<{ user_id: string; name: string | null; email: string | null }>;
     /** Whether created_by identifies a human, service account, or stale principal. */
     ownerType?: 'user' | 'service_account' | 'unknown' | null;
     /** Whether the viewer may read/open the session, independent of inventory visibility. */
@@ -200,7 +198,6 @@ export function serializeSession(
     owner_email: ctx?.ownerEmail ?? null,
     owner_name: ctx?.ownerName ?? null,
     owner_type: ctx?.ownerType ?? (row.createdBy ? 'unknown' : null),
-    participant_people: canAccess ? (ctx?.participants ?? []) : [],
     visibility: row.visibility,
     origin: row.origin,
     parent_session_id: row.parentSessionId ?? null,

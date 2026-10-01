@@ -1175,10 +1175,6 @@
           "name": "MCP server",
           "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
         },
-        "human_messaging": {
-          "name": "Poruke ljudima",
-          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet. Poruke između sesija navode sesiju koja ih šalje, da bi njen agent mogao da odgovori."
-        },
         "reminders": {
           "name": "Подсетници",
           "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
@@ -1591,17 +1587,6 @@
       "failed": "Oznake nije moguće sačuvati",
       "tooLong": "Oznaka ima najviše 64 znaka.",
       "tooMany": "Sesija ima najviše 20 oznaka."
-    },
-    "askedYou": {
-      "title": "Pitali su te",
-      "from": "od {name}",
-      "arrival": "{name} te je pitao/la",
-      "arrivalUnknown": "Neko te je pitao",
-      "open": "Otvori",
-      "withOne": "Razgovor sa 1 osobom",
-      "withMany": "Razgovor sa {count} osoba",
-      "askedFrom": "Pitanje iz sesije {title}",
-      "inConversation": "U ovom razgovoru"
     }
   },
   "dashboard": {
@@ -20348,8 +20333,6 @@
   },
   "messageFrom": {
     "from": "Od",
-    "asked": "je pitao",
-    "replyHint": "Odgovorite ispod. Agent će preuzeti odgovor.",
     "untitledSession": "Sesija bez naslova"
   }
 }

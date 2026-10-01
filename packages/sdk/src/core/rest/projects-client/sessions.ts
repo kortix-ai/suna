@@ -112,11 +112,6 @@ export interface ProjectSession {
   owner_email?: string | null;
   owner_name?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
-  /**
-   * The people a conversation was opened with (`metadata.participants`),
-   * resolved to names. Served on the single-session read only; `[]` elsewhere.
-   */
-  participant_people?: { user_id: string; name: string | null; email: string | null }[];
   visibility?: 'private' | 'project' | 'restricted';
   /** How the session was started — a policy class derived from the caller's
    *  token kind, not the surface. A backend (PAT/service-account) create is
@@ -233,13 +228,6 @@ export interface CreateProjectSessionInput {
   name?: string;
   /** Free-form labels: each trimmed, 1..64 characters; at most 20. */
   labels?: string[];
-  /**
-   * Email addresses of project members to open a conversation with (project
-   * feature flag `human_messaging`). `initial_prompt` is posted to them from
-   * the caller, no turn runs, and the session is shared with them. The agent
-   * runs when one of them replies. 1..20 addresses.
-   */
-  participants?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
@@ -352,9 +340,6 @@ export interface ListProjectSessionsOptions {
   q?: string;
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
-  /** `'me'` = conversations the viewer was asked into (`participants`), at
-   *  any depth. */
-  participant?: 'me';
 }
 
 /** One keyset page of a project's sessions. */
@@ -374,7 +359,6 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const q = options?.q?.trim();
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
-  if (options?.participant) params.set('participant', options.participant);
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -1176,9 +1160,8 @@ export interface SessionPrompt {
    *  cannot tell a stuck upload from a prompt that never had attachments.
    *  Absent from servers older than this field. */
   attachments?: Array<{ filename: string; mime: string }>;
-  /** Posted without a turn — the first message of a conversation with people
-   *  (`participants`). No agent answers it, so show no "thinking" state.
-   *  Absent from servers older than this field. */
+  /** Posted without a turn: no agent answers it, so show no "thinking"
+   *  state. Absent from servers older than this field. */
   no_reply?: boolean;
   created_at: string;
   available_at: string;
