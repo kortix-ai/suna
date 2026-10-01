@@ -14,6 +14,8 @@ import {
   type SessionPrompt,
   type SessionPromptPart,
   hasRetryingAssistantTurn,
+  isTextPart,
+  isToolPart,
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
@@ -386,7 +388,7 @@ interface SessionChatProps {
 const TRANSCRIPT_THROTTLE_MS = 50;
 
 /** `useSessionMessages` input when no `useSession` owns this chat: reads nothing. */
-const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', opencodeSessionId: null };
+const DETACHED_SESSION_MESSAGES = { projectId: '', sessionId: '', runtimeSessionId: null };
 
 export function SessionChat({
   sessionId,
@@ -705,7 +707,7 @@ export function SessionChat({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
   /**
    * The agent this composer will ACTUALLY run — see `composer-agent-access.ts`.
@@ -719,7 +721,7 @@ export function SessionChat({
   const composerAgent = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const composerAgentName = composerAgent.selected;
@@ -1228,7 +1230,7 @@ export function SessionChat({
       }
       // The bubble's own words: the non-synthetic text parts, joined.
       const text = message.parts
-        .filter((part) => part.type === 'text' && !(part as { synthetic?: boolean }).synthetic)
+        .filter((part) => isTextPart(part) && !(part as { synthetic?: boolean }).synthetic)
         .map((part) => (part as { text?: string }).text ?? '')
         .join('\n');
       only = { id: message.info.id, text };
@@ -2210,7 +2212,7 @@ export function SessionChat({
         if (parts) {
           const match = parts.find(
             (p) =>
-              p.type === 'tool' &&
+              isToolPart(p) &&
               isQuestionTool((p as ToolPart).tool) &&
               (p as ToolPart).callID === questionReq.tool!.callID,
           );
@@ -2976,8 +2978,8 @@ export function SessionChat({
         // `unrevert` finds nothing staged (or throws BusyError mid-run).
         // A FAILED send leaves the record staged on purpose — the revert is
         // still real server-side and Restore genuinely works there.
-        if (sendOk && sessionState.opencodeSessionId) {
-          useSessionStateStore.getState().commitSessionRevert(sessionState.opencodeSessionId);
+        if (sendOk && sessionState.runtimeSessionId) {
+          useSessionStateStore.getState().commitSessionRevert(sessionState.runtimeSessionId);
         }
       } catch (error) {
         errorToast(tHardcodedUi.raw('i18nComplete.text810b28e5110c'), {

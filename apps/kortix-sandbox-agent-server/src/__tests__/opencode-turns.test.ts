@@ -118,7 +118,8 @@ describe('the Kortix turn routes keep the runtime gate of the proxy they replace
       const res = await post(app, path)
       expect(res.status).toBe(503)
       expect(res.headers.get('X-Kortix-Boot-Phase')).toBe('workspace_not_ready')
-      expect(await res.json()).toEqual({ reason: 'installing dependencies', phase: 'workspace_not_ready' })
+      // `code` is the one machine answer a client matches; the harness's own details follow it.
+      expect(await res.json()).toEqual({ code: 'runtime_not_ready', reason: 'installing dependencies', phase: 'workspace_not_ready' })
     }
     const read = await app.request('/messages/ses_1/msg_1', { headers: { Authorization: `Bearer ${TOKEN}` } })
     expect(read.status).toBe(503)

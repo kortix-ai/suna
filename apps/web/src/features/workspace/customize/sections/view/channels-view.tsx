@@ -412,7 +412,7 @@ function agentDefaultLabel(projectDefaultAgent: string | null): string {
 }
 
 /** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
-function stripOpencodeNamespace(model: string): string {
+function stripGatewayNamespace(model: string): string {
   return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
 }
 
@@ -424,13 +424,13 @@ function stripOpencodeNamespace(model: string): string {
  */
 function describeEffectiveModel(binding: ChannelBinding): string {
   if (binding.opencodeModel) {
-    const label = stripOpencodeNamespace(binding.opencodeModel);
+    const label = stripGatewayNamespace(binding.opencodeModel);
     return binding.effectiveModel.source === 'explicit'
       ? label
       : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
-  return resolved ? `Project default (${stripOpencodeNamespace(resolved)})` : 'Project default';
+  return resolved ? `Project default (${stripGatewayNamespace(resolved)})` : 'Project default';
 }
 
 function ChannelBindingTableRow({

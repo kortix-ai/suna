@@ -187,4 +187,67 @@ describe('runtime event stream', () => {
     expect(events).toEqual([{ n: 1 }]);
     expect(lastIds).toEqual([null, '7']);
   });
+
+  test('an injected event transport carries the stream; fetch is never called', async () => {
+    const connects: Array<{ url: string; lastEventId: string | null; accept: string | null }> = [];
+    const client = createRuntimeRestClient({
+      baseUrl: BASE,
+      fetch: (async () => {
+        throw new Error('fetch must not carry the event stream');
+      }) as unknown as typeof fetch,
+      eventTransport: async function* (request) {
+        connects.push({
+          url: request.url,
+          lastEventId: request.headers.get('last-event-id'),
+          accept: request.headers.get('x-probe'),
+        });
+        if (connects.length === 1) {
+          yield { id: '7', data: '{"n":1}' };
+          yield { retry: 1 };
+          throw new Error('connection reset');
+        }
+        yield { data: 'plain' };
+      },
+    });
+    const { stream } = await client.global.event({
+      sseMaxRetryAttempts: 2,
+      sseDefaultRetryDelay: 60_000,
+      headers: { 'x-probe': 'caller' },
+    });
+    const events: unknown[] = [];
+    for await (const event of stream) events.push(event);
+    expect(events).toEqual([{ n: 1 }, 'plain']);
+    const url = 'http://runtime.test/p/sbx%201/8000/global/event';
+    // The second connect resumes from the transport's last id, after the
+    // transport's own `retry` (1 ms), not the 60 s default.
+    expect(connects).toEqual([
+      { url, lastEventId: null, accept: 'caller' },
+      { url, lastEventId: '7', accept: 'caller' },
+    ]);
+  });
+
+  test('an aborted signal ends an injected transport without a reconnect', async () => {
+    const abort = new AbortController();
+    let connects = 0;
+    const client = createRuntimeRestClient({
+      baseUrl: BASE,
+      eventTransport: async function* (request) {
+        connects++;
+        yield { data: '{"n":1}' };
+        // The consumer aborts while this generator is suspended at the yield above.
+        if (!request.signal.aborted) {
+          await new Promise<void>((resolve) => request.signal.addEventListener('abort', () => resolve()));
+        }
+        throw new Error('aborted');
+      },
+    });
+    const { stream } = await client.global.event({ signal: abort.signal, sseDefaultRetryDelay: 1 });
+    const events: unknown[] = [];
+    for await (const event of stream) {
+      events.push(event);
+      abort.abort();
+    }
+    expect(events).toEqual([{ n: 1 }]);
+    expect(connects).toBe(1);
+  });
 });

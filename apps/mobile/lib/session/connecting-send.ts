@@ -5,7 +5,7 @@
  * thread replaced it, although the server's prompt inbox holds a prompt
  * durably and delivers it once the computer is ready (the web sends there the
  * same way; `SESSION_NOTICE.waking` promises it). The message shows at once,
- * under the session's OpenCode root, and the delivered echo replaces it (same
+ * under the session's runtime root, and the delivered echo replaces it (same
  * message id). A refused send stays in the thread as a failed send the thread
  * offers to try again (`failed-sends.ts`), never dropped.
  *
@@ -14,8 +14,13 @@
 
 import { createSessionPrompt } from '@kortix/sdk';
 
-import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
-import type { MessageWithParts } from '@/lib/opencode/types';
+import {
+  addOptimisticMessage,
+  markOptimisticAccepted,
+  removeOptimisticMessage,
+  sessionMessageIds,
+} from './session-store';
+import type { MessageWithParts } from './types';
 import { useFailedSendStore } from './failed-sends';
 import { optimisticUserParts } from './optimistic-parts';
 import { promptParts } from './prompt-parts';
@@ -25,7 +30,7 @@ import { mintWireMessageId } from './wire-message-id';
 export async function queuePromptWhileWaking(input: {
   projectId: string;
   projectSessionId: string;
-  /** The session's OpenCode root: the thread the message shows in. */
+  /** The session's runtime root session: the thread the message shows in. */
   rootId: string;
   text: string;
   /** `expo-crypto`'s `randomUUID` in the app. */
@@ -35,11 +40,8 @@ export async function queuePromptWhileWaking(input: {
   if (!text) return false;
   const nowMs = Date.now();
   const clientMessageId = input.randomUUID();
-  const messageId = mintWireMessageId({
-    nowMs,
-    knownMessageIds: (useSyncStore.getState().messages[input.rootId] ?? []).map((m) => m.info.id),
-  });
-  useSyncStore.getState().addOptimisticMessage(input.rootId, {
+  const messageId = mintWireMessageId({ nowMs, knownMessageIds: sessionMessageIds(input.rootId) });
+  addOptimisticMessage(input.rootId, {
     info: { id: messageId, role: 'user', sessionID: input.rootId, time: { created: nowMs } },
     parts: optimisticUserParts(text, [], nowMs),
   } as unknown as MessageWithParts);
@@ -50,14 +52,16 @@ export async function queuePromptWhileWaking(input: {
       parts: promptParts(text, []),
       clientSentAtMs: nowMs,
     });
+    // The inbox holds it: the bubble stays until the delivered echo replaces it.
+    markOptimisticAccepted(input.rootId, messageId);
     return true;
   } catch {
-    // It stops being optimistic, so a refetch keeps it, dimmed, with "Not sent
-    // · Try again" once the thread opens.
-    clearOptimistic([messageId]);
+    // It leaves the transcript and stays in the thread as a failed send:
+    // dimmed, with "Not sent · Try again" once the thread opens.
+    removeOptimisticMessage(input.rootId, messageId);
     useFailedSendStore
       .getState()
-      .markFailed(input.rootId, messageId, { text, options: {}, clientMessageId, messageId });
+      .markFailed(input.rootId, messageId, { text, options: {}, clientMessageId, messageId, failedAtMs: nowMs });
     return false;
   }
 }

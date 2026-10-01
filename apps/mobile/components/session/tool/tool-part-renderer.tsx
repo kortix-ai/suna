@@ -18,9 +18,9 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { getToolInfo, partOutcome, stripAnsi, type ToolPart as SdkToolPart } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
-import type { PermissionRequest } from '@/lib/opencode/types';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import { getDiffStats } from '@/lib/opencode/diff-utils';
+import type { PermissionRequest } from '@/lib/session/types';
+import { usePendingPermissions } from '@/lib/session/session-store';
+import { getDiffStats } from '@/lib/session/diff-utils';
 import {
   isStalePending,
   isToolRunning,
@@ -91,12 +91,8 @@ export interface ToolPartRendererProps {
   defaultOpen?: boolean;
 }
 
-const EMPTY_PERMISSIONS: PermissionRequest[] = [];
-
 function usePendingPermission(part: SdkToolPart, sessionId?: string, permissionProp?: PermissionRequest) {
-  const sessionPermissions = useSyncStore((s) =>
-    sessionId && !permissionProp ? s.permissions[sessionId] : undefined,
-  ) ?? EMPTY_PERMISSIONS;
+  const sessionPermissions = usePendingPermissions(permissionProp ? undefined : sessionId);
   return permissionProp ?? sessionPermissions.find((p) => p.tool?.callID === part.callID);
 }
 

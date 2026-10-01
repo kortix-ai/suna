@@ -9,7 +9,7 @@
  * (`parent=root` / `parent=<id>`, KRTX-639; lib/session/session-tree.ts), so
  * the list and the thread header agree on what a sub-agent is.
  *
- * OpenCode's own sub-session tree (`parentID` / `opencode_sessions[].parent_id`)
+ * the runtime's own sub-session tree (`parentID` / `runtime_sessions[].parent_id`)
  * is a different thing and is not read here.
  *
  * The rows are the project's session list (`useProjectSessions`), already

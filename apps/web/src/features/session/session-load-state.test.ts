@@ -41,7 +41,10 @@ describe('runtimeErrorPresentation', () => {
 
 describe('session load state', () => {
   test("uses the resolved session's own row as an initial transcript pin", () => {
+    expect(findInitialSessionPin({ runtime_session_id: 'ses_b' })).toBe('ses_b');
+    // An API older than W4 names the same pin `opencode_session_id`.
     expect(findInitialSessionPin({ opencode_session_id: 'ses_b' })).toBe('ses_b');
+    expect(findInitialSessionPin({ runtime_session_id: 'ses_new', opencode_session_id: 'ses_old' })).toBe('ses_new');
     // Not loaded yet, and a session that has never been pinned, both answer
     // null — the caller treats null as "still resolving".
     expect(findInitialSessionPin(undefined)).toBeNull();
@@ -52,7 +55,7 @@ describe('session load state', () => {
     expect(
       canMountSessionChat({
         switched: false,
-        opencodeSessionId: 'opencode-cached',
+        runtimeSessionId: 'opencode-cached',
       }),
     ).toBe(true);
   });
@@ -61,7 +64,7 @@ describe('session load state', () => {
     expect(
       canMountSessionChat({
         switched: false,
-        opencodeSessionId: null,
+        runtimeSessionId: null,
       }),
     ).toBe(false);
   });

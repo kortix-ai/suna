@@ -70,7 +70,7 @@ import {
 import { FileItem } from '@/components/files/FileItem';
 import { FileViewer } from '@/components/files/FileViewer';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
-import { useOpenCodeFiles, useOpenCodeFileContent, useOpenCodeUploadFile, fileKeys } from '@/lib/files/hooks';
+import { useSandboxFiles, useSandboxFileContent, useUploadSandboxFile, fileKeys } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -96,7 +96,7 @@ import { formatCost, formatTokens } from '@kortix/sdk';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,
-} from '@/lib/opencode/hooks/use-project-session-stats';
+} from '@/hooks/useProjectSessionStats';
 import { SheetBackdrop, KortixBottomSheetModal } from '@/components/kortix/sheet';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ export function ProjectDetailPage({
   const [newTaskFiles, setNewTaskFiles] = useState<TaskAttachment[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [taskSearch, setTaskSearch] = useState('');
-  const uploadMutForTasks = useOpenCodeUploadFile();
+  const uploadMutForTasks = useUploadSandboxFile();
 
   const resetNewTaskForm = useCallback(() => {
     setNewTaskTitle('');
@@ -393,11 +393,7 @@ export function ProjectDetailPage({
     ));
   }, [sessions]);
   const sessionIds = useMemo(() => sessionList.map((s: any) => s.id), [sessionList]);
-  const { totals: sessionTotals, loading: statsLoading } = useProjectSessionStats(
-    sandboxUrl,
-    sessionIds,
-    tab === 'sessions',
-  );
+  const { totals: sessionTotals, loading: statsLoading } = useProjectSessionStats(sessionIds, tab === 'sessions');
   const taskList = tasks ?? [];
   const filteredTaskList = useMemo(() => {
     if (!taskSearch.trim()) return taskList;
@@ -425,7 +421,7 @@ export function ProjectDetailPage({
     data: files,
     isLoading: filesLoading,
     refetch: refetchFiles,
-  } = useOpenCodeFiles(hasFiles && tab === 'files' ? sandboxUrl : undefined, filePath);
+  } = useSandboxFiles(hasFiles && tab === 'files' ? sandboxUrl : undefined, filePath);
   const [viewerFile, setViewerFile] = useState<SandboxFile | null>(null);
   const [viewerVisible, setViewerVisible] = useState(false);
 
@@ -444,14 +440,14 @@ export function ProjectDetailPage({
     data: contextContent,
     isLoading: contextLoading,
     error: contextError,
-  } = useOpenCodeFileContent(
+  } = useSandboxFileContent(
     tab === 'about' ? sandboxUrl : undefined,
     tab === 'about' ? contextPath : undefined,
     { staleTime: 30_000, retry: 1 },
   );
 
   const qc = useQueryClient();
-  const uploadMutation = useOpenCodeUploadFile();
+  const uploadMutation = useUploadSandboxFile();
   const [contextEditing, setContextEditing] = useState(false);
   const [contextDraft, setContextDraft] = useState('');
   const [contextSaving, setContextSaving] = useState(false);
@@ -480,7 +476,7 @@ export function ProjectDetailPage({
         targetPath: dirPath,
       });
       // Invalidate the specific file-content query so the preview updates.
-      qc.invalidateQueries({ queryKey: fileKeys.opencodeFile(sandboxUrl, contextPath) });
+      qc.invalidateQueries({ queryKey: fileKeys.file(sandboxUrl, contextPath) });
     } catch (err: any) {
       Alert.alert('Save Failed', err?.message || 'Could not save CONTEXT.md');
     } finally {

@@ -27,6 +27,8 @@
 {"input":{"exception":{"values":[{"value":"Unhandled promise rejection: Server URL not ready — sandbox is still loading"}]}},"runtime":false,"sentry":true},
 {"input":{"message":"opencode not ready — sandbox is still starting"},"runtime":true,"sentry":true},
 {"input":{"exception":{"values":[{"value":"opencode not ready — sandbox is still starting"}]}},"runtime":false,"sentry":true},
+{"input":{"message":"{\"code\":\"runtime_not_ready\",\"error\":\"sandbox runtime not ready\",\"reason\":\"pi_not_ready\"}"},"runtime":true,"sentry":true},
+{"input":{"exception":{"values":[{"value":"sandbox runtime not ready"}]}},"runtime":false,"sentry":true},
 {"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"RuntimeNotReadyError: [opencode-sdk] Server URL not ready — sandbox is still loading","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"[opencode-sdk] Server URL not ready — sandbox is still loading","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},
 {"input":{"request":{"url":"https://app.kortix.com/projects/p/sessions/s"},"exception":{"values":[{"value":"[kortix-pty] Server URL not ready — sandbox is still loading","stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/sdk.js"}]}}]}},"runtime":false,"sentry":true},

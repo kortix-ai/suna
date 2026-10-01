@@ -30,6 +30,8 @@ describe('isDeliveredButDisconnected — nothing was delivered, keep failing', (
   test('opencode refused before forwarding', () => {
     expect(isDeliveredButDisconnected('opencode not ready')).toBe(false);
     expect(isDeliveredButDisconnected('sandbox runtime not ready')).toBe(false);
+    // A W6 daemon answers one code on both harnesses.
+    expect(isDeliveredButDisconnected('{"code":"runtime_not_ready","error":"upstream unreachable"}')).toBe(false);
   });
 
   test('a refusal that also mentions unreachable still counts as refused', () => {

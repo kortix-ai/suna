@@ -22,6 +22,14 @@ const mobileNodeModules = path.resolve(projectRoot, 'node_modules');
 // This prevents duplicate React instances when bundling shared packages
 const forcedModules = ['react', 'react-native', 'react/jsx-runtime', 'react/jsx-dev-runtime'];
 
+// `@kortix/sdk/react` is bundled from `packages/sdk`, which has its own copies of
+// these in `packages/sdk/node_modules`. A second React Query never sees this
+// app's `QueryClientProvider`, so they resolve exactly as an import written in
+// this app does (same file, same instance). Mirrored for `bun test` in
+// `lib/testing/sdk-single-instance.ts`.
+const appSingletons = new Set(['@tanstack/react-query', 'zustand', 'zustand/middleware']);
+const appOrigin = path.join(projectRoot, 'package.json');
+
 // Node.js built-ins that leak into the bundle graph via third-party packages
 // but have no React Native equivalent and are never exercised at runtime.
 // `readline` is pulled in by expensify-common's CLI helper (referenced through
@@ -78,6 +86,9 @@ config.resolver = {
         filePath: require.resolve(moduleName, { paths: [mobileNodeModules] }),
         type: 'sourceFile',
       };
+    }
+    if (appSingletons.has(moduleName) && context.originModulePath !== appOrigin) {
+      return context.resolveRequest({ ...context, originModulePath: appOrigin }, moduleName, platform);
     }
     // Fall back to default resolution
     return context.resolveRequest(context, moduleName, platform);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { useLocalConfigStore } from './use-local-config';
+import { useLocalConfigStore } from './local-config';
 
 const gpt = { providerID: 'kortix', modelID: 'gpt-astra' };
 

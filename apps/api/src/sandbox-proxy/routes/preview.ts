@@ -450,6 +450,15 @@ export function isProxiedBaseReset(
   return new URLSearchParams(queryString).get('base') === '1';
 }
 
+/**
+ * The daemon's 503 while the session runtime cannot take a request: the
+ * `runtime_not_ready` code (both harnesses, a W6 daemon), or the text of a
+ * daemon without the code (`sandbox runtime not ready` on pi and on OpenCode's
+ * boot steps, `opencode not ready` from the OpenCode process gate). `\b` keeps
+ * this API's own `runtime_not_ready_timeout` park reason out.
+ */
+const DAEMON_RUNTIME_NOT_READY = /\bruntime_not_ready\b|sandbox runtime not ready|opencode not ready/;
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -1335,11 +1344,11 @@ export async function forwardToSandbox(
           .clone()
           .text()
           .catch(() => '');
-        if (bodyText.includes('opencode not ready')) {
+        if (DAEMON_RUNTIME_NOT_READY.test(bodyText)) {
           void markSandboxUsed(sandboxId);
-          // opencode explicitly rejected the request as not-ready, so it did NOT
+          // The daemon rejected the request as not-ready, so the runtime did NOT
           // enqueue the prompt. Release the dedupe claim so the client's retry
-          // (once opencode is up) actually delivers instead of short-circuiting
+          // (once the runtime is up) actually delivers instead of short-circuiting
           // to a bogus 200 "duplicate" that would drop the message.
           if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
           await abandonTurnLifecycle();

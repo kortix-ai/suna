@@ -22,7 +22,6 @@ export function collectToolParts(messages: MessageWithParts[] | undefined): Tool
     for (const part of msg.parts) {
       if (
         isToolPart(part) &&
-        part.tool !== 'todoread' &&
         shouldShowToolPart(part as ToolPart) &&
         shouldShowToolPartInActionsPanel(part as ToolPart)
       ) {
@@ -45,7 +44,7 @@ export function collectToolParts(messages: MessageWithParts[] | undefined): Tool
  * `shouldShowToolPartInActionsPanel` exists specifically to hide those from
  * the Advanced one-at-a-time stepper — applying it here would silently break
  * two of Easy mode's three cards. This function applies only the universal
- * rules (`isToolPart`, the `todoread` exclusion, and the global
+ * rules (`isToolPart` and the global
  * `shouldShowToolPart` hidden-part filter); engine noise Easy mode still
  * wants to drop (e.g. context-engine bookkeeping) is filtered later, by
  * `familyForTool(tool) === 'hidden'` in group-steps.ts.
@@ -56,7 +55,7 @@ export function collectAllToolParts(messages: MessageWithParts[] | undefined): T
   for (const msg of messages) {
     if (!msg.parts) continue;
     for (const part of msg.parts) {
-      if (isToolPart(part) && part.tool !== 'todoread' && shouldShowToolPart(part as ToolPart)) {
+      if (isToolPart(part) && shouldShowToolPart(part as ToolPart)) {
         parts.push(part as ToolPart);
       }
     }

@@ -1,17 +1,14 @@
 /**
- * useProjectSessionStats — fetch step-finish stats for each session in a
- * project and aggregate into project totals (messages, tokens, cost).
- *
- * Mirrors web's `fetchSessionStats` + `sumStats` from
- * apps/web/src/app/(dashboard)/projects/[id]/page.tsx so the mobile project
- * sessions tab can show the same PROJECT TOTALS card.
+ * useProjectSessionStats — token and cost totals of a project's sessions, for
+ * the project detail page. Each session's whole transcript is read from the
+ * bound session's runtime (`loadSessionTranscriptMessages`) and summed.
  */
 
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getAuthToken } from '@/api/config';
 import { getSessionCost } from '@kortix/sdk';
-import type { MessageWithParts } from '@/lib/opencode/types';
+import { loadSessionTranscriptMessages } from '@kortix/sdk/react';
+import { useSessionRuntime } from '@/components/session/SessionRuntime';
 
 export type SessionStats = {
   messageCount: number;
@@ -27,16 +24,8 @@ const EMPTY_STATS: SessionStats = {
   lastUpdated: null,
 };
 
-async function fetchSessionStats(sandboxUrl: string, sessionId: string): Promise<SessionStats> {
-  const token = await getAuthToken();
-  const res = await fetch(`${sandboxUrl}/session/${sessionId}/message`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) throw new Error(`Failed to fetch session stats: ${res.status}`);
-  const data = (await res.json()) as MessageWithParts[];
+async function fetchSessionStats(sessionId: string): Promise<SessionStats> {
+  const data = await loadSessionTranscriptMessages(sessionId);
 
   let input = 0,
     output = 0,
@@ -45,24 +34,23 @@ async function fetchSessionStats(sandboxUrl: string, sessionId: string): Promise
     cacheWrite = 0;
   let lastUpdated: number | null = null;
 
-  for (const item of data ?? []) {
-    const info = (item as any)?.info ?? {};
-    const ts = info?.time?.updated ?? info?.time?.completed ?? info?.time?.created;
+  for (const item of data) {
+    const time = item.info.time as { updated?: number; completed?: number; created?: number } | undefined;
+    const ts = time?.updated ?? time?.completed ?? time?.created;
     if (typeof ts === 'number' && (!lastUpdated || ts > lastUpdated)) lastUpdated = ts;
-    for (const p of (item as any).parts ?? []) {
-      if (p?.type === 'step-finish') {
-        input += p.tokens?.input || 0;
-        output += p.tokens?.output || 0;
-        reasoning += p.tokens?.reasoning || 0;
-        cacheRead += p.tokens?.cache?.read || 0;
-        cacheWrite += p.tokens?.cache?.write || 0;
-      }
+    for (const part of item.parts) {
+      if (part.type !== 'step-finish') continue;
+      input += part.tokens?.input || 0;
+      output += part.tokens?.output || 0;
+      reasoning += part.tokens?.reasoning || 0;
+      cacheRead += part.tokens?.cache?.read || 0;
+      cacheWrite += part.tokens?.cache?.write || 0;
     }
   }
 
   return {
-    messageCount: data?.length ?? 0,
-    cost: getSessionCost(data ?? []),
+    messageCount: data.length,
+    cost: getSessionCost(data),
     tokens: { input, output, reasoning, cacheRead, cacheWrite },
     lastUpdated,
   };
@@ -89,16 +77,16 @@ export function totalTokens(t: SessionStats['tokens']): number {
   return t.input + t.output + t.reasoning + t.cacheRead + t.cacheWrite;
 }
 
-export function useProjectSessionStats(
-  sandboxUrl: string | undefined,
-  sessionIds: string[],
-  enabled: boolean = true,
-) {
+export function useProjectSessionStats(sessionIds: string[], enabled: boolean = true) {
+  // The runtime these sessions live on: the bound session's. Its sandbox id
+  // keys the cache, so one computer's totals never show under another.
+  const runtime = useSessionRuntime();
+  const runtimeId = runtime?.switched ? (runtime.sandbox?.sandbox_id ?? null) : null;
   const queries = useQueries({
     queries: sessionIds.map((id) => ({
-      queryKey: ['kortix-session-stats', sandboxUrl, id],
-      queryFn: () => fetchSessionStats(sandboxUrl as string, id),
-      enabled: enabled && !!sandboxUrl && !!id,
+      queryKey: ['kortix-session-stats', runtimeId, id],
+      queryFn: () => fetchSessionStats(id),
+      enabled: enabled && !!runtimeId && !!id,
       staleTime: 30_000,
       refetchInterval: 60_000,
     })),

@@ -8,12 +8,13 @@
  *
  * Until a probe answers, every feature reads served (the SDK's
  * `runtimeSupports` rule). A tap in that window can still reach a runtime
- * that refuses it with `501 feature_not_supported`: `featureNotSupportedError`
- * turns that answer into the runtime's own words for the toast.
+ * that refuses it with `501 feature_not_supported`: `unsupportedFeatureMessage`
+ * reads the runtime's own words off that failure for the toast.
  */
 
 import { create } from 'zustand';
-import { FEATURE_NOT_SUPPORTED_CODE, runtimeSupports, type RuntimeCapability } from '@kortix/sdk';
+import { runtimeSupports, type RuntimeCapability } from '@kortix/sdk';
+import { extractSendErrorMessage, useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 interface RuntimeCapabilitiesState {
   /** The computer the list came from: a list says nothing about another one. */
@@ -31,6 +32,10 @@ const useRuntimeCapabilitiesStore = create<RuntimeCapabilitiesState>()(() => ({
 export function recordRuntimeCapabilities(sandboxUrl: string, capabilities: unknown): void {
   if (!Array.isArray(capabilities)) return;
   useRuntimeCapabilitiesStore.setState({ sandboxUrl, capabilities });
+  // The SDK's own gates read its connection store (`useRuntimeCommands` and
+  // `useRuntimeConfig` ask only a runtime that lists the feature). This probe
+  // is the app's one health read, so it reports there too.
+  useRuntimeConnectionStore.setState({ runtimeCapabilities: capabilities });
 }
 
 /** Does the runtime at `sandboxUrl` serve `capability`? */
@@ -46,20 +51,13 @@ export function useRuntimeSupports(sandboxUrl: string | undefined, capability: R
   return useRuntimeCapabilitiesStore((state) => runtimeSupportsAt(sandboxUrl, capability, state));
 }
 
-/** A runtime's `501 feature_not_supported` answer. `message` is its `error`, already user-readable. */
-export class FeatureNotSupportedError extends Error {
-  override name = 'FeatureNotSupportedError';
-}
-
-/** The typed error for a `501 { code: 'feature_not_supported', error }` answer; null for any other. */
-export function featureNotSupportedError(status: number, body: string): FeatureNotSupportedError | null {
-  if (status !== 501) return null;
-  try {
-    const parsed = JSON.parse(body) as { code?: unknown; error?: unknown };
-    return parsed?.code === FEATURE_NOT_SUPPORTED_CODE && typeof parsed.error === 'string' && parsed.error
-      ? new FeatureNotSupportedError(parsed.error)
-      : null;
-  } catch {
-    return null;
-  }
+/**
+ * The runtime's own words when it refused a feature it does not serve
+ * (`501 feature_not_supported`, e.g. "session rewind is not supported by the
+ * pi harness"), or null for any other failure. The SDK surfaces the answer's
+ * `error` text as the thrown message, with no status.
+ */
+export function unsupportedFeatureMessage(error: unknown): string | null {
+  const message = extractSendErrorMessage(error);
+  return /\bnot supported\b|\bread-only\b/i.test(message) ? message : null;
 }

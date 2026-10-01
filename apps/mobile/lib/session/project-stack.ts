@@ -192,7 +192,7 @@ export function pageBackMove(state: {
  */
 export function shownProjectSessionId(state: {
   activePageId: string | null;
-  /** The open thread's project session id (not the OpenCode id). */
+  /** The open thread's project session id (not the runtime session id). */
   threadSessionId: string | null;
   connectingSessionId: string | null;
 }): string | null {
@@ -213,11 +213,11 @@ export function drawerSessionRowMove(
 }
 
 /**
- * A drawer row that targets one OpenCode session of a project session: a
+ * A drawer row that targets one runtime session of a project session: a
  * session row (its root pin) or a sub-session row under it (the child's id).
  *
  * - `open`: another project session — the connect path (`handleOpenProjectSession`).
- * - `focus`: the shown thread, another OpenCode session of it — only the tab
+ * - `focus`: the shown thread, another runtime session of it — only the tab
  *   store's active id changes (`navigateToSession`), the same sandbox stays,
  *   no reconnect. The task tool's View uses the same call.
  * - `queue`: the shown session is still connecting (no thread yet) — the
@@ -230,32 +230,32 @@ export function drawerSessionRowMove(
  */
 export function drawerThreadMove(state: {
   rowSessionId: string;
-  targetOpenCodeId: string | null;
+  targetRuntimeId: string | null;
   shownSessionId: string | null;
-  /** The thread's OpenCode id (tab store `activeSessionId`); null while connecting. */
-  activeOpenCodeId: string | null;
+  /** The thread's runtime session id (tab store `activeSessionId`); null while connecting. */
+  activeRuntimeId: string | null;
 }): 'open' | 'focus' | 'queue' | 'close' {
   if (drawerSessionRowMove(state.rowSessionId, state.shownSessionId) === 'open') return 'open';
-  if (!state.targetOpenCodeId) return 'close';
-  if (!state.activeOpenCodeId) return 'queue';
-  return state.targetOpenCodeId !== state.activeOpenCodeId ? 'focus' : 'close';
+  if (!state.targetRuntimeId) return 'close';
+  if (!state.activeRuntimeId) return 'queue';
+  return state.targetRuntimeId !== state.activeRuntimeId ? 'focus' : 'close';
 }
 
-/** An OpenCode session to show once a project session's thread connects. */
+/** A runtime session to show once a project session's thread connects. */
 export interface PendingThreadFocus {
   sessionId: string;
-  openCodeId: string;
+  runtimeId: string;
 }
 
 /**
- * Which OpenCode session a just-connected thread shows: the pending focus
+ * Which runtime session a just-connected thread shows: the pending focus
  * when it belongs to this project session (a sub-session row tapped while
  * its parent was not open, or while it was connecting), else the root.
  */
 export function threadOpenTarget(
   pending: PendingThreadFocus | null,
   sessionId: string,
-  rootOpenCodeId: string
+  rootRuntimeId: string
 ): string {
-  return pending?.sessionId === sessionId ? pending.openCodeId : rootOpenCodeId;
+  return pending?.sessionId === sessionId ? pending.runtimeId : rootRuntimeId;
 }
