@@ -24,7 +24,7 @@ mock.module('../projects/routes/shared', () => ({
   openSession: async () => ({ stage: 'starting', sandbox: null, opencode_session_id: null, retriable: true }),
 }));
 
-const { healSupersededSessionToken } = await import('../projects/lib/service-key-reconcile');
+const { healSupersededSessionToken } = await import('../projects/lib/heal-session-token');
 const { startSession } = await import('../projects/session-lifecycle/start-session');
 
 type Row = Record<string, unknown>;
