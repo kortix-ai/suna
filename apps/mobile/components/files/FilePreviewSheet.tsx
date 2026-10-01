@@ -17,6 +17,10 @@
  * device instead (`lib/files/save-to-device`).
  */
 import * as React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import * as FileSystem from 'expo-file-system/legacy';
+import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import { API_URL, getAuthToken } from '@/api/config';
 import { View } from 'react-native';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
@@ -33,7 +37,9 @@ import { showFileTypeIcon } from '@/components/session/tool/shared/tool-icons';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { downloadOpenCodeFileToCache } from '@/lib/files/hooks';
+import { blobToDataURL, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
+import { getFilePreviewType } from '@/components/files/FilePreviewRenderers';
+import { BINARY_PREVIEW_MAX_BYTES, TEXT_TRUNCATE_MAX_BYTES, previewDecision } from '@/lib/files/preview-limits';
 import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
@@ -153,20 +159,39 @@ export function FilePreviewBody({
   // as its markup, so the title row's Copy has something to put on the
   // clipboard and Download hands the real file to the device.
   const inline = previewsInline(file.name);
-  const preview = useFilePreviewData(sandboxFile, sandboxUrl, { enabled: inline });
+  const attachment = isSessionAttachmentRef(file.path);
+  const stored = useQuery({
+    queryKey: ['session-attachment-preview', file.path],
+    queryFn: () => fetchSessionAttachment(file.path, undefined, getFilePreviewType(file.name) === 'image' ? BINARY_PREVIEW_MAX_BYTES : TEXT_TRUNCATE_MAX_BYTES),
+    enabled: attachment && inline,
+    retry: false,
+  });
+  const [storedContent, setStoredContent] = React.useState<{ text?: string; url?: string }>();
+  React.useEffect(() => {
+    let active = true;
+    setStoredContent(undefined);
+    if (attachment && stored.data && previewDecision({ size: stored.data.size, previewType: getFilePreviewType(file.name) }) !== 'too-large') {
+      const binary = getFilePreviewType(file.name) === 'image';
+      (binary ? blobToDataURL(stored.data, file.name) : stored.data.text()).then((value) => {
+        if (active) setStoredContent(binary ? { url: value } : { text: value });
+      }).catch(() => { if (active) setStoredContent({}); });
+    }
+    return () => { active = false; };
+  }, [attachment, stored.data, file.name, file.path]);
+  const preview = useFilePreviewData(attachment ? null : sandboxFile, sandboxUrl, { enabled: inline && !attachment });
 
-  const failed = inline && (Boolean(preview.error) || !sandboxUrl);
-  const failure = failed ? previewFailure(preview.error, Boolean(sandboxUrl)) : null;
+  const failed = inline && (attachment ? Boolean(stored.error) : Boolean(preview.error) || !sandboxUrl);
+  const failure = failed ? previewFailure(attachment ? stored.error : preview.error, attachment || Boolean(sandboxUrl)) : null;
 
   const copyText =
-    inline && !failed && typeof preview.textContent === 'string' ? preview.textContent : '';
+    inline && !failed ? (attachment ? storedContent?.text ?? '' : typeof preview.textContent === 'string' ? preview.textContent : '') : '';
   React.useEffect(() => {
     onCopyTextChange(copyText);
   }, [copyText, onCopyTextChange]);
 
   const [downloading, setDownloading] = React.useState(false);
   const handleDownload = async () => {
-    if (!sandboxUrl || downloading) return;
+    if ((!sandboxUrl && !attachment) || downloading) return;
     haptics.tap();
     setDownloading(true);
     try {
@@ -174,7 +199,26 @@ export function FilePreviewBody({
       // streamed to the cache natively (any size or type), then saved in a
       // folder on the device (`lib/files/save-to-device`), never opened in
       // another app.
-      const uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
+      let uri: string;
+      if (attachment) {
+        const token = await getAuthToken();
+        const path = file.path.slice('kortix-attachment://'.length).split('/');
+        const target = `${FileSystem.cacheDirectory}${encodeURIComponent(file.name)}`;
+        const result = await FileSystem.downloadAsync(
+          `${API_URL.replace(/\/$/, '')}/projects/${path[0]}/sessions/${path[1]}/attachments/${path[2]}`,
+          target,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+        if (result.status !== 200) {
+          await FileSystem.deleteAsync(target, { idempotent: true });
+          throw new Error(`Attachment download failed: ${result.status}`);
+        }
+        uri = result.uri;
+      } else if (sandboxUrl) {
+        uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
+      } else {
+        return;
+      }
       const result = await saveFileToDevice(uri, sandboxFile.name);
       if (result.status === 'saved') {
         haptics.success();
@@ -209,7 +253,7 @@ export function FilePreviewBody({
             </Text>
             <Text variant="muted">{sessionFileKindLabel({ name: file.name, kind: file.kind ?? 'file' })}</Text>
           </View>
-        ) : preview.isLoading ? (
+        ) : (attachment ? stored.isLoading || (stored.data && !storedContent && previewDecision({ size: stored.data.size, previewType: getFilePreviewType(file.name) }) !== 'too-large') : preview.isLoading) ? (
           <View
             className="flex-1 items-center justify-center"
             style={{ paddingBottom: contentInset }}>
@@ -222,14 +266,15 @@ export function FilePreviewBody({
             <Text variant="muted" className="text-center">
               {failure.message}
             </Text>
-            {failure.canRetry && sandboxUrl ? (
+            {attachment || (failure.canRetry && sandboxUrl) ? (
               <Button
                 variant="secondary"
                 size="lg"
                 className="rounded-full"
                 onPress={() => {
                   haptics.tap();
-                  preview.retry();
+                  if (attachment) void stored.refetch();
+                  else preview.retry();
                 }}>
                 <Text>Try again</Text>
               </Button>
@@ -237,13 +282,13 @@ export function FilePreviewBody({
           </View>
         ) : (
           <FilePreview
-            content={preview.textContent || null}
+            content={attachment ? storedContent?.text ?? null : preview.textContent || null}
             fileName={sandboxFile.name}
-            previewType={preview.previewType}
-            blobUrl={preview.blobUrl}
+            previewType={attachment ? getFilePreviewType(file.name) : preview.previewType}
+            blobUrl={attachment ? storedContent?.url : preview.blobUrl}
             filePath={sandboxFile.path}
-            sandboxUrl={sandboxUrl}
-            size={preview.size}
+            sandboxUrl={attachment ? undefined : sandboxUrl}
+            size={attachment ? stored.data?.size : preview.size}
           />
         )}
       </FilePreviewBottomInsetContext.Provider>
@@ -257,7 +302,7 @@ export function FilePreviewBody({
         <Button
           variant="secondary"
           className="flex-1 rounded-full"
-          disabled={!sandboxUrl || downloading || failure?.kind === 'missing'}
+          disabled={(!sandboxUrl && !attachment) || downloading || (!attachment && failure?.kind === 'missing')}
           onPress={() => void handleDownload()}
           accessibilityLabel={downloading ? 'Downloading' : 'Download file'}>
           {downloading ? <KortixLoader size="small" /> : <Icon as={DownloadSimpleIcon} size={18} />}
@@ -265,7 +310,7 @@ export function FilePreviewBody({
         </Button>
         {/* A file that did not load is not offered to the chat either. */}
         {onAdd ? (
-          <Button className="flex-1 rounded-full" disabled={failed} onPress={onAdd}>
+          <Button className="flex-1 rounded-full" disabled={failed || attachment} onPress={onAdd}>
             <Icon as={PlusIcon} size={18} />
             <Text>Add to chat</Text>
           </Button>

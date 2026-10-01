@@ -57,7 +57,7 @@ async function rememberedFolder(): Promise<Directory | null> {
   return null;
 }
 
-function writeInto(folder: Directory, sourceUri: string, name: string): string {
+async function writeInto(folder: Directory, sourceUri: string, name: string): Promise<string> {
   const existing = new Set(
     folder
       .list()
@@ -66,7 +66,7 @@ function writeInto(folder: Directory, sourceUri: string, name: string): string {
   );
   const finalName = availableFileName(name, (candidate) => existing.has(candidate));
   const target = folder.createFile(finalName, mimeTypeForFile(finalName) ?? 'application/octet-stream');
-  target.write(new File(sourceUri).bytesSync());
+  await new File(sourceUri).copy(target, { overwrite: true });
   return target.name ?? finalName;
 }
 
@@ -76,7 +76,7 @@ export async function saveFileToDevice(sourceUri: string, name: string): Promise
     const remembered = await rememberedFolder();
     if (remembered) {
       try {
-        return { status: 'saved', name: writeInto(remembered, sourceUri, name), folder: remembered.name };
+        return { status: 'saved', name: await writeInto(remembered, sourceUri, name), folder: remembered.name };
       } catch {
         // Lost write access to the remembered folder: forget it and pick again.
         await AsyncStorage.removeItem(FOLDER_KEY).catch(() => {});
@@ -85,7 +85,7 @@ export async function saveFileToDevice(sourceUri: string, name: string): Promise
   }
   const folder = await pickFolder();
   if (!folder) return { status: 'cancelled' };
-  const saved = writeInto(folder, sourceUri, name);
+  const saved = await writeInto(folder, sourceUri, name);
   if (Platform.OS === 'android') await AsyncStorage.setItem(FOLDER_KEY, folder.uri).catch(() => {});
   return { status: 'saved', name: saved, folder: folder.name };
 }

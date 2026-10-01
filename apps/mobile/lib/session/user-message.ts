@@ -45,6 +45,7 @@ export interface MessageAttachment {
 // ─── Text parsing ────────────────────────────────────────────────────────────
 
 export interface ParsedFileRef {
+  attachment?: string;
   path: string;
   mime: string;
   filename: string;
@@ -209,7 +210,8 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
     const path = pick('path');
     const filename = pick('filename');
     if (path === undefined && filename === undefined) return whole;
-    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '' });
+    const attachment = pick('attachment');
+    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '', ...(attachment ? { attachment } : {}) });
     return '';
   }).trim();
 

@@ -18,6 +18,7 @@
  */
 import {
   createArtifactKind,
+  isSessionAttachmentRef,
   familyForTool,
   isToolPart,
   normalizeActivityToolName,
@@ -27,6 +28,7 @@ import {
 
 import type { MessageWithParts } from '@/lib/opencode/types';
 import { withoutTrailingSlashes } from '@kortix/shared/tool-output';
+import { parseUserMessageText } from './user-message';
 import { partInput, partMetadata } from './tool-part-accessors';
 import { parseImageOutput, parseVideoOutput } from './tools/web-media';
 import { parseShowItems } from './tools/web-show';
@@ -85,7 +87,7 @@ function basename(path: string): string {
 }
 
 function pathKey(path: string): string {
-  return toWorkspaceRelative(path.replace(/\\/g, '/').replace(/^\.\//, ''));
+  return isSessionAttachmentRef(path) ? path : toWorkspaceRelative(path.replace(/\\/g, '/').replace(/^\.\//, ''));
 }
 
 function text(value: unknown): string {
@@ -100,10 +102,10 @@ function kindOfName(name: string): SessionFileKind {
   return 'file';
 }
 
-type Candidate = Omit<SessionFile, 'key' | 'fresh'>;
+type Candidate = Omit<SessionFile, 'key' | 'fresh'> & { key?: string };
 
 function candidate(callID: string, path: string, extra?: Partial<Candidate>): Candidate | null {
-  const name = basename(path);
+  const name = extra?.name || (isSessionAttachmentRef(path) ? '' : basename(path));
   if (!path || !name) return null;
   return { callID, name, path, kind: 'file', shown: false, ...extra };
 }
@@ -132,7 +134,9 @@ function showCandidates(part: ToolPart): Candidate[] {
     // A URL is web's "app" output: nothing to open by path.
     if (/^https?:\/\//i.test(text(payload?.url))) continue;
     const path = text(payload?.path);
-    const item = candidate(part.callID, path, {
+    const item = candidate(part.callID, isSessionAttachmentRef(payload?.attachment) ? text(payload.attachment) : path, {
+      name: basename(path),
+      key: pathKey(path),
       kind: kindOfName(basename(path)),
       title: text(payload?.title) || undefined,
       shown: true,
@@ -228,11 +232,46 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
   messages.forEach((message, messageIndex) => {
     const isLatest = messageIndex >= latestStart;
     for (const part of message.parts ?? []) {
+      if (message.info.role === 'user' && part.type === 'file') {
+        const path = typeof part.url === 'string' && isSessionAttachmentRef(part.url)
+          ? part.url
+          : 'path' in part && typeof part.path === 'string'
+            ? part.path
+            : part.url?.startsWith('file:///workspace/') ? part.url.slice('file://'.length) : '';
+        const item = isSessionAttachmentRef(path) && part.filename
+          ? { callID: part.id, name: part.filename, path, kind: kindOfName(part.filename), shown: true }
+          : candidate(part.id, path, { shown: true, kind: kindOfName(part.filename || path) });
+        if (item) {
+          const key = item.key || pathKey(item.path);
+          const existing = files.findIndex((file) => file.path === item.path);
+          if (existing >= 0) indexByKey.set(key, existing);
+          if (!indexByKey.has(key)) {
+            indexByKey.set(key, files.length);
+            files.push({ ...item, key, ...(isLatest ? { fresh: 'new' } : {}) });
+          }
+        }
+      }
+      if (message.info.role === 'user' && part.type === 'text' && !part.synthetic && !('ignored' in part && part.ignored)) {
+        for (const file of parseUserMessageText(part.text).files) {
+          const name = file.filename || basename(file.path);
+          const path = isSessionAttachmentRef(file.attachment) ? file.attachment || file.path : file.path;
+          const item = candidate(part.id, path, { name, key: pathKey(file.path || path), shown: true, kind: kindOfName(name) });
+          if (!item) continue;
+          const key = item.key || pathKey(item.path);
+          const existing = files.findIndex((file) => file.path === item.path);
+          if (existing >= 0) indexByKey.set(key, existing);
+          if (!indexByKey.has(key)) {
+            indexByKey.set(key, files.length);
+            files.push({ ...item, key, ...(isLatest ? { fresh: 'new' } : {}) });
+          }
+        }
+      }
       if (!isToolPart(part as never)) continue;
       for (const item of candidatesOf(part as unknown as ToolPart)) {
-        const key = pathKey(item.path);
-        const existing = indexByKey.get(key);
-        if (existing === undefined) {
+        const key = item.key || pathKey(item.path);
+        const existing = indexByKey.get(key) ?? (isSessionAttachmentRef(item.path) ? files.findIndex((file) => file.path === item.path) : -1);
+        if (existing >= 0) indexByKey.set(key, existing);
+        if (existing < 0) {
           indexByKey.set(key, files.length);
           files.push({ ...item, key, ...(isLatest ? { fresh: 'new' as const } : {}) });
         } else {

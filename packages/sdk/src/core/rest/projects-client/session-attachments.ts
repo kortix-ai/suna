@@ -77,6 +77,7 @@ export async function uploadSessionAttachment(
 export async function fetchSessionAttachment(
   ref: string,
   signal?: AbortSignal,
+  maxBytes?: number,
 ): Promise<Blob> {
   const scope = parseSessionAttachmentRef(ref);
   if (!scope) throw new Error("Invalid attachment reference");
@@ -89,7 +90,33 @@ export async function fetchSessionAttachment(
     throw new ApiError("Could not load attachment", {
       status: response.status,
     });
-  return response.blob();
+  if (maxBytes === undefined) return response.blob();
+  const length = Number(response.headers.get("content-length"));
+  if (length > maxBytes) {
+    await response.body?.cancel();
+    throw new Error("Attachment is too large to preview");
+  }
+  if (!response.body) return response.blob();
+  const reader = response.body.getReader();
+  const chunks: ArrayBuffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel();
+        throw new Error("Attachment is too large to preview");
+      }
+      const copy = new ArrayBuffer(value.byteLength);
+      new Uint8Array(copy).set(value);
+      chunks.push(copy);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new Blob(chunks, { type: response.headers.get("content-type") ?? "" });
 }
 
 /**
