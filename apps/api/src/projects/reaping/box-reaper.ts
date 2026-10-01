@@ -894,10 +894,6 @@ export async function reapAndReconcileSandboxes(
           isDaytonaTransientProviderError(err) ||
           (row.provider === 'platinum' &&
             err instanceof Error &&
-            /^platinum POST \/v1\/sandboxes\/[^/]+\/exec -> 429\b/.test(err.message) &&
-            err.message.includes('too many write requests for this org')) ||
-          (row.provider === 'platinum' &&
-            err instanceof Error &&
             err.message.includes('Platinum lifecycle renewal failed') &&
             err.message.includes('guest vsock') &&
             err.message.includes('unreachable after 5s: EOF'))
