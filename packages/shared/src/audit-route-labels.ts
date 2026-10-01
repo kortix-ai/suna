@@ -93,7 +93,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/accounts/:accountId/branding/assets/:kind': { action: 'account.branding.asset.upload', title: 'Uploaded branding asset' },
   'GET /v1/accounts/:accountId/iam/actions': { action: 'iam.action.list', title: 'Listed IAM actions' },
   'GET /v1/accounts/:accountId/iam/agent-identities': { action: 'iam.agent_identity.list', title: 'Listed agent identities' },
-  'GET /v1/projects/:projectId/agent-identities': { action: 'iam.agent_identity.list', title: 'Listed agent identities' },
+  'GET /v1/projects/:projectId/agent-identities': { action: 'project.agent_identity.list', title: 'Listed project agent identities' },
   'GET /v1/accounts/:accountId/iam/assignments': { action: 'iam.assignment.list', title: 'Listed role assignments' },
   'POST /v1/accounts/:accountId/iam/assignments': { action: 'iam.assignment.grant', title: 'Granted a role', events: ['iam.assignment.granted'] },
   'DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId': { action: 'iam.assignment.revoke', title: 'Revoked a role assignment', events: ['iam.assignment.revoked'] },
