@@ -12,7 +12,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, inArray, isNull, ne, type SQL } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
@@ -147,6 +147,46 @@ export async function unpairMachine(tunnelId: string, where?: SQL): Promise<bool
   );
   if (deleted) tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
   return deleted;
+}
+
+/**
+ * One machine, one registration per person. Once a registration reports a
+ * hardware id (at approval, or in its first heartbeat that carries one), the
+ * owner's other registrations of the same hardware are superseded: each is
+ * unpaired with its accounts. Only offline ones: two agents running on one
+ * machine at once never cut each other off, and the next heartbeat after one
+ * stops retires it. Another person's registration is never touched. Returns
+ * the retired tunnel ids.
+ */
+export async function retireSupersededRegistrations(tunnelId: string, machineId: string): Promise<string[]> {
+  const [self] = await db
+    .select({ ownerUserId: tunnelConnections.ownerUserId })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, tunnelId))
+    .limit(1);
+  if (!self?.ownerUserId) return [];
+  const others = await db
+    .select({
+      tunnelId: tunnelConnections.tunnelId,
+      status: tunnelConnections.status,
+      lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
+      relayOwnerId: tunnelConnections.relayOwnerId,
+      relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
+    })
+    .from(tunnelConnections)
+    .where(
+      and(
+        eq(tunnelConnections.ownerUserId, self.ownerUserId),
+        sql`${tunnelConnections.machineInfo}->>'machineId' = ${machineId}`,
+        ne(tunnelConnections.tunnelId, tunnelId),
+      ),
+    );
+  const retired: string[] = [];
+  for (const other of others) {
+    if (isTunnelConnectionLive(other)) continue;
+    if (await unpairMachine(other.tunnelId)) retired.push(other.tunnelId);
+  }
+  return retired;
 }
 
 export function createConnectionsRouter() {

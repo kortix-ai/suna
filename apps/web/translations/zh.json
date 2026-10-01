@@ -20370,6 +20370,15 @@
       "settingsHint": "如果打开了系统设置，请在列表中开启 Kortix。此页面会自动更新。",
       "doneTitle": "你的电脑已准备就绪",
       "doneHint": "Kortix 已获得所需的全部权限。代理现在可以使用这台电脑。"
+    },
+    "thisComputerBadge": "这台电脑",
+    "actionsFor": "{name} 的操作",
+    "older": {
+      "title": "旧连接",
+      "hint": "由无法区分电脑的旧版 Kortix 创建。它们都不在线。",
+      "removeAll": "全部移除",
+      "confirmTitle": "移除所有旧连接？",
+      "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
     }
   },
   "messageFrom": {

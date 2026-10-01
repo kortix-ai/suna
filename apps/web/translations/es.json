@@ -20370,6 +20370,15 @@
       "settingsHint": "Si se abre Configuración del Sistema, activa Kortix en la lista. Esto se actualiza solo.",
       "doneTitle": "Tu computadora está lista",
       "doneHint": "Kortix tiene todos los permisos que necesita. Los agentes ya pueden usar esta computadora."
+    },
+    "thisComputerBadge": "Esta computadora",
+    "actionsFor": "Acciones para {name}",
+    "older": {
+      "title": "Conexiones antiguas",
+      "hint": "Creadas por una versión antigua de Kortix que no distinguía computadoras. Ninguna está en línea.",
+      "removeAll": "Quitar todas",
+      "confirmTitle": "¿Quitar todas las conexiones antiguas?",
+      "confirmDescription": "Kortix las quita junto con sus cuentas de todos los proyectos. Una computadora que aún use una puede volver a conectarse."
     }
   },
   "messageFrom": {
