@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import type { SessionPrompt } from '@kortix/sdk';
 import enMessages from '../../../translations/en.json';
+import { sessionAuditKey } from './session-audit-shared';
 import { TurnErrorDisplay } from './session-error-banner';
 
 const realSdk = await import('@kortix/sdk/react');
@@ -33,6 +34,7 @@ const userFixture = (id: string, text: string) => ({
 });
 let inboxPrompts: SessionPrompt[] = [];
 let busy = false;
+let auditPending = false;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
   useSessionMessages: () => fixtureMessages,
@@ -60,7 +62,7 @@ mock.module('@kortix/sdk/react', () => ({
   }),
 }));
 mock.module('next/navigation', () => ({
-  useParams: () => ({}),
+  useParams: () => ({ id: 'project-fixture', sessionId: 'project-session-fixture' }),
   usePathname: () => '/',
   useRouter: () => ({ push: () => {} }),
   useSearchParams: () => new URLSearchParams(),
@@ -69,14 +71,29 @@ mock.module('@/features/session/header/session-site-header', () => ({
   SessionSiteHeader: () => null,
 }));
 mock.module('@/features/session/session-approval-prompt', () => ({
-  SessionApprovalPrompt: () => null,
+  SessionApprovalPrompt: () =>
+    auditPending ? <button type="button">Approve this call</button> : null,
 }));
 mock.module('@/features/session/session-permission-prompt', () => ({
   SessionPermissionPrompt: () => null,
 }));
 mock.module('@/features/session/composer/composer', () => ({
   COMPOSER_SHELL_CLASS: '',
-  Composer: ({ inputSlot }: { inputSlot?: React.ReactNode }) => inputSlot ?? null,
+  Composer: ({
+    inputSlot,
+    lockForApproval,
+  }: {
+    inputSlot?: React.ReactNode;
+    lockForApproval?: boolean;
+  }) => (
+    <div>
+      {inputSlot}
+      <textarea aria-label="Message" disabled={lockForApproval} />
+      <button type="button" disabled={lockForApproval}>
+        Send
+      </button>
+    </div>
+  ),
 }));
 const { SessionChat, deriveTurnErrorAbortState, deriveTurnErrorPresentation } =
   await import('./session-chat');
@@ -130,9 +147,9 @@ describe('SessionChat turn error presentation', () => {
 });
 
 describe('SessionChat transcript rows', () => {
-  const renderChat = () =>
+  const renderChat = (client = new QueryClient()) =>
     renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <NextIntlClientProvider locale="en" messages={enMessages} onError={() => {}}>
           <SidebarProvider>
             <SessionChat
@@ -144,6 +161,26 @@ describe('SessionChat transcript rows', () => {
         </NextIntlClientProvider>
       </QueryClientProvider>,
     );
+  test('an audit-pending executor call leaves the editor and send enabled beside its approval action', () => {
+    auditPending = true;
+    busy = true;
+    const client = new QueryClient();
+    client.setQueryData(sessionAuditKey('project-fixture', 'project-session-fixture'), {
+      actions: [
+        { execution_id: 'synthetic-execution', status: 'pending_approval', resolved_at: null },
+      ],
+    });
+    try {
+      const markup = renderChat(client);
+      expect(markup).toContain('Approve this call');
+      expect(markup).toContain('<textarea aria-label="Message"></textarea>');
+      expect(markup).toContain('>Send</button>');
+    } finally {
+      auditPending = false;
+      busy = false;
+    }
+  });
+
   test('a mounted session shows the user and assistant text without a busy row when idle', () => {
     busy = false;
     const markup = renderChat();
