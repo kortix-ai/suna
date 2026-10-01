@@ -1005,6 +1005,10 @@
           "name": "MCP server",
           "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
         },
+        "human_messaging": {
+          "name": "Human Messaging",
+          "description": "Let agents message people and other sessions. `kortix send alice@example.com` opens a conversation that starts with the agent's message and shows under Asked you in the recipient's sidebar. Several addresses open a group chat."
+        },
         "reminders": {
           "name": "Reminders",
           "description": "Let agents and people schedule check-ins on a session, once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind`."
@@ -1587,6 +1591,17 @@
       "failed": "Could not save the labels",
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
+    },
+    "askedYou": {
+      "title": "Asked you",
+      "from": "from {name}",
+      "arrival": "{name} asked you",
+      "arrivalUnknown": "Someone asked you",
+      "open": "Open",
+      "withOne": "Conversation with 1 person",
+      "withMany": "Conversation with {count} people",
+      "askedFrom": "Asked from {title}",
+      "inConversation": "In this conversation"
     }
   },
   "dashboard": {
@@ -19078,7 +19093,8 @@
       "textbbb4106e8144": "Listening…",
       "text7458028e0d1d": "Done dictating",
       "text9c84d6622566": "Dictate message",
-      "textf164e4b031dc": "Updated session presence"
+      "textf164e4b031dc": "Updated session presence",
+      "text9e6a0b0a06c2": "Viewed session message authors"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -20299,5 +20315,11 @@
     "runInBackgroundDescription": "Off pauses the connection, even after a restart.",
     "manageInProject": "Manage in project",
     "disconnectEllipsis": "Disconnect…"
+  },
+  "messageFrom": {
+    "from": "From",
+    "asked": "asked",
+    "replyHint": "Reply below. The agent picks it up.",
+    "untitledSession": "Untitled session"
   }
 }

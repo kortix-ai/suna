@@ -1179,6 +1179,10 @@
           "name": "Servidor MCP",
           "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
         },
+        "human_messaging": {
+          "name": "Mensajes a personas",
+          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal."
+        },
         "reminders": {
           "name": "Recordatorios",
           "description": "Permite que agentes y personas programen revisiones en una sesión, una vez o de forma recurrente. Cada activación vuelve a avisar a esa sesión. Añade la página Recordatorios, el indicador de recordatorios de la sesión y `kortix remind`."
@@ -1587,6 +1591,17 @@
       "failed": "No se pudieron guardar las etiquetas",
       "tooLong": "Una etiqueta tiene como máximo 64 caracteres.",
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
+    },
+    "askedYou": {
+      "title": "Te preguntaron",
+      "from": "de {name}",
+      "arrival": "{name} te preguntó algo",
+      "arrivalUnknown": "Alguien te preguntó algo",
+      "open": "Abrir",
+      "withOne": "Conversación con 1 persona",
+      "withMany": "Conversación con {count} personas",
+      "askedFrom": "Preguntado desde {title}",
+      "inConversation": "En esta conversación"
     }
   },
   "dashboard": {
@@ -19065,7 +19080,8 @@
       "textbbb4106e8144": "Escuchando…",
       "text7458028e0d1d": "Terminar dictado",
       "text9c84d6622566": "Dictar mensaje",
-      "textf164e4b031dc": "Presencia en la sesión actualizada"
+      "textf164e4b031dc": "Presencia en la sesión actualizada",
+      "text9e6a0b0a06c2": "Vio los autores de los mensajes de la sesión"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20299,5 +20315,11 @@
     "runInBackgroundDescription": "Desactivado pausa la conexión, incluso tras reiniciar.",
     "manageInProject": "Gestionar en el proyecto",
     "disconnectEllipsis": "Desconectar…"
+  },
+  "messageFrom": {
+    "from": "De",
+    "asked": "preguntó a",
+    "replyHint": "Responde abajo. El agente lo recogerá.",
+    "untitledSession": "Sesión sin título"
   }
 }

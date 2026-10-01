@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 696,
+  "count": 698,
   "routes": [
     {
       "method": "GET",
@@ -1779,6 +1779,10 @@
       "path": "/v1/projects/:projectId/connections"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/connections/:connectionId"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/connections/:connectionId/activate"
     },
@@ -2257,6 +2261,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/message-authors"
     },
     {
       "method": "PUT",
