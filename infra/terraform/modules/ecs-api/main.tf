@@ -248,6 +248,31 @@ resource "aws_iam_role_policy" "project_snapshots" {
   })
 }
 
+# Kortix Capture: the API mints presigned PUTs (recorders) and GETs (users)
+# from this role, HEADs an upload before committing it, and deletes objects in
+# the retention sweep and on delete-own-data. ListBucket ONLY so a missing key
+# answers 404 instead of 403.
+resource "aws_iam_role_policy" "capture" {
+  # A plan-time boolean, not the ARN: see project_snapshots above.
+  count = var.capture_enabled ? 1 : 0
+  name  = "${local.name}-capture"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "CaptureObjects"
+      Effect   = "Allow"
+      Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+      Resource = "${var.capture_bucket_arn}/*"
+      }, {
+      Sid      = "CaptureMissingKeyIs404"
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket"]
+      Resource = var.capture_bucket_arn
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
