@@ -422,7 +422,18 @@ headlessAuthRouter.openapi(
       clientIp: requestClientIp(c),
       query: { grant_type: 'refresh_token' },
     });
-    if (!result.ok) return upstreamError(c, result);
+    if (!result.ok) {
+      // A 5xx/network error cannot have consumed the token reliably; GoTrue
+      // decides whether a retry is valid. Never release a definitive 4xx.
+      if (result.status >= 500) {
+        try {
+          await db.execute(sql`DELETE FROM kortix.used_refresh_tokens WHERE token_hash = ${digest}`);
+        } catch {
+          return c.json({ error: 'auth_unavailable', error_description: 'Refresh temporarily unavailable' }, 503);
+        }
+      }
+      return upstreamError(c, result);
+    }
     return sessionResponse(c, result.body);
   },
 );

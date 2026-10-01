@@ -178,7 +178,7 @@ const envSchema = z.object({
   // signed-out or deleted user's still-unexpired HS256 token keeps working on a
   // replica that already confirmed it. 0 = confirm with GoTrue on every request
   // (the pre-2026-09-23 behavior).
-  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(30_000),
+  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.

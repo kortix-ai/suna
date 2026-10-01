@@ -17,8 +17,10 @@ const testConfig: Record<string, unknown> = {
 mock.module('../config', () => ({ config: testConfig }));
 const claims = new Set<string>();
 mock.module('../shared/db', () => ({ db: { execute: async (query: SQL) => {
-  const digest = new PgDialect().sqlToQuery(query).params[0];
+  const rendered = new PgDialect().sqlToQuery(query);
+  const digest = rendered.params[0];
   if (typeof digest !== 'string') throw new Error('missing token digest');
+  if (rendered.sql.startsWith('DELETE')) { claims.delete(digest); return []; }
   if (claims.has(digest)) return [];
   claims.add(digest);
   return [{ token_hash: digest }];
@@ -98,6 +100,15 @@ describe('/v1/auth headless routes', () => {
     expect(first.status).toBe(200);
     expect(replay.status).toBe(400);
     expect(seen.length).toBe(1);
+  });
+
+  test('a transient upstream failure permits one retry, but a successful rotation cannot be replayed', async () => {
+    respond = () => Response.json({ error: 'unavailable' }, { status: 502 });
+    expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(502);
+    respond = () => Response.json(SESSION);
+    expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(200);
+    expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(400);
+    expect(seen).toHaveLength(2);
   });
 
   test('signup reports requires_email_confirmation when GoTrue returns a bare user', async () => {
