@@ -1,6 +1,6 @@
 /**
- * Warm sessions — pre-create the session a present user is about to start, and
- * the deprecated claim that predates it. See ../lib/warm-sessions.ts.
+ * Pre-create warm sessions and adopt them with a durable first prompt.
+ * See ../lib/warm-sessions.ts.
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
@@ -98,11 +98,9 @@ export async function warmSessionPlacement(
  * including the home region when the US flag is off. `includeProvisioning`
  * deduplicates warming via server-owned intent, but does NOT prove placement.
  *
- * `excludeSessionId` skips one session id — the one the caller just took. The
- * warm marker only drops when the FIRST PROMPT reaches the preview proxy
- * (`recordSessionActivity`), seconds after the client already consumed the
- * session client-side, so without this exclusion a replenish racing that gap
- * finds the just-taken row and hands it straight back as `reused: true`.
+ * `excludeSessionId` skips the session the caller just consumed locally. Until
+ * server-side adoption drops its warm marker, a racing replenish could otherwise
+ * find that same row and hand it straight back as `reused: true`.
  *
  * Skips a session whose sandbox ANOTHER API instance provisioned (shared local
  * DB, projects/instance-scope.ts). The first prompt becomes a lifecycle command,
@@ -259,11 +257,9 @@ projectsApp.openapi(
           'application/json': {
             schema: z
               .object({
-                // The id of the warm session the caller just took for a send.
-                // Excluded from the reuse lookup below, so a replenish racing
-                // the window before the first prompt drops `metadata.warm`
-                // (`recordSessionActivity`) creates a FRESH session instead of
-                // handing the just-taken one straight back as `reused: true`.
+                // The warm session the caller just consumed locally. Exclude it
+                // while server-side adoption has not yet dropped its warm marker,
+                // so replenishment creates a fresh session instead of reusing it.
                 exclude_session_id: z.string().optional(),
               })
               .strict(),
@@ -362,14 +358,10 @@ projectsApp.openapi(
 
 // POST /v1/projects/:projectId/sessions/warm/claim
 //
-// DEPRECATED. Kept because `claimWarmProjectSession` has shipped in every
-// published `@kortix/sdk` since v0.11.0 and removing it would 404 an external
-// consumer at runtime. The browser no longer calls it: a warm session is an
-// ordinary session, so the send path navigates to it and prompts it, and the
-// first prompt drops the marker on its own (projects/session-activity.ts).
-//
-// It now does exactly what that prompt does — drop `metadata.warm` — plus the
-// two things its published input can carry.
+// The published SDK claim is deprecated, but the browser still uses it to
+// durably deliver a warm session's first prompt. Adoption requires actual
+// placement matching the current project flag, never speculative warm intent.
+// The claim drops `metadata.warm` in the same transaction as prompt delivery.
 
 projectsApp.openapi(
   createRoute({
