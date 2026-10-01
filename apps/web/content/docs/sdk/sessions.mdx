@@ -460,10 +460,33 @@ await session.send('Refactor the auth module');
 
 Streaming needs `fetch` with a real `ReadableStream` body and
 `TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers
-all support it. React Native and Expo do not: their `fetch` has no
-`response.body`. On React Native, use `createHttpSessionSyncController` for
-bounded history and status synchronization. Use a platform-specific event
-transport for live events.
+all support it.
+
+A host whose `fetch` cannot stream supplies its own transport. The SDK calls it
+once per connection and keeps reconnect, `Last-Event-ID` resume, backoff and
+heartbeat itself:
+
+```ts
+import { configureKortix, notifyHostSignal, type RuntimeEventTransport } from '@kortix/sdk';
+
+const transport: RuntimeEventTransport = async function* ({ url, headers, signal }) {
+  // Yield { data, id?, retry? } for each server-sent message of ONE connection.
+  // Return when the server ends it. Throw (with `status` for a non-2xx answer)
+  // when it fails.
+};
+
+configureKortix({ backendUrl, getToken, eventStreamTransport: transport });
+
+// A host without `visibilitychange` / `online` events reports them itself.
+notifyHostSignal('visible'); // the app is back in the foreground
+notifyHostSignal('online');  // the network is back
+notifyHostSignal('retry');   // a person asked to reconnect now
+```
+
+React Native has no streaming `fetch` by default. The Kortix mobile app uses
+this seam with `react-native-sse`. `createHttpSessionSyncController` remains
+available for a host that only needs bounded history and status
+synchronization.
 
 The controller loads the newest 10 messages first. `loadOlder()` follows the
 server cursor. `loadHttpSessionHistory()` follows every cursor for explicit

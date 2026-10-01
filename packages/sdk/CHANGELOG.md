@@ -256,6 +256,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `useSession({ chatEngine: false })` no longer reads a transcript for no
+  session. Its inner `useSessionSync('')` went busy with the session, and the
+  busy to idle step started `GET /session//message`, which answered 400 and
+  retried every 15 s.
 - `isSandboxNotReadyError` now classifies `sandbox runtime not ready`, the
   text a pi runtime (and OpenCode's boot steps) answers with. Before, only
   `opencode not ready` read as "waking", so a pi session that was still
