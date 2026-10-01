@@ -268,7 +268,10 @@ export function ProjectLeftDrawer({
     () => askedYouState(askedQuery.sessions, viewerId, humanMessaging),
     [askedQuery.sessions, viewerId, humanMessaging]
   );
-  const mine = useProjectSessionsPaged(projectId, { poll: isFocused, parent: 'root', startedBy: 'me' });
+  // Polls only while the drawer is open: its content stays mounted while
+  // closed, every poll result re-rendered it (~2 renders per 3 s), and the
+  // open refetch below already shows a fresh list.
+  const mine = useProjectSessionsPaged(projectId, { poll: isFocused && open, parent: 'root', startedBy: 'me' });
   // Shared loads always (its header hides when it is empty); Automated only
   // once opened: a project can hold hundreds of automated runs.
   const shared = useProjectSessionsPaged(projectId, {
