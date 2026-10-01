@@ -41,6 +41,8 @@ concurrent changes on `main` can introduce failures after a green PR run.
 Translation catalogs must keep one effective value per key. Remove overwritten
 duplicates without changing parsed catalog content. Verify catalog content and
 merge-driver behavior rather than pinning committed JSON bytes.
+New audit labels must provide translations in every locale before merge; keep
+the strict key/placeholder parity checks.
 
 ## Preview lifecycle
 
