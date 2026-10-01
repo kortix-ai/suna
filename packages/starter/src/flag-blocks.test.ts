@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyFlagBlocks, getManagedSkillFiles, getStarterFiles } from './index';
 
@@ -60,9 +60,9 @@ describe('managed skill templates', () => {
   test('every flag used in a template is a known overlay flag', () => {
     const used = new Set<string>();
     const walk = (d: string) => {
-      for (const e of readdirSync(d)) {
-        const p = join(d, e);
-        if (statSync(p).isDirectory()) walk(p);
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, e.name);
+        if (e.isDirectory()) walk(p);
         else for (const m of readFileSync(p, 'utf8').matchAll(/<!-- flag:([\w-]+) -->/g)) used.add(m[1]!);
       }
     };
