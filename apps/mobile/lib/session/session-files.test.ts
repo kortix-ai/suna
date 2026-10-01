@@ -74,6 +74,12 @@ describe('deriveSessionFiles', () => {
     expect(files).toHaveLength(1);
   });
 
+  test('lists persisted file-only uploads for private attachment preview', () => {
+    const url = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+    const files = deriveSessionFiles([msg('user', [{ type: 'file', id: 'saved', filename: 'brief.txt', url }])]);
+    expect(files).toMatchObject([{ name: 'brief.txt', path: url, shown: true, fresh: 'new' }]);
+  });
+
   test('skips files the agent only read', () => {
     const files = deriveSessionFiles([
       msg('assistant', [tool('read', { filePath: '/workspace/a.md' })]),

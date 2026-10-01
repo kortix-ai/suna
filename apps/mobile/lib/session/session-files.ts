@@ -18,6 +18,7 @@
  */
 import {
   createArtifactKind,
+  isSessionAttachmentRef,
   familyForTool,
   isToolPart,
   normalizeActivityToolName,
@@ -86,7 +87,7 @@ function basename(path: string): string {
 }
 
 function pathKey(path: string): string {
-  return toWorkspaceRelative(path.replace(/\\/g, '/').replace(/^\.\//, ''));
+  return isSessionAttachmentRef(path) ? path : toWorkspaceRelative(path.replace(/\\/g, '/').replace(/^\.\//, ''));
 }
 
 function text(value: unknown): string {
@@ -104,7 +105,7 @@ function kindOfName(name: string): SessionFileKind {
 type Candidate = Omit<SessionFile, 'key' | 'fresh'>;
 
 function candidate(callID: string, path: string, extra?: Partial<Candidate>): Candidate | null {
-  const name = basename(path);
+  const name = isSessionAttachmentRef(path) ? '' : basename(path);
   if (!path || !name) return null;
   return { callID, name, path, kind: 'file', shown: false, ...extra };
 }
@@ -230,10 +231,14 @@ export function deriveSessionFiles(messages: MessageWithParts[] | undefined): Se
     const isLatest = messageIndex >= latestStart;
     for (const part of message.parts ?? []) {
       if (message.info.role === 'user' && part.type === 'file') {
-        const path = 'path' in part && typeof part.path === 'string'
-          ? part.path
-          : part.url?.startsWith('file:///workspace/') ? part.url.slice('file://'.length) : '';
-        const item = candidate(part.id, path, { shown: true, kind: kindOfName(part.filename || path) });
+        const path = typeof part.url === 'string' && isSessionAttachmentRef(part.url)
+          ? part.url
+          : 'path' in part && typeof part.path === 'string'
+            ? part.path
+            : part.url?.startsWith('file:///workspace/') ? part.url.slice('file://'.length) : '';
+        const item = isSessionAttachmentRef(path) && part.filename
+          ? { callID: part.id, name: part.filename, path, kind: kindOfName(part.filename), shown: true }
+          : candidate(part.id, path, { shown: true, kind: kindOfName(part.filename || path) });
         if (item) {
           const key = pathKey(item.path);
           if (!indexByKey.has(key)) {
