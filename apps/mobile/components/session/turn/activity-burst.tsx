@@ -60,10 +60,11 @@ function ActivityBurstImpl({
 }: ActivityBurstProps) {
   const palette = useTurnPalette();
   const { colorScheme } = useColorScheme();
-  const thoughtKey = disclosureKey('thought', segment.parts[0]?.id ?? '');
-  const choice = useDisclosureChoice(thoughtKey);
   const { parts } = segment;
   const view = useMemo(() => burstView(parts, turnLive, isTrailing), [parts, turnLive, isTrailing]);
+  const thought = view.steps.length === 1 && view.steps[0]?.kind === 'thought' ? view.steps[0] : undefined;
+  const thoughtKey = disclosureKey('thought', thought?.key ?? '');
+  const choice = useDisclosureChoice(thoughtKey);
   const ownsSheet = useActivitySheetStore((state) => state.sheet !== null && ownsBurst(state.sheet.partIds, parts));
 
   const context = useMemo<ActivityContextValue>(
@@ -79,7 +80,6 @@ function ActivityBurstImpl({
 
   if (view.hidden) return null;
 
-  const thought = view.steps.length === 1 && view.steps[0]?.kind === 'thought' ? view.steps[0] : undefined;
   if (thought) {
     const open = choice ?? (turnLive && thought.running);
     return (
