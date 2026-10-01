@@ -15,16 +15,17 @@
  * hardcoded surface.
  */
 
-import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
+import { EyeIcon as Eye, EyeSlashIcon as EyeOff } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { EmailLinkStep } from './email-link-step';
 
+import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
@@ -48,12 +49,7 @@ import {
   createClient as createBrowserSupabaseClient,
   fetchSamlEnabled,
 } from '@/lib/supabase/client';
-import {
-  resolveAuthMode,
-  sendEmailCode,
-  signInWithPassword,
-  signUpWithPassword,
-} from './actions';
+import { resolveAuthMode, sendEmailCode, signInWithPassword, signUpWithPassword } from './actions';
 
 const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
@@ -622,68 +618,19 @@ function AuthCardForm({
     );
   }
 
-  /* ── Link step ── */
   if (step === 'link') {
     return (
-      <>
-        <m.div {...rise(0)}>
-          <StepHeader
-            title={t('link.title')}
-            description={t.rich('link.description', {
-              email: sentEmail ?? '',
-              address: (chunks) => (
-                <span className="text-foreground font-medium wrap-break-word">{chunks}</span>
-              ),
-            })}
-          />
-        </m.div>
-
-        <m.div {...rise(0.06)}>
-          {info && <InfoStrip message={info} />}
-
-          <div className="text-muted-foreground mt-6 space-y-2 text-sm">
-            <p>
-              {t('link.notReceived')}{' '}
-              {resendIn > 0 ? (
-                <span className="tabular-nums">{t('link.resendIn', { seconds: resendIn })}</span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleResend}
-                  disabled={pending}
-                  className="text-foreground underline-offset-4 hover:underline disabled:opacity-50"
-                >
-                  {pendingAction === 'resend' ? t('sending') : t('link.resend')}
-                </button>
-              )}
-            </p>
-            <p className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={goToEntry}
-                className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline"
-              >
-                {t('useDifferentEmail')}
-              </button>
-              {passwordEnabled && (
-                <>
-                  <span aria-hidden className="text-muted-foreground select-none">
-                    ·
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void goToPassword()}
-                    disabled={pending}
-                    className="hover:text-foreground -my-2 py-2 underline-offset-4 transition-colors hover:underline disabled:opacity-50"
-                  >
-                    {pendingAction === 'password' ? t('oneMoment') : t('usePasswordInstead')}
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
-        </m.div>
-      </>
+      <EmailLinkStep
+        sentEmail={sentEmail}
+        info={info}
+        resendIn={resendIn}
+        pending={pending}
+        pendingAction={pendingAction}
+        passwordEnabled={passwordEnabled}
+        onResend={handleResend}
+        onChangeEmail={goToEntry}
+        onPassword={() => void goToPassword()}
+      />
     );
   }
 
