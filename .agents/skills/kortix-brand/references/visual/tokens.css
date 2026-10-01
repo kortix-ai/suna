@@ -111,6 +111,12 @@
   --email-body-size: 14px;
   --email-kicker-size: 13px;
   --email-small-size: 12px;
+  --email-title-line-height: 1.25;
+  --email-body-line-height: 1.6;
+  --email-gap-kicker-before: 24px;
+  --email-gap-kicker-after: 8px;
+  --email-gap-title: 12px;
+  --email-gap-block: 24px;
   --duration-fast: 100ms;
   --duration-normal: 150ms;
   --duration-moderate: 200ms;

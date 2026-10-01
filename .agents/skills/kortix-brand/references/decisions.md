@@ -6,11 +6,76 @@ Each entry has six fields: **Date** (ISO, the day the decision was recorded or m
 
 How to add an entry: change the value in `visual/visual-system.json`, run `scripts/generate-tokens.ts`, update the guidance file, then write the entry here, at the top of its date group. Do not put a color literal in this file: write the token name. `tests/unit/brand-kit.test.ts` fails on a literal. A value that was removed is written in code font, which the test skips.
 
-Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `J-1` to `J-9` also live in `visual-system.json` (`decisions`). `K1` and up are kit-build decisions. `E1` and `E2` are errata moved from the old skills. `Q1` and up come from fresh-agent QA rounds (Q1 to Q21 round 1, Q22 to Q32 round 2, Q33 to Q45 the full judge input and the surface agents).
+Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `J-1` to `J-9` also live in `visual-system.json` (`decisions`). `K1` and up are kit-build decisions. `E1` and `E2` are errata moved from the old skills. `Q1` and up come from fresh-agent QA rounds (Q1 to Q21 round 1, Q22 to Q32 round 2, Q33 to Q45 the full judge input and the surface agents, Q46 to Q57 the final kit pass on round 3).
 
 ---
 
 ## 2026-10-01
+
+### Q57 Round 3 freedoms marked intentional
+- **Decision:** These are author choices, not kit rules: the total length and paragraph count of a LinkedIn post beyond the 210-character hook (`kortix-social` owns platform limits, and it may be absent); the mobile `notifications.tsx` screen being withheld in prompt 9 (placeholder plus Guesses, Q38); the diagram label text in a scratch deck run, which the judge does not check when no catalog was copied; the optional `.txt` versus source choice for CLI output beyond the Q56 default; the order of two Also-load reads. Why: runs logged each as a guess and no judge showed a harm.
+- **Where:** `qa/fresh-agent.md` judge note.
+- **Source:** round 3 judge input (2026-10-01).
+
+### Q56 CLI quoting, missing-secret wording, help examples
+- **Decision:** A request for existing help or error text gets the shipped text verbatim, with named mechanical fixes only, and any rewrite goes in a `PROPOSED` block. The missing-secret rule gains the plural ("{n} required secrets are missing.") and one fix line naming `secrets set` and `secrets request`. The help structure rule asks for examples only when the command's help has them: `kortix secrets --help` has none (checked in `apps/cli/src/commands/secrets.ts` `HELP`, 2026-10-01). The CLI row names plain text as the default deliverable. Why: a run condensed the help and added an options line and examples the binary lacks, and a run was right to quote and not invent.
+- **Where:** `verbal/voice-and-tone.md` 5.4, `SKILL.md` CLI row.
+- **Supersedes:** the unconditional "then two or three real examples" in the first 5.4 rule.
+- **Source:** round 3 prompt 10 (2026-10-01).
+
+### Q55 QA setup from round 3
+- **Decision:** Each run starts from an empty directory (`rm -rf "$RUN"`). Tier A+ prompt 8 copies `navbar.tsx`. Prompt 6 copies `security-page` and `translations/en.json`. Prompt 9 copies `lib/ui/hit-target.ts` and `app/(settings)/_layout.tsx`, which `design.md` and `AGENTS.md` name. The Claude allowlist adds `agent-browser`, and the prompt names the audit path under `.agents/skills`. Why: prompt 8 found an earlier run's files, three prompts lacked a file the kit names, and a run was denied for calling the audit through `.claude/skills`. These are setup gaps, not kit rules.
+- **Where:** `qa/fresh-agent.md`.
+- **Source:** round 3 prompts 1, 6, 8, 9 (2026-10-01).
+
+### Q54 OG card title source, margin and anchor
+- **Decision:** Title source: H1, then nav label, then page eyebrow, then route slug. When silent the edge margin is spacing step 16 (about 59px) on all four sides, the symbol sits top-left, and the title sits flush-left on the bottom margin. The numbers stay OPEN under D8b: a design lead may change them. The OG row says to read no `verbal/` file. Why: three runs drew the margin, the anchor and the fallback alone, and a run read four verbal files for a card that states no copy.
+- **Where:** `visual/art-direction.md`, `SKILL.md` OG row.
+- **Source:** round 3 prompt 8 (2026-10-01).
+
+### Q53 Literals in a social post are plain text
+- **Decision:** A post writes `main`, `kortix.yaml` and commands without backticks. Why: LinkedIn and X render no mono, and a backtick is a visible character in a pasted post. `SKILL.md` section 1 now says to read `magic_trick.md` before any row file.
+- **Where:** `verbal/voice-and-tone.md` 5.9, `SKILL.md` section 1.
+- **Supersedes:** the "mono on every surface" reading of section 3 for pasted plain text.
+- **Source:** round 3 prompt 7 (2026-10-01).
+
+### Q52 Marketing HTML: padding step, hover, breakpoints, links, theme
+- **Decision:** `py-30` is a named exception to the allowed step list: it ships in `trust-section.tsx` and `connectors/shared.tsx`, and portable HTML writes `calc(var(--spacing) * 30)`. A filled primary button hovers to `hover:bg-foreground/90` (the `default` variant), written with `color-mix` in portable HTML, with no element opacity. Base styles are for a phone, with `min-width` queries only. Standalone HTML links `tokens.css` and `fonts.css` by relative path, copies them beside a file that leaves the repo, and sets no `data-theme` (`tokens.css` follows `prefers-color-scheme`). Why: the step list and the section rule contradicted each other, and runs chose a hover value, mixed `max-width` with `min-width` and pinned the light theme.
+- **Where:** `visual/layout.md` Marketing section, `visual/motion.md`, `SKILL.md` Standalone HTML row.
+- **Source:** round 3 prompt 5 (2026-10-01).
+
+### Q51 Launch email: rhythm, delivery, preheader
+- **Decision:** Line heights (title 1.25, body 1.6) and vertical gaps (kicker 24 above and 8 below, title 12, block 24) move into `visual-system.json` (`email.line_height`, `email.gap_px`), generate as `--email-*` variables and `EMAIL_LAYOUT`, and `template.ts` reads them. The values are the ones the shell already used, so its output does not change. The only hairline is above the footer. A launch email ships as HTML only (plain-text twin on request), with the subject in `<title>` and the reply, and with no HTML comment, `TODO(idea)` or Guesses inside it. The preheader is a hidden first-child `div` with a stated style. Why: two runs invented gaps and line heights, and the four runs put a subject, a comment or a preheader hack in the file with no rule. Two judges proposed opposite places for the subject: the comment risk (a pasted body) decided it.
+- **Where:** `visual/visual-system.json`, `scripts/generate-tokens.ts`, `apps/api/src/lib/email/template.ts`, `visual/layout.md` Email layout, `verbal/voice-and-tone.md` 5.5b.
+- **Supersedes:** the judge proposals of 28/22/18 pixel line heights and 32/10/16/28 gaps: the shell values win.
+- **Source:** round 3 prompt 4 (2026-10-01).
+
+### Q50 Product microcopy row adds color and typography
+- **Decision:** The row adds `color.md` (the status table gives the hue of a refusal or failure, Q8) and `typography.md` (mono for literal text, such as a details fold). Why: a run read the row exactly and chose a red banner for a refusal, and guessed the fold type.
+- **Where:** `SKILL.md` Microcopy row.
+- **Source:** round 3 prompt 3 (2026-10-01).
+
+### Q49 First-run mark tone comes from its wrapper
+- **Decision:** The pixel mark paints `currentColor`. The caller sets `text-muted-foreground` on the wrapper and passes the mark no color class. Why: a run put the color on the mark itself, and the kit said only `currentColor`.
+- **Where:** `visual/layout.md` States.
+- **Source:** round 3 prompt 2 (2026-10-01).
+
+### Q48 An empty state shows the action once
+- **Decision:** While the page header shows the primary action, the empty state carries the line and no second copy. The empty state reuses the header control only where the header hides it. Why: a run rendered Invite twice on one screen. Q4 said the empty-state action mirrors the header action, and read alone it asks for both.
+- **Where:** `visual/layout.md` States.
+- **Supersedes:** the "mirrors the header action" wording in Q4 where the header action is visible.
+- **Source:** round 3 prompt 1 (2026-10-01).
+
+### Q47 Remove on a row is a destructive kebab item, and the focus heading
+- **Decision:** On `AccessRow`, Remove is a `kebab` item with `variant: 'destructive'` that opens the confirm dialog, shown only to a viewer with the grant. A viewer without the grant sees no item: "hide, do not disable" in States already covers it, and the run that hid it was right. The list heading that takes focus after a removal has `tabIndex={-1}` and may carry `outline-none`. Verified in `access-row.tsx`: the row has `actions` (inline ghost buttons) and `kebab`. A one-item kebab on this row is intended: the row's grid keeps one trailing slot. Why: a run drew a solid red `Button` on every row and logged no guess.
+- **Where:** `visual/layout.md` States and Lists of principals.
+- **Source:** round 3 prompt 1 (2026-10-01).
+
+### Q46 Deck diagram captions are slide copy
+- **Decision:** The caption arrays inside `engine/diagram.tsx` count as slide copy and carry claims. `ChangeRequestDiagram` captions now use `claims.md` rows word for word ("Session work reaches main through a change request.", the per-session isolated machine and branch line, the approved note's change-request line, and the "Nothing merges itself ..." line). The gate slide notes in `decks/security.tsx` drop "main is your live company", "reads the diff", "invisible to main", "That is the only door" and the `kortix.yaml` grant line. Slide 1 notes drop the same live-company and only-way wording. The comment in the diagram names `project.gitops.merge`. Why: a run rendered the banned "main is your live company" through the diagram caption at step 0, because the Deck row covered notes and not captions. This resolves the caption half of Q42 item 9; the audit-row fixture action `cr.merge` in `LedgerDiagram` is untouched.
+- **Where:** `apps/web/src/app/[locale]/presentations/engine/diagram.tsx`, `decks/security.tsx`, `SKILL.md` Deck row.
+- **Supersedes:** the OPEN caption half of Q28 and Q42 item 9.
+- **Source:** round 3 prompt 6 (2026-10-01).
 
 ### Q45 Round 1 and 2 freedoms marked intentional
 - **Decision:** These are author choices, not kit rules: the exact wording of an empty-state hint, a viewer variant and a button label inside the section 4 patterns; the placeholder style (`{appName}`) in a string; skipping the host repo workflow (worktree, ponytail, PR) in a scratch run; page elements beyond heading, proof, artifact and call to action, including an eyebrow, a footer and whether a provider is named; the absence of motion or an accent hue on a marketing section; the page title and meta wording inside the title and length rules; reusing the approved hook word for word; whether a post names Kortix; alt text wording, a WebP export and one file per deliverable; group titles and row labels on a mobile screen; accessibility labels; optimistic save, rollback and toast wiring; the choice of CLI examples and extra variants (plural, `--json`); an unquantified market statement from `concepts.md` such as the model cadence; Roobert missing from Electron and proxy pages (D8a); how a styleguide shows `SectionCard`, `List` and `text-md` as banned or non-canonical. Why: judges and runs logged each as a guess, and no judge showed a harm.
