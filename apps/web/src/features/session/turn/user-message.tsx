@@ -488,6 +488,7 @@ export interface AttachmentUploadStatus {
 }
 
 function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [downloading, setDownloading] = useState(false);
   const download = async () => {
     if (downloading) return;
@@ -504,7 +505,7 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
       link.remove();
       if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : 'Could not download attachment');
+      errorToast(error instanceof Error ? error.message : tI18nComplete('text7f755292bf51'));
     } finally {
       setDownloading(false);
     }

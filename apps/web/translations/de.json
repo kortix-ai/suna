@@ -19090,7 +19090,9 @@
       "textdf757dbe33eb": "Dein Teams-Katalog hat Version {value0} der Kortix-App. Version {value1} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
       "texte15f213fa506": "App-Update veröffentlichen",
-      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet"
+      "textcafd830fcf85": "Projekt-Agent-Identitäten aufgelistet",
+      "textea2f51bfe21c": "Teilnehmer der Sitzung angesehen",
+      "text7f755292bf51": "Anhang konnte nicht heruntergeladen werden"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
