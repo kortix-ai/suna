@@ -215,6 +215,19 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     session: createKortixSession,
   };
 
+  /** Kortix Capture: account settings, the caller's recording devices, and search over their captures. */
+  const capture = {
+    getSettings: P.getCaptureSettings,
+    updateSettings: P.updateCaptureSettings,
+    listDevices: P.listCaptureDevices,
+    updateDevice: P.updateCaptureDevice,
+    search: P.searchCapture,
+    timeline: P.getCaptureTimeline,
+    videoUrl: P.getCaptureVideoUrl,
+    frame: P.getCaptureFrame,
+    deleteData: P.deleteCaptureData,
+  };
+
   /** Account-scoped operations. */
   const accounts = {
     list: P.listAccounts,
@@ -1539,6 +1552,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Headless regular auth — see `auth` above. */
     auth,
     accounts,
+    capture,
     /** Identity and access — assignments, roles, permissions, groups, probes. */
     iam,
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
