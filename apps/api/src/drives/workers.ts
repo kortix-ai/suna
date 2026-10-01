@@ -8,6 +8,7 @@
 
 import { platinumVolumeDeletions } from '@kortix/db';
 import { asc, eq, lte, sql } from 'drizzle-orm';
+import { runWorkerTick } from '../shared/audit-scope';
 import { db } from '../shared/db';
 import { configuredTimeoutMs } from '../shared/with-timeout';
 import { runConflictScan } from './conflicts';
@@ -71,12 +72,16 @@ export function startDriveWorkers(): void {
   if (!driveStorageAvailable()) return;
   if (!scanTimer) {
     scanTimer = setInterval(() => {
-      runConflictScan().catch((err) => console.warn('[drives] conflict scan pass failed:', err));
+      runWorkerTick('drive-conflict-scan', runConflictScan).catch((err) =>
+        console.warn('[drives] conflict scan pass failed:', err),
+      );
     }, SCAN_MS);
   }
   if (!drainTimer) {
     drainTimer = setInterval(() => {
-      drainVolumeDeletions().catch((err) => console.warn('[drives] volume deletion pass failed:', err));
+      runWorkerTick('volume-deletions', () => drainVolumeDeletions()).catch((err) =>
+        console.warn('[drives] volume deletion pass failed:', err),
+      );
     }, DRAIN_MS);
   }
 }
