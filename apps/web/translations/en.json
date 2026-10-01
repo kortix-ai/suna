@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "Daily at 9 AM",
     "weekdaysAt9AM": "Weekdays at 9 AM",
     "weeklyOnMonday": "Weekly on Monday",
-    "monthlyOn1st": "Monthly on 1st"
+    "monthlyOn1st": "Monthly on 1st",
+    "runFailed": {
+      "label": "Last run didn’t finish",
+      "nextRun": "The next run tries again."
+    }
   },
   "sidebar": {
     "referAndEarn": "Refer & Earn",
