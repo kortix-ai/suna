@@ -3330,7 +3330,6 @@ export const auditEvents = kortixSchema.table(
   (table) => [
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
-    index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
     index('idx_audit_events_account_project_time').on(
       table.accountId,
       table.projectId,
@@ -3341,16 +3340,15 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.occurredAt,
     ),
-    index('idx_audit_events_account_project_sequence').on(
-      table.accountId,
-      table.projectId,
-      table.sessionSequence,
-    ),
-    index('idx_audit_events_account_session_sequence').on(
-      table.accountId,
-      table.sessionId,
-      table.sessionSequence,
-    ),
+    // Dropped 2026-10-01 (migration 20261001214716390_drop_unused_audit_events_indexes):
+    // `idx_audit_events_account_project_sequence` (account_id, project_id,
+    // session_sequence), `idx_audit_events_account_session_sequence` (account_id,
+    // session_id, session_sequence) and `idx_audit_events_resource` (resource_type,
+    // resource_id). 22 GB, one index write each on every audit row. No query orders
+    // by session_sequence under an account/project predicate (the only
+    // session_sequence read is the session_id-only index below), and no query
+    // filters resource_id; resource_type is matched with LIKE 'x%', which a
+    // default-collation (en_US.UTF-8) btree cannot serve.
     // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
     // filters on `session_id` ALONE and orders by (session_sequence, event_id)
     // — deliberately without an account predicate, because chain rows written
