@@ -678,7 +678,7 @@ export async function relayTurnAnswerDetailed(
   // NO ROW AT ALL → the turn was closed and deleted (the 30-minute GC sweep)
   // while the run was still going. The answer is real and the thread is still
   // waiting for it, so deliver it anyway instead of returning false into an HTTP
-  // 200 the agent reads as "sent". See postAnswerWithoutTurn.
+  // 200 the agent reads as "sent". See postAnswerWithoutTurnDetailed.
   if (!handle) return postAnswerWithoutTurnDetailed(sessionId, text, blocks);
   // A FINALIZED row is a turn already closed WITH its reply — a duplicate
   // `slack send`, or a `session.idle` that won the race. Stay quiet.
@@ -734,18 +734,6 @@ async function claimAnswerRescue(sessionId: string, text: string): Promise<boole
     console.warn('[slack-webhook] answer-rescue claim failed (suppressing)', err);
     return false;
   }
-}
-
-/**
- * Post an agent answer into its Slack thread when no turn row exists.
- * Returns true only when Slack accepted the message.
- */
-export async function postAnswerWithoutTurn(
-  sessionId: string,
-  text: string,
-  blocks?: unknown[],
-): Promise<boolean> {
-  return (await postAnswerWithoutTurnDetailed(sessionId, text, blocks)).ok;
 }
 
 export async function postAnswerWithoutTurnDetailed(
