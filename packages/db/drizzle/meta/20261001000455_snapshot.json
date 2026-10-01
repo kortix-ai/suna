@@ -1,5 +1,5 @@
 {
-  "id": "1afc3ab2-e3f8-4acc-8e29-25afcdcaaf5e",
+  "id": "750bbb67-8c49-47c2-a2a1-964c39caeb3f",
   "prevId": "883e003b-7fd4-4922-a929-b48cf2176e20",
   "version": "7",
   "dialect": "postgresql",
@@ -4373,6 +4373,37 @@
           "with": {}
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.audit_reconciliation_state": {
+      "name": "audit_reconciliation_state",
+      "schema": "kortix",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "checked_at": {
+          "name": "checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "full_scan_at": {
+          "name": "full_scan_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -18709,18 +18740,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "schema": {
-          "name": "schema",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "harness": {
-          "name": "harness",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "opencode_session_id": {
           "name": "opencode_session_id",
