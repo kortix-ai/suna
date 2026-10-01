@@ -83,6 +83,12 @@ export async function pollOpencodeDeviceAuth(
   const res = await post(fetchImpl, '/auth/device/token', { grant_type: DEVICE_GRANT, device_code: deviceCode, client_id: CLIENT_ID });
   const body = await res.json().catch(() => null) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string } | null;
   if (body?.error === 'authorization_pending' || body?.error === 'slow_down') return { status: 'pending' };
+  // A transient console fault (RFC 6749 server_error / temporarily_unavailable,
+  // or a 5xx) keeps the flow alive: a 2026-10-01 dev sign-in died on one
+  // `server_error` poll. The device code's own expiry still ends the flow.
+  if (body?.error === 'server_error' || body?.error === 'temporarily_unavailable' || res.status >= 500) {
+    return { status: 'pending' };
+  }
   if (!res.ok || !body?.access_token || !body.refresh_token) {
     return { status: 'failed', error: `OpenCode authorization failed (${body?.error ?? res.status})` };
   }

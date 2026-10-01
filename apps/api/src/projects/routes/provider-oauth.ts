@@ -444,6 +444,7 @@ projectsApp.openapi(
       ...(resourceLabel === null ? {} : { l: resourceLabel, rid: randomUUID() }),
       ...(resourceId === null ? {} : { rid: resourceId, rc: 1 }),
       e: expiresAt,
+      i: Math.max(challenge.intervalMs, OAUTH_POLL_INTERVAL_MS),
     }),
   );
 
@@ -491,7 +492,7 @@ projectsApp.openapi(
 
   // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
   // another project — or a tampered one — simply won't decrypt → expired.
-  let state: { p?: string; d?: string; u?: string; s?: unknown; uid?: string; e?: number; l?: string; rid?: string; rc?: number };
+  let state: { p?: string; d?: string; u?: string; s?: unknown; uid?: string; e?: number; i?: number; l?: string; rid?: string; rc?: number };
   try {
     state = JSON.parse(decryptProjectSecret(projectId, flowId));
   } catch {
@@ -515,7 +516,9 @@ projectsApp.openapi(
 
   const result = await cfg.poll(state.d, state.u);
   if (result.status === 'pending') {
-    return c.json({ status: 'pending', next_poll_ms: OAUTH_POLL_INTERVAL_MS });
+    // Never ask a client to poll faster than the provider's own interval: the
+    // CLI adopts next_poll_ms, and 3 s against OpenCode's 5 s broke dev sign-in.
+    return c.json({ status: 'pending', next_poll_ms: Math.max(state.i ?? 0, OAUTH_POLL_INTERVAL_MS) });
   }
   if (result.status === 'failed') {
     return c.json({ status: 'failed', error: result.error });
