@@ -56,7 +56,6 @@ import { useProjectSelectorData } from './use-project-selector-data';
  */
 export interface ProjectSelectorViewProps {
   email: string | null;
-  name?: string | null;
   loading: boolean;
   loadFailed: boolean;
   sections: AccountSection[];
@@ -101,7 +100,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-lg flex-col px-6 py-20">
-      <AccountTopBar email={email} name={props.name} signingOut={props.signingOut} onLogOut={props.onLogOut} />
+      <AccountTopBar email={email} signingOut={props.signingOut} onLogOut={props.onLogOut} />
 
       {/* `my-auto` centers the block in the viewport while it fits, and lets
           it start at the top and scroll once the project list is taller.
@@ -448,7 +447,6 @@ export function ProjectSelector() {
   return (
     <ProjectSelectorView
       email={user?.email ?? null}
-      name={user?.user_metadata?.name}
       loading={data.listsLoading || data.invitesQuery.isLoading}
       loadFailed={data.accountsQuery.isError || data.allListsFailed}
       sections={data.sections}
