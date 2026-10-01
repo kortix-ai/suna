@@ -23,6 +23,7 @@ mock.module('./use-runtime-supports', () => ({
 
 const { useRuntimeCommands } = await import('./use-opencode-sessions/commands');
 const { useRuntimeConfig } = await import('./use-opencode-config');
+const { useRuntimeSessionTodo } = await import('./use-opencode-sessions/sessions');
 
 beforeEach(() => {
   supported = new Set();
@@ -41,6 +42,13 @@ describe('runtime capability gates', () => {
     useRuntimeConfig();
     supported.add('session.config');
     useRuntimeConfig();
+    expect(seen.map((q) => q.enabled)).toEqual([false, true]);
+  });
+
+  test('the todo list loads only when the runtime serves session.todo', () => {
+    useRuntimeSessionTodo('ses_1');
+    supported.add('session.todo');
+    useRuntimeSessionTodo('ses_1');
     expect(seen.map((q) => q.enabled)).toEqual([false, true]);
   });
 });

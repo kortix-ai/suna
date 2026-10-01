@@ -25,7 +25,7 @@ import {
   type ToolPart,
 } from '@kortix/sdk';
 
-import type { MessageWithParts } from '@/lib/opencode/types';
+import type { MessageWithParts } from '@/lib/session/types';
 import { withoutTrailingSlashes } from '@kortix/shared/tool-output';
 import { partInput, partMetadata } from './tool-part-accessors';
 import { parseImageOutput, parseVideoOutput } from './tools/web-media';

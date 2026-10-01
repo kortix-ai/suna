@@ -20,7 +20,7 @@
  *     plain text `/<name> <args>` and sent as an ordinary message.
  *
  * Mobile's `#` trigger reuses the SAME `Command[]` `/` already fetches
- * (`useOpenCodeCommands`, passed into `SessionChatInput` as `commands`),
+ * (`useRuntimeCommands`, passed into `SessionChatInput` as `commands`),
  * filtered to `source === 'skill'` — the identical "Skills" bucket web's `/`
  * menu shows. `resolveSkillSubmission` below is `planDraftSubmission`'s
  * mirror for a token that can sit anywhere in the text (not just a leading
@@ -30,7 +30,7 @@
  * way `serialize.ts`'s `commandSplit` does.
  */
 
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 export const SKILL_TRIGGER = '#';
 

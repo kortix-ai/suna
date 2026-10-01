@@ -43,9 +43,10 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen: null }), { getState: () => ({ setViewingSessionId() {}, takeOpen: () => null }) }) },
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector({ openUpgradeSheet: spy('upgrade') }) },
   '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
-  '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate') }) },
+  '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate'), setQueryData: spy('setQueryData') }) },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: [] }) },
   '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
+    sessionStartKey: (projectId: string, sessionId: string) => ['start', projectId, sessionId],
     getSessionHealth: async (url: string, init?: RequestInit) => { const res = await globalThis.fetch(`${url}/kortix/health`, init); return { status: res.status, ok: res.ok, health: await res.json(), body: '' }; } },
   '@/components/kortix/toast-provider': { useToast: () => ({ error: spy('toast') }) },
   '@/lib/billing/upgrade-gate': { getUpgradeGate: (error: any) => error?.upgrade ? { reason: 'upgrade' } : null },
@@ -56,8 +57,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/hooks/useWarmProjectSession': { useWarmProjectSession() {} },
   '@/lib/haptics': { haptics: { tap: spy('tap') } },
   '@/lib/logger': { log: { log() {}, warn() {}, error() {} } },
-  '@/lib/opencode/sync-store': { useSyncStore: Object.assign((selector: any) => selector({ messages: {} }), { getState: () => ({ messages: {} }) }) },
-  '@/lib/session/saved-copy': { loadSavedCopy: async () => ({ empty: false }) },
+  '@kortix/sdk/react': { KortixProjectProvider: ({ children }: any) => children },
+  '@/hooks/useSavedCopy': { useSavedCopy: () => ({ messages: undefined, empty: false }) },
+  '@/lib/session/session-store': { addOptimisticMessage: spy('optimistic'), markOptimisticAccepted() {}, sessionMessageIds: () => [], sessionRows: () => [], sessionStatus: () => undefined, setLocalSessionStatus() {} },
   '@/lib/notifications/registration': { requestPushPermissionOnce() {} },
   '@/stores/composer-draft-store': { clearComposerDraftIfSent: spy('clearDraft') },
   '@/lib/session/create-session': { createSessionCommitted: async () => 'fresh-1' },
@@ -110,6 +112,9 @@ describe('ProjectScreen connect and stack', () => {
     await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
     expect(seen('start')[0]?.args).toEqual(['project-1', 'ps-1']);
     expect(seen('switchSandbox')[0]?.args[0]).toMatchObject({ external_id: 'box-1', status: 'running' });
+    // The SDK binds to the session the sandbox runs, and starts from this `/start` answer.
+    expect(seen('switchSandbox')[0]?.args[1]).toEqual({ projectId: 'project-1', sessionId: 'ps-1' });
+    expect(seen('setQueryData')[0]?.args).toEqual([['start', 'project-1', 'ps-1'], expect.objectContaining({ stage: 'ready' })]);
     expect(seen('navigateSession').at(-1)?.args).toEqual(['oc-1']);
     expect(seen('health')).toHaveLength(1);
     await act(async () => finish({ ok: true, status: 200, json: async () => ({ runtimeReady: true }) }));

@@ -33,6 +33,7 @@ import {
   familyForTool,
   humanizeToolName,
 } from './narration';
+import { toolKind } from '@kortix/sdk';
 
 interface OutputItemBase {
   callID: string;
@@ -250,7 +251,7 @@ export function deriveOutputs(parts: ToolPart[], opts?: { latestRun?: Set<string
     if (family === 'edit') {
       // apply_patch has no name in its input at all — its per-file paths
       // live only in output metadata, and one call can produce several files.
-      if (normalizeName(part.tool) === 'apply_patch') {
+      if (toolKind(part.tool) === 'apply_patch') {
         for (const item of applyPatchOutputs(part)) push(item);
         continue;
       }
@@ -472,10 +473,9 @@ function titleFromFetchOutput(part: ToolPart): string | undefined {
  * - A search with no parseable result falls back to its query text.
  */
 function webSourcesOf(part: ToolPart): Array<{ url: string; label: string }> {
-  const t = normalizeName(part.tool);
   const input = (part.state?.input ?? {}) as Record<string, unknown>;
 
-  if (t === 'web_search' || t === 'websearch' || t === 'image_search') {
+  if (toolKind(part.tool) === 'web_search') {
     const results: WebSearchSource[] = [];
     for (const parsed of parseWebSearchOutput(rawOutputOf(part))) {
       for (const source of parsed.sources) {
@@ -521,9 +521,7 @@ export function deriveContext(parts: ToolPart[]): {
     const family = familyForTool(part.tool);
     if (family === 'hidden') continue; // context-engine bookkeeping — never shown
 
-    const tool = normalizeName(part.tool);
-
-    if (tool === 'read') {
+    if (toolKind(part.tool) === 'read') {
       const path = filePathOf(part) ?? getToolPrimaryArg(part);
       if (!path || seenFiles.has(path)) continue;
       seenFiles.add(path);

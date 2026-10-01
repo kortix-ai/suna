@@ -714,7 +714,8 @@ describe('kortix sessions model', () => {
       {
         method: 'PUT',
         path: `/v1/projects/${PROJECT}/sessions/${SESSION}/model`,
-        body: { opencode_model: 'kortix/glm-5.3-flash' },
+        // `model` since W4; `opencode_model` keeps an older self-hosted API working.
+        body: { model: 'kortix/glm-5.3-flash', opencode_model: 'kortix/glm-5.3-flash' },
       },
     ]);
     expect(r.stdout).toContain('Now running kortix/glm-5.3-flash');

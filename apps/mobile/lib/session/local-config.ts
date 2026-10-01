@@ -14,7 +14,7 @@ import {
   resolveModelDefault,
   type ModelDefaultsResponse,
 } from '@kortix/sdk';
-import type { Agent, FlatModel, ProviderListResponse } from './use-opencode-data';
+import type { Agent, FlatModel, ProviderListResponse } from './runtime-data';
 
 // ─── Persistent store ────────────────────────────────────────────────────────
 

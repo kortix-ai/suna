@@ -48,8 +48,8 @@ import type {
   QuestionRequest,
   SessionStatus,
   Turn,
-} from '@/lib/opencode/types';
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+} from '@/lib/session/types';
+import type { Command } from '@/lib/session/runtime-data';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import {
   answeredQuestionParts as selectAnsweredQuestionParts,

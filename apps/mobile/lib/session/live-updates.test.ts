@@ -8,7 +8,7 @@ import {
   useStreamHealthStore,
   type StreamHealth,
   type StreamHealthEvent,
-} from './stream-health';
+} from './live-updates';
 
 const MIN = 60_000;
 

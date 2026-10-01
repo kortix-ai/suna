@@ -24,7 +24,7 @@
  *   open, and a child never renders without its parent
  *   (`buildDrawerItems`, lib/session/session-tree.ts). Shared and Automated
  *   rows name their starter under the title.
- *   A row whose root OpenCode session has sub-sessions (`directSubsessions`)
+ *   A row whose root runtime session has sub-sessions (`directSubsessions`)
  *   shows their count after its title and ALWAYS lists them under its row,
  *   joined by a connector (`SubsessionTree`) — every such row, not only the
  *   session on screen. A sub-session row shows that sub-session: in place
@@ -151,11 +151,11 @@ export interface ProjectLeftDrawerProps {
    */
   activeProjectSessionId?: string | null;
   /**
-   * The OpenCode id the open thread shows (tab store `activeSessionId`): the
+   * The runtime session id the open thread shows (tab store `activeSessionId`): the
    * root of `activeProjectSessionId`, or one of its sub-sessions. Null while
    * no thread is on screen. Picks which sub-session row is highlighted.
    */
-  activeOpenCodeSessionId?: string | null;
+  activeRuntimeSessionId?: string | null;
   /** The open session's parent (`sessionParentId`): that parent opens by default (KRTX-639). */
   activeParentSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
@@ -170,7 +170,7 @@ export interface ProjectLeftDrawerProps {
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
   /**
-   * A sub-session row: show that OpenCode session — in place when its parent
+   * A sub-session row: show that runtime session — in place when its parent
    * is the open thread, else after opening the parent (ProjectScreen,
    * `drawerThreadMove`).
    */
@@ -212,7 +212,7 @@ const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
-  activeOpenCodeSessionId = null,
+  activeRuntimeSessionId = null,
   activeParentSessionId = null,
   reviewNeedsYouCount = 0,
   needsYouBySession = EMPTY_NEEDS_YOU,
@@ -489,7 +489,7 @@ export function ProjectLeftDrawer({
         key={child.session_id}
         session={child}
         shown={child.session_id === activeProjectSessionId}
-        activeOpenCodeId={activeOpenCodeSessionId}
+        activeRuntimeId={activeRuntimeSessionId}
         nested
         trunkBelow={trunkBelow}
         onPress={handleOpenProjectSession}
@@ -497,7 +497,7 @@ export function ProjectLeftDrawer({
         onPressSubsession={handleOpenSubsession}
       />
     ),
-    [activeProjectSessionId, activeOpenCodeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
+    [activeProjectSessionId, activeRuntimeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
   );
 
   const renderItem = useCallback(
@@ -555,7 +555,7 @@ export function ProjectLeftDrawer({
           <DrawerSessionNode
             session={item.session}
             shown={item.session.session_id === activeProjectSessionId}
-            activeOpenCodeId={activeOpenCodeSessionId}
+            activeRuntimeId={activeRuntimeSessionId}
             starter={item.section === 'sessions' ? undefined : sessionStarter(item.session, viewerId)}
             expanded={isExpanded(item.session)}
             onToggleChildren={toggleParent}
@@ -577,7 +577,7 @@ export function ProjectLeftDrawer({
       isExpanded,
       toggleParent,
       activeProjectSessionId,
-      activeOpenCodeSessionId,
+      activeRuntimeSessionId,
       handleOpenProjectSession,
       handleOpenSubsession,
       onSessionActions,
@@ -629,7 +629,7 @@ export function ProjectLeftDrawer({
                 key={session.session_id}
                 session={session}
                 shown={session.session_id === activeProjectSessionId}
-                activeOpenCodeId={activeOpenCodeSessionId}
+                activeRuntimeId={activeRuntimeSessionId}
                 needsYou={needsYouBySession.get(session.session_id)}
                 onPress={handleOpenProjectSession}
                 onLongPress={onSessionActions}
@@ -650,7 +650,7 @@ export function ProjectLeftDrawer({
       mutedColor,
       handleRetrySessions,
       activeProjectSessionId,
-      activeOpenCodeSessionId,
+      activeRuntimeSessionId,
       handleOpenProjectSession,
       onSessionActions,
       handleOpenSubsession,

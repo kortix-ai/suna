@@ -1,5 +1,11 @@
 import { test, expect } from 'bun:test';
-import { formatRuntimeError, isSandboxNotReadyError } from './runtime-errors';
+import {
+  formatRuntimeError,
+  isRuntimeNotReadyResponse,
+  isRuntimeStartingError,
+  isSandboxNotReadyError,
+  RUNTIME_NOT_READY_MARKERS,
+} from './runtime-errors';
 
 // Both inputs below are constructed as real `Error` instances — that is the
 // ONLY shape `formatRuntimeError` is ever actually called with.
@@ -121,4 +127,65 @@ test("a genuine runtime failure names the runtime, not a harness", () => {
   expect(formatRuntimeError(new Error("")).message).toBe(
     "The sandbox is running, but its runtime returned an error.",
   );
+});
+
+// The daemon's 503 while the session runtime cannot take a request. Bodies as
+// routes/proxy/runtime-proxy.ts composes them: `code` since W6, and the two
+// `error` texts a daemon without the code answers with.
+const DAEMON_NOT_READY = [
+  // W6 daemon, any harness
+  '{"code":"runtime_not_ready","error":"sandbox runtime not ready","reason":"pi_not_ready","runtime":"starting","phase":"boot|pi=starting"}',
+  // pre-W6 daemon, pi (every case) and OpenCode (repo, workspace, root session)
+  '{"error":"sandbox runtime not ready","reason":"workspace_not_ready","phase":"x"}',
+  // pre-W6 daemon, OpenCode process not up
+  '{"error":"opencode not ready","opencode":"starting","phase":"x"}',
+  'Failed to perform action: opencode not ready',
+];
+
+test('the daemon not-ready 503 is one answer on both harnesses', () => {
+  for (const body of DAEMON_NOT_READY) {
+    const verdict = {
+      body,
+      response: isRuntimeNotReadyResponse(new Error(body)),
+      sandbox: isSandboxNotReadyError(new Error(body)),
+      starting: isRuntimeStartingError(new Error(body)),
+    };
+    expect(verdict).toEqual({ body, response: true, sandbox: true, starting: true });
+  }
+  expect(isRuntimeNotReadyResponse('OpenCode Not Ready')).toBe(true);
+});
+
+test('isRuntimeNotReadyResponse is only the daemon answer, not every sandbox state', () => {
+  for (const other of [
+    'sandbox not ready (status: stopped)',
+    'Sandbox is not running',
+    'runtime_not_ready_timeout',
+    '[opencode-sdk] Server URL not ready — sandbox is still loading',
+    'Insufficient credits',
+    '',
+  ]) {
+    expect({ other, response: isRuntimeNotReadyResponse(new Error(other)) }).toEqual({ other, response: false });
+  }
+  expect(isRuntimeNotReadyResponse(null)).toBe(false);
+});
+
+test('isRuntimeStartingError also covers a runtime URL that is not pinned yet', () => {
+  for (const message of [
+    '[opencode-sdk] Server URL not ready — sandbox is still loading',
+    '[kortix-pty] Server URL not ready — sandbox is still loading',
+    'sandbox not ready (status: starting)',
+  ]) {
+    expect({ message, starting: isRuntimeStartingError(new Error(message)) }).toEqual({ message, starting: true });
+  }
+  for (const genuine of ['Insufficient credits', 'sandbox port unreachable', 'Invite is still loading', '']) {
+    expect({ genuine, starting: isRuntimeStartingError(new Error(genuine)) }).toEqual({ genuine, starting: false });
+  }
+});
+
+test('RUNTIME_NOT_READY_MARKERS are lower-case substrings that each classify', () => {
+  expect([...RUNTIME_NOT_READY_MARKERS]).toEqual(['runtime_not_ready', 'sandbox runtime not ready', 'opencode not ready']);
+  for (const marker of RUNTIME_NOT_READY_MARKERS) {
+    expect<string>(marker).toBe(marker.toLowerCase());
+    expect(isRuntimeNotReadyResponse(marker)).toBe(true);
+  }
 });

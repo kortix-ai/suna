@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  FeatureNotSupportedError,
-  featureNotSupportedError,
-  recordRuntimeCapabilities,
-  runtimeSupportsAt,
-} from './runtime-capabilities';
+import { recordRuntimeCapabilities, runtimeSupportsAt, unsupportedFeatureMessage } from './runtime-capabilities';
 
 const PI = ['file.import', 'session.subagents'];
 const OPENCODE = ['file.import', 'session.rewind', 'session.compact', 'session.commands', 'session.subagents'];
@@ -34,21 +29,27 @@ describe('runtime capabilities', () => {
   });
 });
 
-describe('featureNotSupportedError', () => {
-  test("a 501 feature_not_supported answer carries the runtime's words", () => {
-    const error = featureNotSupportedError(
-      501,
-      JSON.stringify({ code: 'feature_not_supported', error: 'session rewind is not supported by the pi harness' }),
+describe('unsupportedFeatureMessage', () => {
+  test("a refused feature answers in the runtime's own words", () => {
+    expect(unsupportedFeatureMessage(new Error('session rewind is not supported by the pi harness'))).toBe(
+      'session rewind is not supported by the pi harness',
     );
-    expect(error).toBeInstanceOf(FeatureNotSupportedError);
-    expect(error?.message).toBe('session rewind is not supported by the pi harness');
+    expect(
+      unsupportedFeatureMessage({ error: 'a pi subagent session is read-only; its parent task drives it' }),
+    ).toBe('a pi subagent session is read-only; its parent task drives it');
   });
 
-  test('any other answer is null', () => {
-    expect(featureNotSupportedError(500, JSON.stringify({ code: 'feature_not_supported', error: 'x' }))).toBeNull();
-    expect(featureNotSupportedError(501, JSON.stringify({ error: 'not implemented' }))).toBeNull();
-    expect(featureNotSupportedError(501, JSON.stringify({ code: 'feature_not_supported' }))).toBeNull();
-    expect(featureNotSupportedError(501, 'Not Implemented')).toBeNull();
-    expect(featureNotSupportedError(501, 'null')).toBeNull();
+  test('any other failure is not a refused feature', () => {
+    expect(unsupportedFeatureMessage(new Error('Network request failed'))).toBeNull();
+    expect(unsupportedFeatureMessage(new Error('Server returned 500'))).toBeNull();
+    expect(unsupportedFeatureMessage(null)).toBeNull();
+  });
+});
+
+describe('the SDK capability gate', () => {
+  test("the app's health probe reports the list to the SDK's connection store", async () => {
+    const { useRuntimeConnectionStore } = await import('@kortix/sdk/react');
+    recordRuntimeCapabilities('https://a', PI);
+    expect(useRuntimeConnectionStore.getState().runtimeCapabilities).toEqual(PI);
   });
 });

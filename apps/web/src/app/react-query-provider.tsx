@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { useState } from 'react';
 
+import { isRuntimeNotReadyResponse } from '@kortix/sdk';
 import { isBillingError } from '@kortix/sdk/react';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -76,12 +77,11 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
             if (isBillingError(error)) {
               return;
             }
-            // Transient "opencode not ready" 503 surfaces while a sandbox is
-            // still booting its opencode binary. The auto-create + SDK call
-            // sites already retry internally; surfacing this as a user toast
-            // is just noise during the boot window. Suppress it.
-            const msg = typeof error?.message === 'string' ? error.message : '';
-            if (/opencode not ready/i.test(msg)) {
+            // The daemon's transient "runtime not ready" 503 surfaces while a
+            // sandbox is still booting its runtime (OpenCode or pi). The
+            // auto-create + SDK call sites already retry internally; a user
+            // toast is just noise during the boot window. Suppress it.
+            if (isRuntimeNotReadyResponse(error?.message)) {
               return;
             }
             // A prompt that REACHED the agent and then lost its connection is

@@ -25,7 +25,7 @@
  * session's changed files in place (`SessionChangesList`), and a file pushes
  * its diff (`SessionChangeFileView`); disabled with "No changes" when the
  * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
- * has closed, then calls `useCompactSession`; the thread's compaction divider
+ * has closed, then calls `useSummarizeRuntimeSession`; the thread's compaction divider
  * is the progress, and only a failure toasts (web `compact-modal.tsx`).
  * Disabled while the session works, hidden when the runtime does not serve
  * `session.compact` (pi). View changes and Compact need the live
@@ -82,10 +82,11 @@ import {
 } from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
-import { useRuntimeSupports } from '@/lib/opencode/runtime-capabilities';
-import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { useRuntimeSupports } from '@/lib/session/runtime-capabilities';
+import { useSessionChanges } from '@/hooks/useSessionChanges';
+import { sessionStatus as readSessionStatus, useSessionStatus } from '@/lib/session/session-store';
+import { useSessionRuntime } from '@/components/session/SessionRuntime';
 import {
   isOpenThreadSession,
   changeRequestBaseRef,
@@ -93,7 +94,6 @@ import {
   sessionActionRows,
   type ChangedFile,
 } from '@/lib/session/session-actions';
-import { useCompactionStore } from '@/stores/compaction-store';
 import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import {
   deleteProjectSession,
@@ -167,7 +167,11 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     React.useEffect(
       () =>
         queryClient.getQueryCache().subscribe((event) => {
-          if (event.query.queryKey[0] === 'project-sessions') bumpLists();
+          // A list WRITE only (`updated`). The cache also reports observers
+          // attaching and changing options, and it does so while the screen
+          // that owns the query is rendering: a state update here on those
+          // is a setState during another component's render.
+          if (event.type === 'updated' && event.query.queryKey[0] === 'project-sessions') bumpLists();
         }),
       [queryClient]
     );
@@ -193,21 +197,24 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
 
     // ── COR-148: Open change request · View changes · Compact ──
     const { sandboxUrl } = useSandboxContext();
-    // The thread on screen, keyed by its OpenCode id (SessionPage's `sessionId`).
+    // The thread on screen, keyed by its runtime session id (SessionPage's `sessionId`).
     const activeSessionId = useTabStore((s) => s.activeSessionId);
     const isOpenThread = !!menuSession && isOpenThreadSession(menuSession, activeSessionId);
     const liveSessionId = isOpenThread ? activeSessionId : null;
-    const changesQuery = useSessionChanges(sandboxUrl, isOpenThread);
-    const runtimeStatus = useSyncStore((s) => (liveSessionId ? s.sessionStatus[liveSessionId] : undefined));
+    // The bound session's runtime: the branch diff and the compaction state
+    // are read from it, so both wait for it.
+    const runtime = useSessionRuntime();
+    const changesQuery = useSessionChanges(isOpenThread && !!runtime?.switched);
+    const runtimeStatus = useSessionStatus(liveSessionId);
     const isBusy = runtimeStatus?.type === 'busy' || runtimeStatus?.type === 'retry';
-    const isCompacting = useCompactionStore((s) =>
-      liveSessionId ? Boolean(s.compactingBySession[liveSessionId]) : false
-    );
-    const compactSession = useCompactSession();
+    const isCompacting = !!liveSessionId && liveSessionId === runtime?.runtimeSessionId && runtime.isCompacting;
+    // The SDK picks the model (config default, the thread's last model, then the
+    // first connected one) and tracks the compaction it starts.
+    const compactSession = useSummarizeRuntimeSession();
     const canCompact = useRuntimeSupports(sandboxUrl, 'session.compact');
     const { confirm, dialog: confirmDialog } = useConfirmDialog();
-    // The session and runtime a Compact tap was for, kept past the sheet's close.
-    const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
+    // The session a Compact tap was for, kept past the sheet's close.
+    const compactTargetRef = React.useRef<{ sessionId: string } | null>(null);
 
     const present = React.useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
       haptics.medium();
@@ -238,7 +245,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       compactTargetRef.current = null;
       if (!target) return;
       // The session may have started working while the dialog was up.
-      const status = useSyncStore.getState().sessionStatus[target.sessionId];
+      const status = readSessionStatus(target.sessionId);
       if (status?.type === 'busy' || status?.type === 'retry') {
         haptics.warning();
         toast.error('The session is working. Compact it when it stops.');
@@ -246,7 +253,8 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       }
       haptics.medium();
       // No progress or success toast: the thread's compaction divider mounts
-      // at once (`startCompaction`) and becomes the server's compaction turn.
+      // at once (the SDK marks the session compacting) and becomes the
+      // server's compaction turn.
       compactSession.mutate(target, {
         onError: (error) => {
           haptics.warning();
@@ -399,8 +407,9 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         // open thread: closing its tab clears `activeSessionId`, and the
         // project stack's view route pops itself back to home.
         const tabs = useTabStore.getState();
-        if (confirmDelete.opencode_session_id) {
-          tabs.closeTab(confirmDelete.opencode_session_id);
+        const rootId = confirmDelete.runtime_session_id ?? confirmDelete.opencode_session_id;
+        if (rootId) {
+          tabs.closeTab(rootId);
         } else if (tabs.activeSessionId === confirmDelete.session_id) {
           tabs.navigateToSession(null);
         }
@@ -509,7 +518,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                           onPress={() => {
                             if (!liveSessionId || !sandboxUrl) return;
                             haptics.tap();
-                            compactTargetRef.current = { sessionId: liveSessionId, sandboxUrl };
+                            compactTargetRef.current = { sessionId: liveSessionId };
                             closeThen('compact');
                           }}
                         />

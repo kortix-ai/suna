@@ -1,6 +1,6 @@
 /**
- * Which live SSE event earns a sound (and a haptic). Framework-free so it is
- * testable without React Native; `event-stream.ts` plays the returned cue.
+ * Which live stream event earns a sound (and a haptic). Framework-free so it is
+ * testable without React Native; `runtime-stream.ts` plays the returned cue.
  *
  * Rules:
  * - reply complete: a session goes idle after this stream saw it busy. A

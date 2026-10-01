@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '@kortix/sdk';
 
-import { isOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
-import { useFailedSendStore } from './failed-sends';
+import { useSessionStateStore } from '@kortix/sdk/react';
+
+import { failedSendRows, useFailedSendStore } from './failed-sends';
+import { sessionRows } from './session-store';
 import { queuePromptWhileWaking } from './connecting-send';
 
 /**
@@ -16,7 +18,7 @@ const originalFetch = globalThis.fetch;
 const uuid = () => 'a4c0f7e2-1b3d-4e5f-8a9b-0c1d2e3f4a5b';
 
 beforeEach(() => {
-  useSyncStore.getState().reset();
+  useSessionStateStore.getState().reset();
   useFailedSendStore.setState({ bySession: {} } as never);
   configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
 });
@@ -43,11 +45,11 @@ describe('queuePromptWhileWaking', () => {
       client_message_id: uuid(),
       parts: [{ type: 'text', text: 'Summarize the repo' }],
     });
-    const [message] = useSyncStore.getState().messages[ROOT] ?? [];
+    const [message] = sessionRows(ROOT);
     expect(message.info).toMatchObject({ id: requests[0].body.message_id, role: 'user', sessionID: ROOT });
     expect(message.parts).toMatchObject([{ type: 'text', text: 'Summarize the repo' }]);
     // The delivered echo, under the same message id, replaces it.
-    expect(isOptimistic(message.info.id)).toBe(true);
+    expect(useSessionStateStore.getState().isOptimisticMessage(ROOT, message.info.id)).toBe(true);
   });
 
   test('a refused send stays in the thread as a failed send, never dropped', async () => {
@@ -55,10 +57,15 @@ describe('queuePromptWhileWaking', () => {
 
     expect(await queuePromptWhileWaking(input('Summarize the repo'))).toBe(false);
 
-    const [message] = useSyncStore.getState().messages[ROOT] ?? [];
+    // It leaves the transcript (the server never had it) and stays in the
+    // thread from the failed-send store, which the thread appends as a row.
+    expect(sessionRows(ROOT)).toEqual([]);
+    const failed = useFailedSendStore.getState().bySession[ROOT] ?? {};
+    const [message] = failedSendRows(ROOT, failed);
     expect(message).toBeDefined();
-    expect(isOptimistic(message.info.id)).toBe(false);
-    expect(useFailedSendStore.getState().bySession[ROOT]?.[message.info.id]).toMatchObject({
+    expect(message.info).toMatchObject({ role: 'user', sessionID: ROOT });
+    expect(message.parts).toMatchObject([{ type: 'text', text: 'Summarize the repo' }]);
+    expect(failed[message.info.id]).toMatchObject({
       text: 'Summarize the repo',
       clientMessageId: uuid(),
       messageId: message.info.id,
@@ -69,6 +76,6 @@ describe('queuePromptWhileWaking', () => {
     globalThis.fetch = mock(async () => Response.json({})) as unknown as typeof fetch;
     expect(await queuePromptWhileWaking(input('   '))).toBe(false);
     expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(useSyncStore.getState().messages[ROOT]).toBeUndefined();
+    expect(useSessionStateStore.getState().messages[ROOT]).toBeUndefined();
   });
 });

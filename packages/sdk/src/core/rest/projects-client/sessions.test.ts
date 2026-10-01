@@ -45,6 +45,8 @@ import {
   holdSessionPrompts,
   retrySessionPrompt,
   revokeSessionPublicShare,
+  sessionModelPin,
+  setProjectSessionModel,
   setProjectSessionScope,
   setProjectSessionSharing,
   stopProjectSession,
@@ -174,6 +176,23 @@ test('listProjectSessions returns the page body unchanged for existing callers',
 test('listProjectSessions throws when the response is unsuccessful', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listProjectSessions('P1')).rejects.toBeTruthy();
+});
+
+test('setProjectSessionModel PUTs the pin as `model`, with the pre-W4 key for an older API', async () => {
+  nextResponse = { status: 200, body: { model: 'kortix/glm', opencode_model: 'kortix/glm', applied_live: true } };
+  const result = await setProjectSessionModel('P1', 'S 1', 'kortix/glm');
+  expect(last().url).toContain('/projects/P1/sessions/S%201/model');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ model: 'kortix/glm', opencode_model: 'kortix/glm' });
+  expect(result.model).toBe('kortix/glm');
+});
+
+test('sessionModelPin reads the stored model pin, trimmed, or null', () => {
+  expect(sessionModelPin({ metadata: { opencode_model: ' kortix/glm ' } })).toBe('kortix/glm');
+  expect(sessionModelPin({ metadata: { opencode_model: '  ' } })).toBeNull();
+  expect(sessionModelPin({ metadata: { opencode_model: 7 } })).toBeNull();
+  expect(sessionModelPin({ metadata: null })).toBeNull();
+  expect(sessionModelPin({})).toBeNull();
 });
 
 test('setProjectSessionSharing PUTs the sharing intent', async () => {

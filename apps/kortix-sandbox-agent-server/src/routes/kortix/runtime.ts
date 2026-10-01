@@ -1,5 +1,6 @@
 /** HTTP controllers for the existing runtime API; the selected harness owns operations. */
 import { Hono, type Context } from 'hono'
+import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
@@ -110,7 +111,7 @@ export function createRuntimeRouter(
       const readiness = await options.readiness?.()
       if (readiness && !readiness.ready) {
         c.header('X-Kortix-Boot-Phase', readiness.phase)
-        return c.json({ ...readiness.details, phase: readiness.phase }, 503)
+        return c.json({ code: RUNTIME_NOT_READY_CODE, ...readiness.details, phase: readiness.phase }, 503)
       }
       try {
         const result = await verb()

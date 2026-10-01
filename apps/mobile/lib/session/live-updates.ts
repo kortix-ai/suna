@@ -1,5 +1,6 @@
 /**
- * Live-update health of the OpenCode SSE stream (`event-stream.ts`), for the
+ * Live-update health of the session's live stream (`@kortix/sdk` owns the
+ * stream; `runtime-stream.ts` reports its transitions here), for the
  * thread's "Live updates paused · Reconnect" pill and the header's
  * "Last update 6 min ago" line (COR-144).
  *
@@ -10,7 +11,8 @@
  */
 
 import { create } from 'zustand';
-import { HEARTBEAT_TIMEOUT_MS } from './stream-policy';
+/** The SDK's stream watchdog: no frame for this long forces a reconnect. */
+const HEARTBEAT_TIMEOUT_MS = 60_000;
 
 export type StreamPhase = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'paused';
 

@@ -1004,9 +1004,11 @@ export interface UseSessionOptions {
    */
   enabled?: boolean;
   /**
-   * A server-authorized OpenCode session pin associated with this Kortix
+   * A server-authorized runtime session pin associated with this Kortix
    * session. The `/start` response remains authoritative.
    */
+  initialRuntimeSessionId?: string | null;
+  /** @deprecated Renamed to `initialRuntimeSessionId`, which wins when both are set. Removed in the next major. */
   initialOpenCodeSessionId?: string | null;
   /**
    * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
@@ -1079,7 +1081,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
-    initialOpenCodeSessionId = null,
+    initialRuntimeSessionId = options.initialOpenCodeSessionId ?? null,
     subscribeMessages = true,
     browserPresence = false,
   } = options;
@@ -1279,7 +1281,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
-    initialPin: transcriptHistory.rootSessionId ?? initialOpenCodeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? initialRuntimeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;
