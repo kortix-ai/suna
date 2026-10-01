@@ -36,6 +36,10 @@ mock.module('../projects/secrets', () => ({
   },
   getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) =>
     input.consumer === 'connector' ? (secretsByName[input.name] ?? null) : null,
+  getProjectSecretValuesForConsumer: async (input: { names: string[]; consumer: string }) =>
+    input.consumer === 'connector'
+      ? Object.fromEntries(input.names.filter((n) => secretsByName[n] != null).map((n) => [n, secretsByName[n]]))
+      : {},
 }));
 
 const { loadTeamsInstall, setTeamsAppVersion, setTeamsPublishState } = await import('../channels/install-store');
