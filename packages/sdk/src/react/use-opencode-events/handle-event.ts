@@ -1,9 +1,13 @@
-import type { Event as OpenCodeSdkEvent, PermissionRequest, QuestionRequest } from '@opencode-ai/sdk/v2/client';
+import type {
+  Event as OpenCodeSdkEvent,
+  PermissionRequest,
+  QuestionRequest,
+} from '@opencode-ai/sdk/v2/client';
 import type { QueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
+import { useSyncStore } from '../../browser/stores/sync-store';
 import type { getClient } from '../../core/runtime/client';
 import type { SessionSyncReason } from '../../core/session-sync/session-sync-controller';
-import { useSyncStore } from '../../browser/stores/sync-store';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 import { binaryBlobKeys, fileContentKeys, fileListKeys, gitStatusKeys } from '../file-keys';
 import { type Session, runtimeKeys } from '../use-opencode-sessions';
