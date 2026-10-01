@@ -168,16 +168,6 @@ export async function reconcileInitialTurnAcceptanceToApi(
     return 'accepted'
   }
   // THIS boot just delivered the prompt, and OpenCode has not picked it up
-  // yet. `prompt_async` answers 204 before OpenCode writes the user message
-  // (absent at +11 ms on 1.18.23) and before its loop marks the root busy
-  // (busy at +308 ms). Boot reconciles right after delivery, so both shapes
-  // are the normal start of a first turn, not proof it was dropped. Reading
-  // them as abandoned stripped the turn authority from ~99% of session-
-  // creating first turns on prod from 2026-08-19: the ledger said `abandoned`
-  // ~12 s in, `turn_begin` could not re-adopt a known message, and the stale-
-  // turn sweeps saw a running first turn as idle. Retry on the reconcile tick
-  // until the pickup grace ends. A prompt an EARLIER boot delivered keeps the
-  // immediate verdict: on a reused root, absence is proof.
   if (
     options.awaitingPickup &&
     (observation.end === 'abandoned' || observation.orphanedPrompt === true)
@@ -259,10 +249,6 @@ export function resolveOpencodeModel(): { providerID: string; modelID: string } 
   }
   if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
   // A pin stored while the gateway was ON can survive a live toggle to native
-  // mode. `kortix/<provider>/<model>` (a nested BYOK/codex wire ref) strips to
-  // the native ref it wraps; a bare `kortix/<managed-id>` has no native
-  // provider to map onto, so it is dropped and OpenCode's default applies —
-  // never a prompt against the nonexistent `kortix` provider.
   const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
   const slash = ref.indexOf('/')
   if (slash <= 0 || slash === ref.length - 1) return undefined

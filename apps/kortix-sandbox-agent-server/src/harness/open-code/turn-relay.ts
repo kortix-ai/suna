@@ -10,17 +10,6 @@ import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
 
 // Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
-// turn to apps/api. The API finalizes channel output and shortens the sandbox
-// deadline to the configured idle grace. OpenCode emits these events for every
-// session, including Task-tool children, so only root events can relay.
-// Turn-end dedup: the last (opencodeSessionId, turnSignature) we already relayed.
-// The signature is the completed turn's identity (last assistant message's
-// completed timestamp), so a turn is finalized EXACTLY ONCE no matter which path
-// observes it — the natural session.idle, the reconcile-on-subscribe backstop, or
-// a duplicate idle from opencode. A genuinely NEW turn has a new completed
-// timestamp → a fresh signature → it relays normally. session.error is never
-// deduped here (it carries no completed signature and the API's claimFinalize is
-// the single-winner backstop). Cleared implicitly by moving to a new signature.
 const relayedTurnSignatures = new Set<string>()
 
 /** Test-only: clear the per-turn dedup set between cases. */
@@ -127,16 +116,6 @@ export async function relayTurnEndToApi(
   if (!ctx) return
 
   // Resolve the turn's error + completed signature in one read. session.error
-  // already hands us the error; an idle end (e.g. retries exhausted, then idle)
-  // carries none, so read the session's last assistant message — exactly what
-  // the web UI shows — and upgrade idle→error when it failed. This is what turns
-  // a blank "ended without a reply" in Slack into "out of credits" / rate-limit /
-  // the real error. The completed timestamp doubles as the per-turn dedup key.
-  //
-  // Read BEFORE the root filter, because the runaway guard below must see EVERY
-  // session's completions: the 2026-08-18 incident was a CHILD session
-  // re-answering the same standing prompt indefinitely, and with the guard
-  // placed after the root filter it never saw a single one of those repeats.
   let turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
   let error = eventError ?? turn.error
   let effectiveStatus = error ? 'error' : status
@@ -147,10 +126,6 @@ export async function relayTurnEndToApi(
   }
 
   // A genuinely new, non-duplicate `idle` completion — check it isn't the SAME
-  // standing prompt answering itself again with no new user message in between
-  // (see `runaway-turn-guard.ts`). Per opencode session id, ROOT AND CHILDREN:
-  // the abort targets the session that is looping. Scoped to `idle` only: an
-  // `error` completion repeating is `turn-auto-resume.ts`'s concern.
   const runawayCheck = (): void => {
     if (effectiveStatus !== 'idle') return
     void observeIdleForRunaway(opencodeSessionId, turn.parentMessageId, async () => {
@@ -167,25 +142,12 @@ export async function relayTurnEndToApi(
   }
 
   // Only the root turn closes channel output and shortens the idle deadline. A
-  // subagent can become idle while the root turn still runs. Detect the root by
-  // parentID, not by a session pin that can change after an OpenCode restart.
-  // A child's completion is still guarded above — but a child has no per-turn
-  // relay dedup signature of its own, so it steps the guard on every idle it
-  // reports. Under a real loop those are distinct completions; a duplicate
-  // observation of one child completion costs at most one extra tolerated
-  // repeat (MAX_CONSECUTIVE_REPEATS absorbs it), never a false abort of a
-  // healthy child.
   if (rootClassification !== 'root') {
     runawayCheck()
     return
   }
 
   // Exactly-once per completed turn: an idle turn (natural OR reconciled on
-  // subscribe) relays a single time. The signature is only RECORDED after a
-  // confirmed relay (below), so a transient API outage that fails all retries
-  // never permanently suppresses the reconcile backstop — a later observation of
-  // the same turn can still relay it. Errors have no completed signature, so they
-  // always pass through and rely on the API's single-winner claimFinalize.
   const dedupSig =
     effectiveStatus === 'idle' && turn.completedAt != null
       ? `${opencodeSessionId}:${turn.completedAt}`
@@ -200,21 +162,11 @@ export async function relayTurnEndToApi(
   runawayCheck()
 
   // A credential the API has refused, repeatedly and without contradiction,
-  // cannot finalize a turn: all four attempts carry the same dead token. Skip
-  // the API relay (the local runaway guard above has already run) so a box that
-  // outlives its session stops adding `POST .../turn-stream -> 401` warn lines
-  // (KRTX-446). The dedup signature is recorded only on a confirmed relay, so a
-  // later observation still relays once the credential works again — the breaker
-  // clears on the next non-dead answer, and the daemon keeps serving.
   if (sessionTokenPresumedDead()) return
 
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
   // This is the ONLY signal that finalizes a turn the agent ended without
-  // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
-  // best-effort: retry with backoff before giving up. A non-ok HTTP response is
-  // a definitive answer from apps/api (e.g. already finalized), so we stop on any
-  // `res.ok`; only network/5xx failures are retried.
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const res = await fetch(url, {
@@ -323,14 +275,6 @@ interface RootTurnState {
 }
 
 // Read the ROOT turn's outcome from its last assistant message — the same
-// `AssistantMessage.error` the web UI renders — plus its completion timestamp.
-// opencode's session.error event already carries the error for a hard failure,
-// but a run that exhausts retries (e.g. out of credits / rate-limited) can end on
-// `session.idle` with the error only on the message; this is what lets Slack still
-// say *why* instead of going silent. The `completedAt` is the per-turn dedup key
-// so a turn finalizes exactly once regardless of which path observes its end.
-// Best-effort: any miss/parse failure returns a clean, un-completed state, so this
-// never turns a healthy turn into a phantom failure.
 async function readRootTurnState(
   opencodeSessionId: string,
   opencode: Pick<Opencode, 'getInternalUrl'>,
@@ -358,33 +302,6 @@ async function readRootTurnState(
     }>
     if (!Array.isArray(rows)) return { completedAt: null, parentMessageId: null }
     // The most recent assistant message decides the turn's outcome. Trailing
-    // USER rows are SKIPPED, not a boundary: a prompt forwarded into a live
-    // turn — and OpenCode's own synthetic `<pty_exited>` wake-ups — leave a
-    // user message as the newest row at almost every turn end, and bailing
-    // there unnamed EVERY relay for such sessions (live 2026-08-20:
-    // `relay_named:false` on each end, double finalizes
-    // because the unnamed relay has no dedup signature, and the forwarded-turn
-    // reconciler lost its primary key). Attribution is message-scoped — the
-    // assistant's own `parentID` names the turn it answered — so a pending
-    // follow-up prompt can never be blamed for a prior turn's error.
-    //
-    // A newest assistant that is still OPEN (no completion, no terminal error)
-    // is not automatically a dead end either. WHICH TURN it belongs to decides,
-    // and `parentID` says so — the same linkage the API-side husk finalizer
-    // matches on. Two different shapes hide behind one open row:
-    //
-    //   `[uA, aA1(done), aA2(open)]`   one turn, mid-step  → STAY UNNAMED.
-    //       Naming aA1 would let completeSandboxTurn close a row whose turn is
-    //       still streaming.
-    //   `[uA, aA(done), uB, aB(open)]` turn A ended, B races → NAME A.
-    //       The idle being handled cannot be B's (B is open), so A is the turn
-    //       that ended. The old code stopped at the open row and relayed A with
-    //       no `turn_message_id` and no dedup signature — the ledger row then
-    //       never closed by message and waited for a reaper sweep, which is a
-    //       direct "stuck working forever" contributor.
-    //
-    // An open row whose `parentID` is missing proves nothing about which turn
-    // is running, so it keeps the old conservative unnamed answer.
     let openTurnParentId: string | null | undefined
     for (let i = rows.length - 1; i >= 0; i--) {
       const info = rows[i]?.info
@@ -412,14 +329,6 @@ async function readRootTurnState(
 }
 
 // Reconcile-on-subscribe backstop for the fast-boot event-loss race. When the
-// /event SSE connects, the FIRST turn may have already reached session.idle in
-// the prompt→subscribe gap (a fast boot + a trivial prompt), so the idle event
-// was fired before anyone was listening and is gone. Read the pinned root's
-// last-turn state directly: if it has already COMPLETED (an assistant message
-// with a completion time), relay a synthetic turn-end so the turn finalizes even
-// though its live event was missed. relayTurnEndToApi dedups by the completed
-// signature, so if the natural idle WASN'T dropped this is a no-op. The callback
-// works for all project sessions and remains a no-op without sandbox identity.
 export async function reconcileFinishedFirstTurn(
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
@@ -436,12 +345,6 @@ export async function reconcileFinishedFirstTurn(
 }
 
 // Is this opencode session the ROOT turn session (not a subagent child)? A root
-// has no parentID; Task-tool children do. We ask opencode directly rather than
-// comparing against the boot-pinned id: an opencode restart can mint a NEW root
-// and orphan the old pin, and gating turn-end on pin-equality then filters out
-// the REAL turn's `session.idle` — the Slack message then loads forever. parentID
-// is the objective signal that survives a re-pin. On any uncertainty, return
-// false so we never close the stream prematurely — the GC sweep is the backstop.
 export async function isRootOpencodeSession(
   opencodeSessionId: string,
   opencode: Pick<Opencode, 'getInternalUrl'>,

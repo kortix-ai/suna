@@ -100,16 +100,6 @@ export async function maybeCreateInitialOpencodeSession(
   const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
 
   // `opencode-session-created` used to be ONE mark covering opencode's entire
-  // cold start plus every bootstrap round-trip — 4.7s (Daytona) / 12.0s
-  // (Platinum) at p50, and completely unattributable. These sub-marks split it:
-  //   opencode-answering  → opencode's own cold start (runtime + config +
-  //                         provider init + per-directory project init)
-  //   opencode-root-ready → resolving/creating this session's root
-  //   opencode-session-created (existing) → first prompt delivered
-  // A big opencode-answering means the fix is in the image (pre-booted
-  // opencode); a big root-ready means it's our bootstrap.
-  // Captured BEFORE this boot writes its own pin below, so it reflects only
-  // what a PRIOR boot of this sandbox left behind — see the T22 note above.
   const priorPin = readOpenCodeSessionPin()
   // F1: likewise captured BEFORE this boot could possibly write its own
   // marker (delivery, below, hasn't happened yet) — reflects only a PRIOR
@@ -132,13 +122,6 @@ export async function maybeCreateInitialOpencodeSession(
   bootMark('opencode-answering')
   if (resolved.status === 'defer') {
     // opencode never answered the root list within the deadline, and a prior
-    // root IS pinned — see `resolveExistingRoot`'s `defer` outcome. Creating
-    // (and pinning) a fresh root here would risk orphaning that conversation
-    // under a competing one — the exact 2026-06-15 spinner-incident shape (see
-    // the comment above this function). Leave `bootState.initialOpenCodeSessionId`
-    // unset and return: boot falls through to the `waitForOpencodeReady`
-    // fallback path below instead of the initial-session fast path, and
-    // nothing here touches the existing root or delivers `prompt` anywhere.
     logger.warn(
       '[boot] deferring initial opencode session setup — opencode did not answer in time and a prior root is pinned',
     )
@@ -146,11 +129,6 @@ export async function maybeCreateInitialOpencodeSession(
   }
   let existing = resolved.status === 'found' ? resolved.root : null
   // Warm-fork de-collision: a CoW-forked sandbox inherits the snapshot's single
-  // pinned root, so `existing` here is the SHARED seed root — every fork would
-  // otherwise resolve the same opencode session id and their chats bleed together
-  // (the client keys all message state by that id). Rotate onto a fresh
-  // per-session root EXACTLY ONCE by ignoring the seed root here; the marker is
-  // retired below so later restarts reuse THIS fork's own root via the path above.
   const seedBakedId = readSeedBakedSessionId()
   const rotateOffSeedRoot = isSharedSeedBakedRoot(existing?.id, seedBakedId)
   if (rotateOffSeedRoot) {
@@ -507,10 +485,6 @@ export async function resolveExistingRoot(
   onListening?: () => void,
 ): Promise<ExistingRootResult> {
   // Wait for a DEFINITIVE answer from opencode before deciding. Treating a slow
-  // boot as "no roots" would create a duplicate on restart — the exact bug we're
-  // killing — so only conclude "create a fresh root" once opencode has actually
-  // answered with an empty list (or never answers within the deadline, and
-  // there is no prior pin to protect — see `defer` above).
   const roots = await waitForRootList(baseUrl, workspace, rootListDeadlineMs, onListening)
   if (!roots) {
     if (priorPin) {
