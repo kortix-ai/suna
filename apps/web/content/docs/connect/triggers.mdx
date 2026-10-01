@@ -252,9 +252,10 @@ When a run that a trigger started ends with an error, Kortix records it on the t
 
 - `last_status` becomes `failed` and `last_error` holds the reason, for example `Out of credits: Payment Required: Insufficient credits.`
 - The Schedule page marks the trigger "Last run didn’t finish" and shows the reason in its panel.
-- The account owner gets one mobile push when a healthy trigger fails. A later failure updates the reason without another push.
+- The account owner gets one mobile push when the first run fails. A later failed run updates the reason without another push.
+- The trigger stays `failed` while it keeps firing. A new fire does not prove that its run works.
 
-The next run that finishes clears the failure. A run you stop yourself, a subagent, and a retried model call are not run outcomes.
+The next run that finishes clears the failure. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
 
 ## Session access
 

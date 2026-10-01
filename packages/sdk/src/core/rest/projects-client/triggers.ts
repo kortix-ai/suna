@@ -107,6 +107,7 @@ export interface ProjectTrigger {
    * The trigger's most recent outcome: `queued` (a prompt waits for its
    * session), `fired` (delivered, or the last run succeeded), or `failed` (the
    * prompt was not delivered, or the run it started ended with an error).
+   * A failed run stays `failed` across later fires until a run finishes.
    * Null before the first fire.
    */
   last_status?: string | null;
