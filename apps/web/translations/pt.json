@@ -20323,7 +20323,8 @@
       "desktop": "Tela e teclado",
       "desktopDescription": "Ver e usar seus apps",
       "allowed": "Permitido",
-      "notAllowed": "Não permitido"
+      "notAllowed": "Não permitido",
+      "needsSetup": "Requer configuração"
     },
     "runInBackground": "Executar em segundo plano",
     "runInBackgroundDescription": "Desligado pausa a conexão, mesmo depois de reiniciar.",
@@ -20338,14 +20339,21 @@
     "alreadyConnectedLive": "Ele está online agora. Aprove para movê-lo para esta solicitação: a conexão atual para. Seus projetos e compartilhamentos permanecem.",
     "reconnect": "Reconectar",
     "accessHint": "O acesso selecionado permanece ativo até que você o revogue.",
-    "grants": {
-      "title": "Permita que o Kortix veja sua tela e use seus apps",
-      "hint": "O macOS pede duas permissões, ambas para o Kortix. O Computer Use funciona assim que você permitir.",
+    "setup": {
+      "title": "Conclua a configuração do seu computador",
+      "hint": "O macOS pede cada permissão abaixo uma vez. Elas vão para o Kortix, então nada pede de novo enquanto um agente trabalha.",
+      "files": "Mesa, Documentos e Downloads",
+      "filesDescription": "Ler e gravar arquivos nessas pastas",
       "accessibility": "Acessibilidade",
+      "accessibilityDescription": "Usar teclado e mouse nos seus apps",
       "screenRecording": "Gravação de tela",
-      "allowed": "permitido",
-      "missing": "não permitido",
-      "allow": "Permitir acesso"
+      "screenRecordingDescription": "Ver o que está na tela",
+      "needed": "Ainda não permitido",
+      "waiting": "Aguardando você",
+      "allowAll": "Permitir tudo",
+      "settingsHint": "Se os Ajustes do Sistema abrirem, ative o Kortix na lista. Isto se atualiza sozinho.",
+      "doneTitle": "Seu computador está pronto",
+      "doneHint": "O Kortix tem todas as permissões necessárias. Agentes já podem usar este computador."
     }
   },
   "messageFrom": {

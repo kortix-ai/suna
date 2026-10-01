@@ -20323,7 +20323,8 @@
       "desktop": "Schermo e tastiera",
       "desktopDescription": "Vedere e usare le tue app",
       "allowed": "Consentito",
-      "notAllowed": "Non consentito"
+      "notAllowed": "Non consentito",
+      "needsSetup": "Da configurare"
     },
     "runInBackground": "Esegui in background",
     "runInBackgroundDescription": "Se disattivato, la connessione resta in pausa anche dopo un riavvio.",
@@ -20338,14 +20339,21 @@
     "alreadyConnectedLive": "È online ora. Approva per spostarlo su questa richiesta: la connessione attuale si interrompe. Progetti e condivisioni restano.",
     "reconnect": "Ricollega",
     "accessHint": "L’accesso selezionato resta attivo finché non lo revochi.",
-    "grants": {
-      "title": "Consenti a Kortix di vedere lo schermo e usare le tue app",
-      "hint": "macOS chiede due autorizzazioni, entrambe per Kortix. Computer Use funziona appena le consenti.",
+    "setup": {
+      "title": "Completa la configurazione del computer",
+      "hint": "macOS chiede una volta ogni autorizzazione qui sotto. Vanno a Kortix, così nulla chiede di nuovo mentre un agente lavora.",
+      "files": "Scrivania, Documenti e Download",
+      "filesDescription": "Leggere e scrivere file in queste cartelle",
       "accessibility": "Accessibilità",
+      "accessibilityDescription": "Usare tastiera e mouse nelle tue app",
       "screenRecording": "Registrazione schermo",
-      "allowed": "consentito",
-      "missing": "non consentito",
-      "allow": "Consenti accesso"
+      "screenRecordingDescription": "Vedere cosa c’è sullo schermo",
+      "needed": "Non ancora consentito",
+      "waiting": "In attesa di te",
+      "allowAll": "Consenti tutto",
+      "settingsHint": "Se si apre Impostazioni di Sistema, attiva Kortix nell’elenco. Questa vista si aggiorna da sola.",
+      "doneTitle": "Il tuo computer è pronto",
+      "doneHint": "Kortix ha tutte le autorizzazioni necessarie. Gli agenti possono usare questo computer."
     }
   },
   "messageFrom": {

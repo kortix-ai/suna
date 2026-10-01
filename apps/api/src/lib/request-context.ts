@@ -240,14 +240,6 @@ const CLOUDWATCH_SAFE_FIELDS = [
   // proxied route attributable in Logs Insights instead of a single opaque
   // duration. See middleware/upstream-timing.ts.
   'upstream_ms',
-  'config_pending_stages',
-  'config_project_access_ms',
-  'config_session_access_ms',
-  'config_sandbox_state_ms',
-  'config_latest_etag_ms',
-  'config_desired_release_ms',
-  'config_runtime_block_ms',
-  'config_config_dir_ms',
 ] as const;
 
 /**

@@ -512,22 +512,25 @@ describe('desktop wiring', () => {
   });
 });
 
-describe('Computer Use onboarding (macOS grants for Kortix)', () => {
-  test('asks for the grants only when the pairing approved Computer Use, and only for missing ones', () => {
+describe('computer setup (the macOS grants the approved access needs)', () => {
+  test('files need the protected folders; Computer Use needs Accessibility and Screen Recording', () => {
     const home = tempDir();
     const config = (capabilities) =>
       fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ enabledCapabilities: capabilities }));
-    const none = { accessibility: false, screenRecording: false };
+    const none = { accessibility: false, screenRecording: false, files: null };
 
-    expect(computer.missingComputerUseGrants(home, none)).toEqual([]); // not paired
-    config(['filesystem', 'shell']);
-    expect(computer.missingComputerUseGrants(home, none)).toEqual([]);
-    config(['filesystem', 'desktop']);
-    expect(computer.missingComputerUseGrants(home, none)).toEqual(['accessibility', 'screenRecording']);
+    expect(computer.computerSetupMissing(home, none)).toEqual([]); // not paired
+    config(['shell']);
+    expect(computer.computerSetupMissing(home, none)).toEqual([]);
+    config(['filesystem', 'shell', 'desktop']);
+    expect(computer.computerSetupMissing(home, none)).toEqual(['files', 'accessibility', 'screenRecording']);
     expect(
-      computer.missingComputerUseGrants(home, { accessibility: true, screenRecording: false }),
+      computer.computerSetupMissing(home, { accessibility: true, screenRecording: false, files: true }),
     ).toEqual(['screenRecording']);
-    expect(computer.missingComputerUseGrants(home, { accessibility: true, screenRecording: true })).toEqual([]);
-    expect(computer.missingComputerUseGrants(home, null)).toEqual([]); // not macOS
+    // A folder the person refused stays missing: setup sends them to System Settings.
+    config(['filesystem']);
+    expect(computer.computerSetupMissing(home, { ...none, files: false })).toEqual(['files']);
+    expect(computer.computerSetupMissing(home, { accessibility: true, screenRecording: true, files: true })).toEqual([]);
+    expect(computer.computerSetupMissing(home, null)).toEqual([]); // not macOS
   });
 });

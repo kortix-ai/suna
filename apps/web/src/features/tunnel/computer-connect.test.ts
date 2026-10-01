@@ -9,7 +9,7 @@ import {
   projectComputerAccounts,
   yourComputerMenu,
 } from './computer-connect';
-import { activeGrant } from './local-computer-modal';
+import { activeGrant, capabilitiesNeedingSetup } from './local-computer-modal';
 
 const ME = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
@@ -172,4 +172,15 @@ describe('yourComputerMenu', () => {
       dot: null,
     });
   });
+});
+
+test('capabilitiesNeedingSetup: a capability waits on the macOS grants it needs', () => {
+  expect(capabilitiesNeedingSetup(undefined)).toEqual([]);
+  expect(capabilitiesNeedingSetup([])).toEqual([]);
+  expect(capabilitiesNeedingSetup(['files'])).toEqual(['filesystem']);
+  expect(capabilitiesNeedingSetup(['screenRecording'])).toEqual(['desktop']);
+  expect(capabilitiesNeedingSetup(['files', 'accessibility', 'screenRecording'])).toEqual([
+    'filesystem',
+    'desktop',
+  ]);
 });
