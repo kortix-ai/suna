@@ -39,7 +39,7 @@ describe('square matrix rendering', () => {
       expect(html).toContain('width:3px');
       expect((html.match(/class="dmx-dot/g) ?? []).length).toBe(25);
       expect((html.match(/dmx-inactive/g) ?? []).length).toBeGreaterThan(0);
-      expect(Component.displayName).toBe(`DotmSquare${index + 1}`);
+      expect([...html.matchAll(/(?:^|;)opacity:([0-9.]+)/g)].map((match) => Number(match[1]))).toMatchSnapshot();
     });
   }
 });
