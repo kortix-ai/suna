@@ -1,14 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
 
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase } from '@/lib/dotmatrix-core';
-import {
-  useDotMatrixPhases,
-  usePrefersReducedMotion,
-  useSteppedCycle,
-} from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
 export type DotmSquare19Props = DotMatrixCommonProps;
 
@@ -66,31 +60,8 @@ function headInfluence(dot: Point, head: Point): number {
   return Math.exp(-distSq / 0.19);
 }
 
-export function DotmSquare19({
-  speed = 1.45,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare19Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-  const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== 'idle',
-    cycleMsBase: 1700,
-    steps: STEP_COUNT,
-    speed,
-  });
+function makeResolver(cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
         return { className: 'dmx-inactive' };
@@ -111,10 +82,10 @@ export function DotmSquare19({
         };
       }
 
-      const headA = loopPoint(step);
-      const headB = loopPoint(step + STEP_COUNT / 2);
-      const trailA = loopPoint(step - 4);
-      const trailB = loopPoint(step + STEP_COUNT / 2 - 4);
+      const headA = loopPoint(cycle);
+      const headB = loopPoint(cycle + STEP_COUNT / 2);
+      const trailA = loopPoint(cycle - 4);
+      const trailB = loopPoint(cycle + STEP_COUNT / 2 - 4);
 
       const lead = Math.max(headInfluence(dot, headA), headInfluence(dot, headB));
       const trail = Math.max(headInfluence(dot, trailA), headInfluence(dot, trailB));
@@ -128,21 +99,6 @@ export function DotmSquare19({
 
       return { style: { opacity: Math.min(PEAK_OPACITY, opacity) } };
     };
-  }, [reducedMotion, step]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmSquare19 = createDotm5x5Component('DotmSquare19', makeResolver, { speed: 1.45, cycleMsBase: 1700, steps: STEP_COUNT });

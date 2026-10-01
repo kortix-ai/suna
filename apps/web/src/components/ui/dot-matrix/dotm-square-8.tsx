@@ -1,14 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
 
 import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
-import { DotMatrixBase, MATRIX_SIZE } from '@/lib/dotmatrix-core';
-import {
-  useDotMatrixPhases,
-  usePrefersReducedMotion,
-  useSteppedCycle,
-} from '@/lib/dotmatrix-hooks';
+import { createDotm5x5Component, MATRIX_SIZE } from '@/lib/dotmatrix-core';
 
 export type DotmSquare8Props = DotMatrixCommonProps;
 
@@ -38,31 +32,8 @@ function drainHeight(col: number, drainTick: number): number {
   return Math.max(0, Math.min(ROWS, ROWS - Math.max(0, drainTick - col)));
 }
 
-export function DotmSquare8({
-  speed = 1.4,
-  pattern = 'full',
-  animated = true,
-  hoverAnimated = false,
-  ...rest
-}: DotmSquare8Props) {
-  const reducedMotion = usePrefersReducedMotion();
-  const {
-    phase: matrixPhase,
-    onMouseEnter,
-    onMouseLeave,
-  } = useDotMatrixPhases({
-    animated: Boolean(animated && !reducedMotion),
-    hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed,
-  });
-  const step = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== 'idle' && SEQUENCE_LEN > 0,
-    cycleMsBase: 2000,
-    steps: SEQUENCE_LEN,
-    speed,
-  });
+function makeResolver(cycle: number, reducedMotion: boolean): DotAnimationResolver {
 
-  const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
         return { className: 'dmx-inactive' };
@@ -75,13 +46,13 @@ export function DotmSquare8({
       let height = 0;
       let blinkOpacity: number | null = null;
 
-      if (step <= FILL_LAST) {
-        height = fillHeight(col, step);
-      } else if (step < FILL_LAST + 1 + BLINK_STEPS) {
+      if (cycle <= FILL_LAST) {
+        height = fillHeight(col, cycle);
+      } else if (cycle < FILL_LAST + 1 + BLINK_STEPS) {
         height = ROWS;
-        blinkOpacity = BLINK_OPACITIES[step - (FILL_LAST + 1)] ?? 1;
+        blinkOpacity = BLINK_OPACITIES[cycle - (FILL_LAST + 1)] ?? 1;
       } else {
-        const drainTick = step - (FILL_LAST + 1 + BLINK_STEPS);
+        const drainTick = cycle - (FILL_LAST + 1 + BLINK_STEPS);
         height = drainHeight(col, drainTick);
       }
 
@@ -101,21 +72,6 @@ export function DotmSquare8({
         style: { opacity: isCap ? CAP_OPACITY : SETTLED_OPACITY },
       };
     };
-  }, [reducedMotion, step]);
-
-  return (
-    <DotMatrixBase
-      {...rest}
-      size={rest.size ?? 36}
-      dotSize={rest.dotSize ?? 5}
-      speed={speed}
-      pattern={pattern}
-      animated={animated}
-      phase={matrixPhase}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      reducedMotion={reducedMotion}
-      animationResolver={resolver}
-    />
-  );
 }
+
+export const DotmSquare8 = createDotm5x5Component('DotmSquare8', makeResolver, { speed: 1.4, cycleMsBase: 2000, steps: SEQUENCE_LEN });
