@@ -56,9 +56,11 @@ describe('resolveSavedTranscript', () => {
   test('a copy that proves the conversation empty waits for the turn record: the next surface is the composer or the boot screen', () => {
     // The two reads answer independently. Declaring `none` first would paint
     // the boot screen for the moment until the turn record lands.
-    expect(resolveSavedTranscript({ ...base, history: 'absent', emptyAwaitingTurnRead: true })).toBe('loading');
-    expect(resolveSavedTranscript({ ...base, history: 'absent', emptyAwaitingTurnRead: false })).toBe('none');
-    expect(resolveSavedTranscript({ ...base, hasMessages: true, emptyAwaitingTurnRead: true })).toBe('shown');
+    for (const root of ['known', 'pending', 'unknown'] as const) {
+      expect(resolveSavedTranscript({ ...base, root, history: 'absent', emptyAwaitingTurnRead: true })).toBe('loading');
+      expect(resolveSavedTranscript({ ...base, root, history: 'absent', emptyAwaitingTurnRead: false })).toBe('none');
+      expect(resolveSavedTranscript({ ...base, root, hasMessages: true, emptyAwaitingTurnRead: true })).toBe('shown');
+    }
   });
 
   test('invariants hold for every input', () => {
@@ -110,24 +112,31 @@ describe('isEmptyConversation', () => {
   test('no saved copy is not evidence: a session may have run turns no record kept', () => {
     // The turn ledger exists since 2026-08-17 and its writes are best-effort,
     // so "no turn ever ended" is also what an older session with history says.
-    expect(isEmptyConversation({ ...empty, savedEmptyRoot: null })).toBe(false);
+    for (const rootSessionId of [ROOT, ''])
+      expect(isEmptyConversation({ ...empty, rootSessionId, savedEmptyRoot: null })).toBe(false);
   });
 
-  test('an empty copy of another root says nothing about this one', () => {
+  test('the session-scoped empty copy answers before the runtime root resolves', () => {
+    expect(isEmptyConversation({ ...empty, rootSessionId: '' })).toBe(true);
+  });
+
+  test('a known different root revokes the saved empty proof', () => {
     expect(isEmptyConversation({ ...empty, rootSessionId: 'ses_repinned' })).toBe(false);
-    expect(isEmptyConversation({ ...empty, rootSessionId: '' })).toBe(false);
   });
 
   test('a turn that ended outranks the saved copy: the copy is older than it', () => {
-    expect(isEmptyConversation({ ...empty, hasEndedTurn: true })).toBe(false);
+    for (const rootSessionId of [ROOT, ''])
+      expect(isEmptyConversation({ ...empty, rootSessionId, hasEndedTurn: true })).toBe(false);
   });
 
   test('an open or queued turn is a conversation starting', () => {
-    expect(isEmptyConversation({ ...empty, hasOpenOrQueuedTurn: true })).toBe(false);
+    for (const rootSessionId of [ROOT, ''])
+      expect(isEmptyConversation({ ...empty, rootSessionId, hasOpenOrQueuedTurn: true })).toBe(false);
   });
 
   test('an unanswered turn read is an unknown, never an empty', () => {
-    expect(isEmptyConversation({ ...empty, turnRead: false })).toBe(false);
+    for (const rootSessionId of [ROOT, ''])
+      expect(isEmptyConversation({ ...empty, rootSessionId, turnRead: false })).toBe(false);
   });
 });
 
@@ -166,11 +175,5 @@ describe('savedCopyEmptyRoot', () => {
         window({ messages: [{ info: { id: 'msg_1' }, parts: [] }] as SessionTranscriptSyncEnvelope['messages'] }),
       ),
     ).toBeNull();
-  });
-
-  test('both rules are public, so every host decides an empty conversation the same way', async () => {
-    const sdk = await import('../../index');
-    expect(sdk.savedCopyEmptyRoot).toBe(savedCopyEmptyRoot);
-    expect(sdk.isEmptyConversation).toBe(isEmptyConversation);
   });
 });

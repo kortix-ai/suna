@@ -48,9 +48,9 @@ export interface SavedTranscriptInput {
    */
   root: 'known' | 'pending' | 'unknown';
   /**
-   * The saved copy proves this root's conversation empty, and the turn record
-   * has not answered yet. The host's next surface is then the composer or the
-   * boot screen, and it cannot tell which: see {@link isEmptyConversation}.
+   * The session-scoped saved copy proves the conversation empty (and does not
+   * contradict a known root), but the turn record has not answered yet. The
+   * next surface is the composer or boot screen: see {@link isEmptyConversation}.
    */
   emptyAwaitingTurnRead?: boolean;
 }
@@ -89,8 +89,9 @@ export function savedCopyEmptyRoot(
 
 export interface EmptyConversationInput {
   /**
-   * The OpenCode root the server's saved copy proves empty: a complete read of
+   * The root the session-scoped saved copy proves empty: a complete read of
    * the runtime found no messages (`total: 0`). Null when no copy proves it.
+   * The copy must belong to the same Kortix session as the turn record.
    */
   savedEmptyRoot: string | null;
   /** The OpenCode root this session's transcript is keyed by, or `''`. */
@@ -106,20 +107,21 @@ export interface EmptyConversationInput {
 /**
  * Is this session's conversation empty, with nothing to wait for?
  *
- * Only a positive record answers yes: the saved copy of THIS root proves the
- * conversation empty, and the turn record shows no turn ended since and none
- * open or queued. Absent records are never evidence. The turn ledger exists
- * since 2026-08-17 and its writes are best-effort, so "no turn ever ended" is
- * also what an older session with history says before its first wake.
+ * Only a positive record answers yes: this session's saved copy proves the
+ * conversation empty, does not contradict a known root, and the turn record
+ * shows no turn ended since and none open or queued. Absent records are never
+ * evidence. The turn ledger exists since 2026-08-17 and its writes are best-effort,
+ * so "no turn ever ended" is also what an older session with history says before
+ * its first wake.
  *
- * A host shows an empty conversation its composer instead of a boot screen:
- * no saved copy will paint, and the computer holds no messages. Any read
- * still in flight answers `false`.
+ * The session-scoped copy can answer before the runtime root resolves. A known
+ * root mismatch revokes that proof. A host shows the composer instead of a boot
+ * screen only once the turn read has also answered.
  */
 export function isEmptyConversation(input: EmptyConversationInput): boolean {
   return (
     input.savedEmptyRoot !== null &&
-    input.savedEmptyRoot === input.rootSessionId &&
+    (input.rootSessionId === '' || input.savedEmptyRoot === input.rootSessionId) &&
     input.turnRead &&
     !input.hasEndedTurn &&
     !input.hasOpenOrQueuedTurn

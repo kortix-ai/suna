@@ -309,8 +309,7 @@ export function bindIntegrationPrincipal(
  * The scope writes no request row.
  *
  * Wrap the tick function itself, not the timer, so an ad-hoc kick from a
- * handler runs as the worker too. `unit-worker-scope-wiring.test.ts` fails
- * when a background loop in `apps/api/src` is neither wrapped nor classified.
+ * handler runs as the worker too.
  */
 export function runWorkerTick<T>(worker: string, tick: () => T | Promise<T>): Promise<T> {
   return requestContext.runWithContext('WORKER', worker, async () => {

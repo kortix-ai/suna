@@ -1371,7 +1371,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const turnOutcome = useSessionTurnOutcome(projectId, sessionId);
   const turnRead = typeof turnOutcome.atMs === 'number';
   const savedEmptyRoot = transcriptHistoryEnabled ? transcriptHistory.emptyRootSessionId : null;
-  const emptyProvenForRoot = savedEmptyRoot !== null && savedEmptyRoot === ocSessionId;
+  // The history query is keyed by this Kortix session. Its complete empty copy
+  // can answer before the runtime pin, but never overrule a known different pin.
+  const emptyProvenForRoot =
+    savedEmptyRoot !== null && (ocSessionId === '' || savedEmptyRoot === ocSessionId);
   // 5a. Can this session show its saved conversation before the computer
   // wakes? A host paints placeholder rows while the answer is `loading` and
   // its boot screen only on `none` — see `core/session-sync/saved-transcript`.

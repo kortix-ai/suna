@@ -50,3 +50,8 @@ function getDb(): Database {
 }
 
 export const { db, transaction: withDbTransaction, afterCommit: afterDbCommit } = contextualDatabase(getDb());
+
+/** CLI shutdown uses the raw client: the contextual proxy binds callable SQL values. */
+export async function closeDatabase(): Promise<void> {
+  await globalForDb.__kortixApiDb?.$client.end({ timeout: 5 });
+}
