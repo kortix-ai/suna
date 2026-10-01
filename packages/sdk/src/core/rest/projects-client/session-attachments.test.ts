@@ -304,3 +304,22 @@ test("a <file> tag inside another file's body is not a second reference", () => 
   ]);
   expect(found.map((a) => a.url)).toEqual([ref]);
 });
+
+test("limits preview response before materializing oversized bytes, even without content-length", async () => {
+  let cancelled = false;
+  globalThis.fetch = (async () => new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(16)); },
+    cancel() { cancelled = true; },
+  }), { headers: { "content-type": "image/png" } })) as unknown as typeof fetch;
+  await expect(fetchSessionAttachment(ref, undefined, 8)).rejects.toThrow("too large");
+  expect(cancelled).toBe(true);
+});
+
+test("reads bounded preview bytes with their content type", async () => {
+  globalThis.fetch = (async () => new Response("image", {
+    headers: { "content-type": "image/png", "content-length": "5" },
+  })) as unknown as typeof fetch;
+  const blob = await fetchSessionAttachment(ref, undefined, 5);
+  expect(blob.size).toBe(5);
+  expect(blob.type).toBe("image/png");
+});

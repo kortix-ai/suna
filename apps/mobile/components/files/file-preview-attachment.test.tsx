@@ -1,20 +1,30 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { configureKortix } from '../../../../packages/sdk/src/core/http/config';
 
 const calls: Array<{ previewType: string; blobUrl?: string }> = [];
 const saves: string[] = [];
-const fetches: string[] = [];
 const downloads: string[] = [];
-const ref = 'kortix-attachment://project-1/session-1/image-1';
-const blob = new Blob(['image'], { type: 'image/png' });
+const ref = 'kortix-attachment://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333';
+configureKortix({ backendUrl: 'https://example.test', getToken: async () => 'test-token' });
+const originalFetch = globalThis.fetch;
+afterAll(() => { globalThis.fetch = originalFetch; });
+globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+  expect(String(url)).toBe('https://example.test/projects/11111111-1111-4111-8111-111111111111/sessions/22222222-2222-4222-8222-222222222222/attachments/33333333-3333-4333-8333-333333333333');
+  expect(new Headers(init?.headers).get('authorization')).toBe('Bearer test-token');
+  return new Response('image', { headers: { 'content-type': 'image/png' } });
+}) as typeof fetch;
 
 mock.module('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 mock.module('react-native', () => ({ View: ({ children }: { children?: React.ReactNode }) => children }));
 mock.module('expo-file-system/legacy', () => ({ cacheDirectory: 'file:///cache/', downloadAsync: async (url: string, uri: string) => { downloads.push(url); return { status: 200, uri }; }, deleteAsync: async () => {} }));
 mock.module('@/api/config', () => ({ API_URL: 'https://example.test', getAuthToken: async () => 'test-token' }));
-mock.module('@kortix/sdk', () => ({ isSessionAttachmentRef: (path: string) => path.startsWith('kortix-attachment://'), fetchSessionAttachment: async (path: string) => { fetches.push(path); return blob; } }));
-mock.module('@tanstack/react-query', () => ({ useQuery: () => ({ data: blob, isLoading: false, refetch: async () => {} }) }));
+mock.module('@tanstack/react-query', () => ({ useQuery: ({ queryFn, enabled }: { queryFn: () => Promise<Blob>; enabled: boolean }) => {
+  const [data, setData] = React.useState<Blob>();
+  React.useEffect(() => { if (enabled) void queryFn().then(setData); }, [enabled]);
+  return { data, isLoading: enabled && !data, refetch: queryFn };
+} }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('@/components/files/FilePreviewRenderers', () => ({ FilePreview: (props: { previewType: string; blobUrl?: string }) => { calls.push(props); return null; }, FilePreviewBottomInsetContext: React.createContext(0), getFilePreviewType: (name: string) => name.endsWith('.png') ? 'image' : name.endsWith('.pdf') ? 'pdf' : name.endsWith('.docx') ? 'docx' : name.endsWith('.xlsx') ? 'xlsx' : 'text' }));
 mock.module('@/components/files/use-file-preview-data', () => ({ useFilePreviewData: () => ({ previewType: 'other' }) }));
@@ -27,7 +37,6 @@ mock.module('@/components/ui/button', () => ({ Button: ({ children, ...props }: 
 mock.module('@/components/ui/icon', () => ({ Icon: () => null }));
 mock.module('@/components/ui/text', () => ({ Text: () => null }));
 mock.module('@/lib/session/session-files', () => ({ previewsInline: (name: string) => !['pdf', 'docx', 'xlsx'].includes(name.split('.').at(-1) ?? ''), sessionFileKindLabel: () => 'File' }));
-mock.module('@/lib/files/preview-limits', () => ({ previewDecision: () => 'ok' }));
 mock.module('@/lib/files/preview-failure', () => ({ previewFailure: () => null }));
 mock.module('@/lib/files/hooks', () => ({ blobToDataURL: async () => 'data:image/png;base64,aW1hZ2U=', downloadOpenCodeFileToCache: async () => '' }));
 mock.module('@/lib/files/save-to-device', () => ({ saveFileToDevice: async (uri: string) => { saves.push(uri); return { status: 'saved', folder: 'Downloads' }; } }));
@@ -54,8 +63,7 @@ describe('stored attachment preview', () => {
     expect(calls.at(-1)).toMatchObject({ previewType: 'image', blobUrl: 'data:image/png;base64,aW1hZ2U=' });
     const button = tree!.root.findByProps({ accessibilityLabel: 'Download file' });
     await act(async () => { await button.props.onPress(); });
-    expect(fetches).toEqual([]);
-    expect(downloads).toEqual(['https://example.test/projects/project-1/sessions/session-1/attachments/image-1']);
+    expect(downloads).toEqual(['https://example.test/projects/11111111-1111-4111-8111-111111111111/sessions/22222222-2222-4222-8222-222222222222/attachments/33333333-3333-4333-8333-333333333333']);
     expect(saves).toEqual(['file:///cache/photo.png']);
     await act(async () => { tree?.unmount(); });
   });

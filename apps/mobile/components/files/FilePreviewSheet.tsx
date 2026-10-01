@@ -39,7 +39,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { blobToDataURL, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
 import { getFilePreviewType } from '@/components/files/FilePreviewRenderers';
-import { previewDecision } from '@/lib/files/preview-limits';
+import { BINARY_PREVIEW_MAX_BYTES, TEXT_TRUNCATE_MAX_BYTES, previewDecision } from '@/lib/files/preview-limits';
 import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
@@ -162,7 +162,7 @@ export function FilePreviewBody({
   const attachment = isSessionAttachmentRef(file.path);
   const stored = useQuery({
     queryKey: ['session-attachment-preview', file.path],
-    queryFn: () => fetchSessionAttachment(file.path),
+    queryFn: () => fetchSessionAttachment(file.path, undefined, getFilePreviewType(file.name) === 'image' ? BINARY_PREVIEW_MAX_BYTES : TEXT_TRUNCATE_MAX_BYTES),
     enabled: attachment && inline,
     retry: false,
   });
