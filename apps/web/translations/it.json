@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Messaggi alle persone",
-          "description": "Consente agli agenti di scrivere a persone e ad altre sessioni. `kortix send alice@example.com` apre una conversazione che inizia con il messaggio dell'agente e compare in Ti chiedono nella barra laterale del destinatario. Più indirizzi aprono una chat di gruppo."
+          "description": "Consente agli agenti di scrivere a persone e ad altre sessioni. `kortix send alice@example.com` apre una conversazione che inizia con il messaggio dell'agente e compare in Ti chiedono nella barra laterale del destinatario. Più indirizzi aprono una chat di gruppo. I messaggi tra sessioni indicano la sessione mittente, così il suo agente può rispondere."
         },
         "reminders": {
           "name": "Promemoria",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Un momento…",
       "useDifferentEmail": "Usa un'altra email",
       "usePasswordInstead": "Usa invece una password",
-      "emailCodeInstead": "Inviami invece un codice via email",
+      "emailLinkInstead": "Inviami invece un link via email",
       "forgotPassword": "Hai dimenticato la password?",
       "automaticAccount": "È la prima volta qui? Continuando, il tuo account verrà creato automaticamente.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Ricerca del provider di identità…",
         "use": "Usa il single sign-on (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Controlla la tua email",
-        "description": "Abbiamo inviato un codice a <address>{email}</address>",
-        "verifying": "Verifica in corso…",
-        "notReceived": "Non hai ricevuto il codice?",
+        "description": "Abbiamo inviato un link di accesso a <address>{email}</address>. Aprilo per continuare.",
+        "notReceived": "Non hai ricevuto il link?",
         "resendIn": "Invia di nuovo tra {seconds}",
         "resend": "Invia di nuovo"
       },
@@ -12885,7 +12884,7 @@
       "text64cc97c96c03": "Disconnetti in qualsiasi momento con",
       "text64cfa6cc8752": "L'impostazione predefinita distribuita è permissiva: un'azione viene eseguita salvo diversa indicazione. Le letture di solito vanno bene così. Le scritture nel warehouse no: impostarle su Ask è una modifica di configurazione che fai tu, non una scelta fatta al posto tuo.",
       "text64cff1319d2f": "Azione",
-      "text64db32d83da9": "Questo account non può essere rimosso mentre è collegato a una sessione. Scollegalo prima dalla sessione.",
+      "text64db32d83da9": "La tua connessione verrà rimossa. Le sessioni associate smetteranno di funzionare.",
       "text64e8222cd578": "Dove risiede Kortix",
       "text64e855d33cce": "Richiesta di accesso rifiutata",
       "text64f160413fef": "Usa i file SVG/PNG forniti",
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "account di servizio",
       "textd7db5a6e1483": "Copia subito questo token",
       "textd7e9af636757": "I token vengono memorizzati per host, quindi cambiando host cambiano anche l’account e il progetto predefinito.",
-      "textd7eb7cdcff7d": "Controlla la tua email per il codice di accesso",
+      "textd7eb7cdcff7d": "Controlla la tua email per il link di accesso",
       "textd7f179da0e70": "Costruiamo aziende autonome. Gli esseri umani verificano, guidano e governano, mentre i team di agenti lavorano in engineering, prodotto, operations, finanza, supporto e crescita.",
       "textd800b1eb8a84": "Fai clic su \"Create App Integration\".",
       "textd814d7970df3": "\"Passare da X a Y\" è una soluzione a cui ti sei già impegnato. Lento, instabile, non funziona per questo cliente — questi sono problemi.",
@@ -17323,7 +17322,7 @@
       "texte2b3a36c0979": "Impossibile aggiungere la sorgente",
       "texte2c604d8e8f9": "La chiusura mensile non è lenta per la contabilità. È lenta per i quattro giorni di estrazione, abbinamento, solleciti e formattazione prima che qualcuno qualificato veda un numero.",
       "texte2cacf330067": "Riconcilia i libri contabili, segnala le eccezioni e attendi l'approvazione finale.",
-      "texte2cbafcec553": "Tutti i membri di questo progetto perderanno l'accesso a questo account. Non può essere rimosso mentre è collegato a una sessione; scollegalo prima dalla sessione.",
+      "texte2cbafcec553": "Tutti i membri di questo progetto perderanno l'accesso a questo account. Le sessioni associate smetteranno di funzionare.",
       "texte2cbd4618228": "Rimuovi la regola {value0}",
       "texte2cc5cc46d8e": "Simbolo quadrato — quando il logo largo non entra e per l'icona touch. Sostituisce il logo quando non ne è impostato alcuno.",
       "texte2d0a54968ea": "Elimina",
@@ -19101,11 +19100,13 @@
       "textc94e8cb68cba": "Pattern vietati",
       "text9bb4af3b0beb": "Sono ancora presenti nel codice, ma il brand kit li vieta. Non aggiungere nuovi utilizzi.",
       "text1aff73a5df45": "{why} Usa {instead}.",
-      "text092e391cacdb": "Removed connector account",
-"text81b004dc7e0b": "Slack e Teams sono disponibili · l’email è in arrivo · oppure avvia sessioni dall’API",
+      "text81b004dc7e0b": "Slack e Teams sono disponibili · l’email è in arrivo · oppure avvia sessioni dall’API",
       "text7d7b98240405": "Due sono disponibili. Uno è sperimentale. Vi diciamo quale.",
-      "textb60c863bbacb": "Attivo per ogni progetto, senza flag. Un amministratore del tenant dà il consenso una volta, oppure un progetto usa la propria app bot. Le stesse sessioni e le stesse regole di identità di Slack."
-
+      "textb60c863bbacb": "Attivo per ogni progetto, senza flag. Un amministratore del tenant dà il consenso una volta, oppure un progetto usa la propria app bot. Le stesse sessioni e le stesse regole di identità di Slack.",
+      "text80043b03898d": "Aggiorna l'app Kortix in Teams",
+      "textdf757dbe33eb": "Il tuo catalogo Teams ha la versione {value0} dell'app Kortix. La versione {value1} include tutti i comandi e le autorizzazioni che il tuo agente usa in Teams. Un amministratore Teams pubblica l'aggiornamento. Poi un proprietario del team aggiorna l'app in ogni team in cui Teams la propone: il team → ⋯ → Gestisci team → App → Aggiorna.",
+      "textcd2c4b26eedd": "Kortix non ha traccia della versione dell'app nel tuo catalogo Teams. La versione {value0} include tutti i comandi e le autorizzazioni che il tuo agente usa in Teams. Un amministratore Teams pubblica l'aggiornamento. Poi un proprietario del team aggiorna l'app in ogni team in cui Teams la propone: il team → ⋯ → Gestisci team → App → Aggiorna.",
+      "texte15f213fa506": "Pubblica l'aggiornamento dell'app"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

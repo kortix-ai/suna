@@ -1003,7 +1003,7 @@
         },
         "human_messaging": {
           "name": "Human Messaging",
-          "description": "Let agents message people and other sessions. `kortix send alice@example.com` opens a conversation that starts with the agent's message and shows under Asked you in the recipient's sidebar. Several addresses open a group chat."
+          "description": "Let agents message people and other sessions. `kortix send alice@example.com` opens a conversation that starts with the agent's message and shows under Asked you in the recipient's sidebar. Several addresses open a group chat. Messages between sessions name the sending session, so its agent can reply."
         },
         "reminders": {
           "name": "Reminders",
@@ -2288,7 +2288,7 @@
       "oneMoment": "One moment…",
       "useDifferentEmail": "Use a different email",
       "usePasswordInstead": "Use a password instead",
-      "emailCodeInstead": "Email me a code instead",
+      "emailLinkInstead": "Email me a link instead",
       "forgotPassword": "Forgot your password?",
       "automaticAccount": "New here? Continue creates your account automatically.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Looking up your identity provider…",
         "use": "Use single sign-on (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Check your email",
-        "description": "We sent a code to <address>{email}</address>",
-        "verifying": "Verifying…",
-        "notReceived": "Didn't receive a code?",
+        "description": "We sent a sign-in link to <address>{email}</address>. Open it to continue.",
+        "notReceived": "Didn't receive the link?",
         "resendIn": "Resend in {seconds}",
         "resend": "Resend"
       },
@@ -16954,7 +16953,7 @@
       "textd7da08389824": "service account",
       "textd7db5a6e1483": "Copy this token now",
       "textd7e9af636757": "Tokens are stored per host, so switching hosts switches the account and the default project with it.",
-      "textd7eb7cdcff7d": "Check your email for a sign-in code",
+      "textd7eb7cdcff7d": "Check your email for a sign-in link",
       "textd7f179da0e70": "We build self-driving companies. Humans verify, steer, and govern while agent teams do work across engineering, product, operations, finance, support, and growth.",
       "textd800b1eb8a84": "Click \"Create App Integration\".",
       "textd814d7970df3": "\"Move from X to Y\" is a solution you pre-committed to. Slow, flaky, breaks for this one customer — those are problems.",
@@ -19114,11 +19113,13 @@
       "textc94e8cb68cba": "Banned patterns",
       "text9bb4af3b0beb": "These ship in the code base but the brand kit bans them. Do not add a new use.",
       "text1aff73a5df45": "{why} Use {instead}.",
-      "text092e391cacdb": "Removed connector account",
-"text81b004dc7e0b": "Slack and Teams are live · email is rolling out · or start sessions from the API",
+      "text81b004dc7e0b": "Slack and Teams are live · email is rolling out · or start sessions from the API",
       "text7d7b98240405": "Two are live. One is experimental. We will say which.",
-      "textb60c863bbacb": "On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack."
-
+      "textb60c863bbacb": "On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack.",
+      "text80043b03898d": "Update the Kortix app in Teams",
+      "textdf757dbe33eb": "Your Teams catalog has version {value0} of the Kortix app. Version {value1} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
+      "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
+      "texte15f213fa506": "Publish app update"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

@@ -114,6 +114,26 @@ projectsApp.openapi(
           PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
         )
       : false;
+  // A conversation with people: refused up front when the flag is off, before
+  // any agent check can answer with an unrelated error.
+  if (body.participants !== undefined) {
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
+    if (gate) return gate;
+    // An ask from a session runs the asking session's own agent. An agent may
+    // always start its own kind (agent_principal delegation), and a project
+    // whose manifest names no default agent left nothing to resolve: dev
+    // 2026-10-01, `kortix send <email>` → "An agent session must name the
+    // agent it starts".
+    const askingSessionId = callerKortixSessionId(c);
+    if (askingSessionId && !normalizeString(body.agent_name ?? body.agentName)) {
+      const [asking] = await db
+        .select({ agentName: projectSessions.agentName })
+        .from(projectSessions)
+        .where(and(eq(projectSessions.sessionId, askingSessionId), eq(projectSessions.projectId, projectId)))
+        .limit(1);
+      if (asking?.agentName) body.agent_name = asking.agentName;
+    }
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
@@ -179,8 +199,6 @@ projectsApp.openapi(
   let participantMetadata: Record<string, unknown> | undefined;
   let askIdempotencyKey: string | null = null;
   if (body.participants !== undefined) {
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'human_messaging');
-    if (gate) return gate;
     const pending = body.pending_prompt as Record<string, unknown> | undefined;
     // The ask header lives in the text; parts (files) would replace it.
     if (Array.isArray(pending?.parts) && pending.parts.length > 0) {
@@ -212,7 +230,16 @@ projectsApp.openapi(
     // The question names the conversation; the header never becomes a title.
     body.name ??= conversationName(question);
     const participantIds = resolved.people.map((p) => p.userId);
-    participantMetadata = { participants: participantIds, awaiting_reply_from: participantIds, awaiting_reply: true };
+    participantMetadata = {
+      participants: participantIds,
+      awaiting_reply_from: participantIds,
+      awaiting_reply: true,
+      // Who asked, as the people see it: the asking session for an agent's
+      // ask (its owner's name read as "a message from yourself"), else the person.
+      asked_by: sender.kind === 'session'
+        ? { kind: 'session', session_id: sender.sessionId, name: sender.title }
+        : { kind: 'person', name: sender.name, email: sender.email },
+    };
     // An agent that re-runs `kortix send` after a timeout must not open a
     // second conversation and notify the same people twice. Without a
     // caller key, the same sender + people + question within the hour is the

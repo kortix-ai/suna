@@ -73,7 +73,10 @@ export function registerSecretResourceRoutes() {
     const membership = await getMembership(userId, accountId);
     if (!membership) return c.json({ error: 'Forbidden' }, 403);
     const projectId = c.req.query('project_id') as string | undefined;
-    if (projectId && !(await memberMayReadProject(accountId, projectId, userId))) return c.json({ error: 'Forbidden' }, 403);
+    // This route authorizes the caller's own request here, so MFA counts.
+    if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: c.get('mfaAal') }))) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
     const manager = membership.accountRole === 'owner' || membership.accountRole === 'admin';
     const rows = await db.select().from(accountSecretResources).where(eq(accountSecretResources.accountId, accountId));
     const scoped = rows.filter((row) => !projectId ? row.projectId === null : row.projectId === null || row.projectId === projectId);
@@ -99,7 +102,13 @@ export function registerSecretResourceRoutes() {
     if (body.project_id) {
       const [project] = await db.select({ accountId: projects.accountId, metadata: projects.metadata }).from(projects)
         .where(eq(projects.projectId, body.project_id)).limit(1);
-      if (!project || project.accountId !== accountId || !(await memberMayReadProject(accountId, body.project_id, userId))) {
+      // A key only for the caller skips the `authorize` below, so this is the
+      // caller's whole project check, and their request's MFA level counts.
+      if (
+        !project ||
+        project.accountId !== accountId ||
+        !(await memberMayReadProject(accountId, body.project_id, userId, { mfaAal: c.get('mfaAal') }))
+      ) {
         return c.json({ error: 'Project unavailable' }, 403);
       }
       if (!resolveFeatureFlag(project.metadata, 'pooled_provider_secrets')) return c.json({ error: 'Pooled provider secrets are disabled' }, 403);
@@ -145,6 +154,11 @@ export function registerSecretResourceRoutes() {
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
     if (!row.projectId || !(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    // Narrowing a key to its creator skips the `authorize` below: the caller's
+    // own request, with its MFA level, is checked here instead.
+    if (!(await memberMayReadProject(accountId, row.projectId, actorId, { mfaAal: c.get('mfaAal') }))) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
     const parsed = z.object({ mode: z.enum(['project', 'members']), user_ids: z.array(z.string().uuid()).max(200) }).strict().safeParse(await readJsonObject(c));
     if (!parsed.success) return c.json({ error: 'Invalid access' }, 400);
     const creatorStillEligible = Boolean(await getMembership(row.createdBy, accountId)) &&

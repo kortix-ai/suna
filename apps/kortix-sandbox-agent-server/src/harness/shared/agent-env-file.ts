@@ -52,6 +52,7 @@ const SHELL_SESSION_CREDS = [
   'KORTIX_API_URL',
   'KORTIX_FRONTEND_URL',
   'KORTIX_DEFAULT_BRANCH',
+  'KORTIX_FEATURES',
 ] as const
 
 function isUnsafeName(name: string): boolean {

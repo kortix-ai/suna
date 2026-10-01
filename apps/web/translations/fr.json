@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Messages aux personnes",
-          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe."
+          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe. Les messages entre sessions indiquent la session expéditrice, pour que son agent puisse répondre."
         },
         "reminders": {
           "name": "Rappels",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Un instant…",
       "useDifferentEmail": "Utiliser une autre adresse e-mail",
       "usePasswordInstead": "Utiliser un mot de passe",
-      "emailCodeInstead": "M’envoyer un code par e-mail",
+      "emailLinkInstead": "M’envoyer un lien par e-mail",
       "forgotPassword": "Mot de passe oublié ?",
       "automaticAccount": "Nouveau ici ? Continuer crée automatiquement votre compte.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Recherche de votre fournisseur d’identité…",
         "use": "Utiliser l’authentification unique (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Consultez votre boîte e-mail",
-        "description": "Nous avons envoyé un code à <address>{email}</address>",
-        "verifying": "Vérification…",
-        "notReceived": "Vous n’avez pas reçu de code ?",
+        "description": "Nous avons envoyé un lien de connexion à <address>{email}</address>. Ouvrez-le pour continuer.",
+        "notReceived": "Vous n’avez pas reçu le lien ?",
         "resendIn": "Renvoyer dans {seconds}",
         "resend": "Renvoyer"
       },
@@ -12885,7 +12884,7 @@
       "text64cc97c96c03": "Déconnectez-vous à tout moment avec",
       "text64cfa6cc8752": "La configuration livrée par défaut est permissive : une action s’exécute sauf indication contraire. Les lectures s’y prêtent généralement. Les écritures dans un data warehouse, non ; les définir sur Ask est une modification que vous effectuez, pas une configuration faite pour vous.",
       "text64cff1319d2f": "Action",
-      "text64db32d83da9": "Ce compte ne peut pas être supprimé tant qu’il est lié à une session. Détachez-le d’abord de la session.",
+      "text64db32d83da9": "Votre connexion est supprimée. Les sessions qui lui sont associées cesseront de fonctionner.",
       "text64e8222cd578": "Où se trouve Kortix",
       "text64e855d33cce": "Demande d’accès refusée",
       "text64f160413fef": "Utiliser les fichiers SVG/PNG fournis",
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "compte de service",
       "textd7db5a6e1483": "Copiez ce jeton maintenant",
       "textd7e9af636757": "Les jetons sont stockés par hôte : changer d’hôte change donc de compte et de projet par défaut.",
-      "textd7eb7cdcff7d": "Consultez votre email pour obtenir un code de connexion",
+      "textd7eb7cdcff7d": "Consultez votre e-mail pour obtenir un lien de connexion",
       "textd7f179da0e70": "Nous construisons des entreprises autonomes. Les humains vérifient, pilotent et gouvernent, tandis que les équipes d’agents travaillent dans l’ingénierie, le produit, les opérations, la finance, le support et la croissance.",
       "textd800b1eb8a84": "Cliquez sur « Create App Integration ».",
       "textd814d7970df3": "« Move from X to Y » est une solution à laquelle vous vous êtes engagé par avance. Lent, instable, défaillant pour ce client précis — ce sont des problèmes.",
@@ -17323,7 +17322,7 @@
       "texte2b3a36c0979": "Impossible d’ajouter la source",
       "texte2c604d8e8f9": "La clôture mensuelle n’est pas lente à cause de la comptabilité. Elle l’est à cause de quatre jours passés à extraire, rapprocher, relancer et mettre en forme avant qu’une personne qualifiée ne voie un chiffre.",
       "texte2cacf330067": "Rapprocher les comptes, signaler les exceptions et attendre la validation.",
-      "texte2cbafcec553": "Tous les membres de ce projet perdront l’accès à ce compte. Il ne peut pas être supprimé tant qu’il est lié à une session ; détachez-le d’abord de la session.",
+      "texte2cbafcec553": "Tous les membres de ce projet perdront l’accès à ce compte. Les sessions qui lui sont associées cesseront de fonctionner.",
       "texte2cbd4618228": "Supprimer la règle {value0}",
       "texte2cc5cc46d8e": "Symbole carré — lorsque le logo large ne convient pas, et pour l’icône tactile. Remplace le logo lorsqu’aucun n’est défini.",
       "texte2d0a54968ea": "Supprimer",
@@ -19101,11 +19100,13 @@
       "textc94e8cb68cba": "Modèles interdits",
       "text9bb4af3b0beb": "Ils existent encore dans le code, mais le brand kit les interdit. N’en ajoutez pas de nouvelle utilisation.",
       "text1aff73a5df45": "{why} Utilisez {instead}.",
-      "text092e391cacdb": "Removed connector account",
-"text81b004dc7e0b": "Slack et Teams sont disponibles · l’e-mail arrive · ou démarrez des sessions depuis l’API",
+      "text81b004dc7e0b": "Slack et Teams sont disponibles · l’e-mail arrive · ou démarrez des sessions depuis l’API",
       "text7d7b98240405": "Deux sont disponibles. Un est expérimental. Nous vous disons lequel.",
-      "textb60c863bbacb": "Actif pour chaque projet, sans flag. Un administrateur du tenant donne son consentement une fois, ou un projet apporte sa propre app de bot. Les mêmes sessions, les mêmes règles d’identité que Slack."
-
+      "textb60c863bbacb": "Actif pour chaque projet, sans flag. Un administrateur du tenant donne son consentement une fois, ou un projet apporte sa propre app de bot. Les mêmes sessions, les mêmes règles d’identité que Slack.",
+      "text80043b03898d": "Mettre à jour l'application Kortix dans Teams",
+      "textdf757dbe33eb": "Votre catalogue Teams contient la version {value0} de l'application Kortix. La version {value1} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
+      "textcd2c4b26eedd": "Kortix ne connaît pas la version de l'application dans votre catalogue Teams. La version {value0} contient toutes les commandes et autorisations que votre agent utilise dans Teams. Un administrateur Teams publie la mise à jour. Ensuite, un propriétaire d'équipe met à jour l'application dans chaque équipe où Teams la propose : l'équipe → ⋯ → Gérer l'équipe → Applications → Mettre à jour.",
+      "texte15f213fa506": "Publier la mise à jour de l'application"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Nachrichten an Menschen",
-          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat."
+          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat. Nachrichten zwischen Sitzungen nennen die sendende Sitzung, damit deren Agent antworten kann."
         },
         "reminders": {
           "name": "Erinnerungen",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Einen Moment …",
       "useDifferentEmail": "Andere E-Mail-Adresse verwenden",
       "usePasswordInstead": "Stattdessen ein Passwort verwenden",
-      "emailCodeInstead": "Code per E-Mail senden",
+      "emailLinkInstead": "Stattdessen einen Link per E-Mail senden",
       "forgotPassword": "Passwort vergessen?",
       "automaticAccount": "Neu hier? Mit „Weiter“ wird dein Konto automatisch erstellt.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Identitätsanbieter wird gesucht …",
         "use": "Single Sign-on (SSO) verwenden"
       },
-      "code": {
+      "link": {
         "title": "E-Mail prüfen",
-        "description": "Wir haben einen Code an <address>{email}</address> gesendet",
-        "verifying": "Wird überprüft …",
-        "notReceived": "Keinen Code erhalten?",
+        "description": "Wir haben einen Anmeldelink an <address>{email}</address> gesendet. Öffne ihn, um fortzufahren.",
+        "notReceived": "Keinen Link erhalten?",
         "resendIn": "Erneut senden in {seconds}",
         "resend": "Erneut senden"
       },
@@ -12885,7 +12884,7 @@
       "text64cc97c96c03": "Jederzeit trennen mit",
       "text64cfa6cc8752": "Der ausgelieferte Standard ist permissiv: Eine Aktion läuft, sofern Sie nichts anderes festgelegt haben. Lesevorgänge sind so meist unproblematisch. Schreibvorgänge in ein Warehouse nicht; sie auf Ask zu setzen ist eine Konfigurationsänderung, die Sie selbst vornehmen.",
       "text64cff1319d2f": "Aktion",
-      "text64db32d83da9": "Dieses Konto kann nicht entfernt werden, solange es an eine Sitzung gebunden ist. Löse zuerst die Bindung in der Sitzung.",
+      "text64db32d83da9": "Deine eigene Verbindung wird entfernt. Sitzungen, die daran gebunden sind, funktionieren nicht mehr.",
       "text64e8222cd578": "Wo Kortix läuft",
       "text64e855d33cce": "Zugriffsanfrage abgelehnt",
       "text64f160413fef": "Verwende die bereitgestellten SVG/PNG-Dateien",
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "Dienstkonto",
       "textd7db5a6e1483": "Kopiere diesen Token jetzt",
       "textd7e9af636757": "Token werden pro Host gespeichert. Beim Wechsel des Hosts wechseln daher auch das Konto und das Standardprojekt.",
-      "textd7eb7cdcff7d": "Prüfe deine E-Mails auf einen Anmeldecode",
+      "textd7eb7cdcff7d": "Prüfe deine E-Mails auf einen Anmeldelink",
       "textd7f179da0e70": "Wir bauen selbststeuernde Unternehmen. Menschen prüfen, lenken und steuern, während Agententeams Arbeit in Engineering, Product, Operations, Finance, Support und Growth erledigen.",
       "textd800b1eb8a84": "Klicken Sie auf „Create App Integration“.",
       "textd814d7970df3": "„Von X nach Y migrieren“ ist eine Lösung, auf die du dich voreilig festgelegt hast. Langsam, instabil, bricht bei diesem einen Kunden — das sind Probleme.",
@@ -17323,7 +17322,7 @@
       "texte2b3a36c0979": "Quelle konnte nicht hinzugefügt werden",
       "texte2c604d8e8f9": "Der Monatsabschluss ist nicht wegen der Buchhaltung langsam. Langsam sind die vier Tage, in denen Daten zusammengetragen, abgeglichen, nachverfolgt und formatiert werden, bevor jemand mit entsprechender Qualifikation eine Zahl sieht.",
       "texte2cacf330067": "Bücher abgleichen, Abweichungen markieren, auf Freigabe warten.",
-      "texte2cbafcec553": "Alle Mitglieder dieses Projekts verlieren den Zugriff auf dieses Konto. Es kann nicht entfernt werden, solange es an eine Sitzung gebunden ist; löse zuerst die Bindung in der Sitzung.",
+      "texte2cbafcec553": "Alle Mitglieder dieses Projekts verlieren den Zugriff auf dieses Konto. Sitzungen, die daran gebunden sind, funktionieren nicht mehr.",
       "texte2cbd4618228": "Regel {value0} entfernen",
       "texte2cc5cc46d8e": "Quadratisches Symbol — wenn das breite Logo nicht passt, sowie Touch-Symbol. Steht für das Logo, wenn keines festgelegt ist.",
       "texte2d0a54968ea": "Löschen",
@@ -19101,11 +19100,13 @@
       "textc94e8cb68cba": "Verbotene Muster",
       "text9bb4af3b0beb": "Diese kommen in der Codebasis noch vor, aber das Brand Kit verbietet sie. Füge keine neue Verwendung hinzu.",
       "text1aff73a5df45": "{why} Verwende stattdessen {instead}.",
-      "text092e391cacdb": "Removed connector account",
-"text81b004dc7e0b": "Slack und Teams sind live · E-Mail wird eingeführt · oder starte Sitzungen über die API",
+      "text81b004dc7e0b": "Slack und Teams sind live · E-Mail wird eingeführt · oder starte Sitzungen über die API",
       "text7d7b98240405": "Zwei sind live. Einer ist experimentell. Wir sagen, welcher.",
-      "textb60c863bbacb": "Für jedes Projekt aktiv, ohne Flag. Ein Tenant-Admin stimmt einmal zu, oder ein Projekt bringt seine eigene Bot-App mit. Dieselben Sitzungen, dieselben Identitätsregeln wie bei Slack."
-
+      "textb60c863bbacb": "Für jedes Projekt aktiv, ohne Flag. Ein Tenant-Admin stimmt einmal zu, oder ein Projekt bringt seine eigene Bot-App mit. Dieselben Sitzungen, dieselben Identitätsregeln wie bei Slack.",
+      "text80043b03898d": "Kortix-App in Teams aktualisieren",
+      "textdf757dbe33eb": "Dein Teams-Katalog hat Version {value0} der Kortix-App. Version {value1} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
+      "textcd2c4b26eedd": "Kortix hat keine Angabe zur App-Version in deinem Teams-Katalog. Version {value0} enthält alle Befehle und Berechtigungen, die dein Agent in Teams nutzt. Ein Teams-Administrator veröffentlicht das Update. Danach aktualisiert ein Teambesitzer die App in jedem Team, in dem Teams sie anbietet: Team → ⋯ → Team verwalten → Apps → Aktualisieren.",
+      "texte15f213fa506": "App-Update veröffentlichen"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

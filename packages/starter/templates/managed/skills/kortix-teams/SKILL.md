@@ -351,6 +351,16 @@ way to add a reaction.
 You can only post into a chat or channel the bot is **already in for this
 project**. Anything else returns 404 — list the targets first rather than
 guessing an id.
+
+<!-- flag:human_messaging -->
+**An answer from another session arrives outside the Teams turn.** When you
+ask someone who is not in this conversation (`kortix send <email> "…"`) or
+message another session, the answer comes back later as a
+`[MESSAGE from session …]` prompt; the original card is closed by then. Keep
+`$MS_TEAMS_CONVERSATION_ID` in your question's context or your notes, and post
+the answer with `teams post --conversation <id> "…"`. When the person is
+already in this conversation, ask here instead (the `question` tool).
+<!-- /flag:human_messaging -->
 </posting-somewhere-else>
 
 <other-surfaces>

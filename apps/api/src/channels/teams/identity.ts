@@ -5,7 +5,8 @@ import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { lookupChatUserForKortixUser } from '../core/identity';
 import { openDirectConversation, sendCard, updateCard } from '../teams-api';
 import { buildAccessRequestNoticeCard, buildConnectedCard, buildRequestAccessCard } from './cards';
-import { teamsLoginCard } from './login-card';
+import { sendTeamsLoginPrompt } from './login-card';
+import { replyPrivately } from './private-reply';
 import { createPendingTeamsAuthMessage } from './auth-resume';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
@@ -28,23 +29,23 @@ function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConv
   };
 }
 
+/**
+ * Tell the sender why their message did not run: connect a Kortix account, or
+ * ask for access to the project. Only they can act on it, so a channel or
+ * group chat shows it to them alone, as Slack's ephemeral.
+ */
 export async function postTeamsIdentityPrompt(input: {
   projectId: string;
   tenantId: string;
   activity: TeamsActivity;
   reason: 'unlinked' | 'not_member';
-  /** The live "Working on it…" card to replace, when one was already posted. */
+  /** This person's own "Working on it…" card in a 1:1 chat, which the prompt replaces. */
   replaceActivityId?: string;
 }): Promise<void> {
   const ref = conversationRef(input.activity, input.projectId);
   if (!ref) return;
   const userId = teamsUserId(input.activity);
   if (!userId) return;
-
-  const post = async (card: Record<string, unknown>) => {
-    if (input.replaceActivityId && (await updateCard(ref, input.replaceActivityId, card))) return;
-    await sendCard(ref, card);
-  };
 
   if (input.reason === 'unlinked') {
     const pendingId = await createPendingTeamsAuthMessage({
@@ -53,11 +54,19 @@ export async function postTeamsIdentityPrompt(input: {
       teamsUserId: userId,
       activity: input.activity,
     });
-    // The sign-in link only in a one-to-one chat (login-card.ts).
-    await post(await teamsLoginCard({ activity: input.activity, tenantId: input.tenantId, teamsUserId: userId, pendingId, projectId: input.projectId }));
+    await sendTeamsLoginPrompt({
+      ref,
+      activity: input.activity,
+      tenantId: input.tenantId,
+      teamsUserId: userId,
+      pendingId,
+      ...(input.replaceActivityId ? { replaceActivityId: input.replaceActivityId } : {}),
+    });
     return;
   }
-  await post(buildRequestAccessCard(input.projectId));
+  const card = buildRequestAccessCard(input.projectId);
+  if (input.replaceActivityId && (await updateCard(ref, input.replaceActivityId, card))) return;
+  await replyPrivately(ref, input.activity, card);
 }
 
 /**

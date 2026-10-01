@@ -1083,6 +1083,7 @@ export function UserMessage({
   author,
   showAuthor,
   headerTrusted,
+  messagingCards = true,
   viewerEmail,
   isLastMessage,
   agentNames,
@@ -1108,6 +1109,12 @@ export function UserMessage({
   showAuthor?: boolean;
   /** The server wrote this message's header without a ledger author (an ask's first, `no_reply` prompt). */
   headerTrusted?: boolean;
+  /**
+   * `human_messaging` is on for the project. Off: no ask / from-session card and
+   * no reply hint, even for a message whose header the ledger confirmed; the
+   * header is stripped and the text draws as a plain bubble. Author labels stay.
+   */
+  messagingCards?: boolean;
   /** The viewer's email, to tell whether an ask is addressed to them. */
   viewerEmail?: string;
   /** No user message came after this one. */
@@ -1178,7 +1185,7 @@ export function UserMessage({
   // `no_reply` prompt makes it real; without either it stays plain text.
   // The header line itself is always hidden: it is agent-facing text, and a
   // typed one claims nothing once it is gone (names come from the ledger).
-  const headerConfirmed = !!author || !!headerTrusted;
+  const headerConfirmed = messagingCards && (!!author || !!headerTrusted);
   const sessionMessage = useMemo(
     () => (headerConfirmed ? parseSessionMessagePrompt(rawText) : undefined),
     [rawText, headerConfirmed],
