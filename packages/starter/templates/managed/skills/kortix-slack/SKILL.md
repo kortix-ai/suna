@@ -322,7 +322,7 @@ A `slack send` with no `--channel` is the turn's answer. When it cannot be deliv
 </final-answer>
 
 <asking-the-user>
-### Use opencode's built-in `question` tool — Slack renders the buttons
+### Use the built-in `question` tool — Slack renders the buttons
 
 **Rule: if your reply asks the user to choose, call the `question` tool. Never put a list of choices inside `slack send`.**
 
@@ -345,7 +345,7 @@ The answer arrives as your NEXT turn, with full context:
 
 ### Calling the `question` tool
 
-Per opencode's schema, every option has a `label` (1–5 words) and a `description`:
+Per the tool's schema, every option has a `label` (1–5 words) and a `description`:
 
 ```jsonc
 {

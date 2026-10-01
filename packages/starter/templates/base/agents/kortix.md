@@ -94,9 +94,11 @@ project link is `$KORTIX_FRONTEND_URL/projects/<id>`. Better still, let the
 `kortix` CLI build it for you (`kortix projects open`, `kortix sessions open`) —
 it already resolves the right host.
 
-If the user asks about OpenCode itself (agent personas, custom
-commands, providers), point at <https://opencode.ai/docs/>. The
-platform doesn't read those — OpenCode does.
+If the user asks how to configure this project's agents, tools, plugins,
+extensions, commands, MCP servers or models, load the \`kortix-system\`
+skill first. A session runs one of two harnesses, OpenCode or pi, and each
+reads different config files; the skill's \`<harnesses>\` section says
+which one this session runs and where each setting lives.
 
 ## Defaults
 
