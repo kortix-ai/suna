@@ -131,7 +131,8 @@ const MEASURED_CONTEXT_WINDOW: Record<string, number> = {
 };
 
 // OpenCode 1.18.23 (session/overflow.ts) compacts after a step that used
-// `limit.context - maxTokens` tokens, and sends `max_tokens = maxTokens`. A route
+// `limit.context - maxTokens` tokens, and sends `max_tokens = maxTokens`
+// (capped at OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX = 65,536 in the sandbox). A route
 // that checks prompt + max_tokens rejects any prompt above `window - maxTokens`.
 // The difference is what one more step may add: a new message plus tool results
 // (OpenCode truncates each tool result at 50 KB, about 12,000 tokens).
@@ -143,7 +144,7 @@ describe('managed context windows', () => {
     (id, model) => {
       const window = MEASURED_CONTEXT_WINDOW[id];
       expect(window, `probe every route of ${id} and record its window`).toBeGreaterThan(0);
-      const maxTokens = Math.min(model.limit.output, 32_000);
+      const maxTokens = Math.min(model.limit.output, 65_536);
       const compactsAt = model.limit.context - maxTokens;
       const largestAcceptedPrompt = window! - maxTokens;
       expect(largestAcceptedPrompt - compactsAt).toBeGreaterThanOrEqual(MIN_STEP_HEADROOM);
