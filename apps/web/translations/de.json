@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "Jederzeit trennen mit",
       "text64cfa6cc8752": "Der ausgelieferte Standard ist permissiv: Eine Aktion läuft, sofern Sie nichts anderes festgelegt haben. Lesevorgänge sind so meist unproblematisch. Schreibvorgänge in ein Warehouse nicht; sie auf Ask zu setzen ist eine Konfigurationsänderung, die Sie selbst vornehmen.",
       "text64cff1319d2f": "Aktion",
-      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
+      "text64db32d83da9": "Dieses Konto kann nicht entfernt werden, solange es an eine Sitzung gebunden ist. Löse zuerst die Bindung in der Sitzung.",
       "text64e8222cd578": "Wo Kortix läuft",
       "text64e855d33cce": "Zugriffsanfrage abgelehnt",
       "text64f160413fef": "Verwende die bereitgestellten SVG/PNG-Dateien",

@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "Desconecte a qualquer momento com",
       "text64cfa6cc8752": "O padrão enviado é permissivo: uma ação executa, salvo indicação contrária. Leituras geralmente são seguras assim. Gravações em um warehouse não são; defini-las como Ask é uma configuração sua, não algo feito por você.",
       "text64cff1319d2f": "Ação",
-      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
+      "text64db32d83da9": "Esta conta não pode ser removida enquanto estiver vinculada a uma sessão. Desvincule-a da sessão primeiro.",
       "text64e8222cd578": "Onde o Kortix está presente",
       "text64e855d33cce": "Solicitação de acesso recusada",
       "text64f160413fef": "Use os arquivos SVG/PNG fornecidos",

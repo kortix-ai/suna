@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "Desconecta en cualquier momento con",
       "text64cfa6cc8752": "El valor predeterminado es permisivo: una acción se ejecuta salvo que indiques lo contrario. Las lecturas suelen estar bien así. Las escrituras en un warehouse no, y configurarlas como Ask es un cambio que haces tú, no algo que se haya hecho por ti.",
       "text64cff1319d2f": "Acción",
-      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
+      "text64db32d83da9": "No se puede eliminar esta cuenta mientras esté vinculada a una sesión. Desvincúlala primero de la sesión.",
       "text64e8222cd578": "Dónde está Kortix",
       "text64e855d33cce": "Solicitud de acceso rechazada",
       "text64f160413fef": "Usa los archivos SVG/PNG proporcionados",

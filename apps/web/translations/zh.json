@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "随时断开连接：",
       "text64cfa6cc8752": "产品默认设置是宽松的：除非另有指定，否则操作会运行。读取通常适合这样设置，但写入数据仓库不适合。将其设为 Ask 是您做出的配置更改，而不是我们替您做出的决定。",
       "text64cff1319d2f": "操作",
-      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
+      "text64db32d83da9": "此账户仍绑定到会话，无法移除。请先从会话中解除绑定。",
       "text64e8222cd578": "Kortix 所在之处",
       "text64e855d33cce": "访问请求已拒绝",
       "text64f160413fef": "使用提供的 SVG/PNG 文件",

@@ -410,7 +410,6 @@ describe('connection owner authorization over HTTP', () => {
     const deletion = request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token);
     try {
       // The insert holds a KEY SHARE lock until commit; deletion must wait.
-      await Bun.sleep(50);
       releaseBinding();
       await binding;
       expect((await deletion).status).toBe(409);

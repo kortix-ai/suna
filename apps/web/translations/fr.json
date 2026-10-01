@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "Déconnectez-vous à tout moment avec",
       "text64cfa6cc8752": "La configuration livrée par défaut est permissive : une action s’exécute sauf indication contraire. Les lectures s’y prêtent généralement. Les écritures dans un data warehouse, non ; les définir sur Ask est une modification que vous effectuez, pas une configuration faite pour vous.",
       "text64cff1319d2f": "Action",
-      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
+      "text64db32d83da9": "Ce compte ne peut pas être supprimé tant qu’il est lié à une session. Détachez-le d’abord de la session.",
       "text64e8222cd578": "Où se trouve Kortix",
       "text64e855d33cce": "Demande d’accès refusée",
       "text64f160413fef": "Utiliser les fichiers SVG/PNG fournis",
