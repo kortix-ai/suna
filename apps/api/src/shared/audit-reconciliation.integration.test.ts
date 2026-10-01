@@ -136,6 +136,10 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       SESSION,
     ]);
     await client.query('DELETE FROM kortix.provider_events WHERE account_id = $1', [ACCOUNT]);
+    await client.query(
+      'DELETE FROM kortix.audit_reconciliation_state WHERE account_id = ANY($1::uuid[])',
+      [[ACCOUNT, SECOND_ACCOUNT]],
+    );
     await client.query('DELETE FROM kortix.tunnel_connections WHERE tunnel_id = $1', [TUNNEL]);
     await client.query('DELETE FROM kortix.accounts WHERE account_id = ANY($1::uuid[])', [
       [ACCOUNT, SECOND_ACCOUNT],
@@ -238,6 +242,11 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
     // contain unrelated accounts from other suites; scanning from null would
     // reconcile and append markers for those accounts as a test side effect.
     const fixtureCursor = await cursorImmediatelyBefore(ACCOUNT);
+    // The calls above wrote a high-water mark; the worker only visits accounts
+    // that are due. Clear it so the worker treats ACCOUNT as never scanned.
+    await client!.query('DELETE FROM kortix.audit_reconciliation_state WHERE account_id = $1', [
+      ACCOUNT,
+    ]);
     const automatic = await runAuditReconciliationPage(fixtureCursor);
     expect(automatic.accountId).toBe(ACCOUNT);
     expect(automatic.result).toEqual({ inserted: 0, complete: true, by_source: {} });
@@ -280,6 +289,12 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
     } finally {
       await client!.query(`SET session_replication_role = 'origin'`);
     }
+    // Age the mark past the recheck interval so the account is due again.
+    await client!.query(
+      `UPDATE kortix.audit_reconciliation_state SET checked_at = now() - interval '7 hours'
+        WHERE account_id = $1`,
+      [ACCOUNT],
+    );
     const nextCycle = await runAuditReconciliationPage(fixtureCursor);
     expect(nextCycle.accountId).toBe(ACCOUNT);
     expect(nextCycle.result).toEqual({
