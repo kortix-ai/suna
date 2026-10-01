@@ -423,6 +423,15 @@ export const desktopComputerResume = () => desktopServiceVerb('computer_resume')
 export const desktopComputerDisconnect = () =>
   desktopCommand<DesktopComputerDisconnectResult>('computer_disconnect');
 export const desktopComputerOpenLogs = () => desktopAction<null>('computer_open_logs');
+/** macOS grants Computer Use runs with, held by the Kortix app. `null` off macOS or off desktop. */
+export interface DesktopComputerGrants {
+  accessibility: boolean;
+  screenRecording: boolean;
+}
+export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>('computer_grants');
+/** Asks macOS for every missing grant at once; the prompts name Kortix. */
+export const desktopComputerRequestGrants = () =>
+  desktopAction<DesktopComputerGrants>('computer_grants_request');
 export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAccess>('computer_access_get');
 /** Rejects with the desktop app's message on invalid input. */
 export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>

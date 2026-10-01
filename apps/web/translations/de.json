@@ -20352,7 +20352,16 @@
     "alreadyConnectedHint": "Bestätige, um ihn mit einem neuen Schlüssel und dem gewählten Zugriff neu zu verbinden. Seine Projekte und Freigaben bleiben.",
     "alreadyConnectedLive": "Er ist gerade online. Bestätige, um ihn auf diese Anfrage zu übertragen: Die aktuelle Verbindung endet. Seine Projekte und Freigaben bleiben.",
     "reconnect": "Neu verbinden",
-    "accessHint": "Der ausgewählte Zugriff bleibt aktiv, bis du ihn widerrufst."
+    "accessHint": "Der ausgewählte Zugriff bleibt aktiv, bis du ihn widerrufst.",
+    "grants": {
+      "title": "Kortix erlauben, deinen Bildschirm zu sehen und deine Apps zu bedienen",
+      "hint": "macOS fragt nach zwei Berechtigungen, beide für Kortix. Computer Use funktioniert, sobald du sie erlaubst.",
+      "accessibility": "Bedienungshilfen",
+      "screenRecording": "Bildschirmaufnahme",
+      "allowed": "erlaubt",
+      "missing": "nicht erlaubt",
+      "allow": "Zugriff erlauben"
+    }
   },
   "messageFrom": {
     "from": "Von",

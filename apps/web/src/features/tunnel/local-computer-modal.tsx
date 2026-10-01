@@ -1,6 +1,6 @@
 'use client';
 
-import { HandPalmIcon, PlusIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
+import { CursorClickIcon, HandPalmIcon, PlusIcon, ScrollIcon, WarningIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
@@ -34,8 +34,10 @@ import {
   desktopComputerAccessGet,
   desktopComputerAccessSet,
   desktopComputerDisconnect,
+  desktopComputerGrants,
   desktopComputerOpenLogs,
   desktopComputerPause,
+  desktopComputerRequestGrants,
   desktopComputerResume,
 } from '@/lib/desktop';
 import { relativeTime } from '@/lib/relative-time';
@@ -54,6 +56,7 @@ import {
 } from './computer-connect';
 
 const DESKTOP_ACCESS_KEY = ['desktop-computer-access'] as const;
+const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
 
 type ComputerAccess = NonNullable<Awaited<ReturnType<typeof desktopComputerAccessGet>>>;
 type AccessMode = ComputerAccess['mode'];
@@ -240,6 +243,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         }
       />
       <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
+        {machine?.capabilities?.includes('desktop') ? <ComputerUseGrants /> : null}
         {access.current?.mode === 'ask' && access.current.pendingRequest ? (
           <AccessRequestBanner
             capability={access.current.pendingRequest.capability}
@@ -334,6 +338,51 @@ function StatusText({ state }: { state: ComputerState }) {
       <ComputerStateDot state={state} />
       <span>{t(`state.${state}`)}</span>
     </>
+  );
+}
+
+/**
+ * Computer Use needs Accessibility and Screen Recording on macOS. Both belong
+ * to the Kortix app: the agent runs the bundled driver inside it. Shown until
+ * both are granted; one button asks for every missing grant. The desktop app
+ * restarts the agent once they land, because macOS applies a grant only to a
+ * process launched after it.
+ */
+function ComputerUseGrants() {
+  const t = useTranslations('computers');
+  const grants = useQuery({
+    queryKey: DESKTOP_GRANTS_KEY,
+    queryFn: async () => (await desktopComputerGrants()) ?? null,
+    // The person answers in System Settings, outside this dialog.
+    refetchInterval: (query) =>
+      query.state.data && !(query.state.data.accessibility && query.state.data.screenRecording)
+        ? 2_000
+        : false,
+  });
+  const request = useMutation({
+    retry: false,
+    mutationFn: desktopComputerRequestGrants,
+    onError: (error: Error) => errorToast(error.message || t('actionFailed')),
+    onSettled: () => void grants.refetch(),
+  });
+  const current = grants.data;
+  if (!current || (current.accessibility && current.screenRecording)) return null;
+  return (
+    <InfoBanner tone="info" icon={CursorClickIcon} title={t('grants.title')}>
+      <div className="space-y-2.5">
+        <p>{t('grants.hint')}</p>
+        <p className="text-xs">
+          {t('grants.accessibility')}: {current.accessibility ? t('grants.allowed') : t('grants.missing')}
+          {' · '}
+          {t('grants.screenRecording')}:{' '}
+          {current.screenRecording ? t('grants.allowed') : t('grants.missing')}
+        </p>
+        <Button size="sm" disabled={request.isPending} onClick={() => request.mutate()}>
+          {request.isPending ? <Loading className="size-4 shrink-0" /> : null}
+          {t('grants.allow')}
+        </Button>
+      </div>
+    </InfoBanner>
   );
 }
 

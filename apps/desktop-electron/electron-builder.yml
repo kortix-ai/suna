@@ -68,7 +68,15 @@ mac:
         - universal
   # macOS ATS exceptions so HTTP localhost / *.localhost sandbox previews load
   # inside the in-app browser (same rationale as the Tauri Info.plist).
+  # Computer Use: the agent runs this driver embedded, so the macOS grants
+  # belong to Kortix (scripts/fetch-cua-driver.js). It is already a universal
+  # binary: x64ArchFiles lets the universal merge keep the one file.
+  extraResources:
+    - from: vendor/cua-driver/cua-driver
+      to: cua-driver/cua-driver
+  x64ArchFiles: Contents/Resources/cua-driver/cua-driver
   extendInfo:
+    NSAppleEventsUsageDescription: Kortix agents use this to work with the apps on this computer when you allow Computer Use.
     NSAppTransportSecurity:
       NSAllowsArbitraryLoads: true
       NSAllowsArbitraryLoadsInWebContent: true

@@ -3,7 +3,19 @@
 // Rules and parsing live in computer.js (unit-tested); this file is the
 // Electron side effects.
 
-const { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, net, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  desktopCapturer,
+  dialog,
+  nativeImage,
+  net,
+  shell,
+  systemPreferences,
+} = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -434,6 +446,54 @@ function setupComputer(deps) {
   const pause = () => serviceVerb('stop', (next) => next.paused === true || !next.serviceActive);
   const resume = () => serviceVerb('start', (next) => next.serviceActive === true);
 
+  /* ─── Computer Use grants (macOS) ────────────────────────────────────── */
+
+  /**
+   * Accessibility and Screen Recording, as macOS answers them for Kortix. The
+   * agent runs as this app's binary and starts the bundled driver as its own
+   * child, so these are the grants Computer Use runs with. `null` off macOS.
+   */
+  function grants() {
+    if (process.platform !== 'darwin') return null;
+    return {
+      accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+      screenRecording: systemPreferences.getMediaAccessStatus('screen') === 'granted',
+    };
+  }
+
+  let grantWatch = null;
+  /**
+   * Asks macOS for every missing grant at once; each prompt names Kortix. The
+   * agent restarts once they are all granted: macOS applies a new grant to a
+   * process only from its next launch.
+   */
+  async function requestGrants() {
+    const before = grants();
+    if (!before) return null;
+    if (!before.accessibility) systemPreferences.isTrustedAccessibilityClient(true);
+    if (!before.screenRecording) {
+      // The first capture attempt adds Kortix to Screen Recording and shows the
+      // prompt. After a "Don't Allow", only System Settings can grant it.
+      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
+        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      } else {
+        void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+      }
+    }
+    if (!grantWatch && !(before.accessibility && before.screenRecording)) {
+      const until = Date.now() + 10 * 60_000;
+      grantWatch = setInterval(() => {
+        const now = grants();
+        if (now?.accessibility && now.screenRecording) void serviceVerb('restart', (next) => next.serviceActive === true);
+        if ((now?.accessibility && now.screenRecording) || Date.now() > until) {
+          clearInterval(grantWatch);
+          grantWatch = null;
+        }
+      }, 2_000);
+    }
+    return grants();
+  }
+
   /**
    * X4: `logout --json` unpairs on the server with the machine's own
    * credential FIRST, then clears it and removes the service.
@@ -621,6 +681,10 @@ function setupComputer(deps) {
       .then(async (result) => {
         closeApproval();
         await refresh();
+        // Onboarding: approving Computer Use asks macOS for its grants at once.
+        if (result?.ok && computer.missingComputerUseGrants(home, grants()).length > 0) {
+          void requestGrants();
+        }
         return result;
       })
       .finally(() => {
@@ -656,6 +720,10 @@ function setupComputer(deps) {
         return computer.accessView((await context()).home);
       case 'computer_access_set':
         return setAccessFromPage(args);
+      case 'computer_grants':
+        return grants();
+      case 'computer_grants_request':
+        return requestGrants();
       default:
         throw new Error(`Unknown command: ${cmd}`);
     }

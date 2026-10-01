@@ -20352,7 +20352,16 @@
     "alreadyConnectedHint": "承認すると、新しいキーと選択したアクセスで再接続します。プロジェクトと共有はそのまま残ります。",
     "alreadyConnectedLive": "現在オンラインです。承認するとこのリクエストに移行し、現在の接続は停止します。プロジェクトと共有はそのまま残ります。",
     "reconnect": "再接続",
-    "accessHint": "選択したアクセス権は、取り消すまで有効です。"
+    "accessHint": "選択したアクセス権は、取り消すまで有効です。",
+    "grants": {
+      "title": "Kortix に画面の表示とアプリの操作を許可",
+      "hint": "macOS が2つの権限を求めます。どちらも Kortix 用です。許可すると Computer Use が使えます。",
+      "accessibility": "アクセシビリティ",
+      "screenRecording": "画面収録",
+      "allowed": "許可済み",
+      "missing": "未許可",
+      "allow": "アクセスを許可"
+    }
   },
   "messageFrom": {
     "from": "送信元",

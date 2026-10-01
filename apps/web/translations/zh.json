@@ -20352,7 +20352,16 @@
     "alreadyConnectedHint": "批准后将使用新密钥和你选择的权限重新连接。其项目和共享保持不变。",
     "alreadyConnectedLive": "它当前在线。批准后将转移到此请求：当前连接会停止。其项目和共享保持不变。",
     "reconnect": "重新连接",
-    "accessHint": "选定的访问权限会一直有效，直到你撤销。"
+    "accessHint": "选定的访问权限会一直有效，直到你撤销。",
+    "grants": {
+      "title": "允许 Kortix 查看你的屏幕并使用你的应用",
+      "hint": "macOS 会请求两项权限，都授予 Kortix。允许后即可使用 Computer Use。",
+      "accessibility": "辅助功能",
+      "screenRecording": "屏幕录制",
+      "allowed": "已允许",
+      "missing": "未允许",
+      "allow": "允许访问"
+    }
   },
   "messageFrom": {
     "from": "来自",
