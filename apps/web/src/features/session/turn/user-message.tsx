@@ -4,7 +4,7 @@ import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel, SessionMessageCard } from './session-message-card';
 import { ReminderTurnCard } from './reminder-turn-card';
 import { isAskForViewer } from './message-author';
-import { toast } from 'sonner';
+import { errorToast } from '@/components/ui/toast';
 import {
   fetchSessionAttachment,
   isSessionAttachmentRef,
@@ -506,7 +506,7 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
       link.remove();
       if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+      errorToast(error instanceof Error ? error.message : 'Could not download attachment');
     } finally {
       setDownloading(false);
     }
