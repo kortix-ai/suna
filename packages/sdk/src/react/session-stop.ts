@@ -6,7 +6,7 @@
  * so `use-session.ts` reaches these here instead of importing that file back.
  * The public names are re-exported from `use-session-send.ts`.
  */
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message } from '../core/runtime/runtime-types';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import type { MessageError } from '../browser/stores/sync-store/types';

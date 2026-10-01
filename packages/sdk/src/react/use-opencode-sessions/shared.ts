@@ -5,7 +5,7 @@ import type {
   Agent,
   Command,
   ProviderListResponse as SdkProviderListResponse,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Query Keys

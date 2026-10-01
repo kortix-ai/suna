@@ -7,7 +7,7 @@ import {
   sessionCacheOwnerScopesConflict,
 } from '../browser/session-sync/session-cache-ownership';
 import type { MessageWithParts } from '../browser/stores/sync-store';
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../core/runtime/runtime-types';
 import { useCurrentRuntime } from './use-current-runtime';
 
 /**

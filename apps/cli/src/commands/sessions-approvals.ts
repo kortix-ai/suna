@@ -1,5 +1,5 @@
 import type { PermissionRequest, QuestionRequest } from '@kortix/sdk';
-import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import {
   emitJson,
   locateSessionAnywhere,
@@ -94,15 +94,8 @@ async function pendingFor(resolved: ResolvedSession): Promise<{
   questions: QuestionRequest[];
 } | null> {
   try {
-    const [permissions, questions] = await Promise.all([
-      withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.permission.list()),
-      ),
-      withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.question.list()),
-      ),
-    ]);
-    return { permissions: permissions ?? [], questions: questions ?? [] };
+    const { permissions, questions } = await withKortixScope(resolved.auth, () => resolved.handle.pending());
+    return { permissions, questions };
   } catch (err) {
     surfaceApiError(err);
     return null;
@@ -206,15 +199,7 @@ export async function runSessionsApprove(argv: string[]): Promise<number> {
 
   const reply = reject ? 'reject' : always ? 'always' : 'once';
   try {
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.permission.reply({
-          requestID: requestId,
-          reply,
-          message,
-        }),
-      ),
-    );
+    await withKortixScope(resolved.auth, () => resolved.handle.answerPermission(requestId, reply, message));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -294,9 +279,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
 
   try {
     if (reject) {
-      await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime(await resolved.runtime.question.reject({ requestID: requestId })),
-      );
+      await withKortixScope(resolved.auth, () => resolved.handle.answerQuestion(requestId, null));
       process.stdout.write(`${status.ok(`Dismissed ${C.bold}${requestId}${C.reset}`)}\n`);
       return 0;
     }
@@ -315,14 +298,7 @@ export async function runSessionsAnswer(argv: string[]): Promise<number> {
       });
       answers = [[...mapped, ...(text !== undefined ? [text] : [])]];
     }
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.question.reply({
-          requestID: requestId,
-          answers,
-        }),
-      ),
-    );
+    await withKortixScope(resolved.auth, () => resolved.handle.answerQuestion(requestId, answers));
   } catch (err) {
     return surfaceApiError(err);
   }

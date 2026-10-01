@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildOpencodeConfigContent } from '@/harness/open-code/lifecycle'
+import { buildOpencodeConfigContent, capabilityToolRules } from '@/harness/open-code/lifecycle'
 import { CONNECTOR_PROXY_PLACEHOLDER_KEY, LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 
 const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
@@ -381,5 +381,46 @@ describe('buildOpencodeConfigContent — warm-fork proxy mode bakes no session c
     expect(server.environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
     expect(server.environment.KORTIX_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
     expect(JSON.stringify(config)).not.toContain('real-session-token')
+  })
+})
+
+describe('capability rules reach the tools that cannot ask (E9)', () => {
+  const PTY = ['pty_spawn', 'pty_write', 'pty_read', 'pty_list', 'pty_kill']
+
+  test.each([
+    ['a bash deny denies every pty tool', { bash: 'deny' }, 'deny'],
+    ['a bash ask denies them: they cannot ask', { bash: 'ask' }, 'deny'],
+    ['a bash pattern map denies them: they cannot match patterns', { bash: { 'git *': 'allow', '*': 'deny' } }, 'deny'],
+    ['a bash allow allows them', { bash: 'allow' }, 'allow'],
+  ] as const)('%s', (_name, permission, expected) => {
+    const rules = capabilityToolRules(permission) as Record<string, unknown>
+    for (const tool of PTY) expect(rules[tool]).toBe(expected)
+  })
+
+  test('web search and scrape tools follow websearch and webfetch', () => {
+    expect(capabilityToolRules({ websearch: 'deny', webfetch: 'ask' })).toMatchObject({
+      web_search: 'deny',
+      image_search: 'deny',
+      scrape_webpage: 'deny',
+    })
+  })
+
+  test('no capability rule, a bare action, or a tool rule of its own is left alone', () => {
+    expect(capabilityToolRules({ edit: 'deny' })).toEqual({ edit: 'deny' })
+    expect(capabilityToolRules('deny')).toBe('deny')
+    expect(capabilityToolRules(undefined)).toBeUndefined()
+    expect(capabilityToolRules({ bash: 'deny', pty_read: 'allow' })).toMatchObject({ pty_read: 'allow', pty_spawn: 'deny' })
+  })
+
+  test('the composed config applies it to every compiled agent and keeps the Slack question deny', async () => {
+    const compiled = JSON.stringify({
+      agent: { locked: { mode: 'primary', permission: { bash: 'deny', edit: 'deny' } }, open: { mode: 'primary' } },
+    })
+    const config = JSON.parse(
+      (await buildOpencodeConfigContent({ KORTIX_COMPILED_AGENT_CONFIG: compiled, SLACK_CHANNEL_ID: 'C123' }))!,
+    )
+    expect(config.agent.locked.permission).toMatchObject({ bash: 'deny', edit: 'deny', pty_spawn: 'deny', pty_kill: 'deny' })
+    expect(config.agent.open.permission).toBeUndefined()
+    expect(config.permission).toEqual({ question: 'deny' })
   })
 })

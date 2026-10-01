@@ -44,8 +44,8 @@ session (a restart or resume re-reads the selection).
 | `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
-| `pi/wire.ts`, `pi/transcript.ts` | pi events → OpenCode wire frames; the transcript store |
-| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts` | Permissions/questions, workspace tools, gateway model |
+| `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
+| `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
 
 ## One host relay (E12)
@@ -74,7 +74,7 @@ spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1` (both harnesses), and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities`: all nine on OpenCode,
+(`HarnessDiagnosticsService.capabilities`: all ten on OpenCode,
 `session.subagents` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
@@ -160,11 +160,19 @@ on pi.
 Boot marks: `git-identity`, `proxy-up`, `llm-proxy-started`, `repo-materialized`,
 `pi-ready`, `initial-prompt-delivered`, `initial-turn-accepted`, `runtime-ready`.
 
-Permission rules follow OpenCode's semantics (`pi/interactions.ts`): a per-tool
-action, or a glob-pattern -> action map matched against the `bash` command line
-or a workspace tool's path, with the longest matching pattern winning and `*`
-the weakest. A pattern map is never collapsed to its `*` entry, and a `deny`
-outranks an earlier "always" reply on the same tool.
+A permission rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES` in
+`@kortix/api-contract/transcript`: `read`, `edit`, `bash`, `webfetch`, …), not
+one harness's tool. Each adapter maps its tools onto them: pi's `write` is
+`edit` (`pi/interactions.ts`); OpenCode's `pty_*` tools follow `bash`, and the
+template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
+and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). Those tools
+cannot ask, so they run only when the capability is `allow`. A rule is an
+action, or a glob-pattern -> action map matched against the `bash` command
+line or a workspace tool's path, with the longest matching pattern winning and
+`*` the weakest. A pattern map is never collapsed to its `*` entry. pi's
+request names the capability and the call's subject (`patterns`); an "always"
+reply allows the capability for the session, and a `deny` still outranks it.
+The reply is `RUNTIME_PERMISSION_REPLIES` (`once`, `always`, `reject`).
 
 ### Extensions
 

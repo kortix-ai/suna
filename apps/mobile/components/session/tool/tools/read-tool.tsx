@@ -14,7 +14,7 @@
 
 import { useContext, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
-import { getFilename, isErrorOutput, parseReadOutput } from '@kortix/sdk';
+import { inputPath, getFilename, isErrorOutput, parseReadOutput } from '@kortix/sdk';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
 import { FileIcon, FolderIcon, ReadCvLogoIcon } from '@/lib/icons';
@@ -51,7 +51,7 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const metadata = partMetadata(part);
   const output = partOutput(part);
   const status = partStatus(part);
-  const filePath = (input.filePath as string) || (streamingInput.filePath as string) || undefined;
+  const filePath = inputPath(input) || inputPath(streamingInput);
   const filename = getFilename(filePath) || '';
   const ext = filename.split('.').pop() || '';
 

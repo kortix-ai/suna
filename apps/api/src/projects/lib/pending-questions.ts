@@ -23,6 +23,7 @@
  * two prompts in the UI.
  */
 
+import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { sessionPendingQuestions } from '@kortix/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -32,7 +33,7 @@ export interface PendingQuestion {
   session_id: string;
   request_id: string;
   opencode_session_id: string | null;
-  questions: unknown;
+  questions: RuntimeQuestion[];
   asked_at: string;
 }
 
@@ -49,7 +50,7 @@ export async function recordPendingQuestion(input: {
   sessionId: string;
   requestId: string;
   opencodeSessionId?: string | null;
-  questions: unknown;
+  questions: RuntimeQuestion[];
 }): Promise<(PendingQuestion & { inserted: boolean }) | null> {
   const [row] = await db
     .insert(sessionPendingQuestions)
@@ -87,7 +88,8 @@ export async function recordPendingQuestion(input: {
     session_id: row.sessionId,
     request_id: row.requestId,
     opencode_session_id: row.opencodeSessionId,
-    questions: row.questions,
+    // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
+    questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
     inserted: row.inserted === true,
   };
@@ -124,7 +126,8 @@ export async function getOpenQuestion(sessionId: string): Promise<PendingQuestio
     session_id: row.sessionId,
     request_id: row.requestId,
     opencode_session_id: row.opencodeSessionId,
-    questions: row.questions,
+    // `jsonb`; only /turn-question writes it, after coercing to RuntimeQuestion[].
+    questions: row.questions as RuntimeQuestion[],
     asked_at: row.askedAt,
   };
 }

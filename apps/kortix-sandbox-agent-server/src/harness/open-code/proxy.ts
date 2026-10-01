@@ -124,18 +124,18 @@ export function createOpenCodeProxyService(
         )
       }
 
-      if (bootState.initialOpenCodeSessionError) {
+      if (bootState.initialRuntimeSessionError) {
         return notReady(
           {
             error: 'sandbox runtime not ready',
             reason: 'initial_runtime_session_failed',
-            message: bootState.initialOpenCodeSessionError,
+            message: bootState.initialRuntimeSessionError,
           },
           'initial_session_failed',
         )
       }
 
-      if (bootState.initialOpenCodeSessionRequired && !bootState.initialOpenCodeSessionId) {
+      if (bootState.initialRuntimeSessionRequired && !bootState.initialRuntimeSessionId) {
         return notReady(
           {
             error: 'sandbox runtime not ready',

@@ -7,7 +7,7 @@ import { openSession } from '../routes/shared';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
-import { healSupersededSessionToken } from '../lib/service-key-reconcile';
+import { healSupersededSessionToken } from '../lib/heal-session-token';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';

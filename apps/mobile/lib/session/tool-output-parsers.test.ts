@@ -153,12 +153,12 @@ describe('diagnostics', () => {
   });
 
   test('getToolDiagnosticsFrom keeps errors and warnings for the file, max 5', () => {
-    const diags = getToolDiagnosticsFrom(output, {}, 'src/a.ts');
+    const diags = getToolDiagnosticsFrom(output, undefined, 'src/a.ts');
     expect(diags.map((d) => [d.range.start.line, d.severity])).toEqual([
       [2, 1],
       [6, 2],
     ]);
-    expect(getToolDiagnosticsFrom(output, {}, undefined)).toEqual([]);
+    expect(getToolDiagnosticsFrom(output, undefined, undefined)).toEqual([]);
   });
 
   test('falls back to metadata diagnostics (errors only)', () => {
@@ -170,6 +170,6 @@ describe('diagnostics', () => {
         ],
       },
     };
-    expect(getToolDiagnosticsFrom('', metadata, '/a.ts').map((d) => d.message)).toEqual(['e']);
+    expect(getToolDiagnosticsFrom('', metadata.diagnostics, '/a.ts').map((d) => d.message)).toEqual(['e']);
   });
 });

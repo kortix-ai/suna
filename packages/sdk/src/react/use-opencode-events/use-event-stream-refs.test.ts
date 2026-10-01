@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient } from '@tanstack/react-query';
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../../core/runtime/runtime-types';
 
 import { useSyncStore } from '../../browser/stores/sync-store';
 import { qk } from '../query-keys';
