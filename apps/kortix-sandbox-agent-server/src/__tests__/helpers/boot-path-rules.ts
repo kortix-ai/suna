@@ -199,12 +199,12 @@ export function readinessDependsOnProof(source: ts.SourceFile | undefined): { ok
 // ── T4 ───────────────────────────────────────────────────────────────────────
 
 /** `<enclosing function>:<assignment target>` for every write of `running`. */
-export function runningWriters(source: ts.SourceFile): string[] {
+export function runningWriters(source: ts.SourceFile, variable = 'running'): string[] {
   const writers: string[] = []
   walk(source, (node) => {
     if (!ts.isBinaryExpression(node) || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return
     const left = node.left.getText()
-    if (left === 'running' || left.startsWith('running.')) writers.push(`${enclosingFunction(node)}:${left}`)
+    if (left === variable || left.startsWith(`${variable}.`)) writers.push(`${enclosingFunction(node)}:${left}`)
   })
   return writers
 }

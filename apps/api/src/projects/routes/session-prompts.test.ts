@@ -332,11 +332,15 @@ mock.module('../lib/agent-access', () => ({
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
-mock.module('../sandbox-turn-lifecycle', () => ({
-  ...realTurnLifecycle,
+const realTurnLedger = await import('../session-turn-ledger');
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
     stopLog.push(['stamp', sessionId, name, scope]);
   },
+}));
+mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
 }));
 mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   ...realHoldSettle,
@@ -950,7 +954,7 @@ describe('POST .../prompts/hold', () => {
     // prod 2026-09-25: the settle's abort reached OpenCode ~450 ms before the
     // client's proxied abort, the turn closed on a bare "Aborted" frame, and
     // the user's own Stop read as "stopped before it finished".
-    visibleSession = { row: { sessionId: SESSION_ID, opencodeSessionId: 'ses_root', metadata: {} } };
+    visibleSession = { row: { sessionId: SESSION_ID, runtimeSessionId: 'ses_root', metadata: {} } };
     commandTable = [
       row({ status: 'succeeded', result: { status: 'delivered', forwarded_message_id: WIRE_ID } }),
     ];

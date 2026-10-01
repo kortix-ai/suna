@@ -13,11 +13,11 @@ mock.module('../../core/runtime/client', () => ({
   }),
 }));
 
-import { executeOpenCodeCommand } from './commands';
+import { executeRuntimeCommand } from './commands';
 
-describe('executeOpenCodeCommand', () => {
+describe('executeRuntimeCommand', () => {
   test('forwards model, agent, and variant overrides to the runtime client', async () => {
-    await executeOpenCodeCommand({
+    await executeRuntimeCommand({
       sessionId: 'ses_root',
       command: 'review',
       args: 'src',

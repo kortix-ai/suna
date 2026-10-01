@@ -27,7 +27,6 @@ import {
   CodeSimpleIcon as Code,
   CopyIcon as Copy,
   TreeStructureIcon as Diagram,
-  DownloadSimpleIcon as Download,
   WarningIcon as Warning,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
@@ -39,6 +38,7 @@ import {
   withIntrinsicSize,
   withViewerTheme,
 } from './mermaid-utils';
+import { Download } from '@/features/icon/icons/download';
 
 type MermaidModule = typeof import('mermaid').default;
 

@@ -132,7 +132,18 @@
     "rateLimitDescription": "当提供商触发速率限制时，网关会轮换使用已选密钥。",
     "enableGateway": "在项目设置中启用 LLM 网关以使用密钥池。",
     "selectedOneForSession": "此会话已选择 {count} 个密钥",
-    "selectedOne": "已选择 {count} 个密钥"
+    "selectedOne": "已选择 {count} 个密钥",
+    "opencodeDeviceDescription": "复制此代码，然后打开 OpenCode 页面并输入它以连接你的工作区。",
+    "opencodeStarting": "正在连接 OpenCode…",
+    "opencodeConnected": "已使用 OpenCode 登录",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "使用你的 OpenCode 账户登录。我们会将登录信息保存为加密的项目密钥，供以后的会话复用。",
+    "opencodeGoConnectedBanner": "OpenCode Go 已连接。",
+    "opencodeGoDisconnected": "OpenCode Go 已断开",
+    "opencodeGoConnect": "连接 OpenCode Go",
+    "opencodeGoReconnect": "重新连接 OpenCode Go",
+    "opencodeGoDisconnect": "断开 OpenCode Go",
+    "opencodeGoFailed": "无法连接 OpenCode Go"
   },
   "useCases": {
     "headline": "驱动公司运转的循环"
@@ -188,11 +199,7 @@
       "label": "账户",
       "createIn": "在 {account} 中创建",
       "choose": "选择账户",
-      "loggedInAs": "当前登录",
-      "nameLabel": "账户名称",
-      "nameHint": "你的团队会在侧边栏和邀请中看到它。之后可以修改。",
-      "nameRequired": "账户名称为必填项",
-      "renameFailed": "无法保存账户名称，请重试。"
+      "loggedInAs": "当前登录"
     },
     "name": {
       "label": "项目名称",
@@ -1553,7 +1560,8 @@
         "restricted": "特定成员",
         "project": "整个项目"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "标签"
     },
     "loadingMore": "加载中…",
     "loadMoreSessions": "加载更多会话",
@@ -1565,7 +1573,21 @@
       "others": "共享",
       "automated": "自动"
     },
-    "reminders": "提醒"
+    "reminders": "提醒",
+    "labels": {
+      "menu": "编辑标签",
+      "title": "标签",
+      "description": "标签用于对此会话分类。可按标签筛选会话列表。代理、CLI 和 API 也可以设置标签。",
+      "placeholder": "输入标签后按 Enter",
+      "empty": "暂无标签。",
+      "remove": "移除 {label}",
+      "save": "保存",
+      "cancel": "取消",
+      "saved": "标签已保存",
+      "failed": "无法保存标签",
+      "tooLong": "标签最多 64 个字符。",
+      "tooMany": "每个会话最多 20 个标签。"
+    }
   },
   "dashboard": {
     "title": "仪表板",
@@ -5157,7 +5179,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "此会话的沙盒已停止。请打开一个新会话以继续。",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode 运行时尚未就绪",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "会话运行时尚未就绪",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "沙盒已启动，但项目运行时未能变为可用状态。",
       "line395JsxTextRestartSession": "重启会话",
       "line424JsxTextRestartSession": "重启会话"
@@ -12485,7 +12507,7 @@
       "text5a0cac0326d5": "下载 Kortix",
       "text5a219a418ec7": "无法从归档中读取此条目。",
       "text5a23444828db": "管理",
-      "text5a26f4425c82": "OpenCode 会话",
+      "text92fbc8484002": "运行时会话",
       "text5a32374d30b4": "每日平台活动和信用消耗。每个桶都是 UTC 日。",
       "text5a37d20f1235": "频道智能体已更新",
       "text5a41803b2dd1": "全部拒绝",
@@ -19034,7 +19056,16 @@
       "text2bbd1ec2197d": "已连接应用",
       "textda3d3fb8f598": "代理会话",
       "text4dcb7e3b10a9": "SCIM 令牌",
-      "text36fe0f55b7f5": "任意凭据"
+      "text36fe0f55b7f5": "任意凭据",
+      "textbfda026e6c59": "已关联",
+      "text72ea4fa7caf9": "听写已停止：{value0}",
+      "text557b623f9a33": "无法开始听写。请检查麦克风权限。",
+      "textb43c4884c3be": "听写控制",
+      "textd31d065a762c": "取消听写",
+      "textbbb4106e8144": "正在聆听…",
+      "text7458028e0d1d": "完成听写",
+      "text9c84d6622566": "语音输入消息",
+      "textf164e4b031dc": "已更新会话在线状态"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -19063,7 +19094,24 @@
       "mismatch": "此安装是从另一个 Kortix 账户或为另一个项目发起的。请使用该账户登录，或从项目中重新开始安装。",
       "expired": "此安装链接无效或已过期。请从项目中重新开始安装。",
       "failed": "无法完成安装。请从项目中重新开始。",
-      "backToProject": "返回项目"
+      "backToProject": "返回项目",
+      "finishingTitle": "正在完成 {service} 安装",
+      "finishingDescription": "正在为此项目将 Kortix 添加到 {service}。完成后将返回项目。",
+      "installingAs": "安装身份",
+      "recording": "正在记录安装…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "正在打开预览",
+      "openingDescription": "正在让你登录到会话所运行的应用。",
+      "preview": "预览",
+      "address": "地址",
+      "signingIn": "正在登录。预览会自动打开。",
+      "signInAgain": "重新登录",
+      "notServed": "该地址不是此部署提供的预览。请改为从会话中打开预览。",
+      "sessionExpired": "会话已过期。请重新登录并再次打开预览。"
+    },
+    "approvalPage": {
+      "title": "批准 {connector} 操作"
     },
     "secretIntakeWithheld": {
       "title": "已保存，但 {agent} 暂时无法读取",
@@ -19938,9 +19986,6 @@
   },
   "projectSelector": {
     "welcome": "欢迎使用 Kortix",
-    "nameAccountTitle": "为你的账户命名",
-    "nameAccountBody": "你的项目、智能体和团队成员都在这里。",
-    "nameAccountContinue": "继续",
     "welcomeBack": "欢迎回来",
     "descriptionNew": "创建你的第一个项目，或加入团队共享的项目。",
     "descriptionReturning": "打开一个项目，或创建新项目。",
@@ -20180,6 +20225,7 @@
     "commandCopied": "命令已复制",
     "copyFailed": "复制失败",
     "copyCommand": "复制命令",
+    "copyCliCommand": "复制安装命令",
     "authorizeCodeHint": "请确认此代码与你电脑上显示的代码一致。",
     "whoCanUse": "谁可以使用这台电脑",
     "onlyYouDescription": "只有你，在每个项目的私人会话中。",

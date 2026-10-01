@@ -26,7 +26,6 @@ import { cn } from '@/lib/utils';
 import {
   AppWindowIcon as AppWindow,
   CaretDownIcon as ChevronDown,
-  DownloadIcon as Download,
   FileTextIcon as FileText,
   ImageIcon,
   PresentationIcon,
@@ -37,6 +36,7 @@ import type { OutputItem } from '../shared/derive-panels';
 import { deliverableKindLabel, isScaffoldingOutput } from '../shared/output-priority';
 import { groupOutputsByKind, outputKey } from './easy-panel-logic';
 import { PanelCard } from './panel-card';
+import { Download } from '@/features/icon/icons/download';
 
 const KIND_ICON = {
   file: FileText,

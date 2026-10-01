@@ -24,7 +24,10 @@ export interface PublicUpstreamError {
   suggestion: string;
 }
 
-const CONTEXT_LENGTH = /context|too many tokens|maximum.{0,40}tokens|prompt is too long|too long|max_tokens/i;
+// CoreWeave states an overflow without the word "context": "accepts at most
+// 1048576 combined input and output tokens" (probed 2026-09-30).
+const CONTEXT_LENGTH =
+  /context|too many tokens|maximum.{0,40}tokens|prompt is too long|too long|max_tokens|input and output tokens/i;
 const IMAGE_INPUT = /image|vision|multimodal|modalit/i;
 const TOOL_DEFINITION = /tool|function|schema/i;
 

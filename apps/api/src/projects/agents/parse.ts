@@ -57,7 +57,7 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
     return { specs: [], errors: [], defaultAgent: null };
   }
 
-  if (manifest.schemaVersion === 2) {
+  if (manifest.schemaVersion >= 2) {
     return extractAgentsV2(raw, manifest, filename);
   }
 
@@ -133,7 +133,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
 
   for (const [name, block] of Object.entries(raw as Record<string, unknown>)) {
     // With `imports:`, attribute the agent to the file that declares it.
-    const result = parseAgentEntryV2(name, block, manifest.imports?.origins.agents[name] ?? filename);
+    const result = parseAgentEntryV2(name, block, manifest.imports?.origins.agents[name] ?? filename, manifest.schemaVersion);
     if (!result.ok) {
       errors.push(result.error);
       continue;
@@ -283,7 +283,7 @@ function parseAgentEntry(entry: unknown, index: number, filename: string = MANIF
  * that reached this reader without going through the CR-merge gate (a raw git
  * push / out-of-band edit) can't smuggle an ungrantable action into a grant.
  */
-function parseAgentEntryV2(name: string, block: unknown, filename: string): ParseOk | ParseErr {
+function parseAgentEntryV2(name: string, block: unknown, filename: string, version: number): ParseOk | ParseErr {
   const err = (n: string, message: string): ParseErr => makeAgentError(n, message, filename);
 
   if (!SLUG_RE.test(name)) {
@@ -313,7 +313,7 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string): Pars
     return err(name, `agents.${name}.file must be a repo-relative path to a .md file`);
   }
   const file: string | null = safeAgentFile(normalizedRow.file);
-  const model: string | null = null;
+  const model: string | null = version === 3 && typeof normalizedRow.model === 'string' ? normalizedRow.model : null;
   const sandbox =
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()

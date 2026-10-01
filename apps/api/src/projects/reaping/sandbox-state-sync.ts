@@ -14,9 +14,10 @@ import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { db } from '../../shared/db';
-import { errorSqlstate } from '../../shared/error-cause';
+import { retryOnDeadlock } from '../../shared/error-cause';
 import { preserveEstablishedRuntime } from '../runtime-identity';
-import { REAPER_TURN_CAUSES, settleOpenSandboxTurns, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { REAPER_TURN_CAUSES, settleOpenSandboxTurns } from '../session-turn-ledger';
+import { storedSandboxTurns } from '../session-turn-ledger';
 import { requeueAbandonedPrompt } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { enqueueContinueSessionCommand } from '../session-lifecycle/store';
@@ -207,22 +208,6 @@ export interface StoppedStateWrite {
   /** Extra keys to record about the stop. Merged, never assigned. */
   metadata?: Record<string, unknown>;
   now?: Date;
-}
-
-/**
- * Complement to the lock order above: a deadlock victim (40P01) rolled back
- * whole, so re-running the idempotent transaction is safe. Two retries, short
- * jittered backoff; any other error, or the third deadlock, propagates.
- */
-async function retryOnDeadlock<T>(run: () => Promise<T>): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await run();
-    } catch (err) {
-      if (attempt >= 3 || errorSqlstate(err) !== '40P01') throw err;
-      await Bun.sleep(50 * attempt + Math.random() * 50);
-    }
-  }
 }
 
 /**

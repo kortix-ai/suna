@@ -4,7 +4,7 @@ import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { config } from '../../config';
-import { classifyTurnError, type TurnErrorInfo } from '../slack/errors';
+import { classifyTurnError, TEAMS_TURN_ERROR_COMMANDS, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
 import type { StreamTaskChunk } from '../slack-api';
 import { sendCard, sendText, updateCard } from '../teams-api';
@@ -217,7 +217,7 @@ async function liveRuntimeTurnTokens(sessionId: string): Promise<string[]> {
   try {
     const [{ sessionSandboxes }, { RUNNING_SANDBOX_STATUSES, storedSandboxTurns }] = await Promise.all([
       import('@kortix/db'),
-      import('../../projects/sandbox-turn-lifecycle'),
+      import('../../projects/session-turn-ledger'),
     ]);
     const [box] = await db
       .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
@@ -468,7 +468,7 @@ export async function relayTurnEnd(
   }
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
-    const classified = classifyTurnError(errorInfo);
+    const classified = classifyTurnError(errorInfo, TEAMS_TURN_ERROR_COMMANDS);
     // The classifier is Slack's, so its copy is Slack's dialect. Translate at
     // the boundary rather than forking the copy — see mrkdwnToTeamsMarkdown.
     // A stop read "Task complete" with its last step ticked: `{}` fell back to

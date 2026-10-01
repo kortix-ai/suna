@@ -239,6 +239,52 @@ describe('buildConfigRelease on the root project layout', () => {
     expect(byPath.has('agents/kortix.md')).toBe(true);
   });
 
+  test('the pi config dir rides along as pi/; the OpenCode files and skills stay where they were', async () => {
+    const sha = seedRootLayout({
+      'harnesses/pi/extensions/guard.ts': 'export default () => {}\n',
+      'harnesses/pi/skills/native/SKILL.md': '---\nname: native\n---\nA pi skill.\n',
+      'harnesses/pi/settings.json': '{}\n',
+    });
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const mirror = await refreshMirror(project);
+
+    expect(release.reason).toBeNull();
+    expect(release.config_dir).toBe('harnesses/opencode');
+    expect(release.files?.map(([path]) => path)).toEqual([
+      'opencode.jsonc',
+      'pi/extensions/guard.ts',
+      'pi/settings.json',
+      'pi/skills/native/SKILL.md',
+      'skills/demo/SKILL.md',
+      'skills/demo/reference.md',
+      'tools/hello.ts',
+    ]);
+    const byPath = new Map(release.files!.map(([path, , blob]) => [path, blob]));
+    expect(byPath.get('pi/extensions/guard.ts')).toBe(run('git', ['rev-parse', `${sha}:harnesses/pi/extensions/guard.ts`], mirror));
+    const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+  });
+
+  test('a pi-only change moves the release; an explicit pi.config_dir is the only pi dir read', async () => {
+    const base = seedRootLayout({ 'harnesses/pi/skills/native/SKILL.md': 'v1\n' });
+    const first = await buildConfigRelease(project, base, 'project', { store });
+    const changed = commit({ 'harnesses/pi/skills/native/SKILL.md': 'v2\n' }, 'pi skill v2');
+    const second = await buildConfigRelease(project, changed, 'project', { store });
+    expect(second.release_id).not.toBe(first.release_id);
+
+    const explicit = commit(
+      {
+        'kortix.yaml': `${ROOT_MANIFEST}pi:\n  config_dir: team/pi\n`,
+        'team/pi/prompts/review.md': 'Review.\n',
+      },
+      'explicit pi dir',
+    );
+    const third = await buildConfigRelease(project, explicit, 'project', { store });
+    const paths = third.files!.map(([path]) => path);
+    expect(paths).toContain('pi/prompts/review.md');
+    expect(paths.some((path) => path.startsWith('pi/skills/'))).toBe(false);
+  });
+
   test('a legacy project with an unrelated root skills/ folder keeps its exact tree ID', async () => {
     seed();
     const sha = commit({ 'skills/notes/readme.txt': 'code, not a skill\n' }, 'unrelated folder');

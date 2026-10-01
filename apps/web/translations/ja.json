@@ -132,7 +132,18 @@
     "rateLimitDescription": "プロバイダーがレート制限を返した場合、ゲートウェイは選択したキーを順に使用します。",
     "enableGateway": "キープールを使用するには、プロジェクト設定で LLM ゲートウェイを有効にしてください。",
     "selectedOneForSession": "このセッションで {count} 個のキーを選択済み",
-    "selectedOne": "{count} 個のキーを選択済み"
+    "selectedOne": "{count} 個のキーを選択済み",
+    "opencodeDeviceDescription": "このコードをコピーしてから OpenCode のページを開き、入力してワークスペースを接続します。",
+    "opencodeStarting": "OpenCode に接続しています…",
+    "opencodeConnected": "OpenCode でサインインしました",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "OpenCode アカウントでサインインします。ログインは暗号化されたプロジェクトシークレットとして保存され、今後のセッションで再利用されます。",
+    "opencodeGoConnectedBanner": "OpenCode Go が接続されました。",
+    "opencodeGoDisconnected": "OpenCode Go の接続を解除しました",
+    "opencodeGoConnect": "OpenCode Go を接続",
+    "opencodeGoReconnect": "OpenCode Go を再接続",
+    "opencodeGoDisconnect": "OpenCode Go の接続を解除",
+    "opencodeGoFailed": "OpenCode Go に接続できませんでした"
   },
   "useCases": {
     "headline": "会社を動かすループ"
@@ -188,11 +199,7 @@
       "label": "アカウント",
       "createIn": "{account} に作成",
       "choose": "アカウントを選択",
-      "loggedInAs": "ログイン中のアカウント",
-      "nameLabel": "アカウント名",
-      "nameHint": "チームにはサイドバーと招待で表示されます。後から変更できます。",
-      "nameRequired": "アカウント名は必須です",
-      "renameFailed": "アカウント名を保存できませんでした。もう一度お試しください。"
+      "loggedInAs": "ログイン中のアカウント"
     },
     "name": {
       "label": "プロジェクト名",
@@ -1553,7 +1560,8 @@
         "restricted": "特定のユーザー",
         "project": "プロジェクト全体"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "ラベル"
     },
     "loadingMore": "読み込み中…",
     "loadMoreSessions": "セッションをさらに読み込む",
@@ -1565,7 +1573,21 @@
       "others": "共有",
       "automated": "自動"
     },
-    "reminders": "リマインダー"
+    "reminders": "リマインダー",
+    "labels": {
+      "menu": "ラベルを編集",
+      "title": "ラベル",
+      "description": "ラベルでこのセッションを分類します。セッション一覧をラベルで絞り込めます。エージェント、CLI、API からも設定できます。",
+      "placeholder": "ラベルを入力して Enter",
+      "empty": "ラベルはまだありません。",
+      "remove": "{label} を削除",
+      "save": "保存",
+      "cancel": "キャンセル",
+      "saved": "ラベルを保存しました",
+      "failed": "ラベルを保存できませんでした",
+      "tooLong": "ラベルは 64 文字以内です。",
+      "tooMany": "1 つのセッションのラベルは 20 個までです。"
+    }
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -5157,7 +5179,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "このセッションのサンドボックスは停止しました。続行するには新しいセッションを開いてください。",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "OpenCode ランタイムの準備ができていません",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "セッションランタイムの準備ができていません",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "サンドボックスは起動しましたが、プロジェクトのランタイムは使用可能になりませんでした。",
       "line395JsxTextRestartSession": "セッションを再起動",
       "line424JsxTextRestartSession": "セッションを再起動"
@@ -12485,7 +12507,7 @@
       "text5a0cac0326d5": "Kortixをダウンロード",
       "text5a219a418ec7": "このエントリはアーカイブから読み込めませんでした。",
       "text5a23444828db": "管理",
-      "text5a26f4425c82": "OpenCodeセッション",
+      "text92fbc8484002": "ランタイムセッション",
       "text5a32374d30b4": "日々のプラットフォームアクティビティとクレジットバーン。すべてのバケットは UTC 日です。",
       "text5a37d20f1235": "チャンネルのエージェントを更新しました",
       "text5a41803b2dd1": "すべて拒否",
@@ -19034,7 +19056,16 @@
       "text2bbd1ec2197d": "接続済みアプリ",
       "textda3d3fb8f598": "エージェントセッション",
       "text4dcb7e3b10a9": "SCIMトークン",
-      "text36fe0f55b7f5": "すべての認証情報"
+      "text36fe0f55b7f5": "すべての認証情報",
+      "textbfda026e6c59": "連携済み",
+      "text72ea4fa7caf9": "音声入力が停止しました: {value0}",
+      "text557b623f9a33": "音声入力を開始できませんでした。マイクへのアクセスを確認してください。",
+      "textb43c4884c3be": "音声入力の操作",
+      "textd31d065a762c": "音声入力をキャンセル",
+      "textbbb4106e8144": "聞き取り中…",
+      "text7458028e0d1d": "音声入力を完了",
+      "text9c84d6622566": "メッセージを音声入力",
+      "textf164e4b031dc": "セッションのプレゼンスを更新しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -19063,7 +19094,24 @@
       "mismatch": "このインストールは別の Kortix アカウント、または別のプロジェクトから開始されました。そのアカウントでサインインするか、プロジェクトからインストールをやり直してください。",
       "expired": "このインストールリンクは無効か期限切れです。プロジェクトからインストールをやり直してください。",
       "failed": "インストールを完了できませんでした。プロジェクトからやり直してください。",
-      "backToProject": "プロジェクトに戻る"
+      "backToProject": "プロジェクトに戻る",
+      "finishingTitle": "{service} のインストールを完了しています",
+      "finishingDescription": "このプロジェクト用に Kortix を {service} に追加しています。完了するとプロジェクトに戻ります。",
+      "installingAs": "インストールするアカウント",
+      "recording": "インストールを記録しています…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "プレビューを開いています",
+      "openingDescription": "セッションで実行中のアプリにサインインしています。",
+      "preview": "プレビュー",
+      "address": "アドレス",
+      "signingIn": "サインインしています。プレビューは自動的に開きます。",
+      "signInAgain": "もう一度サインイン",
+      "notServed": "このアドレスは、このデプロイが提供するプレビューではありません。セッションからプレビューを開いてください。",
+      "sessionExpired": "セッションの有効期限が切れました。もう一度サインインして、プレビューを開き直してください。"
+    },
+    "approvalPage": {
+      "title": "{connector} のアクションを承認"
     },
     "secretIntakeWithheld": {
       "title": "保存しましたが、{agent} はまだ読み取れません",
@@ -19938,9 +19986,6 @@
   },
   "projectSelector": {
     "welcome": "Kortix へようこそ",
-    "nameAccountTitle": "アカウントに名前を付ける",
-    "nameAccountBody": "プロジェクト、エージェント、チームメンバーはここにまとまります。",
-    "nameAccountContinue": "続ける",
     "welcomeBack": "おかえりなさい",
     "descriptionNew": "最初のプロジェクトを作成するか、チームが共有したプロジェクトに参加してください。",
     "descriptionReturning": "プロジェクトを開くか、新しく作成してください。",
@@ -20180,6 +20225,7 @@
     "commandCopied": "コマンドをコピーしました",
     "copyFailed": "コピーに失敗しました",
     "copyCommand": "コマンドをコピー",
+    "copyCliCommand": "インストールコマンドをコピー",
     "authorizeCodeHint": "このコードがコンピューターに表示されているコードと一致することを確認してください。",
     "whoCanUse": "このコンピューターを使える人",
     "onlyYouDescription": "あなただけ。すべてのプロジェクトの、あなたのプライベートセッションで使えます。",

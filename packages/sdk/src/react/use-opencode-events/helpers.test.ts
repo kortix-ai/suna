@@ -146,7 +146,7 @@ describe('refetchKortixSessionMirrors', () => {
 // recreated just because THIS session's runtime switched (`clientsByUrl` is
 // explicitly keyed per url so several session sandboxes can stay connected
 // at once — see `core/runtime/client.ts`'s doc comment on that cache).
-// `resolveClientEvictionUrl` is the pure decision `useOpenCodeEventStream`'s
+// `resolveClientEvictionUrl` is the pure decision `useRuntimeEventStream`'s
 // effect now drives its `dropClientForUrl` call from: WHICH single url (if
 // any) should be evicted, never "all of them".
 describe('resolveClientEvictionUrl', () => {

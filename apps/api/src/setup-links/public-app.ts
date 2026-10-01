@@ -13,7 +13,7 @@ import { requestClientKey } from '../shared/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
-import { credentialExists } from '../connectors/credentials';
+import { connectorAccountLandedSince, credentialExists } from '../connectors/credentials';
 import {
   pipedreamConfigured,
 } from '../connectors/pipedream';
@@ -174,6 +174,18 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
     projectName(resolved.projectId),
     connectorIdentity(resolved.projectId, resolved.payload.slug, resolved.payload.app),
   ]);
+  // Whether the account this link asked for has landed, so a card that is
+  // reloaded stays settled instead of asking again. Omitted for a token minted
+  // before `iat`: there is no moment to measure from, and the card keeps its
+  // own answer. Never "a credential exists" — a link adds an account even when
+  // the connector already has one.
+  const { iat, uid } = resolved.payload;
+  const connected =
+    typeof iat !== 'number'
+      ? undefined
+      : identity.connectorId
+        ? await connectorAccountLandedSince(identity.connectorId, uid, new Date(iat))
+        : false;
   return c.json({
     kind: 'connector',
     // The in-app dialog creates the account through the project's own routes,
@@ -188,6 +200,7 @@ setupLinksPublicApp.get('/connectors/:token', async (c) => {
     app: resolved.payload.app,
     name: identity.name,
     icon_url: identity.iconUrl,
+    ...(connected === undefined ? {} : { connected }),
     expires_at: new Date(resolved.payload.exp).toISOString(),
   });
 });
@@ -206,9 +219,9 @@ async function connectorIdentity(
   projectId: string,
   slug: string,
   app: string | null,
-): Promise<{ name: string | null; iconUrl: string | null }> {
+): Promise<{ connectorId: string | null; name: string | null; iconUrl: string | null }> {
   const [row] = await db
-    .select({ name: connectors.name, config: connectors.config })
+    .select({ connectorId: connectors.connectorId, name: connectors.name, config: connectors.config })
     .from(connectors)
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
@@ -219,7 +232,7 @@ async function connectorIdentity(
       : app
         ? await composioToolkitLogo(app)
         : null;
-  return { name: row?.name ?? null, iconUrl };
+  return { connectorId: row?.connectorId ?? null, name: row?.name ?? null, iconUrl };
 }
 
 /**

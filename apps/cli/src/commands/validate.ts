@@ -29,6 +29,7 @@ import {
 } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from '../dockerfile-lint.ts';
+import { lintWiring } from '../wiring-lint.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { resolveLocalManifest } from '../manifest.ts';
 import { C, help, status } from '../style.ts';
@@ -202,6 +203,7 @@ export function runValidate(argv: string[]): number {
   const issues = [
     ...result.issues,
     ...(flags.dockerfileLint ? lintSandboxDockerfiles(result.parsed, filePath) : []),
+    ...lintWiring(result.parsed, dirname(filePath)),
   ];
   const valid = !issues.some((i) => i.severity === 'error');
 

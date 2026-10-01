@@ -12,6 +12,9 @@ import { buildSlackInstallUrl, completeSlackOauthInstall } from '../../channels/
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
 import { bindSlackThreadToSession } from '../../channels/slack/binding';
 import { downloadSlackFile, uploadSlackFile } from '../../channels/slack/file-proxy';
+import { provenSlackWorkspaces } from '../../channels/slack/inbound';
+import { CONVERSATION_NOT_IN_PROJECT } from '../../connectors/channel-read-scope';
+import { slackWriteRefusal } from '../../connectors/channel-write-scope';
 import { reconcileChannelConnectors } from '../../connectors/sync';
 import { PROJECT_ACTIONS } from '../../iam';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
@@ -338,17 +341,25 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
     );
     const body = await readJsonObject(c);
+    const threadTs =
+      typeof body.thread_ts === 'string'
+        ? body.thread_ts
+        : typeof body.threadTs === 'string'
+          ? body.threadTs
+          : undefined;
+    // A file post is a write, under the same rule as the connector's
+    // send_message: never into another project's channel or thread.
+    const refusal = await slackWriteRefusal(projectId, { channel: body.channel, ts: threadTs, tsArg: 'thread_ts' });
+    if (refusal?.kind === 'invalid') return c.json({ error: refusal.message }, 400);
+    // No install on record: Slack is not connected, the 404 this route always gave.
+    if (refusal?.kind === 'install') return c.json({ error: refusal.message }, 404);
+    if (refusal) return c.json({ error: refusal.message, reason: CONVERSATION_NOT_IN_PROJECT }, 403);
     const result = await uploadSlackFile(projectId, {
       channel: String(body.channel ?? ''),
       filename: String(body.filename ?? ''),
       contentBase64: String(body.content_base64 ?? body.contentBase64 ?? ''),
       comment: typeof body.comment === 'string' ? body.comment : undefined,
-      threadTs:
-        typeof body.thread_ts === 'string'
-          ? body.thread_ts
-          : typeof body.threadTs === 'string'
-            ? body.threadTs
-            : undefined,
+      threadTs,
     });
     if (!result.ok) return c.json({ error: result.error }, result.status as 400 | 404);
     return c.json({ ok: true, files: result.files });
@@ -464,12 +475,30 @@ projectsApp.openapi(
     if (!sess) {
       return c.json({ error: 'session not found in project' }, 404);
     }
+    // The workspace names where replies are looked up. A caller may name one
+    // only among those this project's install proved: a thread row in another
+    // workspace would route that workspace's replies into this session.
+    const workspaceId = body.workspace_id?.trim() || null;
+    if (workspaceId && !(await provenSlackWorkspaces(projectId)).includes(workspaceId)) {
+      return c.json(
+        { error: 'workspace_id is not a Slack workspace this project is connected to', code: 'SLACK_WORKSPACE_NOT_CONNECTED' },
+        400,
+      );
+    }
+    // Binding routes the thread's replies here, so it is a write into that
+    // conversation (connectors/channel-write-scope.ts). Another project's
+    // thread is left to the bind below, which reports it as it always has.
+    const refusal = await slackWriteRefusal(projectId, { channel, ts: threadTs, tsArg: 'thread_ts' });
+    if (refusal?.kind === 'invalid') return c.json({ error: refusal.message }, 400);
+    if (refusal?.kind === 'channel') {
+      return c.json({ error: refusal.message, code: 'CONVERSATION_NOT_IN_PROJECT', reason: CONVERSATION_NOT_IN_PROJECT, channel }, 403);
+    }
     const binding = await bindSlackThreadToSession({
       projectId,
       sessionId,
       channel,
       threadTs,
-      workspaceId: body.workspace_id?.trim() || null,
+      workspaceId,
       force: body.force === true,
     });
     if (binding.bound) return c.json({ ok: true, channel, ...binding });

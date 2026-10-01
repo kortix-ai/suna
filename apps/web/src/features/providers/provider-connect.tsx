@@ -1148,6 +1148,13 @@ export function ProviderConnect({
         onClick={() => { void project.refetch(); void pooledResources.refetch(); }}>{common('retry')}</Button>} />;
   }
 
+  // The OpenCode Go sign-in card under its key field, like ChatGPT's (write
+  // access only: a shared login is a project secret write, as the API enforces).
+  // Zen has none: the picker leaves Zen's models to native OpenCode.
+  const consoleSignInSlots = canWrite ? {
+    'opencode-go': <ChatGptSubscriptionConnect kind="opencode-go" projectId={projectId} onConnected={setPendingRequest} />,
+  } : {};
+
   return (
     <>
       <ProviderConnectView
@@ -1212,6 +1219,7 @@ export function ProviderConnect({
               </div>
               <ChatGptSubscriptionConnect projectId={projectId} onConnected={setPendingRequest} legacyOnly />
             </div>,
+            ...consoleSignInSlots,
           } : canWrite
             ? {
                 // The ONLY live provider subscription flow in the repo. Anthropic
@@ -1230,6 +1238,7 @@ export function ProviderConnect({
                     onConnected={setPendingRequest}
                   />
                 ),
+                ...consoleSignInSlots,
               }
             : undefined
         }

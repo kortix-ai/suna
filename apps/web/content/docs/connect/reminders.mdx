@@ -53,7 +53,8 @@ The command prints the reminder id, for example `reminder.3f9a1c2e7b04`, and its
 - `--every <duration>` repeats. The minimum period is `5m`. Each period starts when the previous fire is claimed.
 - `--cron "<expr>"` repeats on a 6-field cron expression (seconds first). `--timezone` sets its zone; the default is `UTC`. A cron reminder must fire at most once every 5 minutes. It does not take `--in` or `--at`.
 - Durations are `30m`, `24h`, `2d`, or whole seconds.
-- A session holds at most 20 active reminders.
+- `--in`, `--at`, and `--every` accept at most 366 days.
+- A session holds at most 20 active reminders. A project holds at most 200. Either limit returns `409`.
 
 ## What a fire does
 

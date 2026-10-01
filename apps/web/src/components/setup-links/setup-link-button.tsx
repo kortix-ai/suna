@@ -95,21 +95,17 @@ export function SetupLinkButton({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   /**
-   * Settled from THIS card, in this page's lifetime.
+   * Settled from THIS card, in this page's lifetime. Covers the moment after a
+   * connect (the link info is cached for the page) and every secret link: the
+   * secret GET reports nothing about completion.
    *
-   * Deliberately not fetched. Neither setup-link GET reports whether the work
-   * is already done — `ConnectorSetupLinkInfo` is
-   * `{project_name, slug, app, expires_at}` and `SecretSetupLinkInfo` is
-   * `{project_name, fields, expires_at}` (`platform-client/host-boundary.ts`).
-   * The only "is it connected" answer is `POST …/finalize`, which also persists
-   * and notifies, so asking it on mount for every card in a transcript would be
-   * a write on render against a rate-limited route.
-   *
-   * The consequence, stated plainly: after a reload the card reads "Waiting for
-   * you" again even when the app is connected. Closing that needs a field on
-   * the GET response, which is an API change.
+   * A connect link's GET does report it (`ConnectorSetupLinkInfo.connected`: an
+   * account landed after the link was minted), so a reloaded card stays
+   * settled. It is never "the app has an account": a link adds one even then.
+   * An older server, or a link minted before tokens carried their mint time,
+   * omits the field, and that card reads "Waiting for you" again after a reload.
    */
-  const [settled, setSettled] = useState(false);
+  const [settledHere, setSettled] = useState(false);
   const inline = useContext(SetupLinkInlineContext);
   const localizedCopy = useLocalizedUiCatalog(COPY);
   const titles = useLocalizedUiCatalog(CONNECTOR_TITLES);
@@ -121,6 +117,7 @@ export function SetupLinkButton({
   // The link names its app and project; the agent's own text does not always
   // ("Connect", or a bare URL). Until the GET answers, the agent's label stands.
   const info = useConnectorLinkInfo(kind === 'connector' ? token : null);
+  const settled = settledHere || info?.connected === true;
   const headline = info ? connectorHeadline(info) : null;
   const headlineApp = headline?.app ?? null;
   const headlineProject = headline?.project ?? null;

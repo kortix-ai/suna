@@ -1,3 +1,4 @@
+import { appendQuery } from './iam-query';
 // The canonical grant surface: ONE table, ONE write path.
 //
 // `role_assignments` replaced `account_members.account_role`,
@@ -13,6 +14,7 @@
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
+import { iamGet } from './iam-shared';
 
 /** What a role can be bound to. `user` is an auth uid, `group` an `iam_groups`
  *  row, `service_account` the identity an agent runs as, `pending` an invitee
@@ -105,28 +107,17 @@ export interface Permission {
   implies: string[];
 }
 
-/**
- * IAM READS go through this, not `backendApi.get`: `showErrors: false` keeps a
- * capability-denied read (403 `policy.read`) out of the GLOBAL error toast. A
- * viewer who cannot read the roster should see the surface gated or hidden,
- * not a "contact support" toast. Mutations keep full error surfacing.
- */
-function iamGet<T>(path: string) {
-  return backendApi.get<T>(path, { showErrors: false });
-}
-
 function query(filter: ListAssignmentsFilter | undefined) {
-  const params = new URLSearchParams();
-  if (filter?.principalType) params.set('principal_type', filter.principalType);
-  if (filter?.principalId) params.set('principal_id', filter.principalId);
-  if (filter?.scopeType) params.set('scope_type', filter.scopeType);
-  if (filter?.scopeId) params.set('scope_id', filter.scopeId);
-  if (filter?.objectType) params.set('object_type', filter.objectType);
-  if (filter?.objectId) params.set('object_id', filter.objectId);
-  if (filter?.roleId) params.set('role_id', filter.roleId);
-  if (filter?.includeExpired) params.set('include_expired', 'true');
-  const qs = params.toString();
-  return qs ? `?${qs}` : '';
+  return appendQuery({
+    principal_type: filter?.principalType,
+    principal_id: filter?.principalId,
+    scope_type: filter?.scopeType,
+    scope_id: filter?.scopeId,
+    object_type: filter?.objectType,
+    object_id: filter?.objectId,
+    role_id: filter?.roleId,
+    include_expired: filter?.includeExpired ? 'true' : undefined,
+  });
 }
 
 /** Every assignment in the account, optionally narrowed. Live rows only unless

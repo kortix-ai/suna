@@ -181,6 +181,52 @@ describe('runtime model catalog', () => {
     expect(model?.reasoning_options).toEqual([{ type: 'budget_tokens', min: 1024 }]);
   });
 
+  // The ChatGPT-plan lineup comes from the Codex CLI's models.json, never a
+  // hand-kept list (prod 2026-10-01 lacked gpt-6.1-sol and still offered the
+  // retired gpt-5.4).
+  test('refreshes the codex lineup: listed slugs only, Codex priority order', async () => {
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      codexSeed: ['gpt-5.4'],
+      sourceUrl: 'https://catalog.test/api.json',
+      codexSourceUrl: 'https://codex.test/models.json',
+      fetchImpl: async (url) =>
+        url === 'https://codex.test/models.json'
+          ? Response.json({
+              models: [
+                { slug: 'gpt-6-sol', visibility: 'list', priority: 3 },
+                { slug: 'codex-auto-review', visibility: 'hide', priority: 43 },
+                { slug: 'gpt-6.1-sol', visibility: 'list', priority: 1 },
+                { slug: '../../etc', visibility: 'list', priority: 2 },
+              ],
+            })
+          : new Response('down', { status: 503 }),
+    });
+
+    expect(catalog.codexModelIds()).toEqual(['gpt-5.4']);
+    expect(await catalog.refresh()).toBe(false); // models.dev is down; codex is independent
+    expect(catalog.codexModelIds()).toEqual(['gpt-6.1-sol', 'gpt-6-sol']);
+    expect(catalog.status().revision).toBe(1);
+  });
+
+  test('keeps the last known codex lineup when the source fails or changes shape', async () => {
+    let body: unknown = { models: [{ slug: 'gpt-6.1-sol', visibility: 'list' }] };
+    const catalog = createRuntimeModelCatalog({
+      seed,
+      codexSeed: ['gpt-5.4'],
+      codexSourceUrl: 'https://codex.test/models.json',
+      fetchImpl: async (url) =>
+        url === 'https://codex.test/models.json' ? Response.json(body) : new Response('down', { status: 503 }),
+    });
+    await catalog.refresh();
+    expect(catalog.codexModelIds()).toEqual(['gpt-6.1-sol']);
+    for (body of [{ models: [] }, { lineup: [] }, null]) {
+      await catalog.refresh();
+      expect(catalog.codexModelIds()).toEqual(['gpt-6.1-sol']);
+    }
+    expect(catalog.status().revision).toBe(1);
+  });
+
   test('keeps the last known catalog when the API is unavailable', async () => {
     const catalog = createRuntimeModelCatalog({
       seed,

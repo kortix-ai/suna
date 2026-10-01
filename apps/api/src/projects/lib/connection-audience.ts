@@ -54,17 +54,36 @@ export function audiencePersonId(input: {
  * reads: the project's `connection` grants and the person's groups. A project
  * with no narrowed account answers `open` without the second read.
  */
-export async function loadConnectionAudience(input: {
+export function loadConnectionAudience(input: {
   projectId: string;
   accountId: string;
   userId: string | null;
 }): Promise<(connectionId: string) => ConnectionAudienceReach> {
-  const grants = await iamAuthorize.loadObjectGrants(input.projectId, 'connection');
+  return loadObjectAudience('connection', input);
+}
+
+/**
+ * The same audience for project secret VALUES: `secret` object grants keyed by
+ * `project_secrets.secret_id`. `secret-audience.ts` holds the rule that uses it.
+ */
+export function loadSecretAudience(input: {
+  projectId: string;
+  accountId: string;
+  userId: string | null;
+}): Promise<(secretId: string) => ConnectionAudienceReach> {
+  return loadObjectAudience('secret', input);
+}
+
+async function loadObjectAudience(
+  objectType: 'connection' | 'secret',
+  input: { projectId: string; accountId: string; userId: string | null },
+): Promise<(objectId: string) => ConnectionAudienceReach> {
+  const grants = await iamAuthorize.loadObjectGrants(input.projectId, objectType);
   if (grants.size === 0) return () => 'open';
   const userId = input.userId ? input.userId : null;
   const record = userId
     ? await iamAuthorize.resolvePrincipal({ type: 'user', id: userId }, input.accountId)
     : null;
   const groupIds = new Set(record?.groupIds ?? []);
-  return (connectionId) => audienceReachOf(grants.get(connectionId), userId, groupIds);
+  return (objectId) => audienceReachOf(grants.get(objectId), userId, groupIds);
 }

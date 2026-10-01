@@ -60,6 +60,7 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  compileSelectedAgentConfig,
   manifestPiPackageLists,
   manifestPiPackages,
   manifestRuntime,
@@ -869,5 +870,59 @@ describe('resolveSelectedAgentConfigForSession', () => {
     await expect(
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
+  });
+});
+
+describe('v3 YAML-only agent boot', () => {
+  test('reads only YAML and an explicit prompt_file at the session ref', async () => {
+    manifestFile = { path: 'kortix.yaml', content: `kortix_version: 3
+runtime: pi
+default_agent: writer
+agents:
+  writer:
+    model: test/model
+    prompt: Be concise.
+  reader:
+    prompt_file: agents/reader.md
+` };
+    mdFileContent = { 'agents/reader.md': 'Read only.' };
+    readRepoFileCalls = [];
+    const result = await resolveCompiledAgentConfigForSession(PROJECT, 'feature/yaml');
+    expect(JSON.parse(result!).agent.writer.prompt).toBe('Be concise.');
+    expect(JSON.parse(result!).agent.reader.prompt).toBe('Read only.');
+    expect(readRepoFileCalls).toEqual(['agents/reader.md']);
+    expect(manifestRuntime(parseYaml(manifestFile.content))).toBe('pi');
+    const selected = await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml');
+    expect(Object.keys(JSON.parse(selected).agent)).toEqual(['reader']);
+  });
+
+  test('a missing prompt file never produces a partial agent configuration', async () => {
+    manifestFile = { path: 'kortix.yaml', content: 'kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    prompt_file: agents/missing.md\n' };
+    mdFileContent = {};
+    await expect(resolveCompiledAgentConfigForSession(PROJECT)).rejects.toThrow('no such file');
+    await expect(resolveSelectedAgentConfigForSession(PROJECT, 'writer')).rejects.toThrow('no such file');
+  });
+
+  test('compiles inline behavior without an agent markdown file and isolates selected agent', () => {
+    const manifest = parseYaml(`kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    model: test/model\n    prompt: Speak briefly.\n    skills: [review]\n  reader:\n    prompt_file: agents/reader.md\n`);
+    const files = { 'agents/reader.md': 'Read only.' };
+    const compiled = compileAgentConfig(manifest, 'opencode', files);
+    expect(compiled?.model).toBe('test/model');
+    expect(compiled?.agent.writer?.prompt).toBe('Speak briefly.');
+    expect(compiled?.agent.writer?.permission).toMatchObject({ skill: { '*': 'deny', review: 'allow' } });
+    expect(compiled?.agent.reader?.prompt).toBe('Read only.');
+    const selected = compileSelectedAgentConfig(manifest, 'reader', 'opencode', files);
+    expect(Object.keys(selected.agent)).toEqual(['reader']);
+    expect(selected.agent.reader?.prompt).toBe('Read only.');
+    expect(() => compileAgentConfig(manifest, 'opencode')).toThrow('prompt_file');
+    expect(() => compileAgentConfig({ ...manifest, agents: { writer: { prompt_file: '../secret.md' } } }, 'opencode', { '../secret.md': 'wrong' })).toThrow('prompt_file');
+  });
+});
+
+describe('v2 agent tool toggles', () => {
+  test('manifest tool toggles compile per agent without changing other agents', () => {
+    const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
+    expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
+    expect(config?.agent.other.tools).toBeUndefined();
   });
 });

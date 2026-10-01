@@ -23,8 +23,14 @@ export interface KortixFeatureFlagOverrides {
 export interface KortixPlatformConfig {
   /** Absolute backend base URL incl. version prefix, e.g. `http://localhost:8008/v1`. */
   backendUrl: string;
-  /** Returns the current bearer (Supabase JWT, PAT, or API key) — or null if unauthenticated. */
-  getToken: () => Promise<string | null>;
+  /**
+   * Returns the current bearer (Supabase JWT, PAT, or API key) — or null if unauthenticated.
+   *
+   * A getter that caches may carry `invalidate(rejectedToken)`. The transport
+   * calls it when the API answers 401, before its one replay, so the replay
+   * asks for a fresh token instead of re-sending the dead one.
+   */
+  getToken: (() => Promise<string | null>) & { invalidate?: (rejectedToken: string) => void };
   /** Optional fetch implementation for tests, edge runtimes, and compatibility adapters.
    *  Any fetch-shaped function is accepted (the global `fetch` type also carries
    *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */

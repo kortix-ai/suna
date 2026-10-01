@@ -10,7 +10,7 @@ import { logger } from '../../core/http/logger';
 import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
-import { useOpenCodePendingStore } from '../../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';
 import { useSyncStore } from '../../browser/stores/sync-store';
 import {
   noteRuntimeEvidence,
@@ -20,7 +20,7 @@ import { useServerStore } from '../../browser/stores/server-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { opencodeKeys } from '../use-opencode-sessions';
+import { runtimeKeys } from '../use-opencode-sessions';
 import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
@@ -50,18 +50,18 @@ import { openEventStream } from '../../core/stream/event-stream';
  * needs the React Query `QueryClient` (cache reads/writes, which
  * `createEventHandler` and `hydrateCore` below perform).
  */
-export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
+export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
   const queryClient = useQueryClient();
   // The project this SSE connection's events are about — threaded into
   // `refetchKortixSessionMirrors` so a title/tree mirror refetch stays scoped
   // to the project actually being viewed instead of guessing at "every
   // project" (see that function's doc comment in `helpers.ts`).
   const projectId = useKortixRouteProjectId();
-  const addPermission = useOpenCodePendingStore((s) => s.addPermission);
-  const removePermission = useOpenCodePendingStore((s) => s.removePermission);
-  const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
-  const removeQuestion = useOpenCodePendingStore((s) => s.removeQuestion);
-  const clearPending = useOpenCodePendingStore((s) => s.clear);
+  const addPermission = useRuntimePendingStore((s) => s.addPermission);
+  const removePermission = useRuntimePendingStore((s) => s.removePermission);
+  const addQuestion = useRuntimePendingStore((s) => s.addQuestion);
+  const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
+  const clearPending = useRuntimePendingStore((s) => s.clear);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   const applySyncEvent = useSyncStore((s) => s.applyEvent);
   // Re-render (and re-read getActiveServerUrl, which resolves current-runtime) when
@@ -130,7 +130,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       clearPending();
       // NOTE: we intentionally do NOT wipe the sync store or the opencode
       // query cache here anymore. Those are now scoped per-sandbox (see
-      // opencodeKeys.activeServerKey + the sync store's session-id keying),
+      // runtimeKeys.activeServerKey + the sync store's session-id keying),
       // so each sandbox's data coexists safely. Wiping them was what made
       // switching back to an already-open session "reload". Diagnostics are
       // still cleared because they're keyed by bare file path (no sandbox
@@ -152,7 +152,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       return;
 
     // `activeServerUrl` (getActiveServerUrl) and the url getClient() resolves
-    // (getActiveOpenCodeUrl → current-runtime) come from DIFFERENT accessors and
+    // (getActiveRuntimeUrl → current-runtime) come from DIFFERENT accessors and
     // briefly diverge on a session switch: the server-store url is set before the
     // current-runtime url is pinned. In that window getClient() throws
     // RuntimeNotReadyError — and because this hook runs in the page render tree
@@ -296,7 +296,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
       if (options?.refetchSessions) {
         queryClient.refetchQueries({
-          queryKey: opencodeKeys.sessions(),
+          queryKey: runtimeKeys.sessions(),
           type: 'active',
         });
       }
@@ -316,8 +316,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
       }
     };
 
-    // Hydrate on initial connect — permissions, questions, and statuses
-    hydrateCore();
+    // A revived handle has no record of the previous handle's outage. Re-read
+    // the held transcripts so a response completed during the park appears
+    // without requiring a page refresh.
+    hydrateCore({ rehydrateMessages: streamGeneration > 0 });
 
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
@@ -379,12 +381,18 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
 /**
  * Headless provider component that connects the SSE event stream.
- * Renders nothing — just call useOpenCodeEventStream().
+ * Renders nothing — just call useRuntimeEventStream().
  *
  * Mount this once on any page that needs live session updates
  * (dashboard layout, onboarding page, etc.).
  */
-export function OpenCodeEventStreamProvider() {
-  useOpenCodeEventStream();
+export function RuntimeEventStreamProvider() {
+  useRuntimeEventStream();
   return null;
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `RuntimeEventStreamProvider`. Removed in the next major. */
+export const OpenCodeEventStreamProvider = RuntimeEventStreamProvider;
+/** @deprecated Renamed to `useRuntimeEventStream`. Removed in the next major. */
+export const useOpenCodeEventStream = useRuntimeEventStream;

@@ -43,7 +43,9 @@ describe('a sent tile keeps one identity from Send to delivery', () => {
     // Every turn, not only the first: the selection (`sentAttachmentsForTurn`, tested in
     // `sent-attachment-previews.test.ts`) keeps the list through a re-minted echo, and falls
     // back to the queued row's names for a turn this tab did not send.
-    const turn = flat(between(chat, '<SessionTurn', 'sessionWorking={lastTurnWorking}'));
+    // The row is `TranscriptTurnRow` since the turn rendering moved to its own
+    // module (KRTX-355); the shell still passes the turn's props here.
+    const turn = flat(between(chat, '<TranscriptTurnRow', 'sessionWorking={lastTurnWorking}'));
     expect(turn).toContain(
       'pendingAttachments={sentAttachmentsForTurn({ sentByMessage: sentAttachmentsByMessage, messageId: turn.userMessage.info.id, originId: optimisticOriginOf(sessionId, turn.userMessage.info.id), isFirstTurn: turnIndex === 0, firstTurnHandover: firstTurnHandover?.attachments, firstTurnSent: firstPromptAttachments(projectSessionId), queuedRowAttachments: inboxRowsByMessageId.get( turn.userMessage.info.id, )?.attachments, })}',
     );

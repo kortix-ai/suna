@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -75,7 +76,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { canOverride, inheritParentOrigin, resolveSessionOrigin } from './session-origin';
 import { resolveRootSessionInitiator, type SessionInitiator } from './session-initiator';
 import { sessionCreatedAuditAttribution } from './session-audit';
@@ -367,7 +368,9 @@ export async function createProjectSession(input: {
   }
   const secretsAllowlist = parsedSecrets.value ?? null;
   if (secretsAllowlist && secretsAllowlist.length > 0) {
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // The creator's own audience: a value shared only with them is a valid
+    // allowlist entry. Delivery re-applies the session's audience at boot.
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, userId);
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
@@ -502,7 +505,7 @@ export async function createProjectSession(input: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
   if (requestedModel) {
@@ -1053,6 +1056,7 @@ export async function createProjectSession(input: {
         initiatorType: initiator.type,
         initiatorId: initiator.id,
         secretsAllowlist,
+        labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
@@ -1335,7 +1339,6 @@ export async function createProjectSession(input: {
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             repositoryAccess,

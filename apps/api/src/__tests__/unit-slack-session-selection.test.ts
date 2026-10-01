@@ -24,7 +24,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     sandboxProvider: 'daytona',
     sandboxId: null,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'queued',
     error: null,
@@ -39,6 +39,7 @@ function fakeSessionRow(sessionId: string): ProjectSessionRow {
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -94,6 +95,20 @@ mock.module('../channels/slack/selection', () => ({
   ],
   isValidModelId: (id: string) => id.includes('/'),
   modelLabel: (id: string) => id,
+}));
+
+// Session selection is the subject here; model availability is pinned in
+// unit-channel-model-access and must not depend on provider credentials.
+mock.module('../channels/model-access', () => ({
+  agentGrantEnvFor: () => async () => null,
+  projectChannelModelScope: async () => null,
+  planChannelSessionStart: async ({ chosenModel }: { chosenModel?: string | null }) => ({ model: chosenModel ?? null }),
+  planChannelFollowUp: async () => null,
+  listChannelModels: async () => ({ models: [], defaultModel: null }),
+  checkChannelModel: async () => ({ ok: true }),
+  describeKeys: () => '',
+  channelKeySelection: async () => null,
+  channelModelScope: () => null,
 }));
 
 const realIam = await import('../iam');
@@ -324,6 +339,15 @@ test('deleted channel agent (AGENT_NOT_DECLARED) → in-thread agent picker, not
   expect(json).toContain('set_agent_shipper'); // …wired to the existing handler
   // Crucially NOT the old dead-end copy.
   expect(lastFinalize?.error ?? '').not.toContain('Give it a moment and send your message again');
+});
+
+test('follow-ups to one session identify the originating thread for each reply', async () => {
+  const { renderFollowUpPrompt } = await import('../channels/slack/session');
+  const first = renderFollowUpPrompt(envelope, { ...event, channel: 'CONE', thread_ts: '100.1' });
+  const second = renderFollowUpPrompt(envelope, { ...event, channel: 'CTWO', thread_ts: '200.2' });
+  expect(first).toContain('slack send --channel CONE --thread 100.1');
+  expect(second).toContain('slack send --channel CTWO --thread 200.2');
+  expect(second).not.toContain('CONE');
 });
 
 // A non-agent failure still renders honest, specific copy (not the picker).

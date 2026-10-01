@@ -3,7 +3,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import en from '../../../../translations/en.json';
-import { QueuedPromptFailure, queuedBubbleTone } from './queued-prompt-bubbles';
+import { QueuedPromptFailure, QueuedPromptProgress, queuedBubbleTone } from './queued-prompt-bubbles';
 import { BUBBLE_SURFACE } from './user-message';
 
 const renderFailure = () =>
@@ -29,10 +29,20 @@ describe('queued bubble tone', () => {
 });
 
 describe('queued user message text', () => {
-  test('no waiting, sending, paused, or interrupted copy exists to render', () => {
-    const threads = (en as { threads: Record<string, string> }).threads;
-    expect(threads.quickQueueWaiting).toBeUndefined();
-    expect(threads.quickQueueSending).toBeUndefined();
+  test('a pending send says whether delivery is underway or waiting', () => {
+    const render = (state: 'sending' | 'queued' | 'interrupted') =>
+      renderToStaticMarkup(
+        <NextIntlClientProvider locale="en" messages={en} onError={() => {}}>
+          <QueuedPromptProgress state={state} />
+        </NextIntlClientProvider>,
+      );
+    expect(render('sending')).toContain('>Sending<');
+    expect(render('queued')).toContain('>Queued<');
+    expect(render('interrupted')).toContain('>Queued<');
+    expect(render('sending')).toContain('data-queued-status="sending"');
+    expect(render('queued')).toContain('data-queued-status="queued"');
+    // Once delivery fails, progress is replaced with a terminal state and a retry action.
+    expect(renderFailure()).toContain('data-queued-status="failed"');
   });
 
   test('a delivery failure keeps its cause and recovery actions', () => {

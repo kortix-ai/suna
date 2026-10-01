@@ -195,12 +195,13 @@ async function compileArtifact(
   );
   const opencodeConfigDir = await resolveOpencodeConfigDirAtSha(mirror, project, sourceSha);
   // The root `skills/` ride along exactly as in a config release: composed
-  // into the config dir's `skills/` (see config-releases/builder.ts).
+  // into the config dir's `skills/` (see config-releases/builder.ts). The pi
+  // config dir does not: this artifact boots OpenCode only.
   const release = opencodeConfigDir ? await resolveReleaseTreeSource(mirror, project, sourceSha) : null;
   const opencodeConfigArchive = !opencodeConfigDir
     ? null
     : release && 'source' in release && release.source.rootSkills.length > 0
-      ? (await readComposedRelease(mirror, release.source, {
+      ? (await readComposedRelease(mirror, { ...release.source, piTree: null }, {
           archive: true,
           limit: MAX_OPENCODE_CONFIG_ARCHIVE_BYTES,
         })).archive

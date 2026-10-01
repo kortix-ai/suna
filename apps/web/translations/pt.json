@@ -132,7 +132,18 @@
     "rateLimitDescription": "O gateway alterna entre as chaves selecionadas quando um fornecedor indica um limite de pedidos.",
     "enableGateway": "Ative o gateway LLM nas definições do projeto para usar conjuntos de chaves.",
     "selectedOneForSession": "{count} chave selecionada para esta sessão",
-    "selectedOne": "{count} chave selecionada"
+    "selectedOne": "{count} chave selecionada",
+    "opencodeDeviceDescription": "Copie este código. Depois abra a página do OpenCode e insira-o para conectar seu workspace.",
+    "opencodeStarting": "Conectando ao OpenCode…",
+    "opencodeConnected": "Conectado com OpenCode",
+    "opencodeGoTitle": "OpenCode Go",
+    "opencodeGoDescription": "Entre com sua conta do OpenCode. Salvamos o login como um segredo de projeto criptografado para que sessões futuras o reutilizem.",
+    "opencodeGoConnectedBanner": "OpenCode Go conectado.",
+    "opencodeGoDisconnected": "OpenCode Go desconectado",
+    "opencodeGoConnect": "Conectar OpenCode Go",
+    "opencodeGoReconnect": "Reconectar OpenCode Go",
+    "opencodeGoDisconnect": "Desconectar OpenCode Go",
+    "opencodeGoFailed": "Não foi possível conectar o OpenCode Go"
   },
   "useCases": {
     "headline": "Os ciclos que mantêm uma empresa em funcionamento"
@@ -188,11 +199,7 @@
       "label": "Conta",
       "createIn": "Criar em {account}",
       "choose": "Escolher uma conta",
-      "loggedInAs": "Conectado como",
-      "nameLabel": "Nome da conta",
-      "nameHint": "Sua equipe vê este nome na barra lateral e nos convites. Você pode alterá-lo depois.",
-      "nameRequired": "O nome da conta é obrigatório",
-      "renameFailed": "Não foi possível salvar o nome da conta. Tente novamente."
+      "loggedInAs": "Conectado como"
     },
     "name": {
       "label": "Nome do projeto",
@@ -1553,7 +1560,8 @@
         "restricted": "Pessoas específicas",
         "project": "Projeto inteiro"
       },
-      "ownerAccess": "{owner} · {access}"
+      "ownerAccess": "{owner} · {access}",
+      "labels": "Rótulos"
     },
     "loadingMore": "A carregar…",
     "loadMoreSessions": "Carregar mais sessões",
@@ -1565,7 +1573,21 @@
       "others": "Compartilhadas",
       "automated": "Automatizadas"
     },
-    "reminders": "Lembretes"
+    "reminders": "Lembretes",
+    "labels": {
+      "menu": "Editar rótulos",
+      "title": "Rótulos",
+      "description": "Os rótulos classificam esta sessão. Filtre a lista de sessões por eles. Agentes, a CLI e a API também podem defini-los.",
+      "placeholder": "Digite um rótulo e pressione Enter",
+      "empty": "Ainda não há rótulos.",
+      "remove": "Remover {label}",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "saved": "Rótulos salvos",
+      "failed": "Não foi possível salvar os rótulos",
+      "tooLong": "Um rótulo tem no máximo 64 caracteres.",
+      "tooMany": "Uma sessão tem no máximo 20 rótulos."
+    }
   },
   "dashboard": {
     "title": "Painel",
@@ -5157,7 +5179,7 @@
     },
     "appProjectsIdSessionsSessionidPage": {
       "line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen": "A sandbox desta sessão foi interrompida. Abra uma nova sessão para continuar.",
-      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "O runtime do OpenCode não está pronto",
+      "line380JsxAttrTitleOpencodeRuntimeIsNotReady": "O runtime da sessão não está pronto",
       "line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid": "A sandbox foi iniciada, mas o runtime do projeto não ficou utilizável.",
       "line395JsxTextRestartSession": "Reiniciar sessão",
       "line424JsxTextRestartSession": "Reiniciar sessão"
@@ -12485,7 +12507,7 @@
       "text5a0cac0326d5": "Baixar o Kortix",
       "text5a219a418ec7": "Não foi possível ler esta entrada do arquivo.",
       "text5a23444828db": "Gerenciar",
-      "text5a26f4425c82": "Sessão do OpenCode",
+      "text92fbc8484002": "Sessão do runtime",
       "text5a32374d30b4": "Atividade diária da plataforma e queima de crédito. Cada intervalo é um dia UTC.",
       "text5a37d20f1235": "Agente do canal atualizado",
       "text5a41803b2dd1": "Negar todas",
@@ -19034,7 +19056,16 @@
       "text2bbd1ec2197d": "App conectado",
       "textda3d3fb8f598": "Sessão do agente",
       "text4dcb7e3b10a9": "Token SCIM",
-      "text36fe0f55b7f5": "Qualquer credencial"
+      "text36fe0f55b7f5": "Qualquer credencial",
+      "textbfda026e6c59": "Vinculado",
+      "text72ea4fa7caf9": "Ditado interrompido: {value0}",
+      "text557b623f9a33": "Não foi possível iniciar o ditado. Verifique o acesso ao microfone.",
+      "textb43c4884c3be": "Controles de ditado",
+      "textd31d065a762c": "Cancelar ditado",
+      "textbbb4106e8144": "Ouvindo…",
+      "text7458028e0d1d": "Concluir ditado",
+      "text9c84d6622566": "Ditar mensagem",
+      "textf164e4b031dc": "Presença na sessão atualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -19063,7 +19094,24 @@
       "mismatch": "Esta instalação foi iniciada a partir de outra conta Kortix ou para outro projeto. Entre com essa conta ou inicie a instalação novamente a partir do projeto.",
       "expired": "Este link de instalação é inválido ou expirou. Inicie a instalação novamente a partir do projeto.",
       "failed": "Não foi possível concluir a instalação. Inicie-a novamente a partir do projeto.",
-      "backToProject": "Voltar ao projeto"
+      "backToProject": "Voltar ao projeto",
+      "finishingTitle": "Concluindo a instalação do {service}",
+      "finishingDescription": "O Kortix está sendo adicionado ao {service} para este projeto. Você volta ao projeto quando terminar.",
+      "installingAs": "Instalando como",
+      "recording": "Registrando a instalação…"
+    },
+    "previewAuthorize": {
+      "openingTitle": "Abrindo a pré-visualização",
+      "openingDescription": "Você está sendo conectado ao app que sua sessão está executando.",
+      "preview": "Pré-visualização",
+      "address": "Endereço",
+      "signingIn": "Entrando. A pré-visualização abre sozinha.",
+      "signInAgain": "Entrar novamente",
+      "notServed": "Esse endereço não é uma pré-visualização servida por esta implantação. Abra a pré-visualização a partir da sua sessão.",
+      "sessionExpired": "Sua sessão expirou. Entre novamente e reabra a pré-visualização."
+    },
+    "approvalPage": {
+      "title": "Aprovar uma ação do {connector}"
     },
     "secretIntakeWithheld": {
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
@@ -19938,9 +19986,6 @@
   },
   "projectSelector": {
     "welcome": "Boas-vindas ao Kortix",
-    "nameAccountTitle": "Dê um nome à sua conta",
-    "nameAccountBody": "Seus projetos, agentes e colegas de equipe ficam aqui.",
-    "nameAccountContinue": "Continuar",
     "welcomeBack": "Bem-vindo de volta",
     "descriptionNew": "Crie seu primeiro projeto ou entre em um que sua equipe compartilhou.",
     "descriptionReturning": "Abra um projeto ou crie um novo.",
@@ -20180,6 +20225,7 @@
     "commandCopied": "Comando copiado",
     "copyFailed": "Falha ao copiar",
     "copyCommand": "Copiar comando",
+    "copyCliCommand": "Copiar comando de instalação",
     "authorizeCodeHint": "Confira se este código corresponde ao exibido no seu computador.",
     "whoCanUse": "Quem pode usar este computador",
     "onlyYouDescription": "Só você, em todos os projetos, nas suas sessões privadas.",

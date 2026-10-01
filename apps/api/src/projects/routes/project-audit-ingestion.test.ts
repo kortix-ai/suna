@@ -180,7 +180,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
-      opencodeSessionId: 'ses_server_owned',
+      runtimeSessionId: 'ses_server_owned',
       actorType: 'agent',
       agentId: AGENT_ID,
       agentName: 'trusted-agent',
@@ -192,7 +192,7 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
       metadata: {
         provenance_trust: 'sandbox_reported',
         reported_provenance: {
-          opencode_session_id: 'ses_forged',
+          runtime_session_id: 'ses_forged',
           agent_id: 'forged-agent',
           agent_name: 'forged-agent',
           initiator_actor_type: 'service_account',

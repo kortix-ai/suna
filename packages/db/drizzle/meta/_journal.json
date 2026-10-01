@@ -701,6 +701,27 @@
       "when": 1790736323064,
       "tag": "20260930024523_audit_events_credential_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790778759397,
+      "tag": "20260930143239_session_presence_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790781246005,
+      "tag": "20260930151406_session_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790813095392,
+      "tag": "20261001000455_audit_reconciliation_state",
+      "breakpoints": true
     }
   ]
 }

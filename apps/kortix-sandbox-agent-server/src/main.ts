@@ -76,7 +76,9 @@ if (import.meta.main) {
     // Image build only: record which CLI, daemon, skill overlay and OpenCode
     // this image carries, so a box booted from it states that on its FIRST
     // health read instead of after its first reconcile. A missing artifact
-    // fails the build rather than shipping a box that reports a lie.
+    // fails the build rather than shipping a box that reports a lie. The
+    // image's harness (`KORTIX_HARNESS`, default OpenCode) reports its release.
+    registerHarnessAssets((cfg) => resolveHarness(cfg).assets)
     bakeRuntimeAssetsState()
       .then((state) => {
         process.stdout.write(`${JSON.stringify(state)}\n`)

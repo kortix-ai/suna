@@ -1,16 +1,17 @@
 import type { HarnessControlService, HarnessControlOperations, HarnessEnvironmentInput, HarnessRefreshInput } from '../contract/control'
-import { requireOpenCodeConfig } from './config'
+import { requireOpenCodeConfig, type OpenCodeConfig } from './config'
 import { convergeConfigRelease, isConvergenceInFlight, releaseGovernanceActive } from './config-release'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
 import { syncEgressShim } from '@/services/egress-shim'
 import { invalidateRuntimeState } from './runtime-state-projection'
 import { noteOpencodeStopRequested } from './instance-guard'
-import { scheduleRuntimeProjectionPush } from './runtime-projection-relay'
+import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import { convergeManagedModelCatalog, requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
-import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
+import { readRepoInfo, refreshRepo, syncConfigDirToBase, syncWorkspaceToBase, type ConfigDirSyncResult } from '@/lib/git/git'
+import { readBootLinkTarget } from '@/services/config-release/boot-config'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import {
@@ -30,6 +31,8 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
   'KORTIX_OPENCODE_MODEL',
+  // Its harness-neutral name (D3). The API sends both for one release.
+  'KORTIX_MODEL',
   // Channel sessions can opt into the Connector MCP face after a deploy. This
   // must restart OpenCode because MCP servers are registered only at spawn.
   'KORTIX_CONNECTORS_MCP_ENABLED',
@@ -272,6 +275,19 @@ function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boo
 }
 
 /** `repo=0`: report the checkout as it is; nothing is fetched or pulled. */
+/**
+ * `syncConfigDirToBase` on the config dir OpenCode actually reads, when that
+ * dir is inside this checkout. A config release, or no project config dir at
+ * all, leaves nothing in the working tree to bring forward.
+ */
+async function syncServedConfigDir(cfg: OpenCodeConfig, baseSha?: string): Promise<ConfigDirSyncResult> {
+  const served = await readBootLinkTarget()
+  if (!served || !served.startsWith(`${cfg.projectTarget}/`)) {
+    return { synced: false, skipped: 'no tracked config dir' }
+  }
+  return syncConfigDirToBase(cfg, served.slice(cfg.projectTarget.length + 1), baseSha)
+}
+
 async function unchangedRepo(projectTarget: string) {
   const info = await readRepoInfo(projectTarget)
   if (!info) throw new Error('project repo is not materialized')
@@ -454,23 +470,28 @@ export function createOpenCodeControlService(
             // catalog landed, and the credential still will not be injected.
             egress_shim: egressShim.outcome,
             egress_shim_hosts: egressShim.hosts,
-            opencode_env_changed: opencodeEnvChanged,
-            opencode_env_names: opencodeEnvNames,
-            opencode: opencode.getState(),
-            opencode_pid: opencode.getPid(),
+            runtime_env_changed: opencodeEnvChanged,
+            runtime_env_names: opencodeEnvNames,
+            runtime: opencode.getState(),
+            runtime_pid: opencode.getPid(),
             // 'disposed' | 'restarted' | 'kept-old' | null (no reload needed).
             // 'kept-old' is the verified swap declining a config that would not
             // boot — a successful safety outcome, and a FAILED reload.
-            opencode_reload: reloadOutcome,
-            opencode_turn_ended: reloadTurnEnded,
+            runtime_reload: reloadOutcome,
+            runtime_turn_ended: reloadTurnEnded,
           }
         },
-        async refresh({ syncBase, skipRestart, skipRepo, baseSha, forceFail }: HarnessRefreshInput) {
+        async refresh({ syncBase, skipRestart, skipRepo, syncBaseConfig, baseSha, forceFail }: HarnessRefreshInput) {
           const repo = syncBase
             ? await syncWorkspaceToBase(cfg, baseSha)
             : skipRepo
               ? await unchangedRepo(cfg.projectTarget)
               : await refreshRepo(cfg)
+          // A project without config releases runs the agent files in this
+          // checkout, and a fast-forward of the session branch never brings the
+          // base branch's changes to them (prod 2026-09-30: an agent `.md` fix
+          // merged to main never reached a live session, through two reloads).
+          const configDir = syncBaseConfig && !syncBase ? await syncServedConfigDir(cfg, baseSha) : undefined
           // Verified swap, not a kill-then-hope restart: boot the new opencode,
           // prove it serves, and only then retire the running one. A config that
           // cannot boot leaves the session on the opencode it already had.
@@ -489,6 +510,10 @@ export function createOpenCodeControlService(
           const reload = skipRestart
             ? null
             : await opencode.reloadVerified({ forceFail })
+          // Agent files are read only when OpenCode loads its config. Under
+          // `restart=0` a dispose re-reads them in place (a verified swap only
+          // when the dispose does not confirm), so a sync costs milliseconds.
+          const configReload = configDir?.synced && skipRestart ? await opencode.reloadConfig() : null
           // Converge the sandbox's `kortix` CLI + managed-skill overlay on this
           // API. This route is what the platform already calls on warm reuse and
           // reload, and (since this change) after a restart and a resume — the
@@ -545,8 +570,16 @@ export function createOpenCodeControlService(
                   },
                 }
               : {}),
-            opencode: opencode.getState(),
-            opencode_pid: opencode.getPid(),
+            ...(configDir
+              ? {
+                  config_dir: {
+                    ...configDir,
+                    ...(configReload ? { reload: configReload.how, turn_ended: configReload.turnEnded } : {}),
+                  },
+                }
+              : {}),
+            runtime: opencode.getState(),
+            runtime_pid: opencode.getPid(),
           }
         },
         // Config releases. The descriptor is
@@ -571,14 +604,15 @@ export function createOpenCodeControlService(
         // daemon's own fetch-and-diff; the API decides WHETHER to call this at
         // all, this call decides HOW to repair). One attempt, idle-gated,
         // never ends a running turn — see `convergeManagedModelCatalog`.
-        async convergeCatalog() {
-          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true })
+        async convergeCatalog(options) {
+          const result = await convergeManagedModelCatalog(opencode, cfg, { allowRestart: true, model: options?.model })
           return {
             ok: result.outcome !== 'no-gateway',
             outcome: result.outcome,
             missing: result.missing,
             managed: result.managed,
             reason: result.reason ?? null,
+            ...(result.modelPresent !== undefined ? { model_present: result.modelPresent } : {}),
           }
         },
         async abort() {
@@ -611,14 +645,14 @@ export function createOpenCodeControlService(
               return { outcome: 'failed', body: { ok: false, error: `opencode abort failed: ${res.status}`, detail: body } }
             }
             logger.info('[abort] opencode turn aborted', { sessionId })
-            return { outcome: 'aborted', body: { ok: true, opencode_session_id: sessionId } }
+            return { outcome: 'aborted', body: { ok: true, runtime_session_id: sessionId } }
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err)
             logger.warn('[abort] opencode abort threw', { sessionId, error: message })
             return { outcome: 'failed', body: { ok: false, error: message } }
           }
         },
-        armAbortAfterTool: (input) => quickQueue.arm(input),
+        armAbortAfterTool: ({ runtimeSessionId, ...input }) => quickQueue.arm({ ...input, opencodeSessionId: runtimeSessionId }),
         disarmAbortAfterTool: (promptId) => quickQueue.disarm(promptId),
       }
     },

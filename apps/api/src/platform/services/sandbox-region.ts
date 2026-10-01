@@ -1,5 +1,6 @@
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { platinumUsRegion } from '../../shared/platinum-region';
+import { apiRegion, databaseRegion } from '../../lib/deployment-region';
 
 /**
  * The region a session's sandbox is created in, or `undefined` for the
@@ -12,5 +13,14 @@ import { platinumUsRegion } from '../../shared/platinum-region';
  */
 export function resolveSessionSandboxRegion(projectMetadata: unknown): string | undefined {
   if (!resolveFeatureFlag(projectMetadata, 'us_region')) return undefined;
-  return platinumUsRegion() ?? undefined;
+  const region = platinumUsRegion();
+  if (!region) return undefined;
+
+  // Never place a US sandbox beside a different API, database, or archive bucket.
+  // An unknown region is not proof of co-location; keep the existing placement.
+  const awsRegion = region === 'us-east' ? 'us-east-1' : null;
+  if (!awsRegion || apiRegion() !== awsRegion || databaseRegion(process.env.DATABASE_URL ?? '') !== awsRegion ||
+      process.env.KORTIX_PROJECT_SNAPSHOT_S3_REGION !== awsRegion ||
+      process.env.KORTIX_CONFIG_ARCHIVE_S3_REGION !== awsRegion) return undefined;
+  return region;
 }

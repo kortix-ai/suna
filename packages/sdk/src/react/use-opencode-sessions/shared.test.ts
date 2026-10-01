@@ -3,7 +3,7 @@ import {
   activeServerKey,
   asRuntimeList,
   cachedRuntimeList,
-  canQueryOpenCodeSession,
+  canQueryRuntimeSession,
   CACHE_SCOPE_GLOBAL,
   clearProjectProviderCache,
   getLSCache,
@@ -62,27 +62,27 @@ describe('unwrap', () => {
 });
 
 // ============================================================================
-// canQueryOpenCodeSession — rejects Kortix's own project-session UUIDs (which
+// canQueryRuntimeSession — rejects Kortix's own project-session UUIDs (which
 // aren't real opencode session ids and would 404 the opencode API).
 // ============================================================================
 
-describe('canQueryOpenCodeSession', () => {
+describe('canQueryRuntimeSession', () => {
   test('rejects null/undefined/empty', () => {
-    expect(canQueryOpenCodeSession(null)).toBe(false);
-    expect(canQueryOpenCodeSession(undefined)).toBe(false);
-    expect(canQueryOpenCodeSession('')).toBe(false);
+    expect(canQueryRuntimeSession(null)).toBe(false);
+    expect(canQueryRuntimeSession(undefined)).toBe(false);
+    expect(canQueryRuntimeSession('')).toBe(false);
   });
 
   test('rejects a v4 UUID (the Kortix project-session id shape)', () => {
-    expect(canQueryOpenCodeSession('550e8400-e29b-41d4-a716-446655440000')).toBe(false);
+    expect(canQueryRuntimeSession('550e8400-e29b-41d4-a716-446655440000')).toBe(false);
   });
 
   test('accepts a real opencode session id (ses_<...> shape)', () => {
-    expect(canQueryOpenCodeSession('ses_01hzxk3n8g8g8g8g8g8g8g8g')).toBe(true);
+    expect(canQueryRuntimeSession('ses_01hzxk3n8g8g8g8g8g8g8g8g')).toBe(true);
   });
 
   test('accepts an arbitrary non-UUID string', () => {
-    expect(canQueryOpenCodeSession('not-a-uuid-at-all')).toBe(true);
+    expect(canQueryRuntimeSession('not-a-uuid-at-all')).toBe(true);
   });
 });
 
