@@ -98,6 +98,7 @@ mock.module('@/features/providers/auth-provider', () => ({
 }));
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   startSessionWithPrompt,
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),

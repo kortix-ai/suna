@@ -121,6 +121,7 @@ const enqueue = mock(
 );
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   startSessionWithPrompt,
   usePromptAttachments: () => ({}),
   useRuntimeAgents: () => ({ data: [] }),

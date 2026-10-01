@@ -37,6 +37,7 @@ let busy = false;
 let auditPending = false;
 mock.module('@kortix/sdk/react', () => ({
   ...realSdk,
+  useFeatureFlag: () => ({ enabled: true, isLoading: false }),
   useSessionMessages: () => fixtureMessages,
   useSessionSync: () => ({
     messages: fixtureMessages,
