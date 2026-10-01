@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Mensajes a personas",
-          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal."
+          "description": "Permite que los agentes escriban a personas y a otras sesiones. `kortix send alice@example.com` abre una conversación que empieza con el mensaje del agente y aparece en Te preguntaron, en la barra lateral del destinatario. Varias direcciones abren un chat grupal. Los mensajes entre sesiones indican la sesión que los envía, para que su agente pueda responder."
         },
         "reminders": {
           "name": "Recordatorios",

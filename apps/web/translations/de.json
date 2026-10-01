@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Nachrichten an Menschen",
-          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat."
+          "description": "Agenten können Personen und anderen Sitzungen schreiben. `kortix send alice@example.com` öffnet eine Unterhaltung, die mit der Nachricht des Agenten beginnt und in der Seitenleiste der Empfänger unter Fragen an dich erscheint. Mehrere Adressen öffnen einen Gruppenchat. Nachrichten zwischen Sitzungen nennen die sendende Sitzung, damit deren Agent antworten kann."
         },
         "reminders": {
           "name": "Erinnerungen",
