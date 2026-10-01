@@ -123,6 +123,7 @@ export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
@@ -185,6 +186,7 @@ export * from './query-contracts';
 export * from './use-project-name';
 export * from './use-project-session';
 export * from './use-project-sessions';
+export * from './use-sessions-needing-input';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';

@@ -1179,6 +1179,10 @@
           "name": "MCP server",
           "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
         },
+        "human_messaging": {
+          "name": "Poruke ljudima",
+          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet."
+        },
         "reminders": {
           "name": "Подсетници",
           "description": "Омогућава агентима и особама да закажу провере на сесији, једном или периодично. Свако активирање поново покреће ту сесију. Додаје страницу Подсетници, ознаку подсетника у сесији и `kortix remind`."
@@ -1587,6 +1591,17 @@
       "failed": "Oznake nije moguće sačuvati",
       "tooLong": "Oznaka ima najviše 64 znaka.",
       "tooMany": "Sesija ima najviše 20 oznaka."
+    },
+    "askedYou": {
+      "title": "Pitali su te",
+      "from": "od {name}",
+      "arrival": "{name} te je pitao/la",
+      "arrivalUnknown": "Neko te je pitao",
+      "open": "Otvori",
+      "withOne": "Razgovor sa 1 osobom",
+      "withMany": "Razgovor sa {count} osoba",
+      "askedFrom": "Pitanje iz sesije {title}",
+      "inConversation": "U ovom razgovoru"
     }
   },
   "dashboard": {
@@ -19065,7 +19080,8 @@
       "textbbb4106e8144": "Слушам…",
       "text7458028e0d1d": "Заврши диктирање",
       "text9c84d6622566": "Диктирај поруку",
-      "textf164e4b031dc": "Присуство у сесији је ажурирано"
+      "textf164e4b031dc": "Присуство у сесији је ажурирано",
+      "text9e6a0b0a06c2": "Pregledao autore poruka sesije"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20299,5 +20315,11 @@
     "runInBackgroundDescription": "Искључено паузира везу, чак и после поновног покретања.",
     "manageInProject": "Управљај у пројекту",
     "disconnectEllipsis": "Прекини везу…"
+  },
+  "messageFrom": {
+    "from": "Od",
+    "asked": "je pitao",
+    "replyHint": "Odgovorite ispod. Agent će preuzeti odgovor.",
+    "untitledSession": "Sesija bez naslova"
   }
 }
