@@ -21,16 +21,18 @@
  * one fact written once and cannot drift apart. From that moment the row lists
  * like any other session.
  *
- * There is no state machine, no claim protocol, no compatibility matching, no
- * advisory lock and no unique index. A warm session that no longer suits the
- * user is abandoned by the client and reaped like any other idle box; a race
- * between two tabs costs one extra box, which the reserved concurrent-session
- * slot (`createProjectSession`'s `reserveConcurrentSlots`) already bounds.
+ * Compute placement is matched server-side before reuse or adoption. A
+ * server-stamped requested location deduplicates in-flight warming but is
+ * never proof of actual placement. Incompatible boxes are abandoned, not moved.
+ * There is no advisory lock or unique index; a race between two tabs can cost
+ * one extra box, bounded by the reserved concurrent-session slot.
  *
  * Deliberately dependency-free — `session-inventory.ts` is a pure module that
  * must stay importable without the database and config graph.
  */
 export const WARM_SESSION_METADATA_KEY = 'warm';
+/** Server-owned intent for deduplicating pre-provider warm creation. */
+export const WARM_SESSION_LOCATION_KEY = 'warmSandboxLocation';
 
 /** True when this session was pre-created and nobody has prompted it yet. */
 export function isWarmProjectSession(metadata: unknown): boolean {

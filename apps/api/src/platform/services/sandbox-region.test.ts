@@ -34,18 +34,16 @@ afterEach(() => {
 });
 
 describe('us_region', () => {
-  test('flag on and the environment names the region ⇒ that region', () => {
+  test('flag on chooses configured compute placement independently of API, database and archive regions', () => {
     process.env.KORTIX_PLATINUM_US_REGION = 'us-east';
-    process.env.AWS_REGION = 'us-east-1';
-    process.env.DATABASE_URL = 'postgres://u:p@db.cluster-test.us-east-1.rds.amazonaws.com/db';
-    process.env.KORTIX_PROJECT_SNAPSHOT_S3_REGION = 'us-east-1';
-    process.env.KORTIX_CONFIG_ARCHIVE_S3_REGION = 'us-east-1';
+    process.env.AWS_REGION = 'us-west-2';
+    process.env.DATABASE_URL = 'postgres://u:p@db.cluster-test.us-west-2.rds.amazonaws.com/db';
+    process.env.KORTIX_PROJECT_SNAPSHOT_S3_REGION = 'us-west-2';
+    process.env.KORTIX_CONFIG_ARCHIVE_S3_REGION = 'us-west-2';
     expect(resolveSessionSandboxRegion(ON)).toBe('us-east');
     for (const key of ['AWS_REGION', 'DATABASE_URL', 'KORTIX_PROJECT_SNAPSHOT_S3_REGION', 'KORTIX_CONFIG_ARCHIVE_S3_REGION']) {
-      const original = process.env[key];
       delete process.env[key];
-      expect(resolveSessionSandboxRegion(ON)).toBeUndefined();
-      process.env[key] = original;
+      expect(resolveSessionSandboxRegion(ON)).toBe('us-east');
     }
   });
 

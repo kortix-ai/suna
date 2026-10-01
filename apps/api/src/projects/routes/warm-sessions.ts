@@ -20,7 +20,7 @@ import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { createProjectSession } from '../lib/sessions';
 import { currentInstanceId } from '../instance-scope';
-import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { SESSION_LAST_ACTIVITY_KEY } from '../session-activity';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -29,6 +29,7 @@ import { ACTIVE_SESSION_STATUSES } from '../lib/session-status';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { GitOperationError } from '../git/mirror';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
 
 /**
  * Warming is SPECULATIVE. The browser fires it on every project view and
@@ -51,15 +52,51 @@ import { GitOperationError } from '../git/mirror';
 const NO_REFRESH = { status: 'skipped' as const };
 
 const WARM_SESSION_MARKER = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'`;
+// Platinum's default/home compute placement; unrelated to Kortix deployment geography.
+const PLATINUM_HOME_REGION = 'eu-west';
+const WARM_PROVISIONING_STATUSES = ['queued', 'branching', 'provisioning'] as const;
+
+/**
+ * Actual provider placement, never a requested location or a readiness cache.
+ * Unknown placement while provisioning is pending, not proof of a US box.
+ */
+export async function warmSessionPlacement(
+  sessionId: string,
+  projectMetadata: unknown,
+): Promise<'compatible' | 'pending' | 'mismatch'> {
+  const region = resolveSessionSandboxRegion(projectMetadata);
+  const [row] = await db
+    .select({
+      sessionStatus: projectSessions.status,
+      sessionMetadata: projectSessions.metadata,
+      provider: sessionSandboxes.provider,
+      status: sessionSandboxes.status,
+      metadata: sessionSandboxes.metadata,
+    })
+    .from(projectSessions)
+    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessions.sessionId))
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!row) return 'mismatch';
+  const actualRegion = row.metadata?.platinumRegion;
+  if (row.provider === 'platinum' && actualRegion === (region ?? PLATINUM_HOME_REGION)) return 'compatible';
+  if (!region && row.provider && row.provider !== 'platinum') return 'compatible';
+  const intent = (row.sessionMetadata as Record<string, unknown> | null)?.[WARM_SESSION_LOCATION_KEY];
+  if (!actualRegion && (!row.provider || row.provider === 'platinum') &&
+      WARM_PROVISIONING_STATUSES.includes(row.sessionStatus as typeof WARM_PROVISIONING_STATUSES[number]) &&
+      (!row.status || row.status === 'provisioning') &&
+      intent === (region ?? 'home')) return 'pending';
+  return 'mismatch';
+}
 
 /**
  * The caller's live, still-unused warm session for this project, or null.
  *
  * ACTIVE statuses only, so a box the idle reaper already stopped is never handed
- * back as "ready". Deliberately does NOT match on agent or sandbox slug: the
- * client compares what comes back against what the user actually selected and
- * falls back to an ordinary create when they differ, which is why the server
- * needs no notion of compatibility at all.
+ * back as "ready". Agent and sandbox slug remain client-side checks. Compute
+ * placement is server-owned: adoption requires actual provider placement,
+ * including the home region when the US flag is off. `includeProvisioning`
+ * deduplicates warming via server-owned intent, but does NOT prove placement.
  *
  * `excludeSessionId` skips one session id — the one the caller just took. The
  * warm marker only drops when the FIRST PROMPT reaches the preview proxy
@@ -76,9 +113,13 @@ export async function findWarmProjectSession(scope: {
   accountId: string;
   projectId: string;
   userId: string;
+  projectMetadata: unknown;
   excludeSessionId?: string | null;
+  /** Only /warm may reuse in-flight intent; claims require actual placement. */
+  includeProvisioning?: boolean;
 }) {
   const instanceId = currentInstanceId();
+  const region = resolveSessionSandboxRegion(scope.projectMetadata);
   const [row] = await db
     .select()
     .from(projectSessions)
@@ -90,6 +131,29 @@ export async function findWarmProjectSession(scope: {
         inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
         WARM_SESSION_MARKER,
         sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`,
+        or(
+          sql`EXISTS (
+            SELECT 1 FROM ${sessionSandboxes} AS box
+            WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+              AND (
+                (box.provider = 'platinum' AND box.metadata->>'platinumRegion' = ${region ?? PLATINUM_HOME_REGION})
+                ${region ? sql`` : sql`OR box.provider <> 'platinum'`}
+              )
+          )`,
+          scope.includeProvisioning
+            ? and(
+                inArray(projectSessions.status, [...WARM_PROVISIONING_STATUSES]),
+                sql`${projectSessions.metadata}->>${WARM_SESSION_LOCATION_KEY}::text = ${region ?? 'home'}`,
+                sql`NOT EXISTS (
+                  SELECT 1 FROM ${sessionSandboxes} AS box
+                  WHERE box.session_id = ${qualifiedColumn(projectSessions.sessionId)}
+                    AND (box.provider <> 'platinum'
+                      OR box.status <> 'provisioning'
+                      OR coalesce(box.metadata->>'platinumRegion', '') <> '')
+                )`,
+              )
+            : undefined,
+        ),
         instanceId
           ? sql`NOT EXISTS (
               SELECT 1 FROM ${sessionSandboxes} AS box
@@ -244,7 +308,9 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
+      projectMetadata: loaded.row.metadata,
       excludeSessionId,
+      includeProvisioning: true,
     });
     if (existing) {
       return c.json(
@@ -348,6 +414,7 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       projectId,
       userId: loaded.userId,
+      projectMetadata: loaded.row.metadata,
     });
     if (!candidate || candidate.sessionId !== sessionId) {
       return c.json(

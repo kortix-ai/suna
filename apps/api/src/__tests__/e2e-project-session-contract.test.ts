@@ -4246,6 +4246,25 @@ describe('project session API contract', () => {
     expect(lifecycleCommandInserts).toEqual([]);
   });
 
+  test('clients cannot forge or change server-owned warm placement intent', async () => {
+    const app = createApp();
+    const before = sessionRow;
+    for (const [method, path] of [
+      ['POST', `/v1/projects/${PROJECT_ID}/sessions`],
+      ['PATCH', `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`],
+    ] as const) {
+      const res = await app.request(path, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ metadata: { warmSandboxLocation: 'us-east' } }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'metadata key is server-managed: warmSandboxLocation' });
+    }
+    expect(sessionRow).toBe(before);
+    expect(branchCreateCalls).toBe(0);
+  });
+
   test('rejects unknown providers before creating a git branch', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {

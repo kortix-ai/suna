@@ -21,8 +21,9 @@ import { accounts, projectSessions, projects, sessionSandboxes } from '@kortix/d
 import { eq } from 'drizzle-orm';
 
 import { config } from '../config';
-import { findWarmProjectSession } from '../projects/routes/warm-sessions';
+import { findWarmProjectSession, warmSessionPlacement } from '../projects/routes/warm-sessions';
 import { db } from '../shared/db';
+import { WARM_SESSION_LOCATION_KEY } from '../projects/lib/warm-sessions';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -38,6 +39,11 @@ async function seedWarmSession(
     createdAt?: Date;
     /** Stamp the session's sandbox row with this API instance id. */
     boxInstanceId?: string;
+    boxRegion?: string | null;
+    boxStatus?: 'active' | 'provisioning';
+    boxProvider?: 'platinum' | 'daytona';
+    requestedLocation?: string;
+    noSandbox?: boolean;
   } = {},
 ): Promise<string> {
   n += 1;
@@ -49,17 +55,26 @@ async function seedWarmSession(
     branchName: sessionId,
     createdBy: overrides.createdBy ?? USER,
     status: overrides.status ?? 'running',
-    metadata: overrides.warm === false ? {} : { warm: true },
+    metadata: overrides.warm === false ? {} : {
+      warm: true,
+      ...(overrides.requestedLocation ? { [WARM_SESSION_LOCATION_KEY]: overrides.requestedLocation } : {}),
+    },
     ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
   });
-  if (overrides.boxInstanceId) {
+  if (!overrides.noSandbox) {
     await db.insert(sessionSandboxes).values({
       sandboxId: crypto.randomUUID(),
       sessionId,
       accountId: ACCOUNT,
       projectId: PROJECT,
-      status: 'active',
-      metadata: { instanceId: overrides.boxInstanceId },
+      provider: overrides.boxProvider ?? 'platinum',
+      status: overrides.boxStatus ?? 'active',
+      metadata: {
+        ...(overrides.boxInstanceId ? { instanceId: overrides.boxInstanceId } : {}),
+        ...((overrides.boxRegion === undefined ? 'eu-west' : overrides.boxRegion)
+          ? { platinumRegion: overrides.boxRegion ?? 'eu-west' }
+          : {}),
+      },
     });
   }
   return sessionId;
@@ -98,6 +113,7 @@ describe('findWarmProjectSession — exclusion', () => {
       accountId: ACCOUNT,
       projectId: PROJECT,
       userId: USER,
+      projectMetadata: {},
       excludeSessionId: sessionId,
     });
 
@@ -112,6 +128,7 @@ describe('findWarmProjectSession — exclusion', () => {
       accountId: ACCOUNT,
       projectId: PROJECT,
       userId: USER,
+      projectMetadata: {},
       excludeSessionId: justTaken,
     });
 
@@ -121,7 +138,7 @@ describe('findWarmProjectSession — exclusion', () => {
   test('a stopped session is never returned as warm', async () => {
     await seedWarmSession({ status: 'stopped' });
 
-    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });
+    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: {} });
 
     expect(found).toBeNull();
   });
@@ -129,7 +146,7 @@ describe('findWarmProjectSession — exclusion', () => {
   test('a non-warm session (no metadata.warm marker) is never returned', async () => {
     await seedWarmSession({ warm: false });
 
-    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });
+    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: {} });
 
     expect(found).toBeNull();
   });
@@ -137,7 +154,7 @@ describe('findWarmProjectSession — exclusion', () => {
   test("scoped to the caller — a different user's warm session is invisible regardless of exclusion", async () => {
     const otherUsersSession = await seedWarmSession({ createdBy: OTHER_USER });
 
-    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });
+    const found = await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: {} });
 
     expect(found).toBeNull();
     // Sanity: the row really exists, scoped to its own owner.
@@ -145,6 +162,7 @@ describe('findWarmProjectSession — exclusion', () => {
       accountId: ACCOUNT,
       projectId: PROJECT,
       userId: OTHER_USER,
+      projectMetadata: {},
     });
     expect(foundForOwner?.sessionId).toBe(otherUsersSession);
   });
@@ -156,6 +174,7 @@ describe('findWarmProjectSession — exclusion', () => {
       accountId: ACCOUNT,
       projectId: PROJECT,
       userId: USER,
+      projectMetadata: {},
       excludeSessionId: crypto.randomUUID(),
     });
 
@@ -169,7 +188,7 @@ describe('findWarmProjectSession — exclusion', () => {
 // worker can ever deliver.
 describe('findWarmProjectSession — instance scope', () => {
   const original = config.KORTIX_INSTANCE_ID;
-  const lookup = () => findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER });
+  const lookup = () => findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: {} });
   afterEach(() => {
     config.KORTIX_INSTANCE_ID = original;
   });
@@ -197,5 +216,115 @@ describe('findWarmProjectSession — instance scope', () => {
     const sessionId = await seedWarmSession({ boxInstanceId: 'warm-peer-test' });
 
     expect((await lookup())?.sessionId).toBe(sessionId);
+  });
+});
+
+describe('warm sessions — compute placement', () => {
+  const on = { experimental: { us_region: true } };
+  let originalRegion: string | undefined;
+  let originalKey: typeof config.PLATINUM_API_KEY;
+  beforeEach(() => {
+    originalRegion = process.env.KORTIX_PLATINUM_US_REGION;
+    originalKey = config.PLATINUM_API_KEY;
+    process.env.KORTIX_PLATINUM_US_REGION = 'us-east';
+    config.PLATINUM_API_KEY = 'pt_test_placement';
+  });
+  afterEach(() => {
+    if (originalRegion === undefined) delete process.env.KORTIX_PLATINUM_US_REGION;
+    else process.env.KORTIX_PLATINUM_US_REGION = originalRegion;
+    config.PLATINUM_API_KEY = originalKey;
+  });
+  const lookup = (projectMetadata: unknown = on, includeProvisioning = false) => findWarmProjectSession({
+    accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata, includeProvisioning,
+  });
+
+  test('selects an older actual US box rather than newer EU or unknown candidates without changing them', async () => {
+    const us = await seedWarmSession({ boxRegion: 'us-east', createdAt: new Date(Date.now() - 60_000) });
+    const eu = await seedWarmSession({ boxRegion: 'eu-west' });
+    const unknown = await seedWarmSession({ boxRegion: null });
+    expect((await lookup())?.sessionId).toBe(us);
+    expect(await warmSessionPlacement(us, on)).toBe('compatible');
+    expect(await warmSessionPlacement(eu, on)).toBe('mismatch');
+    expect(await warmSessionPlacement(unknown, on)).toBe('mismatch');
+    const boxes = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.accountId, ACCOUNT));
+    expect(boxes.find((box) => box.sessionId === eu)?.metadata).toEqual({ platinumRegion: 'eu-west' });
+    expect(boxes.find((box) => box.sessionId === unknown)?.status).toBe('active');
+  });
+
+  test('unknown provisioning placement stays pending and becomes selectable only after actual region arrives', async () => {
+    const sessionId = await seedWarmSession({
+      status: 'provisioning', boxStatus: 'provisioning', boxRegion: null, requestedLocation: 'us-east',
+    });
+    expect(await lookup()).toBeNull();
+    expect(await warmSessionPlacement(sessionId, on)).toBe('pending');
+    // Repeated /warm requests deduplicate this in-flight create, while claims
+    // still require actual placement and /start remains honestly pending.
+    expect((await lookup(on, true))?.sessionId).toBe(sessionId);
+    await db.update(sessionSandboxes).set({
+      status: 'active', metadata: { platinumRegion: 'us-east' },
+    }).where(eq(sessionSandboxes.sessionId, sessionId));
+    expect((await lookup())?.sessionId).toBe(sessionId);
+    expect(await warmSessionPlacement(sessionId, on)).toBe('compatible');
+  });
+
+  test('an actual EU provisioning box is a mismatch, not a pending US box', async () => {
+    const sessionId = await seedWarmSession({
+      status: 'provisioning', boxStatus: 'provisioning', boxRegion: 'eu-west', requestedLocation: 'us-east',
+    });
+    expect(await lookup()).toBeNull();
+    expect(await lookup(on, true)).toBeNull();
+    expect(await warmSessionPlacement(sessionId, on)).toBe('mismatch');
+  });
+
+  test('a session with no sandbox row is not selected as US', async () => {
+    const sessionId = await seedWarmSession({ status: 'queued', noSandbox: true, requestedLocation: 'us-east' });
+    expect(await lookup()).toBeNull();
+    expect(await warmSessionPlacement(sessionId, on)).toBe('pending');
+    expect((await lookup(on, true))?.sessionId).toBe(sessionId);
+  });
+
+  test('another provider cannot prove Platinum placement with a same-named metadata field', async () => {
+    const sessionId = await seedWarmSession({ boxProvider: 'daytona', boxRegion: 'us-east' });
+    expect(await lookup()).toBeNull();
+    expect(await warmSessionPlacement(sessionId, on)).toBe('mismatch');
+  });
+
+  test('flag off preserves home-path warm reuse without demanding US placement', async () => {
+    const sessionId = await seedWarmSession({ boxRegion: 'eu-west' });
+    const off = { experimental: { us_region: false } };
+    expect((await lookup(off))?.sessionId).toBe(sessionId);
+    expect(await warmSessionPlacement(sessionId, off)).toBe('compatible');
+  });
+
+  test('US warming cannot reuse unknown legacy provisioning intent or a queued home create', async () => {
+    const legacy = await seedWarmSession({ status: 'provisioning', boxStatus: 'provisioning', boxRegion: null });
+    const home = await seedWarmSession({ status: 'queued', noSandbox: true, requestedLocation: 'home' });
+    expect(await lookup(on, true)).toBeNull();
+    expect(await warmSessionPlacement(legacy, on)).toBe('mismatch');
+    expect(await warmSessionPlacement(home, on)).toBe('mismatch');
+  });
+
+  test('flag OFF/default skips actual US and unknown US-intent boxes after a flag flip', async () => {
+    const home = await seedWarmSession({ boxRegion: 'eu-west', createdAt: new Date(Date.now() - 60_000) });
+    const us = await seedWarmSession({ boxRegion: 'us-east' });
+    const pendingUs = await seedWarmSession({
+      status: 'provisioning', boxStatus: 'provisioning', boxRegion: null, requestedLocation: 'us-east',
+    });
+    for (const metadata of [{ experimental: { us_region: false } }, {}]) {
+      expect((await lookup(metadata))?.sessionId).toBe(home);
+      expect((await lookup(metadata, true))?.sessionId).toBe(home);
+      expect(await warmSessionPlacement(us, metadata)).toBe('mismatch');
+      expect(await warmSessionPlacement(pendingUs, metadata)).toBe('mismatch');
+    }
+  });
+
+  test('home warming deduplicates trusted home intent without claiming unknown placement', async () => {
+    const off = { experimental: { us_region: false } };
+    const sessionId = await seedWarmSession({
+      status: 'branching', noSandbox: true, requestedLocation: 'home',
+    });
+    expect((await lookup(off, true))?.sessionId).toBe(sessionId);
+    expect(await lookup(off)).toBeNull();
+    expect(await warmSessionPlacement(sessionId, off)).toBe('pending');
   });
 });
