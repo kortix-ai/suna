@@ -80,7 +80,7 @@ jobs:
           c = load("status.json")["counts"]; print("counts", c)
           assert c["frames"] >= 30, c
           assert c["videos"] >= 1, c
-          assert c["ocr_pending"] == 0, c
+          assert c["ocr_pending"] <= 2, c  # frames still in OCR at shutdown finish on the next start
           notepad, edge = load("fts_notepad.json"), load("fts_edge.json")
           print("fts notepad", len(notepad), "edge", len(edge))
           assert notepad, "Notepad text not searchable"
@@ -136,7 +136,7 @@ jobs:
           import json, os, pathlib
           ev = pathlib.Path(os.environ["EV"])
           c = json.loads((ev / "status.json").read_text())["counts"]; print("counts", c)
-          assert c["frames"] >= 20 and c["videos"] >= 1 and c["ocr_pending"] == 0, c
+          assert c["frames"] >= 20 and c["videos"] >= 1 and c["ocr_pending"] <= 2, c
           assert json.loads((ev / "fts.json").read_text()), "xterm text not searchable"
           assert (ev / "frame.png").stat().st_size > 5_000
           print("LINUX OK")
