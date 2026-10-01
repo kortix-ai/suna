@@ -155,6 +155,11 @@ function mockApi() {
     if (url.endsWith('/projects/proj_1') && method === 'GET') {
       return json({ project_id: 'proj_1', account_id: 'account_1' });
     }
+    if (url.endsWith('/projects/proj_1/agent-identities') && method === 'GET') {
+      return json({
+        agents: [{ service_account_id: 'sa_reporter', name: 'agent', project_id: 'proj_1', agent_name: 'reporter' }],
+      });
+    }
     if (url.endsWith('/accounts/account_1/members') && method === 'GET') {
       return json([
         { user_id: 'user_1', email: 'user@example.test' },
@@ -1217,6 +1222,26 @@ describe('kortix secrets — who can use a value', () => {
         { principal_type: 'user', principal_id: 'user_2' },
       ],
     });
+  });
+
+  test('share --agent <name> names that agent of THIS project as principal_type agent', async () => {
+    secretItems = [{ identifier: 'NIGHTLY_REPORT_KEY', name: 'NIGHTLY_REPORT_KEY' }];
+    const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'reporter']);
+    expect(code).toBe(0);
+    expect(objectBody(posts()[0]!)).toEqual({
+      name: 'NIGHTLY_REPORT_KEY',
+      identifier: 'NIGHTLY_REPORT_KEY',
+      shared_with: [{ principal_type: 'agent', principal_id: 'sa_reporter' }],
+    });
+    expect(stripAnsi(stdout)).toContain('every session of the agent');
+  });
+
+  test('share --agent with an unknown agent fails without a write', async () => {
+    secretItems = [{ identifier: 'NIGHTLY_REPORT_KEY', name: 'NIGHTLY_REPORT_KEY' }];
+    const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'nobody']);
+    expect(code).toBe(1);
+    expect(posts()).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this project');
   });
 
   test('share refuses --everyone together with people, before any write', async () => {

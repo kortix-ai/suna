@@ -53,6 +53,7 @@ async function session(input: {
   visibility?: 'project' | 'private';
   metadata?: Record<string, unknown>;
   minutesAgo?: number;
+  agentName?: string;
 }) {
   const at = new Date(Date.now() - (input.minutesAgo ?? 1) * 60_000);
   await db.insert(projectSessions).values({
@@ -64,6 +65,7 @@ async function session(input: {
     visibility: input.visibility ?? 'project',
     parentSessionId: input.parent ? sid(input.parent) : null,
     metadata: input.metadata ?? {},
+    ...(input.agentName ? { agentName: input.agentName } : {}),
     createdAt: at,
     updatedAt: at,
   });
@@ -209,7 +211,7 @@ describe('sessionMessageAuthors', () => {
     await session({ id: 'spawned', parent: 'lead', metadata: { name: 'Spawned', initial_prompt: 'go' } });
     await session({ id: 'spawned-no-prompt', parent: 'lead', metadata: { name: 'No prompt' } });
     await session({ id: 'chat' });
-    await session({ id: 'sender', metadata: { custom_name: 'Custom title', name: 'Auto title' } });
+    await session({ id: 'sender', metadata: { custom_name: 'Custom title', name: 'Auto title' }, agentName: 'writer-bot' });
     await prompt({ to: 'chat', actor: AVERY, payload: { clientMessageId: 'a', wireMessageId: 'msg_wire_a' } });
     await prompt({
       to: 'chat',
@@ -245,9 +247,9 @@ describe('sessionMessageAuthors', () => {
     }
   });
 
-  test('a prompt sent by another session names that session, using its custom title first', async () => {
+  test('a prompt sent by another session names that session, using its custom title first, and its agent', async () => {
     const { authors } = await authorsOf('chat');
-    expect(authors.msg_wire_c).toEqual({ kind: 'session' as const, session_id: sid('sender'), name: 'Custom title' });
+    expect(authors.msg_wire_c).toEqual({ kind: 'session' as const, session_id: sid('sender'), name: 'Custom title', agent: 'writer-bot' });
   });
 
   test('rows without a clientMessageId, a deleted user, and a session of another project carry no author', async () => {
@@ -330,6 +332,18 @@ describe('sessionMessageSender', () => {
   beforeAll(async () => {
     await session({ id: 'titled', metadata: { custom_name: 'Renamed', name: 'Auto' } });
     await session({ id: 'untitled' });
+    await session({ id: 'agented', metadata: { name: 'Deploy' }, agentName: 'release-bot' });
+    await session({ id: 'default-agent', metadata: { name: 'Plain' }, agentName: 'default' });
+  });
+
+  test("the column's 'default' placeholder is not an agent name", async () => {
+    expect(await sessionMessageSender(OWNER, sid('default-agent'), PROJECT))
+      .toEqual({ kind: 'session' as const, sessionId: sid('default-agent'), title: 'Plain' });
+  });
+
+  test('a session credential also names the agent the session runs', async () => {
+    expect(await sessionMessageSender(OWNER, sid('agented'), PROJECT))
+      .toEqual({ kind: 'session' as const, sessionId: sid('agented'), title: 'Deploy', agent: 'release-bot' });
   });
 
   test('a session credential speaks as that session, custom title first, else the auto name, else Untitled', async () => {

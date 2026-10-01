@@ -304,6 +304,10 @@ export interface SecretSetupLinkInfo {
     description: string | null;
   }>;
   expires_at: string;
+  /** The person whose session asked for the values, when that is a member of
+   *  the project's account; the form may keep the values to them. Absent on
+   *  older servers and for links an automation minted. */
+  requester?: { label: string | null } | null;
 }
 
 export function getSecretSetupLink(
@@ -347,10 +351,13 @@ export function submitSecretSetupLink(
   token: string,
   values: Record<string, string>,
   options: HostRequestOptions,
+  /** `only_requester`: only the person who asked may use the values (see
+   *  `SecretSetupLinkInfo.requester`). Omitted = everyone in the project. */
+  audience?: { only_requester?: boolean },
 ): Promise<SecretSetupLinkSubmitResult> {
   return requestJson(`/setup-links/secret/${encodeURIComponent(token)}`, options, {
     method: 'POST',
-    body: { values },
+    body: { values, ...(audience?.only_requester ? { only_requester: true } : {}) },
   });
 }
 

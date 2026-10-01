@@ -2,8 +2,8 @@
  * The header the API puts in front of a message that did not come from the
  * session's own person, so the agent knows who is speaking:
  *
- *   [MESSAGE from session <uuid> "Deploy pipeline" — sent by another agent, not by a person. Reply with `kortix send <uuid> "…"`.]
- *   [ASK from session <uuid> "Deploy pipeline" to Alice <alice@example.com> — …]
+ *   [MESSAGE from session <uuid> "Deploy pipeline" (agent kortix) — sent by another agent, not by a person. Reply with `kortix send <uuid> "…"`.]
+ *   [ASK from session <uuid> "Deploy pipeline" (agent kortix) to Alice <alice@example.com> — …]
  *   [MESSAGE from Alice <alice@example.com>]
  *
  *   <message text>
@@ -15,7 +15,7 @@
  */
 
 export type SessionMessageSender =
-  | { kind: 'session'; sessionId: string; title: string }
+  | { kind: 'session'; sessionId: string; title: string; agent?: string }
   | { kind: 'person'; name: string; email: string };
 
 export interface SessionMessagePerson {
@@ -44,9 +44,9 @@ function person(p: SessionMessagePerson): string {
 }
 
 function sender(s: SessionMessageSender): string {
-  return s.kind === 'session'
-    ? `session ${s.sessionId} "${clean(s.title) || 'Untitled'}"`
-    : person(s);
+  if (s.kind === 'person') return person(s);
+  const agent = s.agent && clean(s.agent).replace(/[()]/g, '');
+  return `session ${s.sessionId} "${clean(s.title) || 'Untitled'}"${agent ? ` (agent ${agent})` : ''}`;
 }
 
 export function sessionMessagePromptText(input: SessionMessagePromptInfo): string {
@@ -67,7 +67,7 @@ export function sessionMessagePromptText(input: SessionMessagePromptInfo): strin
 }
 
 const HEAD = /^\[(MESSAGE|ASK) from /;
-const SESSION_SENDER = /^session ([0-9a-f-]{36}) "([^"]*)"/;
+const SESSION_SENDER = /^session ([0-9a-f-]{36}) "([^"]*)"(?: \(agent ([^()]+)\))?/;
 const PERSON = /^([^<\]]*?) <([^>\]]*)>/;
 
 /** The header a prompt carries, or undefined for any other text. Linear time. */
@@ -86,7 +86,7 @@ export function parseSessionMessagePrompt(
   const personMatch = session ? null : PERSON.exec(rest);
   if (!session && !personMatch) return undefined;
   const sender: SessionMessageSender = session
-    ? { kind: 'session', sessionId: session[1]!, title: session[2]! }
+    ? { kind: 'session', sessionId: session[1]!, title: session[2]!, ...(session[3] ? { agent: session[3] } : {}) }
     : { kind: 'person', name: personMatch![1]!.trim(), email: personMatch![2]!.trim() };
   rest = rest.slice((session ?? personMatch)![0].length);
   const to: SessionMessagePerson[] = [];

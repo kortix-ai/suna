@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import Loading from '@/components/ui/loading';
 import type { OutcomeTone } from '@/features/session/outcomes/outcome-types';
 import { outcomeTint } from '@/features/session/outcomes/outcome-vocabulary';
@@ -121,6 +122,9 @@ export function SecretIntakeForm({
   const [info, setInfo] = useState<SecretSetupLinkInfo | null>(null);
   const [expiresIn, setExpiresIn] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
+  // Who can use the values: everyone (the default) or only the person who asked.
+  const [onlyRequester, setOnlyRequester] = useState(false);
+  const tSharing = useTranslations('accessSharing');
   const [error, setError] = useState<string | null>(null);
   const [withheldNotice, setWithheldNotice] = useState<ReturnType<
     typeof describeWithheldSecrets
@@ -171,7 +175,12 @@ export function SecretIntakeForm({
     setPhase('submitting');
     setError(null);
     try {
-      const result = await submitSecretSetupLink(token, filled, { backendUrl: base });
+      const result = await submitSecretSetupLink(
+        token,
+        filled,
+        { backendUrl: base },
+        onlyRequester ? { only_requester: true } : undefined,
+      );
       setWithheldNotice(describeWithheldSecrets(result));
       setPhase('done');
       onDone?.();
@@ -314,6 +323,40 @@ export function SecretIntakeForm({
           </Field>
         ))}
       </FieldGroup>
+
+      {info?.requester ? (
+        <div className="space-y-2">
+          <FieldLabel>{tSharing('whoCanUse')}</FieldLabel>
+          <RadioGroup
+            value={onlyRequester ? 'requester' : 'project'}
+            onValueChange={(next) => setOnlyRequester(next === 'requester')}
+            className="space-y-2"
+          >
+            <RadioGroupItem
+              value="project"
+              id="secret-intake-everyone"
+              label={tSharing('everyone', { project: info.project_name })}
+              description={tSharing('everyoneMeta')}
+              size="lg"
+              variant="outline"
+              disabled={submitting}
+            />
+            <RadioGroupItem
+              value="requester"
+              id="secret-intake-requester"
+              label={
+                info.requester.label
+                  ? tSharing('onlyRequester', { name: info.requester.label })
+                  : tSharing('onlyRequesterUnnamed')
+              }
+              description={tSharing('onlyRequesterDescription')}
+              size="lg"
+              variant="outline"
+              disabled={submitting}
+            />
+          </RadioGroup>
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {error ? (

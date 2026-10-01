@@ -3,7 +3,7 @@ import { and, eq, isNull, or } from 'drizzle-orm';
 import type { SecretConsumer, SecretStrategy } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
-import { filterSecretRowsByAudience, secretAudiencePerson } from '../lib/secret-audience';
+import { filterSecretRowsByAudience, secretAudienceSubject } from '../lib/secret-audience';
 import { decryptProjectSecret } from './envelope';
 import { secretAudienceRank } from './grant-policy';
 
@@ -222,8 +222,8 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
   const reachable = await filterSecretRowsByAudience({
     projectId: input.projectId,
     accountId,
-    personId: () =>
-      secretAudiencePerson({
+    subject: () =>
+      secretAudienceSubject({
         projectId: input.projectId,
         accountId,
         sessionId: input.sessionId,

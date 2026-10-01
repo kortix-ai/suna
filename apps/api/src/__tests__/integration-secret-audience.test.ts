@@ -38,6 +38,8 @@ import { resolveGrantedSecretSelection } from '../projects/secrets/grant-policy'
 import {
   clearSecretAudience,
   secretAudiencePerson,
+  secretAudienceSubject,
+  sessionPersonOnlyPlaintextSecrets,
   setSecretAudience,
 } from '../projects/lib/secret-audience';
 import { db } from '../shared/db';
@@ -55,6 +57,8 @@ const OWNER_TRIGGER = crypto.randomUUID();
 const OWNER_LEGACY = crypto.randomUUID();
 const OWNER_CLEARED = crypto.randomUUID();
 const AGENT_SA = crypto.randomUUID();
+const OTHER_AGENT_SA = crypto.randomUUID();
+const AGENT_TRIGGER = crypto.randomUUID();
 
 async function secretIdOf(identifier: string): Promise<string> {
   const [row] = await db
@@ -75,9 +79,9 @@ const onlyFor = async (identifier: string, principals: Parameters<typeof setSecr
   clearAuthorizeCaches();
 };
 
-/** The env a sandbox would receive for this person, KEY -> value. */
-async function envFor(personId: string | null): Promise<Record<string, string>> {
-  const rows = await listResolvedProjectSecrets(PROJECT, null, personId);
+/** The env a sandbox would receive for this subject, KEY -> value. */
+async function envFor(personId: string | null, agentId: string | null = null): Promise<Record<string, string>> {
+  const rows = await listResolvedProjectSecrets(PROJECT, null, { personId, agentId });
   return resolveGrantedSecretSelection(rows, 'all').env;
 }
 
@@ -118,7 +122,16 @@ beforeAll(async () => {
     serviceAccountId: AGENT_SA, accountId: ACCOUNT, name: `agent-${AGENT_SA}`,
     secretHash: `sa-${AGENT_SA}`, publicPrefix: 'kortix_sa_audience', createdBy: OWNER,
   });
-  for (const sessionId of [OWNER_LEGACY, OWNER_CLEARED]) {
+  // A trigger run of the agent: no person, but its token names the agent.
+  await db.insert(projectSessions).values({
+    sessionId: AGENT_TRIGGER, accountId: ACCOUNT, projectId: PROJECT, branchName: AGENT_TRIGGER,
+    createdBy: OWNER, visibility: 'project', origin: 'trigger',
+  });
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: OTHER_AGENT_SA, accountId: ACCOUNT, name: `agent-${OTHER_AGENT_SA}`,
+    secretHash: `sa-${OTHER_AGENT_SA}`, publicPrefix: 'kortix_sa_audience', createdBy: OWNER,
+  });
+  for (const sessionId of [OWNER_LEGACY, OWNER_CLEARED, AGENT_TRIGGER]) {
     await db.insert(accountTokens).values({
       accountId: ACCOUNT, userId: OWNER, name: 'agent session', projectId: PROJECT, sessionId,
       serviceAccountId: AGENT_SA, onBehalfOfUserId: null,
@@ -171,7 +184,7 @@ describe('secret audience — who may use one value', () => {
     expect((await envFor(null)).MAPS_KEY).toBe('maps-team');
     // An explicit agent grant naming both identifiers is not ambiguous for the
     // owner: the ranks differ.
-    const ownerRows = await listResolvedProjectSecrets(PROJECT, null, OWNER);
+    const ownerRows = await listResolvedProjectSecrets(PROJECT, null, { personId: OWNER, agentId: null });
     expect(resolveGrantedSecretSelection(ownerRows, ['MAPS_KEY', 'MAPS_KEY-owner']).env.MAPS_KEY).toBe('maps-owner');
   });
 
@@ -186,6 +199,40 @@ describe('secret audience — who may use one value', () => {
   test('a token minted before on_behalf_of existed resolves by the mint rule; a cleared one stays nobody', async () => {
     expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_LEGACY })).toBe(OWNER);
     expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_CLEARED })).toBeNull();
+  });
+
+  test('shared with an AGENT: every session of that agent gets it, a trigger included; another agent and a person do not', async () => {
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'NIGHTLY_KEY', value: 'nightly-agent' });
+    await onlyFor('NIGHTLY_KEY', [{ principal_type: 'agent', principal_id: AGENT_SA }]);
+    expect((await envFor(null, AGENT_SA)).NIGHTLY_KEY).toBe('nightly-agent');
+    expect((await envFor(OWNER, OTHER_AGENT_SA)).NIGHTLY_KEY).toBeUndefined();
+    expect((await envFor(OWNER)).NIGHTLY_KEY).toBeUndefined();
+    const trigger = await secretAudienceSubject({ projectId: PROJECT, sessionId: AGENT_TRIGGER });
+    expect(trigger).toEqual({ personId: null, agentId: AGENT_SA });
+    expect((await envFor(trigger.personId, trigger.agentId)).NIGHTLY_KEY).toBe('nightly-agent');
+  });
+
+  test('one KEY, three values: the person value beats the agent value beats the team value', async () => {
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'RANKED_KEY', value: 'ranked-team' });
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'RANKED_KEY', identifier: 'RANKED_KEY-agent', value: 'ranked-agent' });
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'RANKED_KEY', identifier: 'RANKED_KEY-owner', value: 'ranked-owner' });
+    await onlyFor('RANKED_KEY-agent', [{ principal_type: 'agent', principal_id: AGENT_SA }]);
+    await onlyFor('RANKED_KEY-owner', [{ principal_type: 'user', principal_id: OWNER }]);
+    expect((await envFor(OWNER, AGENT_SA)).RANKED_KEY).toBe('ranked-owner');
+    expect((await envFor(null, AGENT_SA)).RANKED_KEY).toBe('ranked-agent');
+    expect((await envFor(TEAMMATE, OTHER_AGENT_SA)).RANKED_KEY).toBe('ranked-team');
+  });
+
+  test('share guard: a person-only PLAINTEXT value blocks sharing; agent-shared and server-side values do not', async () => {
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'OWNER_ENV_KEY', value: 'owner-env' });
+    await onlyFor('OWNER_ENV_KEY', [{ principal_type: 'user', principal_id: OWNER }]);
+    const held = await sessionPersonOnlyPlaintextSecrets({ accountId: ACCOUNT, projectId: PROJECT, sessionId: OWNER_LEGACY });
+    expect(held).toContain('OWNER_ENV_KEY');
+    expect(held).toContain('RANKED_KEY-owner');
+    expect(held).not.toContain('NIGHTLY_KEY'); // reached through the agent
+    expect(held).not.toContain('PAYROLL_API_TOKEN'); // server-side, re-checked per call
+    // A session with no person (a trigger) holds no person-only value.
+    expect(await sessionPersonOnlyPlaintextSecrets({ accountId: ACCOUNT, projectId: PROJECT, sessionId: AGENT_TRIGGER })).toEqual([]);
   });
 
   test('connector credential narrowed to the owner: spent only for the owner, directly or in their private session', async () => {

@@ -10,7 +10,13 @@ import {
   resolveSecretDelivery,
 } from '../secrets/strategy';
 import { db } from '../shared/db';
-import { filterSecretRowsByAudience, secretAudiencePerson } from './lib/secret-audience';
+import {
+  filterSecretRowsByAudience,
+  NO_SUBJECT,
+  secretAudienceSubject,
+  type SecretAudienceSubject,
+  type SecretReach,
+} from './lib/secret-audience';
 import {
   type SecretCapabilityCatalog,
   buildSecretCapabilities,
@@ -35,13 +41,17 @@ export async function writeSharedProjectSecret(input: {
   value: string;
   scope?: 'runtime' | 'connector';
   createdBy?: string | null;
-}): Promise<void> {
+  /** Id for a NEW row (its audience may already be written under it). An
+   *  existing row keeps its own id. */
+  secretId?: string;
+}): Promise<string> {
   const now = new Date();
   const identifier = input.identifier ?? input.name;
   const serverSide = input.scope === 'connector';
-  await db
+  const [row] = await db
     .insert(projectSecrets)
     .values({
+      ...(input.secretId ? { secretId: input.secretId } : {}),
       projectId: input.projectId,
       identifier,
       name: input.name,
@@ -69,7 +79,9 @@ export async function writeSharedProjectSecret(input: {
           : {}),
         updatedAt: now,
       },
-    });
+    })
+    .returning({ secretId: projectSecrets.secretId });
+  return row!.secretId;
 }
 
 /** Lock a legacy runtime secret to the server-side connector boundary. */
@@ -111,7 +123,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
   // No person here: a value narrowed to an audience is never included.
   const rows = await filterSecretRowsByAudience({
     projectId,
-    personId: null,
+    subject: NO_SUBJECT,
     rows: await db
       .select({
         secretId: projectSecrets.secretId,
@@ -161,9 +173,10 @@ export interface ResolvedProjectSecret {
   consumer?: SecretConsumer | null;
   egressPolicy?: SecretEgressPolicy | null;
   handlePrefix?: string | null;
-  /** `in` = the value is narrowed and shared with this session's person; it
-   *  wins over an `open` value of the same KEY (`secret-audience.ts`). */
-  audience?: 'in' | 'open';
+  /** How the value reaches this session (`secret-audience.ts`): through its
+   *  `person`, through its `agent`, or `open` to everyone. Ranks in that order
+   *  among values of the same KEY. */
+  audience?: SecretReach;
 }
 
 /**
@@ -173,14 +186,14 @@ export interface ResolvedProjectSecret {
  * rows are never included. `userId` may be null for contexts with no acting
  * human (e.g. a webhook-triggered session) — only shared rows apply then.
  *
- * `audiencePersonId` decides which NARROWED shared values are included: only
- * those whose audience names that person (`secret-audience.ts`). Null — the
- * default — keeps only values shared with everyone.
+ * `subject` decides which NARROWED shared values are included: only those
+ * whose audience names its person or its agent (`secret-audience.ts`). The
+ * default, nobody, keeps only values shared with everyone.
  */
 export async function listResolvedProjectSecrets(
   projectId: string,
   userId: string | null,
-  audiencePersonId: string | null | (() => Promise<string | null>) = null,
+  subject: SecretAudienceSubject | (() => Promise<SecretAudienceSubject>) = NO_SUBJECT,
 ): Promise<ResolvedProjectSecret[]> {
   const rows = await db
     .select({
@@ -209,7 +222,7 @@ export async function listResolvedProjectSecrets(
 
   const reachable = await filterSecretRowsByAudience({
     projectId,
-    personId: audiencePersonId,
+    subject,
     rows,
   });
   type Row = (typeof reachable)[number];
@@ -517,7 +530,7 @@ export async function listProjectSecretsSnapshotForUser(
   const rows = await listResolvedProjectSecrets(
     projectId,
     userId,
-    sessionId ? () => secretAudiencePerson({ projectId, sessionId }) : null,
+    sessionId ? () => secretAudienceSubject({ projectId, sessionId }) : NO_SUBJECT,
   );
   const boundConnectorIdentifiers = new Set(
     (await connectorRead)
@@ -567,7 +580,7 @@ export async function getProjectSecretValue(
   // No person here: a value narrowed to an audience is never returned.
   const rows = await filterSecretRowsByAudience({
     projectId,
-    personId: null,
+    subject: NO_SUBJECT,
     rows: await db
       .select({
         secretId: projectSecrets.secretId,
