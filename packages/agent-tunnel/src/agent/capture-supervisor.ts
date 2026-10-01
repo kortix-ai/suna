@@ -76,7 +76,8 @@ export function startCaptureSupervisor(options: CaptureSupervisorOptions): { sto
       }
       logFd = openSync(logFile, 'a', 0o600);
       child = spawn(options.bin, ['record'], {
-        env: { ...env, KORTIX_CAPTURE_DIR: captureDir, AGENT_TUNNEL_HOME: options.home },
+        // The recorder exits by itself when this pid disappears (no orphan after a SIGKILL).
+        env: { ...env, KORTIX_CAPTURE_DIR: captureDir, AGENT_TUNNEL_HOME: options.home, KORTIX_CAPTURE_PARENT_PID: String(process.pid) },
         stdio: ['ignore', logFd, logFd],
         windowsHide: true,
       });
