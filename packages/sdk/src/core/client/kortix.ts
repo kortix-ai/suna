@@ -111,4 +111,3 @@ export type Kortix = ReturnType<typeof createKortix>;
 export type ProjectHandle = ReturnType<Kortix['project']>;
 /** The id-bound session handle returned by `kortix.session(pid, sid)`. */
 export type SessionHandle = ReturnType<Kortix['session']>;
-
