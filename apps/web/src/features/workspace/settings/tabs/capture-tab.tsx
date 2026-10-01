@@ -306,7 +306,7 @@ function YourDataSection() {
         confirmLabel={t('deleteCaptures')}
         onConfirm={() => remove.mutate()}
         isPending={remove.isPending}
-        destructive
+        confirmVariant="destructive"
       />
     </section>
   );

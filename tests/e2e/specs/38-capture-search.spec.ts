@@ -49,7 +49,10 @@ test.describe("38 — Kortix Capture: settings, search and replay", () => {
         body: JSON.stringify({ machineHostname: "e2e-capture.local" }),
       });
       expect(createdRes.status).toBe(201);
-      const created = (await createdRes.json()) as { deviceCode: string; deviceSecret: string };
+      const created = (await createdRes.json()) as {
+        deviceCode: string;
+        deviceSecret: string;
+      };
       const approved = await api<{ tunnelId: string }>(
         token,
         "POST",
@@ -68,18 +71,29 @@ test.describe("38 — Kortix Capture: settings, search and replay", () => {
       };
       await fetch(`${apiBase}/capture/agent/config`, { headers: machine });
 
-      await installBrowserSessionDirect(page, session, "/settings/capture", authOptions);
+      await installBrowserSessionDirect(
+        page,
+        session,
+        "/settings/capture",
+        authOptions,
+      );
 
       await test.step("The owner switches Kortix Capture on and the account stores it", async () => {
         const toggle = page.getByRole("switch", { name: "Kortix Capture" });
         await expect(toggle).toBeVisible({ timeout: 90_000 });
         const put = page.waitForRequest(
-          (r) => r.method() === "PUT" && r.url().endsWith(`/accounts/${accountId}/capture/settings`),
+          (r) =>
+            r.method() === "PUT" &&
+            r.url().endsWith(`/accounts/${accountId}/capture/settings`),
         );
         await toggle.click();
         expect((await put).postDataJSON()).toEqual({ enabled: true });
         await expect(toggle).toBeChecked();
-        const stored = await api<{ enabled: boolean }>(token, "GET", `/accounts/${accountId}/capture/settings`);
+        const stored = await api<{ enabled: boolean }>(
+          token,
+          "GET",
+          `/accounts/${accountId}/capture/settings`,
+        );
         expect(stored.enabled).toBe(true);
       });
 
@@ -87,16 +101,19 @@ test.describe("38 — Kortix Capture: settings, search and replay", () => {
         const toggle = page.getByRole("switch", { name: "Record E2E laptop" });
         await expect(toggle).toBeVisible({ timeout: 30_000 });
         const put = page.waitForRequest(
-          (r) => r.method() === "PUT" && /\/capture\/devices\/[0-9a-f-]+$/.test(r.url()),
+          (r) =>
+            r.method() === "PUT" &&
+            /\/capture\/devices\/[0-9a-f-]+$/.test(r.url()),
         );
         await toggle.click();
         expect((await put).postDataJSON()).toEqual({ enabled: true });
-        const { devices } = await api<{ devices: Array<{ enabled: boolean; account_id: string }> }>(
-          token,
-          "GET",
-          "/capture/devices",
-        );
-        expect(devices[0]).toMatchObject({ enabled: true, account_id: accountId });
+        const { devices } = await api<{
+          devices: Array<{ enabled: boolean; account_id: string }>;
+        }>(token, "GET", "/capture/devices");
+        expect(devices[0]).toMatchObject({
+          enabled: true,
+          account_id: accountId,
+        });
       });
 
       await test.step("The machine uploads one chunk of two frames", async () => {
@@ -119,36 +136,69 @@ test.describe("38 — Kortix Capture: settings, search and replay", () => {
               video_sha256: await sha256Hex(video),
             }),
           })
-        ).json()) as { chunk_id: string; upload: { url: string; headers: Record<string, string> } };
-        const put = await fetch(reg.upload.url, { method: "PUT", headers: reg.upload.headers, body: video });
-        expect(put.ok).toBe(true);
-        const commit = await fetch(`${apiBase}/capture/agent/chunks/${reg.chunk_id}/commit`, {
-          method: "POST",
-          headers: machine,
-          body: JSON.stringify({
-            frames: [
-              { frame_index: 0, ts: iso(0), app_name: "Mail", window_title: "Inbox", text: `invoice ${phrase} total` },
-              { frame_index: 1, ts: iso(1), app_name: "Terminal", window_title: "deploy", text: "rollout failed" },
-            ],
-          }),
+        ).json()) as {
+          chunk_id: string;
+          upload: { url: string; headers: Record<string, string> };
+        };
+        const put = await fetch(reg.upload.url, {
+          method: "PUT",
+          headers: reg.upload.headers,
+          body: video,
         });
+        expect(put.ok).toBe(true);
+        const commit = await fetch(
+          `${apiBase}/capture/agent/chunks/${reg.chunk_id}/commit`,
+          {
+            method: "POST",
+            headers: machine,
+            body: JSON.stringify({
+              frames: [
+                {
+                  frame_index: 0,
+                  ts: iso(0),
+                  app_name: "Mail",
+                  window_title: "Inbox",
+                  text: `invoice ${phrase} total`,
+                },
+                {
+                  frame_index: 1,
+                  ts: iso(1),
+                  app_name: "Terminal",
+                  window_title: "deploy",
+                  text: "rollout failed",
+                },
+              ],
+            }),
+          },
+        );
         expect(commit.status).toBe(200);
       });
 
       await test.step("Search finds the frame and the player steps through the chunk", async () => {
         await page.goto("/capture", { timeout: 120_000 });
-        await page.getByRole("searchbox", { name: "Search captures" }).fill(phrase);
+        await page
+          .getByRole("searchbox", { name: "Search captures" })
+          .fill(phrase);
         await page.getByRole("button", { name: "Search", exact: true }).click();
         const result = page.getByTestId("capture-result");
         await expect(result).toHaveCount(1, { timeout: 30_000 });
         await expect(result).toContainText("Inbox");
         await expect(result.locator("b")).toHaveText(phrase);
         await result.click();
-        await expect(page.getByTestId("capture-frame-position")).toHaveText("Frame 1 of 2", { timeout: 30_000 });
-        await expect(page.getByTestId("capture-frame")).toContainText(`invoice ${phrase} total`);
+        await expect(page.getByTestId("capture-frame-position")).toHaveText(
+          "Frame 1 of 2",
+          { timeout: 30_000 },
+        );
+        await expect(page.getByTestId("capture-frame")).toContainText(
+          `invoice ${phrase} total`,
+        );
         await page.getByRole("button", { name: "Next frame" }).click();
-        await expect(page.getByTestId("capture-frame-position")).toHaveText("Frame 2 of 2");
-        await expect(page.getByTestId("capture-frame")).toContainText("rollout failed");
+        await expect(page.getByTestId("capture-frame-position")).toHaveText(
+          "Frame 2 of 2",
+        );
+        await expect(page.getByTestId("capture-frame")).toContainText(
+          "rollout failed",
+        );
       });
     } finally {
       const rows = await queryDatabaseRows<{ account_id: string }>(
@@ -156,9 +206,10 @@ test.describe("38 — Kortix Capture: settings, search and replay", () => {
         [user.id],
       ).catch(() => []);
       for (const row of rows) {
-        await runDatabaseSql("delete from kortix.accounts where account_id = $1::uuid", [
-          row.account_id,
-        ]).catch(() => {});
+        await runDatabaseSql(
+          "delete from kortix.accounts where account_id = $1::uuid",
+          [row.account_id],
+        ).catch(() => {});
       }
       await deleteAuthUser(user.id, authOptions);
     }
@@ -167,5 +218,7 @@ test.describe("38 — Kortix Capture: settings, search and replay", () => {
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 }
