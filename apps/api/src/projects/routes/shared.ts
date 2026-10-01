@@ -14,6 +14,11 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, json } from '../../openapi';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
+import {
+  claimRetiredEphemeralRow,
+  isRetiredEphemeralRow,
+  recordedSessionStateVolume,
+} from '../../platform/services/ephemeral-sandbox';
 import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
 import { configReleasesEnabled } from '../../config-releases/enabled';
@@ -317,6 +322,8 @@ export async function resumeStoppedSandbox(
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
       // a no-op — no opencode restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');
+      // Drives attached, detached or granted while the box slept.
+      void import('../../drives/service').then(({ reconcileSessionDrives }) => reconcileSessionDrives(row.sessionId));
       return true;
     },
     fail: async (reason) => {
@@ -440,6 +447,8 @@ export async function allocateRuntimeOnOpen(
   },
   projectId: string,
   sessionId: string,
+  /** Extra keys for the new sandbox row (an ephemeral wake carries its create attempt). */
+  extraRuntimeMetadata?: Record<string, unknown>,
 ): Promise<void> {
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
@@ -447,7 +456,7 @@ export async function allocateRuntimeOnOpen(
   await transitionSession('provision', sessionId, { error: null });
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
-  const runtimeMetadata = { opened_at: new Date().toISOString() };
+  const runtimeMetadata = { opened_at: new Date().toISOString(), ...(extraRuntimeMetadata ?? {}) };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
 
@@ -877,6 +886,7 @@ export function sessionStartFailureFromSandbox(
     rawCategory === 'unsupported-secret-delivery' ||
     rawCategory === 'invalid-secret-boundary-policy' ||
     rawCategory === 'snapshot-too-large' ||
+    rawCategory === 'drives-unavailable' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';
@@ -1216,6 +1226,55 @@ async function runOpenSession(args: {
       ),
     )
     .limit(1);
+
+  // Ephemeral sandboxes: a stop deleted the box and left its state on the
+  // session volume. Waking is a fresh box from the current image with that
+  // volume mounted. The claim is an atomic delete of the retired row, so of
+  // concurrent polls exactly one allocates; the rest report provisioning.
+  // An ephemeral box that parked after its runtime failed to start (or to
+  // wake) is not worth waking again: its state is on the volume, so retire it
+  // and let the branch below boot a fresh one.
+  if (
+    row &&
+    row.status === 'stopped' &&
+    row.externalId &&
+    recordedSessionStateVolume(row.metadata) &&
+    ['runtime_boot_failed', 'runtime_wake_failed'].includes(String(sandboxMetadata(row).stopReason ?? '')) &&
+    !runtimeWakeInProgress(sandboxMetadata(row), log.observedAt)
+  ) {
+    const { retireEphemeralOnStop } = await import('../reaping/stop-box');
+    const retired = await retireEphemeralOnStop({
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      externalId: row.externalId,
+      stopReason: sandboxMetadata(row).stopReason as StopReason,
+      now: new Date(),
+      metadata: { retiredAfterFailedStart: true },
+    });
+    if (retired === 'retired') {
+      const [fresh] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, row.sandboxId)).limit(1);
+      if (fresh) row = fresh;
+    }
+  }
+
+  if (row && isRetiredEphemeralRow(row)) {
+    const claim = sandboxCallbackUnreachableReason() ? null : await claimRetiredEphemeralRow(row.sandboxId);
+    if (claim) {
+      await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId, {
+        platinumCreateAttempt: claim.nextCreateAttempt,
+        ephemeralWakeAt: new Date().toISOString(),
+      });
+      log.did('provisioned');
+    }
+    return {
+      stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'ephemeral_wake',
+    };
+  }
 
   // Gate browser polling before any provider call. A live wake coalesces behind
   // its durable claim. A failed wake returns one terminal cooldown payload.

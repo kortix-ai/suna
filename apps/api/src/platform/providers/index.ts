@@ -113,6 +113,17 @@ export interface CreateSandboxOpts {
   };
   /** Ports that the provider must make reachable through resolveIngress(). */
   publishedPorts?: number[];
+  /**
+   * Volumes mounted at create, keyed by guest mount path: the session's
+   * drives. Platinum only; every other provider ignores it.
+   */
+  volumes?: Record<string, { volume: string; read_only?: boolean }>;
+  /**
+   * An ephemeral session box: its state lives on a session volume and a stop
+   * deletes the box. (A create refused over any `volumes` always fails: a
+   * session never boots without its drives or its state.)
+   */
+  volumesRequired?: boolean;
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {

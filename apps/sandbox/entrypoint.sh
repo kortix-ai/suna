@@ -54,6 +54,239 @@ if [ "${HOME:-/}" = "/" ]; then
 fi
 
 WORKSPACE="${KORTIX_WORKSPACE:-/workspace}"
+
+# ---------------------------------------------------------------------------
+# Kortix Drive ownership.
+#
+# Drive volumes mount root:root, and files the Kortix web app writes into a
+# drive arrive root-owned (0644 files, 0755 folders). The runtime user must be
+# able to change them without sudo. A small root helper follows every
+# read-write mount under /drives (drives can be attached at any time) and
+# hands each new or changed entry to the runtime user. Read-only mounts are
+# left alone. It never blocks the boot: a failure leaves drives root-owned,
+# exactly as before.
+# ---------------------------------------------------------------------------
+start_drive_owner() {
+  local py=/home/kortix/.local/bin/python3
+  [ -x "${py}" ] || py=$(command -v python3 || true)
+  [ -n "${py}" ] || return 0
+  local as_root=()
+  [ "$(id -u)" -eq 0 ] || as_root=(sudo -n)
+  "${as_root[@]}" setsid -f "${py}" - >/tmp/kortix-drive-owner.log 2>&1 <<'KORTIX_DRIVE_OWNER_PY'
+"""Keep every writable Kortix Drive mount owned by the sandbox runtime user.
+
+Drive volumes come up root:root, and every file the Kortix web app writes into
+a drive lands root-owned (0644 files, 0755 folders). The agent runs as the
+runtime user without sudo in its normal flow, so without this it could not
+change an uploaded file or write into an uploaded folder.
+
+Runs as root, started by the entrypoint. Every few seconds it looks for
+read-write mounts under /drives (a drive can be attached at any time), fixes
+ownership once, then follows the mount with inotify and fixes each new or
+changed entry as it appears. Read-only mounts are left alone. stdlib only.
+"""
+
+import ctypes
+import os
+import pwd
+import struct
+import sys
+import time
+
+ROOT = "/drives"
+USER = os.environ.get("KORTIX_DRIVE_OWNER", "kortix")
+IN_ATTRIB, IN_MOVED_TO, IN_CREATE = 0x4, 0x80, 0x100
+IN_DELETE_SELF, IN_UNMOUNT, IN_IGNORED, IN_ISDIR, IN_Q_OVERFLOW = 0x400, 0x2000, 0x8000, 0x40000000, 0x4000
+MASK = IN_ATTRIB | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF
+SKIP = {"lost+found"}
+
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+pw = pwd.getpwnam(USER)
+UID, GID = pw.pw_uid, pw.pw_gid
+
+
+def own(path):
+    try:
+        st = os.lstat(path)
+        if st.st_uid != UID or st.st_gid != GID:
+            os.lchown(path, UID, GID)
+    except OSError:
+        pass
+
+
+def rw_mounts():
+    out = []
+    with open("/proc/mounts") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            mnt = parts[1].replace("\\040", " ")
+            if mnt.startswith(ROOT + "/") and "rw" in parts[3].split(","):
+                out.append(mnt)
+    return out
+
+
+class Watcher:
+    def __init__(self):
+        self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+        if self.fd < 0:
+            raise OSError(ctypes.get_errno(), "inotify_init1")
+        self.paths = {}  # wd -> dir
+        self.mounts = set()
+
+    def add_tree(self, top):
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames[:] = [d for d in dirnames if not (dirpath == top and d in SKIP)]
+            own(dirpath)
+            for name in filenames:
+                own(os.path.join(dirpath, name))
+            wd = libc.inotify_add_watch(self.fd, dirpath.encode(), MASK)
+            if wd >= 0:
+                self.paths[wd] = dirpath
+
+    def sync_mounts(self):
+        live = set(rw_mounts())
+        for mnt in sorted(live - self.mounts):
+            self.add_tree(mnt)
+        self.mounts = live
+
+    def drain(self):
+        try:
+            buf = os.read(self.fd, 1 << 16)
+        except BlockingIOError:
+            return
+        i = 0
+        while i + 16 <= len(buf):
+            wd, mask, _cookie, length = struct.unpack_from("iIII", buf, i)
+            name = buf[i + 16 : i + 16 + length].split(b"\0", 1)[0].decode(errors="surrogateescape")
+            i += 16 + length
+            if mask & IN_Q_OVERFLOW:
+                # Missed events: walk every mount again.
+                self.mounts = set()
+                continue
+            if mask & (IN_IGNORED | IN_UNMOUNT | IN_DELETE_SELF):
+                self.paths.pop(wd, None)
+                continue
+            base = self.paths.get(wd)
+            if not base:
+                continue
+            path = os.path.join(base, name) if name else base
+            if mask & IN_ISDIR and mask & (IN_CREATE | IN_MOVED_TO):
+                self.add_tree(path)
+            else:
+                own(path)
+
+
+def main():
+    w = Watcher()
+    last = 0.0
+    while True:
+        now = time.monotonic()
+        if now - last >= 3:
+            try:
+                w.sync_mounts()
+            except Exception as err:  # never die: the next pass retries
+                print(f"drive-owner: {err}", file=sys.stderr, flush=True)
+            last = now
+        w.drain()
+        time.sleep(0.2)
+
+
+if __name__ == "__main__":
+    main()
+KORTIX_DRIVE_OWNER_PY
+}
+start_drive_owner || true
+
+# ---------------------------------------------------------------------------
+# Session state on a volume (ephemeral sandboxes).
+#
+# When KORTIX_PERSIST_ROOT is set, this box is disposable: the session's
+# durable state lives on a Platinum volume mounted at that path, and the box
+# itself is deleted when the session stops. The next wake creates a new box
+# from the newest image and mounts the same volume here.
+#
+# Package and tool caches (~/.cache, the pnpm store, ~/.npm) stay on the image
+# disk: they are rebuildable, large (about 2 GB baked in), and would be uploaded
+# on every commit. A session's installed dependencies live in /workspace.
+#
+# Each persisted directory is a bind mount from the volume onto its usual
+# path, so nothing downstream (git, OpenCode, the daemon's pins) learns a new
+# location. A directory the volume does not have yet is seeded from the image
+# first, so a brand-new session keeps the image's warm paths (the baked
+# checkout, the migrated OpenCode database).
+#
+# The volume's mount point arrives from the platform agent, possibly after this
+# script starts. Running on the image disk instead would silently throw away
+# everything the session writes, so a mount that never shows up stops the boot.
+# ---------------------------------------------------------------------------
+kortix_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+}
+
+mount_session_state() {
+  local root="$1" wait_s="${KORTIX_PERSIST_WAIT_S:-120}" start now
+  start=$(date +%s)
+  until mountpoint -q "${root}"; do
+    now=$(date +%s)
+    if [ $((now - start)) -ge "${wait_s}" ]; then
+      echo "[entrypoint] session volume never mounted at ${root} (${wait_s}s)" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+  echo "[entrypoint] session volume mounted at ${root} after $(( $(date +%s) - start ))s" >&2
+  local uid gid
+  uid=$(id -u kortix) gid=$(id -g kortix)
+  # A fresh volume's root is root:root 0755; the runtime user must own it.
+  kortix_as_root chown "${uid}:${gid}" "${root}" || return 1
+  local home=/home/kortix spec name dst src
+  for spec in \
+    "workspace:${WORKSPACE}" \
+    "opencode-data:${home}/.local/share/opencode" \
+    "opencode-state:${home}/.local/state/opencode" \
+    "kortix-state:${home}/.local/state/kortix"; do
+    name="${spec%%:*}" dst="${spec#*:}" src="${root}/${name}"
+    if mountpoint -q "${dst}" 2>/dev/null; then continue; fi
+    kortix_as_root mkdir -p "${dst}" || return 1
+    kortix_as_root chown "${uid}:${gid}" "${dst}" || return 1
+    if [ ! -d "${src}" ]; then
+      rm -rf "${src}.seed"
+      mkdir -p "${src}.seed" || return 1
+      cp -a "${dst}/." "${src}.seed/" 2>/dev/null \
+        || kortix_as_root cp -a "${dst}/." "${src}.seed/" || return 1
+      kortix_as_root chown -R "${uid}:${gid}" "${src}.seed" || return 1
+      mv "${src}.seed" "${src}" || return 1
+    fi
+    kortix_as_root mount --bind "${src}" "${dst}" || return 1
+  done
+  # Headroom: a session that filled its volume would otherwise never boot
+  # again, because OpenCode and the daemon write their state here before the
+  # agent can answer. A reserve file (allocated, never written, so it costs no
+  # upload) is released at boot when the volume is nearly full and recreated
+  # once there is room again.
+  local reserve="${root}/.kortix-reserve" reserve_mb=256 free_mb
+  free_mb=$(( $(df -Pk "${root}" | awk 'NR==2 {print $4}') / 1024 ))
+  if [ -f "${reserve}" ] && [ "${free_mb}" -lt 64 ]; then
+    rm -f "${reserve}"
+    echo "[entrypoint] session volume is full (${free_mb} MB free); released the ${reserve_mb} MB reserve" >&2
+  elif [ ! -f "${reserve}" ] && [ "${free_mb}" -gt $(( reserve_mb * 4 )) ]; then
+    fallocate -l "${reserve_mb}M" "${reserve}" 2>/dev/null || rm -f "${reserve}"
+  fi
+  # auth.json is materialized from project secrets at every OpenCode spawn. A
+  # copy left by the previous box must not outlive a rotated secret.
+  rm -f "${home}/.local/share/opencode/auth.json"
+  echo "[entrypoint] session state bound from ${root} in $(( $(date +%s) - start ))s" >&2
+}
+
+if [ -n "${KORTIX_PERSIST_ROOT:-}" ]; then
+  if ! mount_session_state "${KORTIX_PERSIST_ROOT}"; then
+    echo "[entrypoint] session state is not on its volume; refusing to boot on the image disk" >&2
+    exit 1
+  fi
+fi
+
 DEADLINE_S=120
 # Require 2 consecutive clean probes at a tight 0.25s cadence (~0.5s on the
 # common path where the dir is stable immediately) instead of 4×0.5s=2s. The

@@ -213,7 +213,19 @@ type PlatinumExecResponse = {
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
-  return / -> 404\b/.test(message);
+  // A 404 about a volume in the create body is not a missing template.
+  return / -> 404\b/.test(message) && !isVolumeRejection(error);
+}
+
+/**
+ * Platinum refused a create because of its `volumes` (a volume it cannot
+ * find, no host that can mount volumes, a mount limit): a definite refusal,
+ * so no box exists, and the same body can never succeed.
+ */
+function isVolumeRejection(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const match = / -> (4\d\d|503)\b([\s\S]*)$/.exec(message);
+  return !!match && /volume|mount/i.test(match[2] ?? '');
 }
 
 function isMissingSandboxError(error: unknown): boolean {
@@ -438,6 +450,15 @@ export class PlatinumProvider implements SandboxProvider {
     if (dedup) {
       createBody.name = dedup.name;
     }
+    if (opts.volumes && Object.keys(opts.volumes).length > 0) {
+      createBody.volumes = opts.volumes;
+    }
+    if (opts.volumesRequired) {
+      // An ephemeral session box: its state lives on the session volume and a
+      // stop deletes the box, so Platinum's periodic whole-box backup only
+      // uploads a disposable disk (and holds up the delete while it runs).
+      createBody.backup_interval_min = 0;
+    }
     const createBodyJson = JSON.stringify(createBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
@@ -461,6 +482,15 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      // A full fleet stays a capacity error (retried, "try again in a minute").
+      if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(String((err as Error)?.message ?? err))) {
+        // Mounts a session cannot run without (its drives, its state): fail
+        // loudly, never boot without them.
+        const reason = (err instanceof Error ? err.message : String(err)).replace(/^[\s\S]*? -> /, '').slice(0, 300);
+        throw new Error(
+          `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+        );
+      }
       if (!dedup || !isNameTakenConflict(err)) throw err;
       // See isNameTakenConflict + the module doc: the name is exclusively
       // ours, so this can only be our own prior commit under this same
