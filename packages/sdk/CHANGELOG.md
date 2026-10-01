@@ -6,6 +6,27 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `configureKortix({ eventStreamTransport })`: how the live event stream's bytes
+  arrive, for a host whose `fetch` cannot stream a response body. The SDK calls
+  it once per connection with `{ url, headers, signal }` (auth headers
+  included); it yields `{ data?, id?, retry? }` messages, returns when the
+  server ends the stream and throws when the connection fails. Reconnect,
+  `Last-Event-ID` resume, backoff, heartbeat and coalescing stay in the SDK.
+  Types: `RuntimeEventTransport`, `RuntimeEventMessage`.
+- `notifyHostSignal('visible' | 'online' | 'retry')`: a host without
+  `visibilitychange`/`online` events (React Native) reports the same facts.
+  The SDK re-reads the transcript tail, revives a parked stream, and opens a
+  fresh connection (`visible`/`online` only after 60 s without a frame;
+  `retry` always). Type: `HostSignal`.
+- `subscribeRuntimeStream(listener)` (`@kortix/sdk/react`): observe the live
+  stream for host side effects. Signals: `{ type: 'event', event }` after the
+  SDK applied the event, and `connecting`, `open`, `lost`, `parked`, `closed`.
+  Type: `RuntimeStreamSignal`.
+- `openEventStream({ onConnectionChange })`: `connecting`, `open` (first frame
+  of an attempt), `lost`. Type: `EventStreamConnectionState`.
+- `sessionModelPin(session)`: the `provider/model` a session is pinned to, or
+  null. `setProjectSessionModel` sends the pin as `model` and keeps the pre-W4
+  `opencode_model` key for an older API.
 - `isRuntimeNotReadyResponse(error)`: true for the daemon's 503 while the
   session runtime cannot take a request, on both harnesses. It matches the
   `code: "runtime_not_ready"` a current daemon sends and the two `error` texts
