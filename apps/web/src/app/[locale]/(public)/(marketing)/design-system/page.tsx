@@ -1406,11 +1406,11 @@ export default function BrandPage() {
                 </div>
 
                 <div className="mb-8">
-                  <p className="text-muted-foreground mb-1 text-xs">Accents and status</p>
+                  <p className="text-muted-foreground mb-1 text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.text809a706ff256')}
+                  </p>
                   <p className="text-muted-foreground mb-3 max-w-xl text-xs">
-                    The only hues in product UI. They paint glyphs, dots, tints and charts. The
-                    label beside them stays foreground or muted-foreground, because every accent
-                    fails AA as body text on white. Idle has no hue: muted-foreground.
+                    {tI18nHardcoded.raw('i18nComplete.text5ed8e8176c1d')}
                   </p>
                   <div className="border-border rounded-md border px-4">
                     {ACCENTS.map((a) => (
@@ -1427,9 +1427,11 @@ export default function BrandPage() {
                 </div>
 
                 <div>
-                  <p className="text-muted-foreground mb-1 text-xs">Chart ramp</p>
+                  <p className="text-muted-foreground mb-1 text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.text1b730c5151b5')}
+                  </p>
                   <p className="text-muted-foreground mb-3 max-w-xl text-xs">
-                    Data visualization only. Read it through var(--chart-n), not a utility.
+                    {tI18nHardcoded.raw('i18nComplete.text7ac77b03cfd2')}
                   </p>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                     {CHART_TOKENS.map((token) => (
@@ -1637,11 +1639,11 @@ export default function BrandPage() {
                     {tI18nHardcoded.raw('i18nComplete.text707eab0c23ec')}
                   </ComponentLabel>
                   <ComponentDesc>
-                    10 variants, 8 sizes. Buttons are <code className="bg-muted rounded-sm px-1 font-mono text-xs">rounded-md</code>.
-                    Panels, cards and rows are rounded-md too; floating panels are rounded-lg;
-                    rounded-2xl is marketing only. The{' '}
-                    <code className="bg-muted rounded-sm px-1 font-mono text-xs">destructive</code>{' '}
-                    variant is reserved for the one irreversible confirm.
+                    {tI18nHardcoded.rich('i18nComplete.textf25fe860a82d', {
+                      code: (chunks) => (
+                        <code className="bg-muted rounded-sm px-1 font-mono text-xs">{chunks}</code>
+                      ),
+                    })}
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
@@ -3567,9 +3569,11 @@ export default function BrandPage() {
 
                 {/* ── Banned ── */}
                 <div id="pat-banned" className="mb-12">
-                  <ComponentLabel>Banned patterns</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textc94e8cb68cba')}
+                  </ComponentLabel>
                   <ComponentDesc>
-                    These ship in the code base but the brand kit bans them. Do not add a new use.
+                    {tI18nHardcoded.raw('i18nComplete.text9bb4af3b0beb')}
                   </ComponentDesc>
                   <DemoContainer className="p-0">
                     {BANNED_PATTERNS.map((b) => (
@@ -3581,7 +3585,10 @@ export default function BrandPage() {
                         <div className="min-w-0 text-sm">
                           <code className="text-foreground font-mono text-xs">{b.name}</code>
                           <p className="text-muted-foreground mt-0.5 text-xs">
-                            {b.why} Use {b.instead}.
+                            {tI18nHardcoded('i18nComplete.text1aff73a5df45', {
+                              why: b.why,
+                              instead: b.instead,
+                            })}
                           </p>
                         </div>
                       </div>
