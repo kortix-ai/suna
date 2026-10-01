@@ -55,6 +55,12 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // Conversations with people (`POST /sessions` `participants`). The member
+  // grants, the "Asked you" sidebar and the sender header read these; a client
+  // value would add itself to a conversation or silence one.
+  'participants',
+  'awaiting_reply',
+  'awaiting_reply_from',
 ] as const;
 
 /**

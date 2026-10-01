@@ -499,3 +499,22 @@ describe('createSlashSuggestion — a picked file becomes a file mention', () =>
     expect(selected).toEqual([]);
   });
 });
+
+
+test('slash controller navigates both directions, selects with Tab and releases rows on exit', () => {
+  const selected: SlashRow[] = [];
+  const owns: boolean[] = [];
+  const { onStart, onKeyDown, onExit } = createSlashSuggestion({
+    getCommands: () => [], onOwnsEnterChange: (value) => owns.push(value),
+  }).render!();
+  withStubDocument(() => onStart!(fakeStartProps('', (row) => selected.push(row))));
+  expect(onKeyDown!(fakeKeyDown('ArrowDown'))).toBe(true);
+  expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(true);
+  expect(selected[0].index).toBe(1);
+  expect(onKeyDown!(fakeKeyDown('ArrowUp'))).toBe(true);
+  expect(onKeyDown!(fakeKeyDown('Enter'))).toBe(true);
+  expect(selected[1].index).toBe(0);
+  onExit!({} as Parameters<NonNullable<typeof onExit>>[0]);
+  expect(owns.at(-1)).toBe(false);
+  expect(onKeyDown!(fakeKeyDown('Tab'))).toBe(false);
+});

@@ -438,13 +438,18 @@ const TOOLS = [
   },
   {
     name: 'send_message',
-    title: 'Send a message to a session',
+    title: 'Send a message to a session or to people',
     description:
-      "Send a message to a session's agent. It waits in the session's inbox until the current turn ends, and a stopped session is started. Read the reply with read_session and wait_seconds.",
+      "Send a message to a session's agent (session_id), or to people (to + project_id). A session message waits in the session's inbox until the current turn ends, and a stopped session is started; read the reply with read_session and wait_seconds. Messaging people opens a new session whose first message is yours, shared with them; its agent runs when one of them replies. Several addresses make a group chat. Find people with kortix ['access','ls']. Needs the project's human_messaging feature flag.",
     inputSchema: {
       type: 'object',
-      properties: { session_id: SESSION_ID, text: { type: 'string', description: 'The message.' } },
-      required: ['session_id', 'text'],
+      properties: {
+        session_id: SESSION_ID,
+        to: { type: 'array', items: { type: 'string' }, description: 'Email addresses of project members, instead of session_id.' },
+        project_id: { ...PROJECT_ID, description: 'The project to open the conversation in. Required with `to`.' },
+        text: { type: 'string', description: 'The message.' },
+      },
+      required: ['text'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
@@ -767,6 +772,14 @@ async function runTool(ctx: ToolContext, name: string, input: Record<string, unk
       );
     }
     case 'send_message': {
+      if (Array.isArray(input.to)) {
+        const r = await callApi(ctx, 'POST', `/v1/projects/${projectArg(input)}/sessions`, {
+          body: { participants: input.to, initial_prompt: arg(input, 'text') },
+        });
+        if (r.status >= 400) return apiResult(r);
+        const session = JSON.parse(r.body);
+        return text(JSON.stringify({ session_id: session.session_id, project_id: session.project_id, name: session.name ?? null, to: input.to }, null, 2));
+      }
       const sessionId = arg(input, 'session_id');
       const message = arg(input, 'text');
       const path = await sessionPath(sessionId);

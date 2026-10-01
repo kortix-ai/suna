@@ -7,6 +7,7 @@
  */
 
 import { isAbortError, isTextPart, splitUserParts } from '@kortix/sdk';
+import { parseSessionMessagePrompt } from '@kortix/shared';
 import type { TextPart } from '@/lib/opencode/types';
 import {
   fileTagBlocks,
@@ -239,7 +240,9 @@ export function parseUserMessageParts(parts: Parameters<typeof splitUserParts>[0
       )
       .map((p) => (p as TextPart).text)
       .join('\n');
-    const content = parseUserMessageText(rawText);
+    // A message from another session or a person in a group chat opens with a
+    // platform header for the agent; the bubble never shows it.
+    const content = parseUserMessageText(parseSessionMessagePrompt(rawText)?.prompt ?? rawText);
     const attachments: MessageAttachment[] = [
       ...content.files.map((f, i) => ({
         key: `upload:${i}:${f.path}`,

@@ -131,6 +131,11 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
+            name: 'send',
+            args: '<session-id|email>... "<text>"',
+            blurb: 'Message a session\'s agent, or ask people by email (needs human_messaging)',
+          },
+          {
             name: 'tui',
             args: '[options]',
             blurb: 'Experimental: the whole Kortix product as a terminal app (alias: kortix t)',
