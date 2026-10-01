@@ -25,7 +25,8 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
 import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
-import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
+import { sessionRuntimeFetch } from './runtime-fetch';
+import { legacyRuntimePaths } from './legacy-runtime-rest';
 import { reachedPlacement, strandedPlacement, type PlacementTipMessage } from './forwarded-placement';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -106,7 +107,6 @@ export async function cancelForwardedPrompt(
     logger.warn('[cancel-forwarded] endpoint unresolved', { session_id: sessionId, prompt_id: promptId });
     return { outcome: 'unreachable' };
   }
-  const base = `/session/${encodeURIComponent(resolved.opencodeSessionId)}`;
 
   let tip: PlacementTipMessage[] | null;
   try {
@@ -144,7 +144,7 @@ export async function cancelForwardedPrompt(
         const res = await sessionRuntimeFetch(
           resolved.endpoint,
           'DELETE',
-          `${base}/message/${encodeURIComponent(message.id)}/part/${encodeURIComponent(partId)}?directory=${encodeURIComponent(WORKSPACE)}`,
+          legacyRuntimePaths.part(resolved.opencodeSessionId, message.id, partId),
         );
         if (!res.ok && res.status !== 404) {
           logger.warn('[cancel-forwarded] part delete refused', {

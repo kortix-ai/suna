@@ -2,7 +2,7 @@ import type {
   Event as OpenCodeSdkEvent,
   PermissionRequest,
   QuestionRequest,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 import type { QueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
 import { useSyncStore } from '../../browser/stores/sync-store';

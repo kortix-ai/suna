@@ -33,6 +33,8 @@ const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh',
 export interface CatalogModel {
   name?: string
   reasoning?: boolean
+  /** False when the model refuses a non-default temperature. */
+  temperature?: boolean
   attachment?: boolean
   limit?: { context?: number; input?: number; output?: number }
   variants?: Record<string, unknown>

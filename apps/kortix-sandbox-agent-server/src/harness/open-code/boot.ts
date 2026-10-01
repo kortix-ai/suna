@@ -1,3 +1,4 @@
+import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
 import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession } from './initial-session'
 import { relayInitialTurnAcceptedToApi, claimInitialTurnFromApi, reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
 import { getClaimedInitialTurn } from './initial-turn-claim'
@@ -58,12 +59,7 @@ import {
 } from '@/services/runtime-assets/runtime-assets'
 import { wireRuntimeTruth } from './runtime-truth-glue'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
-import {
-  flattenOpencodeError,
-  type PermissionRequest,
-  type QuestionRequest,
-  type OpencodeTurnError,
-} from './events'
+import { flattenOpencodeError, type OpencodeTurnError } from './events'
 import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-projection'
@@ -723,14 +719,14 @@ async function startSessionRuntime(
       })
     }
   }
-  const onQuestionAsked = (req: QuestionRequest) => {
+  const onQuestionAsked = (req: RuntimeQuestionRequest) => {
     void relayQuestionToApi(req, cfg, opencode).catch((err) =>
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
   // Report only: apps/api pushes "needs your approval". The permission itself
-  // stays open for the user (shared/permission-relay.ts).
-  const onPermissionAsked = (req: PermissionRequest) => {
+  // stays open for the user (shared/turn-relay.ts `relayPermission`).
+  const onPermissionAsked = (req: RuntimePermissionRequest) => {
     void relayPermission(req).catch((err) =>
       logger.warn('[opencode-events] permission relay failed', { err: (err as Error).message }),
     )
@@ -822,7 +818,7 @@ async function startSessionRuntime(
   let initialTurnAcceptanceInFlight = false
   const reconcileInitialTurnAcceptance = async () => {
     if (initialTurnAcceptanceSettled || initialTurnAcceptanceInFlight) return
-    const opencodeSessionId = bootState.initialOpenCodeSessionId
+    const opencodeSessionId = bootState.initialRuntimeSessionId
     const turnToken = getClaimedInitialTurn()?.turnToken
     const messageId = getClaimedInitialTurn()?.messageId
     if (!opencodeSessionId || !turnToken || !messageId) return
@@ -879,7 +875,7 @@ async function startSessionRuntime(
     onReconcile: onConnected,
   }
   let loopStarted = false
-  if (bootState.initialOpenCodeSessionRequired) {
+  if (bootState.initialRuntimeSessionRequired) {
     // Start the /event loop before resolving the root and delivering the prompt.
     // Do not await the response headers: OpenCode can withhold them until the
     // first event, which makes an await here deadlock with prompt delivery. The
@@ -890,11 +886,11 @@ async function startSessionRuntime(
       // `maybeCreateInitialOpencodeSession` (direct call above, or via
       // `attemptInitialSession` under the retry ladder below) already wrote
       // the id onto `bootState` before this runs — see the `if
-      // (bootState.initialOpenCodeSessionId)` / `established()` guards at
+      // (bootState.initialRuntimeSessionId)` / `established()` guards at
       // both call sites. Re-applying it through the pure helper is what
-      // clears a poisoned `initialOpenCodeSessionError` from an earlier
+      // clears a poisoned `initialRuntimeSessionError` from an earlier
       // failed attempt; see `finalizeInitialSession`.
-      finalizeInitialSession(bootState, bootState.initialOpenCodeSessionId as string)
+      finalizeInitialSession(bootState, bootState.initialRuntimeSessionId as string)
       await reconcileInitialTurnAcceptance()
       bootMark('initial-turn-accepted')
       opencode.markReady()
@@ -912,11 +908,11 @@ async function startSessionRuntime(
         bootMark,
         markOpencodeListening,
       ).catch((err) => {
-        bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+        bootState.initialRuntimeSessionError = err instanceof Error ? err.message : String(err)
         logger.warn('[boot] initial opencode session setup failed', err)
       })
     await attemptInitialSession()
-    if (bootState.initialOpenCodeSessionId) {
+    if (bootState.initialRuntimeSessionId) {
       await completeInitialSessionBoot()
       return
     }
@@ -930,7 +926,7 @@ async function startSessionRuntime(
     // loop fallback below) proceeds and the box stays observable meanwhile.
     void retryUntilInitialSessionEstablished({
       attempt: attemptInitialSession,
-      established: () => bootState.initialOpenCodeSessionId !== null,
+      established: () => bootState.initialRuntimeSessionId !== null,
       finalize: completeInitialSessionBoot,
     })
   }

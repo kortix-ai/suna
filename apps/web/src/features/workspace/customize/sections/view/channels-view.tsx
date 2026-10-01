@@ -490,10 +490,7 @@ function ChannelBindingTableRow({
   // shows "Project default" beside a channel that has an explicit pin.
   const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
   const selectedModel = binding.opencodeModel
-    ? storedModelRefToKey(
-        stripOpencodeNamespace(binding.opencodeModel),
-        llmGatewayFlag.enabled === true,
-      )
+    ? storedModelRefToKey(binding.opencodeModel, llmGatewayFlag.enabled === true)
     : null;
 
   const update = useUpdateChannelBinding();

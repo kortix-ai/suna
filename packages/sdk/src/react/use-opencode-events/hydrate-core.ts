@@ -1,4 +1,4 @@
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../../core/runtime/runtime-types';
 import type { useQueryClient } from '@tanstack/react-query';
 import type { reconcileSessionTail as reconcileSessionTailFromRegistry } from '../../browser/session-sync/session-sync-registry';
 import type { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';

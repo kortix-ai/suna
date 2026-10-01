@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Project, Path as PathInfo } from '@opencode-ai/sdk/v2/client';
+import type { Project, Path as PathInfo } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
 

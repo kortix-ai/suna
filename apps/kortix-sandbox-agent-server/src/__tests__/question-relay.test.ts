@@ -75,8 +75,8 @@ const REQUEST = {
   id: 'que_1',
   sessionID: 'ses_root',
   questions: [
-    { question: 'Which branch?', header: 'Branch', options: [{ value: 'main' }] },
-    { question: 'Ship it?', header: 'Ship', options: [{ value: 'yes' }, { value: 'no' }] },
+    { question: 'Which branch?', header: 'Branch', options: [{ label: 'main', description: '' }] },
+    { question: 'Ship it?', header: 'Ship', options: [{ label: 'yes', description: '' }, { label: 'no', description: '' }] },
   ],
 }
 
