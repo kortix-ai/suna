@@ -44,6 +44,7 @@ import type { RailItem } from '@/features/workspace/settings/type';
 export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'profile',
   'security',
+  'capture',
   'appearance',
   'sessions',
   'preferences',
@@ -111,6 +112,8 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
     'workspace general settings name rename title icon emoji glyph avatar picture logo archive delete danger zone repo git repository github clone branch remote',
   profile: 'profile name email avatar personal you account display organizations',
   security: 'security two-factor 2fa mfa totp authenticator factor devices sign out sessions',
+  capture:
+    'capture screen recording record computer search timeline retention history memory',
   appearance:
     'appearance theme color mode dark light wallpaper shader shaders background density conversation',
   sessions: 'sessions sounds audio volume notification notifications sound effects mute alerts',

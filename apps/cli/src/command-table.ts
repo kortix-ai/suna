@@ -2,8 +2,6 @@ export interface Command {
   name: string;
   args?: string;
   blurb: string;
-  /** Project feature flag that gates this command; hidden inside a sandbox while it is off. */
-  feature?: string;
 }
 
 export interface CommandSection {
@@ -133,12 +131,6 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
-            name: 'send',
-            args: '<session-id|email>... "<text>"',
-            blurb: 'Message a session\'s agent, or ask people by email (needs human_messaging)',
-            feature: 'human_messaging',
-          },
-          {
             name: 'tui',
             args: '[options]',
             blurb: 'Experimental: the whole Kortix product as a terminal app (alias: kortix t)',
@@ -246,6 +238,11 @@ export const TIERS: readonly CommandTier[] = [
             name: 'reminders',
             args: '<subcommand>',
             blurb: 'Re-prompt one session later or on repeat (kortix remind "…" --in 24h)',
+          },
+          {
+            name: 'capture',
+            args: '<subcommand>',
+            blurb: "Search the screen history of the person you act for (search, timeline, frame)",
           },
         ],
       },

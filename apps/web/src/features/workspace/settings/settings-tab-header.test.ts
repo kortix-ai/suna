@@ -75,6 +75,7 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
   'profile-tab.tsx': 'profile',
   'sandbox-tab.tsx': 'sandbox',
   'security-tab.tsx': 'security',
+  'capture-tab.tsx': 'capture',
   'sessions-tab.tsx': 'sessions',
   'tokens-tab.tsx': 'tokens',
 };

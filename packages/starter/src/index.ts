@@ -55,6 +55,7 @@ export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge
 export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-cli',
   'kortix-apps',
+  'kortix-capture',
   'kortix-computer',
   'kortix-connectors',
   'kortix-harness-refinement',
@@ -81,39 +82,6 @@ export interface StarterVars {
   /** Starter kit. Defaults to `general-knowledge-worker`.
    *  `minimal` is an internal base-only build. */
   template?: StarterTemplateId;
-  /** Feature flags that are ON. Flag blocks of any other flag are dropped. */
-  flags?: readonly string[];
-}
-
-/**
- * Template text may wrap whole lines in `<!-- flag:NAME -->` ...
- * `<!-- /flag:NAME -->` marker lines. Flag on: the marker lines go, the body
- * stays. Flag off (or unknown): marker lines and body go. Blocks do not nest.
- */
-export function applyFlagBlocks(content: string, flags: readonly string[] = []): string {
-  const on = new Set(flags);
-  const out: string[] = [];
-  let skipping = false;
-  let dropBlankAfter = false;
-  for (const line of content.split('\n')) {
-    const marker = /^<!-- (\/?)flag:([\w-]+) -->\r?$/.exec(line);
-    if (marker) {
-      if (marker[1]) {
-        skipping = false;
-        dropBlankAfter = true;
-      } else if (!on.has(marker[2]!)) skipping = true;
-      continue;
-    }
-    if (skipping) continue;
-    // A removed block between two blank lines must not leave a double blank.
-    if (dropBlankAfter && line.trim() === '' && (out.length === 0 || out[out.length - 1]!.trim() === '')) {
-      dropBlankAfter = false;
-      continue;
-    }
-    dropBlankAfter = false;
-    out.push(line);
-  }
-  return out.join('\n');
 }
 
 /** Absolute path to the bundled base template directory. */
@@ -194,7 +162,6 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
     projectName: vars.projectName,
     repoFullName: vars.repoFullName ?? 'your-org/your-repo',
     template: normalizeStarterTemplateId(vars.template),
-    flags: vars.flags ?? [],
   };
 
   // Later roots win (`byPath.set`), so the general-knowledge-worker layer may
@@ -210,7 +177,7 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
   const byPath = new Map<string, StarterFile>();
   for (const root of roots) {
     for (const raw of rawFilesForRoot(root.name, root.dir)) {
-      byPath.set(raw.path, { path: raw.path, content: applyFlagBlocks(interpolate(raw.content, resolvedVars), resolvedVars.flags) });
+      byPath.set(raw.path, { path: raw.path, content: interpolate(raw.content, resolvedVars) });
     }
   }
 
@@ -234,10 +201,10 @@ export function getStarterFiles(vars: StarterVars): StarterFile[] {
  * the visible front door to this family, so a fresh repo still shows the one
  * skill that explains how to reach all the others.
  */
-export function getManagedSkillFiles(opts: { flags?: readonly string[] } = {}): StarterFile[] {
-  return rawFilesForRoot('managed', MANAGED_TEMPLATE_DIR)
-    .map((f) => ({ path: f.path, content: applyFlagBlocks(f.content, opts.flags) }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+export function getManagedSkillFiles(): StarterFile[] {
+  return rawFilesForRoot('managed', MANAGED_TEMPLATE_DIR).sort((a, b) =>
+    a.path.localeCompare(b.path),
+  );
 }
 
 /**

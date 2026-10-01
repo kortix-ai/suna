@@ -80,8 +80,6 @@ export interface SessionListFilter {
   q?: string | null;
   /** The session carries every one of these labels (exact match). */
   labels?: string[] | null;
-  /** 'me' = conversations the viewer was asked into (`metadata.participants`). */
-  participant?: 'me' | null;
 }
 
 type SessionTable = typeof projectSessions;
@@ -143,9 +141,6 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
   if (filter.parent === 'root') conditions.push(isNull(t.parentSessionId));
   else if (filter.parent) conditions.push(eq(t.parentSessionId, filter.parent));
   if (filter.startedBy) conditions.push(startedBySql(filter.startedBy, viewerId));
-  if (filter.participant === 'me') {
-    conditions.push(sql`${t.metadata}->'participants' @> ${JSON.stringify([viewerId])}::jsonb`);
-  }
   if (filter.labels?.length) {
     const has = (table: SessionTable) => sql`${table.labels} @> ${JSON.stringify(filter.labels)}::jsonb`;
     conditions.push(
@@ -249,13 +244,12 @@ export async function loadProjectSessionInventory(input: {
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.participant
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
             filter.q ?? null,
             ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
-            ...(filter.participant ? [`participant:${filter.participant}`] : []),
           ])
         : undefined,
   };
@@ -464,7 +458,7 @@ export async function loadProjectSessionInventory(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.participant;
+  const appendAncestors = !filter.parent && !filter.labels?.length;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(

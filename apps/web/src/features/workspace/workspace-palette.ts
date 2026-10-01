@@ -199,10 +199,8 @@ export function filterWorkspacePaletteRows(
  *   found nothing and the switcher was only reachable by first selecting a row
  *   called "Projects". That two-step is the whole complaint this change
  *   answers;
- * - the ACTIVE workspace is dropped. It is the one row that cannot do
- *   anything: selecting it re-navigates to the page you are on. It also
- *   matches its own name better than anything else does, so leaving it in
- *   means the top hit for the workspace you are in is a no-op.
+ * - the ACTIVE workspace stays searchable. Creating a workspace opens it,
+ *   and selecting its name must still offer a route to its home page.
  *
  * Empty for an empty query — root with no query shows recents, which is a
  * different list with a different heading.
@@ -213,17 +211,14 @@ export function rootWorkspaceResults(
   limit: number = ROOT_WORKSPACE_RESULT_LIMIT,
 ): WorkspacePaletteRow[] {
   if (!query.trim()) return [];
-  return filterWorkspacePaletteRows(rows, query)
-    .filter((row) => !row.isActive)
-    .slice(0, limit);
+  return filterWorkspacePaletteRows(rows, query).slice(0, limit);
 }
 
 /**
  * The rows the dedicated Switch Workspace page renders, capped.
  *
- * Keeps the active workspace, unlike {@link rootWorkspaceResults} — this page
- * is the directory, and a directory that omits where you are makes you doubt
- * it. The component marks that row with a check instead.
+ * Keeps the active workspace, as does {@link rootWorkspaceResults}. The
+ * component marks that row with a check on this directory page.
  */
 export function workspacePageResults(
   rows: WorkspacePaletteRow[],
