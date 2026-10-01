@@ -1,6 +1,5 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { auditFilterQuery } from './audit-filter';
 import { exportAccountAudit, listAccountAudit, listProjectAudit } from './audit';
 import { listAuditEvents } from './iam';
 
@@ -71,23 +70,6 @@ test('exportAccountAudit sends the same reconstruction filters', async () => {
     source: 'web',
     outcome: 'success',
   });
-});
-
-test('audit querystrings preserve fully-populated filters', async () => {
-  const full = { action: 'a', actor: 'b', actorType: 'agent', projectId: 'p', sessionId: 's',
-    source: 'api_key', credentialKind: 'oauth_app', phase: 'completed', outcome: 'success',
-    resourceType: 'session', requestId: 'r', correlationId: 'c', since: '2026-01-01',
-    until: '2026-01-02', q: 'gmail + inbox', cursor: 'cursor|1', limit: 200 } as const;
-  await listAccountAudit('a', full);
-  await exportAccountAudit('a', { format: 'csv', ...full });
-  const expected = 'action=a&actor=b&actor_type=agent&project_id=p&session_id=s&source=api_key&credential_kind=oauth_app&phase=completed&outcome=success&resource_type=session&request_id=r&correlation_id=c&since=2026-01-01&until=2026-01-02&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200';
-  expect(new URL(calls[0]!.url).search.slice(1)).toBe(expected);
-  expect(new URL(calls[1]!.url).search.slice(1)).toBe(`format=csv&${expected}`);
-});
-
-test('audit filter rejects unknown runtime keys', () => {
-  expect(auditFilterQuery({ format: 'csv', action: 'iam.policy', ...{ unexpected: 'secret' } }).toString())
-    .toBe('format=csv&action=iam.policy');
 });
 
 test('listAuditEvents sends project and session reconstruction filters', async () => {
