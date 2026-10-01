@@ -4,8 +4,9 @@
 // testable (no config/db/openapi bootstrap); `accounts/audit.ts` re-exports
 // it. What you see in the viewer is exactly what export gives you.
 //
-// Index-backed where it matters: idx_audit_events_actor_time (actor + since)
-// and idx_audit_events_resource (resource_type).
+// Index-backed where it matters: idx_audit_events_actor_time (actor + since).
+// `resource_type` has no index: it is matched with LIKE 'x%' under an account
+// predicate, and the account_time index serves that.
 
 import { auditEvents } from '@kortix/db';
 import { type SQL, eq, gte, ilike, like, lte, or, sql } from 'drizzle-orm';
