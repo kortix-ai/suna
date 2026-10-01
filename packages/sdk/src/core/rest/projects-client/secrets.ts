@@ -1,7 +1,7 @@
 // Secrets — project/shared + personal secret overrides, provider OAuth, git creds.
 
 import { backendApi } from '../../http/api-client';
-import type { ConnectionShare, ConnectionSharePrincipal } from './connectors';
+import type { ConnectionShare } from './connectors';
 import { type ConnectorSharing, type ProjectGitConnection, unwrap } from './shared';
 
 export type SecretDeliveryStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
@@ -61,9 +61,10 @@ export interface SecretBrokerResponse {
  * references and the UI shows. `name` (the KEY) is NOT unique — multiple
  * identifiers may share one (e.g. GMAPS-primary / GMAPS-backup, both
  * GOOGLE_MAPS_API_KEY). Which AGENT may receive a secret is the agent grant
- * (by identifier). Which PEOPLE may use its shared value is its audience
- * (`shared_with`): everyone in the project by default, or specific people and
- * groups — then only directly, or in their own private sessions.
+ * (by identifier). Which principals may use its shared value is its audience
+ * (`shared_with`): everyone in the project by default, or specific people,
+ * groups and agents. A person reaches a narrowed value directly or in their
+ * own private sessions; an agent in every one of its sessions.
  */
 export interface ProjectSecret {
   /** Unique per project. The handle an agent's `secrets` grant references. */
@@ -119,6 +120,15 @@ export interface ProjectSecret {
   /** False when the value is shared with specific people and the caller is not
    *  one of them. Absent on older servers. */
   usable?: boolean;
+}
+
+/** One principal a secret value is shared with. `agent`: `principal_id` is the
+ *  agent's service account (`listAgentIdentities`) — every session of that
+ *  agent, triggers included, may use the value, so anyone who may run the
+ *  agent can use it through the agent. */
+export interface SecretSharePrincipal {
+  principal_type: 'user' | 'group' | 'agent';
+  principal_id: string;
 }
 
 export interface ProjectSecretsResponse {
@@ -183,10 +193,10 @@ export async function upsertProjectSecret(
     handle_prefix?: string;
     /** Omit to leave an existing secret's value untouched (e.g. a no-op touch). */
     value?: string;
-    /** Who can use the shared value: people and groups. `[]` = everyone in the
-     *  project. Omit to leave it unchanged. A person sets it; an agent session
-     *  gets 403. */
-    shared_with?: ConnectionSharePrincipal[];
+    /** Who can use the shared value: people, groups and agents. `[]` =
+     *  everyone in the project. Omit to leave it unchanged. A person sets it;
+     *  an agent session gets 403. */
+    shared_with?: SecretSharePrincipal[];
   },
 ) {
   return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));

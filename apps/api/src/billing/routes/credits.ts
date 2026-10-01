@@ -1,3 +1,4 @@
+import { debitAndCheckAutoTopup } from '../services/wallet-debits';
 import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import type { AppEnv } from '../../types';
@@ -61,7 +62,7 @@ creditsRouter.openapi(
       return c.json({ success: true, cost: 0, new_balance: 0 });
     }
 
-    const result = await wallet.debit({
+    const result = await debitAndCheckAutoTopup({
       accountId,
       amount: cost,
       description: `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
@@ -107,7 +108,7 @@ creditsRouter.openapi(
       return c.json({ success: true, cost: 0, new_balance: 0 });
     }
 
-    const result = await wallet.debit({
+    const result = await debitAndCheckAutoTopup({
       accountId,
       amount: body.amount,
       description: body.description || `Agent run usage: $${body.amount.toFixed(4)}`,

@@ -54,6 +54,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PendingInteractions`, `RuntimeVerbs`, `RuntimeResult`,
   `RuntimeRequestOptions`, `RuntimeEventStreamOptions`.
 - `openEventStream({ url })`: stream a runtime by its URL.
+- `TeamsInstallation` gains optional `appVersion` (the Teams app version the
+  org catalog serves, or `null` when no publish recorded it),
+  `latestAppVersion` (the version the server publishes), and
+  `appUpdateAvailable` (the org catalog serves an older app, or one with no
+  recorded version, so a Teams admin should publish the update). Absent on
+  older servers.
 - Computers are connector accounts. `addComputerToProject(projectId,
   { tunnelId, share })` (`POST /projects/:id/computers`), the facade's
   `project(id).connectors.connections.addComputer`, and

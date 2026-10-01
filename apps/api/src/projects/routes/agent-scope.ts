@@ -39,6 +39,8 @@ import { db } from '../../shared/db';
 import { isValidIdentifier } from '../secrets';
 import { commitManifest, loadManifestForEdit } from '../lib/triggers';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
+import { listAgentServiceAccounts } from '../../repositories/service-accounts';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
@@ -389,5 +391,58 @@ projectsApp.openapi(
       already_granted: false,
       adopted_governance: applied.adoptedGovernance,
     });
+  },
+);
+
+// GET /v1/projects/:projectId/agent-identities
+// This project's agents as principals — each agent's auto-provisioned service
+// account — for a "Who can use it" picker (a secret value, a connector
+// account). Project read: an agent's id and name, which every agent row already
+// shows. The account-wide `/accounts/:id/iam/agent-identities` stays admin-only
+// (`policy.read`) because it spans every project.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/agent-identities',
+    tags: ['agents'],
+    summary: "List this project's agent identities (service accounts)",
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          agents: z.array(
+            z.object({
+              service_account_id: z.string(),
+              name: z.string(),
+              project_id: z.string().nullable(),
+              agent_name: z.string().nullable(),
+            }),
+          ),
+        }),
+        "The project's agent identities",
+      ),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const byKey = new Map<string, AgentIdentity>();
+    for (const row of await listAgentServiceAccounts(loaded.row.accountId)) {
+      if (row.projectId !== projectId) continue;
+      byKey.set(`${row.projectId}|${row.agentName}`, {
+        service_account_id: row.serviceAccountId,
+        name: row.name,
+        project_id: row.projectId,
+        agent_name: row.agentName,
+      });
+    }
+    await eagerlyProvisionAgentIdentities(loaded.row.accountId, [loaded.row], byKey);
+    const agents = [...byKey.values()]
+      .filter((agent) => agent.project_id === projectId)
+      .sort((a, b) => (a.agent_name ?? '').localeCompare(b.agent_name ?? ''));
+    return c.json({ agents });
   },
 );

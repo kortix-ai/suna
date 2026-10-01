@@ -502,7 +502,7 @@ export interface ObjectGrantRow {
   projectId: string;
   /** Legacy wire vocabulary: `member` | `group`, plus `project` (everyone with
    *  access to the project; `principalId` is the project id). */
-  principalType: 'member' | 'group' | 'project';
+  principalType: 'member' | 'group' | 'project' | 'service_account';
   principalId: string;
   resourceType: string;
   resourceId: string;
@@ -517,6 +517,10 @@ export async function objectGrantRows(filter: {
   projectId?: string;
   projectIds?: string[];
   includeExpired?: boolean;
+  /** Also return `service_account` holders — an agent named in a secret's or a
+   *  connector account's audience. Off by default: every other reader lists
+   *  only people, groups and the project. */
+  includeServiceAccounts?: boolean;
 }): Promise<ObjectGrantRow[]> {
   if (filter.projectIds && filter.projectIds.length === 0) return [];
   const clauses = [eq(roleAssignments.scopeType, 'project'), isNotNull(roleAssignments.objectType)];
@@ -529,14 +533,19 @@ export async function objectGrantRows(filter: {
   for (const r of rows) {
     if (!r.objectType || !r.objectId || !r.scopeId) continue;
     // A human, a group, or everyone in the project holds an object grant.
-    if (r.principalType !== 'user' && r.principalType !== 'group' && r.principalType !== 'project') {
+    if (
+      r.principalType !== 'user' &&
+      r.principalType !== 'group' &&
+      r.principalType !== 'project' &&
+      !(filter.includeServiceAccounts && r.principalType === 'service_account')
+    ) {
       continue;
     }
     out.push({
       grantId: r.assignmentId,
       accountId: r.accountId,
       projectId: r.scopeId,
-      principalType: r.principalType === 'user' ? 'member' : r.principalType,
+      principalType: (r.principalType === 'user' ? 'member' : r.principalType) as ObjectGrantRow['principalType'],
       principalId: r.principalId,
       resourceType: r.objectType,
       resourceId: r.objectId,

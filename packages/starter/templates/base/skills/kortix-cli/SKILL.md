@@ -57,10 +57,13 @@ kortix sessions new --json --wait --with-file data.csv --prompt "…"   # files 
 kortix sessions wait-for <id> --timeout 300     # block until the agent finishes (0=done, 3=blocked on an ask, 124=timeout) — never sleep-poll
 kortix sessions pending <id>                    # see what a blocked agent is asking; answer with approve/answer
 kortix sessions cp <id>:out/result.pdf .        # pull deliverables; also local→session and session→session, -r for dirs
+<!-- flag:human_messaging -->
 kortix send <session-id> "…"                    # message another session's agent (queued; wakes it)
 kortix send <email> "<self-contained question>" # ask a person (find emails: kortix access ls); needs flag human_messaging
+<!-- /flag:human_messaging -->
 ```
 
+<!-- flag:human_messaging -->
 Asking a person: the people and the new conversation's agent cannot read your
 session, so put all context in the text. One ask per decision, never spam. The
 answer arrives later as a `[MESSAGE from session <id> …]` prompt: end your turn
@@ -69,6 +72,7 @@ you are the agent in a conversation with people: help them answer, then reply
 `kortix send <id> "…"`. Reply to any `[MESSAGE from session <id> …]` the same way.
 In a group chat, `[MESSAGE from Name <email>]` names the speaker: address people by name.
 `kortix sessions ls --asked` lists conversations you were asked into.
+<!-- /flag:human_messaging -->
 
 ## Labels and metadata (classify sessions)
 

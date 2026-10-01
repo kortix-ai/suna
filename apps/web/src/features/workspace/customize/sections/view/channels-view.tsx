@@ -256,6 +256,9 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
               ) : null}
               <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
             </ul>
+            {teamsInstall?.appUpdateAvailable ? (
+              <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
+            ) : null}
           </section>
 
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
@@ -711,6 +714,32 @@ function TeamsPublishBadge({
   }
 }
 
+/**
+ * The org catalog serves an older Kortix app than this deployment publishes.
+ * On 1.0.0 (no permission to read channel messages) every thread read in a
+ * team fails. Two people fix it, in order: a Teams admin publishes the update
+ * (the Teams row's button), then a team owner accepts it in each team where
+ * Teams offers it. Teams never installs an update that adds a permission or a
+ * message action on its own, and that second step is the one nobody guesses,
+ * so the notice names it. The server decides when to show it.
+ */
+function TeamsAppUpdateNotice({
+  install,
+  tI18nComplete,
+}: {
+  install: TeamsInstallation;
+  tI18nComplete: UiTranslator;
+}) {
+  const latest = install.latestAppVersion ?? '';
+  return (
+    <InfoBanner tone="warning" title={tI18nComplete.raw('text80043b03898d')}>
+      {install.appVersion
+        ? tI18nComplete('textdf757dbe33eb', { value0: install.appVersion, value1: latest })
+        : tI18nComplete('textcd2c4b26eedd', { value0: latest })}
+    </InfoBanner>
+  );
+}
+
 function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: install } = useTeamsInstall(projectId);
@@ -731,7 +760,9 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
   const retryLabel =
     install?.publishState === 'failed'
       ? tI18nComplete.raw('text942087cc2d41')
-      : tI18nComplete.raw('text8ccfe10f2f2d');
+      : install?.appUpdateAvailable
+        ? tI18nComplete.raw('texte15f213fa506')
+        : tI18nComplete.raw('text8ccfe10f2f2d');
   // The Graph reason, verbatim, under the row: a tooltip on the badge is not
   // discoverable enough for the one line that says what to fix.
   const detail =

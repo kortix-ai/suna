@@ -31,6 +31,7 @@ import { confirm } from '../prompts.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
 import { kortixFromAuth } from '../api/sdk.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
+import { featureHidden } from '../features.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
 import { openInBrowser } from '../browser.ts';
@@ -61,7 +62,9 @@ import { runSessionsShell } from './sessions-shell.ts';
 import { parseMetaPair, runSessionsUpdate } from './sessions-update.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
 
-const HELP = help`Usage: kortix sessions <subcommand> [options]
+// `--asked` belongs to human_messaging: inside a sandbox with the flag off the
+// help does not mention it.
+const sessionsHelp = (asked = !featureHidden('human_messaging')) => help`Usage: kortix sessions <subcommand> [options]
 
 Manage Kortix project sessions — each session is an isolated sandbox VM
 on its own ephemeral branch.
@@ -70,7 +73,7 @@ Subcommands:
   ls [--mine|--shared|--automated]  List sessions with who started each
      [--search <q>]                 (STARTED BY). --mine = you started it,
      [--children <session-id>]      --shared = another member did,
-     [--label <label>]... [--asked]
+     [--label <label>]...${asked ? ' [--asked]' : ''}
                                     --automated = a trigger, channel or API
                                     key did; each lists top-level sessions
                                     with their child count. --search <q>
@@ -78,8 +81,8 @@ Subcommands:
                                     --children <id> lists one session's
                                     children. --label <l> (repeatable)
                                     lists sessions carrying every given
-                                    label. --asked lists conversations
-                                    people asked you into. --json.
+                                    label.${asked ? ` --asked lists conversations
+                                    people asked you into.` : ''} --json.
   status                            Mission control: every session + what
                                     each agent is doing right now (live).
                                     --all, --json. Aliases: overview, ps.
@@ -246,7 +249,7 @@ Global options:
 
 export async function runSessions(argv: string[]): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
+    process.stdout.write(sessionsHelp());
     return argv.length === 0 ? 2 : 0;
   }
 
@@ -351,7 +354,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   // `sessions info --help` would try to look up a session literally named
   // "--help" instead of showing usage.
   if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
+    process.stdout.write(sessionsHelp());
     return 0;
   }
   const json = takeFlagBool(rest, ['--json']);
@@ -423,7 +426,7 @@ export async function runSessions(argv: string[]): Promise<number> {
     case 'open':
       return sessionsOpen(rest[0], ctxOpts);
     default:
-      process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
+      process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${sessionsHelp()}`);
       return 2;
   }
 }

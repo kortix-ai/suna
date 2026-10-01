@@ -618,6 +618,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
 
+      /** This project's agents as principals (service accounts), for a "Who
+       *  can use it" picker. Any project member may read it. */
+      agentIdentities: () => P.listProjectAgentIdentities(projectId),
+
       secrets: {
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>

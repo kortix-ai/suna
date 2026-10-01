@@ -58,7 +58,8 @@
     "./server-store": "./src/deprecated/server-store.ts",
     "./sandbox-connection-store": "./src/deprecated/sandbox-connection-store.ts",
     "./opencode-pending-store": "./src/deprecated/opencode-pending-store.ts",
-    "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts"
+    "./idb-sync-cache": "./src/deprecated/idb-sync-cache.ts",
+    "./workspace-search": "./src/workspace-search/index.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -168,6 +169,10 @@
       "./idb-sync-cache": {
         "types": "./dist/deprecated/idb-sync-cache.d.ts",
         "import": "./dist/deprecated/idb-sync-cache.js"
+      },
+      "./workspace-search": {
+        "types": "./dist/workspace-search/index.d.ts",
+        "import": "./dist/workspace-search/index.js"
       }
     },
     "browser": "./dist/kortix.esm.min.js",
