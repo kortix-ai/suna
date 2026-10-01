@@ -1,4 +1,5 @@
 import type { SessionMessageAuthor, SessionMessageAuthors } from '@kortix/sdk';
+import { parseSessionMessagePrompt, type SessionMessagePromptInfo } from '@kortix/shared';
 
 /** One author, one key: two members never share it, nor do two sessions. */
 export function authorKey(author: SessionMessageAuthor): string {
@@ -80,7 +81,34 @@ export function showAuthorName(
   return author.kind === 'session' || author.user_id !== viewerId;
 }
 
-/** A prompt an agent will answer. A `no_reply` prompt runs no turn. */
+/** True when `info` is an ask that names the viewer, so the reply is theirs. */
+export function isAskForViewer(
+  info: SessionMessagePromptInfo | undefined,
+  viewerEmail: string | undefined,
+): boolean {
+  if (info?.type !== 'ask' || !viewerEmail) return false;
+  const me = viewerEmail.toLowerCase();
+  return info.to.some((p) => p.email.toLowerCase() === me);
+}
+
+/** A prompt an agent will answer. An ask's first message is `no_reply`: it goes to people. */
 export function awaitsAgent(prompt: { no_reply?: boolean }): boolean {
   return !prompt.no_reply;
+}
+
+/**
+ * The newest turn is an ask no agent has answered. The ask went to people, so
+ * the runtime's brief "busy" after delivering it is not an agent thinking.
+ */
+export function isUnansweredAsk(
+  turn:
+    | {
+        userMessage: { parts: ReadonlyArray<{ type: string; text?: string }> };
+        assistantMessages: ReadonlyArray<unknown>;
+      }
+    | undefined,
+): boolean {
+  if (!turn || turn.assistantMessages.length > 0) return false;
+  const text = turn.userMessage.parts.find((p) => p.type === 'text')?.text;
+  return parseSessionMessagePrompt(text)?.type === 'ask';
 }

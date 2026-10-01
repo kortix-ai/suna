@@ -93,6 +93,9 @@ mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => key, { raw: (key: string) => key }),
 }));
 mock.module('@/components/ui/toast', () => ({ ...realToast, errorToast: mock() }));
+mock.module('@/features/providers/auth-provider', () => ({
+  useAuth: () => ({ user: { id: 'viewer-1', email: 'viewer@example.com' } }),
+}));
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   startSessionWithPrompt,
@@ -283,4 +286,38 @@ test('a send made while a boot-shell text-only POST is in flight POSTs after tha
   await textSend;
   await settle();
   expect(posted).toEqual(['text one', 'with image']);
+});
+
+test('an ask (no_reply first prompt) shows the ask card, with no Stop state while the box boots', () => {
+  const ask =
+    '[ASK from Avery <avery@example.com> to Viewer <viewer@example.com> — the people named answer here.]\n\nWhich region?';
+  const before = inboxPrompts;
+  inboxPrompts = [
+    {
+      prompt_id: 'p-ask',
+      client_message_id: 'pending:session-shell',
+      text: ask,
+      full_text: ask,
+      state: 'delivering',
+      placement: 'composer',
+      no_reply: true,
+      attempts: 0,
+      last_error: null,
+    },
+  ];
+  try {
+    const markup = renderToStaticMarkup(
+      createElement(InstantSessionShell, {
+        projectId: 'project-1',
+        sessionId: 'session-shell',
+        stage: 'provisioning',
+      }),
+    );
+    expect(markup).toContain('data-message-kind="ask"');
+    expect(markup).toContain('Which region?');
+    expect(markup).toContain('replyHint');
+    expect(composer.isBusy).toBe(false);
+  } finally {
+    inboxPrompts = before;
+  }
 });

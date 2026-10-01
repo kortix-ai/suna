@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { SessionMessageAuthor } from '@kortix/sdk';
+import { parseSessionMessagePrompt } from '@kortix/shared';
 import {
   AUTHOR_RETRY_DELAYS_MS,
   authorForTurn,
   missingAuthorKey,
   awaitsAgent,
+  isUnansweredAsk,
+  isAskForViewer,
   resolveTranscriptAuthors,
   showAuthorName,
 } from './message-author';
@@ -92,8 +95,38 @@ describe('missingAuthorKey', () => {
   });
 });
 
+describe('isAskForViewer', () => {
+  const ask = parseSessionMessagePrompt(
+    '[ASK from session 3f2b7c1e-0000-4000-8000-000000000001 "Deploy" to Avery <avery@example.com>, Blair <blair@example.com> — x]\n\nShip it?',
+  );
+  test('true for an addressee, compared without case', () => {
+    expect(isAskForViewer(ask, 'Blair@Example.com')).toBe(true);
+  });
+  test('false for anyone else, for a message, and for no viewer', () => {
+    expect(isAskForViewer(ask, 'casey@example.com')).toBe(false);
+    expect(isAskForViewer(parseSessionMessagePrompt('[MESSAGE from Avery <avery@example.com>]\n\nhi'), 'avery@example.com')).toBe(false);
+    expect(isAskForViewer(ask, undefined)).toBe(false);
+  });
+});
+
 describe('awaitsAgent', () => {
   test('a no_reply prompt is not queued for the agent; others are, including old servers without the field', () => {
     expect([{ no_reply: true }, { no_reply: false }, {}].map(awaitsAgent)).toEqual([false, true, true]);
+  });
+});
+
+describe('isUnansweredAsk', () => {
+  const turn = (text: string, answered = false) => ({
+    userMessage: { parts: [{ type: 'text', text }] },
+    assistantMessages: answered ? [{}] : [],
+  });
+  const ask = '[ASK from Avery <avery@example.com> to Blair <blair@example.com> — x]\n\nShip it?';
+  test('an ask with no assistant message is unanswered', () => {
+    expect(isUnansweredAsk(turn(ask))).toBe(true);
+  });
+  test('an answered ask, an ordinary prompt and no turn are not', () => {
+    expect(isUnansweredAsk(turn(ask, true))).toBe(false);
+    expect(isUnansweredAsk(turn('hello'))).toBe(false);
+    expect(isUnansweredAsk(undefined)).toBe(false);
   });
 });

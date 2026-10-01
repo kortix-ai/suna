@@ -178,9 +178,26 @@ Each result is `{ url, attachment_id, filename, mime, message_id, role }`.
 
 ## Who wrote each message
 
-Every message has an author. The server reads it from the credential that sent the
-prompt: a project member, or another session's agent. The runtime transcript does not
-carry it.
+A session can open a conversation with project members. List the addresses in `participants`. `initial_prompt` is required
+with them. The server posts it from the caller with no agent turn and shares the new
+session with only those people. The agent runs when one of them replies. The limit is
+1 to 20 addresses. An address that is not a member who may run sessions answers `404` `PARTICIPANT_NOT_FOUND`.
+
+```ts
+const asked = await kortix.project(projectId).sessions.create({
+  participants: ['avery@example.com'],
+  initial_prompt: 'Which region should I deploy to?',
+})
+
+// The conversations you were asked into, at any depth.
+const { items } = await kortix.project(projectId).sessions.listPage({ participant: 'me' })
+```
+
+`createProjectSession(projectId, { participants, initial_prompt })` and
+`listProjectSessions(projectId, { participant: 'me' })` are the same calls as functions. `participants` and `awaiting_reply` are server-managed `metadata` keys.
+
+Every message has an author. The server reads it from the
+credential that sent the prompt. The runtime transcript does not carry it.
 
 ```ts
 const { authors, initial_author } = await kortix.session(projectId, sessionId).messageAuthors()
@@ -196,11 +213,12 @@ prompt. Each author is a `SessionMessageAuthor`:
 | `kind` | Fields |
 | --- | --- |
 | `'member'` | `user_id`, `name`, `email` (`string \| null`) |
-| `'session'` | `session_id`, `name` (the session title), `agent` (the agent it runs, when named) |
+| `'session'` | `session_id`, `name` |
 
 In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the
 same data. Pass the transcript's message count. A new message is the only event that
-adds an author, so the query refetches when the count changes.
+adds an author, so the query refetches when the count changes. See
+[Messaging people and sessions](/docs/connect/messaging).
 
 ## Readiness is a handshake
 

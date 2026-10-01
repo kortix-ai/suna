@@ -1587,6 +1587,17 @@
       "failed": "No se pudieron guardar las etiquetas",
       "tooLong": "Una etiqueta tiene como máximo 64 caracteres.",
       "tooMany": "Una sesión tiene como máximo 20 etiquetas."
+    },
+    "askedYou": {
+      "title": "Te preguntaron",
+      "from": "de {name}",
+      "arrival": "{name} te preguntó algo",
+      "arrivalUnknown": "Alguien te preguntó algo",
+      "open": "Abrir",
+      "withOne": "Conversación con 1 persona",
+      "withMany": "Conversación con {count} personas",
+      "askedFrom": "Preguntado desde {title}",
+      "inConversation": "En esta conversación"
     }
   },
   "dashboard": {
@@ -19092,7 +19103,6 @@
       "textcd2c4b26eedd": "Kortix no tiene registro de la versión de la app en tu catálogo de Teams. La versión {value0} incluye todos los comandos y permisos que tu agente usa en Teams. Un administrador de Teams publica la actualización. Después, un propietario del equipo actualiza la app en cada equipo donde Teams la ofrezca: el equipo → ⋯ → Administrar equipo → Aplicaciones → Actualizar.",
       "texte15f213fa506": "Publicar actualización de la app",
       "textcafd830fcf85": "Identidades de agente del proyecto enumeradas",
-      "textea2f51bfe21c": "Vio los participantes de la sesión",
       "text7f755292bf51": "No se pudo descargar el adjunto"
     },
     "publicShareConfirm": {
@@ -20361,6 +20371,8 @@
   },
   "messageFrom": {
     "from": "De",
+    "asked": "preguntó a",
+    "replyHint": "Responde abajo. El agente lo recogerá.",
     "untitledSession": "Sesión sin título"
   },
   "sessionParticipants": {

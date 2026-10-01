@@ -390,6 +390,8 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
+  headerTrusted?: boolean;
+  viewerEmail?: string;
   /** What the control plane recorded about how THIS session's turns ended. */
   turnOutcome: SessionTurnOutcome;
   /**
@@ -1522,7 +1524,7 @@ function TurnSessionReport({ report }: { report: SessionReport }) {
 /** The user side of a turn: the report card, the system-pill line, and the
  *  user bubble (hidden for notification-only turns). */
 function TurnUserBlock(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'headerTrusted' | 'viewerEmail' | 'isLast' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
     model: TurnModelState;
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
@@ -1544,14 +1546,14 @@ function TurnUserBlock(
 
 /** The user message bubble — dimmed while the prompt waits in the queue. */
 function TurnUserBubble(
-  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'author' | 'showAuthor' | 'headerTrusted' | 'viewerEmail' | 'isLast' | 'pending' | 'interruptedBeforeRun' | 'pendingPrompt' | 'onRetryQueued' | 'onRemoveQueued' | 'pendingAttachments' | 'uploadStatus' | 'pendingText' | 'agentNames' | 'commandMessages' | 'commands' | 'sessionId' | 'ownsPlan' | 'onRewind' | 'rewindDisabled' | 'editingText' | 'editPending' | 'onEditCancel' | 'onEditSend'> & {
     queueTone: TurnQueueTone;
     userContent: TurnUserContentState;
   },
 ) {
   const { hasVisibleUserContent } = props.userContent;
   const {
-    turn, author, showAuthor, pending, pendingPrompt, interruptedBeforeRun,
+    turn, author, showAuthor, headerTrusted, viewerEmail, isLast, pending, pendingPrompt, interruptedBeforeRun,
     pendingAttachments, uploadStatus, pendingText, agentNames,
     commandMessages, commands, sessionId, ownsPlan, onRewind, rewindDisabled,
     editingText, editPending, onEditCancel, onEditSend,
@@ -1575,6 +1577,9 @@ function TurnUserBubble(
           message={turn.userMessage}
           author={author}
           showAuthor={showAuthor}
+          headerTrusted={headerTrusted}
+          viewerEmail={viewerEmail}
+          isLastMessage={isLast}
           pendingAttachments={pendingAttachments}
           uploadStatus={uploadStatus}
           pendingText={pendingText}

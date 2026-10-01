@@ -202,8 +202,9 @@ describe('SessionChat transcript rows', () => {
     busy = false;
   });
 
-  test('a no_reply prompt shows its bubble with no Queued, Sending or Thinking', () => {
-    const ask = 'Which region?';
+  test('an ask (no_reply first message) shows its card with no Queued, Sending or Thinking', () => {
+    const ask =
+      '[ASK from Avery <avery@example.com> to Viewer <viewer@example.com> — the people named answer here.]\n\nWhich region?';
     fixtureMessages = [];
     inboxPrompts = [
       {
@@ -224,6 +225,7 @@ describe('SessionChat transcript rows', () => {
     ];
     try {
       const markup = renderChat();
+      expect(markup).toContain('data-message-kind="ask"');
       expect(markup).toContain('Which region?');
       expect(markup).not.toContain('Thinking');
       expect(markup).not.toContain('Sending');
