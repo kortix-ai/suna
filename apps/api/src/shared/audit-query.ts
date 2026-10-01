@@ -52,14 +52,21 @@ export function buildAuditCursorCondition(
   accountId: string,
   direction: 'ascending' | 'descending',
 ): SQL {
+  // The stored instant lies in [cursor, cursor + 1 ms): JavaScript truncates it to the
+  // millisecond. Bounding the lookup by that window lets the partitioned table prune to
+  // one weekly partition (two at a boundary) and use the (event_id, occurred_at) key; a
+  // lookup by event_id alone probes the primary key of every partition.
+  const instant = cursor.occurredAt.toISOString();
   const exactOccurredAt = sql`coalesce(
     (
       select cursor_event.occurred_at
       from kortix.audit_events_all as cursor_event
       where cursor_event.event_id = ${cursor.eventId}::uuid
         and cursor_event.account_id = ${accountId}::uuid
+        and cursor_event.occurred_at >= ${instant}::timestamptz
+        and cursor_event.occurred_at < ${instant}::timestamptz + interval '1 millisecond'
     ),
-    ${cursor.occurredAt.toISOString()}::timestamptz
+    ${instant}::timestamptz
   )`;
   return direction === 'ascending'
     ? sql`(${auditEventsAll.occurredAt}, ${auditEventsAll.eventId}) > (${exactOccurredAt}, ${cursor.eventId}::uuid)`

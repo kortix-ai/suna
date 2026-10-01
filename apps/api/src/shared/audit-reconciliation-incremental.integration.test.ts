@@ -76,7 +76,9 @@ describe.skipIf(!databaseUrl)('audit reconciliation is incremental', () => {
     await client.end();
   });
 
-  test('first pass scans the whole history, records the mark, and a crash mid-run loses nothing', async () => {
+  test('first pass scans the hot window, records the mark, and a crash mid-run loses nothing', async () => {
+    // Older than the 80-day window: never reconstructed. Retention archives and drops what is
+    // older than 90 days, so a full rescan must not bring it back as a new audit row.
     await providerEvent(ACCOUNT, 'ancient', 400);
     await providerEvent(ACCOUNT, 'old', 30);
     await providerEvent(ACCOUNT, 'new');
@@ -89,8 +91,8 @@ describe.skipIf(!databaseUrl)('audit reconciliation is incremental', () => {
 
     // Resume: the next calls start from the same (absent) mark and finish.
     const rest = await reconcileAuditEvents(ACCOUNT, 10);
-    expect(rest).toMatchObject({ inserted: 2, complete: true });
-    expect(await audited(ACCOUNT)).toBe(3);
+    expect(rest).toMatchObject({ inserted: 1, complete: true });
+    expect(await audited(ACCOUNT)).toBe(2);
     const state = await stateOf(ACCOUNT);
     expect(state.checked_at).toBeInstanceOf(Date);
     expect(state.full_scan_at.getTime()).toBe(state.checked_at.getTime());
@@ -101,11 +103,11 @@ describe.skipIf(!databaseUrl)('audit reconciliation is incremental', () => {
     await providerEvent(ACCOUNT, 'fresh');
     // A row outside the lookback with no audit event. A full scan would
     // insert it; an incremental pass must not even look at it.
-    await providerEvent(ACCOUNT, 'unreconciled-old', 90);
+    await providerEvent(ACCOUNT, 'unreconciled-old', 60);
 
     const result = await reconcileAuditEvents(ACCOUNT, 10);
     expect(result).toEqual({ inserted: 1, complete: true, by_source: { provider_events: 1 } });
-    expect(await audited(ACCOUNT)).toBe(4);
+    expect(await audited(ACCOUNT)).toBe(3);
 
     const after = await stateOf(ACCOUNT);
     expect(after.checked_at.getTime()).toBeGreaterThan(before.checked_at.getTime());
@@ -120,7 +122,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation is incremental', () => {
     );
     const result = await reconcileAuditEvents(ACCOUNT, 10);
     expect(result).toEqual({ inserted: 1, complete: true, by_source: { provider_events: 1 } });
-    expect(await audited(ACCOUNT)).toBe(5);
+    expect(await audited(ACCOUNT)).toBe(4);
     const state = await stateOf(ACCOUNT);
     expect(state.full_scan_at.getTime()).toBe(state.checked_at.getTime());
   });

@@ -41,13 +41,18 @@ export async function reconcileAuditEvents(
   );
   // null = scan the whole history: no mark yet, or the weekly rescan is due.
   const since = mark && !mark.fullDue ? mark.since : null;
+  // Never reconstruct a row older than the hot window (80 days; retention archives and
+  // drops partitions older than 90). After the legacy table and the old partitions are gone,
+  // an old source row has no audit row to find, and a full rescan would re-insert it.
   const newer = (...columns: string[]) =>
-    since
-      ? sql`AND (${sql.join(
-          columns.map((column) => sql`${sql.raw(column)} >= ${since}::timestamptz`),
-          sql` OR `,
-        )})`
-      : sql``;
+    sql`AND (${sql.join(
+      columns.map((column) =>
+        since
+          ? sql`${sql.raw(column)} >= greatest(${since}::timestamptz, now() - interval '80 days')`
+          : sql`${sql.raw(column)} >= now() - interval '80 days'`,
+      ),
+      sql` OR `,
+    )})`;
   const rows = await auditDb().execute<{ sourceLedger: string }>(sql`
     WITH mark AS (
       SELECT full_scan_at FROM kortix.audit_reconciliation_state WHERE account_id = ${accountId}::uuid

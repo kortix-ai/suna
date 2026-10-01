@@ -144,16 +144,19 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
   });
 
   test('a duplicate source replay inserts nothing; the unique index is the only dedupe check', async () => {
+    // The dedupe key includes occurred_at (partitioned table). A replay carries the instant of the
+    // original, as the relay and the source triggers do, so the test fixes it.
+    const occurredAt = new Date(Date.now() - 60_000).toISOString();
     const insertOne = (client: pg.Client | pg.PoolClient, suffix: string) =>
       client.query<{ event_id: string }>(
         `INSERT INTO kortix.audit_events
            (account_id, project_id, session_id, action, resource_type,
-            source_ledger, source_record_id, phase, authoritative_source)
+            source_ledger, source_record_id, phase, authoritative_source, occurred_at)
          VALUES ($1, $2, $3, 'test.replay', 'project_session',
-                 'audit_v2_replay', $4, 'completed', 'system')
+                 'audit_v2_replay', $4, 'completed', 'system', $5)
          ON CONFLICT DO NOTHING
          RETURNING event_id`,
-        [ACCOUNT, PROJECT, SESSION, suffix],
+        [ACCOUNT, PROJECT, SESSION, suffix, occurredAt],
       );
     const first = await insertOne(client!, 'same');
     const duplicate = await insertOne(client!, 'same');
@@ -166,10 +169,10 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — migrated PostgreSQL', ()
       client!.query(
         `INSERT INTO kortix.audit_events
            (account_id, session_id, action, resource_type, source_ledger, source_record_id,
-            phase, authoritative_source)
+            phase, authoritative_source, occurred_at)
          VALUES ($1, $2, 'test.replay', 'project_session', 'audit_v2_replay', 'same',
-                 'completed', 'system')`,
-        [ACCOUNT, SESSION],
+                 'completed', 'system', $3)`,
+        [ACCOUNT, SESSION, occurredAt],
       ),
     ).rejects.toMatchObject({ code: '23505' });
 
