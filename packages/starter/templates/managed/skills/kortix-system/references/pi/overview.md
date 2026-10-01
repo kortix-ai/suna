@@ -90,8 +90,12 @@ session.
 - A change on the session branch reaches future sessions only after its
   change request merges into the default branch.
 - pi loads extensions, prompt templates and `settings.json` when the runtime
-  starts. To load a change in the same session, restart the session
-  (`kortix sessions restart <id>`).
+  starts. A running session does not load a new or changed one, and
+  `kortix sessions restart` does not reload them. A session that starts after
+  the change request merges loads them.
+- pi reads skills again when the session restarts. A skill added on the
+  session branch is available in that session after
+  `kortix sessions restart <id>`.
 - Kortix builds the npm packages in `harnesses.pi.packages` when the change
   request merges. A session started before the merge does not have them.
 - With the project's `config_releases` flag on, a running session picks up a

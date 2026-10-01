@@ -85,9 +85,13 @@ agents:
 
 ## Test an extension
 
-1. Commit the file on the session branch.
-2. Restart the session: `kortix sessions restart <session-id>`. pi loads
-   extensions only when the runtime starts.
+pi loads extensions only when the runtime starts. The session that writes an
+extension does not load it, and `kortix sessions restart` does not reload it.
+
+1. Commit the file on the session branch and open a change request.
+2. After the merge, start a new session.
 3. Ask the agent to call the tool by name.
-4. Open a change request. The extension reaches other sessions after the
-   merge.
+4. If the tool is absent, read the session's health:
+   `harness.details.extensions.loaded` lists each loaded extension and
+   `harness.details.extensions.failed` gives the error of each one that did
+   not load.
