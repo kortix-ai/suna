@@ -484,9 +484,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           : 'loading';
 
   useEffect(() => {
+    // No runtime session to read (`''` under `useSession({ chatEngine: false })`):
+    // the controller never goes busy, so no poll and no turn-end read start.
+    const readable = canQueryRuntimeSession(sessionId);
     controller.setBusy(
-      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
-      networkEnabled && canQueryRuntimeSession(sessionId) && runtimeScope !== 'none',
+      readable && livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+      networkEnabled && readable && runtimeScope !== 'none',
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn, sessionId, runtimeScope]);
 
