@@ -21,7 +21,7 @@ import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { isWarmProjectSession } from '../lib/warm-sessions';
-import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
+import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
@@ -94,6 +94,26 @@ projectsApp.openapi(
     // this row, not a spend, so it lands even if the billing gate rejects the
     // resume that follows.
     if (isWarmProjectSession(visible.row.metadata)) {
+      // A held browser entry can predate the project's region preference.
+      // Wait for actual placement while creation is pending; never adopt an
+      // EU or unknown active box as US, and never move an existing box.
+      const placement = await warmSessionPlacement(sessionId, projectMetadata);
+      if (placement === 'pending') {
+        return c.json({
+          stage: 'provisioning' as const,
+          agent_name: visible.row.agentName ?? 'default',
+          sandbox: null,
+          opencode_session_id: null,
+          retriable: true,
+          runtime_transport: 'rest' as const,
+        }, 200);
+      }
+      if (placement === 'mismatch') {
+        return c.json({
+          error: 'The warm session does not match the project compute region',
+          code: 'WARM_SESSION_CONFIGURATION_MISMATCH',
+        }, 409);
+      }
       await dropWarmSessionMarkerOnAdopt(sessionId);
       stl.mark('warm-adopted');
     }

@@ -763,6 +763,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Viewed session cost ledger': 'textd7aa05eaf609',
   'Viewed session environment': 'text4e22b3354b8f',
   'Viewed session message authors': 'text9e6a0b0a06c2',
+  'Viewed session participants': 'textea2f51bfe21c',
   'Viewed session policy': 'text48b65bbc9863',
   'Viewed session provider secret pool': 'text7c649f4bf685',
   'Viewed session scope': 'text3fd349f95ce2',
