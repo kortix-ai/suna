@@ -319,6 +319,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Listed pooled provider keys': 'text2e60197c2867',
   'Listed project CLI tokens': 'text4485bc2a9c1b',
   'Listed project access requests': 'text4b06153e8b1d',
+  'Listed project agent identities': 'textcafd830fcf85',
   'Listed project connector accounts': 'text9f0782b5f406',
   'Listed project connector policies': 'text84d5354ddfc6',
   'Listed project files': 'text9ab4c4726ae9',
