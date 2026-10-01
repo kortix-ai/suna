@@ -6,6 +6,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { runtimeKeys } from '@kortix/sdk/react';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { useAuthContext } from '@/contexts';
 
@@ -68,7 +69,7 @@ export function useMigrateAllLegacyThreads() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['legacy-threads'] });
-      queryClient.invalidateQueries({ queryKey: ['opencode', 'sessions'] });
+      queryClient.invalidateQueries({ queryKey: runtimeKeys.sessions() });
     },
   });
 }
@@ -85,7 +86,7 @@ export function useMigrateAllStatus(enabled: boolean) {
       if (data?.status === 'running') return 2000;
       if (data?.status === 'done') {
         queryClient.invalidateQueries({ queryKey: ['legacy-threads'] });
-        queryClient.invalidateQueries({ queryKey: ['opencode', 'sessions'] });
+        queryClient.invalidateQueries({ queryKey: runtimeKeys.sessions() });
       }
       return false;
     },

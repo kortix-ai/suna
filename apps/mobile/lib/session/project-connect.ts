@@ -360,7 +360,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
   const handleOpenProjectSession = useCallback(
     (ps: ProjectSession, focusRuntimeSessionId?: string) => {
       pendingThreadFocusRef.current = focusRuntimeSessionId
-        ? { sessionId: ps.session_id, openCodeId: focusRuntimeSessionId }
+        ? { sessionId: ps.session_id, runtimeId: focusRuntimeSessionId }
         : null;
       haptics.tap();
       releaseWarmSession(ps.session_id);

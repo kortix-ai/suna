@@ -762,7 +762,7 @@ export function useProjectAgentsForTrigger(projectId: string | null) {
 }
 
 /** Gateway model catalog for a trigger's "Model" override picker (web parity:
- *  useOpenCodeProviders() + flattenModels() in gateway mode). Sandbox-free —
+ *  useRuntimeProviders() + flattenModels() in gateway mode). Sandbox-free —
  *  reads the project's server-side catalog directly. `gatewayDisabled` is
  *  true when the project hasn't turned the LLM gateway on; treat that as "no
  *  override available" rather than an error. */
@@ -786,7 +786,7 @@ export function useProjectModelCatalogForTrigger(projectId: string | null) {
 
 /** The native-mode picker sources that need no sandbox: the runtime catalog
  *  and the project's secret NAMES. `project.secret.read` is manager-tier, so a
- *  member's read 403s: that is "no keys visible" (web: `useOpenCodeProviders`). */
+ *  member's read 403s: that is "no keys visible" (web: `useRuntimeProviders`). */
 async function fetchNativeModelCatalog(projectId: string) {
   const [llmCatalogProviders, secrets] = await Promise.all([
     getProjectLlmCatalogProviders(projectId),

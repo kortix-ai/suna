@@ -94,7 +94,7 @@ interface ModelPickerSheetProps {
   thinking?: ModelThinking;
   /** "Connect provider" in the empty state: the project offers no model. */
   onConnect?: () => void;
-  /** The Agent tab: the project config's agents (`projectConfigAgentsToOpenCodeAgents`). */
+  /** The Agent tab: the project config's agents (`projectConfigAgentsToRuntimeAgents`). */
   agent?: AgentChoice;
   /** The thread's AutoContinue row, under Thinking. */
   autoContinue?: ModelAutoContinue;

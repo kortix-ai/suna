@@ -29,7 +29,7 @@ import { THEME } from '@/lib/utils/theme';
 
 export interface SessionChangeRequestsProps {
   projectId: string;
-  /** The Kortix project session (`origin_session_id`), not the OpenCode id. */
+  /** The Kortix project session (`origin_session_id`), not the runtime session id. */
   projectSessionId: string;
   style?: React.ComponentProps<typeof View>['style'];
 }

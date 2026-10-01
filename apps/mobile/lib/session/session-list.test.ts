@@ -36,7 +36,7 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
   } as unknown as ProjectSession;
 }
 
-function openCodeSession(updatedAt: string | null, id = 'oc-1') {
+function runtimeSession(updatedAt: string | null, id = 'oc-1') {
   return {
     id,
     title: null,
@@ -140,7 +140,7 @@ describe('sessionLastActivityAt', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
-      opencode_sessions: [openCodeSession('2026-01-03T04:05:06.000Z')],
+      opencode_sessions: [runtimeSession('2026-01-03T04:05:06.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T04:05:06.000Z'));
   });
@@ -158,11 +158,11 @@ describe('sessionLastActivityAt', () => {
   test('the newer of the prompt stamp and the conversation snapshot wins', () => {
     const staleSnapshot = makeSession({
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [openCodeSession('2026-01-02T00:00:00.000Z')],
+      opencode_sessions: [runtimeSession('2026-01-02T00:00:00.000Z')],
     });
     const stalePrompt = makeSession({
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [openCodeSession('2026-01-09T10:04:00.000Z')],
+      opencode_sessions: [runtimeSession('2026-01-09T10:04:00.000Z')],
     });
     expect(sessionLastActivityAt(staleSnapshot)).toBe(Date.parse('2026-01-09T10:00:00.000Z'));
     expect(sessionLastActivityAt(stalePrompt)).toBe(Date.parse('2026-01-09T10:04:00.000Z'));
@@ -173,7 +173,7 @@ describe('sessionLastActivityAt', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
       metadata: { last_activity_at: 'not a date' },
-      opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
+      opencode_sessions: [runtimeSession('2026-01-03T00:00:00.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
   });
@@ -181,8 +181,8 @@ describe('sessionLastActivityAt', () => {
   test('a snapshot entry with no timestamp does not mask a later one', () => {
     const session = makeSession({
       opencode_sessions: [
-        openCodeSession(null, 'oc-a'),
-        openCodeSession('2026-01-05T00:00:00.000Z', 'oc-b'),
+        runtimeSession(null, 'oc-a'),
+        runtimeSession('2026-01-05T00:00:00.000Z', 'oc-b'),
       ],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-05T00:00:00.000Z'));
@@ -210,7 +210,7 @@ describe('sessionLastActivityAt', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-20T00:00:00.000Z',
-      opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
+      opencode_sessions: [runtimeSession('2026-01-03T00:00:00.000Z')],
     });
     expect(sessionLastActivityAt(session)).toBe(Date.parse('2026-01-03T00:00:00.000Z'));
   });
@@ -560,7 +560,7 @@ describe('recentSessions', () => {
   });
 });
 
-// ── OpenCode sub-sessions (web: session-label.ts) ───────────────────────────
+// ── runtime sub-sessions (web: session-label.ts) ───────────────────────────
 
 function ocNode(
   id: string,
@@ -720,7 +720,7 @@ describe('projectSessionForRuntimeId', () => {
     expect(projectSessionForRuntimeId([parent, other], null)).toBeNull();
   });
 
-  test('the root OpenCode id resolves to its project session', () => {
+  test('the root runtime session id resolves to its project session', () => {
     expect(projectSessionForRuntimeId([parent, other], 'oc-root')?.session_id).toBe('ps-parent');
     expect(projectSessionForRuntimeId([parent, other], 'oc-other')?.session_id).toBe('ps-other');
   });

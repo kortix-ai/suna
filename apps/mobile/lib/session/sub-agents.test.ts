@@ -106,7 +106,7 @@ describe('subAgentRelation', () => {
     expect(subAgentRelation(orphan, [orphan, kid])).toEqual({ type: 'parent', count: 1 });
   });
 
-  test('the same relation the session list nests by: an OpenCode sub-session is not a sub-agent', () => {
+  test('the same relation the session list nests by: a runtime sub-session is not a sub-agent', () => {
     // `opencode_sessions[].parent_id` is OpenCode's own tree. Neither the list
     // nor the header reads it.
     const root = session('root', {

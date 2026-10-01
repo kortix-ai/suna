@@ -326,11 +326,11 @@ export function ProjectScreen() {
   });
   const shownSessionIdRef = useRef(shownSessionId);
   shownSessionIdRef.current = shownSessionId;
-  // The OpenCode id the thread on screen shows (null under a tool page or
+  // The runtime session id the thread on screen shows (null under a tool page or
   // while connecting): which drawer sub-session row is highlighted.
-  const shownOpenCodeId = shownSessionId && !activePageId ? activeSessionId : null;
-  const shownOpenCodeIdRef = useRef(shownOpenCodeId);
-  shownOpenCodeIdRef.current = shownOpenCodeId;
+  const shownRuntimeId = shownSessionId && !activePageId ? activeSessionId : null;
+  const shownRuntimeIdRef = useRef(shownRuntimeId);
+  shownRuntimeIdRef.current = shownRuntimeId;
 
   // Push (components/notifications/PushNotificationsBridge): the session on
   // screen suppresses its own notification banner while this project is on top.
@@ -352,9 +352,9 @@ export function ProjectScreen() {
   }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
 
   // A drawer row (the drawer has already closed itself) that targets one
-  // OpenCode session of `ps`: its root (a session row) or a sub-session (a
+  // runtime session of `ps`: its root (a session row) or a sub-session (a
   // row under it). Another session opens through the connect path. On the
-  // session on screen, another OpenCode session of it only swaps the thread's
+  // session on screen, another runtime session of it only swaps the thread's
   // active id — the same sandbox, no reconnect (the task tool's View does the
   // same) — and the one already showing does nothing more: reopening it would
   // unmount the thread, show Connecting, and rerun the connect loop. While
@@ -362,25 +362,25 @@ export function ProjectScreen() {
   // (`queue`). A sub-session row of another session opens that session and
   // then shows the sub-session (`handleOpenProjectSession` focus).
   const openThreadFromDrawer = useCallback(
-    (ps: ProjectSession, targetOpenCodeId: string | null) => {
+    (ps: ProjectSession, targetRuntimeId: string | null) => {
       const move = drawerThreadMove({
         rowSessionId: ps.session_id,
-        targetOpenCodeId,
+        targetRuntimeId,
         shownSessionId: shownSessionIdRef.current,
-        activeOpenCodeId: shownOpenCodeIdRef.current,
+        activeRuntimeId: shownRuntimeIdRef.current,
       });
       if (move === 'open') {
         // A sub-session row: open its parent, then show the sub-session.
         const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
-        const focus = targetOpenCodeId && targetOpenCodeId !== rootId ? targetOpenCodeId : undefined;
+        const focus = targetRuntimeId && targetRuntimeId !== rootId ? targetRuntimeId : undefined;
         handleOpenProjectSession(ps, focus);
         return;
       }
       haptics.tap();
-      if (move === 'focus' && targetOpenCodeId) navigateToSession(targetOpenCodeId);
+      if (move === 'focus' && targetRuntimeId) navigateToSession(targetRuntimeId);
       // Still connecting: the thread opens on the target when it connects.
-      if (move === 'queue' && targetOpenCodeId) {
-        pendingThreadFocusRef.current = { sessionId: ps.session_id, openCodeId: targetOpenCodeId };
+      if (move === 'queue' && targetRuntimeId) {
+        pendingThreadFocusRef.current = { sessionId: ps.session_id, runtimeId: targetRuntimeId };
       }
     },
     [handleOpenProjectSession, navigateToSession]
@@ -402,7 +402,7 @@ export function ProjectScreen() {
       <ProjectLeftDrawer
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
-        activeOpenCodeSessionId={shownOpenCodeId}
+        activeRuntimeSessionId={shownRuntimeId}
         activeParentSessionId={activeProjectSession ? sessionParentId(activeProjectSession) : null}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
@@ -420,7 +420,7 @@ export function ProjectScreen() {
     [
       projectId,
       shownSessionId,
-      shownOpenCodeId,
+      shownRuntimeId,
       drawerOpen,
       reviewNeedsYouCount,
       returnHome,

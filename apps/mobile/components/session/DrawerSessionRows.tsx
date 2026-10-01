@@ -58,7 +58,7 @@ function ProjectSessionListItem({
   /** A sub-agent session, rendered indented under its coordinator with an
    *  elbow into its status mark. */
   nested?: boolean;
-  /** Direct OpenCode sub-sessions: a count badge after the title when > 0. */
+  /** Direct runtime sub-sessions: a count badge after the title when > 0. */
   subsessionCount?: number;
   onPress: (s: ProjectSession) => void;
   /** Opens the session actions sheet (Rename, Share, Restart, Stop, Delete). */
@@ -149,7 +149,7 @@ const TRUNK_X_TOP_LEVEL = 16 + 10;
 const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 
 /**
- * A session row plus its direct OpenCode sub-sessions under it, always
+ * A session row plus its direct runtime sub-sessions under it, always
  * (web's `renderSessionNode` shows them for the open session only; the
  * owner wants them on every row, 2026-09-26). The row keeps its `bg-accent`
  * only while the thread shows its root; while a sub-session shows, that
@@ -158,7 +158,7 @@ const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 export function DrawerSessionNode({
   session,
   shown,
-  activeOpenCodeId,
+  activeRuntimeId,
   nested = false,
   trunkBelow = false,
   needsYou,
@@ -177,8 +177,8 @@ export function DrawerSessionNode({
   onToggleChildren?: (session: ProjectSession) => void;
   /** This is the project session on screen (thread or connecting). */
   shown: boolean;
-  /** The OpenCode id the thread shows; null while no thread is on screen. */
-  activeOpenCodeId: string | null;
+  /** The runtime session id the thread shows; null while no thread is on screen. */
+  activeRuntimeId: string | null;
   nested?: boolean;
   /** A later sibling sub-agent follows: the trunk runs through this whole node. */
   trunkBelow?: boolean;
@@ -189,7 +189,7 @@ export function DrawerSessionNode({
   onPressSubsession: (parent: ProjectSession, childId: string) => void;
 }) {
   const subsessions = useMemo(() => directSubsessions(session), [session]);
-  const subsessionActive = shown && subsessions.some((child) => child.id === activeOpenCodeId);
+  const subsessionActive = shown && subsessions.some((child) => child.id === activeRuntimeId);
   const handlePressSubsession = useCallback(
     (childId: string) => onPressSubsession(session, childId),
     [onPressSubsession, session]
@@ -226,7 +226,7 @@ export function DrawerSessionNode({
         <SubsessionTree
           subsessions={subsessions}
           parentTitle={sessionDisplayTitle(session)}
-          activeOpenCodeId={shown ? activeOpenCodeId : null}
+          activeRuntimeId={shown ? activeRuntimeId : null}
           trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           showTime={false}

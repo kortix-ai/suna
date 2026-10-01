@@ -25,7 +25,7 @@
  * session's changed files in place (`SessionChangesList`), and a file pushes
  * its diff (`SessionChangeFileView`); disabled with "No changes" when the
  * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
- * has closed, then calls `useCompactSession`; the thread's compaction divider
+ * has closed, then calls `useSummarizeRuntimeSession`; the thread's compaction divider
  * is the progress, and only a failure toasts (web `compact-modal.tsx`).
  * Disabled while the session works, hidden when the runtime does not serve
  * `session.compact` (pi). View changes and Compact need the live

@@ -1,7 +1,7 @@
 /**
  * MemoryPage — View and manage agent memories (LTM + Observations).
  *
- * Uses the OpenCode memory API:
+ * Uses the sandbox memory API:
  *   GET  {sandboxUrl}/memory/entries?limit=200&source={ltm|observation}
  *   GET  {sandboxUrl}/memory/stats
  *   GET  {sandboxUrl}/memory/search?q={query}&source={source}

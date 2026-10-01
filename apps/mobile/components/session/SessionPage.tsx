@@ -205,7 +205,7 @@ interface SessionPageProps {
   /**
    * The title to show in the header (COR-140): `sessionDisplayTitle` of the
    * project session, when the caller has resolved one. Falls back to the
-   * OpenCode session's own `title` — the only signal available for a
+   * runtime session's own `title` — the only signal available for a
    * sub-agent thread, which has no project-session row of its own.
    */
   sessionTitle?: string;
@@ -766,7 +766,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // request): sent as the composer sends it — at once when idle, with the
   // composer's agent/model/variant; into the queue while the agent works or a
   // question waits.
-  // Keyed by the OpenCode id (the actions sheet, on the open thread) or by the
+  // Keyed by the runtime session id (the actions sheet, on the open thread) or by the
   // project session id (Review's Resolve conflicts, sent before this thread
   // has connected, when only that id is known).
   const promptRequest = useSessionPromptRequestStore((s) =>

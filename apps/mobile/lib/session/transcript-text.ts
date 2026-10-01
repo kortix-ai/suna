@@ -67,7 +67,7 @@ function messageLines(message: MessageWithParts): string[] {
 }
 
 /**
- * The transcript for `messages` (sync-store order), or null when no message
+ * The transcript for `messages` (store order), or null when no message
  * has anything to show. A blank `title` drops the header line.
  */
 export function buildTranscriptText(

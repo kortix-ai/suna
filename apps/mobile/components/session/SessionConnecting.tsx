@@ -98,7 +98,7 @@ export function SessionConnecting({
   messages?: MessageWithParts[];
   /** What the computer is doing, for the status bar over the thread (`sessionConnectionLabel`). */
   statusLabel?: string | null;
-  /** The OpenCode session the saved copy belongs to; tool rows read it. */
+  /** The runtime session the saved copy belongs to; tool rows read it. */
   sessionId?: string;
   /** The saved copy proves the conversation empty: nothing to wait for. */
   empty?: boolean;

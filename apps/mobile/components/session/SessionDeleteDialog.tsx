@@ -59,8 +59,9 @@ export const SessionDeleteDialog = React.forwardRef<SessionDeleteDialogRef, { pr
         // open thread: closing its tab clears `activeSessionId`, and the
         // project stack's view route pops itself back to home.
         const tabs = useTabStore.getState();
-        if (confirmDelete.opencode_session_id) {
-          tabs.closeTab(confirmDelete.opencode_session_id);
+        const runtimeSessionId = confirmDelete.runtime_session_id ?? confirmDelete.opencode_session_id;
+        if (runtimeSessionId) {
+          tabs.closeTab(runtimeSessionId);
         } else if (tabs.activeSessionId === confirmDelete.session_id) {
           tabs.navigateToSession(null);
         }

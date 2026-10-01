@@ -2,7 +2,7 @@
  * Platform API Client for Kortix Computer Mobile
  *
  * Communicates with the Computer backend to manage sandbox lifecycle
- * and provides the sandbox URL for OpenCode session operations.
+ * and provides the sandbox URL for runtime session operations.
  *
  * All sandbox operations are proxied through:
  *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
@@ -96,7 +96,7 @@ interface ProjectSessionSandbox {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the OpenCode server URL for a sandbox.
+ * Build the runtime URL for a sandbox.
  * Pattern: {BACKEND_URL}/p/{externalId}/8000
  */
 export function getSandboxUrl(sandboxExternalId: string): string {
