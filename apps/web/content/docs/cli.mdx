@@ -507,8 +507,9 @@ Encrypted values stored on the project. By default a secret injects as a plain e
 
 | Command | Effect |
 | --- | --- |
-| `kortix secrets ls` | List secrets by identifier and manifest `env` spec. Marks required-but-missing values. |
-| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. |
+| `kortix secrets ls` | List secrets by identifier and manifest `env` spec, with who can use each value. Marks required-but-missing values. |
+| `kortix secrets set NAME=VALUE ... [--identifier <id>] [--scope runtime\|connector] [--only-me]` | Upsert one or more secrets. `NAME=-` reads the value from stdin. `--scope connector` keeps the value server-side for the connector gateway. `--only-me` makes the new value usable only by you. |
+| `kortix secrets share IDENTIFIER --user <email\|id\|me> --group <id> \| --everyone` | Set who can use the value. Shared with specific people, it reaches only them, directly or in their own private sessions — never a shared session or a trigger. See [Who can use a secret](/docs/project/secrets#who-can-use-a-secret). |
 | `kortix secrets request NAME ... [--scope runtime\|connector] [--expires <min>]` | Mint a link for a human to enter a value you do not have. |
 | `kortix secrets unset NAME ...` | Remove secrets. |
 | `kortix secrets grant IDENTIFIER --agent <name>` | Let one agent receive this secret: merge the identifier into that agent's `secrets` list in `kortix.yaml`, adding the agent entry when the manifest omits it. |

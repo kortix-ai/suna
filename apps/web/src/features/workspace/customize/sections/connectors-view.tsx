@@ -15,7 +15,6 @@ import {
   MagnifyingGlassIcon as Search,
   ShareNetworkIcon,
   UsersIcon as Users,
-  UsersThreeIcon as UsersThree,
   XIcon as X,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
@@ -165,6 +164,7 @@ import {
   newAccountLabelTaken,
   newAccountReady,
 } from './view/connector-connections';
+import { AudienceBadge } from './view/audience-badge';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 const SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128';
@@ -305,35 +305,7 @@ function ConnectionRow({
             </Badge>
           )}
           {/* Who may use this account, on every card: the list has one group. */}
-          <Hint
-            label={
-              visibility.kind === 'named'
-                ? tSharing('sharedWith', { names: everyoneWithAccess.join(', ') })
-                : visibility.kind === 'everyone'
-                  ? tSharing('everyoneMeta')
-                  : tSharing('onlyYouDescription')
-            }
-          >
-            <Badge variant="outline" size="xs" data-testid="account-visibility">
-              {visibility.kind === 'you' ? (
-                <Lock />
-              ) : visibility.kind === 'everyone' ? (
-                <UsersThree />
-              ) : (
-                <Users />
-              )}
-              {visibility.kind === 'you'
-                ? tSharing('onlyYou')
-                : visibility.kind === 'everyone'
-                  ? tSharing('visibilityEveryone')
-                  : visibility.more > 0
-                    ? tSharing('visibilityNamedMore', {
-                        names: visibility.names.join(', '),
-                        count: visibility.more,
-                      })
-                    : visibility.names.join(', ')}
-            </Badge>
-          </Hint>
+          <AudienceBadge visibility={visibility} labels={everyoneWithAccess} />
         </div>
         <InlineMeta>
           {/* Listed only because the caller manages the project's connections. */}

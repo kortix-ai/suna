@@ -390,6 +390,30 @@ describe('nativeProviderListFromCatalog — default pick quality', () => {
     expect(list.connected).toEqual(['anthropic', 'openrouter']);
   });
 
+  // No curated per-provider table: one pinned gpt-5.5 / claude-opus-4-8 as
+  // the default for weeks after gpt-6.1-sol and claude-sonnet-5-5 shipped.
+  test('the newest tool-capable release is the default, never a stale curated pick', () => {
+    const list = nativeProviderListFromCatalog(
+      {
+        ...catalog,
+        providers: [
+          {
+            id: 'openai',
+            name: 'OpenAI',
+            env: ['OPENAI_API_KEY'],
+            models: [
+              { id: 'gpt-5.5', name: 'GPT-5.5', released: '2026-04-23' },
+              { id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', released: '2026-09-29' },
+              { id: 'gpt-realtime-3', name: 'GPT Realtime 3', released: '2026-09-30', tool_call: false },
+            ],
+          },
+        ],
+      } as never,
+      new Set(['OPENAI_API_KEY']),
+    );
+    expect((list as { default?: Record<string, string> }).default).toEqual({ openai: 'gpt-6.1-sol' });
+  });
+
   test('models within a provider are ordered newest-first', () => {
     const list = nativeProviderListFromCatalog(catalog as never, new Set(['OPENROUTER_API_KEY']));
     const openrouter = (list.all ?? []).find((p) => p.id === 'openrouter') as {

@@ -96,3 +96,22 @@ describe('governed grants canonicalize identically (the intended behavior change
     });
   });
 });
+
+describe('v3 declared agent grants and model', () => {
+  test('parses YAML agent behavior without treating its map as a v1 list', () => {
+    const manifest = parseManifestString(`kortix_version: 3
+default_agent: writer
+agents:
+  writer:
+    model: test/model
+    prompt: Be concise.
+    connectors: [github]
+    secrets: [KEY]
+`, 'yaml', 'kortix.yaml');
+    const loaded = extractAgents(manifest);
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.defaultAgent).toBe('writer');
+    expect(loaded.specs[0]?.model).toBe('test/model');
+    expect(grantFromLoadedAgents('writer', loaded)).toMatchObject({ connectors: ['github'], env: ['KEY'] });
+  });
+});

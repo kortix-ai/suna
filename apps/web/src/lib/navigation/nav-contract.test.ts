@@ -138,6 +138,18 @@ describe('nav contract — the router bridge', () => {
   });
 });
 
+describe('nav contract — session switching', () => {
+  test('sidebar session links prefetch the full destination on intent', () => {
+    const source = readFileSync(
+      resolve(WEB_ROOT, 'src/features/workspace/project-sidebar/project-session-list.tsx'),
+      'utf8',
+    );
+    expect(source).toMatch(
+      /const sessionLink = \(\s*<HoverPrefetchLink\s+href=\{href\}\s+prefetch\s+onClick=\{onNavigate\}/,
+    );
+  });
+});
+
 describe('nav contract — dev/staging environment gate', () => {
   test('the access cookie renews on the cookie path, not only on a Basic challenge', () => {
     // The cookie carries maxAge 7 days. Renewing it only on `source === 'basic'`

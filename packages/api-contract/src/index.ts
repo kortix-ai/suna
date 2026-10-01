@@ -1566,6 +1566,12 @@ export const SecretSchema = z.object({
   strategy_locked: z.boolean(),
   last_rotated_at: z.string().nullable(),
   requires_rotation: z.boolean(),
+  /** Who can use the shared value: each audience grant. Empty = everyone in
+   *  the project. Present on `GET /secrets`. */
+  shared_with: z.array(ConnectionShareSchema).optional(),
+  /** Can the caller's sessions use the shared value? False only when it is
+   *  shared with specific people and the caller is not one of them. */
+  usable: z.boolean().optional(),
 });
 export type Secret = z.infer<typeof SecretSchema>;
 

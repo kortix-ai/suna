@@ -6433,6 +6433,19 @@ export const sessionPresenceLeases = kortixSchema.table('session_presence_leases
 ]);
 
 /**
+ * Audit reconciliation high-water mark, one row per account. `checked_at` is
+ * the start of the account's last COMPLETE pass: the next pass scans only
+ * source rows newer than it (minus a lookback). `full_scan_at` is the start of
+ * the last pass over the whole history, which re-verifies old rows weekly.
+ * Written only when a pass completes, so a crash resumes from the old mark.
+ */
+export const auditReconciliationState = kortixSchema.table('audit_reconciliation_state', {
+  accountId: uuid('account_id').primaryKey(),
+  checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  fullScanAt: timestamp('full_scan_at', { withTimezone: true }).notNull(),
+});
+
+/**
  * A user's Expo push device token plus that device's per-event notification
  * preferences. One row per physical device (`token` is the Expo push token
  * and is the primary key, since a token uniquely identifies a device+app
