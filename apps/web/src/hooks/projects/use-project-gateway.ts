@@ -15,4 +15,4 @@ export {
   useGatewayKeys,
   useCreateGatewayKey,
   useRevokeGatewayKey,
-} from '../../../../../packages/sdk/src/react/use-project-gateway';
+} from '@kortix/sdk/react';
