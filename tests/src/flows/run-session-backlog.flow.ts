@@ -38,6 +38,7 @@ import {
   runtimePath,
   sandboxIdOf,
   sendPrompt,
+  stopSessionAndWait,
   streamedReplies,
   waitForAssistantText,
   waitForSessionReady,
@@ -808,15 +809,8 @@ harnessFlow(
   },
   async (ctx, harness) => {
     const { projectId, sessionId } = await bootSession(ctx, harness);
-    await ctx.step('stop → 200 status stopped', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
-        {},
-        {
-          params: { projectId, sessionId },
-        },
-      );
-      r.status(200).body().has('$.status', 'stopped');
+    await ctx.step('stop → 200 stopped (or stopping, then stopped)', async () => {
+      await stopSessionAndWait(ctx, projectId, sessionId);
     });
     await ctx.step('stopping an already-stopped session → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
@@ -1289,7 +1283,11 @@ harnessFlow(
       });
       await ctx.step('no file tool ran; on pi the write was attempted and refused', async () => {
         const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
-        const fileTools = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'write' || t.tool === 'edit');
+        // `bash: deny` and `edit: deny` also cover the shell and file-writing
+        // tools that do the same job: pty_* and memory.
+        const fileTools = messages
+          .flatMap((m) => m.tools ?? [])
+          .filter((t) => t.tool === 'write' || t.tool === 'edit' || t.tool === 'memory' || t.tool.startsWith('pty_'));
         const ran = fileTools.filter((t) => t.status !== 'error');
         if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
         // OpenCode never offers a tool its policy denies, so its model has no

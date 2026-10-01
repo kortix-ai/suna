@@ -654,6 +654,12 @@ export async function ensureLocalStack(
           API_KEY_SECRET: "local-flow-runner-api-key-secret",
           INTERNAL_SERVICE_KEY: LOCAL_FLOW_INTERNAL_SERVICE_KEY,
           ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
+          // Every access token is confirmed live with GoTrue. TTL 0 sends one
+          // GoTrue `/user` call per request; a full core run then exhausts
+          // GoTrue's ephemeral DB ports (see the learnings ledger, 2026-10-01).
+          // 2 s bounds that to one call per token per 2 s, and logout drops the
+          // cached verdict on this single replica at once.
+          SUPABASE_JWT_LIVENESS_TTL_MS: "2000",
           KORTIX_SKIP_ENSURE_SCHEMA: "1",
           // Config archives go through the API's one object store, pointed at
           // this profile's Supabase Storage S3 endpoint. `--no-env-file` above

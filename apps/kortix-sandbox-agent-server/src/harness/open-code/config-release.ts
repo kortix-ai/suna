@@ -1,5 +1,6 @@
+import { pluginFilesInDir, toolNamesInDir } from './config-directory-inventory'
 import { existsSync } from 'node:fs'
-import { readFile, readdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   activateBootConfig,
@@ -14,7 +15,6 @@ import {
   verifyRelease,
   verifyReleaseDetail,
   writeReleaseManifest,
-  type ReleaseManifest,
 } from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
@@ -283,16 +283,6 @@ export async function preparePlatformConfigDir(
   await ensureInjectedManagedSkills(dir, managedSkillsDir ? { bakedDir: managedSkillsDir } : {})
 }
 
-
-async function pluginFilesInDir(dir: string): Promise<string[]> {
-  const entries = await readdir(join(dir, 'plugins'), { withFileTypes: true }).catch(() => [])
-  return pluginFilesFrom(entries.filter((entry) => entry.isFile()).map((entry) => `plugins/${entry.name}`))
-}
-
-async function toolNamesInDir(dir: string): Promise<string[]> {
-  const entries = await readdir(join(dir, 'tools'), { withFileTypes: true }).catch(() => [])
-  return toolNamesFromFiles(entries.filter((entry) => entry.isFile()).map((entry) => `tools/${entry.name}`))
-}
 
 /**
  * Apply the desired release. Single flight: a call while one runs throws

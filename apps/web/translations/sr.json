@@ -1127,10 +1127,6 @@
           "name": "AgentMail е-пошта",
           "description": "Доделите AgentMail сандучиће да би долазне поруке могле да покрену и наставе Kortix сесије."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Повежите Microsoft Teams бота да би разговори и канали могли да покрену и наставе Kortix сесије."
-        },
         "llm_gateway": {
           "name": "LLM пролаз",
           "description": "Усмерите овај пројекат кроз управљани Kortix LLM пролаз за моделе, мерење и буџете."
@@ -1181,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Poruke ljudima",
-          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet."
+          "description": "Agenti mogu da pišu ljudima i drugim sesijama. `kortix send alice@example.com` otvara razgovor koji počinje porukom agenta i pojavljuje se pod Pitaju te u bočnoj traci primaoca. Više adresa otvara grupni čet. Poruke između sesija navode sesiju koja ih šalje, da bi njen agent mogao da odgovori."
         },
         "reminders": {
           "name": "Подсетници",
@@ -1369,7 +1365,11 @@
     "dailyAt9AM": "Сваки дан у 9 сати",
     "weekdaysAt9AM": " Радним данима у 9 ујутро",
     "weeklyOnMonday": "Недељно у понедељак",
-    "monthlyOn1st": "Месечно 1"
+    "monthlyOn1st": "Месечно 1",
+    "runFailed": {
+      "label": "Последње покретање није завршено",
+      "nextRun": "Следеће покретање покушава поново."
+    }
   },
   "sidebar": {
     "referAndEarn": "Препоручи и заради",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Само тренутак…",
       "useDifferentEmail": "Користи другу имејл адресу",
       "usePasswordInstead": "Користи лозинку",
-      "emailCodeInstead": "Пошаљи ми код имејлом",
+      "emailLinkInstead": "Пошаљи ми линк имејлом",
       "forgotPassword": "Заборавили сте лозинку?",
       "automaticAccount": "Нови сте овде? Кликом на „Настави“ налог ће бити аутоматски направљен.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Проналажење добављача идентитета…",
         "use": "Користи јединствену пријаву (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Проверите имејл",
-        "description": "Послали смо код на <address>{email}</address>",
-        "verifying": "Провера…",
-        "notReceived": "Нисте добили код?",
+        "description": "Послали смо линк за пријаву на <address>{email}</address>. Отворите га да наставите.",
+        "notReceived": "Нисте добили линк?",
         "resendIn": "Поново пошаљи за {seconds}",
         "resend": "Пошаљи поново"
       },
@@ -9886,7 +9885,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Само {value0}",
       "text0dfd0cbdd238": "Ово је једини пут када се приказује цео кључ. Сачувајте га на безбедном месту.",
-      "text0e0b01710c4b": "Slack је доступан · Teams и email ускоро стижу · или покрените сесије преко API-ја",
       "text0e1181a97f66": "Права машина, прави упит, анализа коју можете поново да покренете",
       "text0e16f24ee012": "· {value0} од {value1}",
       "text0e22e022480d": "Изаберите који модел извршава овај корак",
@@ -14469,7 +14467,6 @@
       "textf5262c55d1be": "Microsoft Teams је повезан, али објављивање апликације у вашем Teams каталогу није успело.",
       "text76930360e909": "Microsoft Teams је повезан. Објављивање апликације у вашем Teams каталогу…",
       "textb8d155eea2ab": "Microsoft сагласност је одбијена.",
-      "textd4b32aea5c4a": "Microsoft Teams је искључен за овај пројекат.",
       "text57ef9e5e8110": "Teams инсталација једним кликом није подешена на овом серверу.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Позовите људе да раде на овом налогу.",
@@ -16943,7 +16940,7 @@
       "textd7da08389824": "сервисни налог",
       "textd7db5a6e1483": "Копирај овај токен сада",
       "textd7e9af636757": "Токени се чувају по хосту, па промена хоста мења налог и подразумевани пројекат.",
-      "textd7eb7cdcff7d": "Проверите е-пошту за код за пријављивање",
+      "textd7eb7cdcff7d": "Проверите е-пошту за линк за пријаву",
       "textd7f179da0e70": "Градимо компаније које се саме управљају. Људи проверавају, усмеравају и управљају, док тимови агената обављају посао кроз инжењеринг, производ, операције, финансије, подршку и раст.",
       "textd800b1eb8a84": "Кликните на „Create App Integration“.",
       "textd814d7970df3": "„Прелазак са X на Y“ је решење на које сте се унапред обавезали. Споро, нестабилно, ломи се за овог клијента — то су проблеми.",
@@ -19081,7 +19078,35 @@
       "text7458028e0d1d": "Заврши диктирање",
       "text9c84d6622566": "Диктирај поруку",
       "textf164e4b031dc": "Присуство у сесији је ажурирано",
-      "text9e6a0b0a06c2": "Pregledao autore poruka sesije"
+      "text9e6a0b0a06c2": "Pregledao autore poruka sesije",
+      "text5f58426c214e": "Градимо open-source AI Management System. Свака компанија треба да поседује све њене делове.",
+      "textf729ef1ea584": "Усаглашавање лиценци и места",
+      "text7912f8e97c06": "cron окидач покреће кварталну проверу приступа и месечно усаглашавање лиценци. Окидачи наводе агента под којим се извршавају, па аутоматизована сесија има потпуно исти домет као сесија уз надзор — ни више.",
+      "textbc0deb1bab41": "Kortix је open-source AI Management System — може се самостално хостовати, са било којим моделом. Започните један пројекат бесплатно.",
+      "text0c5b38410c06": "Представљамо Kortix: open-source AI Management System",
+      "textf216fe1b31a2": "Почните са једним одељењем, повежите алате које већ користи и претворите радни ток у пројекат заснован на git-у који клијент може да поседује.",
+      "textdcb3e70ce4dc": "Kortix – open-source AI Management System.",
+      "text1345783053b5": "Kortix наспрам Claude Cowork: асистент на радној површини или AI Management System за компанију?",
+      "textd90da51ca5c2": "Claude Cowork покреће само Anthropic моделе, у Anthropic облаку или на вашем Bedrock, Google Cloud или Microsoft Foundry налогу, без самосталног хостовања. Ево где га компанија прерасте.",
+      "text0216eab899cb": "Консултантским кућама треба један репо за агенте њихових клијената",
+      "text3059f4c530b3": "Зашто консултантским кућама треба један git репо за агенте, меморију, конекторе, политике и проверљив рад њихових клијената.",
+      "textad70f35eaccc": "Наша мисија: да компанију поведемо од људи до AGI и да јој на том путу омогућимо да задржи сваки бајт себе.",
+      "text66b6392a2418": "Белешке са терена о изградњи, покретању и управљању AI агентима који обављају стварни посао — од тима који гради Kortix.",
+      "text809a706ff256": "Акценти и статус",
+      "text5ed8e8176c1d": "Једине нијансе у UI производа. Боје глифове, тачке, тонове и графиконе. Ознака поред њих остаје foreground или muted-foreground, јер ниједан акценат не испуњава AA као текст на белој подлози. Неактивно стање нема нијансу: muted-foreground.",
+      "text1b730c5151b5": "Скала графикона",
+      "text7ac77b03cfd2": "Само за визуелизацију података. Читајте је преко var(--chart-n), не преко utility класе.",
+      "textf25fe860a82d": "10 варијанти, 8 величина. Дугмад су <code>rounded-md</code>. Панели, картице и редови су такође rounded-md; плутајући панели су rounded-lg; rounded-2xl је само за маркетинг. Варијанта <code>destructive</code> је резервисана за једну неповратну потврду.",
+      "textc94e8cb68cba": "Забрањени обрасци",
+      "text9bb4af3b0beb": "Ови се још налазе у коду, али их бренд кит забрањује. Не додајте нову употребу.",
+      "text1aff73a5df45": "{why} Користите {instead}.",
+      "text81b004dc7e0b": "Slack и Teams су доступни · email ускоро стиже · или покрените сесије преко API-ја",
+      "text7d7b98240405": "Два су доступна. Један је експерименталан. Рећи ћемо који.",
+      "textb60c863bbacb": "Укључен за сваки пројекат, без заставице. Администратор тенанта даје сагласност једном, или пројекат користи сопствену бот апликацију. Исте сесије, иста правила идентитета као за Slack.",
+      "text80043b03898d": "Ажурирајте Kortix апликацију у Teams-у",
+      "textdf757dbe33eb": "Ваш Teams каталог има верзију {value0} Kortix апликације. Верзија {value1} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
+      "textcd2c4b26eedd": "Kortix нема запис о верзији апликације у вашем Teams каталогу. Верзија {value0} има све команде и дозволе које ваш агент користи у Teams-у. Teams администратор објављује ажурирање. Затим власник тима ажурира апликацију у сваком тиму у коме је Teams нуди: тим → ⋯ → Управљај тимом → Апликације → Ажурирај.",
+      "texte15f213fa506": "Објави ажурирање апликације"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20127,6 +20152,7 @@
     "everyoneDefaultMeta": "Док не додате групу или особу",
     "everyoneMeta": "Сви са приступом пројекту",
     "groupMeta": "Група",
+    "agentMeta": "Agent",
     "memberMeta": "Члан",
     "remove": "Уклони {name}",
     "keep": "Задржи",
@@ -20150,8 +20176,12 @@
     "addAccountDescription": "Дајте налогу назив и изаберите ко може да га користи.",
     "onlyYou": "Само ви",
     "onlyYouDescription": "Само ви можете да га користите, у својим приватним сесијама.",
-    "specificPeople": "Одређене особе или групе",
-    "specificPeopleDescription": "Само особе и групе које изаберете, у својим приватним сесијама.",
+    "onlyRequester": "Samo {name}",
+    "onlyRequesterUnnamed": "Samo osoba koja je tražila",
+    "onlyRequesterDescription": "Samo ta osoba može da ga koristi, direktno ili u svojim privatnim sesijama.",
+    "specificPeople": "Određene osobe, grupe ili agenti",
+    "specificPeopleDescription": "Samo osobe, grupe i agenti koje izaberete. Osobe ga koriste u svojim privatnim sesijama, a agent u svim svojim sesijama.",
+    "agentShareHint": "Agent ga koristi u svim svojim sesijama, uključujući okidače. Svako ko može da pokrene tog agenta može da ga koristi preko agenta.",
     "shareRequiresManage": "За дељење налога потребна је дозвола за управљање везама пројекта.",
     "nameTaken": "Налог са називом {label} већ постоји.",
     "noAccountsTitle": "Још нема налога",

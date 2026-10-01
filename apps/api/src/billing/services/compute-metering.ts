@@ -1,3 +1,4 @@
+import { settleAndCheckAutoTopup } from './wallet-debits';
 // Billing v2 — sandbox compute metering.
 //
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in
@@ -282,7 +283,7 @@ async function settleComputeWindow(
   // state it used to be: a drained account no longer bounces every window
   // forever, it records the overdraft once and blocks the next admission.
   try {
-    await wallet.settle({
+    await settleAndCheckAutoTopup({
       accountId: row.accountId,
       amount: windowCost,
       // The multiplier is named in the description only when it is not list

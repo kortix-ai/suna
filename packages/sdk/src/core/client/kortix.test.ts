@@ -1749,3 +1749,9 @@ test('project-bound session retains both ids for transcript', async () => {
   await kortix.project('BOUND_PROJECT').session('BOUND_SESSION').transcript();
   expect(last().url).toContain('/projects/BOUND_PROJECT/sessions/BOUND_SESSION/transcript');
 });
+
+test('project agent identities retains its bound project id', async () => {
+  await kortix.project('BOUND_PROJECT').agentIdentities();
+  expect(last().url).toBe('http://test.local/projects/BOUND_PROJECT/agent-identities');
+  expect(last().method).toBe('GET');
+});

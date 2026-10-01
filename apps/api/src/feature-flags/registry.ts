@@ -155,23 +155,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'teams',
-    name: 'Microsoft Teams',
-    description:
-      'Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions. The install flow, org-catalog publishing, and bring-your-own-bot setup are still experimental.',
-    stability: 'experimental',
-    // Always listable. Server-side bot credentials (MICROSOFT_APP_ID /
-    // MICROSOFT_APP_PASSWORD) only decide whether the MANAGED install path is
-    // offered — `teamsMode().available` reports that separately, and a project
-    // can always bring its own bot app. Gating availability on the credentials
-    // would hide the bring-your-own flow on exactly the deployments that need
-    // it (self-host).
-    available: () => true,
-    // Explicit opt-in: a project turns Teams on in Settings.
-    platformDefault: () => false,
-    enforcement: 'routes',
-  },
-  {
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:

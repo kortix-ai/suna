@@ -10,6 +10,8 @@ export interface OutboundActivity {
   type: 'message' | 'typing';
   text?: string;
   attachments?: Array<{ contentType: string; content?: unknown; name?: string; contentUrl?: string }>;
+  /** The one person a targeted message is for. */
+  recipient?: { id: string };
 }
 
 function joinUrl(base: string, path: string): string {
@@ -17,7 +19,7 @@ function joinUrl(base: string, path: string): string {
 }
 
 async function connectorFetch(
-  method: 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   url: string,
   body: unknown,
   projectId?: string,
@@ -139,6 +141,39 @@ export function sendText(ref: TeamsConversationRef, text: string): Promise<strin
 
 export function sendCard(ref: TeamsConversationRef, card: unknown): Promise<string | null> {
   return sendActivity(ref, cardActivity(card));
+}
+
+/**
+ * A card in a channel or group chat that only `recipientId` (a `29:…` Teams
+ * user id of a member there) sees: a Teams targeted message, marked "Only you
+ * can see this message" — Slack's ephemeral. GA since 2026-07-30; Teams
+ * deletes it after 24 hours. Null when Teams refuses it (for example
+ * `403 BotNotInConversationRoster`, or a recipient who left), so every caller
+ * keeps a fallback.
+ */
+export async function sendTargetedCard(ref: TeamsConversationRef, recipientId: string, card: unknown): Promise<string | null> {
+  const url = joinUrl(
+    ref.serviceUrl,
+    `v3/conversations/${encodeURIComponent(ref.conversationId)}/activities?isTargetedActivity=true`,
+  );
+  const r = await connectorFetch('POST', url, { ...cardActivity(card), recipient: { id: recipientId } }, ref.projectId);
+  return r.ok ? r.id : null;
+}
+
+/**
+ * The Teams user id (`29:…`) of the member of `ref`'s conversation whose
+ * Entra object id is `aadObjectId` — the id a targeted message needs, when
+ * only the object id was stored. Null when Teams does not know them there.
+ */
+export async function conversationMemberId(ref: TeamsConversationRef, aadObjectId: string): Promise<string | null> {
+  // A channel thread is `19:…@thread.tacv2;messageid=…`; its members are the channel's.
+  const conversationId = ref.conversationId.split(';')[0] ?? ref.conversationId;
+  const url = joinUrl(
+    ref.serviceUrl,
+    `v3/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(aadObjectId)}`,
+  );
+  const r = await connectorFetch('GET', url, undefined, ref.projectId);
+  return r.ok ? r.id : null;
 }
 
 export function updateCard(ref: TeamsConversationRef, activityId: string, card: unknown): Promise<boolean> {

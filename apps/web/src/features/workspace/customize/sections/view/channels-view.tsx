@@ -174,12 +174,11 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   // `loading` below), so the header action cannot flash the wrong state, and
   // `useEmailInstall` stays unfired until the flag resolves.
   const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
-  const teamsFlag = useFeatureFlag(projectId, 'teams');
   const emailChannelEnabled = emailFlag.enabled;
-  const teamsChannelEnabled = teamsFlag.enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
-  const { data: teamsInstall } = useTeamsInstall(teamsChannelEnabled ? projectId : null);
+  // Teams is on for every project (its feature flag graduated on 2026-10-01).
+  const { data: teamsInstall } = useTeamsInstall(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -188,7 +187,6 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
     loadingInstall ||
     loadingMode ||
     emailFlag.isLoading ||
-    teamsFlag.isLoading ||
     (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
@@ -198,9 +196,9 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   // Email and Teams — same row, same list. So the "More channels" label only
   // earns its place while the hero is above it; with Slack in the list, the
   // rows ARE the channel list and the section header already says "Channels".
+  // The list always has the Teams row.
   const slackRow = Boolean(install);
-  const hasRows = slackRow || emailChannelEnabled || teamsChannelEnabled;
-  const showMoreLabel = !slackRow && hasRows;
+  const showMoreLabel = !slackRow;
 
   return (
     /* Narrower than the page it sits in, and deliberately so. The Connectors
@@ -239,30 +237,29 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
             />
           )}
 
-          {hasRows ? (
-            <section className="space-y-2">
-              {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
-              <ul className="space-y-2">
-                {install ? (
-                  <SlackChannelRow
-                    projectId={projectId}
-                    installation={install}
-                    canWrite={canWrite}
-                  />
-                ) : null}
-                {emailChannelEnabled ? (
-                  <EmailChannelRow
-                    projectId={projectId}
-                    installation={emailInstall ?? null}
-                    canWrite={canWrite}
-                  />
-                ) : null}
-                {teamsChannelEnabled ? (
-                  <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
-                ) : null}
-              </ul>
-            </section>
-          ) : null}
+          <section className="space-y-2">
+            {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
+            <ul className="space-y-2">
+              {install ? (
+                <SlackChannelRow
+                  projectId={projectId}
+                  installation={install}
+                  canWrite={canWrite}
+                />
+              ) : null}
+              {emailChannelEnabled ? (
+                <EmailChannelRow
+                  projectId={projectId}
+                  installation={emailInstall ?? null}
+                  canWrite={canWrite}
+                />
+              ) : null}
+              <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+            </ul>
+            {teamsInstall?.appUpdateAvailable ? (
+              <TeamsAppUpdateNotice install={teamsInstall} tI18nComplete={tI18nComplete} />
+            ) : null}
+          </section>
 
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
           {/* Bindings are per conversation on EVERY platform (Slack channels, Teams
@@ -273,7 +270,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
             <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
           ) : null}
 
-          {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
+          <TeamsChannelPanel projectId={projectId} />
         </>
       )}
     </div>
@@ -674,9 +671,6 @@ function useTeamsInstallReturnToast() {
       case 'declined':
         warningToast(tI18nComplete.raw('textb8d155eea2ab'));
         break;
-      case 'disabled':
-        warningToast(tI18nComplete.raw('textd4b32aea5c4a'));
-        break;
       case 'unconfigured':
         warningToast(tI18nComplete.raw('text57ef9e5e8110'));
         break;
@@ -723,6 +717,32 @@ function TeamsPublishBadge({
   }
 }
 
+/**
+ * The org catalog serves an older Kortix app than this deployment publishes.
+ * On 1.0.0 (no permission to read channel messages) every thread read in a
+ * team fails. Two people fix it, in order: a Teams admin publishes the update
+ * (the Teams row's button), then a team owner accepts it in each team where
+ * Teams offers it. Teams never installs an update that adds a permission or a
+ * message action on its own, and that second step is the one nobody guesses,
+ * so the notice names it. The server decides when to show it.
+ */
+function TeamsAppUpdateNotice({
+  install,
+  tI18nComplete,
+}: {
+  install: TeamsInstallation;
+  tI18nComplete: UiTranslator;
+}) {
+  const latest = install.latestAppVersion ?? '';
+  return (
+    <InfoBanner tone="warning" title={tI18nComplete.raw('text80043b03898d')}>
+      {install.appVersion
+        ? tI18nComplete('textdf757dbe33eb', { value0: install.appVersion, value1: latest })
+        : tI18nComplete('textcd2c4b26eedd', { value0: latest })}
+    </InfoBanner>
+  );
+}
+
 function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: install } = useTeamsInstall(projectId);
@@ -743,7 +763,9 @@ function TeamsChannelRow({ projectId, canWrite }: { projectId: string; canWrite:
   const retryLabel =
     install?.publishState === 'failed'
       ? tI18nComplete.raw('text942087cc2d41')
-      : tI18nComplete.raw('text8ccfe10f2f2d');
+      : install?.appUpdateAvailable
+        ? tI18nComplete.raw('texte15f213fa506')
+        : tI18nComplete.raw('text8ccfe10f2f2d');
   // The Graph reason, verbatim, under the row: a tooltip on the badge is not
   // discoverable enough for the one line that says what to fix.
   const detail =

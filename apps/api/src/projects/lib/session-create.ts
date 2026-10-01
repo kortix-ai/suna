@@ -379,7 +379,10 @@ export async function createProjectSession(input: {
   if (secretsAllowlist && secretsAllowlist.length > 0) {
     // The creator's own audience: a value shared only with them is a valid
     // allowlist entry. Delivery re-applies the session's audience at boot.
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, userId);
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, {
+      personId: userId,
+      agentId: null,
+    });
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.

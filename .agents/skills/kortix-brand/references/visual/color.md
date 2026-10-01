@@ -82,7 +82,7 @@ The `kortix-*` accents are the only source of hue in product UI. Same value in l
 | none | idle, off, unknown → `text-muted-foreground`, no hue |
 | none | count, structure (a subagent count) → neutral fill, `Badge size="tabular"`. Yellow is the "awaiting you" tone. A count is structure (#7067). |
 
-**Rule.** Map status to one hue per meaning, as the table says (D5). — *Why:* three sources gave three greens, two reds and three warning hues (`status.tsx` emerald/amber, `badge.tsx` hex, `info-banner.tsx` yellow-as-info). One mapping ends it. — *Where:* app, marketing, deck, mobile (mobile `success`/`warning` tokens are OPEN, see `decisions.md` J-4). CLI maps it to ANSI, see below. — *When silent:* if the state is not in the table, it is idle: `text-muted-foreground`.
+**Rule.** Map status to one hue per meaning, as the table says (D5). — *Why:* three sources gave three greens, two reds and three warning hues (`status.tsx` emerald/amber, `badge.tsx` hex, `info-banner.tsx` yellow-as-info). One mapping ends it. — *Where:* app, marketing, deck, mobile (mobile `success`/`warning` alias these accents; see `decisions.md` J-4). CLI maps it to ANSI, see below. — *When silent:* if the state is not in the table, it is idle: `text-muted-foreground`.
 
 **Rule.** Paint accents on glyphs, dots, tints and charts. Keep the text label beside them in `text-foreground` or `text-muted-foreground`. — *Why:* every `kortix-*` accent fails AA as body text on a white ground. Measured 2.4 to 4.0:1, yellow lowest (D5, `decisions.md` J-7). — *Where:* app, marketing, mobile, deck. — *When silent:* an icon or a dot carries the hue. The words stay ink.
 
@@ -125,7 +125,7 @@ The `kortix-*` accents are the only source of hue in product UI. Same value in l
 - **Chart ramp** (`color.chart.chart-1` to `chart-5`): data visualization only. Read through `var(--chart-n)`, not utilities. Theme-invariant.
 - **Terminal** (`color.terminal.*`): the PTY pane mirrors a real shell, so it is shell-black in both themes. xterm needs literal colors, so `terminalTheme` in `features/session/pty-terminal.tsx` must equal these.
 - **Glyph and emoji palettes** (`color.glyph`, `color.emoji`): two families on purpose. Emoji hues derive from the glyph and must stay stable. Glyph colors are user-chosen. Both clear 3:1 on the ring.
-- **Mobile status tokens** (`color.status_mobile_only`): `success` and `warning` exist on mobile only. OPEN (`decisions.md` J-4): promote to web tokens or map to `kortix-green` and `kortix-orange`.
+- **Mobile status tokens** (`color.status_mobile_only`): `success` and `warning` exist on mobile only. Resolved (`decisions.md` J-4): alias `kortix-green` and `kortix-orange`.
 
 ## Per surface
 

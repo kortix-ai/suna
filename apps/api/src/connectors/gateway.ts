@@ -1163,6 +1163,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // An upstream that echoes the rejected body would echo the file's base64.
     const upstream = upstreamReason(result);
     const reason =
+      teamsReadConsentHint(connector, result) +
       (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
       fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
@@ -1270,6 +1271,27 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+/**
+ * Teams refuses a read with 403 "… Resource specific consent grants on the
+ * request ''" when the Kortix app in that team holds no permission to read its
+ * messages: the team added it before the app asked for one, and an update that
+ * adds a permission never installs itself (a team owner accepts it). Graph
+ * names a permission; this names who fixes it and where. A new app version
+ * reaches an organization only through a Teams admin's publish
+ * (teams/catalog.ts needs their sign-in).
+ */
+function teamsReadConsentHint(connector: GatewayConnector, result: ExecResult): string {
+  if (connector.provider !== 'channel' || connector.platform !== 'teams' || result.status !== 403) return '';
+  const body = typeof result.data === 'string' ? result.data : JSON.stringify(result.data ?? '');
+  if (!/Resource specific consent/i.test(body)) return '';
+  return (
+    'Kortix cannot read messages in this team yet: the Kortix app in the team has no permission to read them. ' +
+    'A team owner updates the app in Teams (the team → ⋯ → Manage team → Apps → Update) and accepts the new permission. ' +
+    'If no update is offered, a Teams admin first publishes the latest app from the Kortix project ' +
+    '(Connectors → Channels → Microsoft Teams). '
+  );
 }
 
 /**

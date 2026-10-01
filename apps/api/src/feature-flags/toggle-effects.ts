@@ -15,6 +15,8 @@ import type { FeatureFlagKey } from '@kortix/api-contract';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { propagateFeaturesToActiveSandboxes } from '../projects/lib/sandbox-env-push';
+import { sandboxFeaturesValue } from './sandbox-features';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;
@@ -31,15 +33,18 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
 };
 
 /**
- * Effects by flag. Channel-backed flags (teams and agentmail_email) all
- * re-run channel-connector materialization so the connector row appears or
+ * Effects by flag. The channel-backed flag (agentmail_email) re-runs
+ * channel-connector materialization so the connector row appears or
  * disappears with the flag instead of waiting for the next periodic sweep.
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
-  teams: reconcileProjectChannels,
   agentmail_email: reconcileProjectChannels,
   llm_gateway: async ({ projectId, metadata }) => {
     await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
+  },
+  // The in-box CLI hides `send` while the flag is off (KORTIX_FEATURES).
+  human_messaging: async ({ projectId, metadata }) => {
+    await propagateFeaturesToActiveSandboxes(projectId, sandboxFeaturesValue(metadata));
   },
 };
 

@@ -8,8 +8,7 @@
 //      session-gate denies the rest of the session immediately
 //      (instead of waiting for Supabase to refuse the next refresh).
 //
-// The client still calls supabase.auth.signOut() in parallel to
-// invalidate the refresh token at Supabase's end.
+// Logout also revokes at GoTrue so the refresh token cannot revive this session.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
@@ -31,9 +30,8 @@ authRouter.use('/*', supabaseAuth);
  * POST /v1/auth/logout — explicit server-side logout for the calling
  * session. Revokes the session in our activity table (so the gate
  * denies any further request in the same access-token window) and
- * emits an audit event. Always returns 200, even when there's nothing
- * to revoke — clients shouldn't have to handle "I'm not signed in"
- * errors on a logout call.
+ * emits an audit event. A failed upstream revoke returns 503 rather than
+ * claiming success while the session remains live.
  */
 authRouter.openapi(
   createRoute({
@@ -47,7 +45,7 @@ authRouter.openapi(
         z.object({ ok: z.boolean(), revoked_session_rows: z.number() }),
         'Logout processed (always 200)',
       ),
-      ...errors(401),
+      ...errors(401, 503),
     },
   }),
   async (c) => {
@@ -68,9 +66,13 @@ authRouter.openapi(
   // typically have one account context per session, but multi-tenant
   // dashboards can hit several — the safe move is to revoke them all
   // on explicit logout.
-  // This replica stops trusting the token at once; other replicas re-ask
-  // GoTrue within SUPABASE_JWT_LIVENESS_TTL_MS (shared/jwt-liveness.ts).
+  // GoTrue revocation prevents refresh; this replica also drops its cached
+  // liveness verdict. Other replicas re-ask within the configured TTL.
   const logoutBearer = c.req.header('Authorization')?.replace(/^Bearer\s+/, '');
+  if (logoutBearer && c.get('authType') === 'supabase') {
+    const result = await gotrue('/logout', { method: 'POST', bearer: logoutBearer, body: {}, query: { scope: 'local' } });
+    if (!result.ok) return c.json({ error: 'auth_unavailable', error_description: 'Session revocation failed' }, 503);
+  }
   if (logoutBearer) forgetJwtLiveness(logoutBearer);
   let revokedCount = 0;
   if (sessionId) {

@@ -180,9 +180,9 @@
       "kortix-purple": { "value": "oklch(0.675 0.131 306.212)", "hex": "#ab80d6", "utility": "text-kortix-purple", "mobile": true, "meaning": "reserved: no default meaning" }
     },
     "status_mobile_only": {
-      "rule": "Web has no CSS variable: apps/web/src/components/ui/status.tsx uses text-emerald-600 dark:text-emerald-400 and amber. Mobile pins the same Tailwind 4.3.3 shades. Open decision J-4.",
-      "success": { "light": "oklch(59.6% 0.145 163.225)", "dark": "oklch(76.5% 0.177 163.223)", "web": false, "mobile": true },
-      "warning": { "light": "oklch(66.6% 0.179 58.318)", "dark": "oklch(82.8% 0.189 84.429)", "web": false, "mobile": true }
+      "rule": "Web uses kortix-green and kortix-orange for status. Mobile aliases its semantic success and warning tokens to the same accents (J-4).",
+      "success": { "ref": "kortix-green", "web": false, "mobile": true },
+      "warning": { "ref": "kortix-orange", "web": false, "mobile": true }
     },
     "chart": {
       "rule": "Data visualization only. Theme-invariant. Read through var(--chart-n) (Recharts), not utilities.",
@@ -420,8 +420,9 @@
     { "id": "J-3", "change": "Emoji and glyph palettes are two families.", "why": "Emoji hues derive from the glyph and must stay stable; glyph colors are user-chosen (globals.css:132-153)." },
     {
       "id": "J-4",
-      "status": "open",
-      "change": "Web status colors (success/warning) are Tailwind palette classes in status.tsx, which the value law bans elsewhere; mobile has tokens. Decide: promote to web tokens, or map to kortix-green/orange."
+      "status": "resolved",
+      "date": "2026-10-01",
+      "change": "Mobile success and warning alias kortix-green and kortix-orange, matching the current web status palette."
     },
     {
       "id": "J-5",
