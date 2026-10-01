@@ -117,8 +117,16 @@ describe('channelTurnModel', () => {
   const base = { projectId: 'p1', accountId: 'a1', userId: 'u1' };
   beforeEach(() => resetVisionProbeCacheForTest());
 
-  test('a plain text message on a healthy pin is left alone', async () => {
-    expect(await channelTurnModel({ ...base, currentModel: 'codex/gpt-6-astra', hasImage: false })).toBeNull();
+  /**
+   * A plain text message carries its healthy pin too. With no model on the
+   * prompt, OpenCode answers on the model of the session's last prompt: a
+   * Teams channel pinned to DeepSeek answered every message on
+   * `codex/gpt-6-astra` from 2026-09-24 to 2026-10-01, because one earlier
+   * prompt had carried it, and failed each with "Connect Codex".
+   */
+  test('a plain text message carries its healthy pin, so the runtime cannot answer on a stale model', async () => {
+    expect(await channelTurnModel({ ...base, currentModel: 'codex/gpt-6-astra', hasImage: false })).toBe('codex/gpt-6-astra');
+    expect(await channelTurnModel({ ...base, currentModel: 'kortix/deepseek-v4-flash', hasImage: false })).toBe('deepseek-v4-flash');
   });
 
   /**
@@ -229,12 +237,12 @@ describe('channelTurnModel', () => {
 
   test('a /model choice the session does not run yet is returned, so it travels with the prompt', async () => {
     expect(
-      await channelTurnModel({ ...base, currentModel: 'kortix/deepseek-v4-flash', hasImage: false, explicit: true, sessionId: 's1' }),
+      await channelTurnModel({ ...base, currentModel: 'kortix/deepseek-v4-flash', hasImage: false, sessionId: 's1' }),
     ).toBe('deepseek-v4-flash');
   });
 
   test('an unservable choice is still replaced, never sent', async () => {
-    expect(await channelTurnModel({ ...base, currentModel: 'retired-model-v1', hasImage: false, explicit: true })).toBe(
+    expect(await channelTurnModel({ ...base, currentModel: 'retired-model-v1', hasImage: false })).toBe(
       'deepseek-v4-flash',
     );
   });
