@@ -628,8 +628,14 @@ projectsApp.openapi(
         // at the top of the loop caps every further attempt the same way, so
         // the request still answers inside its deadline; past the floor, give
         // up as before.
-        if (chunkSize > AUDIT_INGEST_MIN_CHUNK) {
-          chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunkSize / 2));
+        // Halve the rows this statement actually carried, not the chunk
+        // ceiling. A 3-row batch under a 200-row ceiling used to re-send the
+        // same 3 rows at "100" and "50" — byte-identical statements that each
+        // held an audit-pool backend for the full statement timeout (prod
+        // 2026-10-01: ~20 s per 503, two of the pool's backends' worth of
+        // time, for rows no smaller statement could change).
+        if (chunk.length > AUDIT_INGEST_MIN_CHUNK) {
+          chunkSize = Math.max(AUDIT_INGEST_MIN_CHUNK, Math.floor(chunk.length / 2));
           fallbacks += 1;
           continue;
         }

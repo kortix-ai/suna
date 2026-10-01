@@ -1127,10 +1127,6 @@
           "name": "AgentMail-E-Mail",
           "description": "Weisen Sie AgentMail-Postfächer zu, damit eingehende E-Mail-Threads Kortix-Sitzungen starten und fortsetzen können."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Verbinden Sie einen Microsoft-Teams-Bot, damit Chats und Kanäle Kortix-Sitzungen starten und fortsetzen können."
-        },
         "llm_gateway": {
           "name": "LLM-Gateway",
           "description": "Leiten Sie dieses Projekt über das verwaltete Kortix-LLM-Gateway für Modelle, Messung und Budgets."
@@ -9890,7 +9886,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Nur {value0}",
       "text0dfd0cbdd238": "Dies ist das einzige Mal, dass der vollständige Schlüssel angezeigt wird. Bewahre ihn sicher auf.",
-      "text0e0b01710c4b": "Slack ist live · Teams und E-Mail werden eingeführt · oder starte Sitzungen über die API",
       "text0e1181a97f66": "Eine echte Maschine, eine echte Abfrage, eine Analyse, die Sie erneut ausführen können",
       "text0e16f24ee012": "· {value0} von {value1}",
       "text0e22e022480d": "Wähle, welches Modell diesen Schritt ausführt",
@@ -14473,7 +14468,6 @@
       "textf5262c55d1be": "Microsoft Teams verbunden, aber die Veröffentlichung der App in deinem Teams-Katalog ist fehlgeschlagen.",
       "text76930360e909": "Microsoft Teams verbunden. Die App wird in deinem Teams-Katalog veröffentlicht…",
       "textb8d155eea2ab": "Die Microsoft-Zustimmung wurde abgelehnt.",
-      "textd4b32aea5c4a": "Microsoft Teams ist für dieses Projekt deaktiviert.",
       "text57ef9e5e8110": "Die Teams-Ein-Klick-Installation ist auf diesem Server nicht konfiguriert.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Lade Personen ein, in diesem Konto zu arbeiten.",
@@ -19107,7 +19101,11 @@
       "textc94e8cb68cba": "Verbotene Muster",
       "text9bb4af3b0beb": "Diese kommen in der Codebasis noch vor, aber das Brand Kit verbietet sie. Füge keine neue Verwendung hinzu.",
       "text1aff73a5df45": "{why} Verwende stattdessen {instead}.",
-      "text092e391cacdb": "Removed connector account"
+      "text092e391cacdb": "Removed connector account",
+"text81b004dc7e0b": "Slack und Teams sind live · E-Mail wird eingeführt · oder starte Sitzungen über die API",
+      "text7d7b98240405": "Zwei sind live. Einer ist experimentell. Wir sagen, welcher.",
+      "textb60c863bbacb": "Für jedes Projekt aktiv, ohne Flag. Ein Tenant-Admin stimmt einmal zu, oder ein Projekt bringt seine eigene Bot-App mit. Dieselben Sitzungen, dieselben Identitätsregeln wie bei Slack."
+
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

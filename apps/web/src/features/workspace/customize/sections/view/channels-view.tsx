@@ -174,12 +174,11 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   // `loading` below), so the header action cannot flash the wrong state, and
   // `useEmailInstall` stays unfired until the flag resolves.
   const emailFlag = useFeatureFlag(projectId, 'agentmail_email');
-  const teamsFlag = useFeatureFlag(projectId, 'teams');
   const emailChannelEnabled = emailFlag.enabled;
-  const teamsChannelEnabled = teamsFlag.enabled;
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
   const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
-  const { data: teamsInstall } = useTeamsInstall(teamsChannelEnabled ? projectId : null);
+  // Teams is on for every project (its feature flag graduated on 2026-10-01).
+  const { data: teamsInstall } = useTeamsInstall(projectId);
   const { data: emailInstall, isLoading: loadingEmail } = useEmailInstall(
     emailChannelEnabled ? projectId : null,
     EMAIL_CONNECTOR_SLUG,
@@ -188,7 +187,6 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
     loadingInstall ||
     loadingMode ||
     emailFlag.isLoading ||
-    teamsFlag.isLoading ||
     (emailChannelEnabled && loadingEmail);
   const oauthInstallUrl = mode?.oauth_available ? mode.install_url : null;
   const canWrite =
@@ -198,9 +196,9 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
   // Email and Teams — same row, same list. So the "More channels" label only
   // earns its place while the hero is above it; with Slack in the list, the
   // rows ARE the channel list and the section header already says "Channels".
+  // The list always has the Teams row.
   const slackRow = Boolean(install);
-  const hasRows = slackRow || emailChannelEnabled || teamsChannelEnabled;
-  const showMoreLabel = !slackRow && hasRows;
+  const showMoreLabel = !slackRow;
 
   return (
     /* Narrower than the page it sits in, and deliberately so. The Connectors
@@ -239,30 +237,26 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
             />
           )}
 
-          {hasRows ? (
-            <section className="space-y-2">
-              {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
-              <ul className="space-y-2">
-                {install ? (
-                  <SlackChannelRow
-                    projectId={projectId}
-                    installation={install}
-                    canWrite={canWrite}
-                  />
-                ) : null}
-                {emailChannelEnabled ? (
-                  <EmailChannelRow
-                    projectId={projectId}
-                    installation={emailInstall ?? null}
-                    canWrite={canWrite}
-                  />
-                ) : null}
-                {teamsChannelEnabled ? (
-                  <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
-                ) : null}
-              </ul>
-            </section>
-          ) : null}
+          <section className="space-y-2">
+            {showMoreLabel ? <Label>{tI18nComplete.raw('text28647129955c')}</Label> : null}
+            <ul className="space-y-2">
+              {install ? (
+                <SlackChannelRow
+                  projectId={projectId}
+                  installation={install}
+                  canWrite={canWrite}
+                />
+              ) : null}
+              {emailChannelEnabled ? (
+                <EmailChannelRow
+                  projectId={projectId}
+                  installation={emailInstall ?? null}
+                  canWrite={canWrite}
+                />
+              ) : null}
+              <TeamsChannelRow projectId={projectId} canWrite={canWrite} />
+            </ul>
+          </section>
 
           {install ? <SlackFollowUp projectId={projectId} canWrite={canWrite} /> : null}
           {/* Bindings are per conversation on EVERY platform (Slack channels, Teams
@@ -273,7 +267,7 @@ export function ChannelsSection({ projectId }: { projectId: string }) {
             <ChannelBindingsSection projectId={projectId} canWrite={canWrite} />
           ) : null}
 
-          {teamsChannelEnabled ? <TeamsChannelPanel projectId={projectId} /> : null}
+          <TeamsChannelPanel projectId={projectId} />
         </>
       )}
     </div>
@@ -673,9 +667,6 @@ function useTeamsInstallReturnToast() {
         break;
       case 'declined':
         warningToast(tI18nComplete.raw('textb8d155eea2ab'));
-        break;
-      case 'disabled':
-        warningToast(tI18nComplete.raw('textd4b32aea5c4a'));
         break;
       case 'unconfigured':
         warningToast(tI18nComplete.raw('text57ef9e5e8110'));

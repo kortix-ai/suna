@@ -404,4 +404,7 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'You get a diff': 'text764c11571238',
   'You switch it on': 'text4e32fa98498b',
   'Yours to take': 'text18d270539067',
+  'Two are live. One is experimental. We will say which.': 'text7d7b98240405',
+  'On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack.':
+    'textb60c863bbacb',
 };

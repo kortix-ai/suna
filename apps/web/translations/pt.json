@@ -1127,10 +1127,6 @@
           "name": "E-mail AgentMail",
           "description": "Atribua caixas do AgentMail para que e-mails recebidos possam iniciar e continuar sessões da Kortix."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Conecte um bot do Microsoft Teams para que conversas e canais possam iniciar e continuar sessões da Kortix."
-        },
         "llm_gateway": {
           "name": "Gateway LLM",
           "description": "Encaminhe este projeto pelo gateway LLM gerenciado da Kortix para modelos, medição e orçamentos."
@@ -9890,7 +9886,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Apenas {value0}",
       "text0dfd0cbdd238": "Esta é a única vez que a chave completa será exibida. Guarde-a em um local seguro.",
-      "text0e0b01710c4b": "O Slack está ativo · Teams e e-mail estão sendo disponibilizados · ou inicie sessões pela API",
       "text0e1181a97f66": "Uma máquina real, uma consulta real, uma análise que você pode executar novamente",
       "text0e16f24ee012": "· {value0} por {value1}",
       "text0e22e022480d": "Escolha qual modelo executa esta etapa",
@@ -14473,7 +14468,6 @@
       "textf5262c55d1be": "Microsoft Teams conectado, mas a publicação do app no seu catálogo do Teams falhou.",
       "text76930360e909": "Microsoft Teams conectado. Publicando o app no seu catálogo do Teams…",
       "textb8d155eea2ab": "O consentimento da Microsoft foi recusado.",
-      "textd4b32aea5c4a": "O Microsoft Teams está desativado para este projeto.",
       "text57ef9e5e8110": "A instalação do Teams em um clique não está configurada neste servidor.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Convide pessoas para trabalhar nesta conta.",
@@ -19107,7 +19101,11 @@
       "textc94e8cb68cba": "Padrões proibidos",
       "text9bb4af3b0beb": "Eles ainda existem no código, mas o brand kit os proíbe. Não adicione novos usos.",
       "text1aff73a5df45": "{why} Use {instead}.",
-      "text092e391cacdb": "Removed connector account"
+      "text092e391cacdb": "Removed connector account",
+"text81b004dc7e0b": "O Slack e o Teams estão ativos · o e-mail está sendo disponibilizado · ou inicie sessões pela API",
+      "text7d7b98240405": "Dois estão ativos. Um é experimental. Dizemos qual.",
+      "textb60c863bbacb": "Ativo em todos os projetos, sem flag. Um administrador do tenant dá o consentimento uma vez, ou um projeto usa seu próprio app de bot. As mesmas sessões e as mesmas regras de identidade do Slack."
+
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

@@ -953,10 +953,6 @@
           "name": "AgentMail Email",
           "description": "Assign AgentMail inboxes so incoming email threads can start and continue Kortix sessions."
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Connect a Microsoft Teams bot so chats and channels can start and continue Kortix sessions."
-        },
         "llm_gateway": {
           "name": "LLM Gateway",
           "description": "Route this project through the managed Kortix LLM gateway for managed models, metering, and budgets."
@@ -9903,7 +9899,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "Only {value0}",
       "text0dfd0cbdd238": "This is the only time the full key is displayed. Store it somewhere safe.",
-      "text0e0b01710c4b": "Slack is live · Teams and email are rolling out · or start sessions from the API",
       "text0e1181a97f66": "A real machine, a real query, an analysis you can re-run",
       "text0e16f24ee012": "· {value0} by {value1}",
       "text0e22e022480d": "Choose which model runs this turn",
@@ -14486,7 +14481,6 @@
       "textf5262c55d1be": "Microsoft Teams connected, but publishing the app to your Teams catalog failed.",
       "text76930360e909": "Microsoft Teams connected. Publishing the app to your Teams catalog…",
       "textb8d155eea2ab": "Microsoft consent was declined.",
-      "textd4b32aea5c4a": "Microsoft Teams is turned off for this project.",
       "text57ef9e5e8110": "Teams one-click install isn't configured on this server.",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "Invite people to work in this account.",
@@ -19120,7 +19114,11 @@
       "textc94e8cb68cba": "Banned patterns",
       "text9bb4af3b0beb": "These ship in the code base but the brand kit bans them. Do not add a new use.",
       "text1aff73a5df45": "{why} Use {instead}.",
-      "text092e391cacdb": "Removed connector account"
+      "text092e391cacdb": "Removed connector account",
+"text81b004dc7e0b": "Slack and Teams are live · email is rolling out · or start sessions from the API",
+      "text7d7b98240405": "Two are live. One is experimental. We will say which.",
+      "textb60c863bbacb": "On for every project, no flag. A tenant admin consents once, or a project brings its own bot app. Same sessions, same identity rules as Slack."
+
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
