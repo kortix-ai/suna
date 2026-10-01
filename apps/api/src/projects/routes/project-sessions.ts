@@ -40,7 +40,7 @@ import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { sessionMessagePromptText } from '@kortix/shared';
-import { resolveSessionParticipants, sessionMessageSender } from '../lib/session-participants';
+import { conversationName, resolveSessionParticipants, sessionMessageSender } from '../lib/session-participants';
 import { notifySessionEvent } from '../../notifications/session-push';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -210,7 +210,7 @@ projectsApp.openapi(
     delete body.initialPrompt;
     delete body.participants;
     // The question names the conversation; the header never becomes a title.
-    body.name ??= question.split('\n')[0]!.slice(0, 80);
+    body.name ??= conversationName(question);
     const participantIds = resolved.people.map((p) => p.userId);
     participantMetadata = { participants: participantIds, awaiting_reply_from: participantIds, awaiting_reply: true };
     // An agent that re-runs `kortix send` after a timeout must not open a
