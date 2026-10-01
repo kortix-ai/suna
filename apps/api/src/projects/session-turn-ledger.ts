@@ -18,6 +18,7 @@
  * lives here and the dependency direction stays one-way.
  */
 
+import { classifyRuntimeRequest, turnStartBodyFields } from '../sandbox-proxy/runtime-request';
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
 import { mintWireMessageId } from './wire-message-id';
@@ -200,38 +201,23 @@ export function storedSandboxTurns(
   }
   return turns;
 }
-/** Parse the root OpenCode session and client-minted message identity. */
+/**
+ * The runtime session and client-minted message a turn-start request names.
+ * `noReply` persists the message and starts no loop: there is no turn to
+ * track, and no idle relay will ever arrive to close one. Such a POST skips
+ * the ledger's live-turn serialization; the inbox admission gate is what keeps
+ * it out of a live turn. A malformed body leaves the identity session-scoped;
+ * the delivery token still provides CAS safety.
+ */
 export function extractTurnIdentity(
   path: string,
   body: ArrayBuffer | undefined,
 ): SandboxTurnIdentity | null {
-  const normalized = path.replace(/^\/proxy\/\d+(?=\/)/, '');
-  const match = /^\/session\/([^/?#]+)\/(?:prompt_async|message|command|summarize)(?:$|[/?#])/.exec(
-    normalized,
-  );
-  if (!match) return null;
-
-  let messageId: string | null = null;
-  if (body?.byteLength) {
-    try {
-      const parsed = JSON.parse(new TextDecoder().decode(body)) as {
-        messageID?: unknown;
-        noReply?: unknown;
-      };
-      // `noReply` persists the message and starts no loop: there is no turn to
-      // track, and no idle relay will ever arrive to close one. Such a POST
-      // skips the ledger's live-turn serialization; the inbox admission gate
-      // is what keeps it out of a live turn.
-      if (parsed.noReply === true) return null;
-      if (typeof parsed.messageID === 'string' && parsed.messageID.trim()) {
-        messageId = parsed.messageID.trim();
-      }
-    } catch {
-      // The proxy will let OpenCode validate malformed input. Lifecycle identity
-      // remains session-scoped and the delivery token still provides CAS safety.
-    }
-  }
-  return { runtimeSessionId: decodeURIComponent(match[1]), messageId };
+  const request = classifyRuntimeRequest('POST', path);
+  if (request.kind !== 'turn-start') return null;
+  const { messageId, noReply } = turnStartBodyFields(body);
+  if (noReply) return null;
+  return { runtimeSessionId: request.runtimeSessionId, messageId };
 }
 
 export interface SandboxTurnStart extends SandboxTurnIdentity {

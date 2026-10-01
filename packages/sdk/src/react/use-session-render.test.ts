@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AssistantMessage, TextPart, ToolPart, UserMessage } from '@opencode-ai/sdk/v2/client';
+import type { AssistantMessage, TextPart, ToolPart, UserMessage } from '../core/runtime/runtime-types';
 import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 

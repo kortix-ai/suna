@@ -61,7 +61,7 @@ const cases = [
   ['egress-shim to node-forge', 'src/services/egress-shim/ca.ts', "import forge from 'node-forge';", true],
 
   // harness/ — its own layer; adapters are isolated; only harness.ts reaches into one
-  ['adapter to own folder', 'src/harness/pi/boot.ts', "import './wire';", true],
+  ['adapter to own folder', 'src/harness/pi/boot.ts', "import './turn-events';", true],
   ['adapter to own nested folder', 'src/harness/pi/runtime.ts', "import './extensions/host';", true],
   ['adapter to the contract', 'src/harness/pi/boot.ts', "import type { SandboxBootState } from '../contract/boot-state';", true],
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],
@@ -189,7 +189,7 @@ const opencodeNameCases = [
   ['a word inside a sentence', 'src/app/server.ts', "const e = 'prompt_id and opencode_session_id are required'", ['opencode_session_id']],
   ['a comment', 'src/routes/kortix/health.ts', '// opencode\nexport {}', []],
   ['the OpenCode adapter', 'src/harness/open-code/boot.ts', 'const opencodePort = 1', []],
-  ['the pi adapter, until E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', []],
+  ['the pi adapter, since E2', 'src/harness/pi/boot.ts', 'const opencodePort = 1', ['opencodePort']],
   ['the resolver', 'src/harness/harness.ts', 'const opencodePort = 1', []],
   ['a test file', 'src/__tests__/pi-harness.test.ts', 'const opencodePort = 1', []],
   ['an allowlisted word in its own file', 'src/routes/kortix/legacy-names.ts', 'const opencodeEnv = 1', []],

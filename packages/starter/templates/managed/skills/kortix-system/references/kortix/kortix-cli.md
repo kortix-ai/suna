@@ -178,7 +178,7 @@ the exact HTTPS hosts the policy lists.
 | `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. In a session it lists only your agent's granted secrets; a declared key outside the grant shows `not granted` (set or not, you never receive it — ask the human to enable it under Customize → Agents → your agent → Secrets). |
 | `kortix secrets set NAME=VALUE … [--scope runtime\|connector]` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). **Use it whenever you HAVE the value** — including a key the human gave you in chat. `--scope connector` keeps it server-side for a connector. `403` = your agent lacks secret-write permission → use `request`. |
 | `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER value(s) you do NOT have.** Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `connector` = server-side only; pass `--scope runtime` for a value your code reads from the env), `--expires <minutes>` (default 7 days). Warns when your agent's grant will withhold a requested name. Use this when you need a key you don't have. |
-| `kortix secrets share IDENTIFIER --user <email\|id\|me> --group <id> \| --everyone` | Set who can use a value. A person runs it; in a session it returns `403`. A value shared with specific people reaches only them, directly or in their own private sessions — never a shared session or a trigger (see credentials-and-setup-links.md). |
+| `kortix secrets share IDENTIFIER --user <email\|id\|me> --group <id> --agent <name> \| --everyone` | Set who can use a value. A person runs it; in a session it returns `403`. A value shared with specific people reaches only them, directly or in their own private sessions — never a shared session or a trigger (see credentials-and-setup-links.md). |
 | `kortix secrets unset NAME …` | Remove. |
 | `kortix secrets call IDENTIFIER URL [--method METHOD] [--header NAME:VALUE] [--data BODY\|--data-file PATH]` | (Experimental network enforcement only.) Send one policy-bound HTTPS request. Kortix adds the secret server-side. Use it when a request cannot be relayed transparently. |
 
@@ -354,12 +354,12 @@ Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a
 parked session. A fire never starts a new session; if the session is
 deleted or failed the reminder pauses itself. Max 20 active per session, 200 per project; schedules reach at most 366 days ahead.
 
+<!-- flag:human_messaging -->
 ### Send — message sessions and people
 
-Behind the per-project `human_messaging` feature flag (off by default):
-emailing people answers `feature_disabled` without it; `kortix projects
-features enable human_messaging` turns it on (the user's decision). Sending
-to a session id needs no flag beyond normal session access.
+Enabled for this project (per-project `human_messaging` feature flag). Emailing
+people answers `feature_disabled` if the flag is turned off. Sending to a
+session id needs no flag beyond normal session access.
 
 | Command | What it does |
 | --- | --- |
@@ -386,6 +386,7 @@ Headers the receiving agent sees:
 Errors: `feature_disabled` (403), `PARTICIPANT_NOT_FOUND` (404: not a member
 who may run sessions; the message names the addresses, see `kortix access
 ls`), `INVALID_PARTICIPANTS` (400).
+<!-- /flag:human_messaging -->
 
 ### Channels (Slack)
 

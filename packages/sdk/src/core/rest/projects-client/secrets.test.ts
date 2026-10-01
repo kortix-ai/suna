@@ -4,6 +4,7 @@ import type {
   ProjectSecretsAgentScope,
   SecretDeliveryBlockedReason,
   SecretEgressPolicy,
+  SecretSharePrincipal,
 } from './secrets';
 import type { ConnectionShare } from './connectors';
 import {
@@ -98,6 +99,15 @@ test('upsertProjectSecret sends who can use the value as shared_with ([] = every
   });
   await upsertProjectSecret('P1', { name: 'DEEL_API_TOKEN', shared_with: [] });
   expect(last().body).toEqual({ name: 'DEEL_API_TOKEN', shared_with: [] });
+});
+
+test('upsertProjectSecret can share a value with an agent (its service account)', async () => {
+  nextResponse = { status: 200, body: { name: 'NIGHTLY_REPORT_KEY' } };
+  const shared_with: SecretSharePrincipal[] = [{ principal_type: 'agent', principal_id: 'SA1' }];
+  await upsertProjectSecret('P1', { name: 'NIGHTLY_REPORT_KEY', shared_with });
+  expect(last().body).toEqual({ name: 'NIGHTLY_REPORT_KEY', shared_with });
+  const agentShare: ConnectionShare = { grant_id: 'G2', principal_type: 'agent', principal_id: 'SA1', label: 'reporter', expires_at: null };
+  expect(agentShare.principal_type).toBe('agent');
 });
 
 test('listProjectSecrets returns each value\'s audience and whether the caller can use it', async () => {

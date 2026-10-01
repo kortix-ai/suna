@@ -1,5 +1,5 @@
 import { autoSeedableModels } from '@kortix/llm-catalog/lite';
-import type { ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
 import { healBedrockModelKey } from './bedrock-invokable';

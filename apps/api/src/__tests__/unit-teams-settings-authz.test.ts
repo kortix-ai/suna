@@ -233,7 +233,7 @@ describe('Teams setting cards need a linked project manager', () => {
 
   test('a project manager applies a model pick', async () => {
     expect(await press('teams_set_model', { model: 'kortix/glm-5.3-flash' })).toContain('Model set to');
-    expect(writes).toEqual([{ kind: 'model', value: 'kortix/glm-5.3-flash' }]);
+    expect(writes).toEqual([{ kind: 'model', value: 'glm-5.3-flash' }]);
   });
 });
 

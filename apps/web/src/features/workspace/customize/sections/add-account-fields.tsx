@@ -156,16 +156,27 @@ export function AudienceFields({
         <PrincipalPicker
           scope={{ kind: 'project', projectId }}
           selection="multi"
-          kinds={['member', 'group']}
-          value={{ memberIds: value.picked.memberIds, groupIds: value.picked.groupIds, inviteEmails: [] }}
+          kinds={['member', 'group', 'agent']}
+          value={{
+            memberIds: value.picked.memberIds,
+            groupIds: value.picked.groupIds,
+            agentIds: value.picked.agentIds ?? [],
+            inviteEmails: [],
+          }}
           onChange={(next) =>
-            onChange({ ...value, picked: { memberIds: next.memberIds, groupIds: next.groupIds } })
+            onChange({
+              ...value,
+              picked: { memberIds: next.memberIds, groupIds: next.groupIds, agentIds: next.agentIds ?? [] },
+            })
           }
           disabled={disabled}
           autoFocus={false}
           emptyLabel={tI18nComplete.raw('textd2600c68a9ff')}
           allExcludedLabel={tI18nComplete.raw('textf68d7561db3d')}
         />
+      ) : null}
+      {value.audience === 'members' && (value.picked.agentIds?.length ?? 0) > 0 ? (
+        <p className="text-muted-foreground text-xs">{tSharing('agentShareHint')}</p>
       ) : null}
     </div>
   );

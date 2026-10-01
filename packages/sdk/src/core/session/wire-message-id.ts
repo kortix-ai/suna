@@ -1,5 +1,10 @@
 /**
- * The OpenCode wire message-id clock — framework-free, with no imports.
+ * Kortix message ids, format v1 — framework-free, with no imports. The format
+ * began as OpenCode's wire id; Kortix owns it now (the pi harness mints it
+ * natively). A client mints an id for a prompt (`mintWireMessageId`) and
+ * validates one (`WIRE_MESSAGE_ID`), and otherwise treats ids as opaque: the
+ * clock arithmetic below is `@deprecated` and stays only while the OpenCode
+ * runtime orders a transcript by id.
  *
  * FORMAT. `msg_` + the LOW 48 bits of `Date.now() * 0x1000` as 12 lowercase
  * hex chars + 14 random base62 chars. OpenCode's own `Identifier.ascending`
@@ -22,11 +27,11 @@
  * behavior.
  *
  * WHAT IS NOT HERE. Three other places touch the clock, each on purpose:
- *  - `apps/kortix-sandbox-agent-server/src/harness/pi/wire-id.ts` is the one
+ *  - `apps/kortix-sandbox-agent-server/src/harness/pi/message-id.ts` is the one
  *    remaining COPY: it mints the pi harness's reply ids. kortixd is a
  *    standalone compiled binary with no workspace dependencies. The copy
- *    orders on the ring through its own `wireIdClockDelta`, and
- *    `pi-wire-id.test.ts` runs this file's regex and the golden mint and
+ *    orders on the ring through its own `messageIdClockDelta`, and
+ *    `pi-message-id.test.ts` runs this file's regex and the golden mint and
  *    `delta` vectors against it. It mints with no backdate, at the box clock.
  *  - `./wire-id-unwrap` (internal, not exported) builds on the constants here:
  *    `core/turns/grouping.ts` orders messages for display on an UNWRAPPED
@@ -38,9 +43,17 @@
 
 // `BigInt(0x…)`, not `0x…n`: consumers typecheck this package under targets
 // below ES2020, where BigInt literals are a compile error.
-/** Sub-millisecond slots per millisecond in the id clock (`Date.now() * 0x1000`). */
+/**
+ * Sub-millisecond slots per millisecond in the id clock (`Date.now() * 0x1000`).
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
+ */
 export const WIRE_ID_TIME_SCALE = BigInt(0x1000);
-/** OpenCode keeps the low 6 bytes of its id clock. */
+/**
+ * OpenCode keeps the low 6 bytes of its id clock.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
+ */
 export const WIRE_ID_TIME_MASK = BigInt(0xffffffffffff);
 const WIRE_ID_TIME_SPAN = WIRE_ID_TIME_MASK + BigInt(1);
 const HALF_SPAN = WIRE_ID_TIME_SPAN / BigInt(2);
@@ -50,6 +63,8 @@ const HALF_SPAN = WIRE_ID_TIME_SPAN / BigInt(2);
  * count as placed by it: 1 hour. Every correct mint is within ~2 minutes of its
  * own server timestamp (the backdate below); the high-bits bug put ids ~40 days
  * out. `apps/api` re-exports it as `MAX_WIRE_ID_CLOCK_CORRECTION`.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export const WIRE_ID_CLOCK_TOLERANCE = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCALE;
 
@@ -58,6 +73,8 @@ export const WIRE_ID_CLOCK_TOLERANCE = BigInt(60 * 60 * 1000) * WIRE_ID_TIME_SCA
  * is self-correcting (the lift raises it above what is on record); too LATE is
  * undetectable downstream, because the next reply is minted from the box clock
  * and would sort above its own prompt.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export const WIRE_ID_BACKDATE_MS = 2 * 60 * 1000;
 
@@ -67,13 +84,21 @@ export const WIRE_MESSAGE_ID = /^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/;
 const WIRE_ID_CLOCK = /^msg_([0-9a-f]{12})/;
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
-/** The 48-bit clock encoded in a wire id, or null when `id` is not one. */
+/**
+ * The 48-bit clock encoded in a wire id, or null when `id` is not one.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
+ */
 export function wireIdClock(id: string | null | undefined): bigint | null {
   const match = WIRE_ID_CLOCK.exec(id ?? '');
   return match ? BigInt(`0x${match[1]}`) : null;
 }
 
-/** The 48-bit id clock of wall-clock instant `ms`, as OpenCode writes it. */
+/**
+ * The 48-bit id clock of wall-clock instant `ms`, as OpenCode writes it.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
+ */
 export function wireIdClockAt(ms: number): bigint {
   return (BigInt(Math.trunc(ms)) * WIRE_ID_TIME_SCALE) & WIRE_ID_TIME_MASK;
 }
@@ -86,6 +111,8 @@ export function wireIdClockAt(ms: number): bigint {
  * This is the ONE ordering primitive. Compare two clocks with
  * `wireIdClockDelta(a, b) > 0`, never with `a > b`: a plain compare puts every
  * id minted after a wrap BELOW every id minted before it.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function wireIdClockDelta(clock: bigint, reference: bigint): bigint {
   let delta = (clock - reference) & WIRE_ID_TIME_MASK;
@@ -97,6 +124,8 @@ export function wireIdClockDelta(clock: bigint, reference: bigint): bigint {
  * The newest of `clocks` on the ring, or null when none is given. `null` and
  * `undefined` entries are skipped, so a caller can merge optional floors in one
  * call: `maxWireIdClock([transcriptNewest, deliveredNewest, submitted])`.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function maxWireIdClock(clocks: Iterable<bigint | null | undefined>): bigint | null {
   let newest: bigint | null = null;
@@ -111,6 +140,8 @@ export function maxWireIdClock(clocks: Iterable<bigint | null | undefined>): big
  * Whether `id` claims a clock more than {@link WIRE_ID_CLOCK_TOLERANCE} ahead
  * of `nowMs`. Such an id cannot have been placed against any real transcript;
  * a floor or a lift must skip it rather than let it veto every later mint.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function isWireIdAheadOf(id: string, nowMs: number): boolean {
   const clock = wireIdClock(id);
@@ -122,6 +153,8 @@ export function isWireIdAheadOf(id: string, nowMs: number): boolean {
  * The newest clock among `ids`, compared on the ring, or null when none is a
  * wire id. With `nowMs`, an id {@link isWireIdAheadOf} it is skipped: it is not
  * a position, and as a floor it would veto every lift.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function newestWireIdClock(
   ids: Iterable<string | null | undefined>,
@@ -144,13 +177,21 @@ function newestClockWhere(
   return maxWireIdClock(kept);
 }
 
-/** A minted id and the clock it encodes. */
+/**
+ * A minted id and the clock it encodes.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
+ */
 export interface MintedWireMessageId {
   id: string;
   time: bigint;
 }
 
-/** Input for {@link mintWireMessageIdAbove}. */
+/**
+ * Input for {@link mintWireMessageIdAbove}.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
+ */
 export interface MintWireMessageIdAboveInput {
   /** Wall clock to mint at, in ms since epoch. */
   nowMs: number;
@@ -178,6 +219,8 @@ export interface MintWireMessageIdAboveInput {
  * Dated `backdateMs` (default {@link WIRE_ID_BACKDATE_MS}) back, then lifted
  * to `newestKnownTime + 1` when that floor is 0 to
  * {@link WIRE_ID_CLOCK_TOLERANCE} ahead on the ring.
+ * @deprecated The message-id clock is an ordering detail of the OpenCode runtime;
+ * Kortix message ids are opaque to clients. Removed with OpenCode support.
  */
 export function mintWireMessageIdAbove(input: MintWireMessageIdAboveInput): MintedWireMessageId {
   const random = input.random ?? Math.random;
@@ -205,7 +248,7 @@ export interface MintWireMessageIdOptions {
 }
 
 /**
- * Mint an OpenCode wire message id for a prompt.
+ * Mint a Kortix message id for a prompt.
  *
  * Use this — never a hand-rolled `Date.now()` encoding — for the `messageId`
  * of `session.prompts.create()`. It is dated {@link WIRE_ID_BACKDATE_MS} back

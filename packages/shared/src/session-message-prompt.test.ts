@@ -40,6 +40,20 @@ describe('session message prompt', () => {
     expect(parsed?.prompt).toBe('Which region?\nSecond line.');
   });
 
+  test('a session sender names its agent, and a header without one still parses', () => {
+    const text = sessionMessagePromptText({
+      type: 'ask',
+      sender: { kind: 'session', sessionId: SID, title: 'Move to prod', agent: 'release-bot' },
+      to: [{ name: 'Avery', email: 'avery@example.com' }],
+      prompt: 'Which region?',
+    });
+    expect(text.split('\n')[0]).toStartWith(`[ASK from session ${SID} "Move to prod" (agent release-bot) to Avery <avery@example.com>`);
+    expect(parseSessionMessagePrompt(text)?.sender).toEqual({ kind: 'session', sessionId: SID, title: 'Move to prod', agent: 'release-bot' });
+    expect(parseSessionMessagePrompt(text)?.to).toEqual([{ name: 'Avery', email: 'avery@example.com' }]);
+    expect(parseSessionMessagePrompt(`[MESSAGE from session ${SID} "Old row"]\n\nhi`)?.sender)
+      .toEqual({ kind: 'session', sessionId: SID, title: 'Old row' });
+  });
+
   test('a comma in a name cannot split the list of people', () => {
     const text = sessionMessagePromptText({
       type: 'ask',
