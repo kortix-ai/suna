@@ -776,20 +776,19 @@ export async function spawnAgentTurn(
       // to slackUserId, so for a bot sender both land where no human will ever
       // see them, and the mention reads as "Kortix ignored it" — which is how
       // this went undiagnosed. Link it with `<cmd> link-bot @TheBot` instead.
-      if (!event.bot_id) {
-        await postIdentityPrompt({
-          projectId,
-          teamId,
-          channel: event.channel,
-          // Top-level ephemeral prompts should render beside the message. Passing
-          // the message ts as thread_ts hides the auth prompt in a new thread.
-          threadTs: event.thread_ts,
-          slackUserId,
-          reason: actor.reason,
-          envelope,
-          event,
-        });
-      }
+      if (event.bot_id) return;
+      await postIdentityPrompt({
+        projectId,
+        teamId,
+        channel: event.channel,
+        // Top-level ephemeral prompts should render beside the message. Passing
+        // the message ts as thread_ts hides the auth prompt in a new thread.
+        threadTs: event.thread_ts,
+        slackUserId,
+        reason: actor.reason,
+        envelope,
+        event,
+      });
       return;
     }
     actorUserId = actor.userId;

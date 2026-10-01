@@ -62,7 +62,7 @@ mock.module('../iam', () => ({
   ...realIam,
   authorize: async () => ({ allowed: authorizeAllowed }),
   assertAuthorized: async () => {},
-  filterAccessibleObjects: async (_actor: unknown, _p: string, _t: string, ids: readonly string[]) => [...ids],
+  filterAccessibleObjects: async (_actor: unknown, _p: string, _t: string, ids: readonly string[]) => accessibleAgents ? [...ids] : [],
   unscopedResourceIds: async (_p: string, _t: string, ids: readonly string[]) => [...ids],
   hasAnyResourceGrants: async () => false,
 }));
@@ -77,6 +77,8 @@ mock.module('../projects/git', () => ({
 // must not touch the FIFO of query results the thread routing is tested with.
 const followUpPlans: Array<Record<string, unknown>> = [];
 let unavailableModel: string | undefined;
+let accessibleAgents = true;
+let startResult: { status: 'created' | 'queued'; sessionId?: string; reason?: string; error?: { status: number; body: { code: string } } } | null = null;
 mock.module('../channels/model-access', () => ({
   agentGrantEnvFor: () => async () => null,
   projectChannelModelScope: async () => null,
@@ -212,6 +214,8 @@ beforeEach(() => {
   messages = [];
   createSessionCalls = 0;
   unavailableModel = undefined;
+  accessibleAgents = true;
+  startResult = null;
   createSessionInputs = [];
   deliverCalls = 0;
   setSlackSessionLifecycleForTest({
@@ -222,7 +226,7 @@ beforeEach(() => {
     createSession: async (input: any) => {
       createSessionInputs.push(input);
       createSessionCalls++;
-      return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
+      return startResult ?? { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
     },
     resolveProjectAutomationActor: async () => 'user-1',
   });
@@ -554,6 +558,30 @@ describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thre
     expect(finalizeCalls).toHaveLength(1);
     expect(finalizeCalls[0]?.error).toContain('synthetic/missing-model');
     expect(finalizeCalls[0]?.error).toContain('/kortix models');
+  });
+
+  test('unavailable agent refuses before lifecycle creation', async () => {
+    accessibleAgents = false;
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0);
+    expect(finalizeCalls[0]?.error).toContain('access');
+  });
+
+  test('queued launch reports the queue without creating another session', async () => {
+    startResult = { status: 'queued', reason: 'concurrent_limit' };
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(1);
+    expect(finalizeCalls[0]?.answer).toContain('queued');
+  });
+
+  test('failed launch surfaces the lifecycle error without retrying', async () => {
+    startResult = { status: 'created', error: { status: 503, body: { code: 'UNAVAILABLE' } } };
+    dbResults = [[project], [], [project], [{ eventId: 'claim' }], [], []];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(1);
+    expect(finalizeCalls[0]?.error).toBeTruthy();
   });
 
   test('winner with an already published mapping follows up instead of creating', async () => {
