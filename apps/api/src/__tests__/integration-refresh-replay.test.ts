@@ -1,25 +1,40 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createHash, randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
+import { randomUUID } from 'node:crypto';
+import { Hono } from 'hono';
+import { headlessAuthRouter } from '../auth/headless';
+import { __setGoTrueFetch } from '../auth/gotrue';
 
-// Run against migrated local PostgreSQL: a mock Set cannot validate the SQL constraint.
+// The db-suites runner supplies a migrated, isolated PostgreSQL database.
 const token = randomUUID();
-const digest = createHash('sha256').update(token).digest('hex');
-
-afterAll(async () => {
-  await db.execute(sql`DELETE FROM kortix.used_refresh_tokens WHERE token_hash = ${digest}`);
+const app = new Hono();
+app.route('/v1/auth', headlessAuthRouter);
+let upstreamCalls = 0;
+__setGoTrueFetch(async () => {
+  upstreamCalls++;
+  return Response.json({
+    access_token: 'synthetic-access', refresh_token: 'synthetic-rotated',
+    token_type: 'bearer', expires_in: 3600, expires_at: 1790000000,
+    user: { id: randomUUID(), email: 'synthetic@example.test' },
+  });
 });
 
-describe('refresh claim across concurrent requests', () => {
-  test('only one request claims a token and a later replay cannot claim it', async () => {
-    const claim = () => db.execute<{ token_hash: string }>(sql`
-      INSERT INTO kortix.used_refresh_tokens (token_hash, expires_at)
-      VALUES (${digest}, now() + interval '90 days')
-      ON CONFLICT DO NOTHING RETURNING token_hash
-    `);
-    const results = await Promise.all(Array.from({ length: 8 }, claim));
-    expect(results.map((rows) => rows.length).sort()).toEqual([0, 0, 0, 0, 0, 0, 0, 1]);
-    expect(await claim()).toHaveLength(0);
+afterAll(() => __setGoTrueFetch(null));
+
+const refresh = () => app.request('/v1/auth/refresh', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-forwarded-for': '192.0.2.7' },
+  body: JSON.stringify({ refresh_token: token }),
+});
+
+describe('refresh replay through the HTTP handler with PostgreSQL', () => {
+  test('one concurrent request rotates; the rest and a later replay are rejected', async () => {
+    const responses = await Promise.all(Array.from({ length: 8 }, refresh));
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 400, 400, 400, 400, 400, 400, 400]);
+    expect(upstreamCalls).toBe(1);
+    const accepted = responses.find((response) => response.status === 200);
+    expect((await accepted?.json())?.session?.refresh_token).toBe('synthetic-rotated');
+    const replay = await refresh();
+    expect(replay.status).toBe(400);
+    expect(upstreamCalls).toBe(1);
   });
 });
