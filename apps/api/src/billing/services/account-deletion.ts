@@ -1,10 +1,11 @@
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
 import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
+import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -212,6 +213,17 @@ export async function reclaimableAccountIds(
  * Best-effort per box: one provider failure must never block deletion, abort
  * the remaining boxes, or leave the row claiming to be alive.
  */
+async function markRemovalIntent(sandboxId: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        [KORTIX_REMOVAL_INTENT_KEY]: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
+
 async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxReclaimSummary> {
   const summary: SandboxReclaimSummary = {
     accounts: accountIds.length,
@@ -255,6 +267,16 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
           // unset on this deployment must not throw and skip the box — the row
           // still has to be settled so nothing keeps billing against it.
           const provider = tryGetProvider(row.provider as string);
+
+          // Stamp the intent BEFORE the provider call: its `removed` webhook can
+          // arrive before this request settles the row, and must not read as a
+          // lost runtime.
+          await markRemovalIntent(row.sandboxId).catch((err) =>
+            console.warn(
+              `[AccountDeletion] failed to stamp removal intent for sandbox ${row.sandboxId}:`,
+              err instanceof Error ? err.message : err,
+            ),
+          );
 
           if (provider) {
             try {

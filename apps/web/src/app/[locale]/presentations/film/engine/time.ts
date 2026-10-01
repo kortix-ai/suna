@@ -15,7 +15,7 @@ export const beats = (n: number) => Math.round(n * BEAT);
 
 const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 
-/** No `in` curve on purpose: `ease-in` reads as slow (kortix-brand-guidelines). */
+/** No `in` curve on purpose: `ease-in` reads as slow (kortix-brand `motion.md`). */
 export const ease = {
   linear: (t: number) => t,
   outQuad: (t: number) => 1 - (1 - t) ** 2,

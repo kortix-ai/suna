@@ -10,50 +10,60 @@ import type * as React from 'react';
  * The design system already encapsulates this palette inside `<Badge>` and
  * `<InfoBanner>`. Use those whenever the surface is a chip or a box. But for
  * the cases a component can't cover — a lone status icon, a diff +/- counter,
- * a live activity dot — reach for these maps instead of re-inlining
- * `text-emerald-500` / `bg-red-500/10` / `border-amber-500/30` by hand
- * (which is how shade drift creeps in: emerald-500 vs -600 vs -700).
+ * a live activity dot — reach for these maps instead of re-inlining a palette
+ * class by hand (which is how shade drift creeps in).
  *
- * Values mirror badge.tsx / info-banner.tsx exactly so chips, boxes, icons
- * and dots all read as the same green/amber/red/blue.
+ * Hues follow D5 (kortix-brand color.md): success = kortix-green, warning =
+ * kortix-orange, destructive = kortix-red, info = kortix-blue. Accents fail AA
+ * as body text on white, so STATUS_TEXT paints glyphs and counters only; a
+ * label beside the glyph stays foreground.
  */
 
 export type StatusTone = 'success' | 'warning' | 'destructive' | 'info' | 'neutral';
 
 /** Foreground (text / icon) color per tone. */
 export const STATUS_TEXT: Record<StatusTone, string> = {
-  success: 'text-emerald-600 dark:text-emerald-400',
-  warning: 'text-amber-600 dark:text-amber-400',
-  destructive: 'text-destructive',
-  info: 'text-blue-600 dark:text-blue-400',
+  success: 'text-kortix-green',
+  warning: 'text-kortix-orange',
+  destructive: 'text-kortix-red',
+  info: 'text-kortix-blue',
   neutral: 'text-muted-foreground',
 };
 
 /** Faint tinted background per tone (for chips / fills). */
 export const STATUS_BG: Record<StatusTone, string> = {
-  success: 'bg-kortix-green/10',
-  warning: 'bg-kortix-yellow/10',
-  destructive: 'bg-destructive/10',
-  info: 'bg-kortix-blue/10',
+  success: 'bg-kortix-green/15',
+  warning: 'bg-kortix-orange/15',
+  destructive: 'bg-kortix-red/15',
+  info: 'bg-kortix-blue/15',
   neutral: 'bg-popover',
 };
 
-/** Hairline border per tone (matches InfoBanner edges). */
+/** Solid hairline border per tone. */
 export const STATUS_BORDER: Record<StatusTone, string> = {
   success: 'border-kortix-green',
-  warning: 'border-kortix-yellow',
-  destructive: 'border-destructive/30',
+  warning: 'border-kortix-orange',
+  destructive: 'border-kortix-red',
   info: 'border-kortix-blue',
   neutral: 'border-border',
 };
 
 /** Solid dot fill per tone (for the live activity indicator). */
 export const STATUS_DOT: Record<StatusTone, string> = {
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-500',
-  destructive: 'bg-destructive',
-  info: 'bg-blue-500',
+  success: 'bg-kortix-green',
+  warning: 'bg-kortix-orange',
+  destructive: 'bg-kortix-red',
+  info: 'bg-kortix-blue',
   neutral: 'bg-muted-foreground',
+};
+
+/** Tone color for an svg glyph inside a chip. The chip label stays foreground. */
+const STATUS_CHIP_GLYPH: Record<StatusTone, string> = {
+  success: '[&>svg]:text-kortix-green',
+  warning: '[&>svg]:text-kortix-orange',
+  destructive: '[&>svg]:text-kortix-red',
+  info: '[&>svg]:text-kortix-blue',
+  neutral: '[&>svg]:text-muted-foreground',
 };
 
 export function statusText(tone: StatusTone) {
@@ -81,9 +91,9 @@ export function StatusBadge({
     <span
       data-slot="status-badge"
       className={cn(
-        'inline-flex w-fit items-center gap-1 rounded-2xl px-2 py-0.5 text-xs font-medium whitespace-nowrap',
+        'text-foreground inline-flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap',
         STATUS_BG[tone],
-        STATUS_TEXT[tone],
+        STATUS_CHIP_GLYPH[tone],
         className,
       )}
       {...props}

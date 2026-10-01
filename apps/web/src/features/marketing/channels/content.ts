@@ -9,12 +9,12 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * ==========================================================================
  * ACCURACY GATE — read this before editing one word of the surface list.
  * ==========================================================================
- * The `comms` glossary calls a channel "Slack, Teams, Telegram, WhatsApp, SMS,
+ * The pre-kit glossary calls a channel "Slack, Teams, Telegram, WhatsApp, SMS,
  * email". THE PRODUCT DOES NOT. Verified against the code, not the pitch:
  *
  *  - `packages/manifest-schema/src/constants.ts`:
@@ -69,7 +69,7 @@ export const hero = {
   ctaPrimaryHref: '/auth',
   ctaSecondary: 'Read the docs',
   ctaSecondaryHref: '/docs/connect/slack',
-  microline: 'Slack today · Teams and email behind a switch',
+  microline: 'Slack today · Teams and email experimental, per project',
   /** Four mono facts under the fold. Every value has to be defensible. */
   specs: [
     { k: 'Live today', v: 'Slack', visual: 'presence' },
@@ -81,8 +81,8 @@ export const hero = {
 
 export const surfaces = {
   eyebrow: 'The surfaces',
-  title: 'One is live. Three are behind a switch. We will say which.',
-  sub: 'A channel is a chat platform bound to a project — a closed set of four, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.',
+  title: 'One is live. Two are experimental. We will say which.',
+  sub: 'A channel is a chat platform bound to a project — a closed set of three, not an open field. Here is the real state of each one, including the parts a marketing page usually leaves out.',
   columns: ['Surface', 'State', 'What that means'] as const,
   /** `icon` keys map to `features/icon`. `state` is the honest one. */
   rows: [
@@ -97,8 +97,8 @@ export const surfaces = {
       id: 'teams',
       icon: 'MicrosoftTeams',
       name: 'Microsoft Teams',
-      state: 'Operator switch',
-      body: 'Code complete and off by default. Your deployment turns it on and supplies Microsoft app credentials; a tenant admin then consents once. Same sessions, same identity rules as Slack.',
+      state: 'Experimental',
+      body: 'Code complete and off by default. Turn it on per project with a feature flag; a tenant admin then consents once. Same sessions, same identity rules as Slack.',
     },
     {
       id: 'email',
@@ -241,7 +241,7 @@ export const back = {
 
 export const commands = {
   eyebrow: 'From the thread',
-  title: 'Run the project without leaving the conversation.',
+  title: 'Run the project without leaving the thread.',
   sub: 'Type these as /kortix <command> in Slack, or as plain text in a direct message. Most of what you would otherwise open the dashboard for is one line in the channel.',
   columns: ['Command', 'What it does'] as const,
   rows: [

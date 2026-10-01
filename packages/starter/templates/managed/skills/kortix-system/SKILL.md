@@ -34,7 +34,7 @@ contract.
 </live-skills>
 
 <overview>
-A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one conversation = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
+A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one unit of agent work = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
 
 The repo keeps harness-neutral content at the root and harness-specific files
 under `harnesses/`:
@@ -67,10 +67,10 @@ OpenCode REST.
 <capabilities>
 ## What Kortix can do
 
-Kortix is an AI command center where a workforce of agents does real work —
-and the whole thing is **code you own**: a project is a git repo with a
-`kortix.yaml` at its root; a session is one conversation in its own
-disposable sandbox on its own branch; work becomes permanent only via a
+Kortix is an open-source AI Management System. Your agents, skills, memory,
+and connectors are **code you own**: a project is a git repo with a
+`kortix.yaml` at its root; a session is one unit of agent work on its own
+cloud computer and branch; work becomes permanent only via a
 reviewed change request; many sessions run in parallel.
 
 Twelve capabilities, at a glance: **research** (live web + cited
@@ -525,7 +525,7 @@ Kortix session: if you want your work to land on `main`, you MUST open
 a change request (CR).**
 
 Sessions run on ephemeral branches (`session-<id>`). The session VM
-dies when the conversation ends; the branch persists in git, but
+dies when the session ends; the branch persists in git, but
 **nothing on it reaches `main` automatically.** A session-branch
 commit is invisible to every future session — they all boot from
 `main`. The only sanctioned merge path is a CR — the user reviews
