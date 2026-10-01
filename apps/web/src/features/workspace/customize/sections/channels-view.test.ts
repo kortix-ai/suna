@@ -30,6 +30,7 @@ const connectorsSource = read('connectors-view.tsx');
 const teamsPanelSource = read('teams-channel-panel.tsx');
 const connectCardSource = read('component/slack-connect-card.tsx');
 const wizardSource = read('component/slack-byo-wizard.tsx');
+const wizardStepsSource = read('component/byo-wizard-steps.tsx');
 const coverSource = read('component/slack-connect-cover.tsx');
 const blogCoverSource = read('../../../../components/blog/blog-cover.tsx');
 const channelRowSource = read('component/channel-row.tsx');
@@ -54,6 +55,7 @@ const MODULES: Array<[name: string, source: string]> = [
   ['channels-view', channelsSource],
   ['slack-connect-card', connectCardSource],
   ['slack-byo-wizard', wizardSource],
+  ['byo-wizard-steps', wizardStepsSource],
   ['slack-connect-cover', coverSource],
   ['channel-row', channelRowSource],
   ['manifest-copy-block', copyBlockSource],
@@ -191,8 +193,10 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 
 describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   test('three steps driven by the shared Stepper, inside a Modal', () => {
-    expect(wizardSource).toContain("from '@/components/ui/stepper'");
-    expect(wizardSource).toContain('<Stepper');
+    expect(wizardSource).toContain("from './byo-wizard-steps'");
+    expect(wizardSource).toContain('<ByoWizardSteps steps={steps} step={step} onStepChange={setStep}>');
+    expect(wizardStepsSource).toContain("from '@/components/ui/stepper'");
+    expect(wizardStepsSource).toContain('<Stepper');
     expect(wizardSource).toContain('ModalContent');
     expect(wizardSource).toMatch(/const STEPS = \[[\s\S]*?step: 3/);
   });
