@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "向人发消息",
-          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。"
+          "description": "允许智能体给人和其他会话发消息。`kortix send alice@example.com` 会打开一个以智能体消息开头的对话，并显示在收件人侧边栏的“问你的”中。多个地址会打开群聊。会话之间的消息会注明发送方会话，以便其智能体回复。"
         },
         "reminders": {
           "name": "提醒",
@@ -2288,7 +2288,7 @@
       "oneMoment": "请稍候…",
       "useDifferentEmail": "使用其他邮箱",
       "usePasswordInstead": "改用密码",
-      "emailCodeInstead": "通过邮箱发送验证码",
+      "emailLinkInstead": "改为通过邮箱发送链接",
       "forgotPassword": "忘记密码？",
       "automaticAccount": "还没有账户？点击“继续”即可自动创建账户。",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "正在查找您的身份提供商…",
         "use": "使用单点登录（SSO）"
       },
-      "code": {
+      "link": {
         "title": "查看您的邮箱",
-        "description": "我们已向 <address>{email}</address> 发送验证码",
-        "verifying": "验证中…",
-        "notReceived": "没收到验证码？",
+        "description": "我们已向 <address>{email}</address> 发送登录链接。打开链接即可继续。",
+        "notReceived": "未收到链接？",
         "resendIn": "{seconds} 秒后重新发送",
         "resend": "重新发送"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "服务账户",
       "textd7db5a6e1483": "立即复制此令牌",
       "textd7e9af636757": "令牌按主机存储，因此切换主机会同时切换账户和默认项目。",
-      "textd7eb7cdcff7d": "请检查 email 获取登录代码",
+      "textd7eb7cdcff7d": "请检查邮箱中的登录链接",
       "textd7f179da0e70": "我们构建自动驾驶企业。人类负责验证、引导和治理，代理团队则在工程、产品、运营、财务、支持和增长等领域开展工作。",
       "textd800b1eb8a84": "点击“Create App Integration”。",
       "textd814d7970df3": "“从 X 迁移到 Y”是你预先承诺的解决方案。速度慢、不稳定、对这个客户失效——这些才是问题。",
@@ -19103,7 +19102,11 @@
       "text1aff73a5df45": "{why} 请改用 {instead}。",
       "text81b004dc7e0b": "Slack 和 Teams 已上线 · 电子邮件即将推出 · 或从 API 开始会话",
       "text7d7b98240405": "两个已上线。一个处于实验阶段。我们会说明是哪一个。",
-      "textb60c863bbacb": "对每个项目都已开启，无需开关。租户管理员只需同意一次，或者项目使用自己的机器人应用。会话和身份规则与 Slack 相同。"
+      "textb60c863bbacb": "对每个项目都已开启，无需开关。租户管理员只需同意一次，或者项目使用自己的机器人应用。会话和身份规则与 Slack 相同。",
+      "text80043b03898d": "在 Teams 中更新 Kortix 应用",
+      "textdf757dbe33eb": "你的 Teams 目录中的 Kortix 应用是 {value0} 版。{value1} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
+      "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
+      "texte15f213fa506": "发布应用更新"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

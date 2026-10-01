@@ -707,7 +707,6 @@ function hslaDrift(mobile: Hsla, web: Hsla): string | null {
  * Deliberately NOT in the set:
  *   border-width        a length, mobile-only (hairline stroke)
  *   radius              a length; compared separately below
- *   success / warning   mobile-only tokens; web status uses brand colors
  */
 const WEB_PARITY_TOKENS: Record<string, string> = {
   background: 'background',
@@ -729,6 +728,8 @@ const WEB_PARITY_TOKENS: Record<string, string> = {
   border: 'border',
   input: 'input',
   ring: 'ring',
+  success: 'kortix-green',
+  warning: 'kortix-orange',
   'chart-1': 'chart-1',
   'chart-2': 'chart-2',
   'chart-3': 'chart-3',
@@ -806,19 +807,6 @@ describe('global.css matches apps/web globals.css', () => {
   it('--radius matches web', () => {
     expect(rawTokenValue(':root', 'radius')).toBe(resolveWeb(webRoot, 'radius'));
     expect(rawTokenValue('.dark:root', 'radius')).toBe(resolveWeb(webDark, 'radius'));
-  });
-
-  it('--success / --warning match the canonical mobile status palette', () => {
-    const palette = JSON.parse(
-      readFileSync(join(__dirname, '../../../../.agents/skills/kortix-brand/references/visual/visual-system.json'), 'utf8')
-    );
-    for (const tone of ['success', 'warning'] as const) {
-      for (const [scope, theme] of [[':root', 'light'], ['.dark:root', 'dark']] as const) {
-        const actual = parseMobileColor(resolveTokenValue(scope, tone));
-        const expected = parseWebColor(palette.color.status_mobile_only[tone][theme]);
-        expect(hslaDrift(actual, expected)).toBeNull();
-      }
-    }
   });
 });
 

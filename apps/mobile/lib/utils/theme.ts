@@ -121,8 +121,8 @@ export const THEME = {
     sidebarAccentForeground: 'hsl(0 0% 12.2%)', // --sidebar-accent-foreground
     sidebarBorder: 'hsl(0 0% 88.6%)', // --sidebar-border
     sidebarRing: 'hsl(204 100% 50%)', // --sidebar-ring
-    success: 'hsl(160 100% 29.9%)', // --success (web emerald-600)
-    warning: 'hsl(30.1 100% 44.2%)', // --warning (web amber-600)
+    success: 'hsl(135 70.5% 33.8%)', // --success
+    warning: 'hsl(37.1 78.7% 45.9%)', // --warning
     radius: '0.625rem', // --radius
   },
   dark: {
@@ -161,8 +161,8 @@ export const THEME = {
     sidebarAccentForeground: 'hsl(0 0% 100%)', // --sidebar-accent-foreground
     sidebarBorder: 'hsl(0 0% 10.2%)', // --sidebar-border
     sidebarRing: 'hsl(204 100% 50%)', // --sidebar-ring
-    success: 'hsl(161.2 100% 41.6%)', // --success (web emerald-400)
-    warning: 'hsl(43.6 100% 50%)', // --warning (web amber-400)
+    success: 'hsl(135 70.5% 33.8%)', // --success
+    warning: 'hsl(37.1 78.7% 45.9%)', // --warning
     radius: '0.625rem', // --radius
   },
   /**

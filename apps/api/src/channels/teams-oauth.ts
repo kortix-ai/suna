@@ -3,6 +3,7 @@ import { makeOpenApiApp } from '../openapi';
 import { reconcileChannelConnectors } from '../connectors/sync';
 import {
   saveTeamsInstall,
+  setTeamsAppVersion,
   setTeamsCatalogAppId,
   setTeamsOrgInstalled,
   setTeamsPublishState,
@@ -66,6 +67,7 @@ async function runCatalogPublish(input: {
     status = 'connected';
     await setTeamsOrgInstalled(projectId, true).catch(() => {});
     if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
+    if (published.version) await setTeamsAppVersion(projectId, published.version).catch(() => {});
     await setTeamsPublishState(projectId, 'published').catch(() => {});
   } else if (published.pendingReview) {
     status = 'review';
@@ -81,6 +83,7 @@ async function runCatalogPublish(input: {
     tenantId: input.tenantId,
     status,
     teamsAppId: published.teamsAppId ?? null,
+    appVersion: published.version ?? null,
     error: published.error ?? null,
   });
   return status;

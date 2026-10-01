@@ -43,11 +43,14 @@ export interface TeamsManifest {
 }
 
 /**
- * Bump when the manifest changes shape. The org-catalog publish upgrades an
- * existing app only when this differs from what the catalog holds, and a Teams
- * admin has to re-consent to new resource-specific permissions on the team.
+ * Bump on every manifest change, text included. Graph refuses an app-definition
+ * update that does not raise the version, so an unbumped change never reaches
+ * a tenant that already has the app (1.6.1: the descriptions and accent color
+ * changed under 1.6.0). The Channels page offers the update to every catalog
+ * on an older version; a team owner still accepts a new permission or message
+ * action in each team. `unit-teams-manifest.test.ts` fails until you bump.
  */
-export const TEAMS_MANIFEST_VERSION = '1.6.0';
+export const TEAMS_MANIFEST_VERSION = '1.6.1';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in

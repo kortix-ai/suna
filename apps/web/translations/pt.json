@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Mensagens para pessoas",
-          "description": "Permite que agentes enviem mensagens a pessoas e a outras sessões. `kortix send alice@example.com` abre uma conversa que começa com a mensagem do agente e aparece em Perguntaram a você, na barra lateral do destinatário. Vários endereços abrem um chat em grupo."
+          "description": "Permite que agentes enviem mensagens a pessoas e a outras sessões. `kortix send alice@example.com` abre uma conversa que começa com a mensagem do agente e aparece em Perguntaram a você, na barra lateral do destinatário. Vários endereços abrem um chat em grupo. As mensagens entre sessões indicam a sessão que as enviou, para que o agente dela possa responder."
         },
         "reminders": {
           "name": "Lembretes",
@@ -2288,7 +2288,7 @@
       "oneMoment": "Aguarde um momento…",
       "useDifferentEmail": "Usar outro e-mail",
       "usePasswordInstead": "Usar uma senha",
-      "emailCodeInstead": "Enviar um código por e-mail",
+      "emailLinkInstead": "Enviar um link por e-mail",
       "forgotPassword": "Esqueceu sua senha?",
       "automaticAccount": "É novo por aqui? Ao continuar, sua conta será criada automaticamente.",
       "sso": {
@@ -2300,11 +2300,10 @@
         "lookingUp": "Buscando seu provedor de identidade…",
         "use": "Usar login único (SSO)"
       },
-      "code": {
+      "link": {
         "title": "Verifique seu e-mail",
-        "description": "Enviamos um código para <address>{email}</address>",
-        "verifying": "Verificando…",
-        "notReceived": "Não recebeu um código?",
+        "description": "Enviamos um link de acesso para <address>{email}</address>. Abra-o para continuar.",
+        "notReceived": "Não recebeu o link?",
         "resendIn": "Reenviar em {seconds}",
         "resend": "Reenviar"
       },
@@ -16941,7 +16940,7 @@
       "textd7da08389824": "conta de serviço",
       "textd7db5a6e1483": "Copie este token agora",
       "textd7e9af636757": "Os tokens são armazenados por host, então trocar de host também troca a conta e o projeto padrão.",
-      "textd7eb7cdcff7d": "Verifique seu email para obter um código de acesso",
+      "textd7eb7cdcff7d": "Verifique seu email para obter um link de acesso",
       "textd7f179da0e70": "Criamos empresas autônomas. Humanos verificam, conduzem e governam enquanto equipes de agentes trabalham em engenharia, produto, operações, finanças, suporte e crescimento.",
       "textd800b1eb8a84": "Clique em \"Create App Integration\".",
       "textd814d7970df3": "\"Migrar de X para Y\" é uma solução com a qual você já se comprometeu. Lento, instável, quebra para este cliente — esses são problemas.",
@@ -19103,7 +19102,11 @@
       "text1aff73a5df45": "{why} Use {instead}.",
       "text81b004dc7e0b": "O Slack e o Teams estão ativos · o e-mail está sendo disponibilizado · ou inicie sessões pela API",
       "text7d7b98240405": "Dois estão ativos. Um é experimental. Dizemos qual.",
-      "textb60c863bbacb": "Ativo em todos os projetos, sem flag. Um administrador do tenant dá o consentimento uma vez, ou um projeto usa seu próprio app de bot. As mesmas sessões e as mesmas regras de identidade do Slack."
+      "textb60c863bbacb": "Ativo em todos os projetos, sem flag. Um administrador do tenant dá o consentimento uma vez, ou um projeto usa seu próprio app de bot. As mesmas sessões e as mesmas regras de identidade do Slack.",
+      "text80043b03898d": "Atualize o app Kortix no Teams",
+      "textdf757dbe33eb": "Seu catálogo do Teams tem a versão {value0} do app Kortix. A versão {value1} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
+      "textcd2c4b26eedd": "O Kortix não tem registro da versão do app no seu catálogo do Teams. A versão {value0} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
+      "texte15f213fa506": "Publicar atualização do app"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
