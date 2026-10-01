@@ -16,7 +16,7 @@ mock.module('@/api/config', () => ({ API_URL: 'https://example.test', getAuthTok
 mock.module('@kortix/sdk', () => ({ isSessionAttachmentRef: (path: string) => path.startsWith('kortix-attachment://'), fetchSessionAttachment: async (path: string) => { fetches.push(path); return blob; } }));
 mock.module('@tanstack/react-query', () => ({ useQuery: () => ({ data: blob, isLoading: false, refetch: async () => {} }) }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
-mock.module('@/components/files/FilePreviewRenderers', () => ({ FilePreview: (props: { previewType: string; blobUrl?: string }) => { calls.push(props); return null; }, FilePreviewBottomInsetContext: React.createContext(0), getFilePreviewType: (name: string) => name.endsWith('.png') ? 'image' : 'text' }));
+mock.module('@/components/files/FilePreviewRenderers', () => ({ FilePreview: (props: { previewType: string; blobUrl?: string }) => { calls.push(props); return null; }, FilePreviewBottomInsetContext: React.createContext(0), getFilePreviewType: (name: string) => name.endsWith('.png') ? 'image' : name.endsWith('.pdf') ? 'pdf' : name.endsWith('.docx') ? 'docx' : name.endsWith('.xlsx') ? 'xlsx' : 'text' }));
 mock.module('@/components/files/use-file-preview-data', () => ({ useFilePreviewData: () => ({ previewType: 'other' }) }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: () => null }));
 mock.module('@/components/kortix/pinned-bar', () => ({ PinnedBar: ({ children }: { children?: React.ReactNode }) => children, usePinnedBarInset: () => 0 }));
@@ -37,6 +37,14 @@ mock.module('@/lib/utils/theme', () => ({ THEME: { light: { background: '#fff' }
 
 // Render the actual body: the query and native leaves are stubbed, not the routing decision.
 describe('stored attachment preview', () => {
+  test.each(['pdf', 'docx', 'xlsx'])('provides binary preview data for %s attachment', async (extension) => {
+    const { FilePreviewBody } = await import('./FilePreviewSheet');
+    let tree: ReactTestRenderer | undefined;
+    await act(async () => { tree = create(<FilePreviewBody file={{ name: `document.${extension}`, path: ref }} sandboxUrl={undefined} onCopyTextChange={() => {}} />); });
+    expect(calls.at(-1)).toMatchObject({ previewType: extension, blobUrl: 'data:image/png;base64,aW1hZ2U=' });
+    await act(async () => { tree?.unmount(); });
+  });
+
   test('renders an image and downloads its authenticated bytes', async () => {
     const { FilePreviewBody } = await import('./FilePreviewSheet');
     let tree: ReactTestRenderer | undefined;

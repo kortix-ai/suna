@@ -25,7 +25,10 @@ mock.module('expo-file-system', () => ({
   File: class {
     uri: string;
     constructor(uri: string) { this.uri = uri; }
-    async copy(target: { uri: string }) { copies.push(`${this.uri} -> ${target.uri}`); }
+    async copy(target: { uri: string }, options?: { overwrite?: boolean }) {
+      if (files.includes(target.uri) && !options?.overwrite) throw Error('destination already exists');
+      copies.push(`${this.uri} -> ${target.uri}`);
+    }
   },
 }));
 

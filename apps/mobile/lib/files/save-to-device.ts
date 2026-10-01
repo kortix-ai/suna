@@ -66,7 +66,7 @@ async function writeInto(folder: Directory, sourceUri: string, name: string): Pr
   );
   const finalName = availableFileName(name, (candidate) => existing.has(candidate));
   const target = folder.createFile(finalName, mimeTypeForFile(finalName) ?? 'application/octet-stream');
-  await new File(sourceUri).copy(target);
+  await new File(sourceUri).copy(target, { overwrite: true });
   return target.name ?? finalName;
 }
 

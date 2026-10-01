@@ -171,9 +171,9 @@ export function FilePreviewBody({
     let active = true;
     setStoredContent(undefined);
     if (attachment && stored.data && previewDecision({ size: stored.data.size, previewType: getFilePreviewType(file.name) }) !== 'too-large') {
-      const image = getFilePreviewType(file.name) === 'image';
-      (image ? blobToDataURL(stored.data, file.name) : stored.data.text()).then((value) => {
-        if (active) setStoredContent(image ? { url: value } : { text: value });
+      const binary = ['image', 'pdf', 'docx', 'xlsx'].includes(getFilePreviewType(file.name));
+      (binary ? blobToDataURL(stored.data, file.name) : stored.data.text()).then((value) => {
+        if (active) setStoredContent(binary ? { url: value } : { text: value });
       }).catch(() => { if (active) setStoredContent({}); });
     }
     return () => { active = false; };
