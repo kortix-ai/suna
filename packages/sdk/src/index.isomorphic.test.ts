@@ -205,6 +205,7 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './session', file: 'deprecated/session.ts', tier: 'isomorphic-core' },
   { name: './session/url', file: 'deprecated/session-url.ts', tier: 'isomorphic-core' },
   { name: './message-queue', file: 'core/session/message-queue.ts', tier: 'isomorphic-core' },
+  { name: './workspace-search', file: 'workspace-search/index.ts', tier: 'isomorphic-core' },
   // Zero imports: `apps/api` loads the wire-id clock without the whole root barrel.
   { name: './wire-message-id', file: 'core/session/wire-message-id.ts', tier: 'isomorphic-core' },
   { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },

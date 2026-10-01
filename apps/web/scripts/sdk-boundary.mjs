@@ -35,6 +35,7 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
   '@kortix/sdk/react',
   '@kortix/sdk/server',
+  '@kortix/sdk/workspace-search',
   '@kortix/sdk/internal/idb-sync-cache',
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
