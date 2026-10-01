@@ -88,6 +88,16 @@ async function linkRequester(
   uid: string | null | undefined,
 ): Promise<{ id: string; label: string | null } | null> {
   if (!uid) return null;
+  // Optional: a failed lookup offers no "only the person who asked" choice
+  // rather than breaking the link page.
+  try {
+    return await lookupLinkRequester(projectId, uid);
+  } catch {
+    return null;
+  }
+}
+
+async function lookupLinkRequester(projectId: string, uid: string): Promise<{ id: string; label: string | null } | null> {
   const result = await db.execute<{ found: number }>(sql`
     select 1 as found from kortix.account_memberships m
       join kortix.projects p on p.account_id = m.account_id
