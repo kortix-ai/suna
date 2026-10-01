@@ -24,6 +24,7 @@ const saved: Array<Record<string, unknown>> = [];
 const states: Array<{ state: string; error?: string | null }> = [];
 const orgInstalled: boolean[] = [];
 const catalogIds: string[] = [];
+const appVersions: string[] = [];
 let publishImpl: () => Promise<Record<string, unknown>> = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
 
 mock.module('../config', () => ({
@@ -53,6 +54,9 @@ mock.module('../channels/install-store', () => ({
   setTeamsCatalogAppId: async (_projectId: string, id: string) => {
     catalogIds.push(id);
   },
+  setTeamsAppVersion: async (_projectId: string, version: string) => {
+    appVersions.push(version);
+  },
 }));
 
 mock.module('../channels/teams/catalog', () => ({
@@ -80,6 +84,7 @@ beforeEach(() => {
   states.length = 0;
   orgInstalled.length = 0;
   catalogIds.length = 0;
+  appVersions.length = 0;
   publishImpl = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
   globalThis.fetch = (async (url: any) => {
     // Only the token endpoint may be called from the callback; the catalog
@@ -201,6 +206,18 @@ describe('Teams one-click install completion', () => {
     expect(saved).toHaveLength(0);
   });
 
+  test('the app version the catalog serves is recorded on the install', async () => {
+    publishImpl = async () => ({ ok: true, published: true, teamsAppId: 'cat-1', updated: true, version: '1.6.0' });
+
+    expect(await complete()).toEqual(landed('connected'));
+    expect(appVersions).toEqual(['1.6.0']);
+  });
+
+  test('a publish that cannot say which version the catalog serves records none', async () => {
+    expect(await complete()).toEqual(landed('connected'));
+    expect(appVersions).toEqual([]);
+  });
+
   test('non-admin submit → ?teams=review, state "review"', async () => {
     publishImpl = async () => ({ ok: true, published: false, pendingReview: true, teamsAppId: 'sub-9' });
 
@@ -208,6 +225,7 @@ describe('Teams one-click install completion', () => {
     expect(states).toEqual([{ state: 'publishing' }, { state: 'review' }]);
     expect(orgInstalled).toEqual([]);
     expect(catalogIds).toEqual(['sub-9']);
+    expect(appVersions).toEqual([]);
   });
 
   test('Graph rejects the package → ?teams=failed, the reason is persisted on the install', async () => {

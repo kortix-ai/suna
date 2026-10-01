@@ -1,3 +1,4 @@
+import { TEAMS_MANIFEST_VERSION } from '../teams-manifest';
 import { buildTeamsAppPackage } from './app-package';
 
 const CATALOG_URL = 'https://graph.microsoft.com/v1.0/appCatalogs/teamsApps';
@@ -19,6 +20,11 @@ export interface PublishResult {
   teamsAppId?: string;
   /** The app already existed and a new app definition (manifest version) was submitted. */
   updated?: boolean;
+  /**
+   * The manifest version the org catalog serves after this publish. Unset
+   * while a package waits for admin review, or when Graph did not say.
+   */
+  version?: string;
   error?: string;
 }
 
@@ -44,16 +50,27 @@ async function bodySnippet(res: Response): Promise<string> {
   return text.slice(0, 300);
 }
 
-async function lookupCatalogAppId(accessToken: string, externalId: string): Promise<string | undefined> {
+interface CatalogApp {
+  id: string;
+  /** The version of the published app definition; a definition awaiting review is not served. */
+  version?: string;
+}
+
+async function lookupCatalogApp(accessToken: string, externalId: string): Promise<CatalogApp | undefined> {
   try {
-    const url = `${CATALOG_URL}?$filter=externalId eq '${encodeURIComponent(externalId)}'`;
+    const url = `${CATALOG_URL}?$filter=externalId eq '${encodeURIComponent(externalId)}'&$expand=appDefinitions`;
     const res = await fetch(url, {
       headers: { authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) return undefined;
-    const body = (await res.json()) as { value?: Array<{ id?: string }> };
-    return body.value?.[0]?.id;
+    const body = (await res.json()) as {
+      value?: Array<{ id?: string; appDefinitions?: Array<{ version?: string; publishingState?: string }> }>;
+    };
+    const app = body.value?.[0];
+    if (!app?.id) return undefined;
+    const published = app.appDefinitions?.find((d) => d.publishingState === 'published');
+    return { id: app.id, version: published?.version };
   } catch {
     return undefined;
   }
@@ -93,26 +110,28 @@ export async function publishTeamsAppToCatalog(input: {
   }
 
   if (res.status === 201) {
-    return { ok: true, published: true, teamsAppId: await firstId(res) };
+    return { ok: true, published: true, teamsAppId: await firstId(res), version: TEAMS_MANIFEST_VERSION };
   }
   if (res.status === 409) {
-    const id = await lookupCatalogAppId(input.accessToken, input.appId);
-    if (!id) return { ok: true, published: true };
+    const app = await lookupCatalogApp(input.accessToken, input.appId);
+    if (!app) return { ok: true, published: true };
     // Already in the catalog: submit this package as a new app definition so
     // manifest changes (version, RSC permissions, commands) reach the tenant.
+    // A refused update leaves the catalog on the version the lookup read.
+    const kept = { ok: true, published: true, teamsAppId: app.id, version: app.version };
     let upd: Response;
     try {
-      upd = await postPackage(`${CATALOG_URL}/${encodeURIComponent(id)}/appDefinitions`, zip, input.accessToken);
+      upd = await postPackage(`${CATALOG_URL}/${encodeURIComponent(app.id)}/appDefinitions`, zip, input.accessToken);
     } catch (err) {
       console.warn('[teams-catalog] app definition update failed', requestError(err, 'Graph app-definition update'));
-      return { ok: true, published: true, teamsAppId: id };
+      return kept;
     }
     if (upd.status === 200 || upd.status === 201 || upd.status === 202) {
-      return { ok: true, published: true, teamsAppId: id, updated: true };
+      return { ok: true, published: true, teamsAppId: app.id, updated: true, version: TEAMS_MANIFEST_VERSION };
     }
     const text = await bodySnippet(upd);
     console.warn('[teams-catalog] app definition update rejected', { status: upd.status, body: text });
-    return { ok: true, published: true, teamsAppId: id };
+    return kept;
   }
   if (res.status === 403) {
     let rev: Response;
@@ -125,8 +144,8 @@ export async function publishTeamsAppToCatalog(input: {
       return { ok: true, published: false, pendingReview: true, teamsAppId: await firstId(rev) };
     }
     if (rev.status === 409) {
-      const id = await lookupCatalogAppId(input.accessToken, input.appId);
-      return { ok: true, published: true, teamsAppId: id };
+      const app = await lookupCatalogApp(input.accessToken, input.appId);
+      return { ok: true, published: true, teamsAppId: app?.id, version: app?.version };
     }
     const text = await bodySnippet(rev);
     console.warn('[teams-catalog] review submit failed', { status: rev.status, body: text });
