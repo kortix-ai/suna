@@ -1,6 +1,6 @@
 # @kortix/sdk
 
-The **single, opinionated data layer** for the Kortix agent platform. One typed
+The **single, opinionated data layer** for the Kortix API. One typed
 client wraps both the **Kortix REST API** and the **agent runtime** so a
 host app — web, mobile, reference — imports **only `@kortix/sdk`** and never
 `@opencode-ai/sdk` directly. (The no-raw-`backendApi`/`authenticatedFetch` rule

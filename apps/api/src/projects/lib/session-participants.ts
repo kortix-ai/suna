@@ -141,3 +141,12 @@ export async function sessionMayMessage(
     .limit(1);
   return to ?? null;
 }
+
+/** A conversation is named by its question's first line, cut at a word. */
+export function conversationName(question: string, max = 80): string {
+  const line = question.split('\n')[0]!.trim();
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?-]+$/, '')}…`;
+}

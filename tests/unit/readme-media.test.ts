@@ -26,7 +26,8 @@ describe('README media', () => {
   it('every referenced file exists in the repo', () => {
     const missing = localImagePaths().filter((p) => {
       try {
-        return !statSync(join(REPO_ROOT, p)).isFile();
+        // `src` is a URL: a space in a path is written %20.
+        return !statSync(join(REPO_ROOT, decodeURI(p))).isFile();
       } catch {
         return true;
       }
