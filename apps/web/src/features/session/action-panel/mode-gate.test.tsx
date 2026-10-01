@@ -1,14 +1,15 @@
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
+import { act, create } from 'react-test-renderer';
 import { AdvancedPanel } from './advanced/advanced-panel';
 import { EasyPanel } from './easy/easy-panel';
 import { ActionPanel } from './index';
-import { SessionPanelContext, type SessionPanelValue } from './session-panel-provider';
+import { SessionPanelContext, SessionPanelProvider, useOptionalSessionPanel, type SessionPanelValue } from './session-panel-provider';
 
 // The cards read everything from `SessionPanelProvider`. Standing the real one
 // up here would drag in the sandbox proxy, react-query and four stores for
@@ -91,21 +92,58 @@ describe('EasyPanel home has no Terminal/Audit footer row', () => {
   });
 });
 
-// Static rendering cannot run effects. Pin the handoff ownership here until
-// the local browser suite can exercise a mounted provider with a real session.
-describe('pending panel requests', () => {
-  test('ActionPanel never consumes requests ahead of its provider', () => {
-    const source = readFileSync(new URL('./index.tsx', import.meta.url), 'utf8');
-    expect(source).not.toContain('consumePrimaryOpen(');
-    expect(source).not.toContain('consumeQuickView(');
-  });
+// A mounted renderer runs child effects before provider effects, reproducing
+// the lost-request race that server rendering cannot observe.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const previousWindow = globalThis.window;
+Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+  innerWidth: 1440,
+  matchMedia: () => ({ addEventListener() {}, removeEventListener() {} }),
+} });
+afterAll(() => Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow }));
 
-  test('the primary-open request remains one-shot for its own session', () => {
-    useKortixComputerStore.getState().reset();
-    useKortixComputerStore.getState().requestPrimaryOpen('s1');
-    expect(useKortixComputerStore.getState().consumePrimaryOpen('s2')).toBe(false);
-    expect(useKortixComputerStore.getState().consumePrimaryOpen('s1')).toBe(true);
-    expect(useKortixComputerStore.getState().consumePrimaryOpen('s1')).toBe(false);
-    expect(useKortixComputerStore.getState().pendingPrimaryOpenSessionId).toBeNull();
-  });
+describe('pending panel requests', () => {
+  for (const mode of ['easy', 'advanced'] as const) {
+    test(`${mode} preference opens the primary deliverable and palette quick views`, async () => {
+      useKortixComputerStore.getState().reset();
+      useUserPreferencesStore.getState().setPanelMode(mode);
+      const opened: string[] = [];
+      function Observe() {
+        const panel = useOptionalSessionPanel();
+        if (panel?.detail?.key && opened.at(-1) !== panel.detail.key) opened.push(panel.detail.key);
+        if (panel?.terminalOpen && opened.at(-1) !== 'terminal') opened.push('terminal');
+        return null;
+      }
+      const messages = [{
+        info: {
+          id: 'm1', sessionID: 's1', role: 'assistant' as const,
+          time: { created: 1 }, parentID: 'u1', modelID: 'test', providerID: 'test',
+          mode: 'build', agent: 'build', path: { cwd: '/', root: '/' }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{
+          id: 'p1', sessionID: 's1', messageID: 'm1', type: 'tool' as const,
+          tool: 'write', callID: 'c1', state: {
+            status: 'completed' as const, input: { filePath: '/a/report.pdf' },
+            output: '', title: '', metadata: {}, time: { start: 1, end: 2 },
+          },
+        }],
+      }];
+      let renderer: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(withQueryClient(
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <SessionPanelProvider sessionId="s1" messages={messages}>
+              <ActionPanel /><Observe />
+            </SessionPanelProvider>
+          </NextIntlClientProvider>,
+        ));
+      });
+      await act(async () => { useKortixComputerStore.getState().requestPrimaryOpen('s1'); });
+      expect(opened).toContain('file:/a/report.pdf');
+      await act(async () => { useKortixComputerStore.getState().requestQuickView('terminal', 's1'); });
+      expect(opened).toContain('terminal');
+      await act(async () => { renderer!.unmount(); });
+    });
+  }
 });
