@@ -182,7 +182,10 @@ export async function createOrJoinThreadSession(input: {
   const handle = await startTurn(projectId, teamId, event, 'Spinning up a sandbox');
 
   const launch = await planSlackLaunch(project, event, teamId, userId, handle);
-  if (!launch) return;
+  if (!launch) {
+    if (claimKey) await releaseThreadCreate(claimKey);
+    return;
+  }
   const { selection, conversationPolicy, launchAgent, start, createModel } = launch;
 
   const result = await launchSlackSession(project, input, launch, claimKey);
@@ -374,6 +377,14 @@ async function planSlackLaunch(
     agentGrantEnv: agentGrantEnvFor(projectId, launchAgent),
   });
   const createModel = start.model;
+
+  if (start.unavailableModel) {
+    if (handle) await finalizeTurn(handle, {
+      title: 'Model unavailable',
+      error: `The model \`${start.unavailableModel}\` isn't available. Pick another model with \`/kortix models\`, then send your message again.`,
+    });
+    return null;
+  }
 
   return { selection, conversationPolicy, launchAgent, start, createModel };
 }
