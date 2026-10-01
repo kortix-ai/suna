@@ -18,10 +18,12 @@ import {
   accountGroupMembers,
   accountGroups,
   accountMembers,
+  accountTokens,
   accounts,
   projectSecrets,
   projectSessions,
   projects,
+  serviceAccounts,
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
@@ -50,6 +52,9 @@ const TEAMMATE = crypto.randomUUID();
 const OWNER_PRIVATE = crypto.randomUUID();
 const OWNER_SHARED = crypto.randomUUID();
 const OWNER_TRIGGER = crypto.randomUUID();
+const OWNER_LEGACY = crypto.randomUUID();
+const OWNER_CLEARED = crypto.randomUUID();
+const AGENT_SA = crypto.randomUUID();
 
 async function secretIdOf(identifier: string): Promise<string> {
   const [row] = await db
@@ -103,6 +108,24 @@ beforeAll(async () => {
     { sessionId: OWNER_SHARED, accountId: ACCOUNT, projectId: PROJECT, branchName: OWNER_SHARED, createdBy: OWNER, visibility: 'project' },
     { sessionId: OWNER_TRIGGER, accountId: ACCOUNT, projectId: PROJECT, branchName: OWNER_TRIGGER, createdBy: OWNER, visibility: 'private', origin: 'trigger' },
   ]);
+  // Two private sessions whose agent token carries NO on_behalf_of: one minted
+  // before the column existed (no stamp), one a foreign prompt cleared (stamp).
+  await db.insert(projectSessions).values([
+    { sessionId: OWNER_LEGACY, accountId: ACCOUNT, projectId: PROJECT, branchName: OWNER_LEGACY, createdBy: OWNER, visibility: 'private', origin: 'user' },
+    { sessionId: OWNER_CLEARED, accountId: ACCOUNT, projectId: PROJECT, branchName: OWNER_CLEARED, createdBy: OWNER, visibility: 'private', origin: 'user', metadata: { on_behalf_of_cleared_at: new Date().toISOString() } },
+  ]);
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: AGENT_SA, accountId: ACCOUNT, name: `agent-${AGENT_SA}`,
+    secretHash: `sa-${AGENT_SA}`, publicPrefix: 'kortix_sa_audience', createdBy: OWNER,
+  });
+  for (const sessionId of [OWNER_LEGACY, OWNER_CLEARED]) {
+    await db.insert(accountTokens).values({
+      accountId: ACCOUNT, userId: OWNER, name: 'agent session', projectId: PROJECT, sessionId,
+      serviceAccountId: AGENT_SA, onBehalfOfUserId: null,
+      publicKey: `pk_${sessionId.slice(0, 12)}`, secretKeyHash: `h_${sessionId}`,
+      agentGrant: { agent: 'kortix', permissions: 'all', connectors: 'all', env: 'all' },
+    });
+  }
   // A runtime env var, and a connector credential (server-side only).
   await writeSharedProjectSecret({ projectId: PROJECT, name: 'MAPS_KEY', value: 'maps-team' });
   await writeSharedProjectSecret({ projectId: PROJECT, name: 'PAYROLL_API_TOKEN', value: 'payroll-owner', scope: 'connector' });
@@ -158,6 +181,11 @@ describe('secret audience — who may use one value', () => {
     expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_TRIGGER })).toBeNull();
     // No session: the direct caller.
     expect(await secretAudiencePerson({ projectId: PROJECT, actorUserId: TEAMMATE })).toBe(TEAMMATE);
+  });
+
+  test('a token minted before on_behalf_of existed resolves by the mint rule; a cleared one stays nobody', async () => {
+    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_LEGACY })).toBe(OWNER);
+    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_CLEARED })).toBeNull();
   });
 
   test('connector credential narrowed to the owner: spent only for the owner, directly or in their private session', async () => {

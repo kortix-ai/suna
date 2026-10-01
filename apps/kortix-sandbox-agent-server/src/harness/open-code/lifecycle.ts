@@ -1328,6 +1328,9 @@ export type ManagedCatalogConvergeOutcome =
   /** No gateway credentials on this box (KORTIX_LLM_BASE_URL/KORTIX_TOKEN),
    *  or the gateway itself never answered. */
   | 'no-gateway'
+  /** `model` was asked for and the live gateway catalog does not carry it — a
+   *  retired or mistyped id. Nothing to repair; OpenCode's own error stands. */
+  | 'not-served'
 
 export interface ManagedCatalogConvergeResult {
   outcome: ManagedCatalogConvergeOutcome
@@ -1337,6 +1340,9 @@ export interface ManagedCatalogConvergeResult {
   /** Size of the live managed listing this call fetched, 0 when unavailable. */
   managed: number
   reason?: string
+  /** Set when the caller asked about one `model`: whether the RUNNING OpenCode
+   *  registers it after this call. */
+  modelPresent?: boolean
 }
 
 /**
@@ -1372,14 +1378,45 @@ export async function convergeManagedModelCatalog(
     allowRestart?: boolean
     catalogTargetFile?: string
     turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
+    /** The one model a turn asks for (`codex/gpt-6.1-sol`, `openai/…`, a
+     *  managed id). Any provider, not only managed: the image-baked catalog
+     *  is as stale for a new BYOK/ChatGPT model as for a managed one. */
+    model?: string
   } = {},
 ): Promise<ManagedCatalogConvergeResult> {
   const allowRestart = opts.allowRestart !== false
   const startedAt = Date.now()
   const baseUrl = process.env.KORTIX_LLM_BASE_URL
   const apiKey = process.env.KORTIX_TOKEN
+  if (opts.model && lastConfiguredProviderModelIds?.has(opts.model)) {
+    return { outcome: 'unchanged', missing: [], managed: 0, modelPresent: true }
+  }
   if (!hasKortixLlmGateway(process.env) || !baseUrl || !apiKey) {
-    return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'no gateway credentials on this box' }
+    return {
+      outcome: 'no-gateway',
+      missing: [],
+      managed: 0,
+      reason: 'no gateway credentials on this box',
+      ...(opts.model ? { modelPresent: false } : {}),
+    }
+  }
+  if (opts.model) {
+    const model = opts.model
+    const refreshed = await refreshGatewayCatalogFile({
+      currentCatalogFile: process.env.KORTIX_LLM_CATALOG_FILE ?? BAKED_LLM_CATALOG_PATH,
+      targetCatalogFile: opts.catalogTargetFile ?? `${OPENCODE_HOME}/.config/kortix-llm-catalog.session.json`,
+      fetchBaseURL: baseUrl,
+      fetchApiKey: apiKey,
+    })
+    if (!refreshed?.fullCatalogLive) {
+      return { outcome: 'no-gateway', missing: [], managed: 0, reason: 'live gateway catalog unavailable', modelPresent: false }
+    }
+    process.env.KORTIX_LLM_CATALOG_FILE = refreshed.catalogFile
+    if (!readCatalogFile(refreshed.catalogFile)?.[model]) {
+      return { outcome: 'not-served', missing: [], managed: 0, reason: `the gateway does not serve ${model}`, modelPresent: false }
+    }
+    const result = await restartIfIdle(opencode, cfg, opts.turnProbe, [model], startedAt)
+    return { ...result, managed: 0, modelPresent: result.outcome === 'restarted' }
   }
   const live = await fetchManagedModels(baseUrl, apiKey)
   if (!live) {
@@ -1406,14 +1443,26 @@ export async function convergeManagedModelCatalog(
     })
     return { outcome: 'file-updated', missing, managed }
   }
-  const probe = opts.turnProbe ?? opencodeTurnInFlight
+  return { ...(await restartIfIdle(opencode, cfg, opts.turnProbe, missing, startedAt)), managed }
+}
+
+/** One idle-gated, verified OpenCode restart onto the catalog file already
+ *  written. Never ends a running turn, never retries. */
+async function restartIfIdle(
+  opencode: Pick<Opencode, 'getInternalUrl' | 'reloadVerified'>,
+  cfg: Pick<Config, 'workspace'>,
+  turnProbe: ((baseUrl: string, workspace: string) => Promise<boolean | null>) | undefined,
+  missing: string[],
+  startedAt: number,
+): Promise<Pick<ManagedCatalogConvergeResult, 'outcome' | 'missing' | 'reason'>> {
+  const probe = turnProbe ?? opencodeTurnInFlight
   const idle = async (): Promise<boolean> => (await probe(opencode.getInternalUrl(), cfg.workspace)) === false
   if (!(await idle())) {
     logger.warn('[opencode] on-demand catalog converge: skipping restart — a turn is live or unreadable', {
       missing,
       ms: Date.now() - startedAt,
     })
-    return { outcome: 'declined', missing, managed, reason: 'a turn is live or its state is unknown' }
+    return { outcome: 'declined', missing, reason: 'a turn is live or its state is unknown' }
   }
   const result = await opencode.reloadVerified({ mayPromote: idle })
   if (result.outcome !== 'swapped') {
@@ -1422,19 +1471,21 @@ export async function convergeManagedModelCatalog(
       reason: result.reason,
       ms: Date.now() - startedAt,
     })
-    return { outcome: 'declined', missing, managed, reason: result.reason ?? 'reload declined' }
+    return { outcome: 'declined', missing, reason: result.reason ?? 'reload declined' }
   }
-  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing managed models', {
+  logger.info('[opencode] on-demand catalog converge: restarted opencode with the missing models', {
     missing,
-    managed,
     ms: Date.now() - startedAt,
   })
-  return { outcome: 'restarted', missing, managed }
+  return { outcome: 'restarted', missing }
 }
 
 export type GatewayCatalogRefreshResult = {
   changed: boolean
   catalogFile: string
+  /** The full project catalog came from the gateway on this call, not the
+   *  file already on disk. */
+  fullCatalogLive: boolean
 }
 
 /**
@@ -1484,7 +1535,7 @@ export async function refreshGatewayCatalogFile(opts: {
     fullCatalogLive: !!liveModels,
     target: opts.targetCatalogFile,
   })
-  return { changed, catalogFile: opts.targetCatalogFile }
+  return { changed, catalogFile: opts.targetCatalogFile, fullCatalogLive: !!liveModels }
 }
 
 // Conservative window for a model we have no declared limit for. Better to

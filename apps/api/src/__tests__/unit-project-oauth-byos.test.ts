@@ -92,10 +92,13 @@ mock.module('../projects/codex-device-auth', () => ({
   pollCodexDeviceAuth: async () => ({ status: 'authorized', authJson: '{"openai":{"access":"a","refresh":"r","expires":1}}' }),
 }));
 
+let opencodePending = false;
 const actualOpencode = await import('../llm-gateway/credentials/opencode-console');
 mock.module('../llm-gateway/credentials/opencode-console', () => ({
   ...actualOpencode,
-  pollOpencodeDeviceAuth: async () => ({ status: 'authorized', authJson: '{"type":"oauth","access":"st","refresh":"rt","expires":1}' }),
+  pollOpencodeDeviceAuth: async () => opencodePending
+    ? { status: 'pending' }
+    : { status: 'authorized', authJson: '{"type":"oauth","access":"st","refresh":"rt","expires":1}' },
 }));
 
 // The flow handle is opaque to clients; a readable envelope lets the test
@@ -291,6 +294,16 @@ describe('POST /oauth/opencode-go/poll — an OpenCode Console login', () => {
     expect(result.body).toMatchObject({ status: 'success', credential: { provider_id: 'opencode-go', secret_id: RESOURCE_ID } });
     expect(updates[0]!.values).toMatchObject({ valueEnc: 'account-sealed:{"type":"oauth","access":"st","refresh":"rt","expires":1}' });
     expect(auditEvents).toContainEqual(expect.objectContaining({ metadata: expect.objectContaining({ provider_id: 'opencode-go' }) }));
+  });
+
+  test('a pending poll asks the client to wait the provider interval, never less', async () => {
+    opencodePending = true;
+    try {
+      const result = await poll(MEMBER_ID, handle({ p: 'opencode-go', i: 5000 }), 'opencode-go');
+      expect(result.body).toEqual({ status: 'pending', next_poll_ms: 5000 });
+    } finally {
+      opencodePending = false;
+    }
   });
 
   test('a ChatGPT flow handle never completes an OpenCode login', async () => {

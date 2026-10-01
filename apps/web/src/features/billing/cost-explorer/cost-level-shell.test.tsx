@@ -42,6 +42,9 @@ describe('CostLevelShell', () => {
     );
     expect(html).toContain('Last 30 days');
     expect(html).toContain('table-slot');
+    expect(html).toContain('aria-label="Loading cost summary"');
+    expect(html).toContain('aria-label="Loading spend chart"');
+    expect(html).not.toContain('$0.00');
   });
 
   test('surfaces the summary error message while the tiles show their loading skeleton, not empty tiles', () => {
@@ -115,6 +118,8 @@ describe('CostLevelShell', () => {
       </CostLevelShell>,
     );
     expect(html).toContain('data-slot="chart"');
+    expect(html).toContain('$46.42');
+    expect(html).not.toContain('aria-label="Loading cost summary"');
   });
 
   test('omits the chart when showChart is explicitly false, even with a chartable series', () => {

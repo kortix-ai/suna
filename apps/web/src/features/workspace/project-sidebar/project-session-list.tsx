@@ -1251,6 +1251,7 @@ function ProjectSessionRow({
   const sessionLink = (
     <HoverPrefetchLink
       href={href}
+      prefetch
       onClick={onNavigate}
       {...openIntent}
       aria-busy={isSwitching || undefined}
