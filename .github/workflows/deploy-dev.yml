@@ -567,6 +567,10 @@ jobs:
       # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
       # surface=all dispatch can enable it after the rollout gates pass.
       #
+      # KORTIX_CAPTURE_S3_BUCKET/REGION name the Kortix Capture video bucket
+      # (module.capture in the same root, with the task-role grant). Unset =
+      # the capture machine API answers 503 CAPTURE_STORAGE_UNCONFIGURED.
+      #
       # KORTIX_PROJECT_SNAPSHOT_S3_BUCKET/REGION name the bucket Terraform owns
       # in infra/terraform/environments/dev (module.project_snapshots; the task
       # role's grant comes with it). Naming the bucket turns on the PRODUCER
@@ -605,7 +609,7 @@ jobs:
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
+        {"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2","KORTIX_PROJECT_SNAPSHOT_MODE":"prefer-s3","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","KORTIX_CAPTURE_S3_BUCKET":"kortix-dev-capture","KORTIX_CAPTURE_S3_REGION":"us-west-2","KORTIX_PROJECT_SNAPSHOT_S3_ACCELERATE":"false","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-dev-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0","KORTIX_PLATINUM_US_REGION":"us-east"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
