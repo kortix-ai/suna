@@ -18,12 +18,17 @@ export const PARTICIPANT_AVATAR_SIZE = Math.round(webSpace(6));
 /** Web `rounded-sm`: `--radius` (10) minus 4. */
 const RADIUS = 6;
 
+/** Web `size-8`: the people sheet's rows (the hover card's `md`). */
+export const PARTICIPANT_ROW_AVATAR_SIZE = Math.round(webSpace(8));
+
 interface ParticipantAvatarProps {
   person: AvatarPerson;
+  /** Default `PARTICIPANT_AVATAR_SIZE` (web `size-6`). */
+  size?: number;
   style?: StyleProp<ViewStyle>;
 }
 
-export function ParticipantAvatar({ person, style }: ParticipantAvatarProps) {
+export function ParticipantAvatar({ person, size = PARTICIPANT_AVATAR_SIZE, style }: ParticipantAvatarProps) {
   const text = participantAvatarText(person);
   const chalk = entityChalk(text);
   // A local-stack photo is served from `127.0.0.1`, which on a phone is the
@@ -40,8 +45,8 @@ export function ParticipantAvatar({ person, style }: ParticipantAvatarProps) {
       className="items-center justify-center"
       style={[
         {
-          width: PARTICIPANT_AVATAR_SIZE,
-          height: PARTICIPANT_AVATAR_SIZE,
+          width: size,
+          height: size,
           borderRadius: RADIUS,
           borderWidth: 1,
           borderColor: chalk.border,
@@ -53,7 +58,7 @@ export function ParticipantAvatar({ person, style }: ParticipantAvatarProps) {
       {source ? <AvatarImage source={source} style={{ borderRadius: RADIUS }} /> : null}
       <AvatarFallback className="rounded-none bg-transparent">
         <Text
-          style={{ fontFamily: 'Roobert-SemiBold', fontSize: 10, letterSpacing: -0.2, color: chalk.foreground }}
+          style={{ fontFamily: 'Roobert-SemiBold', fontSize: size >= 28 ? 12 : 10, letterSpacing: -0.2, color: chalk.foreground }}
           allowFontScaling={false}>
           {participantInitials(person)}
         </Text>

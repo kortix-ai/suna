@@ -1,7 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import type { SessionMessageAuthor } from '@kortix/sdk';
 import { parseSessionMessagePrompt } from '@kortix/shared';
-import { awaitsAgent, isUnansweredAsk, isAskForViewer, resolveTranscriptAuthors, showAuthorName } from './message-author';
+import {
+  AUTHOR_RETRY_DELAYS_MS,
+  authorForTurn,
+  missingAuthorKey,
+  awaitsAgent,
+  isUnansweredAsk,
+  isAskForViewer,
+  resolveTranscriptAuthors,
+  showAuthorName,
+} from './message-author';
 
 const avery: SessionMessageAuthor = { kind: 'member', user_id: 'u1', name: 'Avery', email: 'avery@example.com' };
 const blair: SessionMessageAuthor = { kind: 'member', user_id: 'u2', name: 'Blair', email: 'blair@example.com' };
@@ -41,6 +50,48 @@ describe('resolveTranscriptAuthors', () => {
 
   test('no data means no authors', () => {
     expect(resolveTranscriptAuthors(['a'], undefined)).toEqual({ byMessage: new Map(), multiAuthor: false });
+  });
+});
+
+describe('authorForTurn', () => {
+  const RAJU: SessionMessageAuthor = { kind: 'member', user_id: 'u2', name: 'Raju', email: 'raju@example.test' };
+  const JAY: SessionMessageAuthor = { kind: 'member', user_id: 'u1', name: 'Jay', email: 'jay@example.test' };
+  const data = { authors: { msg_sent: JAY, msg_queued: RAJU, msg_wire: RAJU }, initial_author: null };
+  const resolved = resolveTranscriptAuthors(['msg_sent'], data);
+
+  test('a delivered message keeps the transcript pairing', () => {
+    expect(authorForTurn(resolved, data, 'msg_sent')).toEqual(JAY);
+  });
+
+  test('a queued prompt, not yet in the runtime transcript, still gets its author', () => {
+    expect(authorForTurn(resolved, data, 'msg_queued')).toEqual(RAJU);
+  });
+
+  test("a queued prompt is also found under its prompt's wire id", () => {
+    expect(authorForTurn(resolved, data, 'msg_local', 'msg_wire')).toEqual(RAJU);
+  });
+
+  test('an unknown message has no author', () => {
+    expect(authorForTurn(resolved, data, 'msg_nope')).toBeUndefined();
+    expect(authorForTurn(resolved, undefined, 'msg_queued')).toBeUndefined();
+  });
+});
+
+describe('missingAuthorKey', () => {
+  const JAY: SessionMessageAuthor = { kind: 'member', user_id: 'u1', name: 'Jay', email: 'jay@example.test' };
+  const data = { authors: { msg_a: JAY }, initial_author: null };
+
+  test('names every wanted id with no author, in a stable order', () => {
+    expect(missingAuthorKey(data, ['msg_c', 'msg_a', 'msg_b'])).toBe('msg_b,msg_c');
+  });
+
+  test('is empty when every id has an author, before the first read, and for blanks', () => {
+    expect(missingAuthorKey(data, ['msg_a', ''])).toBe('');
+    expect(missingAuthorKey(undefined, ['msg_b'])).toBe('');
+  });
+
+  test('retries back off and end', () => {
+    expect(AUTHOR_RETRY_DELAYS_MS).toEqual([2000, 5000, 12000]);
   });
 });
 

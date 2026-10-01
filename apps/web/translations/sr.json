@@ -20356,6 +20356,7 @@
     "title": "Особе",
     "sentBy": "Послао: {name}",
     "people": "Особе у овој сесији: {names}",
-    "peopleMore": "Особе у овој сесији: {names} и још {count}"
+    "peopleMore": "Особе у овој сесији: {names} и још {count}",
+    "more": "Još {count} može da otvori ovu sesiju"
   }
 }

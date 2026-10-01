@@ -103,7 +103,7 @@ describe('messages with a platform header', () => {
     expect(plain).not.toContain('[MESSAGE');
     expect(plain).toContain('Looks good to me.');
     expect(plain).not.toContain('Sent by');
-    // A member author is the avatar beside the bubble (screen readers get the
+    // A member author is the avatar above the bubble (screen readers get the
     // name), never the named label line.
     const shown = renderText(personMessage, { author: blair, showAuthor: true });
     expect(shown).toContain('data-slot="avatar"');

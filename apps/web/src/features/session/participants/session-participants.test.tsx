@@ -7,7 +7,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 import enMessages from '../../../../translations/en.json';
 import {
-  MessageSenderBeside,
+  hiddenParticipantCount,
+  MessageSenderAbove,
   SessionParticipantStack,
   participantLabel,
 } from './session-participants';
@@ -47,22 +48,24 @@ describe('participantLabel', () => {
   });
 });
 
-describe('MessageSenderBeside', () => {
-  test('puts the sender avatar beside the message, with no visible name', () => {
+describe('MessageSenderAbove', () => {
+  test('puts the sender avatar above the message, on the right, with no visible name', () => {
     const markup = render(
-      <MessageSenderBeside sender={MEMBER}>
+      <MessageSenderAbove sender={MEMBER}>
         <p>hello</p>
-      </MessageSenderBeside>,
+      </MessageSenderAbove>,
     );
     expect(markup).toContain('rounded-sm');
     expect(markup).not.toContain('rounded-full');
-    expect(markup.indexOf('data-slot="avatar"')).toBeGreaterThan(markup.indexOf('hello'));
+    // Above: the avatar comes first, then the message, in a right-aligned column.
+    expect(markup.indexOf('data-slot="avatar"')).toBeLessThan(markup.indexOf('hello'));
+    expect(markup).toContain('flex-col items-end');
     // The name is for screen readers only.
     expect(markup).toContain('<span class="sr-only">Sent by member</span>');
   });
 
   test('no sender: the message renders alone', () => {
-    expect(render(<MessageSenderBeside sender={null}><p>hello</p></MessageSenderBeside>)).toBe('<p>hello</p>');
+    expect(render(<MessageSenderAbove sender={null}><p>hello</p></MessageSenderAbove>)).toBe('<p>hello</p>');
   });
 });
 
@@ -94,5 +97,15 @@ describe('SessionParticipantStack', () => {
     expect(avatars(markup)).toBe(3);
     expect(markup).toContain('+4');
     expect(markup).toContain('aria-label="People in this session: Owner Name, member, c and 4 more"');
+  });
+});
+
+describe('hiddenParticipantCount', () => {
+  const person = (id: string) => ({ user_id: id, name: id, email: `${id}@example.test`, avatar_url: null, is_viewer: false });
+  test('who can open the session beyond the listed rows (the route lists 20)', () => {
+    const listed = Array.from({ length: 20 }, (_, i) => person(`p${i}`));
+    expect(hiddenParticipantCount({ participants: listed, total: 100, multi_user: true })).toBe(80);
+    expect(hiddenParticipantCount({ participants: listed.slice(0, 2), total: 2, multi_user: true })).toBe(0);
+    expect(hiddenParticipantCount(undefined)).toBe(0);
   });
 });

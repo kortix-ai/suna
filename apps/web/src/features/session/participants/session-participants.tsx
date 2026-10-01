@@ -34,12 +34,12 @@ function ParticipantAvatar({ person, size }: { person: AvatarPerson; size: 'sm' 
 }
 
 /**
- * A message in a shared session: its member author's avatar beside the
- * bubble, your own included, bottom edges aligned (`items-end`). A message
- * with no recorded author, or any message in a single-user session, renders
- * alone. The author comes from `.../message-authors`.
+ * A message in a shared session: its member author's avatar above the
+ * bubble, on the right edge, your own included. A message with no recorded
+ * author, or any message in a single-user session, renders alone. The author
+ * comes from `.../message-authors`.
  */
-export function MessageSenderBeside({
+export function MessageSenderAbove({
   sender,
   children,
 }: {
@@ -50,17 +50,23 @@ export function MessageSenderBeside({
   if (!sender) return children;
   const name = participantLabel(sender);
   return (
-    <div className="flex max-w-full items-end gap-2">
-      {/* `flex`, not a block: no inline line box to pad the bottom edge. */}
-      <div className="flex min-w-0">{children}</div>
+    <div className="flex max-w-full flex-col items-end gap-1.5">
       <span className="sr-only">{t('sentBy', { name })}</span>
       <Hint label={sender.email ?? name} side="top" delayDuration={300}>
-        <span aria-hidden className="flex shrink-0 mb-px">
+        <span aria-hidden className="flex shrink-0">
           <ParticipantAvatar person={sender} size="sm" />
         </span>
       </Hint>
+      {/* `flex`, not a block: no inline line box under the bubble. */}
+      <div className="flex max-w-full min-w-0">{children}</div>
     </div>
   );
+}
+
+/** Who can open the session beyond the listed rows: the route lists 20, `total` counts everyone. */
+export function hiddenParticipantCount(participants: SessionParticipants | undefined): number {
+  if (!participants) return 0;
+  return Math.max(0, participants.total - participants.participants.length);
 }
 
 /**
@@ -94,7 +100,8 @@ export function SessionParticipantStack({
               <ParticipantAvatar key={person.user_id} person={person} size="sm" />
             ))}
             {more > 0 && (
-              <AvatarGroupCount className="size-6 text-xs tabular-nums">
+              // `min-w-6 w-auto`: the tile grows with the count (+97), never under 24px.
+              <AvatarGroupCount className="h-6 w-auto min-w-6 px-1 text-xs tabular-nums">
                 +{more}
               </AvatarGroupCount>
             )}
@@ -136,6 +143,11 @@ export function SessionParticipantStack({
             ))}
           </ul>
         </FadedScrollArea>
+        {hiddenParticipantCount(participants) > 0 ? (
+          <p className="text-muted-foreground border-border border-t px-3.5 py-2 text-xs tabular-nums">
+            {t('more', { count: hiddenParticipantCount(participants) })}
+          </p>
+        ) : null}
       </HoverCardContent>
     </HoverCard>
   );

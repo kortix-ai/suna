@@ -3,6 +3,7 @@ import type { SessionMessageAuthors, SessionParticipant, SessionParticipants } f
 
 import {
   messageAvatarPerson,
+  participantSheetRows,
   participantAvatarText,
   participantInitials,
   participantName,
@@ -113,5 +114,24 @@ describe('messageAvatarPerson', () => {
     expect(messageAvatarPerson(data, view(), 'owner', 'm3')).toBeNull();
     expect(messageAvatarPerson(data, view(), 'owner', 'nope')).toBeNull();
     expect(messageAvatarPerson(undefined, view(), 'owner', 'm1')).toBeNull();
+  });
+});
+
+describe('participantSheetRows', () => {
+  test('one row per listed person: the name, else the email local part, and the email underneath', () => {
+    const { rows, more } = participantSheetRows(view());
+    expect(rows.map((row) => [row.key, row.name, row.email, row.isViewer])).toEqual([
+      ['owner', 'Owner Name', 'owner@example.test', true],
+      ['member', 'member', 'member@example.test', false],
+    ]);
+    expect(more).toBe(0);
+  });
+
+  test('people beyond the listed 20 are counted, never dropped silently', () => {
+    expect(participantSheetRows(view({ total: 25 })).more).toBe(23);
+  });
+
+  test('no data, no rows', () => {
+    expect(participantSheetRows(undefined)).toEqual({ rows: [], more: 0 });
   });
 });

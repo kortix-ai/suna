@@ -80,3 +80,32 @@ export function messageAvatarPerson(
   if (!groupChat && (viewerId === undefined || author.user_id === viewerId)) return null;
   return { name: author.name, email: author.email, avatar_url: author.avatar_url ?? null };
 }
+
+export interface ParticipantSheetRow {
+  key: string;
+  person: SessionParticipant;
+  /** The display name, else the email local part. */
+  name: string;
+  email: string | null;
+  isViewer: boolean;
+}
+
+/**
+ * The people sheet's rows (web's hover card): one per listed person, owner
+ * first. `more` counts who can open the session beyond the listed ones (the
+ * route lists 20; `total` is everyone).
+ */
+export function participantSheetRows(participants: SessionParticipants | undefined): {
+  rows: ParticipantSheetRow[];
+  more: number;
+} {
+  if (!participants) return { rows: [], more: 0 };
+  const rows = participants.participants.map((person) => ({
+    key: person.user_id,
+    person,
+    name: participantName(person),
+    email: person.email,
+    isViewer: person.is_viewer,
+  }));
+  return { rows, more: Math.max(0, participants.total - rows.length) };
+}

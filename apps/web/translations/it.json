@@ -20356,6 +20356,7 @@
     "title": "Persone",
     "sentBy": "Inviato da {name}",
     "people": "Persone in questa sessione: {names}",
-    "peopleMore": "Persone in questa sessione: {names} e altre {count}"
+    "peopleMore": "Persone in questa sessione: {names} e altre {count}",
+    "more": "Altri {count} possono aprire questa sessione"
   }
 }

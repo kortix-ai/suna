@@ -6,11 +6,12 @@
  *
  * Two faces, then a `+N` tile: the centred title keeps the width (the same
  * ruling as `SubAgentHeaderChip`). Each face is `ParticipantAvatar`, web's
- * `UserAvatar`. Display only: it opens nothing (Jay, 2026-09-30).
- * Screen readers read the names from its label.
+ * `UserAvatar`. A tap opens `SessionParticipantsSheet`, the phone's version
+ * of web's hover card (Jay, 2026-10-01). Screen readers read the names from
+ * its label.
  */
 import * as React from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import type { SessionParticipants } from '@kortix/sdk';
 
 import { ParticipantAvatar, PARTICIPANT_AVATAR_SIZE } from '@/components/session/ParticipantAvatar';
@@ -31,9 +32,11 @@ const STACK_HEIGHT = 32;
 
 interface SessionParticipantStackProps {
   participants: SessionParticipants | undefined;
+  /** Opens the people sheet. */
+  onPress?: () => void;
 }
 
-export function SessionParticipantStack({ participants }: SessionParticipantStackProps) {
+export function SessionParticipantStack({ participants, onPress }: SessionParticipantStackProps) {
   const stack = participantStack(participants, STACK_LIMIT);
   if (!stack) return null;
 
@@ -47,7 +50,8 @@ export function SessionParticipantStack({ participants }: SessionParticipantStac
           <View
             key="more"
             className="items-center justify-center bg-muted"
-            style={{ width: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, borderRadius: 6 }}>
+            // Grows with the count (+97), never narrower than a face.
+            style={{ minWidth: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, paddingHorizontal: 3, borderRadius: 6 }}>
             <Text
               className="text-muted-foreground"
               style={{ fontFamily: 'Roobert-Medium', fontSize: 10, fontVariant: ['tabular-nums'] }}
@@ -60,11 +64,15 @@ export function SessionParticipantStack({ participants }: SessionParticipantStac
   ];
 
   return (
-    <View
-      accessible
-      accessibilityRole="image"
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole="button"
       accessibilityLabel={stack.label}
-      className="flex-row items-center rounded-full bg-background"
+      accessibilityHint="Shows who can open this session"
+      // 32pt pill + 6pt slop each side = a 44pt target, as `ProjectHeaderActions`.
+      hitSlop={6}
+      className="flex-row items-center rounded-full bg-background active:opacity-70"
       style={{ height: STACK_HEIGHT, paddingHorizontal: 4 }}>
       {faces.map((face, index) => (
         <View
@@ -74,6 +82,6 @@ export function SessionParticipantStack({ participants }: SessionParticipantStac
           {face}
         </View>
       ))}
-    </View>
+    </Pressable>
   );
 }

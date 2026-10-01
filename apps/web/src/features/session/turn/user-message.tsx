@@ -1,6 +1,6 @@
 'use client';
 
-import { MessageSenderBeside } from '../participants/session-participants';
+import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel, SessionMessageCard } from './session-message-card';
 import { ReminderTurnCard } from './reminder-turn-card';
 import { isAskForViewer } from './message-author';
@@ -762,8 +762,11 @@ export function UserMessageBubble({
   textId,
   textRef,
   quoted,
+  tail = false,
   children,
 }: {
+  /** The sender's avatar sits above: the top-right corner, under it, is 4px. */
+  tail?: boolean;
   /** The text overflows its clamp, so there is something to expand. */
   canExpand: boolean;
   expanded: boolean;
@@ -786,6 +789,8 @@ export function UserMessageBubble({
       className={cn(
         BUBBLE_SURFACE,
         'relative overflow-hidden',
+        // 4px: `--radius` (10) minus 6, the corner under the sender's avatar.
+        tail && 'rounded-tr-[calc(var(--radius)-6px)]',
         fullWidth ? 'w-full' : 'w-fit',
         canExpand && 'cursor-pointer',
       )}
@@ -1657,7 +1662,7 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {/* A member author is the avatar beside the bubble; another session's
+      {/* A member author is the avatar above the bubble; another session's
           agent has no face, so it keeps the named label. */}
       {showAuthor && author?.kind === 'session' && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
@@ -1677,8 +1682,9 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <MessageSenderBeside sender={showAuthor && author?.kind === 'member' ? author : null}>
+        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
           <UserMessageBubble
+            tail={showAuthor && author?.kind === 'member'}
             canExpand={canExpand}
             expanded={expanded}
             onToggle={() => setExpanded(!expanded)}
@@ -1697,7 +1703,7 @@ export function UserMessage({
               )
             )}
           </UserMessageBubble>
-        </MessageSenderBeside>
+        </MessageSenderAbove>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate

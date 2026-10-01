@@ -996,7 +996,7 @@ describe('SessionPage send, retry and stop', () => {
     seedTurns(['one']);
     await renderPage();
     await act(async () => {
-      promptResponder = fail;
+      inboxFails = true;
       composerProps.onSend('hello', {});
       await sleep(15);
     });
@@ -1014,13 +1014,21 @@ describe('SessionPage send, retry and stop', () => {
     const retryTurn = turnProps.find((props) => props.uploadStatus?.state === 'failed');
     expect(retryTurn.uploadStatus.onRetry).toBeTypeOf('function');
     await act(async () => {
-      promptResponder = pass;
+      inboxFails = false;
       retryTurn.uploadStatus.onRetry();
       await sleep(15);
     });
-    const promptPosts = fetchCalls.filter((c) => c.url.endsWith('/prompt_async'));
+    // A project session sends through the prompt inbox, never `prompt_async`.
+    const promptPosts = fetchCalls.filter(
+      (c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'),
+    );
     expect(promptPosts).toHaveLength(2);
-    expect(JSON.stringify(promptPosts[1].body)).toBe(JSON.stringify(promptPosts[0].body));
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
+    // Same ids, parts and overrides: the inbox dedupes on `client_message_id`.
+    // Only the send time differs.
+    const { client_sent_at_ms: _first, ...firstBody } = promptPosts[0].body;
+    const { client_sent_at_ms: _retry, ...retryBody } = promptPosts[1].body;
+    expect(retryBody).toEqual(firstBody);
     // One 'hello' user message again, under the failed attempt's wire id —
     // the prompt inbox dedupes on `clientMessageId`, so a retry cannot double-run.
     const after = (useSyncStore.getState().messages[SID] ?? []).filter(
@@ -1071,19 +1079,20 @@ describe('SessionPage send, retry and stop', () => {
 // ── Composer option assembly ────────────────────────────────────────────────
 
 describe('SessionPage prompt-options assembly', () => {
-  test('a requested prompt sends with the resolved agent, model key and variant', async () => {
+  test('a requested prompt goes to the prompt inbox with the resolved agent, model key and variant', async () => {
     await renderPage();
     await act(async () => {
       useSessionPromptRequestStore.getState().requestSend(SID, 'open change text');
       await sleep(15);
     });
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    const post = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'),
+    );
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'open change text' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
     expect(useSessionPromptRequestStore.getState().request).toBeNull();
   });
 
@@ -1111,13 +1120,14 @@ describe('SessionPage prompt-options assembly', () => {
     // The messages the revert hides leave the thread; the edit goes out as a send.
     const after = useSyncStore.getState().messages[SID] ?? [];
     expect(after.map((m) => [(m.parts[0] as any).text, m.info.role])).toEqual([['edited', 'user']]);
-    const post = fetchCalls.find((c) => c.url.endsWith('/prompt_async'));
-    expect(post?.body).toEqual({
+    const post = fetchCalls.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'),
+    );
+    expect(post?.body).toMatchObject({
       parts: [{ type: 'text', text: 'edited' }],
-      agent: 'builder',
-      model: { providerID: 'prov', modelID: 'mod' },
-      variant: 'high',
+      overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
+    expect(fetchCalls.some((c) => c.url.endsWith('/prompt_async'))).toBe(false);
   });
 
   test('a slash command posts the command with the resolved agent, model string and variant', async () => {

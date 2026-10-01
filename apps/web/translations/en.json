@@ -20356,6 +20356,7 @@
     "title": "People",
     "sentBy": "Sent by {name}",
     "people": "People in this session: {names}",
-    "peopleMore": "People in this session: {names} and {count} more"
+    "peopleMore": "People in this session: {names} and {count} more",
+    "more": "{count} more can open this session"
   }
 }

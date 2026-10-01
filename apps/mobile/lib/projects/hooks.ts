@@ -413,16 +413,22 @@ export function useSessionParticipants(projectId: string | null | undefined, ses
   });
 }
 
+/** When to ask again for an author that is not recorded yet: 2 s, 5 s, 12 s. */
+const AUTHOR_RETRY_DELAYS_MS = [2000, 5000, 12000];
+
 /**
  * Who wrote each message of a session (`GET .../message-authors`). The ledger
- * records a prompt's delivered id a moment after the runtime shows it, so when
- * the newest user message has no author yet it asks once more, 2 s later, once
- * per message id. Mirrors web's `session-chat.tsx`.
+ * records a delivered prompt's id a moment after the runtime shows it, and a
+ * prompt someone else just queued is newer than the cached answer. So while
+ * any of `wantedMessageIds` (the transcript's user messages and the queued
+ * prompts) has no author, it asks again on `AUTHOR_RETRY_DELAYS_MS`, per set
+ * of missing ids. A message that never gets an author (a slash command) stops
+ * after the last delay.
  */
 export function useSessionMessageAuthors(
   projectId: string | null | undefined,
   sessionId: string | null | undefined,
-  newestUserMessageId?: string,
+  wantedMessageIds: readonly string[] = [],
 ) {
   const query = useQuery({
     queryKey: projectKeys.sessionMessageAuthors(projectId, sessionId),
@@ -431,14 +437,19 @@ export function useSessionMessageAuthors(
     staleTime: 30_000,
   });
   const { data, refetch } = query;
-  const retriedFor = useRef<string | null>(null);
+  const missing = data ? wantedMessageIds.filter((id) => id && !data.authors[id]).sort().join(',') : '';
+  const attempts = useRef<{ key: string; count: number }>({ key: '', count: 0 });
   useEffect(() => {
-    if (!data || !newestUserMessageId || data.authors[newestUserMessageId]) return;
-    if (retriedFor.current === newestUserMessageId) return;
-    retriedFor.current = newestUserMessageId;
-    const timer = setTimeout(() => void refetch(), 2000);
+    if (!missing) return;
+    if (attempts.current.key !== missing) attempts.current = { key: missing, count: 0 };
+    const delay = AUTHOR_RETRY_DELAYS_MS[attempts.current.count];
+    if (delay === undefined) return;
+    const timer = setTimeout(() => {
+      attempts.current.count += 1;
+      void refetch();
+    }, delay);
     return () => clearTimeout(timer);
-  }, [data, newestUserMessageId, refetch]);
+  }, [missing, data, refetch]);
   return query;
 }
 

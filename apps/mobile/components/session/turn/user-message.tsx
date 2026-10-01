@@ -83,6 +83,8 @@ const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHe
 const BUBBLE_PADDING_X = webSpace(3.5);
 const BUBBLE_PADDING_Y = webSpace(2.5);
 const BUBBLE_RADIUS = 10;
+/** Web's 4px top-right corner under the sender's avatar (`--radius` 10 minus 6). */
+const BUBBLE_TAIL_RADIUS = 4;
 /** `max-h-[200px]`. */
 const CLAMP_HEIGHT = 200;
 /** `h-10` fade. */
@@ -102,10 +104,10 @@ function paletteFor(isDark: boolean) {
 }
 
 /**
- * A message in a shared session: its sender's avatar beside the bubble,
- * your own included, bottom edges aligned (web `MessageSenderBeside`).
+ * A message in a shared session: its sender's avatar above the bubble, on
+ * the right edge, your own included (web `MessageSenderAbove`).
  */
-function MessageSenderBeside({
+function MessageSenderAbove({
   sender,
   children,
 }: {
@@ -115,11 +117,11 @@ function MessageSenderBeside({
   if (!sender) return <>{children}</>;
   return (
     <View
-      className="flex-row items-end"
-      style={{ gap: webSpace(2) }}
+      className="items-end"
+      style={{ gap: webSpace(1.5) }}
       accessibilityLabel={`Sent by ${participantName(sender)}`}>
-      <View className="shrink">{children}</View>
       <ParticipantAvatar person={sender} />
+      <View className="max-w-full">{children}</View>
     </View>
   );
 }
@@ -239,7 +241,7 @@ export function UserMessage({
   uploadStatus?: UserMessageUploadStatus;
   /**
    * Who sent this message, in a shared session, the viewer included. Drawn
-   * as their avatar beside the bubble. Null when no sender is recorded.
+   * as their avatar above the bubble. Null when no sender is recorded.
    */
   sender?: AvatarPerson | null;
   /** `human_messaging` is on. Off: a header never makes a card; the text draws as a plain bubble. */
@@ -410,12 +412,13 @@ export function UserMessage({
         ) : null}
 
         {hasBubble ? (
-          <MessageSenderBeside sender={sender}>
+          <MessageSenderAbove sender={sender}>
             {/* A failed send greys its bubble; "Try again" above stays full strength. */}
             <MessageMenu {...menuProps} onSelectText={() => setSelecting(true)}>
               <View className="items-end" style={failed ? FAILED_BUBBLE_STYLE : undefined}>
                 <UserMessageBubble
                   isDark={isDark}
+                  tail={!!sender}
                   quotes={content.quotes}
                   // While selecting, a long press belongs to the text selection.
                   onLongPress={selecting ? undefined : openMenu}>
@@ -434,7 +437,7 @@ export function UserMessage({
                 </UserMessageBubble>
               </View>
             </MessageMenu>
-          </MessageSenderBeside>
+          </MessageSenderAbove>
         ) : null}
 
         {actions}
@@ -620,8 +623,11 @@ export function UserMessageBubble({
   quotes = [],
   children,
   onLongPress,
+  tail = false,
 }: {
   isDark: boolean;
+  /** The sender's avatar sits above: the top-right corner, under it, is 4pt, as web. */
+  tail?: boolean;
   /** Quoted passages above the text. Omitted by the connecting screen's pending-prompt bubble. */
   quotes?: string[];
   children?: React.ReactNode;
@@ -659,6 +665,7 @@ export function UserMessageBubble({
         maxWidth: '100%',
         backgroundColor: surface,
         borderRadius: BUBBLE_RADIUS,
+        ...(tail ? { borderTopRightRadius: BUBBLE_TAIL_RADIUS } : null),
         paddingHorizontal: BUBBLE_PADDING_X,
         paddingVertical: BUBBLE_PADDING_Y,
         overflow: 'hidden',

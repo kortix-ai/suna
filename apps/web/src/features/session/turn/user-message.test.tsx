@@ -1180,16 +1180,21 @@ describe('UserMessage member author', () => {
       </QueryClientProvider>,
     );
 
-  test('a shown member author is an avatar beside the bubble, not a name line', () => {
+  test('a shown member author is an avatar above the bubble, not a name line', () => {
     const markup = renderWith(MEMBER, true);
     const text = markup.indexOf('ship the thing');
     const avatar = markup.indexOf('data-slot="avatar"');
-    expect(avatar).toBeGreaterThan(text);
-    // Beside the bubble, before the actions row that holds Copy.
-    expect(avatar).toBeLessThan(markup.indexOf('aria-label="Copy code"'));
+    // Above the bubble: the avatar comes before the message text.
+    expect(avatar).toBeGreaterThan(-1);
+    expect(avatar).toBeLessThan(text);
     expect(markup).not.toContain('>Marko<');
     expect(markup).not.toContain('data-testid="message-author"');
     expect(markup).toContain('Sent by Marko');
+  });
+
+  test('under the avatar, the bubble top-right corner is less rounded; without one it stays round', () => {
+    expect(renderWith(MEMBER, true)).toContain('rounded-tr-[calc(var(--radius)-6px)]');
+    expect(renderWith(MEMBER, false)).not.toContain('rounded-tr-[calc(var(--radius)-6px)]');
   });
 
   test('an author that is not shown, or no author: the message is unchanged', () => {

@@ -20356,6 +20356,7 @@
     "title": "参加者",
     "sentBy": "送信者: {name}",
     "people": "このセッションの参加者: {names}",
-    "peopleMore": "このセッションの参加者: {names} ほか{count}人"
+    "peopleMore": "このセッションの参加者: {names} ほか{count}人",
+    "more": "ほか{count}人がこのセッションを開けます"
   }
 }

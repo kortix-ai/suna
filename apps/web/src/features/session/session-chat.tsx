@@ -24,7 +24,15 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { awaitsAgent, isUnansweredAsk, resolveTranscriptAuthors, showAuthorName } from './turn/message-author';
+import {
+  AUTHOR_RETRY_DELAYS_MS,
+  authorForTurn,
+  awaitsAgent,
+  isUnansweredAsk,
+  missingAuthorKey,
+  resolveTranscriptAuthors,
+  showAuthorName,
+} from './turn/message-author';
 import { useAuth } from '@/features/providers/auth-provider';
 import { QueuedPromptList } from './composer/queued-prompt-list';
 import { runtimePermissionLocksComposer } from './composer/send-blockers';
@@ -600,16 +608,6 @@ export function SessionChat({
     projectSessionId,
     newestUserMessageId,
   );
-  // The ledger records a message's delivered id a moment after the runtime
-  // shows it: ask once more when the newest message is still unattributed.
-  const authorsRetriedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!messageAuthors || !newestUserMessageId || messageAuthors.authors[newestUserMessageId]) return;
-    if (authorsRetriedFor.current === newestUserMessageId) return;
-    authorsRetriedFor.current = newestUserMessageId;
-    const timer = setTimeout(() => void refetchMessageAuthors(), 2000);
-    return () => clearTimeout(timer);
-  }, [messageAuthors, newestUserMessageId, refetchMessageAuthors]);
   const transcriptAuthors = useMemo(
     () => resolveTranscriptAuthors(userMessageIds, messageAuthors),
     [userMessageIds, messageAuthors],
@@ -638,6 +636,26 @@ export function SessionChat({
   // queued for the agent: it draws no Sending/Queued chip and no Thinking row.
   // Its bubble still comes from `queuedSyntheticMessages`.
   const agentPrompts = useMemo(() => promptInbox.prompts.filter(awaitsAgent), [promptInbox.prompts]);
+  // Every user message and queued prompt on screen wants an author. The ledger
+  // records a delivered id a moment after the runtime shows it, and a prompt
+  // someone else just queued is newer than the cached answer: while any id is
+  // unattributed, ask again on a short backoff (`AUTHOR_RETRY_DELAYS_MS`).
+  const missingAuthors = missingAuthorKey(messageAuthors, [
+    ...userMessageIds,
+    ...promptInbox.prompts.flatMap((prompt) => [prompt.message_id, prompt.wire_message_id ?? '']),
+  ]);
+  const authorRetry = useRef<{ key: string; count: number }>({ key: '', count: 0 });
+  useEffect(() => {
+    if (!missingAuthors) return;
+    if (authorRetry.current.key !== missingAuthors) authorRetry.current = { key: missingAuthors, count: 0 };
+    const delay = AUTHOR_RETRY_DELAYS_MS[authorRetry.current.count];
+    if (delay === undefined) return;
+    const timer = setTimeout(() => {
+      authorRetry.current.count += 1;
+      void refetchMessageAuthors();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [missingAuthors, messageAuthors, refetchMessageAuthors]);
   // Ids a server `no_reply` ask prompt shows under: its header is the server's.
   // `human_messaging` off: asks and from-session messages draw as plain bubbles.
   const { enabled: messagingCards } = useFeatureFlag(projectId, 'human_messaging');
@@ -4247,6 +4265,14 @@ export function SessionChat({
                             !confirmedActive && turn.assistantMessages.length === 0
                               ? pendingPromptsByMessageId.get(turn.userMessage.info.id)
                               : undefined;
+                          // A queued prompt is not in the runtime transcript yet;
+                          // its author still shows (`authorForTurn`).
+                          const turnAuthor = authorForTurn(
+                            transcriptAuthors,
+                            messageAuthors,
+                            turn.userMessage.info.id,
+                            pendingPrompt?.wire_message_id,
+                          );
                           return (
                             <TranscriptTurnRow
                               // ONE element per prompt: keyed by the id the
@@ -4277,12 +4303,8 @@ export function SessionChat({
                                     : 'mt-12'
                               }
                               turn={turn}
-                              author={transcriptAuthors.byMessage.get(turn.userMessage.info.id)}
-                              showAuthor={showAuthorName(
-                                transcriptAuthors.byMessage.get(turn.userMessage.info.id),
-                                groupChat,
-                                viewer?.id,
-                              )}
+                              author={turnAuthor}
+                              showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
                               headerTrusted={askMessageIds.has(turn.userMessage.info.id)}
                               messagingCards={messagingCards}
                               viewerEmail={viewer?.email}
