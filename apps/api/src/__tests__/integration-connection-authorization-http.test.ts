@@ -385,6 +385,44 @@ describe('connection owner authorization over HTTP', () => {
     expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, ALICE_CONNECTION))).length).toBe(1);
   });
 
+  test('disconnect cannot remove an account while a concurrent binding is committed', async () => {
+    const id = crypto.randomUUID();
+    const token = await mint(ALICE);
+    await db.insert(connectorConnections).values({
+      connectionId: id, accountId: ACCOUNT, projectId: PROJECT,
+      connectorId: USER_CONNECTOR, ownerType: 'member', ownerId: ALICE,
+      label: 'Racing account',
+    });
+    let releaseBinding!: () => void;
+    const held = new Promise<void>((resolve) => { releaseBinding = resolve; });
+    let bindingInserted!: () => void;
+    const inserted = new Promise<void>((resolve) => { bindingInserted = resolve; });
+    const binding = db.transaction(async (tx) => {
+      await tx.insert(projectSessionConnectorBindings).values({
+        sessionId: DEFAULT_SCOPE_SESSION, accountId: ACCOUNT, projectId: PROJECT,
+        connectorAlias: 'racing_account', connectorId: USER_CONNECTOR,
+        connectionId: id, source: 'request', createdBy: ALICE,
+      });
+      bindingInserted();
+      await held;
+    });
+    await inserted;
+    const deletion = request('DELETE', `/v1/projects/${PROJECT}/connections/${id}`, token);
+    try {
+      // The insert holds a KEY SHARE lock until commit; deletion must wait.
+      await Bun.sleep(50);
+      releaseBinding();
+      await binding;
+      expect((await deletion).status).toBe(409);
+      expect((await db.select().from(connectorConnections).where(eq(connectorConnections.connectionId, id))).length).toBe(1);
+    } finally {
+      releaseBinding();
+      await binding;
+      await db.delete(projectSessionConnectorBindings).where(eq(projectSessionConnectorBindings.connectionId, id));
+      await db.delete(connectorConnections).where(eq(connectorConnections.connectionId, id));
+    }
+  });
+
   test('managers administer system connections but cannot enumerate personal connections', async () => {
     const response = await request(
       'GET',

@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "Disconnetti in qualsiasi momento con",
       "text64cfa6cc8752": "L'impostazione predefinita distribuita è permissiva: un'azione viene eseguita salvo diversa indicazione. Le letture di solito vanno bene così. Le scritture nel warehouse no: impostarle su Ask è una modifica di configurazione che fai tu, non una scelta fatta al posto tuo.",
       "text64cff1319d2f": "Azione",
-      "text64db32d83da9": "La tua connessione verrà rimossa. Le sessioni associate smetteranno di funzionare.",
+      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
       "text64e8222cd578": "Dove risiede Kortix",
       "text64e855d33cce": "Richiesta di accesso rifiutata",
       "text64f160413fef": "Usa i file SVG/PNG forniti",

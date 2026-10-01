@@ -12885,7 +12885,7 @@
       "text64cc97c96c03": "いつでも接続を解除できます：",
       "text64cfa6cc8752": "製品出荷時のデフォルトは許可優先です。明示的に指定しない限り、アクションは実行されます。読み取りは通常これで問題ありませんが、ウェアハウスへの書き込みは別です。Askにするのは、あなたが行う設定変更であり、あらかじめ設定されたものではありません。",
       "text64cff1319d2f": "操作",
-      "text64db32d83da9": "自分の接続が削除されます。これに紐づくセッションは動作しなくなります。",
+      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
       "text64e8222cd578": "Kortixの配置場所",
       "text64e855d33cce": "アクセス要求を却下しました",
       "text64f160413fef": "提供されたSVG/PNGファイルを使用する",

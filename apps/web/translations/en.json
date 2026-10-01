@@ -12898,7 +12898,7 @@
       "text64cc97c96c03": "Disconnect anytime with",
       "text64cfa6cc8752": "The shipped default is permissive: an action runs unless you have said otherwise. Reads are usually fine that way. Writes to a warehouse are not, and setting them to Ask is a configuration change you make, not one that was made for you.",
       "text64cff1319d2f": "Action",
-      "text64db32d83da9": "Your own connection is removed. Sessions bound to it will stop working.",
+      "text64db32d83da9": "This account cannot be removed while a session is bound to it. Unbind it from the session first.",
       "text64e8222cd578": "Where Kortix lives",
       "text64e855d33cce": "Access request declined",
       "text64f160413fef": "Use the provided SVG/PNG files",
