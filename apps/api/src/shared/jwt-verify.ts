@@ -1,12 +1,10 @@
 /**
- * Local JWT verification using Web Crypto API (no network roundtrip).
+ * Local JWT signature verification using the Web Crypto API.
  *
  * Supabase JWTs are signed with ES256 (ECDSA P-256). We fetch the JWKS once
- * at startup and verify tokens locally — no call to /auth/v1/user per request.
- *
- * Why: supabase.auth.getUser() makes a live HTTP call every time. On local dev
- * any transient blip to 127.0.0.1:54321 → intermittent 401 on valid tokens.
- * Local verification is also ~10x faster.
+ * at startup and check signature and expiry locally. A signature cannot show
+ * revocation, so a verified token still asks GoTrue whether its session is
+ * live, through `jwt-liveness.ts` (cached per `SUPABASE_JWT_LIVENESS_TTL_MS`).
  *
  * Fallback: if JWKS fetch fails (Supabase not up yet) or key is unknown, we
  * fall back to the network call so nothing breaks during cold starts.
@@ -237,10 +235,24 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
     return { ok: false, reason: 'no-sub' };
   }
 
+  return confirmLive(token, payload.sub, payload);
+}
+
+// A valid signature cannot show a revoked session (sign-out, deleted or banned
+// user). GoTrue can, so every algorithm asks it — see `jwt-liveness.ts`.
+async function confirmLive(token: string, sub: string, payload: JwtPayload): Promise<VerifyResult | VerifyFailure> {
+  let live: Awaited<ReturnType<typeof confirmJwtLive>>;
+  try {
+    live = await confirmJwtLive(token, payload.exp);
+  } catch {
+    return { ok: false, reason: 'liveness-unavailable' };
+  }
+  if (!live || live.id !== sub) return { ok: false, reason: 'session-not-live' };
+
   return {
     ok: true,
-    userId: payload.sub,
-    email: payload.email || payload.user_metadata?.email as string || '',
+    userId: sub,
+    email: payload.email || live.email || (payload.user_metadata?.email as string) || '',
     payload,
   };
 }
@@ -316,20 +328,7 @@ async function verifyHs256(token: string): Promise<VerifyResult | VerifyFailure>
   if (payload.exp && Date.now() / 1000 > payload.exp) return { ok: false, reason: 'expired' };
   if (!payload.sub) return { ok: false, reason: 'no-sub' };
 
-  let live: Awaited<ReturnType<typeof confirmJwtLive>>;
-  try {
-    live = await confirmJwtLive(token, payload.exp);
-  } catch {
-    return { ok: false, reason: 'liveness-unavailable' };
-  }
-  if (!live || live.id !== payload.sub) return { ok: false, reason: 'session-not-live' };
-
-  return {
-    ok: true,
-    userId: payload.sub,
-    email: payload.email || live.email || (payload.user_metadata?.email as string) || '',
-    payload,
-  };
+  return confirmLive(token, payload.sub, payload);
 }
 
 // ── Eager JWKS load on import ─────────────────────────────────────────────────
