@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import type { VcsFileDiff } from '@opencode-ai/sdk/v2/client';
+import type { VcsFileDiff } from '../../core/runtime/runtime-types';
 
 import { getClient } from '../../core/runtime/client';
 import { useCurrentRuntime } from '../use-current-runtime';

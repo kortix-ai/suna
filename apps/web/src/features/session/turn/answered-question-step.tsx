@@ -21,6 +21,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { DisclosureContent } from '@/components/ui/disclosure';
 import { isToolPart, type Part, type ToolPart } from '@/ui';
+import { toToolView } from '@kortix/sdk';
 import { ChatTeardropTextIcon } from '@phosphor-icons/react';
 import { memo } from 'react';
 import { isQuestionTool } from '../session-activity-groups';
@@ -37,8 +38,7 @@ function readQuestions(part: ToolPart): QuestionInput[] {
 }
 
 function readAnswers(part: ToolPart): string[][] {
-  const metadata = (part.state as { metadata?: { answers?: unknown } } | undefined)?.metadata;
-  return Array.isArray(metadata?.answers) ? (metadata.answers as string[][]) : [];
+  return toToolView(part).answers ?? [];
 }
 
 /**

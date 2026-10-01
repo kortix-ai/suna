@@ -31,6 +31,7 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import type { SessionPromptOverrides, SessionStartStage } from '@kortix/sdk';
 import type { Command } from '@kortix/sdk/react';
 import {
+  useFeatureFlag,
   usePromptAttachments,
   useRuntimeAgents,
   useSessionPrompts,
@@ -131,7 +132,8 @@ export function InstantSessionShell({
   // An ask's first message (`no_reply`) goes to people: show it as the ask card,
   // with no Thinking row and no Stop button while the box boots.
   const { user: viewer } = useAuth();
-  const askInfo = firstPromptRow?.no_reply
+  const { enabled: humanMessaging } = useFeatureFlag(projectId, 'human_messaging');
+  const askInfo = humanMessaging && firstPromptRow?.no_reply
     ? parseSessionMessagePrompt(firstPromptRow.full_text ?? firstPromptRow.text)
     : undefined;
   const send = useInstantSessionSend({

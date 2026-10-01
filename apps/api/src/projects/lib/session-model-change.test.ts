@@ -53,6 +53,10 @@ describe('modelChangeNeedsLivePush', () => {
     expect(modelChangeNeedsLivePush({ current: 'a/b', next: 'a/b', status: 'running' })).toBe(false);
   });
 
+  test('the same model spelled with and without `kortix/` is not a change', () => {
+    expect(modelChangeNeedsLivePush({ current: 'glm-5.3-flash', next: 'kortix/glm-5.3-flash', status: 'running' })).toBe(false);
+  });
+
   test('a session with no box yet just persists — nothing to push to', () => {
     expect(modelChangeNeedsLivePush({ current: null, next: 'c/d', status: 'provisioning' })).toBe(
       false,

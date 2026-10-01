@@ -1,3 +1,4 @@
+import { settleAndCheckAutoTopup } from '../billing/services/wallet-debits';
 import type {
   AuthedPrincipal,
   AuthorizeResult,
@@ -346,7 +347,7 @@ async function settleLlmUsage(event: UsageEvent, costUsd: number, usageEventId: 
   if (costUsd <= 0) return;
   const markup = llmPriceMarkup();
   const hasAudit = Boolean(usageEventId) || event.upstreamCost != null;
-  await wallet.settle({
+  await settleAndCheckAutoTopup({
     accountId: event.accountId,
     amount: costUsd,
     description: `LLM · ${event.provider ? `${event.provider}/` : ''}${event.model}`,

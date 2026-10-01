@@ -115,6 +115,29 @@ describe.if(hasDatabase)('buildActor', () => {
     expect(actor.credential.activated).toBe(false);
   });
 
+  test('an OBJECT grant to the service account (a shared secret or account) does not activate it', async () => {
+    const roleId = crypto.randomUUID();
+    await raw(
+      `insert into kortix.iam_roles (role_id, account_id, key, name, scope_type)
+       values ('${roleId}','${ACCOUNT}','ba_object_role','BA object','project')`,
+    );
+    await raw(
+      `insert into kortix.role_assignments (account_id, principal_type, principal_id, role_id, scope_type, scope_id, object_type, object_id)
+       values ('${ACCOUNT}','service_account','${SA}','${roleId}','project','${PROJECT}','secret','${crypto.randomUUID()}')`,
+    );
+    const actor = await actorFromContext({
+      userId: USER,
+      accountId: ACCOUNT,
+      authType: 'pat',
+      iamTokenId: AGENT_TOKEN,
+      agentGrant: GRANT,
+    });
+    if (actor?.credential.kind !== 'agent_session') throw new Error('unreachable');
+    // Activation swaps the default ceiling for the bound roles, and object
+    // grants never enter that ceiling: counting one would brick the agent.
+    expect(actor.credential.activated).toBe(false);
+  });
+
   test('assigning the service account a role flips activation', async () => {
     const roleId = crypto.randomUUID();
     await raw(

@@ -6,6 +6,7 @@
  * bodies are moved verbatim, so the traffic contract — statuses, response
  * fields, and side-effect order — is unchanged.
  */
+import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
@@ -57,6 +58,8 @@ export type TurnStreamBody = {
   error_status?: number;
   error_retryable?: boolean;
   error_provider?: string;
+  /** The daemon's `TurnErrorCode`. Absent from a daemon built before W5. */
+  error_code?: string;
 };
 
 /** The only surface these handlers use from the Hono context. */
@@ -224,6 +227,7 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
           statusCode: typeof body.error_status === 'number' ? body.error_status : undefined,
           isRetryable: typeof body.error_retryable === 'boolean' ? body.error_retryable : undefined,
           providerID: typeof body.error_provider === 'string' ? body.error_provider : undefined,
+          code: isTurnErrorCode(body.error_code) ? body.error_code : undefined,
         }
       : undefined;
   // SANDBOX-REPORTED turn end. `shortenSandboxDeadline` is LEAST-only, so

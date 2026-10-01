@@ -251,14 +251,6 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
 
       // ── catalog reads ────────────────────────────────────────────────────
       if (method === 'GET') {
-        if (path === '/config' || path === '/global/config') return json(200, rt.configObject())
-        if (path === '/agent') return json(200, [rt.agentObject()])
-        if (path === '/provider') return json(200, rt.providerList())
-        if (path === '/config/providers') {
-          const list = rt.providerList() as { all: unknown[]; default: Record<string, string> }
-          return json(200, { providers: list.all, default: list.default })
-        }
-        if (path === '/command') return json(200, [])
         if (path === '/skill') {
           return json(
             200,

@@ -19106,7 +19106,8 @@
       "text80043b03898d": "Atualize o app Kortix no Teams",
       "textdf757dbe33eb": "Seu catálogo do Teams tem a versão {value0} do app Kortix. A versão {value1} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "textcd2c4b26eedd": "O Kortix não tem registro da versão do app no seu catálogo do Teams. A versão {value0} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
-      "texte15f213fa506": "Publicar atualização do app"
+      "texte15f213fa506": "Publicar atualização do app",
+      "textcafd830fcf85": "Identidades de agente do projeto listadas"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -20152,6 +20153,7 @@
     "everyoneDefaultMeta": "Até você adicionar um grupo ou uma pessoa",
     "everyoneMeta": "Todos com acesso ao projeto",
     "groupMeta": "Grupo",
+    "agentMeta": "Agente",
     "memberMeta": "Membro",
     "remove": "Remover {name}",
     "keep": "Manter",
@@ -20175,8 +20177,12 @@
     "addAccountDescription": "Dê um nome à conta e escolha quem pode usá-la.",
     "onlyYou": "Só você",
     "onlyYouDescription": "Só você pode usá-la, nas suas sessões privadas.",
-    "specificPeople": "Pessoas ou grupos específicos",
-    "specificPeopleDescription": "Só as pessoas e os grupos escolhidos, nas sessões privadas deles.",
+    "onlyRequester": "Somente {name}",
+    "onlyRequesterUnnamed": "Somente a pessoa que pediu",
+    "onlyRequesterDescription": "Somente essa pessoa pode usá-lo, diretamente ou em suas próprias sessões privadas.",
+    "specificPeople": "Pessoas, grupos ou agentes específicos",
+    "specificPeopleDescription": "Somente as pessoas, grupos e agentes escolhidos. Pessoas o usam em suas sessões privadas; um agente, em todas as suas sessões.",
+    "agentShareHint": "Um agente o usa em todas as suas sessões, incluindo gatilhos. Quem pode executar esse agente pode usá-lo por meio do agente.",
     "shareRequiresManage": "Para compartilhar uma conta é preciso permissão para gerenciar as conexões do projeto.",
     "nameTaken": "Já existe uma conta chamada {label}.",
     "noAccountsTitle": "Nenhuma conta ainda",

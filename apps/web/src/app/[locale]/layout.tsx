@@ -97,6 +97,7 @@ const ROOT_METADATA: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
       {
         url: '/icon-light-32.png',
         sizes: '32x32',

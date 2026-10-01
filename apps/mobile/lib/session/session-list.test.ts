@@ -1,3 +1,4 @@
+import { directSubsessions, projectSessionForRuntimeId, rootRuntimeSession } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -14,9 +15,6 @@ import {
   shortRelative,
   spokenRelative,
   SUB_SESSION_FALLBACK_TITLE,
-  directSubsessions,
-  projectSessionForOpenCodeId,
-  rootOpenCodeSession,
   subsessionTitle,
   SUBSESSION_COUNT_BADGE_THRESHOLD,
   showSubsessionCountBadge,
@@ -581,14 +579,14 @@ function ocNode(
   };
 }
 
-describe('rootOpenCodeSession', () => {
+describe('rootRuntimeSession', () => {
   test('no opencode_sessions: null', () => {
-    expect(rootOpenCodeSession(makeSession({ opencode_sessions: [] }))).toBeNull();
+    expect(rootRuntimeSession(makeSession({ opencode_sessions: [] }))).toBeNull();
   });
 
   test('a missing opencode_sessions array (older payload): null, no throw', () => {
     const session = makeSession({ opencode_sessions: undefined as unknown as ProjectSession['opencode_sessions'] });
-    expect(rootOpenCodeSession(session)).toBeNull();
+    expect(rootRuntimeSession(session)).toBeNull();
   });
 
   test('the pinned opencode_session_id wins over a parentless entry', () => {
@@ -596,7 +594,7 @@ describe('rootOpenCodeSession', () => {
       opencode_session_id: 'oc-root',
       opencode_sessions: [ocNode('oc-other', null), ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
-    expect(rootOpenCodeSession(session)?.id).toBe('oc-root');
+    expect(rootRuntimeSession(session)?.id).toBe('oc-root');
   });
 
   test('a pin that is not in the snapshot: null (web parity, no guess)', () => {
@@ -604,7 +602,7 @@ describe('rootOpenCodeSession', () => {
       opencode_session_id: 'oc-missing',
       opencode_sessions: [ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
-    expect(rootOpenCodeSession(session)).toBeNull();
+    expect(rootRuntimeSession(session)).toBeNull();
   });
 
   test('no pin: the first parentless entry', () => {
@@ -612,7 +610,7 @@ describe('rootOpenCodeSession', () => {
       opencode_session_id: null,
       opencode_sessions: [ocNode('oc-child', 'oc-root'), ocNode('oc-root', null)],
     } as Partial<ProjectSession>);
-    expect(rootOpenCodeSession(session)?.id).toBe('oc-root');
+    expect(rootRuntimeSession(session)?.id).toBe('oc-root');
   });
 });
 
@@ -706,7 +704,7 @@ describe('subsessionTitle', () => {
   });
 });
 
-describe('projectSessionForOpenCodeId', () => {
+describe('projectSessionForRuntimeId', () => {
   const parent = makeSession({
     session_id: 'ps-parent',
     opencode_session_id: 'oc-root',
@@ -719,24 +717,24 @@ describe('projectSessionForOpenCodeId', () => {
   } as Partial<ProjectSession>);
 
   test('null id: null', () => {
-    expect(projectSessionForOpenCodeId([parent, other], null)).toBeNull();
+    expect(projectSessionForRuntimeId([parent, other], null)).toBeNull();
   });
 
   test('the root OpenCode id resolves to its project session', () => {
-    expect(projectSessionForOpenCodeId([parent, other], 'oc-root')?.session_id).toBe('ps-parent');
-    expect(projectSessionForOpenCodeId([parent, other], 'oc-other')?.session_id).toBe('ps-other');
+    expect(projectSessionForRuntimeId([parent, other], 'oc-root')?.session_id).toBe('ps-parent');
+    expect(projectSessionForRuntimeId([parent, other], 'oc-other')?.session_id).toBe('ps-other');
   });
 
   test('a project session id resolves to itself', () => {
-    expect(projectSessionForOpenCodeId([parent, other], 'ps-other')?.session_id).toBe('ps-other');
+    expect(projectSessionForRuntimeId([parent, other], 'ps-other')?.session_id).toBe('ps-other');
   });
 
   test('a direct sub-session id resolves to its parent project session', () => {
-    expect(projectSessionForOpenCodeId([other, parent], 'oc-a')?.session_id).toBe('ps-parent');
+    expect(projectSessionForRuntimeId([other, parent], 'oc-a')?.session_id).toBe('ps-parent');
   });
 
   test('a deeper descendant (a task opened from a sub-session) resolves to the same project session', () => {
-    expect(projectSessionForOpenCodeId([parent, other], 'oc-a-1')?.session_id).toBe('ps-parent');
+    expect(projectSessionForRuntimeId([parent, other], 'oc-a-1')?.session_id).toBe('ps-parent');
   });
 
   test('a pin match wins over a snapshot match in an earlier row', () => {
@@ -745,11 +743,11 @@ describe('projectSessionForOpenCodeId', () => {
       opencode_session_id: 'oc-x',
       opencode_sessions: [ocNode('oc-x', null), ocNode('oc-root', 'oc-x')],
     } as Partial<ProjectSession>);
-    expect(projectSessionForOpenCodeId([stale, parent], 'oc-root')?.session_id).toBe('ps-parent');
+    expect(projectSessionForRuntimeId([stale, parent], 'oc-root')?.session_id).toBe('ps-parent');
   });
 
   test('an unknown id: null', () => {
-    expect(projectSessionForOpenCodeId([parent, other], 'oc-nope')).toBeNull();
+    expect(projectSessionForRuntimeId([parent, other], 'oc-nope')).toBeNull();
   });
 });
 

@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 const MSG = {
-  to: ['user@example.test'],
+  to: ['user@kortix.com'],
   subject: 'Test',
   html: '<p>hello</p>',
   category: 'unit-test',

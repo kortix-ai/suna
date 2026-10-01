@@ -30,7 +30,6 @@ import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionAskedFromLink, SessionPeopleIndicator } from './session-people';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
-import { directSubsessions } from '@/components/projects/session-label';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
@@ -47,7 +46,7 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
 import { qk, useProjectSession, useRuntimeSupports } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,

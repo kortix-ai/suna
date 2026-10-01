@@ -12,7 +12,8 @@ import { type Diagnostic, getDiagnostics, type ToolPart } from '@/ui';
 import { cn } from '@/lib/utils';
 import { useToolCardFrame, useToolCardPad, useToolIndent } from './surface';
 import { MD_FLUSH_CLASSES, useToolNavigation } from './infrastructure-preview';
-import { partMetadata, partOutput } from './infrastructure-parts';
+import { toToolView } from '@kortix/sdk';
+import { partOutput } from './infrastructure-parts';
 
 /**
  * A file's contents inside an expanded tool row, in the same card `bash` draws
@@ -170,8 +171,7 @@ export function getToolDiagnostics(part: ToolPart, filePath: string | undefined)
     }
   }
 
-  const metadata = partMetadata(part);
-  return getDiagnostics(metadata.diagnostics as Record<string, Diagnostic[]> | undefined, filePath);
+  return getDiagnostics(toToolView(part).diagnostics as Record<string, Diagnostic[]> | undefined, filePath);
 }
 
 export function DiagnosticsDisplay({

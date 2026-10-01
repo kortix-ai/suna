@@ -148,12 +148,6 @@ function requestId(key: WalletKey | null): string | null {
   return key && 'request' in key ? key.request : null;
 }
 
-/** Fire-and-forget: a debit or settlement may have crossed the auto-topup threshold. */
-async function triggerAutoTopup(accountId: string): Promise<void> {
-  const { checkAndTriggerAutoTopup } = await import('../services/auto-topup');
-  void checkAndTriggerAutoTopup(accountId);
-}
-
 async function grant(input: GrantInput): Promise<GrantResult> {
   const event = eventId(input.key);
   const request = requestId(input.key);
@@ -210,7 +204,6 @@ async function debit(input: DebitInput): Promise<DebitResult> {
     );
   }
 
-  await triggerAutoTopup(input.accountId);
   return {
     amount: result.amount_deducted ?? input.amount,
     balance: result.new_total ?? 0,
@@ -270,7 +263,6 @@ async function settle(input: SettleInput): Promise<SettleResult> {
       });
   }
 
-  await triggerAutoTopup(input.accountId);
   return {
     amount: result.amount_deducted ?? input.amount,
     balance: result.new_total ?? 0,

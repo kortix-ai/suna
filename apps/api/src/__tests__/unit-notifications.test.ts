@@ -34,10 +34,12 @@ function sentPayload() {
   return JSON.parse(String(calls[0].init.body));
 }
 
+// Recipients use a real domain: the transport never relays mail to reserved
+// test domains (#8656), so an example.test recipient would be skipped.
 describe('notification emails', () => {
   test('sends account invite emails to the shared invite landing route', async () => {
     const result = await sendAccountInviteEmail({
-      email: 'teammate@example.test',
+      email: 'teammate@kortix.com',
       accountName: 'Acme <Labs>',
       inviterEmail: 'owner@example.test',
       inviteId: 'invite-account-123',
@@ -50,7 +52,7 @@ describe('notification emails', () => {
 
     const payload = sentPayload();
     expect(payload.from).toEqual({ email: 'noreply@example.test', name: 'Kortix Test' });
-    expect(payload.to).toEqual([{ email: 'teammate@example.test' }]);
+    expect(payload.to).toEqual([{ email: 'teammate@kortix.com' }]);
     expect(payload.subject).toBe('You\'re invited to join "Acme <Labs>" on Kortix');
     expect(payload.category).toBe('account-invite');
     expect(payload.html).toContain('https://app.example.test/invites/invite-account-123');
@@ -63,7 +65,7 @@ describe('notification emails', () => {
     mockConfig.MAILTRAP_API_TOKEN = '';
 
     const result = await sendAccountInviteEmail({
-      email: 'teammate@example.test',
+      email: 'teammate@kortix.com',
       accountName: 'Acme',
       inviterEmail: null,
       inviteId: 'invite-disabled',
@@ -76,7 +78,7 @@ describe('notification emails', () => {
 
   test('sends project access request emails to the Members review surface', async () => {
     const result = await sendProjectAccessRequestEmail({
-      email: 'manager@example.test',
+      email: 'manager@kortix.com',
       projectName: 'Slack <Auth>',
       requesterEmail: 'requester@example.test',
       reviewUrl: 'https://app.example.test/projects/proj-1/customize/members',
@@ -86,7 +88,7 @@ describe('notification emails', () => {
     expect(result).toEqual({ ok: true, provider: 'mailtrap', status: 200 });
 
     const payload = sentPayload();
-    expect(payload.to).toEqual([{ email: 'manager@example.test' }]);
+    expect(payload.to).toEqual([{ email: 'manager@kortix.com' }]);
     expect(payload.subject).toBe('requester@example.test requested access to Slack <Auth>');
     expect(payload.category).toBe('project-access-request');
     expect(payload.html).toContain('https://app.example.test/projects/proj-1/customize/members');

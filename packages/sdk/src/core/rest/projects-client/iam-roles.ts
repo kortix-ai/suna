@@ -23,6 +23,18 @@ export async function listAgentIdentities(accountId: string) {
   ).agents;
 }
 
+/** One project's agent identities, readable by any project member — the
+ *  principals a "Who can use it" picker offers for a secret value or a
+ *  connector account. `listAgentIdentities` spans the account and needs
+ *  `policy.read`. */
+export async function listProjectAgentIdentities(projectId: string) {
+  return unwrap(
+    await backendApi.get<{ agents: AgentIdentity[] }>(`/projects/${projectId}/agent-identities`, {
+      showErrors: false,
+    }),
+  ).agents;
+}
+
 export async function getRolePermissions(accountId: string, roleId: string) {
   return unwrap(
     await iamGet<{ role_id: string; key: string; actions: string[] }>(
