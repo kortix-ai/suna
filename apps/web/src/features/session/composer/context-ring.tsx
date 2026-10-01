@@ -15,7 +15,7 @@
  */
 
 import { ProgressRing } from '@/components/ui/progress-ring';
-import { STATUS_TEXT, type StatusTone } from '@/components/ui/status';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 import type { ContextReading } from './context-usage';
 

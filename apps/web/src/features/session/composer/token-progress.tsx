@@ -12,11 +12,14 @@ import { STATUS_DOT, STATUS_TEXT, type StatusTone } from '@/components/ui/status
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@kortix/sdk/react';
 import { ContextRing } from './context-ring';
-import { getContextUsage } from './context-usage';
-export { CONTEXT_DANGER_RATIO, CONTEXT_WARNING_RATIO, contextTone, formatContextCount, getContextLimit, getLastAssistantTokenBreakdown, getLastAssistantTokenTotal, getSelectedModelName } from './context-usage';
-export type { ContextBreakdown } from './context-usage';
-import { formatContextCount } from './context-usage';
+import { formatContextCount, getContextUsage } from './context-usage';
 import type { ContextBreakdown } from './context-usage';
+
+export {
+  CONTEXT_DANGER_RATIO, CONTEXT_WARNING_RATIO, contextTone, formatContextCount,
+  getContextLimit, getLastAssistantTokenBreakdown, getLastAssistantTokenTotal, getSelectedModelName,
+} from './context-usage';
+export type { ContextBreakdown } from './context-usage';
 
 import type { FlatModel } from '../model-flatten';
 
