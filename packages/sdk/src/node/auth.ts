@@ -22,7 +22,7 @@
  * redirect through `/refresh`, so a page never renders "signed out" for a user
  * whose refresh token is still good.
  */
-import { createScopedKortix, forwardKortixRequest } from './server';
+import { createScopedKortix, forwardKortixRequest } from './scoped-client';
 import type { Kortix } from '../core/client/kortix';
 import type { AccountIdentity } from '../core/rest/projects-client/accounts';
 import { stripTrailingSlashes } from '../platform/strings';
