@@ -7,7 +7,7 @@ export { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, relayInitia
 export type { InitialTurnAcceptanceReconciliation } from './initial-prompt'
 import { armSeedAdoption, runWarmSeedMode } from './warm-seed'
 import { relayTurnBeginAfterInitialAcceptance, relayTurnBeginToApi, relayTurnEndToApi, reconcileFinishedFirstTurn, isRootOpencodeSession } from './turn-relay'
-export { __resetRelayedTurnSignatures, __resetRelayedTurnBegins, relayTurnBeginAfterInitialAcceptance, relayTurnBeginToApi, relayTurnEndToApi, reconcileFinishedFirstTurn } from './turn-relay'
+export { __resetRelayedTurnSignatures, __resetRelayedTurnBegins, relayTurnBeginAfterInitialAcceptance, relayTurnBeginToApi, relayTurnEndToApi, relayOrphanedTurnEndToApi, reconcileFinishedFirstTurn } from './turn-relay'
 import { publishOpenCodeEvent } from './event-bus'
 import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-guard'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
