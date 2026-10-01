@@ -1127,10 +1127,6 @@
           "name": "AgentMail メール",
           "description": "AgentMail の受信箱を割り当て、受信メールから Kortix セッションを開始・継続できるようにします。"
         },
-        "teams": {
-          "name": "Microsoft Teams",
-          "description": "Microsoft Teams ボットを接続し、チャットやチャンネルから Kortix セッションを開始・継続します。"
-        },
         "llm_gateway": {
           "name": "LLM ゲートウェイ",
           "description": "管理モデル、計測、予算のために、Kortix の管理対象 LLM ゲートウェイ経由でこのプロジェクトを処理します。"
@@ -9890,7 +9886,6 @@
       "text0df6f1cad36c": "Show",
       "text0df9df285277": "{value0}のみ",
       "text0dfd0cbdd238": "完全なキーが表示されるのは今回だけです。安全な場所に保管してください。",
-      "text0e0b01710c4b": "Slackは利用可能です · Teamsとメールは順次提供予定です · またはAPIからセッションを開始してください",
       "text0e1181a97f66": "実際のマシン、実際のクエリ、再実行できる分析",
       "text0e16f24ee012": "· {value0} by {value1}",
       "text0e22e022480d": "このターンを実行するモデルを選択",
@@ -14473,7 +14468,6 @@
       "textf5262c55d1be": "Microsoft Teams に接続しましたが、Teams カタログへのアプリの公開に失敗しました。",
       "text76930360e909": "Microsoft Teams に接続しました。Teams カタログにアプリを公開しています…",
       "textb8d155eea2ab": "Microsoft の同意が拒否されました。",
-      "textd4b32aea5c4a": "このプロジェクトでは Microsoft Teams が無効です。",
       "text57ef9e5e8110": "このサーバーでは Teams のワンクリックインストールが設定されていません。",
       "text601eb4f02129": "$ grep -ri \"annual\" memory",
       "text9233263288f5": "このアカウントで作業するユーザーを招待します。",
@@ -19106,7 +19100,10 @@
       "textf25fe860a82d": "10種類のバリアント、8種類のサイズ。ボタンは<code>rounded-md</code>です。パネル、カード、行もrounded-md、フローティングパネルはrounded-lg、rounded-2xlはマーケティング専用です。<code>destructive</code>バリアントは、取り消せない唯一の確認操作のためのものです。",
       "textc94e8cb68cba": "禁止パターン",
       "text9bb4af3b0beb": "これらはコードベースに残っていますが、ブランドキットで禁止されています。新たに使わないでください。",
-      "text1aff73a5df45": "{why} 代わりに{instead}を使います。"
+      "text1aff73a5df45": "{why} 代わりに{instead}を使います。",
+      "text81b004dc7e0b": "SlackとTeamsは利用可能です · メールは順次提供予定です · またはAPIからセッションを開始してください",
+      "text7d7b98240405": "2つは利用可能です。1つは試験運用中です。どれかは明記します。",
+      "textb60c863bbacb": "すべてのプロジェクトで有効で、フラグは不要です。テナント管理者が一度同意するか、プロジェクトが独自のボットアプリを使います。セッションもIDのルールもSlackと同じです。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

@@ -1212,7 +1212,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CHN-33` `/kortix sessions` lists only the chat-started sessions the caller's linked Kortix account may open: a member sees their own session and project-visible sessions, never another user's private session. An unlinked Slack user is asked to connect and sees no session.
 `CHN-T1` A project member reads the Microsoft Teams installation state.
 `CHN-T2` A project member reads the Microsoft Teams channel mode.
-`CHN-T3` A project manager starts Microsoft Teams connection. Invalid input and unauthorized callers are rejected.
+`CHN-T3` A project manager starts Microsoft Teams connection with no feature flag set: every project can connect Teams, and the retired `teams` flag key is refused as unknown (`400`). Invalid input and unauthorized callers are rejected.
 `CHN-T4` The Microsoft Teams messages webhook verifies its request before it starts work.
 `CHN-T5` An agent posts into a Microsoft Teams conversation its project is already in. A caller without connector write is refused, and a conversation the project does not own is not found. A file upload is addressed the same way: a caller without connector write is refused, and an upload into a conversation the project does not own is not found, whatever `service_url` the caller sends.
 `CHN-T6` A Microsoft Teams tenant is connected only with proof of the tenant. A tenant id without bot credentials is refused and nothing is installed. The file download proxy reads only message attachment paths from Microsoft Graph and sends the bot token only to the Teams connector host.

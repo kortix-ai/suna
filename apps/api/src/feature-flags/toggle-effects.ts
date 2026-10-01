@@ -31,12 +31,11 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
 };
 
 /**
- * Effects by flag. Channel-backed flags (teams and agentmail_email) all
- * re-run channel-connector materialization so the connector row appears or
+ * Effects by flag. The channel-backed flag (agentmail_email) re-runs
+ * channel-connector materialization so the connector row appears or
  * disappears with the flag instead of waiting for the next periodic sweep.
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
-  teams: reconcileProjectChannels,
   agentmail_email: reconcileProjectChannels,
   llm_gateway: async ({ projectId, metadata }) => {
     await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));

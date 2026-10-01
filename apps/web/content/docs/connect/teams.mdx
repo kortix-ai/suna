@@ -8,8 +8,7 @@ a [session](/docs/work/sessions), and the agent replies right there with live
 progress. It follows the same session, identity, and credential rules as
 [Slack](/docs/connect/slack); this page covers what is specific to Teams.
 
-Teams is experimental — enable **Microsoft Teams** under
-[Settings → Feature flags](/docs/feature-flags) on the project first.
+Every project can connect Teams. There is no feature flag to turn on.
 
 ## Connect
 
@@ -55,8 +54,7 @@ it; later messages continue it, even after the sandbox stops and resumes. A
 tenant connected to more than one project shows a **project picker** on the
 first unrouted message, and remembers the choice. In a channel only a message
 that mentions the bot gets the picker, and a command about the project, such as
-`/models`, asks which project first. Teams offers only projects that have the
-Teams feature flag on.
+`/models`, asks which project first.
 
 In a channel, every new post starts its own session. A personal or group chat
 is one conversation for its whole life, so it keeps one session until you send

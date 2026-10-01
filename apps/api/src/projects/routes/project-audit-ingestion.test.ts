@@ -657,6 +657,37 @@ describe('audit ingest contention fallback', () => {
     expect(insertStatements.map((batch) => batch.length)).toEqual([200, 100, 50, 25]);
   });
 
+  test('a small batch never re-runs a byte-identical statement after a timeout', async () => {
+    failStatementFrom = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    // 3 rows is already below the 25-row floor: halving the 200-row chunk size
+    // used to re-send the same 3 rows twice more (each re-send held an
+    // audit-pool backend for the full 10 s statement timeout).
+    const small = await post(3);
+    expect(small.status).toBe(503);
+    expect(insertStatements.map((batch) => batch.length)).toEqual([3]);
+  });
+
+  test('the fallback halves the rows actually sent, not the unused chunk ceiling', async () => {
+    failStatementFrom = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    // 53 rows: 53 -> 26 -> 25 (floor). Halving the 200 ceiling re-sent all 53
+    // rows at 100 before the first smaller statement.
+    const { status } = await post(53);
+    expect(status).toBe(503);
+    expect(insertStatements.map((batch) => batch.length)).toEqual([53, 26, 25]);
+  });
+
   test('a request with little budget left still lands rows the full-chunk budget refused', async () => {
     // 13s spent before the handler: the old 23s one-chunk preflight answered
     // 503 with zero inserts. The per-attempt budget caps the lock wait to what
