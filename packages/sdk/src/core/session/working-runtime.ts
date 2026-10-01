@@ -1,11 +1,7 @@
 import type { SessionTurn } from '../rest/projects-client/sessions';
 import type { WorkingServerInput, WorkingStreamInput } from './working';
 
-function instant(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
+import { instant } from './working-time';
 
 /**
  * Whether the runtime has already finished this turn.

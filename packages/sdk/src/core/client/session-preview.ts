@@ -4,7 +4,6 @@ import { proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 
 import type { SessionBindingContext } from './session-context';
-import { SessionNotReadyError } from './session-shared';
 export function bindSessionPreview(ctx: SessionBindingContext) {
   return {
     // ── runtime health + preview (the session owns its runtime) ──────────

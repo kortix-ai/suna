@@ -1,6 +1,5 @@
 import { backendApi } from '../http/api-client';
 
-import * as A from '../rest/platform-client/auth';
 import * as P from '../rest/projects-client';
 
 import type { SessionBindingContext } from './session-context';

@@ -3,11 +3,7 @@ import type { WorkingInputs, WorkingProjection } from './working';
 import { workingEvidence } from './working-evidence';
 import { endedByRuntime } from './working-runtime';
 
-function instant(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
+import { instant } from './working-time';
 
 /**
  * The one place a session's working state is decided.

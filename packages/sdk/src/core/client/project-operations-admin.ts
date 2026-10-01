@@ -1,12 +1,8 @@
 import * as P from '../rest/projects-client';
 import { bindProjectOperationsWorkspace } from './project-operations-workspace';
 
-import type { projectConnections } from './project-connections';
 type DropFirst<T extends unknown[]> = T extends [unknown, ...infer R] ? R : [];
-export function bindProjectOperationsAdmin(
-  projectId: string,
-  connections: ReturnType<typeof projectConnections>,
-) {
+export function bindProjectOperationsAdmin(projectId: string) {
   return {
     policies: {
       list: () => P.listProjectPolicies(projectId),

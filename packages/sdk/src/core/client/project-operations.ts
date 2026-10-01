@@ -67,6 +67,6 @@ export function bindProjectOperations(
       },
     },
 
-    ...bindProjectOperationsAdmin(projectId, connections),
+    ...bindProjectOperationsAdmin(projectId),
   };
 }
