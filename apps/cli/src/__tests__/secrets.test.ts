@@ -1246,26 +1246,6 @@ describe('kortix secrets — who can use a value', () => {
     expect(stripAnsi(stderr)).toContain('No agent "nobody" in this project');
   });
 
-  test('share --agent <name> names that agent of THIS project as principal_type agent', async () => {
-    secretItems = [{ identifier: 'NIGHTLY_REPORT_KEY', name: 'NIGHTLY_REPORT_KEY' }];
-    const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'reporter']);
-    expect(code).toBe(0);
-    expect(objectBody(posts()[0]!)).toEqual({
-      name: 'NIGHTLY_REPORT_KEY',
-      identifier: 'NIGHTLY_REPORT_KEY',
-      shared_with: [{ principal_type: 'agent', principal_id: 'sa_reporter' }],
-    });
-    expect(stripAnsi(stdout)).toContain('every session of the agent');
-  });
-
-  test('share --agent with an unknown agent fails without a write', async () => {
-    secretItems = [{ identifier: 'NIGHTLY_REPORT_KEY', name: 'NIGHTLY_REPORT_KEY' }];
-    const code = await runSecrets(['share', 'NIGHTLY_REPORT_KEY', '--agent', 'nobody']);
-    expect(code).toBe(1);
-    expect(posts()).toHaveLength(0);
-    expect(stripAnsi(stderr)).toContain('No agent "nobody" in this project');
-  });
-
   test('share refuses --everyone together with people, before any write', async () => {
     secretItems = [{ identifier: 'DEEL_API_TOKEN', name: 'DEEL_API_TOKEN' }];
     const code = await runSecrets(['share', 'DEEL_API_TOKEN', '--everyone', '--user', 'me']);
