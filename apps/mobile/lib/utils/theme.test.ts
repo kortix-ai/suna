@@ -707,8 +707,8 @@ function hslaDrift(mobile: Hsla, web: Hsla): string | null {
  * Deliberately NOT in the set:
  *   border-width        a length, mobile-only (hairline stroke)
  *   radius              a length; compared separately below
- *   success / warning   web has no CSS variable; compared against the
- *                       Tailwind palette classes status.tsx uses (below)
+ *   success / warning   mobile-only semantic tokens; web uses --kortix-green /
+ *                       --kortix-orange for status indicators
  */
 const WEB_PARITY_TOKENS: Record<string, string> = {
   background: 'background',
@@ -763,38 +763,6 @@ const WEB_PARITY_TOKENS: Record<string, string> = {
   'terminal-border': 'terminal-border',
 };
 
-/**
- * web's status palette is not a CSS variable: status.tsx STATUS_TEXT uses
- * Tailwind classes (`text-emerald-600 dark:text-emerald-400`). Tailwind 4
- * resolves those from `tailwindcss/theme.css`. The oklch values are pinned
- * here (tailwindcss 4.3.3) so this test does not depend on web's
- * node_modules; a separate test re-reads theme.css when it is installed.
- */
-const TAILWIND_PALETTE: Record<string, string> = {
-  'emerald-400': 'oklch(76.5% 0.177 163.223)',
-  'emerald-600': 'oklch(59.6% 0.145 163.225)',
-  'amber-400': 'oklch(82.8% 0.189 84.429)',
-  'amber-600': 'oklch(66.6% 0.179 58.318)',
-};
-const STATUS_TSX_PATH = join(__dirname, '../../../web/src/components/ui/status.tsx');
-const TAILWIND_THEME_PATH = join(__dirname, '../../../web/node_modules/tailwindcss/theme.css');
-
-/** Read `tone: 'text-<light> dark:text-<dark>'` from web's STATUS_TEXT. */
-function webStatusShades(tone: 'success' | 'warning'): { light: string; dark: string } {
-  const src = readFileSync(STATUS_TSX_PATH, 'utf8');
-  const m = src.match(
-    new RegExp(`${tone}:\\s*'text-([a-z]+-\\d+)\\s+dark:text-([a-z]+-\\d+)'`)
-  );
-  if (!m) throw new Error(`status.tsx STATUS_TEXT.${tone} not in 'text-X dark:text-Y' form`);
-  return { light: m[1], dark: m[2] };
-}
-
-function paletteColor(shade: string): Hsla {
-  const value = TAILWIND_PALETTE[shade];
-  if (!value) throw new Error(`Tailwind shade ${shade} not pinned in TAILWIND_PALETTE`);
-  return parseWebColor(value);
-}
-
 describe('color conversion helpers are correct', () => {
   it('converts known oklch values to the sRGB hex they render as', () => {
     // oklch(0.669 0.1837 248.8066) is web's accent-blue, commented #0099ff.
@@ -841,37 +809,21 @@ describe('global.css matches apps/web globals.css', () => {
     expect(rawTokenValue('.dark:root', 'radius')).toBe(resolveWeb(webDark, 'radius'));
   });
 
-  it('--success / --warning match the Tailwind shades web status.tsx uses', () => {
+  it('status colors match the web status palette tokens', () => {
     const drift: string[] = [];
-    for (const tone of ['success', 'warning'] as const) {
-      const shades = webStatusShades(tone);
-      for (const [mobileScope, shade] of [
-        [':root', shades.light],
-        ['.dark:root', shades.dark],
-      ] as const) {
-        let mobileValue: string;
-        try {
-          mobileValue = resolveTokenValue(mobileScope, tone);
-        } catch {
-          drift.push(`--${tone} missing in ${mobileScope} → ${fmtHsla(paletteColor(shade))}`);
-          continue;
-        }
-        const expected = hslaDrift(parseMobileColor(mobileValue), paletteColor(shade));
-        if (expected) drift.push(`--${tone} (${mobileScope}): ${mobileValue} → ${expected}`);
+    for (const [mobileToken, webToken] of [
+      ['kortix-green', 'kortix-green'],
+      ['kortix-orange', 'kortix-orange'],
+    ] as const) {
+      for (const scope of [':root', '.dark:root'] as const) {
+        const actual = parseMobileColor(resolveTokenValue(scope, mobileToken));
+        const expected = parseWebColor(resolveWeb(scope === ':root' ? webRoot : webDark, webToken));
+        const difference = hslaDrift(actual, expected);
+        if (difference) drift.push(`--${mobileToken} (${scope}): ${fmtHsla(actual)} → ${difference}`);
       }
     }
     expect(drift).toEqual([]);
   });
-
-  it.skipIf(!existsSync(TAILWIND_THEME_PATH))(
-    'pinned TAILWIND_PALETTE equals the installed tailwindcss/theme.css',
-    () => {
-      const themeCss = readFileSync(TAILWIND_THEME_PATH, 'utf8');
-      for (const [shade, value] of Object.entries(TAILWIND_PALETTE)) {
-        expect(themeCss).toContain(`--color-${shade}: ${value};`);
-      }
-    }
-  );
 });
 
 describe('THEME carries the web-parity tokens', () => {
