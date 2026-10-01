@@ -8,7 +8,7 @@ incident_date: 2026-10-01
 
 **Trigger surface:** `apps/web/src/middleware.ts`, `apps/web/src/i18n/routing.ts` (`isNonPagePath`), any new page route with a dynamic segment, and any API code that mints a link to a web page. Examples: the Slack and Teams sign-in links (`channels/*/login.ts`), setup links, and share links.
 
-**Incident:** 2026-10-01, found in a live Teams test on dev. Every Slack and Teams sign-in link (`/slack/login/<token>`, `/teams/login/<token>`, signed by `channels/core/signed-state.ts` as `<body>.<mac>`) answered 404 on dev and on `kortix.com`. It happened because `pathname.includes('.')` skipped the locale rewrite. The cause was #7566 (2026-09-24), which moved every page under `app/[locale]`. Before that, the page did not need the rewrite. Nobody could link a chat account from that release until the fix (PR to be merged with this entry). Setup links (`ksl_…`) were not affected: their base64url token has no literal dot.
+**Incident:** 2026-10-01, found in a live Teams test on dev. Every Slack and Teams sign-in link (`/slack/login/<token>`, `/teams/login/<token>`, signed by `channels/core/signed-state.ts` as `<body>.<mac>`) answered 404 on dev and on `kortix.com`. It happened because `pathname.includes('.')` skipped the locale rewrite. The cause was #7566 (2026-09-24), which moved every page under `app/[locale]`. Before that, the page did not need the rewrite. Nobody could link a chat account from that release until the fix, PR #8611. Setup links (`ksl_…`) were not affected: their base64url token has no literal dot.
 
 **Enforcement:** `apps/web/src/middleware-locale-routing.test.ts` → "chat sign-in links carry a dotted token":
 - an anonymous visitor with a dotted token gets the 307 to `/auth`, not a pass-through;
