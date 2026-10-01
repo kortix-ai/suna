@@ -5,12 +5,14 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 const calls: Array<{ previewType: string; blobUrl?: string }> = [];
 const saves: string[] = [];
 const fetches: string[] = [];
-const ref = 'kortix-attachment://session-1/image-1';
+const downloads: string[] = [];
+const ref = 'kortix-attachment://project-1/session-1/image-1';
 const blob = new Blob(['image'], { type: 'image/png' });
 
 mock.module('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
 mock.module('react-native', () => ({ View: ({ children }: { children?: React.ReactNode }) => children }));
-mock.module('expo-file-system/legacy', () => ({ cacheDirectory: 'file:///cache/', EncodingType: { Base64: 'base64' }, writeAsStringAsync: async (uri: string) => { saves.push(uri); } }));
+mock.module('expo-file-system/legacy', () => ({ cacheDirectory: 'file:///cache/', downloadAsync: async (url: string, uri: string) => { downloads.push(url); return { status: 200, uri }; }, deleteAsync: async () => {} }));
+mock.module('@/api/config', () => ({ API_URL: 'https://example.test', getAuthToken: async () => 'test-token' }));
 mock.module('@kortix/sdk', () => ({ isSessionAttachmentRef: (path: string) => path.startsWith('kortix-attachment://'), fetchSessionAttachment: async (path: string) => { fetches.push(path); return blob; } }));
 mock.module('@tanstack/react-query', () => ({ useQuery: () => ({ data: blob, isLoading: false, refetch: async () => {} }) }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
@@ -42,8 +44,9 @@ describe('stored attachment preview', () => {
     expect(calls.at(-1)).toMatchObject({ previewType: 'image', blobUrl: 'data:image/png;base64,aW1hZ2U=' });
     const button = tree!.root.findByProps({ accessibilityLabel: 'Download file' });
     await act(async () => { await button.props.onPress(); });
-    expect(fetches).toEqual([ref]);
-    expect(saves).toEqual(['file:///cache/photo.png', 'file:///cache/photo.png']);
+    expect(fetches).toEqual([]);
+    expect(downloads).toEqual(['https://example.test/projects/project-1/sessions/session-1/attachments/image-1']);
+    expect(saves).toEqual(['file:///cache/photo.png']);
     await act(async () => { tree?.unmount(); });
   });
 });

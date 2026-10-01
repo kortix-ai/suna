@@ -20,6 +20,7 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
 import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import { API_URL, getAuthToken } from '@/api/config';
 import { View } from 'react-native';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
@@ -200,10 +201,19 @@ export function FilePreviewBody({
       // another app.
       let uri: string;
       if (attachment) {
-        const blob = await fetchSessionAttachment(file.path);
-        const data = await blobToDataURL(blob, file.name);
-        uri = `${FileSystem.cacheDirectory}${encodeURIComponent(file.name)}`;
-        await FileSystem.writeAsStringAsync(uri, data.slice(data.indexOf(',') + 1), { encoding: FileSystem.EncodingType.Base64 });
+        const token = await getAuthToken();
+        const path = file.path.slice('kortix-attachment://'.length).split('/');
+        const target = `${FileSystem.cacheDirectory}${encodeURIComponent(file.name)}`;
+        const result = await FileSystem.downloadAsync(
+          `${API_URL.replace(/\/$/, '')}/projects/${path[0]}/sessions/${path[1]}/attachments/${path[2]}`,
+          target,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+        if (result.status !== 200) {
+          await FileSystem.deleteAsync(target, { idempotent: true });
+          throw new Error(`Attachment download failed: ${result.status}`);
+        }
+        uri = result.uri;
       } else if (sandboxUrl) {
         uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
       } else {
