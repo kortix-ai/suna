@@ -5,7 +5,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * WHAT THIS SECTION IS. Two things and nothing else: the live star count, and
  * the reason the code is open at all. The number on its own is a vanity metric;
@@ -32,9 +32,9 @@
  * ACCURACY GATE for this section specifically. Every item is still binding on
  * whatever this file grows back into:
  *  1. NEVER name a licence. "open source" and stop — no badge, no Apache/MIT/
- *     Elastic. (`comms` §7, "On the license".)
+ *     Elastic. (`kortix-brand` verbal/claims.md, "On the license".)
  *  2. ONE superlative form is sanctioned: "the leading open-source
- *     alternative" (`comms` §7, decided 2026-07-31). The hero already carries
+ *     alternative" (`kortix-brand` verbal/claims.md, decided 2026-07-31). The hero already carries
  *     it (`marketing/landing/content.ts` → `heroEyebrow.lead`), so this
  *     section does not repeat it. No other superlative — "the go-to", "#1",
  *     "the best" — is allowed, and the sanctioned one is never extended.

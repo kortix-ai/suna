@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. Never name a licence — "open source" and stop.
+ * Voice rules: the `kortix-brand` skill. Never name a licence — "open source" and stop.
  * Say "cloud computer" / "sandbox", never "container". No invented numbers.
  *
  * ACCURACY GATE — everything below is checked against the shipped CLI

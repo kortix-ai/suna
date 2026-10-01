@@ -6,7 +6,7 @@
  * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  *
- * Voice rules: the `comms` skill. The bar is distilled from `CLAUDE.md`.
+ * Voice rules: the `kortix-brand` skill. The bar is distilled from `CLAUDE.md`.
  *
  * ACCURACY GATE for this page specifically:
  *  - INVENT NOTHING about employment. No salary band, no equity, no benefits,

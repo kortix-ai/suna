@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. Category = "AI Management System". Never name
+ * Voice rules: the `kortix-brand` skill. Category = "AI Management System". Never name
  * a licence. Never claim a certification we do not hold.
  */
 
@@ -61,7 +61,7 @@ export const cta = {
  * ACCURACY GATE: SOC 2 Type I is held — its badge renders bare (no state), like
  * GDPR, which is a compliance posture the company holds. SOC 2 Type II is NOT
  * held and carries an explicit "In progress" state. Never write "compliant",
- * "certified", or "we are SOC 2" here — the `comms` skill forbids claiming a
+ * "certified", or "we are SOC 2" here — the `kortix-brand` skill forbids claiming a
  * certification we do not hold. Adding a badge without holding it, or clearing
  * a SOC 2 `state` before the report lands, is a copy bug.
  */

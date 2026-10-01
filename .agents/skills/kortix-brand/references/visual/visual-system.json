@@ -1,0 +1,426 @@
+{
+  "$doc": "THE ONLY FILE WITH VALUES. Every color, type, spacing, radius, motion and effect value for the web app, the mobile app and the portable kit lives here and nowhere else. Guidance files cite token names, never values. To change a value: edit this file, then run `bun .agents/skills/kortix-brand/scripts/generate-tokens.ts`. The script rewrites the marker regions in apps/web/src/app/globals.css and apps/mobile/global.css, plus references/visual/tokens.css and fonts.css. `--check` exits 1 and names the drifted file; tests/unit/brand-kit.test.ts runs it. Web color values are CSS strings exactly as the web ships them. Mobile color values are derived (oklch to sRGB to 'H S% L%', 1 decimal). 'hex' fields are checked against the oklch value by the generator.",
+  "version": 1,
+  "generates": [
+    "apps/web/src/app/globals.css: region 'kortix-brand' (the :root and .dark token blocks) and region 'kortix-brand theme' (inside @theme inline: type scale, emoji, glyph, motion)",
+    "apps/mobile/global.css: regions 'kortix-brand mobile-light' and 'kortix-brand mobile-dark'",
+    ".agents/skills/kortix-brand/references/visual/tokens.css: portable hex variables for HTML, email and OG outside apps/web",
+    ".agents/skills/kortix-brand/references/visual/fonts.css: @font-face for Roobert and Roobert Mono"
+  ],
+  "when_the_guide_is_silent": "Pick the nearest role token by what the surface IS (canvas, lifted region, inset control, floating panel), never by how it looks. If no role fits, the design is wrong, not the token set. Add a token here only with a role, a use and a decision entry.",
+  "color": {
+    "rules": [
+      "Semantic tokens and kortix-* accents only. Never a palette class, hex, rgb, hsl or oklch literal in a component.",
+      "Every token carries both themes. Never write dark: for color.",
+      "Hierarchy comes from surface lift (canvas -> surface-1 -> surface-2), never from opacity on text.",
+      "Blue (--ring / kortix-base) is a signal: focus, links, selection. Never a fill."
+    ],
+    "semantic": {
+      "background": { "light": "oklch(1 0 0)", "dark": "oklch(15% 0 0)", "hex": ["#ffffff", "#0b0b0b"], "ramp": "canvas", "utility": "bg-background", "mobile": true, "use": "The page itself." },
+      "pane": { "light": "oklch(1 0 0)", "dark": "oklch(0.1543 0 0)", "hex": ["#ffffff", "#0c0c0c"], "ramp": "base", "utility": "bg-pane", "mobile": true, "use": "Content pane inside the app shell." },
+      "surface": {
+        "light": "oklch(0.9911 0 0)",
+        "dark": "oklch(0.1913 0 0)",
+        "hex": ["#fcfcfc", "#141414"],
+        "ramp": "surface",
+        "utility": "bg-surface",
+        "mobile": true,
+        "use": "Full-bleed shell pane that stands in for the page (settings at side=fullscreen). Never a card, row or panel."
+      },
+      "foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-foreground", "mobile": true, "use": "Primary text." },
+      "foreground-strong": { "ref": "foreground", "utility": "text-foreground-strong", "mobile": true, "use": "Alias for title-weight text." },
+      "foreground-weak": { "ref": "muted-foreground", "utility": "text-foreground-weak", "mobile": true, "use": "Alias for description-weight text." },
+      "card": {
+        "light": "oklch(0.9672 0 0)",
+        "dark": "oklch(0.1913 0 0)",
+        "hex": ["#f4f4f4", "#141414"],
+        "ramp": "surface-1",
+        "utility": "bg-card",
+        "mobile": true,
+        "use": "Washed lifted region. Not the panel default (that is popover)."
+      },
+      "card-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-card-foreground", "mobile": true },
+      "popover": {
+        "light": "oklch(1 0 0)",
+        "dark": "oklch(0.1913 0 0)",
+        "hex": ["#ffffff", "#141414"],
+        "ramp": "canvas / surface-1",
+        "utility": "bg-popover",
+        "mobile": true,
+        "use": "Panels, rows, overlays: the default panel fill. Floating use pairs with border + shadow."
+      },
+      "popover-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-popover-foreground", "mobile": true },
+      "primary": {
+        "light": "oklch(0.2393 0 0)",
+        "dark": "oklch(1 0 0)",
+        "hex": ["#1f1f1f", "#ffffff"],
+        "ramp": "ink",
+        "utility": "bg-primary",
+        "mobile": true,
+        "use": "Black (light) / white (dark) pill CTA."
+      },
+      "primary-foreground": { "light": "oklch(1 0 0)", "dark": "oklch(0.1398 0 0)", "hex": ["#ffffff", "#090909"], "utility": "text-primary-foreground", "mobile": true },
+      "secondary": { "light": "oklch(0.9461 0 0)", "dark": "oklch(0.2264 0 0)", "hex": ["#ededed", "#1c1c1c"], "ramp": "surface-2", "utility": "bg-secondary", "mobile": true, "use": "Inset controls, chips." },
+      "secondary-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-secondary-foreground", "mobile": true },
+      "muted": { "light": "oklch(0.9461 0 0)", "dark": "oklch(0.2264 0 0)", "hex": ["#ededed", "#1c1c1c"], "ramp": "surface-2", "utility": "bg-muted", "mobile": true },
+      "muted-foreground": {
+        "light": "oklch(0.5103 0 0)",
+        "dark": "oklch(0.683 0 0)",
+        "hex": ["#666666", "#999999"],
+        "ramp": "ink-muted",
+        "utility": "text-muted-foreground",
+        "mobile": true,
+        "use": "Descriptions, meta, idle state. The only way to de-emphasize text."
+      },
+      "accent": {
+        "light": "oklch(0.9672 0 0)",
+        "dark": "oklch(0.1913 0 0)",
+        "hex": ["#f4f4f4", "#141414"],
+        "ramp": "surface-1",
+        "utility": "bg-accent",
+        "mobile": true,
+        "use": "Solid hover surface. Not a hue: kortix-* are the hues."
+      },
+      "accent-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-accent-foreground", "mobile": true },
+      "destructive": {
+        "light": "oklch(0.583 0.2387 28.4765)",
+        "dark": "oklch(0.7022 0.1892 22.2279)",
+        "hex": ["#e7000b", "#ff6467"],
+        "utility": "bg-destructive",
+        "mobile": true,
+        "use": "Destructive actions and their confirm state."
+      },
+      "destructive-foreground": { "light": "oklch(0.9851 0 0)", "dark": "oklch(0.9851 0 0)", "hex": ["#fafafa", "#fafafa"], "utility": "text-destructive-foreground", "mobile": true },
+      "border": {
+        "light": "oklch(0.9128 0 0)",
+        "dark": "oklch(0.2686 0 0)",
+        "hex": ["#e2e2e2", "#262626"],
+        "ramp": "hairline",
+        "utility": "border-border",
+        "mobile": true,
+        "use": "Every border. There is one border color."
+      },
+      "input": { "light": "oklch(0.9461 0 0)", "dark": "oklch(0.2264 0 0)", "hex": ["#ededed", "#1c1c1c"], "ramp": "surface-2", "utility": "bg-input", "mobile": true, "use": "Legacy. Add no new use: fields use bg-popover." },
+      "ring": {
+        "light": "oklch(0.669 0.1837 248.8066)",
+        "dark": "oklch(0.669 0.1837 248.8066)",
+        "hex": ["#0099ff", "#0099ff"],
+        "ramp": "accent-blue",
+        "utility": "ring-ring",
+        "mobile": true,
+        "use": "Focus only (focus-visible)."
+      },
+      "hover": { "light": "oklch(0 0 0 / 0.045)", "dark": "oklch(1 0 0 / 0.06)", "utility": "bg-hover", "mobile": true, "use": "Transient hover. Translucent ink, so it composes over any substrate." },
+      "active": { "light": "oklch(0 0 0 / 0.075)", "dark": "oklch(1 0 0 / 0.1)", "utility": "bg-active", "mobile": true, "use": "Persistent selected fill." },
+      "focus-ring": { "ref": "ring", "mobile": true, "utility": null, "use": "Alias read by components that style focus in CSS." },
+      "sidebar": {
+        "light": "oklch(0.9672 0 0)",
+        "dark": "oklch(0.1913 0 0)",
+        "hex": ["#f4f4f4", "#141414"],
+        "ramp": "surface-1",
+        "utility": "bg-sidebar",
+        "mobile": true,
+        "mobile_aliases": ["chrome-background"]
+      },
+      "sidebar-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-sidebar-foreground", "mobile": true },
+      "sidebar-primary": {
+        "light": "oklch(0.669 0.1837 248.8066)",
+        "dark": "oklch(0.669 0.1837 248.8066)",
+        "hex": ["#0099ff", "#0099ff"],
+        "ramp": "accent-blue",
+        "utility": "bg-sidebar-primary",
+        "mobile": true,
+        "use": "Selection in the sidebar. 0 class uses in apps/web at audit time."
+      },
+      "sidebar-primary-foreground": { "light": "oklch(1 0 0)", "dark": "oklch(1 0 0)", "hex": ["#ffffff", "#ffffff"], "utility": "text-sidebar-primary-foreground", "mobile": true },
+      "sidebar-accent": { "light": "oklch(0.9461 0 0)", "dark": "oklch(0.2264 0 0)", "hex": ["#ededed", "#1c1c1c"], "ramp": "surface-2", "utility": "bg-sidebar-accent", "mobile": true },
+      "sidebar-accent-foreground": { "light": "oklch(0.2393 0 0)", "dark": "oklch(1 0 0)", "hex": ["#1f1f1f", "#ffffff"], "ramp": "ink", "utility": "text-sidebar-accent-foreground", "mobile": true },
+      "sidebar-row": {
+        "light": { "ref": "card" },
+        "dark": { "ref": "sidebar-accent" },
+        "utility": "bg-sidebar-row",
+        "mobile": false,
+        "use": "Hovered or selected sidebar row as a SOLID fill (the row masks its own title, so it cannot be translucent).",
+        "why_dark_differs": "surface-1 on the #0b0b0b canvas is 1.07:1 and did not read as a fill; surface-2 is 1.15:1."
+      },
+      "sidebar-row-control": {
+        "light": { "ref": "sidebar-accent" },
+        "dark": "oklch(0.2686 0 0)",
+        "hex": [null, "#262626"],
+        "utility": "bg-sidebar-row-control",
+        "mobile": false,
+        "use": "A control on a filled sidebar row: one step above sidebar-row."
+      },
+      "sidebar-border": { "light": "oklch(0.9128 0 0)", "dark": "oklch(0.2178 0 0)", "hex": ["#e2e2e2", "#1a1a1a"], "ramp": "hairline / hairline-soft", "utility": "border-sidebar-border", "mobile": true },
+      "sidebar-ring": { "light": "oklch(0.669 0.1837 248.8066)", "dark": "oklch(0.669 0.1837 248.8066)", "hex": ["#0099ff", "#0099ff"], "utility": "ring-sidebar-ring", "mobile": true }
+    },
+    "accents": {
+      "rule": "The only sources of hue in product UI. Theme-invariant today (same value in light and dark). Tinted fill = /15, glyph = solid. Two opacities, no others.",
+      "kortix-base": {
+        "ref": "ring",
+        "hex": "#0099ff",
+        "utility": "text-kortix-base",
+        "mobile": true,
+        "meaning": "brand, focus, links, selection",
+        "web_value": "var(--color-ring)",
+        "mobile_value": "var(--ring)"
+      },
+      "kortix-green": { "value": "oklch(0.581 0.165 146.619)", "hex": "#199338", "utility": "text-kortix-green", "mobile": true, "meaning": "success, running, connected, merged" },
+      "kortix-red": { "value": "oklch(0.648 0.202 24.745)", "hex": "#f14b4c", "utility": "text-kortix-red", "mobile": true, "meaning": "error, failed" },
+      "kortix-orange": { "value": "oklch(0.691 0.142 71.784)", "hex": "#d18b19", "utility": "text-kortix-orange", "mobile": true, "meaning": "warning, needs attention" },
+      "kortix-yellow": {
+        "value": "oklch(0.732 0.15 90.688)",
+        "hex": "#cca300",
+        "utility": "text-kortix-yellow",
+        "mobile": true,
+        "meaning": "pending",
+        "note": "Slightly outside sRGB; displays clip to #cca300. 2.38:1 on #ffffff."
+      },
+      "kortix-blue": { "value": "oklch(0.652 0.177 252.624)", "hex": "#2b91f7", "utility": "text-kortix-blue", "mobile": true, "meaning": "info, open, in review" },
+      "kortix-purple": { "value": "oklch(0.675 0.131 306.212)", "hex": "#ab80d6", "utility": "text-kortix-purple", "mobile": true, "meaning": "reserved: no default meaning" }
+    },
+    "status_mobile_only": {
+      "rule": "Web has no CSS variable: apps/web/src/components/ui/status.tsx uses text-emerald-600 dark:text-emerald-400 and amber. Mobile pins the same Tailwind 4.3.3 shades. Open decision J-4.",
+      "success": { "light": "oklch(59.6% 0.145 163.225)", "dark": "oklch(76.5% 0.177 163.223)", "web": false, "mobile": true },
+      "warning": { "light": "oklch(66.6% 0.179 58.318)", "dark": "oklch(82.8% 0.189 84.429)", "web": false, "mobile": true }
+    },
+    "chart": {
+      "rule": "Data visualization only. Theme-invariant. Read through var(--chart-n) (Recharts), not utilities.",
+      "chart-1": { "value": "oklch(0.8781 0.1688 91.8567)", "hex": "#ffd230", "mobile": true },
+      "chart-2": { "value": "oklch(0.7724 0.1728 65.367)", "hex": "#fe9a00", "mobile": true },
+      "chart-3": { "value": "oklch(0.6671 0.1685 53.3814)", "hex": "#e17100", "mobile": true },
+      "chart-4": { "value": "oklch(0.557 0.1583 45.3594)", "hex": "#bb4d00", "mobile": true },
+      "chart-5": { "value": "oklch(0.4747 0.1358 44.9806)", "hex": "#973c00", "mobile": true }
+    },
+    "terminal": {
+      "rule": "The PTY pane mirrors a real shell, so it is shell-black in both themes. features/session/pty-terminal.tsx terminalTheme must equal these (xterm needs literal colors).",
+      "terminal-surface": { "value": "#0f0f0f", "mobile": true },
+      "terminal-fg": { "value": "#e5e5e5", "mobile": true },
+      "terminal-border": { "value": "rgb(255 255 255 / 0.1)", "mobile": true }
+    },
+    "emoji": {
+      "rule": "Emoji-picker active cell. Hues are DERIVED from the glyph (emoji-tint.ts) and must stay stable. Fill stays pale; the 1px inset ring carries WCAG 1.4.11 3:1 against --popover (measured 3.03-3.19:1). Emitted as light-dark() in @theme.",
+      "fill": {
+        "red": ["hsl(4 46% 88%)", "hsl(4 28% 26%)"],
+        "amber": ["hsl(32 52% 87%)", "hsl(32 30% 25%)"],
+        "green": ["hsl(96 34% 87%)", "hsl(96 22% 24%)"],
+        "teal": ["hsl(178 36% 86%)", "hsl(178 26% 24%)"],
+        "blue": ["hsl(212 46% 88%)", "hsl(212 30% 27%)"],
+        "violet": ["hsl(280 32% 88%)", "hsl(280 22% 27%)"]
+      },
+      "ring": {
+        "red": ["hsl(4 46% 63%)", "hsl(4 46% 45%)"],
+        "amber": ["hsl(32 52% 51%)", "hsl(32 52% 35%)"],
+        "green": ["hsl(96 34% 46%)", "hsl(96 34% 32%)"],
+        "teal": ["hsl(178 36% 46%)", "hsl(178 36% 32%)"],
+        "blue": ["hsl(212 46% 60%)", "hsl(212 46% 42%)"],
+        "violet": ["hsl(280 32% 63%)", "hsl(280 32% 46%)"]
+      }
+    },
+    "glyph": {
+      "rule": "Project glyph icon palette, CHOSEN by the user. Separate from emoji on purpose. The ring token paints both the inset ring and the glyph, tuned (L only) to clear 3:1 against the fill and --popover/--card in both themes.",
+      "fill": {
+        "grey": ["hsl(220 8% 88%)", "hsl(220 6% 26%)"],
+        "red": ["hsl(4 46% 88%)", "hsl(4 28% 26%)"],
+        "orange": ["hsl(24 60% 88%)", "hsl(24 32% 26%)"],
+        "yellow": ["hsl(46 62% 87%)", "hsl(46 34% 25%)"],
+        "lime": ["hsl(84 42% 87%)", "hsl(84 26% 24%)"],
+        "blue": ["hsl(212 46% 88%)", "hsl(212 30% 27%)"],
+        "purple": ["hsl(275 34% 88%)", "hsl(275 24% 27%)"],
+        "magenta": ["hsl(318 40% 88%)", "hsl(318 26% 27%)"]
+      },
+      "ring": {
+        "grey": ["hsl(220 8% 50%)", "hsl(220 8% 58%)"],
+        "red": ["hsl(4 46% 53%)", "hsl(4 46% 60%)"],
+        "orange": ["hsl(24 60% 46%)", "hsl(24 60% 55%)"],
+        "yellow": ["hsl(46 62% 37%)", "hsl(46 55% 47%)"],
+        "lime": ["hsl(84 42% 37%)", "hsl(84 40% 46%)"],
+        "blue": ["hsl(212 46% 50%)", "hsl(212 46% 59%)"],
+        "purple": ["hsl(275 34% 56%)", "hsl(275 34% 61%)"],
+        "magenta": ["hsl(318 40% 52%)", "hsl(318 40% 61%)"]
+      }
+    }
+  },
+  "typography": {
+    "families": {
+      "sans": {
+        "name": "Roobert",
+        "web_var": "--font-roobert",
+        "web_files": ["apps/web/public/fonts/roobert/RoobertUprightsVF.woff2", "apps/web/public/fonts/roobert/RoobertItalicsVF.woff2"],
+        "mobile_files": "apps/mobile/assets/font/Roobert/Roobert-{Light,Regular,Medium,SemiBold,Bold,Heavy}.ttf",
+        "use": "Everything."
+      },
+      "mono": {
+        "name": "Roobert Mono",
+        "web_var": "--font-roobert-mono",
+        "web_files": ["apps/web/public/fonts/roobert/RoobertMonoUprightsVF.woff2", "apps/web/public/fonts/roobert/RoobertMonoItalicsVF.woff2"],
+        "mobile_files": "apps/mobile/assets/font/Roobert/RoobertMono-Regular.ttf",
+        "use": "Only code, commands, paths, IDs and keys. Never decorative."
+      }
+    },
+    "feature_settings": "'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt'",
+    "scale": {
+      "xs": { "size": "0.8125rem", "line_height": "calc(1 / 0.8125)", "px": 13, "role": "Meta, captions, row descriptions: the workhorse", "surface": "app" },
+      "sm": { "size": "0.875rem", "line_height": "calc(1.25 / 0.875)", "px": 14, "role": "Body, row titles, labels, button text", "surface": "app" },
+      "md": {
+        "size": "0.9rem",
+        "line_height": "calc(1.375 / 0.9375)",
+        "px": 14.4,
+        "role": "Non-canonical. Do not add uses.",
+        "surface": "legacy",
+        "defect": "line-height denominator 0.9375 != size 0.9: computes 21.12px, not 22px. Decision J-6."
+      },
+      "base": { "size": "1rem", "line_height": "calc(1.5 / 1)", "px": 16, "role": "Long-form prose only", "surface": "app" },
+      "lg": { "size": "1.125rem", "line_height": "calc(1.75 / 1.125)", "px": 18, "role": "Rare sub-heading", "surface": "app" },
+      "xl": { "size": "1.25rem", "line_height": "calc(1.75 / 1.25)", "px": 20, "role": "Section page title", "surface": "app" },
+      "2xl": { "size": "1.5rem", "line_height": "calc(2 / 1.5)", "px": 24, "role": "Detail-view title; app ceiling", "surface": "app" },
+      "3xl": { "size": "1.875rem", "line_height": "calc(2.25 / 1.875)", "px": 30, "surface": "marketing" },
+      "4xl": { "size": "2.25rem", "line_height": "calc(2.5 / 2.25)", "px": 36, "surface": "marketing" },
+      "5xl": { "size": "3rem", "line_height": "1", "px": 48, "surface": "marketing" },
+      "6xl": { "size": "3.75rem", "line_height": "1", "px": 60, "surface": "marketing" },
+      "7xl": { "size": "4.5rem", "line_height": "1", "px": 72, "surface": "marketing" },
+      "8xl": { "size": "6rem", "line_height": "1", "px": 96, "surface": "marketing" }
+    },
+    "weights": { "normal": "body, meta (default, do not write it)", "medium": "row title, label, active nav", "semibold": "detail title, with tracking-tight" },
+    "tracking": { "normal": "0em", "tight": "-0.025em (Tailwind default) with text-2xl and up, and on mono" },
+    "mobile": "Mobile uses NativeWind's Tailwind 3 scale (text-xs = 12px) and Text variants in components/ui/text.tsx; not generated. Decision J-5.",
+    "feature_settings_font_face": "'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on",
+    "feature_settings_note": "Web sets the six-value list (adds 'palt') on html and body. @font-face carries the five stylistic sets, as next/font does.",
+    "stacks": {
+      "sans": "Roobert, ui-sans-serif, -apple-system, 'Segoe UI', 'Helvetica Neue', 'Noto Sans', sans-serif",
+      "mono": "'Roobert Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+    }
+  },
+  "spacing": {
+    "web_base": "0.23rem",
+    "mobile_base": "0.25rem",
+    "why": "Web is 8% tighter than stock Tailwind for density. Mobile keeps stock 4pt so p-2/p-3 touch targets stay at or above the 44pt HIG minimum (apps/mobile/AGENTS.md Color rule 2).",
+    "steps": [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12, 16, 20, 24],
+    "named": { "sidebar": "1.5rem" }
+  },
+  "radius": {
+    "base": "0.625rem",
+    "web": {
+      "sm": { "value": "calc(var(--radius) - 4px)", "px": 6, "use": "Status icon tiles, small chips, the segmented chip, menu rows" },
+      "md": { "value": "calc(var(--radius) - 2px)", "px": 8, "use": "Panels, rows, tables, cards, buttons: the default" },
+      "lg": { "value": "var(--radius)", "px": 10, "use": "Floating panels: menu, popover, select content" },
+      "xl": { "value": "calc(var(--radius) + 4px)", "px": 14, "use": "Rare: large media containers" },
+      "2xl": { "value": "1rem", "px": 16, "use": "Marketing surfaces only" }
+    },
+    "mobile": {
+      "sm": 6,
+      "md": 8,
+      "lg": 10,
+      "xl": 12,
+      "2xl": 16,
+      "note": "Mobile xl/2xl are Tailwind 3 defaults (0.75rem, 1rem), not derived from --radius. rounded-xl is 14px on web and 12px on mobile. Decision J-5."
+    }
+  },
+  "elevation": {
+    "rule": "In page flow = border, no shadow. Floating = shadow + hairline border. Never dark:shadow-*.",
+    "source": "Tailwind 4.3.3 defaults (node_modules/tailwindcss/theme.css:406-412). Kortix defines no shadow tokens.",
+    "steps": {
+      "xs": { "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "use": "Chips, the segmented chip, slider thumbs" },
+      "sm": { "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)", "use": "Sticky bars" },
+      "md": { "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "use": "Dropdowns, selects, popovers" },
+      "lg": { "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", "use": "Modals, sheets, toasts" },
+      "xl": { "value": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)", "use": "Command palette, floating windows" }
+    }
+  },
+  "effects": {
+    "liquid-glass": {
+      "use": "Frosted secondary surface. Pair with @utility liquid-glass. Mix with transparent so backdrop-filter shows through.",
+      "bg": ["color-mix(in oklch, var(--secondary) 45%, transparent)", "color-mix(in oklch, var(--secondary) 38%, transparent)"],
+      "bg-hover": ["color-mix(in oklch, var(--secondary) 62%, transparent)", "color-mix(in oklch, var(--secondary) 52%, transparent)"],
+      "blur": "20px",
+      "saturate": "1.8",
+      "shadow": ["0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35), inset 0 -1px 0 oklch(1 0 0 / 0.08)", "inset 0 0 0 1px oklch(1 0 0 / 0.1)"],
+      "highlight": ["radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%)", "radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.12), transparent 55%)"],
+      "why_dark_differs": "A drop shadow is invisible on black; dark uses a 1px inset rim instead."
+    },
+    "selection": "color-mix(in oklch, var(--primary) 72%, transparent)",
+    "press": {
+      "button": { "scale": 0.96, "utility": "active:scale-[0.96]", "use": "Buttons and compact controls." },
+      "row": { "scale": 0.998, "utility": "active:scale-[0.998]", "use": "Full-width rows. A larger element gets a smaller scale." }
+    },
+    "disabled_opacity": 0.5,
+    "tint_opacity": 0.15
+  },
+  "motion": {
+    "rule": "Fast, or none. Count how often a user sees it first; keyboard-driven changes are never animated. Menus, selects, popovers, tooltips, submenus and the command palette open and close with no animation. Modals, sheets and toasts use 200-300ms. Hover-card is the only animated floating panel.",
+    "duration": {
+      "fast": { "ms": 100, "use": "Hover color/opacity" },
+      "normal": { "ms": 150, "use": "The default UI transition" },
+      "moderate": { "ms": 200, "use": "Disclosure, accordion, tab" },
+      "slow": { "ms": 300, "use": "Modal, drawer, sheet: the product ceiling" },
+      "slower": { "ms": 500, "use": "Marketing only" }
+    },
+    "easing": {
+      "default": { "bezier": [0.2, 0, 0, 1], "use": "Kortix default curve" },
+      "out": { "bezier": [0, 0, 0.2, 1], "use": "Enter and exit: reach here first" },
+      "in-out": { "bezier": [0.4, 0, 0.2, 1], "use": "On-screen elements that move or morph" },
+      "in": { "bezier": [0.4, 0, 1, 1], "use": "Nothing. Kept only because Tailwind ships it." }
+    },
+    "spring": { "type": "spring", "duration": 0.3, "bounce": 0, "note": "bounce > 0 only after a drag release" },
+    "enter_scale_floor": [0.9, 0.97],
+    "mobile": "apps/mobile/lib/utils/theme.ts MOTION transcribes these as numbers; pinned by lib/utils/theme.test.ts.",
+    "tailwind": {
+      "theme_namespace": "--transition-duration-*",
+      "why": "Tailwind 4 reads duration utilities from --transition-duration-*. The old --duration-* names are not a namespace, so duration-fast, -normal, -moderate, -slow and -slower emitted no CSS and 105 call sites ran at the 150ms default. The generator emits --transition-duration-* inside @theme inline so the five utilities compile.",
+      "runtime_vars": "--duration-* and --ease-* stay on :root for JS and the /design-system page.",
+      "bare_ease": "Bare `ease` is not a utility. Never prescribe it."
+    }
+  },
+  "mobile": {
+    "spacing_base": "0.25rem",
+    "why_spacing": "Mobile keeps the stock 4pt step so p-2 and p-3 touch targets stay at or above 44pt.",
+    "mobile_only_tokens": ["success", "warning", "chrome-background"],
+    "web_only_tokens": ["sidebar-row", "sidebar-row-control", "liquid-glass", "emoji", "glyph", "type scale", "transition-duration"],
+    "extra_declarations": { "border-width": "1.5px" },
+    "documented_differences": [
+      "text-xs is 12px on mobile and 13px on web (NativeWind uses the Tailwind 3 scale).",
+      "rounded-xl is 12px on mobile and 14px on web (Tailwind 3 default, not derived from --radius).",
+      "ring utility is 20% alpha on mobile (apps/mobile/tailwind.config.js)."
+    ],
+    "generated": "Color declarations in apps/mobile/global.css come from the oklch values above. Layout, type and radius on mobile stay in tailwind.config.js and are not generated."
+  },
+  "decisions": [
+    {
+      "id": "J-1",
+      "date": "2026-06-19",
+      "by": "Jay Suthar (b70f773bfd)",
+      "change": "Neutral ramp adopted from the Framer design reference: hierarchy from surface lift, blue as signal only. Light mirrors each dark surface's lift distance from canvas.",
+      "why": "globals.css:504-525 header."
+    },
+    {
+      "id": "J-2",
+      "change": "Dark --sidebar-row is surface-2, one step above light.",
+      "why": "surface-1 on the dark canvas measured 1.07:1 and did not read as a fill; surface-2 is 1.15:1 (globals.css:659-661)."
+    },
+    { "id": "J-3", "change": "Emoji and glyph palettes are two families.", "why": "Emoji hues derive from the glyph and must stay stable; glyph colors are user-chosen (globals.css:132-153)." },
+    {
+      "id": "J-4",
+      "status": "open",
+      "change": "Web status colors (success/warning) are Tailwind palette classes in status.tsx, which the value law bans elsewhere; mobile has tokens. Decide: promote to web tokens, or map to kortix-green/orange."
+    },
+    {
+      "id": "J-5",
+      "status": "open",
+      "change": "Mobile keeps stock spacing (decided), but also stock type (text-xs 12 vs 13px) and radius (xl 12 vs 14px). Decide whether type and radius follow web."
+    },
+    { "id": "J-6", "status": "open", "change": "text-md line-height uses 0.9375 against a 0.9rem size. Fix the denominator or delete text-md (8 uses)." },
+    { "id": "J-7", "status": "open", "change": "kortix-* accents are theme-invariant and measure 2.38-3.98:1 on #ffffff (yellow lowest). Decide on light/dark pairs for text use." },
+    {
+      "id": "J-8",
+      "date": "2026-10-01",
+      "change": "Motion duration tokens emit --transition-duration-*. duration-fast=100ms, normal=150ms, moderate=200ms, slow=300ms, slower=500ms are real utilities.",
+      "why": "The previous --duration-* names compiled to nothing (see motion.tailwind)."
+    },
+    {
+      "id": "J-9",
+      "date": "2026-10-01",
+      "change": "The legacy hsl --sidebar-* block and the second shiny-text @theme block in globals.css are deleted. The oklch tokens always overrode the first. animate-shiny-text has 0 uses.",
+      "why": "Dead CSS audit, 2026-10-01."
+    }
+  ]
+}

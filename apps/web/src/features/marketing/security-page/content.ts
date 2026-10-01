@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. ACCURACY GATE for this page specifically —
+ * Voice rules: the `kortix-brand` skill. ACCURACY GATE for this page specifically —
  * every line below traces to shipped code, and the citation is in the comment
  * above it. This is the page an enterprise reviewer will hold us to.
  *
@@ -37,7 +37,7 @@ import type { UiTranslator } from '@/i18n/translator';
  *     DEFAULT provider. Platinum is a Cloud Hypervisor microVM; Daytona, the
  *     default, is not. The copy claims one isolated sandbox per session, and
  *     names microVM only where it is accurate.
- *  3. "Egress controlled at the network" (a `comms` proof point) is NOT
+ *  3. "Egress controlled at the network" (a `kortix-brand` proof point) is NOT
  *     substantiated anywhere in this tree — E2B ships `allowInternetAccess:
  *     true` and the network design is "Proposed — not scheduled". Dropped.
  *  4. Approval gates are NOT on by default. `policy.default_mode` falls back to

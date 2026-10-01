@@ -9,12 +9,12 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * ==========================================================================
  * ACCURACY GATE — read this before editing one word of the surface list.
  * ==========================================================================
- * The `comms` glossary calls a channel "Slack, Teams, Telegram, WhatsApp, SMS,
+ * The pre-kit glossary calls a channel "Slack, Teams, Telegram, WhatsApp, SMS,
  * email". THE PRODUCT DOES NOT. Verified against the code, not the pitch:
  *
  *  - `packages/manifest-schema/src/constants.ts`:

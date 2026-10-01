@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  * ACCURACY GATE for this page specifically:
  *  - Every line of YAML, every path and every CLI command on this page is real.
  *    Ground truth: `packages/starter/templates/base/kortix.yaml`, the same

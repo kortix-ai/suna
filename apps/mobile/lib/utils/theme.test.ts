@@ -566,16 +566,17 @@ const HSL_TOLERANCE = 0.2;
 
 type Hsla = { h: number; s: number; l: number; a: number };
 
+// A quoted string survives: web's `@source "…/dist/*.js"` holds a literal `/*`
+// that is not a comment start.
 function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '');
+  return source.replace(/"[^"\n]*"|\/\*[\s\S]*?\*\//g, (m) => (m.startsWith('"') ? m : ''));
 }
 
 /**
  * Collect `--name: value;` declarations from every block whose selector is
  * exactly `selector` (at the start of a line, followed by `{`), merged in
  * source order so a later declaration wins — the CSS cascade for same-
- * specificity rules. web declares `--sidebar-*` twice (a legacy hsl block at
- * the top of the file and the oklch block later); the later one must win.
+ * specificity rules. A later declaration of the same token wins.
  */
 function webDeclarations(selector: ':root' | '.dark'): Map<string, string> {
   const css = stripComments(webCss);
@@ -806,7 +807,7 @@ describe('color conversion helpers are correct', () => {
     expect(toHexColor(`hsl(${fmtHsla(parseWebColor('#0f0f0f'))})`)).toBe('#0f0f0f');
   });
 
-  it('the later web --sidebar block wins over the legacy hsl block', () => {
+  it('web declares --sidebar as the oklch surface-1 value', () => {
     expect(webRoot.get('sidebar')).toBe('oklch(0.9672 0 0)');
     expect(webDark.get('sidebar-border')).toBe('oklch(0.2178 0 0)');
   });

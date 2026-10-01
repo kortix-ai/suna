@@ -3,7 +3,7 @@
  *
  * Plain English lives here, not in `apps/web/translations/*.json`, so the copy
  * can iterate before paying the 8-locale parity gate. Wire i18n keys once the
- * page is announced. Voice and every claim: the `comms` skill (§1 positioning,
+ * page is announced. Voice and every claim: the `kortix-brand` skill (§1 positioning,
  * §3 message house, §4 proof points). No invented metric, no customer name.
  */
 

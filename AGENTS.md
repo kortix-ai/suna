@@ -626,7 +626,7 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 | Surface | Read before changing UI | Implemented source |
 |---|---|---|
-| Web (`apps/web`) | `.agents/skills/kortix-brand-guidelines/SKILL.md` for values, then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens, `apps/web/src/components/ui/`, the live `/design-system` route |
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `apps/web/src/components/ui/`, the live `/design-system` route |
 | Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
 | Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 
@@ -655,12 +655,16 @@ prevent every future regression.
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.agents/skills/kortix-brand-guidelines/SKILL.md` before writing the first
-  `className`. It is the value law: the complete allowlist of every color,
-  spacing step, type rung, radius, elevation, and duration you may use. Note
-  `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
-  padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
-  before opening the PR; it must be clean on files you touched.
+- Read `.agents/skills/kortix-brand/SKILL.md` before writing the first
+  `className` or the first user-facing string. It routes you to the value law:
+  the complete allowlist of every color, spacing step, type rung, radius,
+  elevation, and duration you may use. Note `--spacing: 0.23rem` — Tailwind's
+  scale is 8% tighter here, so a 16px mockup padding is `p-4`, never
+  `p-[16px]`. Run `.agents/skills/kortix-brand/scripts/audit.sh` over your
+  changed paths before opening the PR; it must be clean on files you touched.
+  `references/visual/visual-system.json` is the only file with values: edit it,
+  then run `scripts/generate-tokens.ts`. Never edit a generated region of
+  `globals.css` by hand.
 - Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
