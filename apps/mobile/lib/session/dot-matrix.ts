@@ -875,6 +875,64 @@ const DOTM_SQUARE: readonly DotMatrixVariant[] = [
   }),
 ];
 
+// ─── Frame track (UI-thread playback) ────────────────────────────────────────
+
+/**
+ * Loop length of each variant at speed 1, in ms. Every animation repeats
+ * exactly after `base / speed`; dot delays and square-14's first-step rule only
+ * shape the first pass. Pinned by `dot-matrix.test.ts`, which checks each
+ * variant against its own `frame`.
+ */
+const PERIOD_BASE_MS: Readonly<Record<string, number>> = {
+  'dotm-3x3-2': 5100, 'dotm-3x3-3': 5100, 'dotm-3x3-4': 5100, 'dotm-3x3-5': 5100,
+  'dotm-3x3-6': 1230, 'dotm-3x3-7': 5100, 'dotm-3x3-8': 5100, 'dotm-3x3-9': 1560,
+  'dotm-3x3-10': 33810, 'dotm-3x3-12': 1950, 'dotm-3x3-13': 5100, 'dotm-3x3-15': 1590,
+  'dotm-3x3-16': 3600, 'dotm-3x3-18': 1800, 'dotm-3x3-19': 3600, 'dotm-3x3-20': 3600,
+  'dotm-3x3-21': 3600, 'dotm-circular-1': 1700, 'dotm-circular-2': 1500, 'dotm-circular-3': 1650,
+  'dotm-circular-4': 1800, 'dotm-circular-5': 1650, 'dotm-circular-6': 1700, 'dotm-circular-7': 1600,
+  'dotm-circular-8': 1400, 'dotm-circular-9': 1900, 'dotm-circular-10': 1600, 'dotm-circular-11': 1850,
+  'dotm-circular-12': 1700, 'dotm-circular-14': 1650, 'dotm-circular-15': 1680, 'dotm-circular-17': 1500,
+  'dotm-square-1': 1500, 'dotm-square-2': 1500, 'dotm-square-3': 1500, 'dotm-square-4': 1500,
+  'dotm-square-5': 1500, 'dotm-square-6': 1500, 'dotm-square-7': 1900, 'dotm-square-8': 2000,
+  'dotm-square-9': 5200, 'dotm-square-10': 1500, 'dotm-square-11': 1500, 'dotm-square-12': 1500,
+  'dotm-square-13': 1550, 'dotm-square-14': 1700, 'dotm-square-15': 1600, 'dotm-square-16': 1400,
+  'dotm-square-17': 1600, 'dotm-square-18': 1750, 'dotm-square-19': 1700, 'dotm-square-20': 1600,
+};
+
+/** Playback resolution: one sample per 60 Hz frame, what the JS loop gave. */
+export const TRACK_STEP_MS = 1000 / 60;
+
+/**
+ * A variant sampled once on the JS thread so the UI thread only indexes it.
+ * `data` is row-major, `cells` opacities per sample (hidden cells 0), covering
+ * the first pass plus one repeat: `periodMs` to `2 × periodMs` loops.
+ * `periodMs` 0 is a still track: a single sample.
+ */
+export interface DotMatrixTrack {
+  data: number[];
+  cells: number;
+  periodMs: number;
+}
+
+export function buildDotMatrixTrack(entry: DotMatrixVariant, still: boolean): DotMatrixTrack {
+  const cells = entry.grid * entry.grid;
+  const periodMs = still ? 0 : PERIOD_BASE_MS[entry.name]! / entry.speed;
+  const samples = still ? 1 : Math.ceil((2 * periodMs) / TRACK_STEP_MS);
+  const data: number[] = [];
+  for (let i = 0; i < samples; i += 1) {
+    for (const value of entry.frame(i * TRACK_STEP_MS, still)) data.push(value ?? 0);
+  }
+  return { data, cells, periodMs };
+}
+
+/** The track sample shown `elapsedMs` after mount. Runs on the UI thread. */
+export function trackSampleIndex(periodMs: number, elapsedMs: number): number {
+  'worklet';
+  if (periodMs <= 0) return 0;
+  const t = elapsedMs < periodMs ? elapsedMs : periodMs + ((elapsedMs - periodMs) % periodMs);
+  return Math.floor(t / TRACK_STEP_MS);
+}
+
 // ─── Catalog, hash, layout ───────────────────────────────────────────────────
 
 export const DOT_MATRIX_CATALOG: readonly DotMatrixVariant[] = [...DOTM_3X3, ...DOTM_CIRCULAR, ...DOTM_SQUARE];
