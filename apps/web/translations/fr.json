@@ -1177,7 +1177,7 @@
         },
         "human_messaging": {
           "name": "Messages aux personnes",
-          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe."
+          "description": "Permet aux agents d'écrire à des personnes et à d'autres sessions. `kortix send alice@example.com` ouvre une conversation qui commence par le message de l'agent et apparaît sous On vous demande dans la barre latérale du destinataire. Plusieurs adresses ouvrent un chat de groupe. Les messages entre sessions indiquent la session expéditrice, pour que son agent puisse répondre."
         },
         "reminders": {
           "name": "Rappels",
