@@ -78,6 +78,8 @@ Animation exists to make the UI feel faster, or to show where a thing came from.
 | Bounce above 0 | drag-release gestures only | A drag applied force, so a settle reads as physical. A click did not. `lib/springs.ts` (`bounce: 0.12`) and the onboarding seal (`bounce: 0.28`) pre-date this rule and are debt. |
 | Blur bridge | `filter: blur(4px)` to `blur(0)` | Only to bridge a state swap where two objects would blink. Never on text the user is reading. |
 
+**Rule.** A filled primary button or link-button hovers to its own fill at 90%: `hover:bg-foreground/90` (the `default` variant in `button.tsx`). In portable HTML write `color-mix(in oklab, var(--foreground) 90%, transparent)`. Set no hover `opacity` on the element. — *Why:* the shipped `Button` default does this, and an element opacity would fade the label with the fill (Q52). — *Where:* app, marketing. — *When silent:* that value.
+
 **Rule.** Make a hover effect change color, background, opacity or `transform`, never position in flow. — *Why:* a hover that shifts layout moves the element from under the cursor and flickers between states. — *Where:* app, marketing. — *When silent:* color only.
 
 **Rule.** Enter with opacity, or opacity plus a scale from the enter floor. Never use opacity with a large `y` translate. — *Why:* a large translate moves the text the user wants to read, and every item in a list pays the delay. — *Where:* app | marketing. — *When silent:* opacity only.

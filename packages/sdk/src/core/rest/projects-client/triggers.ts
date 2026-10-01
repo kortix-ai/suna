@@ -103,6 +103,18 @@ export interface ProjectTrigger {
   /** Access policy applied to every session this trigger creates. */
   session_access: TriggerSessionAccess;
   last_fired_at: string | null;
+  /**
+   * The trigger's most recent outcome: `queued` (a prompt waits for its
+   * session), `fired` (delivered, or the last run succeeded), or `failed` (the
+   * prompt was not delivered, or the run it started ended with an error).
+   * A failed run stays `failed` across later fires until a run finishes.
+   * Null before the first fire.
+   */
+  last_status?: string | null;
+  /** Why the last fire or run failed, e.g. "Out of credits: …". Null otherwise. */
+  last_error?: string | null;
+  /** ISO time of the last fire attempt or run outcome. */
+  last_attempt_at?: string | null;
   /** Public fire URL for webhook triggers; null for cron. */
   webhook_url: string | null;
 }

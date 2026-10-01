@@ -10,7 +10,7 @@ The fresh agent runs in a scratch directory with no repo, no memory and no web a
 
 What still leaks, and the judge accepts it: the user-level `~/.claude/CLAUDE.md` and its hooks, and a user-level skill folder that Codex reads (`~/.agents/skills`). The judge does not count a read of those files against R. The run may not copy a login file or `HOME` content into the scratch directory.
 
-Before each run, check the ancestors of the scratch directory. The check must print nothing:
+Start each run from an empty directory: `rm -rf "$RUN"` before the setup below. A file left by an earlier run (an OG spec, an HTML card) is read as input and voids the run (Q55). Before each run, check the ancestors of the scratch directory. The check must print nothing:
 
 ```bash
 RUN="$HOME/.cache/kortix-brand-qa/<run>"; mkdir -p "$RUN"
@@ -31,8 +31,9 @@ ln -s ../../.agents/skills/kortix-brand .claude/skills/kortix-brand   # Claude d
 **Tier A+ (Tier A plus the files a prompt names).** Prompts 5 and 8 add the brand files and the page source. Prompt 10 adds the CLI source.
 
 ```bash
-# prompts 5 and 8: the symbol and logo files, and the security page copy
-mkdir -p apps/web/public/brandkit apps/web/src/features/marketing
+# prompts 5 and 8: the symbol and logo files, and the security page copy (prompt 8 also the nav, for the title and the logo height)
+mkdir -p apps/web/public/brandkit apps/web/src/features/marketing apps/web/src/components/home
+cp "$REPO/apps/web/src/components/home/navbar.tsx" apps/web/src/components/home/
 cp -R "$REPO/apps/web/public/brandkit/Logo" apps/web/public/brandkit/
 cp -R "$REPO/apps/web/src/features/marketing/security-page" apps/web/src/features/marketing/
 # prompt 10: the CLI help source and styles
@@ -87,6 +88,9 @@ mkdir -p $M/components $M/stores $M/lib
 cp "$REPO/$M/design.md" "$REPO/$M/AGENTS.md" "$REPO/$M/global.css" $M/
 cp -R "$REPO/$M/components/ui" "$REPO/$M/components/kortix" $M/components/
 cp -R "$REPO/$M/lib/icons" $M/lib/ && cp "$REPO/$M/lib/haptics.ts" $M/lib/
+mkdir -p $M/lib/ui "$M/app/(settings)"
+cp "$REPO/$M/lib/ui/hit-target.ts" $M/lib/ui/
+cp "$REPO/$M/app/(settings)/_layout.tsx" "$M/app/(settings)/"
 cp "$REPO/$M/stores/notification-store.ts" $M/stores/
 ```
 
@@ -96,7 +100,7 @@ cp "$REPO/$M/stores/notification-store.ts" $M/stores/
 
 ```bash
 cd "$RUN" && claude -p "<prompt> <suffix>" --model sonnet --permission-mode acceptEdits \
-  --allowedTools "Bash(bash .agents/skills/kortix-brand/scripts/audit.sh:*)" Read Write Edit Glob Grep \
+  --allowedTools "Bash(bash .agents/skills/kortix-brand/scripts/audit.sh:*)" "Bash(agent-browser:*)" Read Write Edit Glob Grep \
   --output-format stream-json --verbose < /dev/null > "$LOG" 2>&1
 cd "$RUN" && codex exec --skip-git-repo-check --sandbox workspace-write --json "<prompt> <suffix>" > "$LOG" 2>&1
 ```
@@ -107,7 +111,7 @@ Flags checked against `claude --help` and `codex exec --help` on 2026-10-01. Do 
 
 > Before you answer, list every file you read. After you answer, list every decision you made that no file covered, under 'Guesses'. Include every className override of a shared component.
 
-The agent runs `scripts/audit.sh` on its own output, so the agent measures V as well as the judge. The judge scores UI structure, copy and routing. The judge ignores data-layer choices (prop shapes, types, role names, file placement), handoff file names, and the author choices listed in Q45: they are intentional freedom (Q9, Q32, Q45).
+The prompt must name the audit path `.agents/skills/kortix-brand/scripts/audit.sh` (a run called `.claude/skills/...` and the allowlist denied it). The agent runs `scripts/audit.sh` on its own output, so the agent measures V as well as the judge. The judge scores UI structure, copy and routing. The judge ignores data-layer choices (prop shapes, types, role names, file placement), handoff file names, and the author choices listed in Q45: they are intentional freedom (Q9, Q32, Q45).
 
 **Judge.** A stronger model scores each output against the rubric in section 3. A person reviews the M score and every Guess: the design lead for visual work, the founder for M.
 
@@ -126,7 +130,7 @@ The agent runs `scripts/audit.sh` on its own output, so the agent measures V as 
 | 9 | B | mobile | "A notification-preferences screen in the mobile app." The shipped screen is withheld: the agent takes event types and defaults from `stores/notification-store.ts`. |
 | 10 | A+ | CLI | "`kortix secrets --help` output and the error printed when a required secret is missing." The agent quotes `secrets.ts`, and the judge checks each line against it. |
 
-Prompts 6 and 8 also need the recipe skill for the job (`kortix-presentation`, `kortix-image`) in `.agents/skills/`, linked in `.claude/skills/` like the others. Prompt 6 also needs the presentations engine files that `kortix-presentation` names, under `apps/web/src/app/[locale]/presentations/` (the skill still names `apps/web/src/app/presentations/`: OPEN for its owner, Q28).
+Prompt 6 also copies `apps/web/src/features/marketing/security-page` and `apps/web/translations/en.json`, so deck copy and diagram labels have a source (Q55). Prompts 6 and 8 also need the recipe skill for the job (`kortix-presentation`, `kortix-image`) in `.agents/skills/`, linked in `.claude/skills/` like the others. Prompt 6 also needs the presentations engine files that `kortix-presentation` names, under `apps/web/src/app/[locale]/presentations/` (the skill still names `apps/web/src/app/presentations/`: OPEN for its owner, Q28).
 
 ## 3. Rubric
 

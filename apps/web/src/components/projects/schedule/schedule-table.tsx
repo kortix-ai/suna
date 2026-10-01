@@ -48,6 +48,7 @@ import {
   PlayIcon,
   TimerIcon,
   TrashIcon,
+  WarningCircleIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 
@@ -156,13 +157,17 @@ function ScheduleTableRow({
   onDelete: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tTriggers = useTranslations('triggers');
   const kind = trigger.type;
   const name = triggerName(trigger);
   const status = triggerStatus(trigger.enabled, tI18nComplete);
   const when = describeWhen(trigger);
   const security = describeSecurity(trigger, tI18nComplete);
   const KindIcon = kind === 'cron' ? TimerIcon : WebhooksLogoIcon;
-  const StatusIcon = status.active ? KindIcon : PauseIcon;
+  // A run that failed outranks Active/Paused on the tile: it is the one
+  // state the owner has to act on.
+  const failed = trigger.last_status === 'failed';
+  const StatusIcon = failed ? WarningCircleIcon : status.active ? KindIcon : PauseIcon;
 
   return (
     <TableRow className="group cursor-pointer" onClick={onOpen}>
@@ -171,11 +176,14 @@ function ScheduleTableRow({
           <span
             className={cn(
               'flex size-8 shrink-0 items-center justify-center rounded-sm',
-              status.tileClassName,
+              failed ? 'bg-kortix-red/15' : status.tileClassName,
             )}
             aria-hidden="true"
           >
-            <StatusIcon weight="fill" className={cn('size-4 shrink-0', status.iconClassName)} />
+            <StatusIcon
+              weight="fill"
+              className={cn('size-4 shrink-0', failed ? 'text-kortix-red' : status.iconClassName)}
+            />
           </span>
           <span className="min-w-0 flex-1">
             {/* A real button, so the row is reachable by keyboard — a
@@ -191,11 +199,15 @@ function ScheduleTableRow({
               {name}
             </button>
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
-            {!status.active && (
+            {failed ? (
+              <span className="text-muted-foreground hidden text-xs sm:block">
+                {tTriggers('runFailed.label')}
+              </span>
+            ) : !status.active ? (
               <span className="text-muted-foreground hidden text-xs sm:block">
                 {tI18nComplete.raw('texte159b06187d3')}
               </span>
-            )}
+            ) : null}
           </span>
         </div>
       </TableCell>

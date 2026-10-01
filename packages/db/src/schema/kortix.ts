@@ -21,6 +21,11 @@ import {
 
 export const kortixSchema = pgSchema('kortix');
 
+export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'provisioning',
   'active',
@@ -1465,6 +1470,10 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // When the current streak of failed RUNS began; null once a run finishes.
+    // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
+    // owner is pushed only when it goes from null to set.
+    runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
     // Account-local sharing policy for sessions created by this trigger. The
     // portable manifest cannot contain member/group ids from one account.
     sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),

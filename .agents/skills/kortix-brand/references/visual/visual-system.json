@@ -387,7 +387,9 @@
     "button_padding": "12px 28px",
     "logo_height_px": 22,
     "logo_url": "https://kortix.com/brandkit/Logo/Logomark/PNG/Logomark%20Black.png",
-    "font_size_px": { "title": 22, "body": 14, "kicker": 13, "small": 12 }
+    "font_size_px": { "title": 22, "body": 14, "kicker": 13, "small": 12 },
+    "line_height": { "title": 1.25, "body": 1.6 },
+    "gap_px": { "kicker_before": 24, "kicker_after": 8, "title_after": 12, "block_after": 24 }
   },
   "mobile": {
     "spacing_base": "0.25rem",

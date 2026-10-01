@@ -281,6 +281,8 @@ function emailLayout() {
     logoHeight: e.logo_height_px as number,
     logoUrl: e.logo_url as string,
     fontSize: e.font_size_px as { title: number; body: number; kicker: number; small: number },
+    lineHeight: e.line_height as { title: number; body: number },
+    gap: e.gap_px as { kicker_before: number; kicker_after: number; title_after: number; block_after: number },
   };
 }
 
@@ -328,7 +330,13 @@ function kitTokens(): string {
     `  --email-title-size: ${em.fontSize.title}px;`,
     `  --email-body-size: ${em.fontSize.body}px;`,
     `  --email-kicker-size: ${em.fontSize.kicker}px;`,
-    `  --email-small-size: ${em.fontSize.small}px;`
+    `  --email-small-size: ${em.fontSize.small}px;`,
+    `  --email-title-line-height: ${em.lineHeight.title};`,
+    `  --email-body-line-height: ${em.lineHeight.body};`,
+    `  --email-gap-kicker-before: ${em.gap.kicker_before}px;`,
+    `  --email-gap-kicker-after: ${em.gap.kicker_after}px;`,
+    `  --email-gap-title: ${em.gap.title_after}px;`,
+    `  --email-gap-block: ${em.gap.block_after}px;`
   );
   for (const [k, v] of Object.entries<any>(vs.motion.duration)) shared.push(`  --duration-${k}: ${v.ms}ms;`);
   for (const [k, v] of Object.entries<any>(vs.motion.easing))

@@ -201,7 +201,7 @@ export function TypeRow({
   return (
     <div className="border-border flex items-baseline gap-4 border-b py-3">
       <div className="w-24 shrink-0">
-        <span className="text-muted-foreground font-mono text-xs">text-{step}</span>
+        <span className="text-muted-foreground font-mono text-xs">{`text-${step}`}</span>
       </div>
       <div className="w-28 shrink-0">
         <span className="text-muted-foreground font-mono text-xs">
