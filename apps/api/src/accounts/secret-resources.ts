@@ -73,7 +73,10 @@ export function registerSecretResourceRoutes() {
     const membership = await getMembership(userId, accountId);
     if (!membership) return c.json({ error: 'Forbidden' }, 403);
     const projectId = c.req.query('project_id') as string | undefined;
-    if (projectId && !(await memberMayReadProject(accountId, projectId, userId))) return c.json({ error: 'Forbidden' }, 403);
+    // This route authorizes the caller's own request here, so MFA counts.
+    if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: c.get('mfaAal') }))) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
     const manager = membership.accountRole === 'owner' || membership.accountRole === 'admin';
     const rows = await db.select().from(accountSecretResources).where(eq(accountSecretResources.accountId, accountId));
     const scoped = rows.filter((row) => !projectId ? row.projectId === null : row.projectId === null || row.projectId === projectId);
