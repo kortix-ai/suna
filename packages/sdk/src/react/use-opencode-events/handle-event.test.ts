@@ -1474,14 +1474,28 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
 });
 
 describe('event-family routing characterization', () => {
-  test('the reducer sees unknown events and message removal exactly once', () => {
-    const { handleEvent, applySyncEvent } = buildHandler();
-    const removed = {
-      id: 'evt_removed',
-      type: 'message.removed',
-      properties: { sessionID: 'ses_1', messageID: 'msg_1' },
+  test('dispatcher delivers each family to its observable side effect after reducer delivery', () => {
+    const { handleEvent, applySyncEvent, queryClient, addPermission, fetchLspDiagnosticsDebounced } =
+      buildHandler();
+    const message = {
+      id: 'evt_message', type: 'message.updated',
+      properties: { sessionID: 'ses_1', info: assistantMessage('msg_1') },
     } as Parameters<typeof handleEvent>[0];
-    handleEvent(removed);
-    expect(applySyncEvent.calls).toEqual([[removed]]);
+    const created = {
+      id: 'evt_session', type: 'session.created', properties: { sessionID: 'ses_new', info: session('ses_new') },
+    } as Parameters<typeof handleEvent>[0];
+    const permission = {
+      id: 'evt_permission', type: 'permission.asked',
+      properties: { id: 'perm_1', sessionID: 'ses_1', permission: 'bash', patterns: ['*'], metadata: {}, always: [] },
+    } as Parameters<typeof handleEvent>[0];
+    const workspace = {
+      id: 'evt_workspace', type: 'lsp.updated', properties: {},
+    } as Parameters<typeof handleEvent>[0];
+    for (const event of [message, created, permission, workspace]) handleEvent(event);
+    expect(applySyncEvent.calls).toEqual([[message], [created], [permission], [workspace]]);
+    expect(queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0]?.id).toBe('ses_new');
+    expect(addPermission.calls).toHaveLength(1);
+    expect(notifications[0]?.kind).toBe('permission');
+    expect(fetchLspDiagnosticsDebounced.calls).toHaveLength(1);
   });
 });
