@@ -57,7 +57,7 @@ export function sessionMessagePromptText(input: SessionMessagePromptInfo): strin
     const to = input.to.map(person).join(', ');
     header = replyTo
       ? `[ASK from ${from} to ${to} — the agent that asked is not in this conversation. The people named answer here. When you have their answer, send it back with \`kortix send ${replyTo} "…"\`.]`
-      : `[ASK from ${from} to ${to} — the people named answer here.]`;
+      : `[ASK from ${from} to ${to} — the people named answer here, and ${(input.sender.kind === 'person' && clean(input.sender.name)) || 'the person who asked'} reads this conversation. Help them reach an answer.]`;
   } else {
     header = replyTo
       ? `[MESSAGE from ${from} — sent by another agent, not by a person. Reply with \`kortix send ${replyTo} "…"\`.]`

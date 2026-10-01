@@ -280,6 +280,8 @@ mock.module('../session-lifecycle', () => ({
 
 let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = null;
 let visibleSession: Record<string, unknown> | null = null;
+/** `null` = ordinary visibility refuses the session (only `sessionMayMessage` can admit it). */
+let visibleSessionOverride: null | undefined = undefined;
 let loadProjectCalls: Array<{ projectId: string; action: string }> = [];
 let capabilityCalls: string[] = [];
 
@@ -298,7 +300,7 @@ mock.module('../lib/access', () => ({
   ) => {
     capabilityCalls.push(action);
   },
-  loadVisibleSession: async () => visibleSession,
+  loadVisibleSession: async () => (visibleSessionOverride === null ? null : visibleSession),
 }));
 
 // The prompt route re-authorizes the AGENT on every send (agents are
@@ -330,9 +332,11 @@ mock.module('../lib/agent-access', () => ({
 // The sender envelope (`[MESSAGE from …]`). `sessionMessageSender` reads
 // Postgres, which this suite mocks away: stub it with the two senders the route
 // can ask for. Its own SQL is pinned by `integration-human-messaging.test.ts`.
+let messagedSession: Record<string, unknown> | null = null;
 const realParticipants = await import('../lib/session-participants');
 mock.module('../lib/session-participants', () => ({
   ...realParticipants,
+  sessionMayMessage: async () => messagedSession,
   sessionMessageSender: async (_userId: string, callerSessionId: string | null) =>
     callerSessionId
       ? { kind: 'session', sessionId: callerSessionId, title: 'Deploy pipeline' }
@@ -1048,6 +1052,26 @@ describe('POST .../prompts sender header (human_messaging)', () => {
     await send({ flag: true });
     expect(sentText()).toBe('say hi');
     expect(enqueued[0].authorSessionId).toBeNull();
+  });
+
+  // Live 2026-10-01: a worker reporting to its private parent was refused by
+  // the parent's sandbox ("machine could not be reached") because delivery
+  // signed as the worker's person, who may not open the parent.
+  test('a session messaging one it cannot open is delivered as that session\'s owner, authored by the sender', async () => {
+    const OWNER = '88888888-8888-4888-8888-888888888888';
+    expect((await send({ flag: true, fromSession: OWN_SESSION })).status).toBe(202);
+    expect(enqueued[0].actorUserId).toBe(USER_ID);
+    enqueued.length = 0;
+    messagedSession = { sessionId: SESSION_ID, createdBy: OWNER, metadata: {}, agentName: null };
+    visibleSessionOverride = null;
+    try {
+      expect((await send({ flag: true, fromSession: OWN_SESSION })).status).toBe(202);
+      expect(enqueued[0].actorUserId).toBe(OWNER);
+      expect(enqueued[0].authorSessionId).toBe(OWN_SESSION);
+    } finally {
+      messagedSession = null;
+      visibleSessionOverride = undefined;
+    }
   });
 
   test('flag on, a session credential writing into its own session: no header', async () => {

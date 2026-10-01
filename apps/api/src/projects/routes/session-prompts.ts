@@ -81,6 +81,7 @@ const SessionPromptSchema = z.object({
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  no_reply: z.boolean(),
   created_at: z.string(),
   available_at: z.string(),
 });
@@ -192,11 +193,10 @@ projectsApp.openapi(
     const callerSessionId = callerKortixSessionId(c);
     const authorSessionId =
       isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
-    const visible =
-      (await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId)) ??
-      (authorSessionId
-        ? await sessionMayMessage(authorSessionId, sessionId, projectId).then((row) => (row ? { row } : null))
-        : null);
+    const ordinary = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // Its parent, or a session that messaged it first — see sessionMayMessage.
+    const messaged = !ordinary && authorSessionId ? await sessionMayMessage(authorSessionId, sessionId, projectId) : null;
+    const visible = ordinary ?? (messaged ? { row: messaged } : null);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -330,7 +330,11 @@ projectsApp.openapi(
       projectId,
       accountId: loaded.row.accountId,
       sessionId,
-      actorUserId: loaded.userId,
+      // Delivery signs as this person, and the target's sandbox admits only
+      // people who may open it. A session reaching one it cannot open (its
+      // parent, a reply) therefore delivers as that session's owner; the
+      // sender stays recorded as `authorSessionId`.
+      actorUserId: messaged ? (messaged.createdBy ?? loaded.userId) : loaded.userId,
       // Spec 2026-09-22 §2.3 (closes V6): the session token acts as the person
       // who sent this prompt, from the moment its turn is delivered — not now,
       // while it may still wait behind another member's turn. An agent-session

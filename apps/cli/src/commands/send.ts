@@ -133,7 +133,20 @@ export async function runSend(argv: string[]): Promise<number> {
 }
 
 async function sendToSession(args: SendArgs): Promise<number> {
-  const id = args.targets[0];
+  const id = args.targets[0]!;
+  // Post into the current project first, without reading the target: a
+  // session may message its parent, or reply to a session that messaged it,
+  // without being allowed to read it. The server decides. Only a 404 falls
+  // through to the cross-project / cross-host lookup.
+  const ctx = await resolveProjectContext({ projectArg: args.project, hostArg: args.host, quietWhenUnresolved: true });
+  if (ctx) {
+    try {
+      const result = await queueSessionPrompt(ctx.client, ctx.projectId, { session_id: id } as ProjectSession, args.text);
+      return reportSent(args, id, result.message_id);
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 404)) return surfaceApiError(err);
+    }
+  }
   const located = await locateSessionAnywhere(
     id,
     { projectArg: args.project, hostArg: args.host },
@@ -143,22 +156,21 @@ async function sendToSession(args: SendArgs): Promise<number> {
   const { client, projectId, session } = located.located;
   try {
     const result = await queueSessionPrompt(client, projectId, session, args.text);
-    if (args.json) {
-      emitJson({
-        kind: 'session',
-        session_id: session.session_id,
-        message_id: result.message_id,
-        queued: true,
-      });
-      return 0;
-    }
-    process.stdout.write(
-      `${status.ok(`Sent to session ${C.bold}${session.session_id}${C.reset} ${C.dim}(queued)${C.reset}`)}\n`,
-    );
-    return 0;
+    return reportSent(args, session.session_id, result.message_id);
   } catch (err) {
     return surfaceApiError(err);
   }
+}
+
+function reportSent(args: SendArgs, sessionId: string, messageId: string): number {
+  if (args.json) {
+    emitJson({ kind: 'session', session_id: sessionId, message_id: messageId, queued: true });
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Sent to session ${C.bold}${sessionId}${C.reset} ${C.dim}(queued)${C.reset}`)}\n`,
+  );
+  return 0;
 }
 
 async function sendToPeople(args: SendArgs): Promise<number> {
