@@ -36,12 +36,19 @@ mock.module('../channels/teams-api', () => ({
     sent.push({ to: ref.conversationId, card: JSON.stringify(card) });
     return 'act-1';
   },
-  updateCard: async () => true,
+  sendTargetedCard: async (_ref: unknown, recipient: string, card: unknown) => {
+    sent.push({ to: `targeted:${recipient}`, card: JSON.stringify(card) });
+    return 'act-2';
+  },
+  updateCard: async (_ref: unknown, activityId: string, card: unknown) => {
+    sent.push({ to: `replaced:${activityId}`, card: JSON.stringify(card) });
+    return true;
+  },
 }));
-mock.module('../channels/teams/login-card', () => ({ teamsLoginCard: async () => ({}) }));
+mock.module('../channels/teams/login-card', () => ({ sendTeamsLoginPrompt: async () => {} }));
 mock.module('../channels/teams/auth-resume', () => ({ createPendingTeamsAuthMessage: async () => 'p-1' }));
 
-const { confirmTeamsConnected, notifyAdminsOfTeamsAccessRequest } = await import('../channels/teams/identity');
+const { confirmTeamsConnected, notifyAdminsOfTeamsAccessRequest, postTeamsIdentityPrompt } = await import('../channels/teams/identity');
 const request = { tenantId: 'tenant-1', projectId: 'proj-1', accountId: 'acct-1', requesterUserId: 'requester' };
 
 beforeEach(() => {
@@ -95,5 +102,31 @@ describe('confirmTeamsConnected', () => {
     refusedFor = new Set(['aad-user']);
     await confirmTeamsConnected({ ...input, resumed: false, hasAccess: true });
     expect(sent).toEqual([]);
+  });
+});
+
+// Only the person who has no project access can act on "Request access", so a
+// channel or group chat shows it to them alone, as Slack's ephemeral.
+describe('postTeamsIdentityPrompt: a linked member without project access', () => {
+  const activity = (conversationType: string) => ({
+    type: 'message',
+    serviceUrl: 'https://smba.trafficmanager.net/emea/',
+    conversation: { id: 'conv-1', conversationType },
+    from: { id: '29:member', aadObjectId: 'aad-member' },
+    recipient: { id: '28:bot' },
+  });
+
+  test('a channel or group chat: the Request access card goes to them alone', async () => {
+    for (const type of ['channel', 'groupChat']) {
+      sent.length = 0;
+      await postTeamsIdentityPrompt({ projectId: 'proj-1', tenantId: 'tenant-1', activity: activity(type), reason: 'not_member' });
+      expect(sent.map((s) => s.to)).toEqual(['targeted:29:member']);
+      expect(sent[0]!.card).toContain('teams_request_access');
+    }
+  });
+
+  test("a 1:1 chat: the card replaces the person's own live card", async () => {
+    await postTeamsIdentityPrompt({ projectId: 'proj-1', tenantId: 'tenant-1', activity: activity('personal'), reason: 'not_member', replaceActivityId: 'live-1' });
+    expect(sent.map((s) => s.to)).toEqual(['replaced:live-1']);
   });
 });
