@@ -1,3 +1,4 @@
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   cancelAccountDeletion,
@@ -103,27 +104,12 @@ export function useCancelAccountDeletion() {
 
 export function useDeleteAccountImmediately() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: deleteAccountImmediately,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       successToast(data.message);
-
-      // Clear deletion status since account is gone
-      queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
-        has_pending_deletion: false,
-        deletion_scheduled_for: null,
-        requested_at: null,
-        can_cancel: false,
-        supported: true,
-      });
-
-      // Redirect to home or logout after a short delay
-      setTimeout(() => {
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Account deletion: the document load is the point, the signed-in tree and every cache belong to an account that no longer exists.
-        window.location.href = '/';
-      }, 2000);
+      await performSignOut();
     },
     onError: (error: Error) => {
       errorToast(error.message || tI18nComplete.raw('textb7ef1459725d'));
