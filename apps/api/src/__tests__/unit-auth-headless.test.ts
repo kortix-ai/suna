@@ -102,13 +102,12 @@ describe('/v1/auth headless routes', () => {
     expect(seen.length).toBe(1);
   });
 
-  test('a transient upstream failure permits one retry, but a successful rotation cannot be replayed', async () => {
+  test('an ambiguous upstream failure retains the claim even if GoTrue rotated before losing its response', async () => {
     respond = () => Response.json({ error: 'unavailable' }, { status: 502 });
     expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(502);
     respond = () => Response.json(SESSION);
-    expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(200);
     expect((await post('/refresh', { refresh_token: 'retry-token' })).status).toBe(400);
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(1);
   });
 
   test('signup reports requires_email_confirmation when GoTrue returns a bare user', async () => {
