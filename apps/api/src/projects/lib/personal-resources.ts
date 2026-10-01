@@ -139,7 +139,11 @@ export async function resolveSessionPersonalOwner(input: {
         ),
       )
       .limit(1);
-    if (token) {
+    // Strict: a token with NO on_behalf_of either predates the column (minted
+    // before 2026-09-22, never re-minted) or was cleared by a foreign prompt.
+    // Every clear stamps ON_BEHALF_OF_CLEARED_KEY, which the mint rule below
+    // reads, so the mint rule answers both exactly as a re-mint would.
+    if (token && !(input.strict && !token.onBehalfOfUserId)) {
       const grant = readStoredAgentGrant(token.agentGrant);
       if (!input.strict && !isGovernedAgentGrant(grant)) return input.legacyUserId;
       return personalResourceOwner({
