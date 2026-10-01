@@ -79,7 +79,7 @@ for (const platform of ['slack', 'teams'])
       onOpenChange: (value: boolean) => closed.push(value),
     };
     const renderer = await render(
-      platform === 'slack' ? <SlackByoWizard {...props} /> : <TeamsByoWizard {...props} />,
+      platform === 'slack' ? <SlackByoWizard {...props} /> : <TeamsByoWizard {...props} mode={undefined} />,
     );
     const gates = () =>
       renderer.root
