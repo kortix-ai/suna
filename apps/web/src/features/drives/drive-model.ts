@@ -104,7 +104,8 @@ export function foldSessionDrives(mounts: SessionDriveMount[]): SessionDriveRow[
       ...(mount.ownerEmail ? { ownerEmail: mount.ownerEmail } : {}),
     });
   }
-  return rows;
+  const rank = (role: SessionDriveRow['role']) => (role === 'me' ? 0 : role === 'agent' ? 1 : 2);
+  return rows.sort((a, b) => rank(a.role) - rank(b.role));
 }
 
 export interface DriveGrantRecord {

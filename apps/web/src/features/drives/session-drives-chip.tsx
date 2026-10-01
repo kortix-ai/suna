@@ -177,7 +177,7 @@ function SessionDriveList({
                     >
                       <SelectTrigger
                         aria-label={t('accessLabel')}
-                        className="h-7 w-28 shrink-0 text-xs"
+                        className="h-7 w-32 shrink-0 text-xs"
                       >
                         <SelectValue />
                       </SelectTrigger>

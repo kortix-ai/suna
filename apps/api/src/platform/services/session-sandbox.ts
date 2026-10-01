@@ -325,6 +325,10 @@ export function restorePlatinumCreateAttempt(metadata: Record<string, unknown> |
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/** Platinum itself did not answer (as opposed to refusing a request). */
+const PLATINUM_UNREACHABLE =
+  /Unable to connect|ECONNREFUSED|ECONNRESET|ConnectionRefused|socket connection was closed|fetch failed|provider state is unknown|The operation timed out/i;
+
 export async function provisionSessionSandbox(opts: {
   sandboxId: string;
   accountId: string;
@@ -1244,7 +1248,16 @@ export async function provisionSessionSandbox(opts: {
 
       // Keep provider SDK text in diagnostic metadata. Show one stable contract
       // for E2B, Daytona, Platinum, and future providers.
-      const failure = classifySandboxProvisioningFailure(bgErr);
+      // A project with drives runs on Platinum only: when Platinum cannot be
+      // reached at all, say that, instead of a generic provider failure.
+      const failure = classifySandboxProvisioningFailure(
+        drivesRequirePlatinum && PLATINUM_UNREACHABLE.test(bgMessage)
+          ? new Error(
+              '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
+                'The session did not start. Try again in a minute.',
+            )
+          : bgErr,
+      );
       const { isCapacity, isGitAuth, userMessage } = failure;
       const failureCategory = failure.category;
       if (isCapacity) {

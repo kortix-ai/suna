@@ -305,7 +305,7 @@ function AccessSelect({
       disabled={disabled}
       onValueChange={(next) => onChange(next as DriveAccess)}
     >
-      <SelectTrigger aria-label={t('accessLabel')} className="w-36 shrink-0">
+      <SelectTrigger aria-label={t('accessLabel')} className="w-40 shrink-0">
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="end">
