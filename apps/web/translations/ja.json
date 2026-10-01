@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "毎日午前9時",
     "weekdaysAt9AM": "平日午前9時",
     "weeklyOnMonday": "毎週月曜日",
-    "monthlyOn1st": "毎月1日"
+    "monthlyOn1st": "毎月1日",
+    "runFailed": {
+      "label": "最終実行は完了しませんでした",
+      "nextRun": "次回の実行で再試行します。"
+    }
   },
   "sidebar": {
     "referAndEarn": "紹介して獲得",

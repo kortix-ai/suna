@@ -1369,7 +1369,11 @@
     "dailyAt9AM": "Quotidiennement à 9h",
     "weekdaysAt9AM": "Jours ouvrables à 9h",
     "weeklyOnMonday": "Hebdomadaire le lundi",
-    "monthlyOn1st": "Mensuel le 1er"
+    "monthlyOn1st": "Mensuel le 1er",
+    "runFailed": {
+      "label": "La dernière exécution n’a pas abouti",
+      "nextRun": "La prochaine exécution réessaie."
+    }
   },
   "sidebar": {
     "referAndEarn": "Parrainer et Gagner",
