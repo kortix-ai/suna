@@ -23,10 +23,18 @@ set statement_timeout = '30s';
 --   except retention (partition drop), which now also leaves the delivery row; a
 --   delivery older than the 90-day hot window is already delivered or dead-lettered.
 --
+-- LOCK ORDER (found by a concurrent-writer test, PostgreSQL 15): an audit INSERT holds ROW
+--   EXCLUSIVE on audit_events and then needs ROW EXCLUSIVE on audit_webhook_deliveries (the
+--   AFTER INSERT trigger runs an INSERT ... SELECT into it, even when no webhook matches). A bare
+--   ALTER TABLE on the deliveries table locks deliveries first and audit_events second: it
+--   deadlocked with live writers (40P01). The migration therefore takes audit_events first, the
+--   order every writer uses, and only then touches the deliveries table.
+--
 -- mixed-version-safe: no application code names this constraint. Old code inserts into
 --   audit_webhook_deliveries only through the audit_events AFTER INSERT trigger, which
 --   does not depend on the FK. Removing a check cannot make an old write fail.
 --
 -- ROLL BACK: no down migration (repo policy). Re-adding it needs a unique index on
 --   audit_events(event_id) alone, which a partitioned table cannot have; do not re-add.
+LOCK TABLE kortix.audit_events IN ACCESS EXCLUSIVE MODE;--> statement-breakpoint
 ALTER TABLE kortix.audit_webhook_deliveries DROP CONSTRAINT IF EXISTS audit_delivery_event_fk;

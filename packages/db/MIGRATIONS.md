@@ -230,6 +230,34 @@ guard requires the author to state **how** they verified every environment —
 including any that were ever faked/rebaselined — actually has the value,
 rather than assuming a baseline is authoritative everywhere.
 
+### Worked example #3: swapping a hot table for a partitioned one (`audit_events`, 2026-10)
+
+A 210 GB table cannot be converted in place, and a copy needs a downtime window. The migrations
+build the new table empty and swap names. Locks on PostgreSQL 15, each verified in `pg_locks`:
+
+| Statement | Lock | Held |
+| --- | --- | --- |
+| `CREATE TABLE ... PARTITION OF` a live parent | `ACCESS EXCLUSIVE` on the parent | until commit: do not use on a live table |
+| `CREATE TABLE ... (LIKE parent)` + `ATTACH PARTITION` | `SHARE UPDATE EXCLUSIVE` on the parent, `ACCESS EXCLUSIVE` on the new child and on the DEFAULT partition | until commit; inserts continue |
+| `ALTER TABLE ... DROP CONSTRAINT` of a foreign key | `ACCESS EXCLUSIVE` on both tables | until commit |
+| `ALTER TABLE ... RENAME`, `ALTER INDEX ... RENAME` | `ACCESS EXCLUSIVE` on that relation | until commit |
+| `ALTER COLUMN ... SET DEFAULT` | `ACCESS EXCLUSIVE` | until commit |
+| `DETACH PARTITION ... CONCURRENTLY` | `SHARE UPDATE EXCLUSIVE` on the parent (two transactions, not in a transaction block) | short |
+
+Rules from that work:
+
+- **Lock in the writers' order.** An audit INSERT locks `audit_events`, then `audit_webhook_deliveries`
+  (its trigger). A migration that locked deliveries first deadlocked with live writers. `LOCK TABLE`
+  the table the writers touch first.
+- **Primary key and every unique index include the partition key.** No foreign key may reference a
+  partitioned table by a column set without it.
+- **Row triggers on the parent are cloned onto partitions, but fire after routing.** They cannot
+  move a row to another partition. Out-of-range rows need a DEFAULT partition, or the INSERT fails.
+- **A rename keeps the OID.** Views hold the OID: redefine them in the same transaction. Prepared
+  statements re-resolve names on their next execution.
+- A test runs the swap on a database with history, and with a connection that stays open across it
+  (`audit-events-partition-cutover.integration.test.ts`).
+
 ---
 
 ## Enforcement scope: new vs. grandfathered migrations
