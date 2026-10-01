@@ -19,7 +19,10 @@ export function normalizeSearchQuery(query: string): string {
   if (normalized === '/' || normalized === '/workspace/' || normalized === 'workspace/') {
     return '/workspace';
   }
-  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+  if (normalized.length <= 1) return normalized;
+  let end = normalized.length;
+  while (end > 0 && normalized[end - 1] === '/') end -= 1;
+  return normalized.slice(0, end);
 }
 
 export function stripWorkspacePrefix(path: string): string {
