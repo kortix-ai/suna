@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { getTableConfig, getViewConfig } from 'drizzle-orm/pg-core';
+import { IndexedColumn, getTableConfig, getViewConfig } from 'drizzle-orm/pg-core';
 import {
   permissions,
   objectPolicies,
@@ -52,6 +52,7 @@ import {
   connectorConnections,
   connectors,
   providerEvents,
+  projectTriggerExecutions,
   sessionLifecycleCommands,
 } from './kortix';
 
@@ -342,6 +343,38 @@ describe('connectors', () => {
     expect(columnNames(connectorCalls)).toContain('connection_id');
     expect(columnNames(connectorCalls)).not.toContain('profile_id');
     expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
+  });
+});
+
+describe('project trigger executions', () => {
+  test('indexes every foreign key on the trigger execution queue', () => {
+    // The Supabase `unindexed_foreign_keys` advisor flagged
+    // project_trigger_exec_session_fk (session_id -> project_sessions.session_id,
+    // ON DELETE set null): deleting a session runs that FK's set-null update, and
+    // with no index leading with session_id it sequential-scans the whole queue
+    // per deleted session (prod 2026-10-02, 163,657 rows / 264 MB heap).
+    // 20261002213109792_project_trigger_executions_session_index.concurrent.ts
+    // built idx_project_trigger_executions_session for it. Regression guard: the
+    // same covering rule the advisor applies — the FK columns are the leading
+    // columns of some index — pinned on the schema so a new FK cannot land bare.
+    const table = getTableConfig(projectTriggerExecutions);
+    for (const fk of table.foreignKeys) {
+      const columns = fk.reference().columns;
+      const covered = table.indexes.some(
+        (index) =>
+          index.config.columns.length >= columns.length &&
+          columns.every((column, k) => {
+            const entry = index.config.columns[k];
+            // An index led by an SQL expression (not a bare column) never covers the FK.
+            if (!(entry instanceof IndexedColumn)) return false;
+            return entry.name === column.name;
+          }),
+      );
+      expect(
+        covered,
+        `${fk.getName()} on (${columns.map((c) => c.name).join(', ')}) has no covering index`,
+      ).toBe(true);
+    }
   });
 });
 
