@@ -429,6 +429,19 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("'text28c7d3f8b75d'");
   });
 
+  // Every thread of a Teams channel is its own binding, and all of them read
+  // `Team › Channel` (on dev: three rows of one channel, 2026-10-02).
+  test('a Teams channel thread reads its session title under the name; threads of one channel sort by it', () => {
+    expect(channelsSource).toMatch(/if \(binding\.threadTitle\) return tI18nComplete\('text5097881a690f', \{ title: binding\.threadTitle \}\)/);
+    expect(channelsSource).toMatch(/a\.name\.localeCompare\(b\.name, undefined, \{ numeric: true \}\) \|\|\s*a\.scope\.localeCompare\(b\.scope/);
+  });
+
+  test('a Teams thread with no name reads Channel thread, even without a stored kind: its id says it', () => {
+    expect(channelsSource).toMatch(
+      /binding\.channelType === 'channel' \|\| binding\.channelId\.includes\(';messageid='\)\) return tI18nComplete\.raw\('text5cb103d6008c'\)/,
+    );
+  });
+
   // Every Slack row on dev read `C0…` over `T0…` (2026-10-02): no Slack name
   // lookup had ever succeeded. A Slack row now reads like a Teams row.
   test('a Slack row shows #channel, a person, or a group DM, over its kind, not its workspace id', () => {
