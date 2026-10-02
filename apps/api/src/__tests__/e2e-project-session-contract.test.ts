@@ -76,6 +76,8 @@ let runtimeContactCalls = 0;
 let releaseProviderRecovery: (() => void) | null = null;
 let computeReopenCalls = 0;
 let opencodeEnsureReason: 'unchanged' | 'healed' | 'not_ready' | 'unreachable' = 'unchanged';
+/** The signed daemon endpoint `/start` reads the runtime capabilities from. Null: unresolvable. */
+let runtimeEndpoint: { url: string; headers: Record<string, string> } | null = null;
 let activeSessionCount = 0;
 let accountSessionLimit = 1;
 let sessionRow: typeof projectSessions.$inferSelect | null;
@@ -152,6 +154,7 @@ function resetState() {
   releaseProviderRecovery = null;
   computeReopenCalls = 0;
   opencodeEnsureReason = 'unchanged';
+  runtimeEndpoint = null;
   activeSessionCount = 0;
   accountSessionLimit = 1;
   lastSessionInsertValues = null;
@@ -553,7 +556,7 @@ mock.module('../projects/opencode-mapping', () => ({
   resolveRootSessionId: () => 'ses_root_existing',
   sandboxOpencodeEndpoint: async () => {
     runtimeContactCalls += 1;
-    return null;
+    return runtimeEndpoint;
   },
   listSandboxOpencodeSessions: async () => {
     runtimeContactCalls += 1;
@@ -2985,6 +2988,60 @@ describe('project session API contract', () => {
     const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_wake_failed');
+  });
+
+  // The client assumes every capability until it knows the list. `/start`
+  // hands it over with `ready`, before the client's own first health probe.
+  test('a ready start carries what the runtime serves, read from the daemon health', async () => {
+    const app = createApp();
+    sessionRow = { ...sessionRow!, sandboxProvider: 'platinum', status: 'running', runtimeSessionId: 'ses_root_existing' };
+    const box = (externalId: string): typeof sessionSandboxRows => [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId,
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: { initStatus: 'ready', initSucceededAt: new Date(Date.now() - 2 * 60 * 1000).toISOString() },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    const start = () => app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    const realFetch = globalThis.fetch;
+    let health: unknown = { status: 'ok', capabilities: ['runtime.turns.v1', 'session.subagents'] };
+    globalThis.fetch = (async (url: unknown) =>
+      String(url).endsWith('/kortix/health')
+        ? Response.json(health)
+        : new Response(null, { status: 404 })) as unknown as typeof fetch;
+    try {
+      runtimeEndpoint = { url: 'https://daemon.test', headers: {} };
+      sessionSandboxRows = box('box-capabilities');
+      expect(await (await start()).json()).toMatchObject({
+        stage: 'ready',
+        capabilities: ['runtime.turns.v1', 'session.subagents'],
+      });
+
+      // A daemon that lists nothing: unknown, not "serves nothing". No field.
+      health = { status: 'ok' };
+      sessionSandboxRows = box('box-no-capability-list');
+      expect(await (await start()).json()).not.toHaveProperty('capabilities');
+
+      // The health read fails: the start still answers ready, without the field.
+      runtimeEndpoint = null;
+      sessionSandboxRows = box('box-health-unreadable');
+      const unreadable = await (await start()).json();
+      expect(unreadable).toMatchObject({ stage: 'ready' });
+      expect(unreadable).not.toHaveProperty('capabilities');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   test('dashboard start trusts live runtime health when the provider status stays unknown', async () => {
