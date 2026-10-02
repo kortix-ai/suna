@@ -62,11 +62,13 @@ const STATEMENT_TIMEOUT_MS = intFromEnv('DB_STATEMENT_TIMEOUT_MS', 25_000);
 /**
  * Opt-in: send Drizzle statements as server-side prepared statements.
  *
- * Drizzle calls `client.unsafe(query, params)`, and postgres.js `unsafe()`
- * defaults to `prepare: false`, so the pool's `prepare` option below never
- * reaches a Drizzle statement. Unprepared, every parameterized statement costs
- * two round trips (Parse/Describe, then Bind/Execute). Prepared, a statement a
- * connection has seen costs one.
+ * Two switches have to agree, and each alone is a no-op. postgres.js prepares a
+ * statement only when the CONNECTION option `prepare` is true and the query's
+ * own option is not false. Drizzle calls `client.unsafe(query, params)`, whose
+ * query option defaults to false. `createDb` sets both (`preparedSql` for the
+ * second). Unprepared, every parameterized statement costs two round trips
+ * (Parse/Describe, then Bind/Execute). Prepared, a statement a connection has
+ * seen costs one.
  *
  * Off by default, and a per-environment decision:
  *  - it needs a direct or session-mode connection. A transaction pooler
@@ -194,13 +196,12 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
     throw new Error('DATABASE_URL is required');
   }
 
+  // Off unless `DB_PREPARE_STATEMENTS=true` or the caller asks. Off keeps us
+  // compatible with the Supabase transaction pooler (Supavisor multiplexes
+  // connections, so server-side prepared statements can't be reused). Prod
+  // uses the DIRECT connection, where prepared statements work.
+  const prepare = options?.prepare ?? PREPARE_STATEMENTS;
   const client = postgres(databaseUrl, {
-    // prepare: false keeps us compatible with the Supabase transaction pooler
-    // (Supavisor multiplexes connections, so server-side prepared statements
-    // can't be reused). Prod currently uses the DIRECT connection where prepared
-    // statements would be fine, but leaving this off keeps a pooler switch a
-    // pure connection-string change with no code impact.
-    prepare: false,
     max: POOL_MAX,
     idle_timeout: IDLE_TIMEOUT_S,
     connect_timeout: CONNECT_TIMEOUT_S,
@@ -212,9 +213,10 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
       statement_timeout: STATEMENT_TIMEOUT_MS,
     },
     ...options,
+    prepare,
   });
 
-  const statements = PREPARE_STATEMENTS ? preparedSql(client as AnySql) : client;
+  const statements = prepare ? preparedSql(client as AnySql) : client;
   const observed = hooks?.onQuery ? instrumentSql(statements as AnySql, hooks.onQuery) : statements;
   return drizzle(observed as typeof client, { schema });
 }
