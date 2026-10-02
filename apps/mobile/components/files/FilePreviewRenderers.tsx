@@ -236,6 +236,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   const [aspectRatio, setAspectRatio] = useState(0);
   const { width: screenWidth } = useWindowDimensions();
   const maxWidth = screenWidth - 32;
+  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
 
   if (!blobUrl) {
     return (
@@ -251,7 +252,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
   return (
     <ScrollView
       className="flex-1"
-      contentContainerStyle={{ padding: 16 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 16 + bottomInset }}
       showsVerticalScrollIndicator={false}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
@@ -596,7 +597,9 @@ function HtmlPreview({
 
   if (htmlPreviewUrl) {
     return (
-      <View className="flex-1">
+      // Android has no `contentInset`: the WebView ends above the host's
+      // floating controls instead, so the page's end is never under them.
+      <View className="flex-1" style={Platform.OS === 'android' ? { paddingBottom: bottomInset } : undefined}>
         <WebView
           source={{ uri: htmlPreviewUrl }}
           // iOS only: the page's end rests above a host's floating controls.
@@ -672,19 +675,17 @@ function CsvPreview({ content }: { content: string }) {
   const headers = rows[0]?.split(',').slice(0, CSV_MAX_COLUMNS).map(h => h.trim()) || [];
   const dataRows = rows.slice(1);
 
+  // Vertical outside, horizontal inside: on Android the outer scroll view sees
+  // a drag first, and a horizontal one takes any drag that drifts sideways.
   return (
     <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={true}
+      showsVerticalScrollIndicator={true}
       className="flex-1"
+      contentContainerStyle={{ paddingBottom: bottomInset }}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={true}
-        className="px-4 py-4"
-        contentContainerStyle={{ paddingBottom: bottomInset }}
-        style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
-      >
+      <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+        <View className="px-4 py-4">
         {/* Headers */}
         <View className="flex-row border-b pb-2 mb-2"
           style={{
@@ -741,6 +742,7 @@ function CsvPreview({ content }: { content: string }) {
             Showing first 100 rows of {dataRows.length}
           </Text>
         )}
+        </View>
       </ScrollView>
     </ScrollView>
   );
