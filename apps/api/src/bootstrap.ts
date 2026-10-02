@@ -14,6 +14,10 @@ import {
   stopAuditReconciliationWorker,
 } from './shared/audit-reconciliation-worker';
 import { startAuditPartitionWorker, stopAuditPartitionWorker } from './shared/audit-partition-worker';
+import {
+  startAuditEventCountWorker,
+  stopAuditEventCountWorker,
+} from './shared/audit-event-count-worker';
 import { startAuditArchiveWorker, stopAuditArchiveWorker } from './shared/audit-archive/worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
 import {
@@ -204,6 +208,9 @@ async function startSingletonWorkers() {
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
   startAuditPartitionWorker();
+  // Exact per-5-minute counts of audit_events rows, so the ops dashboard's
+  // "audit events in the last 24 h" metric never scans the table.
+  startAuditEventCountWorker();
   // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
   startAuditArchiveWorker();
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
@@ -232,6 +239,7 @@ async function stopSingletonWorkers() {
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   stopAuditPartitionWorker();
+  stopAuditEventCountWorker();
   stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');

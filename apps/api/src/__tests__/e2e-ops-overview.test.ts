@@ -145,9 +145,15 @@ describe('ops overview dashboard API', () => {
     // 4ba74f8c17f3e48e13c07511fb802ec55ba07294237c0985f3df792729e8f4d8 —
     // the audit_events 24h count hit statement_timeout (unindexed full scan)
     // and, inside Promise.all, took the whole /ops/overview down with it.
-    // Index 6 in the queue is the audit_events_24h count (see happyPathResults).
+    // Index 6 in the queue is the audit_events_24h metric (see
+    // happyPathResults) — today the 5-minute slot rollup sum, not a count
+    // over audit_events itself.
     const queue = happyPathResults();
-    queue[6] = { __throw: new Error('Failed query: SELECT count(*)::int AS count FROM kortix.audit_events WHERE occurred_at >= now() - interval \'24 hours\'') };
+    queue[6] = {
+      __throw: new Error(
+        "Failed query: SELECT coalesce(sum(events), 0)::int AS count FROM kortix.audit_event_counts WHERE slot_start >= now() - interval '24 hours'",
+      ),
+    };
     executeResults = queue;
 
     const res = await app().request('/v1/ops/overview');

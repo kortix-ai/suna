@@ -249,10 +249,22 @@ opsApp.openapi(
     Promise.resolve<Record<string, number>>({}),
     safeCount(
       'audit_events_24h',
+      // The last 24 h of audit events, read from the per-5-minute slots the
+      // audit-event-count worker maintains (shared/audit-event-count-worker.ts).
+      // Counting audit_events itself cannot answer under the 25 s
+      // statement_timeout at the table's ingest rate: an exact count visits
+      // every row in the window (prod 2026-10-02: 65,007 rows / 10 min =
+      // 1.03 s, 268,641 rows / 1 h = 54.5 s), because freshly written rows
+      // have no visibility-map bit and the index-only scan fetches their heap
+      // pages. A slot is counted 5–10 min after it closed (the worker's
+      // late-retry grace), so this reads the trailing 24 h of counted slots —
+      // bounded by slot granularity, never a statement_timeout. Slots before
+      // this metric's rollout do not exist, so the number undercounts for the
+      // first ~26 h after a deploy (the worker's catch-up window).
       sql`
-        SELECT count(*)::int AS count
-        FROM kortix.audit_events_all
-        WHERE occurred_at >= now() - interval '24 hours'
+        SELECT coalesce(sum(events), 0)::int AS count
+        FROM kortix.audit_event_counts
+        WHERE slot_start >= now() - interval '24 hours'
       `,
     ),
     safeGroup('legacy_sandbox_migrations_by_status', sql`
