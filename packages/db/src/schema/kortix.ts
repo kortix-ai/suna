@@ -6050,6 +6050,7 @@ export const connectionOAuthSessions = kortixSchema.table(
     uniqueIndex('idx_connection_oauth_sessions_state_hash')
       .on(table.stateHash)
       .where(sql`${table.stateHash} is not null`),
+    index('idx_connection_oauth_sessions_application').on(table.applicationId),
     index('idx_connection_oauth_sessions_connection').on(table.connectionId),
     index('idx_connection_oauth_sessions_expires').on(table.expiresAt),
     check(

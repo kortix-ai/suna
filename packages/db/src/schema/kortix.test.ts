@@ -48,6 +48,7 @@ import {
   accountSsoProviders,
   accountScimUsers,
   connectorAuthorizationStrategyEnum,
+  connectionOAuthSessions,
   connectorCalls,
   connectorConnections,
   connectors,
@@ -342,6 +343,27 @@ describe('connectors', () => {
     expect(columnNames(connectorCalls)).toContain('connection_id');
     expect(columnNames(connectorCalls)).not.toContain('profile_id');
     expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
+  });
+
+  test('covers the oauth-session application foreign key with an index', () => {
+    // The Supabase advisor's unindexed_foreign_keys lint flags
+    // connection_oauth_sessions_application_fk: with no index leading with
+    // application_id, a cascade delete on connection_oauth_applications
+    // seq-scans this table. Regression guard: some declared index must lead
+    // with every FK column, in order.
+    const fk = getTableConfig(connectionOAuthSessions).foreignKeys.find(
+      (candidate) => candidate.getName() === 'connection_oauth_sessions_application_fk',
+    );
+    expect(fk).toBeDefined();
+    const fkColumns = fk?.reference().columns.map((column) => column.name) ?? [];
+    expect(fkColumns.length).toBeGreaterThan(0);
+    const covered = getTableConfig(connectionOAuthSessions).indexes.some((index) => {
+      const leading = index.config.columns
+        .flatMap((column) => ('name' in column && column.name ? [column.name] : []))
+        .slice(0, fkColumns.length);
+      return leading.length === fkColumns.length && leading.every((name, position) => name === fkColumns[position]);
+    });
+    expect(covered).toBe(true);
   });
 });
 
