@@ -3157,6 +3157,7 @@ export const oauthRefreshTokens = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_oauth_refresh_token_hash').on(table.tokenHash),
+    index('idx_oauth_refresh_tokens_access_token').on(table.accessTokenId),
     index('idx_oauth_refresh_tokens_client').on(table.clientId),
   ],
 );
