@@ -2,6 +2,7 @@ import type { ModelRouteInput, ModelRoutePlan, AuthedPrincipal } from '@kortix/l
 import { config } from '../../config';
 import { catalogModelForWireModel, gatewayModelCatalog } from '../models/catalog-models';
 import { platformDefaultModelId } from '../models/served-managed-models';
+import { isConfiguredDefaultModel } from '../resolution/default-model';
 import { createGatewayRouteResolver } from './resolve-route';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 
@@ -18,6 +19,7 @@ const resolver = createGatewayRouteResolver({
     return routingCatalog()[wire]?.attachment === true;
   },
   getProjectPolicy: getProjectRoutingPolicy,
+  isConfiguredDefault: isConfiguredDefaultModel,
   catalogModelFor: (model) => catalogModelForWireModel(model),
 });
 

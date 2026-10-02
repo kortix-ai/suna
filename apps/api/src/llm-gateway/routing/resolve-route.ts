@@ -24,6 +24,14 @@ export interface GatewayRouteResolverOptions {
   supportsImage: (model: string) => boolean;
   getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
   /**
+   * Whether `model` is a default configured for the principal, as stored.
+   * `principal.defaultModel` is one model: the most specific default that can
+   * be served right now. A session whose agent has its own default, or whose
+   * default has no usable account left, still requests a default when it
+   * names the project's.
+   */
+  isConfiguredDefault?: (principal: AuthedPrincipal, model: string) => Promise<boolean>;
+  /**
    * Resolve `model`'s live catalog capability record (reasoning_options,
    * temperature, limit.output, ...) — used ONLY to clamp a project's
    * configured generation defaults before they're injected into a request
@@ -70,7 +78,9 @@ export function createGatewayRouteResolver(
       ? await options.getProjectPolicy(principal.projectId)
       : null;
     const concreteDefault = principal.defaultModel || options.defaultModel;
-    const isDefaultRequest = input.requestedModel === concreteDefault;
+    const isDefaultRequest =
+      input.requestedModel === concreteDefault ||
+      ((await options.isConfiguredDefault?.(principal, input.requestedModel)) ?? false);
     let primaryModel = input.requestedModel;
 
     if (isDefaultRequest && input.requires.imageInput && !options.supportsImage(primaryModel)) {

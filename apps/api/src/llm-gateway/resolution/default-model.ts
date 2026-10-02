@@ -1,5 +1,6 @@
 import { type AuthedPrincipal, GatewayResolutionError } from '@kortix/llm-gateway';
 import { connectedByokPickerModels } from '../models/picker-catalog';
+import { platformDefaultModelId } from '../models/served-managed-models';
 import { listProjectSecretNamesForConsumer } from '../../projects/secrets';
 import { DEFAULT_AGENT_SENTINEL } from '../../projects/agents';
 import {
@@ -161,6 +162,28 @@ export async function resolveDefaultModelForPrincipal(
       ),
   );
   return kept ?? undefined;
+}
+
+/**
+ * Whether `model` is a default configured for the principal, as stored: the
+ * model the Routing screen attaches the project's chain to (project default,
+ * else account default, else platform default), or the default of the
+ * session's agent. `resolveDefaultModelForPrincipal` names one model, the most
+ * specific default that can be served right now, so it drops a default exactly
+ * when every account of its provider is paused. That is when the chain is
+ * needed.
+ */
+export async function isConfiguredDefaultModel(principal: AuthedPrincipal, model: string): Promise<boolean> {
+  const defaults = await cachedAccountDefaults(principal.accountId, principal.projectId);
+  const configured: Array<string | null | undefined> = [
+    (principal.projectId && defaults.projects[principal.projectId]) || defaults.account || platformDefaultModelId(),
+  ];
+  if (principal.sessionId && Object.keys(defaults.agents).length > 0) {
+    const agentName = await cachedSessionAgent(principal.sessionId);
+    if (agentName) configured.push(defaults.agents[agentName]);
+  }
+  const wire = toWireModel(model);
+  return configured.some((candidate) => Boolean(candidate) && toWireModel(candidate as string) === wire);
 }
 
 /**

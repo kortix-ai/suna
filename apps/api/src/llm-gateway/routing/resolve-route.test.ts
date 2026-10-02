@@ -181,6 +181,39 @@ describe('gateway control-plane route resolver', () => {
     expect(noFallback.fallbackModels).toEqual([]);
     expect(noFallback.policyId).toBe('project:default');
   });
+
+  // Incident 2026-10-02: a trigger pinned to the project default ran on an
+  // agent with its own default. The principal default was the agent's, so the
+  // request routed `direct` and the provider's 429 reached the session.
+  test('a configured default takes the project chain when the principal default is another model', async () => {
+    const projectResolver = createGatewayRouteResolver({
+      defaultModel: 'platform-default',
+      visionModel: undefined,
+      policies: [],
+      supportsImage: () => true,
+      getProjectPolicy: async () => ({
+        visionModel: null,
+        defaultFallback: { models: ['project-fallback'], fallbackOn: 'any-error' },
+        rules: [],
+      }),
+      isConfiguredDefault: async (_principal, model) => model === 'project-default',
+    });
+    const session = { ...principal, projectId: 'p1', sessionId: 's1', defaultModel: 'agent-default' };
+    const route = (requestedModel: string) =>
+      projectResolver(session, { requestedModel, requires: { imageInput: false } });
+
+    expect(await route('project-default')).toMatchObject({
+      policyId: 'project:default',
+      primaryModel: 'project-default',
+      fallbackModels: ['project-fallback'],
+      fallbackOn: 'any-error',
+    });
+    expect(await route('agent-default')).toMatchObject({
+      policyId: 'project:default',
+      fallbackModels: ['project-fallback'],
+    });
+    expect(await route('explicit-model')).toMatchObject({ policyId: 'direct', fallbackModels: [] });
+  });
 });
 
 describe('gateway control-plane route resolver — generation-defaults clamping', () => {
