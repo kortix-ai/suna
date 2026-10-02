@@ -201,9 +201,10 @@ path changed after 2026-09-29. "R1" is branch `api-hot-path` with `main`
 50 ms arms: 4 sessions and 12 turns each. Direct arm: 3 sessions and 9 turns
 (baseline direct: 1 session, 3 turns, p50 only).
 
-Restart the stack before every arm (`pnpm worktree stop`, then `start`): the
-bench fails a run that crosses a hot reload, and a stack that reloaded before
-the run is slow for another reason (learnings, 2026-10-02).
+Restart the stack before every arm (`pnpm worktree stop`, then `start`): with
+`BENCH_API_LOG` set (a local API) the bench fails a run that crosses a hot
+reload, and a stack that reloaded before the run is slow for another reason
+(learnings, 2026-10-02).
 
 | Metric | Baseline, 50 ms | R1, 50 ms | R1 + prepared, 50 ms | Baseline, direct | R1, direct |
 | --- | --- | --- | --- | --- | --- |
@@ -253,3 +254,39 @@ Notes:
   a deployed environment.
 - The bench sends `client_sent_at_ms`, as the web composer does. Without it the
   prompt route keeps the 250 ms burst wait.
+
+### On dev, after the merge
+
+`68f98e566e` (#8765) on `dev-api.kortix.com`, 2026-10-02 18:23–18:45 UTC. Same
+laptop, provider Platinum, harness OpenCode, model `deepseek-v4.1-flash`.
+"Before" is dev at `d137b8a749`, the commit dev served until the deploy,
+measured in the 10 minutes before it: 3 sessions and 9 turns. "After": 9 sessions and
+27 turns. All 36 turns answered correctly. Values in ms, p50 / p90.
+
+| Metric | Dev, 2026-09-29 | Dev before, same day | Dev after R1 |
+| --- | --- | --- | --- |
+| POST /sessions wall | 2,477 / 3,343 | 2,655 / 3,885 | 2,345 / 5,931 |
+| POST /sessions db dur | 1,477 / 2,495 | 1,284 / 3,134 | 1,766 / 4,720 |
+| POST /sessions git runs | 5 of 12 creates timed | 3 of 3 | 3 of 9 |
+| POST /prompts wall | 1,568 / 3,234 | 1,866 / 3,900 | 1,403 / 2,601 |
+| POST /prompts db dur | 1,321 / 2,943 | 1,556 / 3,575 | 1,077 / 2,278 |
+| POST /prompts db n | 16 / 19 | 15 / 18 | 14 / 16 |
+| delivery: created→forwarded (DB) | 5,977 / 12,139 | 7,759 / 13,387 | 3,879 / 7,819 |
+| POST→busy | 6,687 / 13,681 | 8,611 / 14,979 | 4,887 / 9,454 |
+| POST→idle | 13,358 / 20,607 | 16,190 / 25,231 | 9,538 / 14,080 |
+
+- Delivery moved as the 50 ms arm predicted: created→forwarded is 50% lower
+  than the same day's "before" and 35% lower than 2026-09-29.
+- `POST /sessions` did not move on dev. The git call is gone from 6 of 9
+  creates, but a create still runs 13–22 statements for 1.0–2.9 s of database
+  time. The cause is not measured. One difference is known: dev runs with
+  billing on and the local arms do not. Trace the route's statements on a
+  stack started with `--billing` before the next change to it.
+- The tip proof is per API process and lasts 60 s. Dev has 2 API replicas and
+  the bench creates one session every 1–3 minutes, so 3 of 9 creates still paid
+  the `ls-remote`.
+- `session ready` read 36.5 s, 44.7 s and 20.2 s in the 3 columns. Not
+  attributed, as above.
+- The `deliver` and `proxy` log lines are in CloudWatch and were not read for
+  this run.
+
