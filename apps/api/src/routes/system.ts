@@ -77,10 +77,14 @@ app.openapi(
 // probe and crash-loop). See infra/k8s/charts/kortix-api.
 const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
 let eventLoopLagMs = 0;
-{
+let lagTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Every replica (bootstrap.ts startReplicaServices): /health/live reads it. */
+export function startEventLoopLagSampler(): void {
+  if (lagTimer) return;
   const SAMPLE_INTERVAL_MS = 1000;
   let lastSample = performance.now();
-  const lagTimer = setInterval(() => {
+  lagTimer = setInterval(() => {
     const now = performance.now();
     // How much longer than the interval the loop took to come back to this tick.
     eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
@@ -88,7 +92,12 @@ let eventLoopLagMs = 0;
     setEventLoopLagSeconds(eventLoopLagMs / 1000);
   }, SAMPLE_INTERVAL_MS);
   // Never keep the process alive just for the sampler.
-  (lagTimer as { unref?: () => void }).unref?.();
+  lagTimer.unref();
+}
+
+export function stopEventLoopLagSampler(): void {
+  if (lagTimer) clearInterval(lagTimer);
+  lagTimer = null;
 }
 
 const livenessHandler = (c: any) => {

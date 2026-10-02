@@ -186,15 +186,26 @@ export async function sweepStaleSlackTurns(): Promise<void> {
   await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
 }
 
-setInterval(() => {
-  void runWorkerTick('slack-turn-gc', async () => {
-    try {
-      await sweepStaleSlackTurns();
-    } catch (err) {
-      console.warn('[slack-webhook] gc tick failed', err);
-    }
-  });
-}, 5 * 60 * 1000).unref();
+let gcTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Leader-only (bootstrap.ts): one replica sweeps, not all of them. */
+export function startSlackTurnGc(): void {
+  if (gcTimer) return;
+  gcTimer = setInterval(() => {
+    void runWorkerTick('slack-turn-gc', async () => {
+      try {
+        await sweepStaleSlackTurns();
+      } catch (err) {
+        console.warn('[slack-webhook] gc tick failed', err);
+      }
+    });
+  }, 5 * 60 * 1000);
+}
+
+export function stopSlackTurnGc(): void {
+  if (gcTimer) clearInterval(gcTimer);
+  gcTimer = null;
+}
 
 /**
  * Does the runtime's turn authority still hold a live turn for this session?
