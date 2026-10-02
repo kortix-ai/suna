@@ -1268,6 +1268,10 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
 //     WHERE project_id IS NULL   — account/project scope + legacy global agent pins
 //   idx_account_model_preferences_scope_project (account_id, scope, scope_key, project_id)
 //     WHERE project_id IS NOT NULL — new per-project agent pins
+// Neither leads with project_id, so the projects FK needs its own one-column
+// index: idx_account_model_preferences_project_id. It serves the FK's own
+// scans — validating the constraint and cascading a project delete (the
+// Supabase advisor's unindexed_foreign_keys check) — not an app query.
 export const accountModelPreferences = kortixSchema.table(
   'account_model_preferences',
   {
@@ -1286,6 +1290,7 @@ export const accountModelPreferences = kortixSchema.table(
   },
   (table) => [
     index('idx_account_model_preferences_account').on(table.accountId),
+    index('idx_account_model_preferences_project_id').on(table.projectId),
     uniqueIndex('idx_account_model_preferences_scope_global')
       .on(table.accountId, table.scope, table.scopeKey)
       .where(sql`${table.projectId} is null`),
