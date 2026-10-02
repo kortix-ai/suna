@@ -348,3 +348,147 @@ describe('deleteSnapshot removes every exact-name Platinum template', () => {
     expect(String(error)).toMatch(/409/);
   });
 });
+
+// ─── Exact-name lookups (GET /v1/templates?name=) ────────────────────────────
+// Measured 2026-10-02: the first session after each Kortix deploy walked the
+// Kortix Dev org's 1,671 templates (34 pages × ~250 ms) to resolve its image,
+// and `image:resolved` took 8.7 s. A control plane that honours `?name=`
+// answers every name lookup in ONE request; one that ignores it gets the old
+// walk with the exact same number of requests.
+
+function urlOf(input: RequestInfo | URL): URL {
+  const raw =
+    typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+  return new URL(raw, 'https://platinum.test');
+}
+
+/** A control plane that honours the name filter over `rows` (newest first). */
+function nameFilteringServer(
+  rows: Array<{ id: string; name: string; state: string }>,
+  log: string[],
+) {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = urlOf(input);
+    log.push(`${init?.method ?? 'GET'} ${url.pathname}${url.search}`);
+    if ((init?.method ?? 'GET') === 'DELETE') return jsonResponse({ ok: true });
+    const name = url.searchParams.get('name');
+    const offset = Number(url.searchParams.get('offset') ?? '0');
+    const limit = Number(url.searchParams.get('limit') ?? '50');
+    const visible = name === null ? rows : rows.filter((t) => t.name === name);
+    return jsonResponse(visible.slice(offset, offset + limit));
+  }) as unknown as typeof fetch;
+}
+
+/** 1,671 templates, the sought ones far past page 1 (oldest last). */
+function bigOrg(): Array<{ id: string; name: string; state: string }> {
+  const rows = Array.from({ length: 1671 }, (_, i) => namedTpl(`id-${i}`, `kortix-default-${i}`));
+  return rows;
+}
+
+describe('exact-name lookups — one request on a control plane that honours ?name=', () => {
+  test('findTemplateByName: one request, carrying the name, newest first', async () => {
+    const log: string[] = [];
+    const rows = [
+      namedTpl('new', 'kortix-default-x'),
+      ...bigOrg(),
+      namedTpl('old', 'kortix-default-x'),
+    ];
+    globalThis.fetch = nameFilteringServer(rows, log);
+    const found = await findTemplateByName('kortix-default-x');
+    expect(found?.id).toBe('new');
+    expect(log).toEqual(['GET /v1/templates?limit=50&offset=0&name=kortix-default-x']);
+  });
+
+  test('a definitively absent name is one request, not a walk of 34 pages', async () => {
+    const log: string[] = [];
+    globalThis.fetch = nameFilteringServer(bigOrg(), log);
+    expect(await findTemplateByName('kortix-default-gone')).toBeNull();
+    expect(log).toHaveLength(1);
+  });
+
+  test('getSnapshotState of a template deep in a big org is one request', async () => {
+    const log: string[] = [];
+    globalThis.fetch = nameFilteringServer(bigOrg(), log);
+    expect(await platinumProvider.getSnapshotState('kortix-default-1600')).toBe('active');
+    expect(log).toHaveLength(1);
+  });
+
+  test('deleteSnapshot: one lookup, then DELETE every duplicate of that name only', async () => {
+    const log: string[] = [];
+    const rows = [
+      namedTpl('dup-a', 'kortix-default-old'),
+      ...bigOrg(),
+      namedTpl('dup-b', 'kortix-default-old'),
+    ];
+    globalThis.fetch = nameFilteringServer(rows, log);
+    await platinumProvider.deleteSnapshot('kortix-default-old');
+    expect(log).toEqual([
+      'GET /v1/templates?limit=50&offset=0&name=kortix-default-old',
+      'DELETE /v1/templates/dup-a',
+      'DELETE /v1/templates/dup-b',
+    ]);
+  });
+
+  test('findFirstActiveSnapshot: the first candidate active → one request', async () => {
+    const log: string[] = [];
+    globalThis.fetch = nameFilteringServer(bigOrg(), log);
+    expect(
+      await platinumProvider.findFirstActiveSnapshot(['kortix-default-1500', 'kortix-default-3']),
+    ).toBe('kortix-default-1500');
+    expect(log).toHaveLength(1);
+  });
+
+  test('findFirstActiveSnapshot: keeps candidate priority without walking the list', async () => {
+    const log: string[] = [];
+    const rows = bigOrg().map((t) =>
+      t.name === 'kortix-default-7' ? { ...t, state: 'building' } : t,
+    );
+    globalThis.fetch = nameFilteringServer(rows, log);
+    const result = await platinumProvider.findFirstActiveSnapshot([
+      'kortix-default-missing',
+      'kortix-default-7',
+      'kortix-default-1200',
+      'kortix-default-5',
+    ]);
+    // missing → absent, 7 → building (not active), 1200 → active: priority wins over 5.
+    expect(result).toBe('kortix-default-1200');
+    expect(log.every((line) => line.includes('&name='))).toBe(true);
+    expect(log).toHaveLength(4);
+  });
+
+  test('a lookup failure is a listing error, never "absent"', async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse({ error: 'boom' }, 500)) as unknown as typeof fetch;
+    await expect(findTemplateByName('x')).rejects.toBeInstanceOf(PlatinumTemplateListingError);
+  });
+
+  test('an auth failure on the name lookup propagates verbatim', async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse({ error: 'unauthorized' }, 401)) as unknown as typeof fetch;
+    await expect(findTemplateByName('x')).rejects.toThrow(/-> 401/);
+  });
+});
+
+describe('a control plane that ignores ?name= keeps the old walk, request for request', () => {
+  test('the probe is reused as page 0: a name on page 2 costs 2 requests, as before', async () => {
+    const page0 = Array.from({ length: 50 }, (_, i) => tpl(`filler-${i}`));
+    const page1 = [tpl('kortix-ppwarm-OLD')];
+    const seen: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      seen.push(url.search);
+      return jsonResponse(offsetOf(input) === 0 ? page0 : page1);
+    }) as unknown as typeof fetch;
+    expect((await findTemplateByName('kortix-ppwarm-OLD'))?.id).toBe('id-kortix-ppwarm-OLD');
+    expect(seen).toEqual(['?limit=50&offset=0&name=kortix-ppwarm-OLD', '?limit=50&offset=50']);
+  });
+
+  test('walks past 2,000 templates without throwing (the old 40-page cap)', async () => {
+    const rows = Array.from({ length: 2300 }, (_, i) => tpl(`t-${i}`));
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const offset = offsetOf(input);
+      return jsonResponse(rows.slice(offset, offset + 50));
+    }) as unknown as typeof fetch;
+    expect((await findTemplateByName('t-2299'))?.id).toBe('id-t-2299');
+  });
+});

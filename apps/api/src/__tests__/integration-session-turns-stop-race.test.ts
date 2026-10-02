@@ -14,14 +14,30 @@
  * authority write itself returned. These tests run the SHIPPED functions
  * against a REAL stop in both orders and concurrently.
  */
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import * as realDbModule from '../shared/db';
 
+import {
+  type SeededProject,
+  localTestDatabaseUrl,
+  removeSeeded,
+  seedProject,
+} from './helpers/integration-fixtures';
+
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `turn-stop-race-${SANDBOX_ID}`;
-const ACCOUNT_ID = crypto.randomUUID();
-const PROJECT_ID = crypto.randomUUID();
+let ACCOUNT_ID: string;
+let PROJECT_ID: string;
+let project: SeededProject;
+beforeAll(async () => {
+  project = await seedProject('turn-stop-race');
+  ACCOUNT_ID = project.account_id;
+  PROJECT_ID = project.project_id;
+  await realDbModule.db.execute(sql`INSERT INTO kortix.project_sessions
+    (session_id, account_id, project_id, branch_name, agent_name, status)
+    VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${SESSION_ID}, 'default', 'running')`);
+});
 const t = (name: string) => `${name}-${SANDBOX_ID}`;
 
 const {
@@ -67,6 +83,7 @@ async function openRows(): Promise<number> {
 }
 
 beforeEach(async () => {
+  await realDbModule.db.execute(sql`UPDATE kortix.project_sessions SET status = 'running', error = NULL WHERE session_id = ${SESSION_ID}`);
   await realDbModule.db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, status, metadata)
@@ -88,6 +105,8 @@ afterAll(async () => {
   await realDbModule.db
     .execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`)
     .catch(() => undefined);
+  await realDbModule.db.execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${SESSION_ID}`);
+  await removeSeeded([project]);
 });
 
 describe('a turn writer racing a stop', () => {
