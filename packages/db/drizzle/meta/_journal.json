@@ -715,6 +715,13 @@
       "when": 1790781246005,
       "tag": "20260930151406_session_labels",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790977257652,
+      "tag": "20261002214057_connector_binding_tenant_indexes",
+      "breakpoints": true
     }
   ]
 }

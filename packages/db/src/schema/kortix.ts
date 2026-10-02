@@ -5858,6 +5858,29 @@ export const projectSessionConnectorBindings = kortixSchema.table(
     }).onDelete('restrict'),
     index('idx_project_session_connector_bindings_connection').on(table.connectionId),
     index('idx_project_session_connector_bindings_project').on(table.projectId),
+    // The three *_tenant_fk constraints are tenant-led and nothing above leads
+    // with their column list, so the Supabase unindexed-foreign-keys lint flags
+    // them and every parent-side delete/update (the session FK cascades)
+    // seq-scans this table. One index per FK, in the FK's own column order
+    // (see the schema test); built by
+    // 20261002214201035_connector_binding_tenant_indexes.concurrent.ts.
+    index('idx_project_session_connector_bindings_session_tenant').on(
+      table.accountId,
+      table.projectId,
+      table.sessionId,
+    ),
+    index('idx_project_session_connector_bindings_alias_tenant').on(
+      table.accountId,
+      table.projectId,
+      table.connectorId,
+      table.connectorAlias,
+    ),
+    index('idx_project_session_connector_bindings_connection_tenant').on(
+      table.accountId,
+      table.projectId,
+      table.connectorId,
+      table.connectionId,
+    ),
   ],
 );
 

@@ -344,6 +344,28 @@ describe('project session connector bindings', () => {
     expect(column?.notNull).toBe(true);
     expect(column?.default).toBe(false);
   });
+
+  // The Supabase unindexed-foreign-keys lint covers a foreign key when some
+  // index's leading columns equal the FK's column list, in order. All three
+  // FKs here are tenant-led and nothing leads with them, so every parent-side
+  // delete/update (the session FK cascades) seq-scans this table. Regression
+  // guard for the covering indexes in the table config above.
+  test('leads an index with every foreign key column list', () => {
+    const config = getTableConfig(projectSessionConnectorBindings);
+
+    expect(config.foreignKeys.length).toBeGreaterThan(0);
+    for (const foreignKey of config.foreignKeys) {
+      const fkColumns = foreignKey.reference().columns.map((column) => column.name);
+      const covered = config.indexes.some((index) => {
+        const leading = index.config.columns
+          .slice(0, fkColumns.length)
+          .map((column) => ('name' in column ? column.name : undefined));
+        return leading.every((name, position) => name === fkColumns[position]);
+      });
+
+      expect(covered, `no index leads with (${fkColumns.join(', ')})`).toBe(true);
+    }
+  });
 });
 
 describe('sandbox compute provider attribution', () => {
