@@ -406,6 +406,14 @@ describe('Kortix Apps schema', () => {
     expect(indexNames(apps)).toContain('apps_project_slug_live_unique');
   });
 
+  test('indexes the active deployment foreign key', () => {
+    // `apps_active_deployment_fk` references app_deployments ON DELETE SET NULL.
+    // Every deployment-row delete (an app delete cascades into its deployments)
+    // scans apps for the pointer row; without an index that is a full table
+    // scan per deleted deployment (Supabase advisor: unindexed_foreign_keys).
+    expect(indexNames(apps)).toContain('apps_active_deployment_idx');
+  });
+
   test('stores immutable artifacts and deployment versions', () => {
     expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
     expect(getTableConfig(appDeployments).name).toBe('app_deployments');

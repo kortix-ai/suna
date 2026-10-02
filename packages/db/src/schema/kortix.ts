@@ -4093,6 +4093,12 @@ export const apps = kortixSchema.table(
       .where(sql`${table.deletedAt} IS NULL`),
     index('apps_account_idx').on(table.accountId),
     index('apps_route_key_idx').on(table.routeKey),
+    // Covers `apps_active_deployment_fk` (active_deployment_id ->
+    // app_deployments ON DELETE SET NULL). A deployment-row delete -- an app
+    // delete cascades into its deployments, and the snapshot GC removes
+    // superseded ones -- scans this table for the pointer row per deleted
+    // deployment; no other index leads with active_deployment_id.
+    index('apps_active_deployment_idx').on(table.activeDeploymentId),
   ],
 );
 
