@@ -93,6 +93,15 @@ unbootable.
 3. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
    directory — pre-release behavior.
 
+**The meta coordinator is the exception.** A session whose agent is `meta`
+(`meta_agent` flag) is never assigned the project's release. It gets the `meta`
+variant: the platform's own governance (`buildPlatformMetaOpenCodeConfig`) on
+the image default config dir, with no archive. Its release ID does not change
+when the base branch moves. Its box holds no project checkout and the meta
+image has no `bun`, so a config dir whose tools import a dependency can never
+load there. A failure a meta session reported never counts toward the project
+quarantine (`notFromMetaSession` in `quarantine.ts`).
+
 **Daemon side — where a box reads config from, per boot/converge:**
 1. The API's desired release, downloaded and verified against its manifest.
 2. The last release **this box** proved, if the desired release cannot be
