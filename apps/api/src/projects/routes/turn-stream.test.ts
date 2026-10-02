@@ -116,6 +116,14 @@ mock.module('../../channels/teams/cards', () => ({
 
 const realTurnLedger = await import('../session-turn-ledger');
 const realTurnLifecycle = await import('../sandbox-turn-lifecycle');
+const realStatusTransitions = await import('../session-lifecycle/status-transitions');
+
+// Every session-status write the settle path attempts, recorded in order.
+const sessionStatusWrites: Array<{
+  transition: string;
+  sessionId: string;
+  error?: string | null;
+}> = [];
 
 mock.module('../sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
@@ -140,6 +148,18 @@ mock.module('../session-turn-ledger', () => ({
 mock.module('../session-lifecycle', () => ({
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
+  },
+}));
+
+mock.module('../session-lifecycle/status-transitions', () => ({
+  ...realStatusTransitions,
+  transitionSession: async (
+    transition: string,
+    sessionId: string,
+    write: { error?: string | null } = {},
+  ) => {
+    sessionStatusWrites.push({ transition, sessionId, error: write?.error });
+    return true;
   },
 }));
 
@@ -237,6 +257,7 @@ beforeEach(() => {
   causeResult = 'attached';
   order.length = 0;
   triggerRunEnds.length = 0;
+  sessionStatusWrites.length = 0;
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -632,6 +653,97 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
       'title',
       'relayEnd',
     ]);
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — a terminal turn error parks the session', () => {
+  // KRTX-1046: a session whose turn dies (`session.error`, not retryable) kept
+  // `project_sessions.status = 'running'` — the sidebar's green dot and
+  // `sessions ls` showed Running until the idle box was reaped ~15 min later.
+  // The terminal error end must park the session row itself.
+  test('a terminal error end parks the session with the cause', async () => {
+    const response = await post({
+      session_id: SESSION_ID,
+      kind: 'end',
+      status: 'error',
+      error_name: 'APIError',
+      error_message: '402: out of credits',
+      error_status: 402,
+      error_retryable: false,
+    });
+    expect(response.status).toBe(200);
+    expect(sessionStatusWrites).toEqual([
+      {
+        transition: 'parkTurnError',
+        sessionId: SESSION_ID,
+        error: 'agent turn failed: APIError: 402: out of credits',
+      },
+    ]);
+  });
+
+  test('a bare error end with no detail still parks the session', async () => {
+    const response = await post({ session_id: SESSION_ID, kind: 'end', status: 'error' });
+    expect(response.status).toBe(200);
+    expect(sessionStatusWrites).toEqual([
+      { transition: 'parkTurnError', sessionId: SESSION_ID, error: 'agent turn failed' },
+    ]);
+  });
+
+  test('a completed (idle) end parks nothing', async () => {
+    await post({ session_id: SESSION_ID, kind: 'end' });
+    expect(sessionStatusWrites).toEqual([]);
+  });
+
+  test('a retryable error (opencode is about to retry) parks nothing', async () => {
+    completionResult = { outcome: 'non_terminal', activeTurnCount: 1, closedTurnCount: 0 };
+    await post({
+      session_id: SESSION_ID,
+      kind: 'end',
+      status: 'error',
+      error_name: 'APIError',
+      error_message: '429 rate limited',
+      error_status: 429,
+      error_retryable: true,
+    });
+    expect(sessionStatusWrites).toEqual([]);
+  });
+
+  test('an error end while a newer turn is live parks nothing', async () => {
+    completionResult = { outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 };
+    await post({
+      session_id: SESSION_ID,
+      kind: 'end',
+      status: 'error',
+      error_name: 'APIError',
+      error_message: 'boom',
+      error_retryable: false,
+    });
+    expect(sessionStatusWrites).toEqual([]);
+  });
+
+  test('a duplicate relay (the turn was already settled) parks nothing', async () => {
+    completionResult = { outcome: 'already_closed', activeTurnCount: 0, closedTurnCount: 0 };
+    await post({
+      session_id: SESSION_ID,
+      kind: 'end',
+      status: 'error',
+      error_name: 'APIError',
+      error_message: 'boom',
+      error_retryable: false,
+    });
+    expect(sessionStatusWrites).toEqual([]);
+  });
+
+  test('an aborted turn (a user stop) parks nothing', async () => {
+    await post({
+      session_id: SESSION_ID,
+      kind: 'end',
+      status: 'error',
+      error_name: 'MessageAbortedError',
+      error_message: 'aborted',
+      error_retryable: false,
+    });
+    expect(sessionStatusWrites).toEqual([]);
   });
 });
 
