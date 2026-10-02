@@ -22,6 +22,8 @@ export interface AuditEvent {
   message_id?: string | null;
   tool_call_id?: string | null;
   execution_id?: string | null;
+  /** @deprecated Set only on rows written before 2026-10; `null` for every newer row. Order a
+   *  session log by the order the API returns it (it is stable); `event_id` is time-ordered. */
   session_sequence?: number | null;
   actor_user_id: string | null;
   /** `anonymous`: a request no authenticator identified. The API writes a row
@@ -68,7 +70,9 @@ export interface AuditEvent {
   output_sha256?: string | null;
   error_code?: string | null;
   error_message?: string | null;
+  /** @deprecated The hash chain was removed from ingestion (2026-10); `null` for new rows. */
   integrity_previous_hash?: string | null;
+  /** @deprecated See `integrity_previous_hash`; `null` for new rows. */
   integrity_hash?: string | null;
   before: unknown;
   after: unknown;

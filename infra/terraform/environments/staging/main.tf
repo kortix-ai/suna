@@ -85,6 +85,21 @@ module "project_snapshots" {
   tags   = local.tags
 }
 
+# ── Audit-event archive (WORM) ────────────────────────────────────────────────
+# Weekly kortix.audit_events partitions older than the 90-day hot window,
+# exported by the API as gzip JSONL with Object Lock retention (365 days). The
+# task names it through AUDIT_ARCHIVE_BUCKET / AUDIT_ARCHIVE_REGION in the
+# deploy workflow. Applying this creates the bucket, its KMS key, and the
+# task-role grant only.
+module "audit_archive" {
+  source = "../../modules/audit-archive-bucket"
+  name   = "${local.name}-audit-archive"
+  # Disposable environment: GOVERNANCE lets an operator with s3:BypassGovernanceRetention
+  # clear test data. Prod uses COMPLIANCE (the module default).
+  object_lock_mode = "GOVERNANCE"
+  tags             = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -109,6 +124,9 @@ module "api" {
   ses_send_identity_names     = ["kortix.com", "kortix.ai"]
   project_snapshots_enabled   = true
   project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
+  audit_archive_enabled       = true
+  audit_archive_bucket_arn    = module.audit_archive.bucket_arn
+  audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 

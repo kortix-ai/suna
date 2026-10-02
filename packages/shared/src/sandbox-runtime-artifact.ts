@@ -70,6 +70,12 @@ export function cliConnectorRuntimeArtifacts(
       excludeNames: CLI_RUNTIME_EXCLUDES,
     },
     { label: 'kortix-sdk-pkg', path: join(sdkRoot, 'package.json') },
+    {
+      label: 'kortix-host-config',
+      path: resolve(cliRoot, '../../packages/shared/src/host-config'),
+      excludeNames: CLI_RUNTIME_EXCLUDES,
+    },
+    { label: 'kortix-shared-pkg', path: resolve(cliRoot, '../../packages/shared/package.json') },
   ];
 }
 

@@ -9,7 +9,8 @@
  * | Shape | Producer |
  * | --- | --- |
  * | `You're answering a message on Slack as a teammate.` | `channels/slack/session.ts` renderAgentPrompt |
- * | `New message from <user> in the same Slack thread:` | `channels/slack/session.ts` renderFollowUpPrompt |
+ * | `New message from <user> in Slack channel <channel>, thread <ts>:` | `channels/slack/session.ts` renderFollowUpPrompt |
+ * | `New message from <user> in the same Slack thread:` | the same renderer before 2026-09, kept for old transcripts |
  * | `You're answering a message on Microsoft Teams as a teammate.` | `channels/teams/session.ts` renderAgentPrompt |
  * | `New message from <user> in the same Teams conversation:` | `channels/teams/session.ts` renderFollowUpPrompt |
  * | `You received a message on Telegram.` | `channels/telegram-webhook.ts` renderAgentPrompt |
@@ -24,7 +25,7 @@
  * took 22 s and 7 s.
  */
 
-import { readLegacyChannelHeader, replaceSpans, tagBlocks } from '@kortix/shared';
+import { readLegacyChannelHeader, readSlackFollowUpHeader, replaceSpans, slackPlainText, tagBlocks } from '@kortix/shared';
 
 export type ChannelPlatform = 'Slack' | 'Teams' | 'Telegram';
 
@@ -106,6 +107,66 @@ const FIRST_MESSAGE_HEADERS: Array<{ platform: ChannelPlatform; header: RegExp; 
   },
 ];
 
+/**
+ * A Slack label is written `Sam Rivera (U0…)` or `#general (C0…)`: the id stays
+ * for the agent's commands, and a person reads the label. A bare id is kept.
+ */
+function withoutSlackId(value: string): string {
+  if (!value.endsWith(')')) return value;
+  const at = value.lastIndexOf(' (');
+  if (at <= 0) return value;
+  return /^[A-Z][A-Z0-9]+$/.test(value.slice(at + 2, -1)) ? value.slice(0, at) : value;
+}
+
+/**
+ * A bound Slack conversation as a person reads it: `#general`, the other
+ * person's name for a DM, the members of a group DM. Null until the API has
+ * named it. A name stored before Slack types were recorded is a channel's.
+ */
+export function slackConversationName(binding: { channelName: string | null; channelType: string | null }): string | null {
+  if (!binding.channelName) return null;
+  return binding.channelType === 'im' || binding.channelType === 'mpim' ? binding.channelName : `#${binding.channelName}`;
+}
+
+/**
+ * Bound Slack conversation ids mapped to the names `slackConversationName`
+ * gives them. Rows of other platforms, and rows Slack has not named, are left
+ * out: their ids show as they are.
+ */
+export function slackChannelNames(
+  bindings: ReadonlyArray<{ platform: string; channelId: string; channelName: string | null; channelType: string | null }>,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const binding of bindings) {
+    if (binding.platform !== 'slack') continue;
+    const name = slackConversationName(binding);
+    if (name) names.set(binding.channelId, name);
+  }
+  return names;
+}
+
+/**
+ * `New message from <user> in Slack channel <channel>, thread <ts>:`, the first
+ * line of a Slack follow-up. The API writes it with `slackFollowUpHeader` and
+ * this reads it with `readSlackFollowUpHeader`, both from `@kortix/shared`.
+ * Its instruction lines run to the first blank line; the message follows.
+ */
+function readSlackFollowUp(text: string): ChannelMessageInfo | undefined {
+  const lineEnd = text.indexOf('\n');
+  const header = readSlackFollowUpHeader((lineEnd < 0 ? text : text.slice(0, lineEnd)).trimEnd());
+  if (!header) return undefined;
+  const rest = lineEnd < 0 ? '' : text.slice(lineEnd + 1);
+  const blank = rest.search(/\r?\n\s*\r?\n/);
+  const body = blank < 0 ? rest : rest.slice(blank);
+  return {
+    platform: 'Slack',
+    context: withoutSlackId(header.channel),
+    userName: withoutSlackId(header.user),
+    messageText: slackPlainText(cutAtTail(body)),
+    followUp: true,
+  };
+}
+
 const FOLLOW_UP_HEADERS: Array<{ platform: ChannelPlatform; header: RegExp }> = [
   { platform: 'Teams', header: /^New message from (.+?) in the same Teams conversation:$/m },
   { platform: 'Slack', header: /^New message from (.+?) in the same Slack thread:$/m },
@@ -125,11 +186,12 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
   const legacy = readLegacyChannelHeader(text);
   if (legacy) {
     const platform = legacy.platform === 'Teams' ? 'Teams' : legacy.platform === 'Telegram' ? 'Telegram' : 'Slack';
+    const messageText = cutAtTail(text.slice(legacy.length));
     return {
       platform,
       context: legacy.context,
       userName: legacy.userName,
-      messageText: cutAtTail(text.slice(legacy.length)),
+      messageText: platform === 'Slack' ? slackPlainText(messageText) : messageText,
       followUp: false,
     };
   }
@@ -140,23 +202,28 @@ export function parseChannelMessage(rawText: string | null | undefined): Channel
     const block = text.slice(m.index + m[0].length);
     const body = messageBody(block);
     if (body === null) continue;
+    const slack = shape.platform === 'Slack';
     return {
       platform: shape.platform,
-      context: field(block, shape.context),
-      userName: field(block, shape.user) || 'unknown',
-      messageText: body,
+      context: slack ? withoutSlackId(field(block, shape.context)) : field(block, shape.context),
+      userName: (slack ? withoutSlackId(field(block, shape.user)) : field(block, shape.user)) || 'unknown',
+      messageText: slack ? slackPlainText(body) : body,
       followUp: false,
     };
   }
 
+  const slackFollowUp = readSlackFollowUp(text);
+  if (slackFollowUp) return slackFollowUp;
+
   for (const shape of FOLLOW_UP_HEADERS) {
     const m = shape.header.exec(text);
     if (!m || !opensPrompt(text, m.index)) continue;
+    const messageText = cutAtTail(text.slice(m.index + m[0].length));
     return {
       platform: shape.platform,
       context: '',
       userName: m[1].trim(),
-      messageText: cutAtTail(text.slice(m.index + m[0].length)),
+      messageText: shape.platform === 'Slack' ? slackPlainText(messageText) : messageText,
       followUp: true,
     };
   }

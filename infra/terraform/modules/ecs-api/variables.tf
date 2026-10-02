@@ -268,6 +268,24 @@ variable "project_snapshot_kms_key_arn" {
   default     = ""
 }
 
+variable "audit_archive_enabled" {
+  description = "Grant the TASK role access to audit_archive_bucket_arn. A literal bool so the grant's count is known at plan time even when the bucket is created in the same apply."
+  type        = bool
+  default     = false
+}
+
+variable "audit_archive_bucket_arn" {
+  description = "ARN of the environment's audit-archive bucket (modules/audit-archive-bucket). Used only when audit_archive_enabled."
+  type        = string
+  default     = ""
+}
+
+variable "audit_archive_kms_key_arn" {
+  description = "KMS key the audit-archive bucket encrypts with. The task role gets GenerateDataKey/Decrypt on it. Used only when audit_archive_enabled."
+  type        = string
+  default     = ""
+}
+
 variable "ses_send_region" {
   description = "Region containing ses_send_identity_names. Required when SES task-role access is enabled."
   type        = string

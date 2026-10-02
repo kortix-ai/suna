@@ -97,11 +97,11 @@ function walk(
  * PostgreSQL SQLSTATEs that mean "another writer holds what this one needs",
  * not "this write is wrong".
  *
- * `audit_prepare_event` serializes every row of a session behind one
- * `audit_session_sequences` row lock held to COMMIT, so a burst on one session
- * turns into a lock queue. On the audit pool that queue surfaces as 57014
- * (statement_timeout, the SampleCo signature: 445 x 500 in 3h, each at ~10s)
- * or — since `lock_timeout` was added — 55P03 at ~2.5s. Callers must report
+ * Until 2026-10 `audit_prepare_event` serialized every row of a session behind
+ * one `audit_session_sequences` row lock held to COMMIT; the lock is gone, but a
+ * slow INSERT on the audit pool still surfaces as 57014 (statement_timeout, the
+ * SampleCo signature: 445 x 500 in 3h, each at ~10s) or 55P03 at the pool's
+ * `lock_timeout`, e.g. behind DDL. Callers must report
  * these as retryable backpressure, never as a 500 or a silent drop: a 500
  * makes the sandbox relay retry a batch that has already been rejected, and a
  * drop just loses the events (prod, 2026-09-24 through 2026-09-27: hundreds of

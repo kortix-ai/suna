@@ -179,7 +179,7 @@ export function SessionAuditPanel({
                   </Badge>
                 </div>
                 <ul className="bg-popover overflow-hidden rounded-md border">
-                  {events.map((event) => (
+                  {events.map((event, index) => (
                     <li key={event.event_id} className="border-border border-b last:border-b-0">
                       <button
                         type="button"
@@ -187,7 +187,7 @@ export function SessionAuditPanel({
                         onClick={() => setSelectedEvent(event)}
                       >
                         <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs tabular-nums">
-                          {event.session_sequence ?? '—'}
+                          {event.session_sequence ?? index + 1}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -332,7 +332,7 @@ export function SessionAuditPanel({
             <ModalTitle>{tI18nComplete.raw('text7ed62f13532a')}</ModalTitle>
             <ModalDescription>
               {tI18nComplete.raw('text20cec9e797c9')}
-              {selectedEvent?.session_sequence ?? '—'} {tI18nComplete.raw('text28419d670fef')}
+              {selectedEvent ? (selectedEvent.session_sequence ?? events.indexOf(selectedEvent) + 1) : '—'} {tI18nComplete.raw('text28419d670fef')}
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[70vh] space-y-4 overflow-y-auto">

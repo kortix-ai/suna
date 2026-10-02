@@ -30,6 +30,7 @@ const connectorsSource = read('connectors-view.tsx');
 const teamsPanelSource = read('teams-channel-panel.tsx');
 const connectCardSource = read('component/slack-connect-card.tsx');
 const wizardSource = read('component/slack-byo-wizard.tsx');
+const wizardStepsSource = read('component/byo-wizard-steps.tsx');
 const coverSource = read('component/slack-connect-cover.tsx');
 const blogCoverSource = read('../../../../components/blog/blog-cover.tsx');
 const channelRowSource = read('component/channel-row.tsx');
@@ -54,6 +55,7 @@ const MODULES: Array<[name: string, source: string]> = [
   ['channels-view', channelsSource],
   ['slack-connect-card', connectCardSource],
   ['slack-byo-wizard', wizardSource],
+  ['byo-wizard-steps', wizardStepsSource],
   ['slack-connect-cover', coverSource],
   ['channel-row', channelRowSource],
   ['manifest-copy-block', copyBlockSource],
@@ -191,8 +193,10 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 
 describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   test('three steps driven by the shared Stepper, inside a Modal', () => {
-    expect(wizardSource).toContain("from '@/components/ui/stepper'");
-    expect(wizardSource).toContain('<Stepper');
+    expect(wizardSource).toContain("from './byo-wizard-steps'");
+    expect(wizardSource).toContain('<ByoWizardSteps steps={steps} step={step} onStepChange={setStep}>');
+    expect(wizardStepsSource).toContain("from '@/components/ui/stepper'");
+    expect(wizardStepsSource).toContain('<Stepper');
     expect(wizardSource).toContain('ModalContent');
     expect(wizardSource).toMatch(/const STEPS = \[[\s\S]*?step: 3/);
   });
@@ -396,6 +400,29 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("'text28c7d3f8b75d'");
   });
 
+  // Every Slack row on dev read `C0…` over `T0…` (2026-10-02): no Slack name
+  // lookup had ever succeeded. A Slack row now reads like a Teams row.
+  test('a Slack row shows #channel, a person, or a group DM, over its kind, not its workspace id', () => {
+    expect(channelsSource).toContain('slackBindingName(binding, tI18nComplete)');
+    expect(channelsSource).toContain('slackScopeLabel(binding, tI18nComplete)');
+    // The `#name` / person / group-DM rule is `slackConversationName`, shared
+    // with the session's `slack send` card (channel-message.test.ts).
+    expect(channelsSource).toContain('slackConversationName(binding)');
+    expect(channelsSource).toMatch(/binding\.platform === 'slack'\) return slackScopeLabel\(binding, tI18nComplete\)/);
+    for (const key of [
+      'text87f9f3ba9b60', // Private channel
+      'textcd3e16057d09', // Direct message
+      'textcbe7c5d45160', // Group DM
+      'textf5738ddc651d', // Unavailable channel
+    ]) {
+      expect(channelsSource).toContain(key);
+    }
+  });
+
+  test('a deleted Slack channel says so and still shows its id', () => {
+    expect(channelsSource).toContain('binding.channelUnavailable');
+  });
+
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {
     expect(channelsSource).toContain("from '@/hooks/channels/use-channel-bindings'");
     expect(channelsSource).toContain('useChannelBindings');
@@ -426,9 +453,22 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("value: 'owner_approval'");
   });
 
-  test('read-only members see static values instead of editable controls', () => {
-    expect(channelsSource).toContain('canManage');
-    expect(channelsSource).toContain('disabled={!canManage');
+  test('read-only members see the settings with every control disabled and no Save', () => {
+    expect(channelsSource.match(/\sdisabled=\{!canWrite\}/g)).toHaveLength(3);
+    expect(channelsSource).toMatch(/\{canWrite \? \(\s*<Button type="submit"/);
+  });
+
+  // ~30 conversations × 3 live pickers was ~90 controls and a clipped column.
+  test('the table is read-only; a row opens one settings dialog with one Save', () => {
+    const table = channelsSource.slice(
+      channelsSource.indexOf('function ChannelBindingsSection'),
+      channelsSource.indexOf('function ChannelSettingsModalContent'),
+    );
+    expect(table).not.toContain('<AgentSelector');
+    expect(table).not.toContain('<ModelSelector');
+    expect(table).not.toContain('<Select');
+    expect(table).toContain('<ChannelSettingsModalContent');
+    expect(channelsSource.match(/update\.mutate\(/g)).toHaveLength(1);
   });
 });
 

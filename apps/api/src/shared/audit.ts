@@ -541,10 +541,10 @@ async function settlePendingInboundEmissions(): Promise<void> {
 /**
  * How long a READ route's flush barrier may wait.
  *
- * A read route awaits `flushAuditEvents()` for read-your-writes. The queue's
- * per-session serialize waits without a timeout (see audit-session-serial.ts)
- * and each snapshot chains onto the in-flight one, so under the per-session
- * write convoy the barrier can wait far past the request deadline: prod,
+ * A read route awaits `flushAuditEvents()` for read-your-writes. Each snapshot
+ * chains onto the in-flight one, so while the audit pool's INSERT is slow (cold
+ * cache IO, up to the 10 s statement timeout) the barrier can wait far past the
+ * request deadline: prod,
  * 2026-09-28 — `GET /v1/accounts/:id/audit` answered 16× 503 "25s deadline" +
  * 3× 57014 statement timeouts in one minute while its workspace's audit ingest
  * was contended (KRTX-631). Read routes therefore pass this bound: a healthy

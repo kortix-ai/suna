@@ -138,6 +138,9 @@ is connected to, connect it first: run `/kortix switch` in it and pick this
 project.
 
 - Channel history leaves out the messages of another project's thread.
+- `get_history` and `get_thread` add `user_name` to each message whose author
+  Slack can name, beside the `user` id. Up to 25 people are named per read;
+  a name Slack does not return within 2 seconds is left out.
 - `list_channels` lists every public channel, and the private channels and DMs
   the agent may read.
 - `channel_info` answers for any public channel. A private channel or DM
@@ -222,6 +225,25 @@ they rotate on rate limits. The channel's model starts every new thread; a
 thread keeps the model it started with. A model a thread can no longer run is
 replaced for that message instead of failing it. See
 [Provider keys and member access](/docs/project/models#provider-keys-and-member-access).
+
+## Channel and people names
+
+Slack sends ids, such as `C0123ABCD` and `U0123ABCD`. Kortix shows the names
+people read in Slack and keeps the ids for operations.
+
+| Where | What it shows |
+|---|---|
+| The Channels page, `kortix channels bindings` | `#channel` for a public or private channel, the person for a DM, the members for a group DM |
+| A Slack message in a session | The sender's name and `#channel` |
+| A `slack send` reply in a session | `#channel`, or the person of a DM |
+| The session title | Mentions as Slack shows them: `@Kortix`, not `<@U0123ABCD>` |
+| The agent's prompt | Names beside ids: `Sam Rivera (U0123ABCD)`, `#general (C0123ABCD)` |
+| An approval card in Slack | A channel parameter as a channel link, which Slack names by your own access. A user parameter with the person's name |
+
+A channel that Slack cannot find reads **Unavailable channel** and keeps its
+id. This happens when the channel was deleted or the bot was removed from it.
+A name that Slack does not return within 2 seconds is left out of that
+message. The prompt then carries the ids alone, and the turn does not wait.
 
 ## Approvals
 

@@ -187,15 +187,20 @@ export function resolvedTone(label: string): 'success' | 'destructive' | 'muted'
  * The redacted parameters the connector would receive — the whole reason an
  * approval is decidable rather than a guess. Shared by the standalone page, the
  * Audit panel, and the in-session notice so all three show the same values.
+ *
+ * `channelNames`: a value that is a bound Slack conversation id shows its name
+ * beside it. The id stays, because it is the exact parameter.
  */
 export function ApprovalParameters({
   argsPreview,
   reviewComplete = true,
   dense = false,
+  channelNames,
   className,
 }: DenseProp & {
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
+  channelNames?: ReadonlyMap<string, string>;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -255,7 +260,12 @@ export function ApprovalParameters({
                       {tI18nComplete.raw('text1c57f31d6315')}
                     </span>
                   ) : (
-                    renderArgValue(value)
+                    <>
+                      {renderArgValue(value)}
+                      {typeof value === 'string' && channelNames?.has(value) ? (
+                        <span className="text-muted-foreground"> · {channelNames.get(value)}</span>
+                      ) : null}
+                    </>
                   )}
                 </ClampedValue>
               </dd>

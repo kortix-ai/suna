@@ -401,9 +401,11 @@ Reach for these only when the task explicitly asks for them.
 ### Read prior thread context
 
 ```sh
-slack history --channel "$SLACK_CHANNEL_ID" --thread "$SLACK_THREAD_TS"
-slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
+slack history --channel "$SLACK_CHANNEL_ID" --limit 20            # the channel's recent messages
+slack thread  --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_THREAD_TS"  # this thread's replies
 ```
+
+Each message carries `user`, the author's id, and `user_name`, the author's display name when Slack has one. Write people's names from `user_name` in an answer. Use `<@user>` only to mention someone, because a mention notifies them.
 
 ### Reads and writes stay inside this project
 
@@ -447,7 +449,7 @@ slack search --query "deploy api@"
 
 ```sh
 slack users
-slack user        --user "U0123ABCD"
+slack user        --id "U0123ABCD"
 slack channels
 slack channel-info --channel "C0123ABCD"
 slack me
