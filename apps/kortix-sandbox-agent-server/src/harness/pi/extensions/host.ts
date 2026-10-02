@@ -165,6 +165,8 @@ class KortixResourceLoader extends DefaultResourceLoader {
 
 export interface PiSessionInput {
   agent: Agent
+  /** pi's session store; the agent's messages are already its projection. */
+  sessionManager: SessionManager
   ref: RunnerRef
   cwd: string
   agentDir: string
@@ -349,7 +351,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
 
   const session = new AgentSession({
     agent: input.agent,
-    sessionManager: SessionManager.inMemory(input.cwd),
+    sessionManager: input.sessionManager,
     settingsManager,
     cwd: input.cwd,
     resourceLoader: loader,
