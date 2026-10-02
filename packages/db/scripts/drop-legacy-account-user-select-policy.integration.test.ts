@@ -63,12 +63,12 @@ const KEPT = [
 ];
 
 async function policyNames(client: pg.Client) {
-  const { rows } = await client.query(
+  const { rows } = await client.query<{ policyname: string }>(
     `select policyname from pg_policies
       where schemaname = 'basejump' and tablename = 'account_user'
       order by policyname`,
   );
-  return rows.map((row) => row.policyname as string);
+  return rows.map((row) => row.policyname);
 }
 
 async function migrationSql() {
