@@ -6479,6 +6479,11 @@ export const projectUserProviderConnections = kortixSchema.table('project_user_p
     name: 'project_user_provider_connections_owner_fk',
   }).onDelete('cascade'),
   index('project_user_provider_connections_connection').on(table.connectionId),
+  // Covers project_user_provider_connections_owner_fk: a cascade delete on
+  // user_provider_connections probes this table with (connection_id, user_id,
+  // provider_id), and the connection-only index above does not match those
+  // three columns (the Supabase unindexed-foreign-keys advisor).
+  index('idx_project_user_provider_connections_owner').on(table.connectionId, table.userId, table.providerId),
 ]);
 
 /** A session retains its selected personal pool member across API replicas. */
