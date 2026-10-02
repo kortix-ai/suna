@@ -847,14 +847,9 @@ export class PiRuntime {
     this.persist()
   }
 
-  /**
-   * The session row changed (`time.compacting`). The frame names no title: pi
-   * does not title a session, apps/api does, and a client takes the title of a
-   * `session.updated` as the session's new name.
-   */
+  /** The session row changed (`time.compacting`). */
   private publishSessionUpdated(): void {
-    const { title: _working, ...info } = this.sessionObject()
-    this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info } })
+    this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info: this.sessionObject() } })
   }
 
   private onAgentEvent(event: AgentEvent): void {
