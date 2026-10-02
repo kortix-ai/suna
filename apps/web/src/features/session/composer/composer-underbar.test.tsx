@@ -35,10 +35,15 @@ const messages = {
   threads: {
     attachFiles: 'Attach files',
     selectAgent: 'Select agent',
+    agentLockedHint: "You can't switch agents in an already started session.",
   },
 };
 
-function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): string {
+function render(props?: {
+  noAccessibleAgents?: boolean;
+  agents?: Agent[];
+  locked?: boolean;
+}): string {
   return renderToStaticMarkup(
     <NextIntlClientProvider locale="en" messages={messages} onError={noop}>
       {/* Both providers live higher up the tree in the app than this
@@ -53,7 +58,7 @@ function render(props?: { noAccessibleAgents?: boolean; agents?: Agent[] }): str
             onAttachClick={noop}
             agents={props?.agents ?? []}
             selectedAgent={props?.agents?.[0]?.name ?? null}
-            agentSelectorLocked={false}
+            agentSelectorLocked={props?.locked ?? false}
             noAccessibleAgents={props?.noAccessibleAgents}
             messages={[]}
             models={[]}
@@ -239,6 +244,49 @@ describe('ComposerUnderbar — the denied roster looks like an ordinary picker',
     const html = render({ noAccessibleAgents: true });
     expect(html).toContain('>Agent</span>');
     expect(html).not.toContain('>No agents available to you');
+  });
+});
+
+/** The full markup of the <button> whose accessible name starts with `name`. */
+function buttonMarkup(html: string, name: string): string {
+  const at = html.indexOf(`aria-label="${name}`);
+  expect(at).toBeGreaterThan(-1);
+  const start = html.lastIndexOf('<button', at);
+  return html.slice(start, html.indexOf('</button>', at));
+}
+
+/**
+ * A started session binds ONE agent, and the picker is locked. It used to keep
+ * the caret and the enabled chrome, so it read as a dropdown while opening
+ * nothing — the reported bug. The agent that will run must stay visible, so
+ * the control stays; it just stops pretending to be interactive.
+ */
+describe('ComposerUnderbar — the locked session picker reads inert', () => {
+  const KORTIX = [{ name: 'kortix', mode: 'primary' } as unknown as Agent];
+
+  test('says why in the tooltip, on the trigger itself', () => {
+    // The locked hint is the button's accessible name — screen readers get
+    // the reason, and the static-markup assertion pins the wiring.
+    const html = render({ agents: KORTIX, locked: true });
+    expect(html).toContain('switch agents in an already started session');
+  });
+
+  test('no caret inside the locked trigger — nothing may suggest a menu opens', () => {
+    const inner = buttonMarkup(render({ agents: KORTIX, locked: true }), 'You can');
+    expect(inner).not.toContain('<svg');
+  });
+
+  test('the locked trigger is actually disabled and still shows the agent name', () => {
+    const inner = buttonMarkup(render({ agents: KORTIX, locked: true }), 'You can');
+    expect(inner).toMatch(/\sdisabled=""/);
+    expect(inner).toContain('Kortix');
+  });
+
+  test('the unlocked picker keeps its caret and stays enabled', () => {
+    // Control for the two assertions above: same trigger, unlocked state.
+    const inner = buttonMarkup(render({ agents: KORTIX }), 'Select agent');
+    expect(inner).toContain('<svg');
+    expect(inner).not.toMatch(/\sdisabled=""/);
   });
 });
 

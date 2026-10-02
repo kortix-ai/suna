@@ -1914,6 +1914,7 @@
     "messageInput": "メッセージ入力",
     "attachFiles": "ファイルを添付",
     "selectAgent": "エージェントを選択",
+    "agentLockedHint": "開始済みのセッションではエージェントを切り替えられません。",
     "noModel": "モデルなし",
     "thinkingEffort": "思考レベル",
     "sessionOverrides": "セッションの上書き",

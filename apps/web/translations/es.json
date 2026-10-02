@@ -1914,6 +1914,7 @@
     "messageInput": "Campo de mensaje",
     "attachFiles": "Adjuntar archivos",
     "selectAgent": "Seleccionar agente",
+    "agentLockedHint": "No se puede cambiar de agente en una sesión ya iniciada.",
     "noModel": "Sin modelo",
     "thinkingEffort": "Nivel de razonamiento",
     "sessionOverrides": "Ajustes de la sesión",
