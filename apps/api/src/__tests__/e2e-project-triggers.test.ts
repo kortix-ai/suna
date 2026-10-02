@@ -308,8 +308,8 @@ mock.module('../projects/lib/git', () => ({
 
 mock.module('../platform/services/session-sandbox', () => ({
   provisionSessionSandbox: async (input: any) => {
+    lastProvisionEnv = await input.extraEnvVars;
     sandboxProvisionCalls += 1;
-    lastProvisionEnv = input.extraEnvVars;
   },
 }));
 

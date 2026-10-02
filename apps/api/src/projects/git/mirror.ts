@@ -630,6 +630,24 @@ async function mirrorMatchesRemoteTip(
   }
 }
 
+/**
+ * The remote tip of `ref`, read from the mirror, when that branch was proven
+ * current inside the refresh interval (see `MirrorRefresh`). Null otherwise:
+ * the caller asks the remote. Saves the `ls-remote` a caller would run right
+ * after a `'tip-proof'` read of the same branch.
+ */
+export async function provenMirrorTip(project: GitBackedProject, ref: string): Promise<string | null> {
+  if (!tipProven(project.projectId, ref)) return null;
+  const repoPath = existingProjectMirrorPath(project);
+  if (!repoPath) return null;
+  const local = await runGitCapture(
+    ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
+    repoPath,
+  ).catch(() => null);
+  const sha = local?.exitCode === 0 ? local.stdout.trim() : '';
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
+}
+
 async function doRefreshMirror(
   project: GitBackedProject,
   force: MirrorRefresh = false,

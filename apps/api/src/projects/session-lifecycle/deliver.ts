@@ -12,6 +12,7 @@ import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
+import { waitForSessionRuntimeActive } from './runtime-active-signal';
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
@@ -127,8 +128,9 @@ export async function deliverWithRetry(input: {
 
 const READY_DEADLINE_MS = 300_000;
 const POLL_INTERVAL_MS = 3_000;
-
-const sleepWake = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** After the box went active: the pause before re-opening a session that is
+ *  not `ready` yet (the daemon is still binding). */
+const ACTIVE_RECHECK_MS = 500;
 
 interface WakeDeliveryContext {
   command: ContinueSessionCommand;
@@ -213,6 +215,9 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
 
     const deadline = Date.now() + READY_DEADLINE_MS;
     let opened: Awaited<ReturnType<typeof openOnce>>;
+    // The provision signals when the box goes active (`runtime-active-signal`),
+    // so this loop re-opens at once instead of up to 3 s later.
+    let boxActive = false;
     for (;;) {
       opened = await openOnce();
       if (!opened) return 'no-session';
@@ -229,7 +234,9 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
         });
         return 'pending';
       }
-      await sleepWake(POLL_INTERVAL_MS);
+      boxActive =
+        (await waitForSessionRuntimeActive(sessionId, boxActive ? ACTIVE_RECHECK_MS : POLL_INTERVAL_MS)) ||
+        boxActive;
     }
 
     // Converge the box BEFORE the prompt goes on the wire — every time, not only

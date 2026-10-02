@@ -462,8 +462,11 @@ const realSessionSandbox = await import('../platform/services/session-sandbox');
 mock.module('../platform/services/session-sandbox', () => ({
   ...realSessionSandbox,
   provisionSessionSandbox: async (input: any) => {
+    // The env arrives as a promise: provisioning awaits it where it builds the
+    // provider input, as the real function does. Recorded once it is in hand.
+    const extraEnvVars = await input.extraEnvVars;
+    lastProvisionInput = { ...input, extraEnvVars };
     sandboxProvisionCalls += 1;
-    lastProvisionInput = input;
   },
 }));
 

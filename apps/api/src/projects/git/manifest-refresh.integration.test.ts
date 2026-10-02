@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { loadProjectAgents, requiredConnectorsForAgent } from '../agents';
-import { invalidateProjectMirror, refreshMirror, repoCachePath } from './mirror';
+import { invalidateProjectMirror, provenMirrorTip, refreshMirror, repoCachePath } from './mirror';
 import type { GitBackedProject } from './types';
 
 const exec = promisify(execFile);
@@ -154,6 +154,18 @@ describe('manifest refresh', () => {
       await pushRequiredManifest();
 
       expect(await required(tipProof)).toEqual(['required-check']);
+    });
+
+    test('a proven branch answers its tip from the mirror; an unproven one answers nothing', async () => {
+      expect(await provenMirrorTip(project, 'main')).toBeNull();
+      await required(tipProof);
+      const { stdout } = await exec('git', ['rev-parse', 'refs/heads/main'], { cwd: remotePath });
+
+      expect(await provenMirrorTip(project, 'main')).toBe(stdout.trim());
+      // A branch nobody proved is not answered from the mirror.
+      expect(await provenMirrorTip(project, 'other')).toBeNull();
+      invalidateProjectMirror(project.projectId);
+      expect(await provenMirrorTip(project, 'main')).toBeNull();
     });
 
     test('an expired proof is re-proved against the remote', async () => {
