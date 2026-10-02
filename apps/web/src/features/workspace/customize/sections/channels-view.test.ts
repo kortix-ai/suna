@@ -408,7 +408,7 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     // The `#name` / person / group-DM rule is `slackConversationName`, shared
     // with the session's `slack send` card (channel-message.test.ts).
     expect(channelsSource).toContain('slackConversationName(binding)');
-    expect(channelsSource).toMatch(/binding\.platform === 'slack'\s*\?\s*slackScopeLabel\(binding, tI18nComplete\)/);
+    expect(channelsSource).toMatch(/binding\.platform === 'slack'\) return slackScopeLabel\(binding, tI18nComplete\)/);
     for (const key of [
       'text87f9f3ba9b60', // Private channel
       'textcd3e16057d09', // Direct message
@@ -453,9 +453,22 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("value: 'owner_approval'");
   });
 
-  test('read-only members see static values instead of editable controls', () => {
-    expect(channelsSource).toContain('canManage');
-    expect(channelsSource).toContain('disabled={!canManage');
+  test('read-only members see the settings with every control disabled and no Save', () => {
+    expect(channelsSource.match(/\sdisabled=\{!canWrite\}/g)).toHaveLength(3);
+    expect(channelsSource).toMatch(/\{canWrite \? \(\s*<Button type="submit"/);
+  });
+
+  // ~30 conversations × 3 live pickers was ~90 controls and a clipped column.
+  test('the table is read-only; a row opens one settings dialog with one Save', () => {
+    const table = channelsSource.slice(
+      channelsSource.indexOf('function ChannelBindingsSection'),
+      channelsSource.indexOf('function ChannelSettingsModalContent'),
+    );
+    expect(table).not.toContain('<AgentSelector');
+    expect(table).not.toContain('<ModelSelector');
+    expect(table).not.toContain('<Select');
+    expect(table).toContain('<ChannelSettingsModalContent');
+    expect(channelsSource.match(/update\.mutate\(/g)).toHaveLength(1);
   });
 });
 
