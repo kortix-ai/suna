@@ -205,15 +205,21 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
         // The SDK binds to this session: its live stream and runtime calls.
         { projectId, sessionId: ps.session_id },
       );
-      setConnectingProjectSessionId(null);
-      setConnectError(null);
-      erroredSessionRef.current = null;
       if (freshSessionIdRef.current === ps.session_id) freshSessionIdRef.current = null;
       seedFirstPrompt(rootId, firstPromptRef.current[ps.session_id]);
       delete firstPromptRef.current[ps.session_id];
       openedProjectSessionIdsRef.current[rootId] = ps.session_id;
       openedProjectSessionIdsRef.current[threadId] = ps.session_id;
+      // The thread first, the connecting state cleared after. Every render in
+      // between must see one of them: `isHome` is "no page, no thread, not
+      // connecting", and the view route pops itself and resets the project
+      // the moment it reads true. Cleared first, a render forced in between
+      // (`seedFirstPrompt` writes the sync store) read home, and a home send
+      // that opened at once (a warm session) landed back on project home.
       navigateToSession(threadId);
+      setConnectingProjectSessionId(null);
+      setConnectError(null);
+      erroredSessionRef.current = null;
       // The row may be missing from the lists yet (a just-created session):
       // refetch them, so the thread's title and `···` menu appear.
       refreshSessionLists();
@@ -365,12 +371,14 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
         : null;
       haptics.tap();
       releaseWarmSession(ps.session_id);
-      navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
       // A reopened session, never a fresh one: Cancel must not stop it server-side.
       freshSessionIdRef.current = null;
+      // Connecting first, the open thread cleared after: never a render that
+      // reads project home (see connectToProjectSession).
       setConnectingProjectSessionId(ps.session_id);
+      navigateToSession(null);
     },
     [navigateToSession, releaseWarmSession]
   );
@@ -380,11 +388,11 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
     (sessionId: string) => {
       pendingThreadFocusRef.current = null;
       releaseWarmSession(sessionId);
-      navigateToSession(null);
       setConnectError(null);
       erroredSessionRef.current = null;
       freshSessionIdRef.current = null;
       setConnectingProjectSessionId(sessionId);
+      navigateToSession(null);
     },
     [navigateToSession, releaseWarmSession]
   );

@@ -634,12 +634,14 @@ export async function buildOpencodeConfigContent(
 
   // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
   // OpenCode tool: the tools a capability covers get its rule (E9).
-  out.permission = capabilityToolRules(out.permission)
+  // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
+  // a Kortix project: every permission block denies them.
+  out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
   if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
     for (const agent of Object.values(out.agent as Record<string, unknown>)) {
       if (agent && typeof agent === 'object' && 'permission' in agent) {
         const entry = agent as Record<string, unknown>
-        entry.permission = capabilityToolRules(entry.permission)
+        entry.permission = denyBuiltinSkills(capabilityToolRules(entry.permission))
       }
     }
   }
@@ -676,6 +678,34 @@ export function capabilityToolRules(permission: unknown): unknown {
     for (const tool of tools) if (!(tool in rules)) rules[tool] = action
   }
   return rules
+}
+
+/**
+ * Skills compiled into the OpenCode binary that a Kortix session must not load.
+ * `customize-opencode` teaches `.opencode/`, `~/.config/opencode/` and "quit and
+ * restart opencode"; a Kortix project keeps its config under `harnesses/opencode/`
+ * and the `kortix-system` skill is its reference.
+ */
+const DENIED_BUILTIN_SKILLS = ['customize-opencode']
+
+/**
+ * Deny the built-in skills in one permission block. OpenCode flattens the
+ * global block and then the agent's into one rule list and the LAST match
+ * wins, so an agent's own `permission: allow` outranks a global deny: every
+ * block gets the rule, as its last `skill` entry. A bare action becomes its
+ * `*` form, which OpenCode reads the same way. A block that already denies
+ * every skill is left alone.
+ */
+export function denyBuiltinSkills(permission: unknown): unknown {
+  if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
+  const { skill, ...rest }: Record<string, unknown> = typeof permission === 'string' ? { '*': permission } : ((permission ?? {}) as Record<string, unknown>)
+  if (skill === 'deny' || (skill === undefined && rest['*'] === 'deny')) return permission
+  const rules: Record<string, unknown> = typeof skill === 'string' ? { '*': skill } : { ...(skill as Record<string, unknown> | undefined) }
+  for (const name of DENIED_BUILTIN_SKILLS) {
+    delete rules[name]
+    rules[name] = 'deny'
+  }
+  return { ...rest, skill: rules }
 }
 
 type KortixProviderOpts = {

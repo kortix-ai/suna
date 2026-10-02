@@ -14,12 +14,16 @@ here. It has four components, all in git:
 | **Prompts** | `agents/<name>.md` (body) | Each agent's instructions and strategy |
 | **Sub-agents** | `agents/*.md` | Specialist agents the orchestrator invokes |
 | **Skills** | `skills/<name>/SKILL.md` | Reusable routines: text heuristics and guides |
-| **Tools** | `harnesses/opencode/tools/*.ts` | Executable code: wrappers, scripts, automations |
+| **Tools** | `harnesses/opencode/tools/*.ts` (OpenCode sessions), `harnesses/pi/extensions/*.ts` (pi sessions) | Executable code: wrappers, scripts, automations |
 | **Memory** | `memory/` | Persistent facts, strategies, observations |
 
 Projects created before 2026-09 keep agents, skills and tools under
 `.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work.
 Edit files where they already are; put new files in the root layout.
+
+A session runs one harness, OpenCode or pi, and a harness loads only its own
+tools directory. `echo "${KORTIX_HARNESS:-opencode}"` prints the one this
+session runs. Prompts, sub-agents, skills and memory serve both.
 
 **Refinement** means: read your recent trajectory, find where the harness
 failed you, and fix the harness — not just the immediate task. A memory
@@ -58,7 +62,7 @@ signatures. Each one names the component to fix:
   sequence more than twice by hand. → Codify it: a skill (if guidance)
   or a tool (if executable).
 - **Exception-raising code** — an executable tool or script in
-  `harnesses/opencode/tools/` raised; you worked around it instead of
+  `harnesses/opencode/tools/` or `harnesses/pi/extensions/` raised; you worked around it instead of
   fixing it. → Repair the code now.
 - **Missed opportunities** — information or shortcuts visible in the
   trajectory that no component captured. → Whichever component fits.

@@ -37,9 +37,13 @@ const PENDING_HREF = '#kortix-setup-link-pending:';
 
 const SETUP_HREF = new RegExp(`^${SETUP_URL}(?:[?#].*)?$`);
 const PARTIAL_SETUP_URL = /^https?:\/\/[^/\s]+\/(secret-intake|connect)\/([\w-]*)$/;
-/** `[label](url)`, `[label](pending)`, or a bare, `<…>` or `` `…` `` wrapped URL. */
+/**
+ * `[label](url)`, `[label](pending)`, or a bare, `<…>` or `` `…` `` wrapped URL.
+ * The label holds no `[`: an unbounded label rescanned the rest of the line from
+ * every `[` of a run (5.8 s on 50k `[` beside a setup link, under Hermes).
+ */
 const SETUP_LINK = new RegExp(
-  String.raw`\[([^\]\n]*)\]\((?:${SETUP_URL}${URL_TAIL}|${PENDING_HREF}(secret|connector))\)` +
+  String.raw`\[([^\[\]\n]*)\]\((?:${SETUP_URL}${URL_TAIL}|${PENDING_HREF}(secret|connector))\)` +
     String.raw`|[<\x60]?${SETUP_URL}${URL_TAIL}[>\x60]?`,
   'g',
 );

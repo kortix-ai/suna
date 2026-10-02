@@ -1,18 +1,26 @@
 ---
 title: Agents
-description: An agent is a markdown file that OpenCode runs; the manifest only governs its access.
+description: An agent is a markdown file that the session harness runs; the manifest only governs its access.
 ---
 
-An agent is a markdown file that defines how OpenCode acts in a
+An agent is a markdown file that defines how the harness acts in a
 [session](/docs/work/sessions). This page covers agent files, skills, and
 how a session picks an agent.
 
-## OpenCode runs every session
+## A harness runs every session
 
-OpenCode, the open-source coding-agent runtime, runs every session. The
-`kortix-agent` daemon starts it as `opencode serve`. OpenCode reads the
-project's agents from `agents/`, its skills from `skills/`, and the files only
-OpenCode reads from `harnesses/opencode/`.
+A session runs one agent harness: OpenCode (the default) or pi.
+[Harnesses](/docs/work/harnesses) lists how a project selects one and what
+each one supports.
+
+- **OpenCode** — the open-source coding-agent runtime. The `kortix-agent`
+  daemon starts it as `opencode serve`.
+- **pi** — runs in-process in the `kortix-agent` daemon. Select it with
+  `runtime: pi` in `kortix.yaml` or the `pi_harness` feature flag.
+
+Both read the project's agents from `agents/` and its skills from `skills/`.
+OpenCode also reads the files only it uses from `harnesses/opencode/`. pi
+reads its own from `harnesses/pi/`.
 
 Projects created before 2026-09 keep agents and skills under
 `.kortix/opencode/`. Kortix reads both layouts.
@@ -79,8 +87,10 @@ grant full access by default. Set specific grants to restrict access. See
 ## Skills give an agent know-how
 
 A skill is a markdown file at `skills/<name>/SKILL.md`.
-OpenCode loads a skill on demand when the agent calls it — Kortix does not
-inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
+The harness loads a skill on demand — Kortix does not inject skill bodies
+into every prompt. On OpenCode the agent calls the `skill` tool. On pi the
+system prompt lists each skill's name and description, and the agent reads
+the file. An agent's `skills` grant in `kortix.yaml`
 controls which skills it may load.
 
 ## How a session picks its agent

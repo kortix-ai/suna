@@ -9,23 +9,25 @@
  * this view. No step checklist, no timer, no Cancel bar.
  *
  * When the runtime fails to boot (a repo-materialization / git-clone failure
- * surfaced via /kortix/health `boot_error`, or the connect loop's own timeout),
- * the centre shows the failure with the detail, Restart, and a way back to
- * project home — web parity with the dashboard's "OpenCode runtime is not
- * ready" screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
+ * surfaced via /kortix/health `boot_error`, a terminal /start answer, or the
+ * connect loop's own timeout), the failure is a card with the composer's
+ * surface, the detail, Restart, and a way back to project home, centred in the
+ * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "OpenCode runtime is not ready"
+ * screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  *
  * With a SAVED COPY (`messages`: the copy this device kept, then the server's;
  * `lib/session/saved-copy.ts`) the view is the thread itself: its turns,
- * read-only, and a status bar above the composer saying what the computer is
- * doing. The loader is gone — the conversation is the content. A failure then
- * takes the composer's slot instead of replacing the thread, the rule the web
+ * read-only, and a status card above the composer saying what the computer
+ * is doing. The loader is gone — the conversation is the content. A failure takes
+ * the composer's slot here too, so the thread stays readable, the rule the web
  * follows: a readable conversation is never replaced by a card.
  *
  * A conversation the saved copy proves EMPTY (`empty`) has nothing to wait
- * for: no loader, the status bar and the composer. With `onSend` the composer
- * takes messages while the computer wakes: they queue through the prompt inbox
- * (`lib/session/connecting-send.ts`), and the typed text is the thread's own
- * draft, so it carries into the thread when the computer is ready.
+ * for: no loader, the status card and the composer.
+ *
+ * The composer is disabled until the thread replaces this view: no typing,
+ * no keyboard (Jay, 2026-10-02). A waking composer that took text had no agent
+ * chip, no attach, no keyboard avoidance, and a dead send button.
  */
 
 import React from 'react';
@@ -37,15 +39,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { Composer } from '@/components/kortix/composer';
-import { draftKey } from '@/lib/session/composer-draft';
-import { useComposerDraft } from '@/lib/session/use-composer-draft';
-import { flushComposerDrafts } from '@/stores/composer-draft-store';
+import { Icon } from '@/components/ui/icon';
+import { COMPOSER_CARD_CLASS, Composer } from '@/components/kortix/composer';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
 import { AttachmentTile } from '@/components/session/attachment-tile';
 import { UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
+import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
 import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
@@ -79,7 +80,6 @@ export function SessionConnecting({
   statusLabel,
   sessionId,
   empty = false,
-  onSend,
   projectId,
   projectSessionId,
 }: {
@@ -100,14 +100,12 @@ export function SessionConnecting({
   showLoader?: boolean;
   /** The session's saved copy, shown as the thread while the computer wakes. */
   messages?: MessageWithParts[];
-  /** What the computer is doing, for the status bar over the thread (`sessionConnectionLabel`). */
+  /** What the computer is doing, for the status card above the composer (`sessionConnectionLabel`). */
   statusLabel?: string | null;
   /** The runtime session the saved copy belongs to; tool rows read it. */
   sessionId?: string;
   /** The saved copy proves the conversation empty: nothing to wait for. */
   empty?: boolean;
-  /** Queues a message while the computer wakes. Absent: the composer is disabled. */
-  onSend?: (text: string) => void;
   /**
    * The project session, for the shared-session senders. Read here, not only
    * in `SessionPage`: the saved copy shows while the computer wakes, and its
@@ -139,7 +137,6 @@ export function SessionConnecting({
         onCancel={onCancel}
         onRestart={onRestart}
         restarting={restarting}
-        onSend={onSend}
         participants={participants}
         messageAuthors={messageAuthors}
       />
@@ -151,9 +148,9 @@ export function SessionConnecting({
       <View style={{ flex: 1 }} className="bg-background">
         <View style={{ flex: 1 }} />
         <View style={{ paddingBottom: insets.bottom }}>
-          <WakingStatus label={statusLabel ?? null} />
+          {statusLabel ? <WakingStatus label={statusLabel} /> : null}
           <View className="px-4 pb-3 pt-1">
-            <WakingComposer onSend={onSend} draftSessionId={sessionId} />
+            <WakingComposer />
           </View>
         </View>
       </View>
@@ -194,67 +191,55 @@ export function SessionConnecting({
             ) : null}
           </View>
         ) : null}
-        <View style={{ flex: 1 }} className="items-center justify-center">
+        {/* No conversation above: the failure sits where the eye already is,
+            the centre, not down in the composer's slot (Jay, 2026-10-02). */}
+        <View style={{ flex: 1 }} className="justify-center">
           {error ? (
-            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} />
+            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} sessionId={sessionId} />
           ) : showLoader ? (
-            <KortixLoader size="medium" />
+            <View className="items-center">
+              <KortixLoader size="medium" />
+            </View>
           ) : null}
         </View>
       </View>
 
       {/* The thread's composer, where `SessionPage` puts it (`px-4 pb-3 pt-1`
-          above the safe area). Disabled: there is no runtime to send to yet. */}
-      <View style={{ paddingBottom: insets.bottom }}>
-        <View className="px-4 pb-3 pt-1">
-          <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
+          above the safe area). Disabled: there is no runtime to send to yet.
+          None under a failure: nothing can be sent. */}
+      {error ? (
+        <View style={{ height: insets.bottom }} />
+      ) : (
+        <View style={{ paddingBottom: insets.bottom }}>
+          <View className="px-4 pb-3 pt-1">
+            <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
 
-/**
- * The composer while the computer wakes. With `onSend` it takes a message (see
- * the file comment); the draft is flushed on unmount so the thread's own
- * composer restores it in the same commit. Without it, disabled: there is no
- * runtime to send to yet.
- */
-function WakingComposer({ onSend, draftSessionId }: { onSend?: (text: string) => void; draftSessionId?: string }) {
-  const [text, setText] = React.useState('');
-  useComposerDraft(
-    onSend && draftSessionId ? draftKey({ kind: 'session', sessionId: draftSessionId }) : null,
-    text,
-    setText,
-  );
-  React.useEffect(() => () => flushComposerDrafts(), []);
-  if (!onSend) return <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />;
-  return (
-    <Composer
-      value={text}
-      onChangeText={setText}
-      onSubmit={() => {
-        const sent = text;
-        setText('');
-        onSend(sent);
-      }}
-    />
-  );
+/** The composer while the computer wakes: disabled, there is no runtime to send to yet. */
+function WakingComposer() {
+  return <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />;
 }
 
 /**
- * What the computer is doing: `SandboxHealthPill`'s bar, the composer card with
- * the dot on the text inset. Two lines, not one: the queue notice
- * (`SESSION_NOTICE.waking`) does not fit one line on a phone.
+ * What the computer is doing: a card above the composer with the composer
+ * card's own surface (`COMPOSER_CARD_CLASS`), so the two read as a pair. The
+ * dot sits on the first line of text, the words on the composer's text inset.
  */
-function WakingStatus({ label }: { label: string | null }) {
-  if (!label) return null;
+function WakingStatus({ label }: { label: string }) {
   return (
     <View className="px-4 pb-2" accessibilityLiveRegion="polite">
-      <View className="flex-row items-center gap-2 rounded-3xl border border-border bg-background p-2">
-        <View className="flex-1 flex-row items-center gap-2 px-2">
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
-          <Text variant="muted" className="shrink" numberOfLines={2}>
+      <View className={COMPOSER_CARD_CLASS}>
+        <View className="flex-row items-start gap-2.5 px-2 py-1">
+          {/* One text line tall (leading-5), so the dot centres on the first line. */}
+          <View className="h-5 justify-center">
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: THEME.accent.yellow }} />
+          </View>
+          <Text variant="muted" className="flex-1 leading-5" numberOfLines={2}>
             {label}
           </Text>
         </View>
@@ -265,7 +250,7 @@ function WakingStatus({ label }: { label: string | null }) {
 
 /**
  * The thread as its saved copy shows it: the turns, read-only, opened at the
- * newest message like the live thread; then the status bar and the composer.
+ * newest message like the live thread; then the status card and the composer.
  * A failure takes the composer's slot and the thread stays readable.
  */
 function SavedThread({
@@ -276,7 +261,6 @@ function SavedThread({
   onCancel,
   onRestart,
   restarting,
-  onSend,
   participants,
   messageAuthors,
 }: {
@@ -289,7 +273,6 @@ function SavedThread({
   onCancel: () => void;
   onRestart?: () => void;
   restarting?: boolean;
-  onSend?: (text: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
@@ -338,14 +321,14 @@ function SavedThread({
 
       <View style={{ paddingBottom: insets.bottom }}>
         {error ? (
-          <View className="items-center px-4 pb-3 pt-1">
-            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} />
+          <View className="px-4 pb-3 pt-1">
+            <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} sessionId={sessionId} />
           </View>
         ) : (
           <>
-            <WakingStatus label={statusLabel} />
+            {statusLabel ? <WakingStatus label={statusLabel} /> : null}
             <View className="px-4 pb-3 pt-1">
-              <WakingComposer onSend={onSend} draftSessionId={sessionId} />
+              <WakingComposer />
             </View>
           </>
         )}
@@ -360,39 +343,57 @@ function openFilePreview(path: string) {
   useToolFilePreviewStore.getState().openPreview(path);
 }
 
+/**
+ * The failure: the composer card's surface, the words on top, and Back to
+ * project · Restart side by side, 50/50, the primary on the right. Centred in
+ * the page when there is no conversation; in the composer's slot under a
+ * saved copy.
+ */
 function ConnectErrorState({
   error,
   onCancel,
   onRestart,
   restarting,
+  sessionId,
 }: {
   error: SessionConnectError;
   onCancel: () => void;
   onRestart?: () => void;
   restarting?: boolean;
+  /** Picks the restart glyph: the same dot matrix this session shows while it works. */
+  sessionId?: string;
 }) {
   const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
+  // The glyph draws on the `default` pill: its foreground, not the muted dots.
+  const onPrimary = THEME[colorScheme === 'dark' ? 'dark' : 'light'].primaryForeground;
   return (
-    <View className="w-full max-w-md items-center" style={{ gap: 12 }}>
-      <Text className="text-[15px] font-roobert-medium text-foreground text-center">{error.title}</Text>
-      <Text className="text-[13px] leading-5 text-muted-foreground text-center">{error.message}</Text>
+    <View className={COMPOSER_CARD_CLASS} style={{ gap: 12 }}>
+      <View className="gap-1 px-2 pt-1">
+        <Text className="text-[15px] font-roobert-medium text-foreground">{error.title}</Text>
+        <Text className="text-[13px] leading-5 text-muted-foreground">{error.message}</Text>
+      </View>
       {error.detail ? (
         <View className="w-full rounded-2xl border border-border bg-muted/40 px-3 py-2">
           <Text className="font-mono text-[12px] leading-5 text-muted-foreground">{error.detail}</Text>
         </View>
       ) : null}
-      {onRestart ? (
-        <Button variant="outline" onPress={onRestart} disabled={restarting} className="mt-1 rounded-full">
-          {/* Restarting is an inline disabled state, not a second loader. */}
-          <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-          <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
+      <View className="flex-row gap-2">
+        <Button variant="secondary" onPress={onCancel} className="flex-1 rounded-full">
+          <Text>Back to project</Text>
         </Button>
-      ) : null}
-      <Button variant="ghost" onPress={onCancel} className="rounded-full">
-        <Text>Back to project</Text>
-      </Button>
+        {onRestart ? (
+          <Button variant="default" onPress={onRestart} disabled={restarting} className="flex-1 rounded-full">
+            {/* Restarting: the session's dot matrix in place of the icon, inside
+                the disabled pill, never a second loader (Jay, 2026-10-02). */}
+            {restarting ? (
+              <SessionDotMatrix sessionId={sessionId} size={14} color={onPrimary} />
+            ) : (
+              <Icon as={RotateCcw} size={15} />
+            )}
+            <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
+          </Button>
+        ) : null}
+      </View>
     </View>
   );
 }
