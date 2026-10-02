@@ -101,7 +101,12 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isDefaultRequest && projectPolicy?.defaultFallback) {
+    // The project's chain is a catch-all: it covers every model that has no
+    // exact rule. It never depends on `isDefaultRequest`, because the
+    // principal's default is one model. An agent with its own default, or a
+    // default with every account paused, would otherwise take a request for
+    // the project's own model out of the chain.
+    if (projectPolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,

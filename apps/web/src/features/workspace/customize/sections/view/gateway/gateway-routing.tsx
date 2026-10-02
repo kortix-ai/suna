@@ -47,13 +47,13 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * | Capability | Where it is now |
  * | --- | --- |
- * | Inherit / custom / no fallback | "When the default fails" row (primary) |
+ * | Inherit / custom / no fallback | "When a model fails" row (primary) |
  * | Ordered default chain, reorder + remove, max 8 | Chain row — one line per step (primary) |
  * | Fallback condition (transient / any error) | "Retry on" line, inside the chain it belongs to |
  * | Per-model override rules, max 20 | "Per-model overrides" — one row per rule, promoted second (primary) |
  * | Vision (image-input) override | "Vision model" row, inside Advanced |
  * | Per-model generation defaults | "Generation defaults" section, inside Advanced |
- * | Provider-availability preview | `AvailabilityBadge`, unchanged, now also on the primary |
+ * | Provider-availability preview | `AvailabilityBadge`, on every chain step and override |
  * | Reset / dirty / validation / save | Header action + sticky footer, unchanged |
  *
  * The data contract is untouched: same props in, same `routing.set` /
@@ -782,11 +782,10 @@ export function GatewayRouting({
             {fallbackMode === 'custom' && draft.defaultFallback ? (
               <RoutingRow
                 align="start"
-                label={<span className="truncate font-mono text-xs">{primaryModel}</span>}
+                label={tI18nComplete.raw('texte75d99a42dba')}
                 hint={tI18nComplete.raw('textc3ecd3cd791b')}
               >
                 <div className="space-y-1.5">
-                  <AvailabilityBadge available={availability[primaryModel]} />
                   <ChainRows
                     primary={primaryModel}
                     chain={draft.defaultFallback}
