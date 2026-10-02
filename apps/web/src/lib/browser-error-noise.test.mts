@@ -12206,14 +12206,14 @@ test('anonymous Supabase refresh race is noise only on the landing page', () => 
   }), true);
 });
 
-test('frameless input-stream global rejection is noise; attributable and handled failures report', () => {
+test('unknown input-stream failures remain reportable, including frameless global rejections', () => {
   const event = {
     exception: { values: [{
       value: 'Error in input stream',
       mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
     }] },
   };
-  assert.equal(shouldIgnoreSentryBrowserNoise(event), true);
+  assert.equal(shouldIgnoreSentryBrowserNoise(event), false);
   for (const filename of ['apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx', 'app:///_next/static/chunks/app.js']) {
     assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
       ...event.exception.values[0], stacktrace: { frames: [{ filename }] },
