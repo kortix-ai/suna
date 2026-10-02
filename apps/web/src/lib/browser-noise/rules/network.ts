@@ -471,6 +471,17 @@ export function isSignalTimeoutNoise(input: {
 }
 
 export const NETWORK_RULES: readonly NoiseRule[] = [
+  // Observed Firefox input-stream rejection (KRTX-984). Only the exact,
+  // frameless global rejection is non-paging; attributable failures report.
+  {
+    id: 'frameless-input-stream',
+    appliesTo: 'sentry',
+    match: (evidence) =>
+      evidence.message === 'Error in input stream' &&
+      evidence.mechanism === 'auto.browser.global_handlers.onunhandledrejection' &&
+      evidence.handled === false &&
+      !sourcesOf(evidence).some(isResolvableFrameSource),
+  },
   { id: 'connection-closed', appliesTo: 'both', match: isConnectionClosedNoise },
   { id: 'failed-to-send-message', appliesTo: 'both', match: isFailedToSendMessageNoise },
   { id: 'frameless-network-error', appliesTo: 'sentry', match: isFramelessNetworkErrorNoise },

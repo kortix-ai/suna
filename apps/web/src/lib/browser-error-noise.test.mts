@@ -12205,3 +12205,27 @@ test('anonymous Supabase refresh race is noise only on the landing page', () => 
     exception: { values: [{ value: input.message, mechanism: { type: input.mechanism }, stacktrace: { frames: input.frames } }] },
   }), true);
 });
+
+test('frameless input-stream global rejection is noise; attributable and handled failures report', () => {
+  const event = {
+    exception: { values: [{
+      value: 'Error in input stream',
+      mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
+    }] },
+  };
+  assert.equal(shouldIgnoreSentryBrowserNoise(event), true);
+  for (const filename of ['apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx', 'app:///_next/static/chunks/app.js']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
+      ...event.exception.values[0], stacktrace: { frames: [{ filename }] },
+    }] } }), false);
+  }
+  for (const mechanism of [{ type: 'generic', handled: true }, { type: 'auto.browser.global_handlers.onunhandledrejection', handled: true }, undefined]) {
+    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
+      value: 'Error in input stream', mechanism,
+    }] } }), false);
+  }
+  for (const value of ['Error in input stream: invalid data', 'error in input stream', 'Error in output stream']) {
+    assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{ ...event.exception.values[0], value }] } }), false);
+  }
+  assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: 'Error in input stream' }), false);
+});
