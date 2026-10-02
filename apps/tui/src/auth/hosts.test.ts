@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { Host } from '@kortix/cli/src/api/config.ts';
+import type { Host } from '@kortix/shared/host-config';
 
 import { hostToResolved, resolveHost, resolvedFromHost, tokenRejectionNotice } from './hosts.ts';
 

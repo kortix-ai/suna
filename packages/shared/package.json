@@ -19,7 +19,9 @@
     "./code-language": "./src/code-language.ts",
     "./markdown-math": "./src/markdown-math.ts",
     "./tool-output": "./src/tool-output/index.ts",
-    "./session-fixture": "./src/session-fixture/index.ts"
+    "./session-fixture": "./src/session-fixture/index.ts",
+    "./host-config": "./src/host-config/config.ts",
+    "./sandbox-env": "./src/host-config/sandbox-env.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -792,6 +792,9 @@ importers:
       '@kortix/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+      '@kortix/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@opentui/core':
         specifier: 0.5.11
         version: 0.5.11(typescript@5.9.3)(web-tree-sitter@0.25.10)
