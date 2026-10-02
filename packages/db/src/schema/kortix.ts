@@ -1201,10 +1201,11 @@ export const projectSecretHandleStatusEnum = kortixSchema.enum('project_secret_h
  * secret's current `egressPolicy` at call time would let an agent widen its own
  * reach by editing the row it was denied the value of.
  *
- * NOTE: this table's indexes ship in
- * 20260728132613912_secret_delivery_indexes.concurrent.ts. The unique ones are
- * declared below; the non-unique `idx_secret_handles_session` (session_id) is
- * on scripts/schema-contract-sql-only.ts.
+ * NOTE: the unique indexes below ship in
+ * 20260728132613912_secret_delivery_indexes.concurrent.ts; the non-unique
+ * `idx_secret_handles_session` (session_id) is on
+ * scripts/schema-contract-sql-only.ts. The FK covering indexes are declared
+ * below and built by 20261002213239677_secret_handle_fk_indexes.concurrent.ts.
  */
 export const projectSessionSecretHandles = kortixSchema.table('project_session_secret_handles', {
   handleId: uuid('handle_id').defaultRandom().primaryKey(),
@@ -1244,6 +1245,10 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
   uniqueIndex('idx_secret_handles_one_active')
     .on(table.sessionId, table.secretId)
     .where(sql`${table.status} = 'active'`),
+  // FK covering indexes: every FK needs an index leading with its column so a
+  // delete on the referenced row finds the referencing rows without a seq scan.
+  index('idx_secret_handles_project').on(table.projectId),
+  index('idx_secret_handles_secret').on(table.secretId),
 ]);
 
 // Account-scoped default model preferences. Drives server-side resolution of the
