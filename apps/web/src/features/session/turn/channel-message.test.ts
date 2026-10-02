@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseChannelMessage, slackConversationName } from './channel-message';
+import { parseChannelMessage, slackChannelNames, slackConversationName } from './channel-message';
 
 /**
  * The scaffolds below are copied from the API renderers that produce them:
@@ -432,5 +432,20 @@ describe('slackConversationName', () => {
 
   test('no stored name is no label', () => {
     expect(slackConversationName({ channelName: null, channelType: 'channel' })).toBeNull();
+  });
+});
+
+describe('slackChannelNames', () => {
+  test("maps each named Slack binding's id to its name; skips other platforms and unnamed rows", () => {
+    const names = slackChannelNames([
+      { platform: 'slack', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' },
+      { platform: 'slack', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' },
+      { platform: 'slack', channelId: 'C0TEST2', channelName: null, channelType: null },
+      { platform: 'teams', channelId: '19:abc@thread.tacv2', channelName: 'General', channelType: 'channel' },
+    ]);
+    expect([...names]).toEqual([
+      ['C0TEST1', '#general'],
+      ['D0TEST1', 'Sam Rivera'],
+    ]);
   });
 });

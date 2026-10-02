@@ -129,6 +129,23 @@ export function slackConversationName(binding: { channelName: string | null; cha
 }
 
 /**
+ * Bound Slack conversation ids mapped to the names `slackConversationName`
+ * gives them. Rows of other platforms, and rows Slack has not named, are left
+ * out: their ids show as they are.
+ */
+export function slackChannelNames(
+  bindings: ReadonlyArray<{ platform: string; channelId: string; channelName: string | null; channelType: string | null }>,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const binding of bindings) {
+    if (binding.platform !== 'slack') continue;
+    const name = slackConversationName(binding);
+    if (name) names.set(binding.channelId, name);
+  }
+  return names;
+}
+
+/**
  * `New message from <user> in Slack channel <channel>, thread <ts>:`, the first
  * line of a Slack follow-up. The API writes it with `slackFollowUpHeader` and
  * this reads it with `readSlackFollowUpHeader`, both from `@kortix/shared`.
