@@ -19108,7 +19108,8 @@
       "text9116af1ce384": "Une conversation est partagée : elle peut utiliser les modèles Kortix et les clés partagées avec tout le projet, pas les clés personnelles.",
       "texte83e9ba50357": "Tout membre du projet dont le compte est associé peut rejoindre une session ici.",
       "text4540af5229a8": "Seule la personne qui a démarré une session peut la poursuivre.",
-      "textda4bd8bdfe42": "Les autres personnes doivent obtenir l’approbation du propriétaire de la session pour la rejoindre."
+      "textda4bd8bdfe42": "Les autres personnes doivent obtenir l’approbation du propriétaire de la session pour la rejoindre.",
+      "text5dae52a3f448": "{count, plural, one {# canal} other {# canaux}}"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
