@@ -14,9 +14,8 @@ variable "name" {
 
 variable "retention_days" {
   description = <<-EOT
-    Default Object Lock retention in days, and the lifetime of current objects
-    (they expire at retention_days + 1). The privacy policy keeps application
-    logs up to 365 days. The API job sets a per-object retain-until date of
+    Default Object Lock retention in days (the floor for an object written without a
+    retain-until date). The privacy policy keeps application logs up to 365 days. The API job sets a per-object retain-until date of
     occurred_at + 365 days; the bucket default is the floor for any object
     written without one.
   EOT
@@ -26,6 +25,22 @@ variable "retention_days" {
   validation {
     condition     = var.retention_days >= 1 && floor(var.retention_days) == var.retention_days
     error_message = "retention_days must be a positive whole number."
+  }
+}
+
+variable "archive_lag_days" {
+  description = <<-EOT
+    Age of an audit week, in days, when the API job uploads it (the 90-day hot window). The
+    lifecycle rule counts from the upload, the policy from the event, so current objects
+    expire at retention_days - archive_lag_days + 1 days after upload: about 365 days after
+    the event instead of about 455.
+  EOT
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.archive_lag_days >= 0 && var.archive_lag_days < var.retention_days
+    error_message = "archive_lag_days must be between 0 and retention_days - 1."
   }
 }
 

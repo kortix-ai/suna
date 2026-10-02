@@ -2,8 +2,8 @@
 #
 # WORM store for kortix.audit_events. The API job exports each weekly partition
 # older than the 90-day hot window as gzip JSONL and writes it with Object Lock
-# retention until occurred_at + 365 days. A lifecycle rule deletes everything
-# at retention_days + 1; the privacy policy keeps application logs up to 365
+# retention until occurred_at + 365 days. A lifecycle rule deletes current objects
+# at retention_days - archive_lag_days + 1 days after upload (about 365 days after the event); the privacy policy keeps application logs up to 365
 # days. The API task role may write and read, never delete (modules/ecs-api).
 #
 # COMPLIANCE mode is irreversible for each written object version: nobody,
@@ -101,7 +101,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
 
 # Object Lock blocks deletion before each version's retention ends, so these
 # rules only act once retention has passed. +1 day keeps the expiry after the
-# last lock for an object written with the default retention.
+# last lock: the API sets retain-until = week end + 365 days, which is at most
+# retention_days - archive_lag_days after the upload (it only uploads weeks older than
+# archive_lag_days). Expiry therefore counts from the upload, not from the default retention.
 resource "aws_s3_bucket_lifecycle_configuration" "this" {
   bucket = aws_s3_bucket.this.id
 
@@ -110,7 +112,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     status = "Enabled"
     filter {}
     expiration {
-      days = var.retention_days + 1
+      days = var.retention_days - var.archive_lag_days + 1
     }
     noncurrent_version_expiration {
       noncurrent_days = var.noncurrent_version_days
