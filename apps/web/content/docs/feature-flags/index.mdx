@@ -170,7 +170,9 @@ refs). An explicit project choice always wins.
   delegates with the `task` tool to `general`, `explore` (read-only), or any
   project agent with `mode: subagent` in its `.md`, and the transcript
   shows each subagent's steps in place. pi sessions also load pi.dev packages:
-  see [`harnesses:`](/docs/project/manifest#harnesses).
+  see [`harnesses:`](/docs/project/manifest#harnesses). pi does not serve every
+  session feature OpenCode does: see the matrix in
+  [Harnesses](/docs/work/harnesses#what-each-harness-supports).
 
 ### Graduated flags
 
@@ -184,7 +186,7 @@ A graduated feature is on for every project and has no switch.
   on the old launcher-role model for a single release; ask support, who set it
   with `PATCH /v1/projects/:id/features`. That switch is removed in the release
   after this one.
-- **Review Center** graduated out of the flag system. The Review tab, the
+- **Review Center** graduated out of the flag system. The Review page, the
   sidebar Review row, and the command-palette row show for every project; the
   `project.review.read` and `project.review.act` permissions still apply.
   `review_center` is no longer a flag key: `PATCH /v1/projects/:id/features`

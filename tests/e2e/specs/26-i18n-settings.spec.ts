@@ -92,7 +92,7 @@ function productSurfaceRoutes(projectId: string, accountId: string): string[] {
     `/projects/${projectId}/customize/skills`,
     `/projects/${projectId}/customize/connectors`,
     `/projects/${projectId}/customize/triggers`,
-    `/projects/${projectId}/customize/review`,
+    `/projects/${projectId}/review`,
     `/projects/${projectId}/customize/models`,
     `/projects/${projectId}/customize/secrets`,
     `/projects/${projectId}/customize/settings`,

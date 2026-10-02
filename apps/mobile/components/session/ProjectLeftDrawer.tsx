@@ -50,7 +50,7 @@
  * Layout rules: apps/mobile/design.md → Project sidebar.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -80,14 +80,16 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PixelDeadFlower } from '@/components/kortix/PixelDeadFlower';
-import { DrawerSessionNode, NESTED_SESSION_INDENT } from './DrawerSessionRows';
+import { DrawerSessionNode, NESTED_SESSION_INDENT, useSessionStarterOf } from './DrawerSessionRows';
+import { SubsessionTreeMemory } from '@/components/session/SessionSubsessionTree';
 import { NavPill, ReviewCountPill, SwitcherRow } from './DrawerNavRows';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
-import { SessionChildren } from '@/components/session/SessionTreeParts';
+import { SessionChildren, type SessionChildrenProps } from '@/components/session/SessionTreeParts';
 import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
+import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
 import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -97,7 +99,7 @@ import {
   PROJECT_SESSIONS_ROUTE,
   type ProjectDrawerRoute,
 } from '@/lib/session/project-stack';
-import { buildDrawerItems, isParentExpanded, rootRowsOnly, sessionStarter, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
+import { buildDrawerItems, isParentExpanded, rootRowsOnly, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
 import { parentKey, sectionKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { useAuthContext } from '@/contexts';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
@@ -139,6 +141,18 @@ function DrawerEmptyFlower({ color }: { color: string }) {
     }
   );
   return <PixelDeadFlower color={color} animate={visible} />;
+}
+
+/**
+ * The drawer's `open`, for the children blocks' loaders. A context, not a
+ * `renderItem` dependency: a drawer open or close then re-renders those
+ * blocks only, not every list cell.
+ */
+const DrawerOpenContext = React.createContext(false);
+
+function DrawerSessionChildren(props: Omit<SessionChildrenProps, 'showLoader'>) {
+  const open = React.useContext(DrawerOpenContext);
+  return <SessionChildren {...props} showLoader={open} />;
 }
 
 // ─── ProjectLeftDrawer ───────────────────────────────────────────────────────
@@ -209,7 +223,11 @@ const SIDE_SECTION_PAGE_SIZE = 20;
 /** Shared empty map: a fresh one per render would re-derive the lists. */
 const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 
-export function ProjectLeftDrawer({
+/**
+ * Memoized: ProjectScreen re-renders it on every poll and sheet change, and
+ * its props are stable.
+ */
+export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
   activeRuntimeSessionId = null,
@@ -249,12 +267,16 @@ export function ProjectLeftDrawer({
   // KRTX-639: three independent paged queries of top-level sessions, by who
   // started the run. Children load per parent, on expand (`SessionChildren`).
   const viewerId = useAuthContext().user?.id ?? null;
+  const starterOf = useSessionStarterOf(viewerId);
   const choices = useSessionTreeStore((state) => state.choices);
   const setChoice = useSessionTreeStore((state) => state.setChoice);
   const sectionOpen = (id: DrawerSectionId) => choices[sectionKey(projectId, id)] ?? id === 'sessions';
   const sharedOpen = sectionOpen('shared');
   const automatedOpen = sectionOpen('automated');
-  const mine = useProjectSessionsPaged(projectId, { poll: isFocused, parent: 'root', startedBy: 'me' });
+  // Polls only while the drawer is open: its content stays mounted while
+  // closed, every poll result re-rendered it (~2 renders per 3 s), and the
+  // open refetch below already shows a fresh list.
+  const mine = useProjectSessionsPaged(projectId, { poll: isFocused && open, parent: 'root', startedBy: 'me' });
   // Shared loads always (its header hides when it is empty); Automated only
   // once opened: a project can hold hundreds of automated runs.
   const shared = useProjectSessionsPaged(projectId, {
@@ -277,16 +299,27 @@ export function ProjectLeftDrawer({
     isFetchingNextPage,
     fetchNextPage,
   } = mine;
+  // The side sections' "Show more" rows. `fetchNextPage` is stable; the query
+  // objects are new on every render, so the list reads these fields, not them.
+  const sharedFetchingNext = shared.isFetchingNextPage;
+  const automatedFetchingNext = automated.isFetchingNextPage;
+  const fetchNextShared = shared.fetchNextPage;
+  const fetchNextAutomated = automated.fetchNextPage;
   const mineRoots = useMemo(() => rootRowsOnly(mine.sessions), [mine.sessions]);
   const sharedRoots = useMemo(() => rootRowsOnly(shared.sessions), [shared.sessions]);
   const automatedRoots = useMemo(() => rootRowsOnly(automated.sessions), [automated.sessions]);
+  // Depends on the `refetch` functions (stable), not the query objects (new on
+  // every render): the callback must not change on each fetch's re-render.
+  const refetchMine = mine.refetch;
+  const refetchShared = shared.refetch;
+  const refetchAutomated = automated.refetch;
   const refetchAll = useCallback(async () => {
     await Promise.all([
-      mine.refetch(),
-      shared.refetch(),
-      automatedOpen ? automated.refetch() : Promise.resolve(),
+      refetchMine(),
+      refetchShared(),
+      automatedOpen ? refetchAutomated() : Promise.resolve(),
     ]);
-  }, [mine, shared, automated, automatedOpen]);
+  }, [refetchMine, refetchShared, refetchAutomated, automatedOpen]);
   // Sessions that wait on the user, newest wait first: their own group above
   // the list, from every loaded top-level row. A session not loaded yet (an
   // older page, a child) is left to the Review row's count.
@@ -371,11 +404,7 @@ export function ProjectLeftDrawer({
   // session created or renamed elsewhere shows without a pull. After the
   // slide (open is 420ms): a response landing mid-slide re-rendered the list
   // while it moved (Jay, 2026-09-27: "not smooth").
-  useEffect(() => {
-    if (!open) return;
-    const timer = setTimeout(() => void refetchAll(), DRAWER_REFETCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [open, refetchAll]);
+  useRefetchOnOpen(open, refetchAll, DRAWER_REFETCH_DELAY_MS);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
     void refetchAll();
@@ -489,7 +518,7 @@ export function ProjectLeftDrawer({
         key={child.session_id}
         session={child}
         shown={child.session_id === activeProjectSessionId}
-        activeRuntimeId={activeRuntimeSessionId}
+        activeRuntimeId={child.session_id === activeProjectSessionId ? activeRuntimeSessionId : null}
         nested
         trunkBelow={trunkBelow}
         onPress={handleOpenProjectSession}
@@ -521,18 +550,19 @@ export function ProjectLeftDrawer({
         );
       }
       if (item.kind === 'more') {
-        const query = item.section === 'shared' ? shared : automated;
+        const isShared = item.section === 'shared';
+        const fetchingNext = isShared ? sharedFetchingNext : automatedFetchingNext;
         return (
           <View className="px-2 -mx-1 items-start pl-4">
             <Button
               variant="ghost"
               size="sm"
-              disabled={query.isFetchingNextPage}
+              disabled={fetchingNext}
               onPress={() => {
                 haptics.tap();
-                void query.fetchNextPage();
+                void (isShared ? fetchNextShared : fetchNextAutomated)();
               }}>
-              <Text>{query.isFetchingNextPage ? 'Loading…' : 'Show more'}</Text>
+              <Text>{fetchingNext ? 'Loading…' : 'Show more'}</Text>
             </Button>
           </View>
         );
@@ -540,23 +570,23 @@ export function ProjectLeftDrawer({
       if (item.kind === 'children') {
         return (
           <View className="px-2 -mx-1">
-            <SessionChildren
+            <DrawerSessionChildren
               projectId={projectId}
               parent={item.session}
               renderChild={renderChild}
               moreInset={NESTED_SESSION_INDENT}
-              showLoader={open}
             />
           </View>
         );
       }
+      const shown = item.session.session_id === activeProjectSessionId;
       return (
         <View className="px-2 -mx-1">
           <DrawerSessionNode
             session={item.session}
-            shown={item.session.session_id === activeProjectSessionId}
-            activeRuntimeId={activeRuntimeSessionId}
-            starter={item.section === 'sessions' ? undefined : sessionStarter(item.session, viewerId)}
+            shown={shown}
+            activeRuntimeId={shown ? activeRuntimeSessionId : null}
+            starter={item.section === 'sessions' ? undefined : starterOf(item.session)}
             expanded={isExpanded(item.session)}
             onToggleChildren={toggleParent}
             onPress={handleOpenProjectSession}
@@ -568,12 +598,13 @@ export function ProjectLeftDrawer({
     },
     [
       projectId,
-      open,
-      shared,
-      automated,
+      sharedFetchingNext,
+      automatedFetchingNext,
+      fetchNextShared,
+      fetchNextAutomated,
       setChoice,
       renderChild,
-      viewerId,
+      starterOf,
       isExpanded,
       toggleParent,
       activeProjectSessionId,
@@ -629,7 +660,7 @@ export function ProjectLeftDrawer({
                 key={session.session_id}
                 session={session}
                 shown={session.session_id === activeProjectSessionId}
-                activeRuntimeId={activeRuntimeSessionId}
+                activeRuntimeId={session.session_id === activeProjectSessionId ? activeRuntimeSessionId : null}
                 needsYou={needsYouBySession.get(session.session_id)}
                 onPress={handleOpenProjectSession}
                 onLongPress={onSessionActions}
@@ -672,6 +703,29 @@ export function ProjectLeftDrawer({
 
   // LegacyChatsSection takes raw colours for its icons.
   const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  // Memoized: a new footer element re-renders Previous chats on every drawer render.
+  const legacyChats = useMemo(
+    () => (
+      <View className="mt-2 px-2">
+        <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
+      </View>
+    ),
+    [iconColor, mutedColor, isDark]
+  );
+  const showPageLoader = isFetchingNextPage && open;
+  const listFooter = useMemo(
+    () => (
+      <View>
+        {showPageLoader ? (
+          <View className="items-center py-4">
+            <KortixLoader size="small" />
+          </View>
+        ) : null}
+        {legacyChats}
+      </View>
+    ),
+    [showPageLoader, legacyChats]
+  );
 
   // The drawer surface (bg-chrome-background), transparent → opaque, so rows
   // fade out under the bottom bar instead of stopping at a hard edge.
@@ -707,6 +761,10 @@ export function ProjectLeftDrawer({
       </View>
 
       <View className="flex-1">
+        <DrawerOpenContext.Provider value={open}>
+        {/* Expanded sub-session trees survive virtualisation; the drawer stays
+            mounted, so they stay expanded while the project is open. */}
+        <SubsessionTreeMemory>
         <Animated.FlatList
           style={{ flex: 1 }}
           data={items}
@@ -723,19 +781,10 @@ export function ProjectLeftDrawer({
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={mutedColor} />
           }
-          ListFooterComponent={
-            <View>
-              {isFetchingNextPage && open ? (
-                <View className="items-center py-4">
-                  <KortixLoader size="small" />
-                </View>
-              ) : null}
-              <View className="mt-2 px-2">
-                <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-              </View>
-            </View>
-          }
+          ListFooterComponent={listFooter}
         />
+        </SubsessionTreeMemory>
+        </DrawerOpenContext.Provider>
         {/* Top fade: rows fade out under the nav pills instead of a hard edge. */}
         <Animated.View
           pointerEvents="none"
@@ -786,4 +835,4 @@ export function ProjectLeftDrawer({
     </View>
     </>
   );
-}
+});

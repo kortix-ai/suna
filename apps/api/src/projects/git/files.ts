@@ -12,7 +12,7 @@ import {
 } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
+import { type MirrorRefresh, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
   GetFileAtRefResult,
@@ -234,7 +234,7 @@ export async function readManifestFromRepo(
   candidatePaths: string[],
   ref?: string,
   opts?: {
-    forceRefresh?: boolean;
+    forceRefresh?: MirrorRefresh;
     /** Throw when `ref` does not resolve instead of answering "absent".
      *  Authorization reads set this: an unreadable ref must not be laundered
      *  into the synthesized permissive manifest a blank project gets. */

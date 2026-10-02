@@ -1764,6 +1764,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
     index('idx_session_lifecycle_commands_account').on(table.accountId),
+    // The forwarded-prompt sweep (`reconcileForwardedPrompts`): rows still
+    // `forwarded`, oldest first. Partial, because every other row is closed:
+    // `(status, available_at)` matches every succeeded row ever written.
+    index('idx_session_lifecycle_commands_forwarded')
+      .on(table.updatedAt)
+      .where(sql`(${table.result}->>'status') = 'forwarded'`),
   ],
 );
 
@@ -4134,7 +4140,11 @@ export const appArtifacts = kortixSchema.table(
   ],
 );
 
-/** Immutable deployment version. Active routing remains an Apps-row pointer. */
+/**
+ * Immutable deployment version. Active routing remains an Apps-row pointer.
+ * `deleted` is terminal: the owner removed this deployment, its runtimes, and
+ * its provider image. Reads hide it; it is never a rollback target.
+ */
 export const appDeployments = kortixSchema.table(
   'app_deployments',
   {
@@ -4177,7 +4187,7 @@ export const appDeployments = kortixSchema.table(
   (table) => [
     check(
       'app_deployments_status_check',
-      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled')`,
+      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled', 'deleted')`,
     ),
     check(
       'app_deployments_source_kind_check',

@@ -15,18 +15,17 @@
  * has neither a sub-session modal nor URL routes inside a project, so both
  * open the child session in the app (`useToolNavigation().openSession`).
  * Web's running mark is a pulsing dot; mobile's loading rule allows only
- * `KortixLoader`, so the mark is `KortixLoader` at `size-3`.
+ * `KortixLoader`, so the mark is `KortixLoader` at `size-3` (`RunningLoader`: an empty box in a finished turn).
  */
 
 import { useCallback, useContext, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import { getChildSessionId } from '@kortix/sdk';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Text } from '@/components/ui/text';
 import { ArrowSquareOutIcon, CpuIcon } from '@/lib/icons';
 import { sessionSpawnModel } from '@/lib/session/tools/agents-spawn';
 import { webSpace } from '@/lib/session/user-message';
-import { partInput, partStatus, useToolNavigation } from '../shared/infrastructure';
+import { RunningLoader, partInput, partStatus, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import { ToolDetailContext } from '../shared/surface';
@@ -100,7 +99,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           ) : null}
           {model.isRunning ? (
             <View style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <KortixLoader customSize={TURN_SPACE.statusIcon} />
+              <RunningLoader size={TURN_SPACE.statusIcon} />
             </View>
           ) : null}
           {model.stepsLabel ? (

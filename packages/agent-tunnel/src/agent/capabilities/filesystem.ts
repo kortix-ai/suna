@@ -5,7 +5,7 @@
  * even though the server already validates permissions.
  */
 
-import { open, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
+import { open, writeFile, readdir, stat, lstat, unlink, rmdir, mkdir } from 'fs/promises';
 import { createHash } from 'node:crypto';
 import { validateFilesystemParams } from '../../shared/filesystem-validation';
 import { join, dirname } from 'path';
@@ -243,7 +243,11 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
 
     validateFilesystemPath(path, config, params);
 
-    await unlink(path);
+    if ((await lstat(path)).isDirectory()) {
+      await rmdir(path);
+    } else {
+      await unlink(path);
+    }
 
     return { deleted: true, path };
   });

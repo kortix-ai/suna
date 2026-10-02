@@ -94,6 +94,26 @@ export const DEFAULT_PREFIX = 'kortix-default-';
  * the sole reason to reap — exactly the role it already plays for `kortix-tpl-`.
  */
 export const APP_DEPLOYMENT_PREFIX = 'kortix-app-';
+
+/**
+ * The provider image one App deployment build mints. The deployment worker
+ * builds it, quota GC protects it, and App/deployment delete removes it — all
+ * three must use this function, or a rename strands images nothing can find.
+ */
+export function appDeploymentSnapshotName(deploymentId: string): string {
+  return `${APP_DEPLOYMENT_PREFIX}${deploymentId.replaceAll('-', '')}`;
+}
+
+/**
+ * The inverse of `appDeploymentSnapshotName`: the deployment id an App image
+ * belongs to, or null when the name is not exactly that shape. The reclaim
+ * sweep keys every delete on this id, so a near-miss name is never touched.
+ */
+export function deploymentIdFromAppSnapshotName(name: string): string | null {
+  const match = /^kortix-app-([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/.exec(name);
+  return match ? match.slice(1).join('-') : null;
+}
+
 /** Namespaces we own and may reap. Anything else (stock/bench images) is untouched. */
 export const MANAGED_PREFIXES = [
   DEFAULT_PREFIX,

@@ -23,3 +23,4 @@ export * from './tag-blocks';
 export * from './trigger-event';
 export * from './reminder-prompt';
 export * from './channel-header';
+export * from './slack-text';

@@ -1331,6 +1331,30 @@ export async function deleteSessionPrompt(
 }
 
 /**
+ * Replace the text of a prompt that is still waiting in the queue.
+ *
+ * The row keeps its place, its files, its wire id and any hold. Nothing is
+ * sent: an edit is not a new message, so unlike `createSessionPrompt` it never
+ * releases a Stop hold or admits the row early. A row already on the wire
+ * answers `409` — the agent has the old text.
+ */
+export async function editSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+  text: string,
+): Promise<SessionPrompt> {
+  return unwrap(
+    await backendApi.patch<SessionPrompt>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      { text },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
  * Run THIS prompt next — the one primitive behind both "retry" and "send now".
  *
  * They are one intent: the user pointed at a row and asked for that message.

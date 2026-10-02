@@ -3,15 +3,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast } from '@/components/ui/toast';
 
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-
+import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
@@ -34,10 +32,12 @@ export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPr
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
 
 function AppsHeader({
+  projectId,
   columns,
   onColumnsChange,
   showColumns,
 }: {
+  projectId: string;
   columns: AppGridColumns;
   onColumnsChange: (next: AppGridColumns) => void;
   /**
@@ -50,19 +50,9 @@ function AppsHeader({
   showColumns: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const sidebar = useOptionalSidebar();
 
   return (
-    <div
-      className="kx-titlebar-row kx-titlebar-band-height relative flex shrink-0 items-center gap-1 border-b px-2"
-      data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
-    >
-      <SidebarToggle />
-      <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
-        <h1 className="text-foreground shrink-0 text-sm font-medium">
-          {tI18nComplete.raw('text89dd748442c1')}
-        </h1>
-      </div>
+    <ProjectPageHeader title={tI18nComplete.raw('text89dd748442c1')} href={`/projects/${projectId}/apps`}>
       {showColumns ? (
         <div className="flex shrink-0 items-center pr-1">
           <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
@@ -78,7 +68,7 @@ function AppsHeader({
         {tI18nComplete.raw('text7af023c43013')}
         <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
       </Link>
-    </div>
+    </ProjectPageHeader>
   );
 }
 
@@ -128,6 +118,7 @@ export function AppsView({ projectId }: { projectId: string }) {
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
       <AppsHeader
+        projectId={projectId}
         columns={gridColumns}
         onColumnsChange={setGridColumns}
         showColumns={

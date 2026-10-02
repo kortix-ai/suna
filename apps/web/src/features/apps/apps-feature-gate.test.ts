@@ -104,11 +104,16 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   // The exact bar contract, read off the file that owns it — if the tab row is
   // ever restyled this fails rather than letting Apps drift into a second
   // dialect of page chrome.
+  // Apps draws it through `ProjectPageHeader`, the one header the standalone
+  // project pages (Review, Files, Reminders, Apps) share.
+  const header = readFileSync(
+    resolve(root, 'features/workspace/project-layout/project-page-header.tsx'),
+    'utf8',
+  );
   const BAR = 'relative flex shrink-0 items-center gap-1 border-b px-2';
   expect(tabs).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
-  expect(view).toContain(BAR);
-  expect(view).toContain('kx-titlebar-row');
-  expect(view).toContain('kx-titlebar-band-height');
+  expect(header).toContain(`kx-titlebar-row kx-capability-titlebar ${BAR}`);
+  expect(view).toContain('<ProjectPageHeader');
 
   // `CustomizeSectionWrapper` is the settings-section shell: an 80px centred
   // masthead that scrolls away with the content. Apps is an operational grid
@@ -120,7 +125,7 @@ test('the Apps header is the capability tab bar, not a settings masthead', () =>
   // never a second copy absolutely positioned at top-2 left-2 over the macOS
   // traffic lights. The rule and the control are both pinned in
   // workspace/project-layout/sidebar-toggle.test.ts.
-  expect(view).toContain('<SidebarToggle />');
+  expect(header).toContain('<SidebarToggle />');
   expect(view).not.toContain('sidebarOpenerLabel');
   expect(view).not.toContain('placement="floating"');
   expect(view).not.toContain('absolute top-2 left-2');

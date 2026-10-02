@@ -59,7 +59,9 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       return envVars;
     });
 
-    const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
+    // Not awaited here: provisioning reads it only when it builds the provider
+    // input, so the env build overlaps the image check and the token mint.
+    const extraEnvVars = envPromise.then((env) => mergeSessionSandboxEnv(env, input.extraEnvVars));
 
     await provisionSessionSandbox({
       sandboxId: input.sessionId,

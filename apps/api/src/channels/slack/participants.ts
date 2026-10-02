@@ -114,7 +114,7 @@ function threadJoinRequestBlocks(input: {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${escapeMrkdwn(input.requesterLabel)}* wants to join this Kortix session.\nThis Slack thread is private until you approve them.`,
+        text: `*${input.requesterLabel}* wants to join this Kortix session.\nThis Slack thread is private until you approve them.`,
       },
     },
     {
@@ -139,9 +139,15 @@ function threadJoinRequestBlocks(input: {
   ];
 }
 
+/**
+ * The requester as mrkdwn: a live `<@U…>` mention, which every Slack client
+ * renders as the person's current name, then their Kortix email when known.
+ * Only the email is escaped — escaping the mention prints it as literal text.
+ */
 async function requesterLabel(userId: string, slackUserId: string): Promise<string> {
   const email = (await lookupEmailsByUserIds([userId]).catch(() => null))?.get(userId);
-  return email || `<@${slackUserId}>`;
+  const mention = `<@${slackUserId}>`;
+  return email ? `${mention} (${escapeMrkdwn(email)})` : mention;
 }
 
 async function postJoinRequest(input: {

@@ -154,7 +154,7 @@ confirms it: `Forwarded localhost:3000 → sandbox:3000`. Set
 Detection ignores ports 1-1023 except 80 and 443 (a sandboxed dev server
 essentially never binds a privileged port; treating a `host:port`-shaped match
 there as a false positive is safer than flooding the panel with noise) and the
-sandbox's own SSH (22) and OpenCode control (8000) ports.
+sandbox's own SSH (22) and kortixd service (8000) ports.
 
 `Alt+P` opens the panel — one row per port, its state (forwarding / stopped /
 error), and its local URL when forwarding:

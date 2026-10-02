@@ -77,6 +77,13 @@ describe('releaseVariantFor', () => {
     expect(releaseVariantFor('reviewer', false)).toBe('agent:reviewer');
   });
 
+  // The coordinator never holds the project's files, whatever the session
+  // metadata says about repository access.
+  test('the platform meta coordinator has its own variant', () => {
+    expect(releaseVariantFor('meta', true)).toBe('meta');
+    expect(releaseVariantFor('meta', false)).toBe('meta');
+  });
+
   // The whole point: a session with no usable agent still gets a RELEASE.
   // `none` compiles to an empty OpenCode config, which has a non-null etag,
   // so `release_id` is never null and the box never falls back.

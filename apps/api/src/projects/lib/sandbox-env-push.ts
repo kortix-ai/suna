@@ -9,6 +9,7 @@ import type { ProviderName } from '../../platform/providers';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { loadSessionSecretContext } from './session-secret-context';
 import { decideEnvSyncAction } from './env-sync-skip-decision';
 import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
 import {
@@ -401,10 +402,15 @@ export async function syncSandboxEnvForPrompt(args: {
   // result. They start together and are awaited in the original order, so a
   // failure still surfaces at the same place and with the same meaning — the
   // boundary's fail-closed grant error included.
+  // Both read the session row, the project row, the running agent's grant and
+  // the personal-override owner. One context answers both.
+  const secretContext = loadSessionSecretContext(args.projectId, args.sessionId, args.requestedAgent);
+  secretContext.catch(() => undefined);
   const boundaryRead = resolveSessionNetworkBoundary(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
+    secretContext,
   );
   const gatewayRead = projectLlmGatewayEnabledById(args.projectId);
   boundaryRead.catch(() => undefined);
@@ -413,6 +419,7 @@ export async function syncSandboxEnvForPrompt(args: {
     args.projectId,
     args.sessionId,
     args.requestedAgent,
+    secretContext,
   );
   lap('snapshot');
   if (!snapshot) return;
@@ -555,8 +562,9 @@ export async function syncSandboxEnvForPrompt(args: {
         signature,
       });
     }
-    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
-    lap('mark');
+    // Bookkeeping, and on this path the stored flag already matches in the
+    // steady state: the turn does not wait for a write that changes nothing.
+    void markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled).catch(() => undefined);
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
         `background_refresh=${decision.scheduleBackgroundRefresh} ${JSON.stringify(timing)}`,

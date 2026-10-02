@@ -96,10 +96,12 @@ export function insertSkillToken(text: string, trigger: SkillTriggerMatch, skill
  * Drop tracked mentions whose "#label" text no longer appears in `text` —
  * same rule `useMentions.ts`'s `handleTextChange` applies to "@label":
  * deleting the visible token (backspace, selecting and typing over it, …)
- * untracks it.
+ * untracks it. Returns `mentions` itself when nothing is pruned, so a
+ * keystroke keeps the state's identity.
  */
 export function pruneSkillMentions(text: string, mentions: TrackedSkillMention[]): TrackedSkillMention[] {
-  return mentions.filter((m) => text.includes(`${SKILL_TRIGGER}${m.label}`));
+  const kept = mentions.filter((m) => text.includes(`${SKILL_TRIGGER}${m.label}`));
+  return kept.length === mentions.length ? mentions : kept;
 }
 
 export type SkillSubmissionPlan =

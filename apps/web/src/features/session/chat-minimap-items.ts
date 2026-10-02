@@ -1,3 +1,4 @@
+import { parseChannelMessage } from '@/features/session/turn/channel-message';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { isFilePart, isTextPart, type FilePart, type TextPart, type Turn } from '@/ui';
@@ -213,7 +214,13 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
   ) as TextPart[];
   const fileParts = parts.filter(isFilePart) as FilePart[];
 
-  const raw = stripSystemPtyText(textParts.map((p) => p.text ?? '').join('\n'));
+  const prompt = stripSystemPtyText(textParts.map((p) => p.text ?? '').join('\n'));
+  // A Slack, Teams or Telegram turn is a scaffold around a person's words: the
+  // preview is the sender and the words, as the message card shows them.
+  const channel = parseChannelMessage(prompt);
+  const raw = channel
+    ? [channel.userName, channel.messageText].filter(Boolean).join(': ')
+    : prompt;
   const afterReply = stripReplyContexts(raw);
   const { cleanText: afterFiles, files: uploads } = parseFileReferences(afterReply);
   const { cleanText: afterProjects } = parseProjectReferences(afterFiles);

@@ -232,11 +232,14 @@ The seed only hydrates cached transcript content while `/start` runs. It does
 not override the runtime identity. The pin returned by `/start` is
 authoritative and replaces a stale seed.
 
-Do not accept this value from an untrusted tenant selector. Do not create an
-OpenCode session in the host. Kortix creates and persists the root session.
-OpenCode query caches and transcript controllers are scoped to the sandbox
-runtime, so equal OpenCode ids from different sandboxes do not share cache
-entries.
+`opencode_session_id` is the deprecated name of `runtime_session_id`. Both
+carry the same value; read the old name only as the fallback above.
+
+Do not accept this value from an untrusted tenant selector. Do not create a
+runtime session in the host. Kortix creates and persists the root session.
+Runtime query caches and transcript controllers are scoped to the sandbox
+runtime, so equal runtime session ids from different sandboxes do not share
+cache entries.
 
 Pending message retries keep their originating sandbox URL when you switch
 sessions. A `404` or `410` message response stops automatic retries without
@@ -366,7 +369,8 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 with `runtimeSupports(capabilities, capability)` and hide the control when it
 returns `false`. An OpenCode session serves all ten; a pi session serves
 `session.subagents` only and answers the others with `501 feature_not_supported`
-(`404` for the config document).
+(`404` for the config document). [Harnesses](/docs/work/harnesses) has the
+full OpenCode and pi matrix.
 
 | Capability | Feature |
 | --- | --- |
@@ -392,6 +396,10 @@ if (!runtimeSupports(health?.capabilities, 'session.compact')) hideCompact();
 runtime that lists no `session.*` capability: a daemon built before capabilities
 existed runs OpenCode, which serves every feature. In React, use
 [`useRuntimeSupports`](/docs/sdk/react).
+
+The `start` answer also carries the list: `SessionStartResult.capabilities` is
+set with `stage: 'ready'`. `useSession` records it, so a capability gate is
+right before the first health probe answers.
 
 ## Status words
 
@@ -445,6 +453,12 @@ const stream = await session.stream({
 
 await session.send('Refactor the auth module');
 ```
+
+The stream delivers events in batches, 16 ms apart. Consecutive
+`message.part.delta` events for one part field in a batch arrive as one event.
+Its `properties.delta` is their text, joined in order. Its `id` is the last
+event's id. Its `coalesced` array lists the events it replaced. Append `delta`
+to the part's field, as for a single delta.
 
 Streaming needs `fetch` with a real `ReadableStream` body and
 `TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers

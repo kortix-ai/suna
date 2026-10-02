@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { SlackIcon } from '@/components/icons/slack-icon';
 import {
   CaretDownIcon,
   CopyIcon,
@@ -29,7 +30,6 @@ import {
   TextTIcon,
   DownloadSimpleIcon,
   PaperPlaneTiltIcon,
-  SlackLogoIcon,
   TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
@@ -91,11 +91,10 @@ const FADE_HEIGHT = webSpace(10);
 /** `text-xs` = 0.8125rem with a 1rem line. */
 const META_TEXT_STYLE = { fontSize: 13, lineHeight: 16 } as const;
 
-// Fixed third-party brand marks for channel cards; they must not follow the app theme.
-const CHANNEL_BRAND_COLOR = {
-  Telegram: 'hsl(198.7 91.9% 56.3%)', // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
-  Slack: 'hsl(339.6 82.2% 51.6%)', // hex-allowlist: Slack pink, web CHANNEL_BRAND_COLOR.Slack hsl(339.6 82.2% 51.6%)
-} as const;
+// Telegram's fixed brand blue for its channel card; it must not follow the app
+// theme. Slack has no hue to tint with: its mark is four colors (`SlackIcon`)
+// and its name reads like Slack's wordmark, in the text color.
+const TELEGRAM_BRAND_COLOR = 'hsl(198.7 91.9% 56.3%)'; // hex-allowlist: Telegram blue, web CHANNEL_BRAND_COLOR.Telegram hsl(198.7 91.9% 56.3%)
 
 /** `isDark` is passed down from SessionTurn. */
 function paletteFor(isDark: boolean) {
@@ -258,6 +257,8 @@ export function UserMessage({
   const openMenu = useCallback(() => {
     if (!promptText) return;
     haptics.medium();
+    // The menu draws under the keyboard otherwise: close it first.
+    Keyboard.dismiss();
     menuRef.current?.open();
   }, [promptText]);
   const menuProps = {
@@ -300,16 +301,18 @@ export function UserMessage({
   }
 
   if (channelMessageInfo) {
-    const brand = CHANNEL_BRAND_COLOR[channelMessageInfo.platform] ?? CHANNEL_BRAND_COLOR.Slack;
+    const telegram = channelMessageInfo.platform === 'Telegram';
     return (
       <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
         <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          <Icon
-            as={channelMessageInfo.platform === 'Telegram' ? PaperPlaneTiltIcon : SlackLogoIcon}
-            size={webSpace(3.5)}
-            color={brand}
-          />
-          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', color: brand }]}>
+          {telegram ? (
+            <Icon as={PaperPlaneTiltIcon} size={webSpace(3.5)} color={TELEGRAM_BRAND_COLOR} />
+          ) : (
+            <SlackIcon size={webSpace(3.5)} />
+          )}
+          <Text
+            style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, telegram ? { color: TELEGRAM_BRAND_COLOR } : null]}
+          >
             {channelMessageInfo.platform}
           </Text>
           <Text variant="muted" style={META_TEXT_STYLE}>
