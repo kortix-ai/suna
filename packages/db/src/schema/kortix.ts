@@ -1764,6 +1764,12 @@ export const sessionLifecycleCommands = kortixSchema.table(
     index('idx_session_lifecycle_commands_session').on(table.sessionId),
     index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
     index('idx_session_lifecycle_commands_account').on(table.accountId),
+    // The forwarded-prompt sweep (`reconcileForwardedPrompts`): rows still
+    // `forwarded`, oldest first. Partial, because every other row is closed:
+    // `(status, available_at)` matches every succeeded row ever written.
+    index('idx_session_lifecycle_commands_forwarded')
+      .on(table.updatedAt)
+      .where(sql`(${table.result}->>'status') = 'forwarded'`),
   ],
 );
 

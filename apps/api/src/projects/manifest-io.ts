@@ -9,7 +9,7 @@ import {
   serializeManifestObject,
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
-import { type GitBackedProject, readManifestFromRepo } from './git';
+import { type GitBackedProject, type MirrorRefresh, readManifestFromRepo } from './git';
 import type { ParsedManifest } from './trigger-types';
 
 /** Where the manifest lives. Same path the rest of the platform looks for.
@@ -61,7 +61,7 @@ export const MAX_SCHEMA_VERSION = 3;
  */
 export async function readManifest(
   project: GitBackedProject,
-  opts?: { forceRefresh?: boolean; rethrowReadErrors?: boolean },
+  opts?: { forceRefresh?: MirrorRefresh; rethrowReadErrors?: boolean },
 ): Promise<ParsedManifest | null> {
   let found: Awaited<ReturnType<typeof readManifestFromRepo>>;
   try {

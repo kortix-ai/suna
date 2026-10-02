@@ -5,7 +5,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
-import { inboxOrderBy } from './inbox-order';
+import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
 import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
 /**
@@ -598,6 +598,26 @@ export async function sessionHasHoldMark(sessionId: string): Promise<boolean> {
 }
 
 /**
+ * What a new send has to know about its session's inbox, in one read.
+ * `held` answers what `sessionHasHoldMark` answers.
+ *
+ * `held`: a Stop mark is in force, so the send releases it (see
+ * `enqueueReleasingHold`). `pending`: another prompt is queued or in delivery,
+ * so this send may be one of a burst and its drain collects the stragglers
+ * (see `drainSessionLifecycleQueue`).
+ */
+export async function inboxSendState(sessionId: string): Promise<{ held: boolean; pending: boolean }> {
+  const [row] = await db
+    .select({
+      held: sql<boolean>`COALESCE(bool_or(${holdMarked()}), false)`,
+      pending: sql<boolean>`COALESCE(bool_or(${sessionLifecycleCommands.status} IN ('queued', 'running')), false)`,
+    })
+    .from(sessionLifecycleCommands)
+    .where(inboxScope(sessionId));
+  return { held: row?.held === true, pending: row?.pending === true };
+}
+
+/**
  * Release without asserting anything about whether a hold was set.
  *
  * Without a Stop the release's ordered UPDATEs match no rows at all — round
@@ -634,9 +654,11 @@ export async function enqueueReleasingHold(
   sessionId: string,
   enqueue: (hold: HoldOnEnqueue | null) => Promise<EnqueuedContinueSessionCommand>,
   release: (sessionId: string) => Promise<unknown> = (id) => holdInboxPrompts(id, false),
+  /** The hold read, when the caller already started it (`inboxSendState`). */
+  held: Promise<boolean> = sessionHasHoldMark(sessionId),
 ): Promise<EnqueuedContinueSessionCommand> {
   // The read failing is treated as "no hold": the send still goes in, due.
-  if (!(await sessionHasHoldMark(sessionId).catch(() => false))) return enqueue(null);
+  if (!(await held.catch(() => false))) return enqueue(null);
   const enqueued = await enqueue({ held: true, availableAt: new Date(Date.now() + INBOX_HOLD_MS) });
   // A repeat POST of a send already in the inbox changes nothing — unless the
   // first one's release failed and left that send held: the retry releases.
@@ -689,8 +711,9 @@ export async function claimDueSessionInboxSiblings(input: {
   limit?: number;
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
-  const rows = await db
-    .select()
+  // One statement, as `claimDueLifecycleCommands`: lock, skip, update.
+  const due = db
+    .select({ commandId: sessionLifecycleCommands.commandId })
     .from(sessionLifecycleCommands)
     .where(
       and(
@@ -713,26 +736,18 @@ export async function claimDueSessionInboxSiblings(input: {
       ),
     )
     .orderBy(...inboxOrderBy())
-    .limit(input.limit ?? 20);
-  const claimed: SessionLifecycleCommandRow[] = [];
-  for (const row of rows) {
-    const [locked] = await db
-      .update(sessionLifecycleCommands)
-      .set({
-        status: 'running',
-        attempts: row.attempts + 1,
-        lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, 'queued'),
-        ),
-      )
-      .returning();
-    if (locked) claimed.push(locked as SessionLifecycleCommandRow);
-  }
-  return claimed;
+    .limit(input.limit ?? 20)
+    .for('update', { skipLocked: true });
+  const claimed = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'running',
+      attempts: sql`${sessionLifecycleCommands.attempts} + 1`,
+      lockedBy: input.workerId,
+      lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+      updatedAt: now,
+    })
+    .where(sql`${sessionLifecycleCommands.commandId} = ANY(ARRAY(${due}))`)
+    .returning();
+  return (claimed as SessionLifecycleCommandRow[]).sort(compareInboxSendOrder);
 }

@@ -108,8 +108,12 @@ mock.module('../lib/session-audit-read', () => ({
     return auditLeg();
   },
 }));
+let resolveModelParams: Array<Record<string, unknown>> = [];
 mock.module('../../llm-gateway/resolution/default-model', () => ({
-  resolveEffectiveModel: async () => ({ model: 'anthropic/claude-sonnet-4-6', source: 'project' }),
+  resolveEffectiveModel: async (params: Record<string, unknown>) => {
+    resolveModelParams.push(params);
+    return { model: 'anthropic/claude-sonnet-4-6', source: 'project' };
+  },
 }));
 mock.module('../../llm-gateway/models/served-managed-models', () => ({
   platformDefaultModelId: () => 'anthropic/claude-sonnet-4-6',
@@ -273,6 +277,9 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     expect(body.models.known).toBe(true);
     expect(body.models.projectDefault).toBe('p');
     expect(body.models.resolvedForCaller).toBe('anthropic/claude-sonnet-4-6');
+    // The SDK seeds the `model-defaults` query from this leg, so it resolves as
+    // `GET .../model-defaults` does: for the project, with no session scope.
+    expect(resolveModelParams.at(-1)).not.toHaveProperty('sessionId');
     expect(body.audit).toEqual({
       known: true,
       session_id: SESSION_ID,

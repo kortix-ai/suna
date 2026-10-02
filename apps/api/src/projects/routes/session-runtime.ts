@@ -20,6 +20,7 @@ import {
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
+import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt, warmSessionPlacement } from './warm-sessions';
 import { readSessionTurnState } from '../lib/session-turn-read';
@@ -148,7 +149,7 @@ projectsApp.openapi(
     // server holds the request until readiness flips (or a bounded deadline),
     // killing the ~800ms client poll-tick latency. Clamped; omitted = one-shot.
     const waitMsRaw = Number(c.req.query('wait_ms'));
-    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, 8000) : 0;
+    const waitMs = Number.isFinite(waitMsRaw) && waitMsRaw > 0 ? Math.min(waitMsRaw, START_AWAIT_MAX_MS) : 0;
     const result = await startSession({
       source: 'ui',
       loaded,
