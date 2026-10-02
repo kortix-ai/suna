@@ -232,3 +232,5 @@ export {
   useCreateGatewayKey,
   useRevokeGatewayKey,
 } from './use-project-gateway';
+
+export * from './use-admin-providers';
