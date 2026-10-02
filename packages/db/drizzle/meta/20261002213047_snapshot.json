@@ -1,5 +1,5 @@
 {
-  "id": "342c2736-f0c2-4ff9-8b8e-a28c24af64ef",
+  "id": "f437005a-e96a-4699-9de8-5d61be349e22",
   "prevId": "e80f6c0a-4d81-4413-9a1f-9c2313f15fe1",
   "version": "7",
   "dialect": "postgresql",
@@ -2374,6 +2374,38 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_service_account": {
+          "name": "idx_account_tokens_service_account",
+          "columns": [
+            {
+              "expression": "service_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"service_account_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_on_behalf_of_user": {
+          "name": "idx_account_tokens_on_behalf_of_user",
+          "columns": [
+            {
+              "expression": "on_behalf_of_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"on_behalf_of_user_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -14836,21 +14868,6 @@
             },
             {
               "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_trigger_executions_session": {
-          "name": "idx_project_trigger_executions_session",
-          "columns": [
-            {
-              "expression": "session_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

@@ -38,6 +38,7 @@ import {
   appDeployments,
   appRuntimes,
   appDeploymentEvents,
+  accountTokens,
   creditAccounts,
   creditLedger,
   usageEvents,
@@ -374,6 +375,28 @@ describe('project trigger executions', () => {
         covered,
         `${fk.getName()} on (${columns.map((c) => c.name).join(', ')}) has no covering index`,
       ).toBe(true);
+    }
+  });
+});
+
+describe('account_tokens foreign-key coverage', () => {
+  // The Supabase performance advisor (unindexed_foreign_keys) flags a foreign
+  // key whose referencing column is not the leading column of any index: every
+  // ON DELETE CASCADE / SET NULL walk over that column seq-scans the table.
+  // account_tokens carries four FKs — three declared here (account_id,
+  // project_id, service_account_id) plus the SQL-only
+  // account_tokens_on_behalf_of_user_fk (auth.users is outside this schema;
+  // added NOT VALID by 20260922135103135_agent_session_on_behalf_of). The
+  // advisor reported service_account_id and on_behalf_of_user_id unindexed in
+  // prod (KRTX-1091); account_id and project_id were already covered.
+  // Regression guard: every FK column must lead some index on the table.
+  test('indexes every foreign key column the table carries', () => {
+    const leading = getTableConfig(accountTokens).indexes.map((i) => {
+      const first = i.config.columns[0];
+      return first && 'name' in first ? first.name : undefined;
+    });
+    for (const fk of ['account_id', 'project_id', 'service_account_id', 'on_behalf_of_user_id']) {
+      expect(leading).toContain(fk);
     }
   });
 });
