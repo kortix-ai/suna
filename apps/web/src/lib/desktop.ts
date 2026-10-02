@@ -106,31 +106,6 @@ export function desktopShellPlatform(): DesktopShellPlatform | null {
   return platform === 'macos' ? 'macos' : 'other';
 }
 
-type TauriWindow = {
-  minimize: () => Promise<void>;
-  toggleMaximize: () => Promise<void>;
-  close: () => Promise<void>;
-  isMaximized: () => Promise<boolean>;
-  onResized: (cb: () => void) => Promise<() => void>;
-};
-
-type TauriGlobal = {
-  window: { getCurrentWindow: () => TauriWindow };
-};
-
-function tauri(): TauriGlobal | null {
-  if (typeof window === 'undefined') return null;
-  return (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
-}
-
-/**
- * Custom URL scheme registered by the desktop shell. OAuth providers and
- * email magic links should redirect here (instead of `https://kortix.com/...`)
- * so the OS hands the callback back to the desktop app rather than opening
- * it in the user's browser.
- */
-export const DESKTOP_URL_SCHEME = 'kortix';
-
 /**
  * Returns the right OAuth redirect target for the current runtime:
  * - Desktop: HTTPS `/auth/callback?desktop=true&...` so the user's browser
@@ -443,22 +418,6 @@ export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAcce
 /** Rejects with the desktop app's message on invalid input. */
 export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
   desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
-
-export const desktopWindow = {
-  minimize: () => tauri()?.window.getCurrentWindow().minimize(),
-  toggleMaximize: () => tauri()?.window.getCurrentWindow().toggleMaximize(),
-  close: () => tauri()?.window.getCurrentWindow().close(),
-  isMaximized: async () => {
-    const t = tauri();
-    if (!t) return false;
-    return t.window.getCurrentWindow().isMaximized();
-  },
-  onResized: async (cb: () => void) => {
-    const t = tauri();
-    if (!t) return () => {};
-    return t.window.getCurrentWindow().onResized(cb);
-  },
-};
 
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and
