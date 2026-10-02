@@ -52,6 +52,7 @@ interface CliResult {
 }
 
 let server: ReturnType<typeof Bun.serve> | null = null;
+let apiPort = 0;
 
 function startApi(): void {
   server = Bun.serve({
@@ -66,6 +67,7 @@ function startApi(): void {
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
+  apiPort = server.port;
 }
 
 /** A throwaway HOME + multi-host config pointing `test` at the local API. */
@@ -78,7 +80,7 @@ function seedConfig(token: string): { dir: string; config: string } {
       active: HOST_NAME,
       hosts: {
         [HOST_NAME]: {
-          url: `http://127.0.0.1:${server!.port}/v1`,
+          url: `http://127.0.0.1:${apiPort}/v1`,
           token,
           user_id: ME.user_id,
           user_email: EMAIL,
