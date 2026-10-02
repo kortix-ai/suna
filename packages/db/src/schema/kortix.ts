@@ -2608,6 +2608,10 @@ export const projectSnapshotBuilds = kortixSchema.table(
     finishedAt: timestamp('finished_at', { withTimezone: true }),
   },
   (table) => [
+    // Covers the account_id foreign key (accounts → cascade deletes) and the
+    // Supabase `unindexed_foreign_keys` advisor lint; the other two indexes on
+    // this table lead with project_id, so the account FK would scan the table.
+    index('idx_project_snapshot_builds_account').on(table.accountId),
     index('idx_project_snapshot_builds_project_recent').on(table.projectId, table.startedAt.desc()),
     index('idx_project_snapshot_builds_status').on(
       table.projectId,
