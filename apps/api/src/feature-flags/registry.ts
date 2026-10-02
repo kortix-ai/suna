@@ -138,9 +138,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces without requiring a managed provider.',
     stability: 'beta',
     available: () => true,
-    // The direct catalogue is available even when no managed provider is configured.
-    // Explicit project overrides still provide a rollback path.
-    platformDefault: () => true,
+    // Direct discovery is an explicit opt-in, not the reliable managed default.
+    platformDefault: () => false,
     enforcement: 'routes',
   },
   {

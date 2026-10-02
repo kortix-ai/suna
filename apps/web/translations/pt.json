@@ -19092,7 +19092,10 @@
       "textcd2c4b26eedd": "O Kortix não tem registro da versão do app no seu catálogo do Teams. A versão {value0} tem todos os comandos e permissões que seu agente usa no Teams. Um administrador do Teams publica a atualização. Depois, um proprietário da equipe atualiza o app em cada equipe em que o Teams oferecer a atualização: a equipe → ⋯ → Gerenciar equipe → Aplicativos → Atualizar.",
       "texte15f213fa506": "Publicar atualização do app",
       "textcafd830fcf85": "Identidades de agente do projeto listadas",
-      "text7f755292bf51": "Não foi possível baixar o anexo"
+      "text7f755292bf51": "Não foi possível baixar o anexo",
+      "connectorSourceLabel": "Origem do conector",
+      "connectorSourceManaged": "Geridos",
+      "connectorSourceDirect": "API / MCP"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
