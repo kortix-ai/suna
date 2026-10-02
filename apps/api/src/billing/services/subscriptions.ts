@@ -760,6 +760,23 @@ async function createOrUpdateSubscriptionSchedule(params: {
   console.log(`[Billing] Created subscription schedule ${schedule.id} for downgrade of ${accountId}`);
 }
 
+/**
+ * Release a schedule so a new one can be created from the subscription. Stripe
+ * answers 400 (no code) for a schedule already released or canceled and 404
+ * `resource_missing` for one that is gone: both mean "nothing to release".
+ * Anything else is a real failure and must surface, not hide behind the next
+ * call's "already attached to a schedule" error. Release is synchronous: a
+ * schedule created right after it succeeds (verified in Stripe test mode).
+ */
+async function releaseSchedule(stripe: Stripe, scheduleId: string): Promise<void> {
+  try {
+    await stripe.subscriptionSchedules.release(scheduleId);
+  } catch (err: any) {
+    if (err?.statusCode !== 400 && err?.statusCode !== 404) throw err;
+    console.warn(`[Billing] Schedule ${scheduleId} not releasable (${err.statusCode}): ${err.message}`);
+  }
+}
+
 async function handleExistingSchedule(
   existingScheduleId: string,
   subscription: any,
@@ -779,8 +796,7 @@ async function handleExistingSchedule(
       const now = Math.floor(Date.now() / 1000);
       if (phases.length > 0 && phases[0].end_date && phases[0].end_date < now) {
         console.log(`[Billing] Schedule ${existingScheduleId} phase 0 has ended, releasing`);
-        try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
-        await new Promise(r => setTimeout(r, 1000));
+        await releaseSchedule(stripe, existingScheduleId);
         return false;
       }
 
@@ -804,16 +820,14 @@ async function handleExistingSchedule(
       return true;
     }
 
-    try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
-    await new Promise(r => setTimeout(r, 1000));
+    await releaseSchedule(stripe, existingScheduleId);
     return false;
   } catch (err: any) {
-    if (err?.code === 'resource_missing' || err?.message?.includes('No such subscription_schedule')) {
-      return false;
-    }
-    if (err?.message?.includes('phase that has already ended')) {
-      try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
-      await new Promise(r => setTimeout(r, 1000));
+    if (err?.code === 'resource_missing') return false;
+    // Phase 0 ended between the retrieve above and the update. Stripe gives
+    // this 400 no code, so the message is the only signal.
+    if (err?.statusCode === 400 && err?.message?.includes('phase that has already ended')) {
+      await releaseSchedule(stripe, existingScheduleId);
       return false;
     }
     throw err;

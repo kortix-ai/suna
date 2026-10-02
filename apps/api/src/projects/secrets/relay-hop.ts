@@ -611,7 +611,9 @@ function auditRelayCompletion(frame: HopFrame, responseBytes: number) {
     complete: true,
     ...(spent && { substituted }),
   };
-  void recordAuditEvent({ ...base, action: 'secret.broker.streamed', outcome: 'success', after });
+  recordAuditEvent({ ...base, action: 'secret.broker.streamed', outcome: 'success', after }).catch((err) =>
+    console.error('[secret-relay] completion audit failed', err),
+  );
 }
 
 async function buildRelayResponse(frame: HopFrame & { redactable: string[] }): Promise<Response> {
