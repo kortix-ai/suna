@@ -53,7 +53,9 @@ BEGIN
     RETURN; -- baseline database: nothing to retire
   END IF;
 
-  -- SQL or PL/pgSQL function bodies record no pg_depend row.
+  -- SQL or PL/pgSQL function bodies record no pg_depend row. Scan for both
+  -- dropped names: a body that only CALLS public.add_credits mentions neither
+  -- table, and the drop would leave it failing on its first call.
   SELECT string_agg(DISTINCT n.nspname || '.' || p.proname, '; ')
     INTO blocker
   FROM pg_proc p
@@ -61,7 +63,7 @@ BEGIN
   JOIN pg_language l ON l.oid = p.prolang
   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
     AND l.lanname IN ('sql', 'plpgsql')
-    AND p.prosrc ~ '\mcredit_balance\M'
+    AND p.prosrc ~ '\mcredit_balance\M|\madd_credits\M'
     AND NOT (n.nspname = 'public' AND p.proname = 'add_credits');
   IF blocker IS NOT NULL THEN
     RAISE EXCEPTION 'public.credit_balance drop refused, a function body still references it: %', blocker;
@@ -79,11 +81,11 @@ BEGIN
     END IF;
   END IF;
 
-  -- Another table's RLS policy subquery.
+  -- Another table's RLS policy subquery, for either dropped name.
   SELECT string_agg(DISTINCT schemaname || '.' || tablename || ' :: ' || policyname, '; ')
     INTO blocker
   FROM pg_policies
-  WHERE (qual ~ '\mcredit_balance\M' OR with_check ~ '\mcredit_balance\M')
+  WHERE (qual ~ '\mcredit_balance\M|\madd_credits\M' OR with_check ~ '\mcredit_balance\M|\madd_credits\M')
     AND NOT (schemaname = 'public' AND tablename = 'credit_balance');
   IF blocker IS NOT NULL THEN
     RAISE EXCEPTION 'public.credit_balance drop refused, an RLS policy still references it: %', blocker;
