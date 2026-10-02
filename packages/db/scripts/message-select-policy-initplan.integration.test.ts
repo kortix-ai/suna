@@ -483,10 +483,10 @@ function applyMigration(database: string): void {
 }
 
 let beforeQual = '';
-const beforeIds = new Map<string, string>();
+const beforeIds = new Map<string, { count: number; ids: string }>();
 let beforePlan = { filters: [] as string[], hasInitPlan: false };
 let afterQual = '';
-const afterIds = new Map<string, string>();
+const afterIds = new Map<string, { count: number; ids: string }>();
 let afterPlan = { filters: [] as string[], hasInitPlan: false };
 
 const suite = describe.skipIf(dockerAvailable === false && localPostgresBins() === null);
