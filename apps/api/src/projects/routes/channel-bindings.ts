@@ -26,6 +26,7 @@ import { teamsThreadTitles } from "../../channels/teams/binding";
 import { backfillTeamsBindingLabel, needsTeamsNameBackfill } from "../../channels/teams/channel-label";
 import { isTeamsChannelThreadId } from "../../channels/teams/util";
 import { requestMemo } from "../../lib/request-context";
+import { withTimeout } from "../../shared/with-timeout";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
@@ -47,6 +48,9 @@ import { projectsApp } from "../lib/app";
 
 /** The three Slack conversation-join policies (channels/slack/participants.ts). */
 const CONVERSATION_POLICIES = ["owner_approval", "owner_only", "project_open"] as const;
+
+/** How long `GET /channels/bindings` waits for Teams to name unnamed threads. */
+const TEAMS_NAMING_BUDGET_MS = 2_500;
 
 function projectDefaultAgentOf(metadata: unknown): string | null {
   return typeof (metadata as Record<string, unknown> | null)?.default_agent === "string"
@@ -279,21 +283,27 @@ projectsApp.openapi(
     }
     // A Teams channel thread whose name does not say its team is named on read
     // when its id does: the General channel's id is the team's id. The name is
-    // stored, and one Teams read per team serves every thread in it.
+    // stored, and one Teams read per team serves every thread in it. A cold
+    // read is ~1.4 s (token + connector, measured); the list waits for names
+    // at most TEAMS_NAMING_BUDGET_MS, and a lookup still running stores its
+    // name for the next load.
     const teamsUnnamed = bindings.filter(needsTeamsNameBackfill);
     const teamsServiceUrl = teamsUnnamed.length > 0 ? await loadTeamsServiceUrlForProject(projectId).catch(() => null) : null;
     if (teamsServiceUrl) {
-      for (let i = 0; i < teamsUnnamed.length; i += 5) {
-        await Promise.all(
-          teamsUnnamed.slice(i, i + 5).map(async (b) => {
-            const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
-            if (name) {
-              b.channelName = name;
-              b.channelType = "channel";
-            }
-          }),
-        );
-      }
+      const naming = (async () => {
+        for (let i = 0; i < teamsUnnamed.length; i += 5) {
+          await Promise.all(
+            teamsUnnamed.slice(i, i + 5).map(async (b) => {
+              const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
+              if (name) {
+                b.channelName = name;
+                b.channelType = "channel";
+              }
+            }),
+          );
+        }
+      })();
+      await withTimeout(naming, TEAMS_NAMING_BUDGET_MS).catch(() => {});
     }
     const [modelDefaults, mayUseManagedModels, threadTitles] = await Promise.all([
       getAccountModelDefaults(accountId, projectId),

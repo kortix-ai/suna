@@ -19,11 +19,13 @@ import {
   teamsChannelRoot,
 } from './util';
 
-// A team's name changes rarely. Its channel list and a miss (an id that is not
-// a team, Teams unreachable) are read again sooner, so a new channel is named
-// within minutes.
+// A team's name changes rarely, and an id that is not a team never becomes
+// one: the bindings list asks about every unnamed thread's channel, and a
+// thread outside a General channel is never a team. Both are kept an hour. A
+// team's channel list is read again sooner, so a new channel is named within
+// minutes.
 const TEAM_TTL_MS = 60 * 60 * 1000;
-const SHORT_TTL_MS = 10 * 60 * 1000;
+const CHANNELS_TTL_MS = 10 * 60 * 1000;
 const MAX_ENTRIES = 1000;
 
 interface Entry<T> {
@@ -43,7 +45,7 @@ export function resetTeamsChannelLabelsForTest(): void {
 function cached<T>(
   cache: Map<string, Entry<T>>,
   key: string,
-  hitTtlMs: number,
+  ttlMs: number,
   load: () => Promise<T | null>,
 ): Promise<T | null> {
   const now = Date.now();
@@ -54,11 +56,7 @@ function cached<T>(
     if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
   }
   const value = load().catch(() => null);
-  const entry: Entry<T> = { until: now + SHORT_TTL_MS, value };
-  cache.set(key, entry);
-  void value.then((v) => {
-    if (v) entry.until = Date.now() + hitTtlMs;
-  });
+  cache.set(key, { until: now + ttlMs, value });
   return value;
 }
 
@@ -79,7 +77,7 @@ export async function resolveTeamsChannelName(input: {
   );
   if (!team) return null;
   if (input.channelId === team.id) return `${team.name} › ${TEAMS_GENERAL_CHANNEL}`;
-  const channels = await cached(channelReads, key, SHORT_TTL_MS, () =>
+  const channels = await cached(channelReads, key, CHANNELS_TTL_MS, () =>
     listTeamsTeamChannels(input.serviceUrl, team.id, input.projectId),
   );
   const channel = channels?.find((c) => c.id === input.channelId)?.name;
