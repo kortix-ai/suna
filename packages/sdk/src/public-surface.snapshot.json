@@ -22,6 +22,7 @@
     "FileExistsError",
     "HeadlessAuthError",
     "HostBoundaryError",
+    "IMAGE_AUTO_LOAD_LIMIT_BYTES",
     "IMPERSONATION_HEADER",
     "INBOX_OBSERVATION_MAX_MS",
     "INITIAL_SETTLED_CONNECTION",
@@ -201,6 +202,7 @@
     "createPersistedQueryCache",
     "createPolicy",
     "createPortalSession",
+    "createProbeCache",
     "createProject",
     "createProjectAgent",
     "createProjectCliToken",
@@ -226,6 +228,7 @@
     "createTicket",
     "createTunnelEventStream",
     "currentSavedCopyStore",
+    "decideImageLoad",
     "declineAccountInvite",
     "declineInvite",
     "deleteAccountImmediately",
@@ -327,6 +330,7 @@
     "formatCost",
     "formatDuration",
     "formatJsonFailureOutput",
+    "formatMegabytes",
     "formatMessageDay",
     "formatMessageExact",
     "formatOpenCodeRuntimeError",
@@ -759,6 +763,7 @@
     "openEventStream",
     "openStressTestStream",
     "parseBillingError",
+    "parseContentLength",
     "parseEmbeddedFailure",
     "parseFlagOverride",
     "parseJsonFailure",
@@ -2502,6 +2507,13 @@
     "uploadFile",
     "uploadTimeoutMsForBytes",
     "writeFile"
+  ],
+  "./files/image-load": [
+    "IMAGE_AUTO_LOAD_LIMIT_BYTES",
+    "createProbeCache",
+    "decideImageLoad",
+    "formatMegabytes",
+    "parseContentLength"
   ],
   "./session": [
     "CONNECTION_FAULT_GRACE_MS",

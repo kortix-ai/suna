@@ -80,6 +80,18 @@ export {
 export type { UploadFileOptions, UploadProgressEvent } from './core/files/client';
 export type * from './core/files/types';
 
+// The sandbox-image runtime policy (size gate + HEAD probe cache), moved from
+// apps/mobile. Also served as its own `./files/image-load` subpath for hosts
+// that want the helpers without the file client.
+export {
+  IMAGE_AUTO_LOAD_LIMIT_BYTES,
+  createProbeCache,
+  decideImageLoad,
+  formatMegabytes,
+  parseContentLength,
+} from './core/files/image-load';
+export type { ProbeCache } from './core/files/image-load';
+
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
 

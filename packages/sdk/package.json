@@ -49,6 +49,7 @@
     "./platform-client": "./src/deprecated/platform-client.ts",
     "./event-stream": "./src/deprecated/event-stream.ts",
     "./files": "./src/deprecated/files.ts",
+    "./files/image-load": "./src/core/files/image-load.ts",
     "./session": "./src/deprecated/session.ts",
     "./session/url": "./src/deprecated/session-url.ts",
     "./message-queue": "./src/core/session/message-queue.ts",
@@ -136,6 +137,10 @@
         "import": "./dist/deprecated/event-stream.js"
       },
       "./files": { "types": "./dist/deprecated/files.d.ts", "import": "./dist/deprecated/files.js" },
+      "./files/image-load": {
+        "types": "./dist/core/files/image-load.d.ts",
+        "import": "./dist/core/files/image-load.js"
+      },
       "./session": { "types": "./dist/deprecated/session.d.ts", "import": "./dist/deprecated/session.js" },
       "./session/url": {
         "types": "./dist/deprecated/session-url.d.ts",

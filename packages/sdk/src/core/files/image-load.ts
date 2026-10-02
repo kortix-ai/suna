@@ -1,8 +1,11 @@
 /**
- * Size gate for sandbox image previews in the session thread.
+ * Framework-free sandbox-image runtime policy, moved from
+ * `apps/mobile/lib/session/image-load.ts` (behavior-preserving).
  *
- * The thread probes `content-length` with a HEAD request before the native
- * image loader downloads a file. Files above the limit wait for a tap.
+ * A session-thread image part must not download unknown-size files into the
+ * JS heap: the caller HEAD-probes `content-length` first and only auto-loads
+ * images at or below `IMAGE_AUTO_LOAD_LIMIT_BYTES`. The probe result is memoized
+ * per URL in a bounded LRU so a remounting list cell does not re-probe.
  */
 
 export const IMAGE_AUTO_LOAD_LIMIT_BYTES = 8 * 1024 * 1024;

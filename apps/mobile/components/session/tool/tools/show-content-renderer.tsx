@@ -55,7 +55,7 @@ import {
   PlayIcon,
   WarningIcon,
 } from '@/lib/icons';
-import { formatMegabytes } from '@/lib/session/image-load';
+import { formatMegabytes } from '@kortix/sdk/files/image-load';
 import { isLocalSandboxFilePath, languageFromPath, parseFrontmatter } from '@/lib/session/tool-part-accessors';
 import { isShowBinaryPath, parseShowAspectRatio, showContentBranch, showDomain } from '@/lib/session/tools/web-show';
 import { webSpace } from '@/lib/session/user-message';

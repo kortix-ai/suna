@@ -6,7 +6,7 @@ import {
   createProbeCache,
   decideImageLoad,
   parseContentLength,
-} from '@/lib/session/image-load';
+} from '@kortix/sdk/files/image-load';
 
 // ─── Sandbox image loading ───────────────────────────────────────────────────
 // The native image loader downloads, caches, and downsamples the file, so no
