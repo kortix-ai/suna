@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "Les événements de plus de 90 jours ne sont pas listés ici. L’export les renvoie depuis l’archive, jusqu’à 365 jours en arrière.",
       "connectorSourceLabel": "Source du connecteur",
       "connectorSourceManaged": "Gérés",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "Canal privé",
+      "textcd3e16057d09": "Message direct",
+      "textcbe7c5d45160": "Message direct de groupe",
+      "textf5738ddc651d": "Canal indisponible"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

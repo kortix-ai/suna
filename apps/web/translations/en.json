@@ -19109,7 +19109,11 @@
       "textd8b78d762ad0": "Events older than 90 days are not listed here. Export returns them from the archive, up to 365 days back.",
       "connectorSourceLabel": "Connector source",
       "connectorSourceManaged": "Managed",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "Private channel",
+      "textcd3e16057d09": "Direct message",
+      "textcbe7c5d45160": "Group DM",
+      "textf5738ddc651d": "Unavailable channel"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

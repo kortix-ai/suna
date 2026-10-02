@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "Gli eventi più vecchi di 90 giorni non sono elencati qui. L'esportazione li restituisce dall'archivio, fino a 365 giorni indietro.",
       "connectorSourceLabel": "Origine del connettore",
       "connectorSourceManaged": "Gestiti",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "Canale privato",
+      "textcd3e16057d09": "Messaggio diretto",
+      "textcbe7c5d45160": "Messaggio diretto di gruppo",
+      "textf5738ddc651d": "Canale non disponibile"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
