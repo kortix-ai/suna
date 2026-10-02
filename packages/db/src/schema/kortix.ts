@@ -967,6 +967,11 @@ export const accountSecretGrants = kortixSchema.table('account_secret_grants', {
   foreignKey({ columns: [table.userId, table.accountId], foreignColumns: [accountMemberships.userId, accountMemberships.accountId], name: 'account_secret_grants_member_fk' }).onDelete('cascade'),
   foreignKey({ columns: [table.secretId, table.accountId], foreignColumns: [accountSecretResources.secretId, accountSecretResources.accountId], name: 'account_secret_grants_resource_fk' }).onDelete('cascade'),
   index('account_secret_grants_member').on(table.accountId, table.userId),
+  // Cover the two composite FKs (Supabase lint `unindexed_foreign_keys`): a
+  // cascade delete from account_secret_resources / account_memberships
+  // otherwise scans the table for the referencing grant rows.
+  index('idx_account_secret_grants_secret_account').on(table.secretId, table.accountId),
+  index('idx_account_secret_grants_user_account').on(table.userId, table.accountId),
 ]);
 
 /** A session's explicit provider pool. Absence means inherit legacy behavior;
