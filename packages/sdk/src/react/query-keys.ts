@@ -391,6 +391,9 @@ export const qk = {
     /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
     sessionMessageAuthors: (id: string, sessionId: string) =>
       [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
+    /** `getSessionModelUsage` — `GET /projects/:id/sessions/:sid/model-usage`. */
+    sessionModelUsage: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-model-usage', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

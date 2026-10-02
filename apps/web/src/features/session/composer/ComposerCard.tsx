@@ -169,6 +169,7 @@ export function ComposerCard({
   onVariantChange,
   projectId,
   toolbarSlot,
+  servedModel,
   rewind,
   selectedAgent = null,
   onAgentChange,
@@ -372,6 +373,7 @@ export function ComposerCard({
             // the 'below' placement the ComposerUnderbar further down renders
             // it — passing it here as well would show the gear twice.
             toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
+            servedModel={servedModel}
             rewind={rewind}
             isSending={isSending}
             isBusy={isBusy}

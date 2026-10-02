@@ -42,6 +42,7 @@ import {
 import { ImagesUnsupportedBar, ModelConnectionBar } from '../model-connection-gate';
 import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
+import type { ServedModelNotice } from '../turn/served-model';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
 import type { DraftScope, StoredDraft } from './draft/composer-draft';
@@ -306,6 +307,9 @@ export interface SessionChatInputProps {
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
+  /** The newest answer came from a fallback model instead of the selected
+   *  one: the toolbar names it beside the model selector. */
+  servedModel?: ServedModelNotice | null;
   /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.

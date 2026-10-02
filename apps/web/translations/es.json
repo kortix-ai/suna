@@ -19110,7 +19110,11 @@
       "text4540af5229a8": "Solo la persona que inició una sesión puede continuarla.",
       "textda4bd8bdfe42": "Las demás personas necesitan la aprobación del propietario de la sesión para unirse.",
       "text5dae52a3f448": "{count, plural, one {# canal} other {# canales}}",
-      "text5097881a690f": "Hilo: {title}"
+      "text5097881a690f": "Hilo: {title}",
+      "servedModelRow": "Modelo",
+      "servedModelInPlaceOf": "En lugar de",
+      "servedModelBadge": "Ejecutándose en {model}",
+      "servedModelHint": "{requested} no respondió a la última solicitud. {model} respondió desde la cadena alternativa de este proyecto."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

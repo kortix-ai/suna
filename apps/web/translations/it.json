@@ -19110,7 +19110,11 @@
       "text4540af5229a8": "Solo la persona che ha avviato una sessione può continuarla.",
       "textda4bd8bdfe42": "Le altre persone hanno bisogno dell'approvazione del proprietario della sessione per partecipare.",
       "text5dae52a3f448": "{count, plural, one {# canale} other {# canali}}",
-      "text5097881a690f": "Thread: {title}"
+      "text5097881a690f": "Thread: {title}",
+      "servedModelRow": "Modello",
+      "servedModelInPlaceOf": "Al posto di",
+      "servedModelBadge": "In esecuzione su {model}",
+      "servedModelHint": "{requested} non ha risposto all’ultima richiesta. {model} ha risposto dalla catena di fallback di questo progetto."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

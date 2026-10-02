@@ -19123,7 +19123,11 @@
       "text4540af5229a8": "Only the person who started a session can continue it.",
       "textda4bd8bdfe42": "Other people need the session owner's approval to join.",
       "text5dae52a3f448": "{count, plural, one {# channel} other {# channels}}",
-      "text5097881a690f": "Thread: {title}"
+      "text5097881a690f": "Thread: {title}",
+      "servedModelRow": "Model",
+      "servedModelInPlaceOf": "In place of",
+      "servedModelBadge": "Running on {model}",
+      "servedModelHint": "{requested} did not answer the last request. {model} answered from this project's fallback chain."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

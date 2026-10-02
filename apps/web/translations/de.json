@@ -19110,7 +19110,11 @@
       "text4540af5229a8": "Nur die Person, die eine Sitzung gestartet hat, kann sie fortsetzen.",
       "textda4bd8bdfe42": "Andere Personen brauchen zum Beitreten die Genehmigung des Sitzungseigentümers.",
       "text5dae52a3f448": "{count, plural, one {# Kanal} other {# Kanäle}}",
-      "text5097881a690f": "Thread: {title}"
+      "text5097881a690f": "Thread: {title}",
+      "servedModelRow": "Modell",
+      "servedModelInPlaceOf": "Anstelle von",
+      "servedModelBadge": "Läuft auf {model}",
+      "servedModelHint": "{requested} hat die letzte Anfrage nicht beantwortet. {model} hat aus der Fallback-Kette dieses Projekts geantwortet."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

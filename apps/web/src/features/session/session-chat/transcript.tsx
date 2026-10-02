@@ -58,6 +58,7 @@ import { TurnOutcomes } from '@/features/session/outcomes/turn-outcomes';
 import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
+import type { TurnServedModel } from '@/features/session/turn/served-model';
 import { SessionBusyIndicator } from '../session-busy-indicator';
 import { SessionTurnMeta } from '../session-turn-meta';
 import {
@@ -390,6 +391,9 @@ interface SessionTurnProps {
   /** Who wrote this turn's user message, and whether the bubble names them. */
   author?: SessionMessageAuthor;
   showAuthor?: boolean;
+  /** The models that answered this turn and what Kortix billed for it, from
+   *  the gateway's request record. Keep its identity stable: the row is memoized. */
+  servedModel?: TurnServedModel;
   /** What the control plane recorded about how THIS session's turns ended. */
   turnOutcome: SessionTurnOutcome;
   /**
@@ -1926,7 +1930,7 @@ function TurnSettledResponse({
 /** The turn's footer: the working row, the error banner, the outcomes, the
  *  action bar, and the connect-provider dialog. */
 function TurnFooter(
-  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers'> & {
+  props: Pick<SessionTurnProps, 'turn' | 'sessionId' | 'suppressBusyIndicator' | 'awaitingUser' | 'providers' | 'servedModel'> & {
     model: TurnModelState;
     errors: TurnErrorState;
     answered: TurnAnsweredState;
@@ -1940,7 +1944,7 @@ function TurnFooter(
 ) {
   const {
     turn, providers, model, errors, answered, status, retry, meta, tHardcodedUi,
-    connectProviderOpen, onConnectProviderOpenChange,
+    connectProviderOpen, onConnectProviderOpenChange, servedModel,
   } = props;
   const { working, response } = model;
   const { turnError, turnErrorRow, turnErrorRowDetails, turnErrorRaw } = errors;
@@ -1990,6 +1994,7 @@ function TurnFooter(
           turnEndedAt={turnEndedAt}
           turnDurationMs={turnDurationMs}
           costInfo={costInfo}
+          servedModel={servedModel}
           tHardcodedUi={tHardcodedUi}
         />
       )}
@@ -2058,6 +2063,7 @@ function TurnActionBar({
   turnEndedAt,
   turnDurationMs,
   costInfo,
+  servedModel,
   tHardcodedUi,
 }: {
   response: string;
@@ -2065,6 +2071,7 @@ function TurnActionBar({
   turnEndedAt: TurnSettledMeta['turnEndedAt'];
   turnDurationMs: TurnSettledMeta['turnDurationMs'];
   costInfo: TurnSettledMeta['costInfo'];
+  servedModel?: TurnServedModel;
   tHardcodedUi: ReturnType<typeof useTranslations>;
 }) {
   const [copied, setCopied] = useState(false);
@@ -2119,6 +2126,7 @@ const handleCopy = async () => {
           endedAt={turnEndedAt}
           durationMs={turnDurationMs}
           cost={costInfo}
+          served={servedModel}
           className="flex items-center justify-center"
         />
     </div>

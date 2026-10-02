@@ -19110,7 +19110,11 @@
       "text4540af5229a8": "Само особа која је покренула сесију може да је настави.",
       "textda4bd8bdfe42": "Другим особама је потребно одобрење власника сесије да би се придружиле.",
       "text5dae52a3f448": "{count, plural, one {# канал} other {# канала}}",
-      "text5097881a690f": "Нит: {title}"
+      "text5097881a690f": "Нит: {title}",
+      "servedModelRow": "Модел",
+      "servedModelInPlaceOf": "Уместо",
+      "servedModelBadge": "Ради на моделу {model}",
+      "servedModelHint": "{requested} није одговорио на последњи захтев. {model} је одговорио из резервног ланца овог пројекта."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

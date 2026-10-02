@@ -1941,3 +1941,46 @@ export async function getSessionMessageAuthors(
     ),
   );
 }
+
+/** The model that answered a request, read from the gateway's request record. */
+export interface SessionServedModel {
+  /** Route id of the model that answered, as the model picker names it. */
+  served_model: string;
+  /** The model the request was routed to, when a fallback model answered in
+   *  its place. Null when the routed model answered. */
+  fallback_from: string | null;
+  at: string;
+}
+
+/** The models that answered one turn, and what Kortix billed for it. */
+export interface SessionTurnModelUsage {
+  /** Route ids of the models that answered in this turn, most requests first. */
+  served_models: string[];
+  fallback_from: string | null;
+  /** What Kortix debited for this turn's model calls, in USD. */
+  billed_cost: number;
+}
+
+export interface SessionModelUsage {
+  /** The newest answered model request. Null before the first answer. */
+  latest: SessionServedModel | null;
+  /** What Kortix debited for the session's model calls, in USD. */
+  billed_cost: number;
+  /** Keyed by the runtime message id of the prompt that started each turn. */
+  turns: Record<string, SessionTurnModelUsage>;
+}
+
+/** Which model answered a session's turns and what Kortix billed for them,
+ *  from the gateway's request record. The runtime transcript records only the
+ *  model a turn asked for, so it cannot show a fallback or its cost. */
+export async function getSessionModelUsage(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionModelUsage> {
+  return unwrap(
+    await backendApi.get<SessionModelUsage>(
+      `/projects/${projectId}/sessions/${sessionId}/model-usage`,
+      { showErrors: false },
+    ),
+  );
+}

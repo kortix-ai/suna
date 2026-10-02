@@ -125,6 +125,7 @@ export { useAccountSecretResources, useSessionProviderSecretPools } from './use-
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useSessionMessageAuthors } from './use-session-message-authors';
+export { useSessionModelUsage } from './use-session-model-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
