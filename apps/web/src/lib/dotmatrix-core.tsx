@@ -1363,6 +1363,7 @@ export function createDotm5x5Component(
     cycleMsBase?: number;
     steps?: number;
     idleStep?: number;
+    lockedPattern?: MatrixPattern;
   },
 ) {
   function Dotm5x5Component({
@@ -1394,7 +1395,7 @@ export function createDotm5x5Component(
         size={size}
         dotSize={dotSize}
         speed={speed}
-        pattern={pattern}
+        pattern={config.lockedPattern ?? pattern}
         animated={animated}
         phase={phase}
         onMouseEnter={onMouseEnter}
