@@ -100,7 +100,8 @@ interface ModelPickerSheetProps {
   autoContinue?: ModelAutoContinue;
 }
 
-export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps>(
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const ModelPickerSheet = React.memo(React.forwardRef<SheetRef, ModelPickerSheetProps>(
   ({ options, activeKey, onSelect, thinking, onConnect, agent, autoContinue }, ref) => {
     const pickerRef = React.useRef<SheetRef>(null);
     const [tab, setTab] = React.useState(MODEL_TAB);
@@ -193,7 +194,7 @@ export const ModelPickerSheet = React.forwardRef<SheetRef, ModelPickerSheetProps
       </PickerSheet>
     );
   },
-);
+));
 ModelPickerSheet.displayName = 'ModelPickerSheet';
 
 /** The track is a 44pt touch target; the thumb sits 4pt inside it. */
