@@ -14,6 +14,7 @@
  * a cross-origin link.
  */
 import { autoLinkUrls, openMarkdownLinkAtEnd } from '@kortix/shared';
+import { PrefixCache } from './prefix-cache';
 
 export type SetupLinkKind = 'secret' | 'connector';
 
@@ -216,6 +217,71 @@ export function splitSetupLinks(markdown: string, streaming = false): SetupLinkS
  */
 export function assistantSegments(markdown: string, streaming = false): SetupLinkSegment[] {
   return splitSetupLinks(markdown, streaming).map((segment) =>
-    segment.type === 'markdown' ? { ...segment, text: autoLinkUrls(segment.text) } : segment,
+    segment.type === 'markdown' ? { ...segment, text: autoLinkGrowing(segment.text) } : segment,
   );
+}
+
+/** Linked text of safe prefixes (`isSafeLinkChunk`), keyed by the prefix. */
+const LINKED_PREFIXES = new PrefixCache<string>();
+
+/**
+ * `autoLinkUrls` for text that grows at its end, as a streaming reply does.
+ * The result is the same as `autoLinkUrls(text)`; only the work differs.
+ *
+ * `autoLinkUrls(head + tail)` equals `autoLinkUrls(head) + autoLinkUrls(tail)`
+ * when `head` is a safe chunk (`isSafeLinkChunk`): every range it protects and
+ * every URL or email it links lies on one side of the cut. Safe chunks
+ * concatenate to a safe chunk. So the linked text of the longest safe prefix
+ * is kept, and each call links only the text after it: one pass over the new
+ * text, not over the whole reply. `setup-links-streaming.test.ts` checks the
+ * equality on every prefix of a corpus and of random text.
+ */
+export function autoLinkGrowing(text: string): string {
+  const saved = LINKED_PREFIXES.find(text);
+  let headLength = saved?.prefix.length ?? 0;
+  let linked = saved?.value ?? '';
+  const cut = text.lastIndexOf('\n') + 1;
+  if (cut > headLength) {
+    const chunk = text.slice(headLength, cut);
+    if (isSafeLinkChunk(chunk)) {
+      headLength = cut;
+      linked += autoLinkUrls(chunk);
+      LINKED_PREFIXES.set(text.slice(0, cut), linked);
+    }
+  }
+  return linked + autoLinkUrls(text.slice(headLength));
+}
+
+/**
+ * A chunk that ends with a newline and that `autoLinkUrls` handles the same
+ * alone as in front of any text. It mirrors that function's protected ranges
+ * (`@kortix/shared` url-autolink); change both together.
+ *
+ * - The newline: no inline construct, URL or email crosses the cut.
+ * - Every ``` and `$$` that opens a code or math range closes inside it.
+ * - The last `[` has a `]` after it, and the last `](` a `)` after it, so
+ *   every markdown link range it starts also ends inside it.
+ *
+ * Inline code, inline math, reference definitions, `<url>` links and a link
+ * left open at the very end are each confined to one line.
+ */
+function isSafeLinkChunk(chunk: string): boolean {
+  return (
+    pairsClose(chunk, /```[\s\S]*?```/g, '```') &&
+    pairsClose(chunk, /\$\$[\s\S]*?\$\$/g, '$$') &&
+    closesAfterLast(chunk, '[', ']') &&
+    closesAfterLast(chunk, '](', ')')
+  );
+}
+
+/** After the last pair `pattern` matches, no unpaired `marker` remains. */
+function pairsClose(chunk: string, pattern: RegExp, marker: string): boolean {
+  let end = 0;
+  for (const match of chunk.matchAll(pattern)) end = (match.index ?? 0) + match[0].length;
+  return !chunk.includes(marker, end);
+}
+
+function closesAfterLast(chunk: string, open: string, close: string): boolean {
+  const index = chunk.lastIndexOf(open);
+  return index === -1 || chunk.includes(close, index + open.length);
 }

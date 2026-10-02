@@ -8,6 +8,11 @@
  * - band half-width (`--spread`) = text length × `spread` px (2px);
  * - reduced motion: base colour only, no sweep.
  *
+ * Android does not sweep. `RNCMaskedView` draws its mask into an offscreen layer
+ * that redraws on every frame the band moves, and a burst of running tools shows
+ * several shimmers at once. Android draws ONE text and pulses its opacity on the
+ * UI thread instead (`TextShimmerPulse`): no mask, no gradient, no measuring.
+ *
  * The text width is MEASURED (`onLayout` on the real label), never estimated
  * from the character count, so the sweep covers exactly the rendered glyphs,
  * including a truncated line.
@@ -19,8 +24,9 @@
  * - `muted` — the burst summary line: `muted-foreground` at 55% → `muted-foreground`.
  */
 
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
+  Platform,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -41,6 +47,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Text } from '@/components/ui/text';
 import { SHIMMER, shimmerBandCenter, shimmerSpread } from '@/lib/session/activity';
 import { THEME, withAlpha } from '@/lib/utils/theme';
@@ -74,6 +81,18 @@ export interface TextShimmerProps {
   containerStyle?: StyleProp<ViewStyle>;
 }
 
+/**
+ * Whether the tool row around this label may animate. A tool row in a finished
+ * turn (Stop, an interrupt, a crash) provides `false`: its call will never
+ * finish, so `TextShimmer` draws still text and `RunningLoader` draws no Lottie.
+ */
+export const ToolMotionContext = createContext(true);
+
+/** The Lottie twin of `TextShimmer`: while motion is off it keeps the box and draws nothing. */
+export function RunningLoader({ size }: { size: number }) {
+  return useContext(ToolMotionContext) ? <KortixLoader customSize={size} /> : <View style={{ width: size, height: size }} />;
+}
+
 function shimmerColors(tone: TextShimmerTone, isDark: boolean) {
   const t = isDark ? THEME.dark : THEME.light;
   if (tone === 'muted') {
@@ -82,7 +101,7 @@ function shimmerColors(tone: TextShimmerTone, isDark: boolean) {
   return { base: isDark ? SHIMMER_BASE.dark : SHIMMER_BASE.light, highlight: t.foreground };
 }
 
-function TextShimmerImpl({
+function TextShimmerSweep({
   children,
   variant,
   style,
@@ -168,6 +187,62 @@ function TextShimmerImpl({
       )}
     </View>
   );
+}
+
+/** Lowest opacity of the pulse: `muted` matches its base alpha (0.55); `default` sits near web's base grey. */
+const PULSE_MIN = { default: 0.45, muted: 0.55 } as const;
+
+function TextShimmerPulse({
+  children,
+  variant,
+  style,
+  numberOfLines,
+  tone = 'default',
+  duration = SHIMMER.sweepMs / 1000,
+  containerStyle,
+}: TextShimmerProps) {
+  const { colorScheme } = useColorScheme();
+  const reduceMotion = useReducedMotion();
+  const { base, highlight } = shimmerColors(tone, colorScheme === 'dark');
+  const opacity = useSharedValue(1);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    // One cycle takes as long as one sweep plus its hold, so both platforms keep the same pace.
+    const halfMs = (duration * 1000 * (1 + SHIMMER.holdMs / SHIMMER.sweepMs)) / 2;
+    const timing = { duration: halfMs, easing: Easing.inOut(Easing.ease) };
+    opacity.value = withRepeat(withSequence(withTiming(PULSE_MIN[tone], timing), withTiming(1, timing)), -1, false);
+    return () => cancelAnimation(opacity);
+  }, [duration, opacity, reduceMotion, tone]);
+
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.View style={[styles.container, containerStyle, reduceMotion ? undefined : pulseStyle]}>
+      <Text variant={variant} style={[style, { color: reduceMotion ? base : highlight }]} numberOfLines={numberOfLines}>
+        {children}
+      </Text>
+    </Animated.View>
+  );
+}
+
+/** The same box and base colour the sweep and the pulse start from, with no animation. */
+function TextShimmerStill({ children, variant, style, numberOfLines, tone = 'default', containerStyle }: TextShimmerProps) {
+  const { colorScheme } = useColorScheme();
+  const { base } = shimmerColors(tone, colorScheme === 'dark');
+  return (
+    <View style={[styles.container, containerStyle]}>
+      <Text variant={variant} style={[style, { color: base }]} numberOfLines={numberOfLines}>
+        {children}
+      </Text>
+    </View>
+  );
+}
+
+function TextShimmerImpl(props: TextShimmerProps) {
+  const motion = useContext(ToolMotionContext);
+  if (!motion) return <TextShimmerStill {...props} />;
+  return Platform.OS === 'android' ? <TextShimmerPulse {...props} /> : <TextShimmerSweep {...props} />;
 }
 
 const styles = StyleSheet.create({

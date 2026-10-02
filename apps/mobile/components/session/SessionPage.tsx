@@ -27,6 +27,7 @@ import {
 import {
   KeyboardAvoidingView,
   KeyboardController,
+  KeyboardEvents,
   KeyboardGestureArea,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
@@ -95,6 +96,7 @@ import {
   extractSendErrorMessage,
   promptRuntimeMessage,
   rejectQuestion,
+  SESSION_PROMPTS_IDLE_POLL_MS,
   usePermissionSelfHeal,
   useQuestionSelfHeal,
   useRuntimeCommands,
@@ -233,8 +235,6 @@ interface SessionPageProps {
   onCreateAgent?: () => void;
   /** The agent the project session was created with (`agent_name`): the composer's agent until a pick. */
   boundAgentName?: string | null;
-  /** True when the left drawer is currently open — swaps the menu icon for an X */
-  isDrawerOpen?: boolean;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
   isRightDrawerOpen?: boolean;
 }
@@ -250,6 +250,7 @@ const EMPTY_SESSIONS = frozenEmpty<Session>();
 const EMPTY_COMMANDS = frozenEmpty<Command>();
 const EMPTY_IDS = frozenEmpty<string>();
 const EMPTY_PROJECT_SESSIONS = frozenEmpty<ProjectSession>();
+const EMPTY_PROMPTS = frozenEmpty<SessionPrompt>();
 
 /** Returns the previous array while its elements are reference-equal to `next`. */
 function useShallowStableArray<T>(next: T[]): T[] {
@@ -270,6 +271,9 @@ const INITIAL_TURNS_TO_RENDER = 4;
 /** The transcript re-renders at most once per this interval while a reply streams. */
 const TRANSCRIPT_RENDER_INTERVAL_MS = 64;
 
+/** A keyboard motion with no end event ends after this (a keyboard animation takes ~250 ms). */
+const KEYBOARD_MOTION_MAX_MS = 1000;
+
 /** How long a pull-to-refresh shows its spinner: the re-read is one bounded tail page. */
 const PULL_REFRESH_SPINNER_MS = 800;
 
@@ -289,7 +293,7 @@ function readSavedScrollOffset(sessionId: string): number {
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, isRightDrawerOpen }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -311,13 +315,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Height of the composer (or the question card), without the inset above.
   // It is the offset of the list's drag-to-dismiss: the keyboard starts to
   // follow the finger at the top of the composer, as in Messages, not at the
-  // top of the keyboard.
-  const [bottomAreaHeight, setBottomAreaHeight] = useState(0);
+  // top of the keyboard. It changes on every line wrap of the draft, so it is
+  // not this page's state: only `ComposerGestureArea` renders again.
+  const bottomAreaHeightRef = useRef(0);
+  const setGestureOffsetRef = useRef<((height: number) => void) | null>(null);
   // Per session: two threads can be mounted in the stack at once, and the
   // offset is registered under this id.
   const composerInputNativeID = `composer-input-${sessionId}`;
   const handleBottomAreaLayout = useCallback((e: LayoutChangeEvent) => {
-    setBottomAreaHeight(Math.round(e.nativeEvent.layout.height));
+    const height = Math.round(e.nativeEvent.layout.height);
+    bottomAreaHeightRef.current = height;
+    setGestureOffsetRef.current?.(height);
   }, []);
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
@@ -337,6 +345,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // it ready, points every runtime call at it and keeps its live stream open.
   // Null for a frame after the sandbox switches in, and on the debug screens.
   const runtime = useSessionRuntime();
+  // `useSession` returns a new object on every render. Event handlers read the
+  // latest one here, so they keep their identity and the memoized transcript
+  // and composer do not render again. Render output reads `runtime` itself.
+  const runtimeRef = useRef(runtime);
+  runtimeRef.current = runtime;
   const runtimeReady = !!runtime?.switched;
   // This thread shows a sub-agent of the session, in its own runtime session.
   // Unknown root (still resolving) reads as the root thread.
@@ -426,16 +439,21 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
 
   // ── Message Queue ──────────────────────────────────────────────────────
-  const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);
+  // A read with the same rows keeps the previous array, so a poll that finds
+  // nothing new renders nothing.
+  const setQueueRows = useCallback((prompts: SessionPrompt[]) => {
+    setQueuedMessages((prev) => (JSON.stringify(prev) === JSON.stringify(prompts) ? prev : prompts));
+  }, []);
   const refreshQueue = useCallback(async () => {
-    if (!projectId || !projectSessionId) { setQueuedMessages([]); return; }
+    if (!projectId || !projectSessionId) { setQueueRows(EMPTY_PROMPTS); return; }
     try {
       const { prompts } = await listSessionPrompts(projectId, projectSessionId);
-      setQueuedMessages(prompts);
+      setQueueRows(prompts);
     } catch (error) {
       log.error('[SessionPage] Could not read prompt inbox:', error);
     }
-  }, [projectId, projectSessionId]);
+  }, [projectId, projectSessionId, setQueueRows]);
 
   // Move pre-upgrade local rows into the durable inbox before removing them.
   useEffect(() => {
@@ -460,12 +478,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     return () => { cancelled = true; };
   }, [projectId, projectSessionId, sessionId, refreshQueue]);
 
+  // Every 3 s while prompts wait or the agent works. An empty queue on an idle
+  // thread is still read, every 15 s (the SDK's idle floor): the server can
+  // hand a prompt back, or another device can queue one. A send, a queue
+  // action and the end of a turn read it at once.
+  const queuePollMs = queuedMessages.length > 0 || isBusy ? 3000 : SESSION_PROMPTS_IDLE_POLL_MS;
   useEffect(() => {
     void refreshQueue();
     if (!projectId || !projectSessionId) return;
-    const timer = setInterval(() => void refreshQueue(), 3000);
+    const timer = setInterval(() => void refreshQueue(), queuePollMs);
     return () => clearInterval(timer);
-  }, [projectId, projectSessionId, refreshQueue]);
+  }, [projectId, projectSessionId, refreshQueue, queuePollMs]);
 
   const handleEnqueue = useCallback(async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
     if (!projectId || !projectSessionId) {
@@ -713,19 +736,20 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       toast.error("Couldn't stop. Kortix is still working.");
     };
     try {
-      if (isSubThread || !runtime) {
+      const current = runtimeRef.current;
+      if (isSubThread || !current) {
         // A sub-agent's own run: abort that runtime session.
         await abortRuntimeSession(sessionId);
         return;
       }
       // The session's turn: the SDK holds the prompt inbox first, so a queued
       // prompt does not start the next turn, then aborts the run.
-      const settlement = await runtime.cancel();
+      const settlement = await current.cancel();
       if (settlement.status === 'failed') failed(settlement.error);
     } catch (err) {
       failed(err);
     }
-  }, [runtime, runtimeReady, isSubThread, sessionId, toast]);
+  }, [runtimeReady, isSubThread, sessionId, toast]);
 
   const handleQueueSendNow = useCallback(async (promptId: string) => {
     if (!projectId || !projectSessionId) return;
@@ -899,11 +923,12 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleEditSend = useCallback(
     async (messageId: string, text: string) => {
-      if (!runtime || !runtimeReady || editPendingRef.current) return;
+      const current = runtimeRef.current;
+      if (!current || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
       setEditPending(true);
       try {
-        await runtime.rewind(messageId);
+        await current.rewind(messageId);
       } catch (err: any) {
         // The editor stays open with the draft, so Send can be tried again.
         log.error('[SessionPage] Rewind failed:', err?.message || err);
@@ -928,7 +953,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (variant) options.variant = variant;
       await handleSend(text, options);
     },
-    [runtime, runtimeReady, sessionId, handleSend, toast],
+    [runtimeReady, sessionId, handleSend, toast],
   );
 
   // Group messages into turns. Turns whose messages did not change keep their
@@ -954,22 +979,36 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
   const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds).data;
   const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // The sender of a message, built once per message while the authors and the
+  // participants stay the same: the same object each render keeps the memoized
+  // rows from rendering again.
+  const senderOf = useMemo(() => {
+    const cache = new Map<string, AvatarPerson | null>();
+    return (messageId: string) => {
+      if (!cache.has(messageId)) {
+        cache.set(messageId, messageAvatarPerson(messageAuthors, participants, viewerId, messageId));
+      }
+      return cache.get(messageId) ?? null;
+    };
+  }, [messageAuthors, participants, viewerId]);
   // A queued prompt is keyed by its own message id, or by the wire id it was
   // re-minted under; either finds its author.
   const queuedSender = useCallback(
     (prompt: SessionPrompt) =>
-      messageAvatarPerson(messageAuthors, participants, viewerId, prompt.message_id) ??
-      (prompt.wire_message_id
-        ? messageAvatarPerson(messageAuthors, participants, viewerId, prompt.wire_message_id)
-        : null),
-    [messageAuthors, participants, viewerId],
+      senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
+    [senderOf],
   );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
   const isFreshSession = turns.length === 0;
   // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
-  const interruptedIds = useMemo(() => interruptedTurnIds(turns, isBusy), [turns, isBusy]);
+  // Stable by content: `turns` changes on every stream delta, and a new Set
+  // would re-render every row.
+  const interruptedIdList = useShallowStableArray(
+    useMemo(() => [...interruptedTurnIds(turns, isBusy)], [turns, isBusy]),
+  );
+  const interruptedIds = useMemo(() => new Set(interruptedIdList), [interruptedIdList]);
   // Web refuses a rewind while the runtime is busy or prompts are still queued.
   // A runtime without rewind (pi) never offers Edit, and a sub-agent's thread
   // does not either: a rewind belongs to the session's own conversation.
@@ -977,13 +1016,20 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     !canRewind || isSubThread || isBusy || queuedMessages.length > 0 || editPending || !runtimeReady;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
+  // The hero stays mounted only while it shows or fades out: its logo shader
+  // and tilt sensor run while mounted, even at opacity 0.
+  const [heroMounted, setHeroMounted] = useState<boolean>(showFreshHero);
+  if (showFreshHero && !heroMounted) setHeroMounted(true);
 
   useEffect(() => {
     Animated.timing(heroOpacity, {
       toValue: showFreshHero ? 1 : 0,
       duration: 220,
       useNativeDriver: true,
-    }).start();
+    }).start(({ finished }) => {
+      // An interrupted fade-out (the hero shows again) keeps it mounted.
+      if (finished && !showFreshHero) setHeroMounted(false);
+    });
   }, [showFreshHero, heroOpacity]);
 
   // ── Transcript scroll physics ──────────────────────────────────────────
@@ -1030,6 +1076,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const [room, setRoom] = useState(0);
   const roomRef = useRef(0);
   const renderedRoomRef = useRef(0);
+  // The last room handed to `setRoom`. While the keyboard moves, the list's
+  // height changes every frame (the `padding` of `KeyboardAvoidingView`), and a
+  // room per frame is a page render per frame. A room that shrinks is blank
+  // space the smaller list clips anyway, so it waits for the keyboard to stop.
+  // A room that grows is set at once: the list cannot scroll past its content.
+  const committedRoomRef = useRef(0);
+  const keyboardMovingRef = useRef(false);
   const lastAnchorRef = useRef<{ id: string; reached: boolean } | null>(null);
 
   const glideRef = useRef<{
@@ -1148,8 +1201,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     } else {
       lastAnchorRef.current = null;
     }
-    if (next !== roomRef.current) {
-      roomRef.current = next;
+    roomRef.current = next;
+    if (next !== committedRoomRef.current && (!keyboardMovingRef.current || next > committedRoomRef.current)) {
+      committedRoomRef.current = next;
       setRoom(next);
     }
     return { measured: true, anchorChanged };
@@ -1196,6 +1250,40 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       settleRef.current();
     });
   }, []);
+
+  // The keyboard's start and end events bound its motion. The end sets the
+  // room the motion held back, then settles once. The fallback ends a motion
+  // whose end event does not come.
+  useEffect(() => {
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+    const stop = () => {
+      if (fallback) clearTimeout(fallback);
+      fallback = null;
+      if (!keyboardMovingRef.current) return;
+      keyboardMovingRef.current = false;
+      if (committedRoomRef.current !== roomRef.current) {
+        committedRoomRef.current = roomRef.current;
+        setRoom(roomRef.current);
+      }
+      scheduleSettle();
+    };
+    const start = () => {
+      keyboardMovingRef.current = true;
+      if (fallback) clearTimeout(fallback);
+      fallback = setTimeout(stop, KEYBOARD_MOTION_MAX_MS);
+    };
+    const subscriptions = [
+      KeyboardEvents.addListener('keyboardWillShow', start),
+      KeyboardEvents.addListener('keyboardWillHide', start),
+      KeyboardEvents.addListener('keyboardDidShow', stop),
+      KeyboardEvents.addListener('keyboardDidHide', stop),
+    ];
+    return () => {
+      for (const subscription of subscriptions) subscription.remove();
+      if (fallback) clearTimeout(fallback);
+      keyboardMovingRef.current = false;
+    };
+  }, [scheduleSettle]);
 
   const cancelGlide = useCallback(() => {
     const glide = glideRef.current;
@@ -1685,13 +1773,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
-            sender={messageAvatarPerson(messageAuthors, participants, viewerId, id)}
+            sender={senderOf(id)}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, participants, messageAuthors, viewerId],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1885,12 +1973,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         {/* iOS: the list's drag-to-dismiss starts at the top of the composer.
             Only the list sits inside: below Android 11 this renders its
             children alone, so the absolute siblings keep the View above. */}
-        <KeyboardGestureArea
-          style={{ flex: 1 }}
-          offset={bottomAreaHeight}
-          textInputNativeID={composerInputNativeID}
-          // Android keeps `keyboardDismissMode="on-drag"` below.
-          enableSwipeToDismiss={false}>
+        <ComposerGestureArea
+          heightRef={bottomAreaHeightRef}
+          setHeightRef={setGestureOffsetRef}
+          textInputNativeID={composerInputNativeID}>
         <ConnectorHandoffContext.Provider value={connectorHandoffApi}>
         <MarkdownActionsProvider value={markdownActions}>
         <FlatList
@@ -1965,14 +2051,11 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         />
         </MarkdownActionsProvider>
         </ConnectorHandoffContext.Provider>
-        </KeyboardGestureArea>
+        </ComposerGestureArea>
 
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
-        <FreshSessionHero
-          opacity={heroOpacity}
-          visible={showFreshHero}
-        />
+        {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
       </View>
 
       {/* Fade gradient above input — only when textarea is shown */}
@@ -2081,6 +2164,39 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
  * thread. Callers pass stable callbacks.
  */
 export const SessionPage = React.memo(SessionPageImpl);
+
+const FILL = { flex: 1 } as const;
+
+/**
+ * The list's `KeyboardGestureArea`, offset by the composer's height. The height
+ * is this component's own state, set through `setHeightRef` from the composer's
+ * layout: a new height renders only this component, and `children` (the list,
+ * built by the page) is the same element, so React skips it.
+ */
+function ComposerGestureArea({
+  heightRef,
+  setHeightRef,
+  textInputNativeID,
+  children,
+}: {
+  heightRef: React.RefObject<number>;
+  setHeightRef: React.RefObject<((height: number) => void) | null>;
+  textInputNativeID: string;
+  children: React.ReactNode;
+}) {
+  const [offset, setOffset] = useState(() => heightRef.current);
+  setHeightRef.current = setOffset;
+  return (
+    <KeyboardGestureArea
+      style={FILL}
+      offset={offset}
+      textInputNativeID={textInputNativeID}
+      // Android keeps `keyboardDismissMode="on-drag"` below.
+      enableSwipeToDismiss={false}>
+      {children}
+    </KeyboardGestureArea>
+  );
+}
 
 /** Web: `ease-[cubic-bezier(0.23,1,0.32,1)]` on the scroll-to-bottom button. */
 const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);

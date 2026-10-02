@@ -24,6 +24,23 @@ export function describeMarkdownImage(src: unknown, alt: unknown): MarkdownImage
   return { label: altText || host || 'Image', href };
 }
 
+/**
+ * A short, stable React key part for an image source: the source itself up to
+ * 64 characters, else its length and 32-bit FNV-1a hash. A `data:` URI can be
+ * hundreds of KB, which is too long for a key. The same source always gives
+ * the same key; two different long sources share one only on a hash collision
+ * at the same length.
+ */
+export function imageSourceKey(src: string): string {
+  if (src.length <= 64) return src;
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < src.length; index += 1) {
+    hash ^= src.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${src.length}#${(hash >>> 0).toString(36)}`;
+}
+
 /** One `![alt](src "title")` image, as the gallery and the inline image read it. */
 export interface MarkdownImageRef {
   src: string;
@@ -33,8 +50,16 @@ export interface MarkdownImageRef {
 /** `![alt](src)` or `![alt](src "title")`; alt has no `]`, src has no space or `)`. */
 const IMAGE_TOKEN = /!\[([^\]\n]{0,500})\]\(\s*([^\s)]{1,2048})(?:\s+"[^"\n]{0,500}")?\s*\)/g;
 
+/**
+ * An image-only block starts with an image after optional whitespace. `\s` is
+ * the set `trim()` removes, so this rejects exactly the blocks whose text
+ * before the first image is not blank, without scanning the whole block.
+ */
+const STARTS_WITH_IMAGE = /^\s*!\[/;
+
 /** The images of a block that holds nothing but images (and whitespace), else null. */
 export function imageOnlyBlock(block: string): MarkdownImageRef[] | null {
+  if (!STARTS_WITH_IMAGE.test(block)) return null;
   const images: MarkdownImageRef[] = [];
   let rest = '';
   let last = 0;
