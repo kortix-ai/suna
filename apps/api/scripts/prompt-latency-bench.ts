@@ -319,8 +319,16 @@ async function main(): Promise<void> {
     return;
   }
   if (!API || !TOKEN || !PROJECT) throw new Error('BENCH_API, BENCH_TOKEN and BENCH_PROJECT are required');
+  // `bun --hot` re-evaluates the API on a source change and keeps the previous
+  // instance's pool, LISTEN connection and worker loops: statements slow down
+  // 3x within an hour of edits. A run across a reload is not a measurement.
+  const startedAt = async () => (await api('/health')).body?.started_at ?? null;
+  const apiStartedAt = await startedAt();
   const sessions: Session[] = [];
   for (let round = 1; round <= SESSIONS; round++) sessions.push(await runSession(round));
+  if ((await startedAt()) !== apiStartedAt) {
+    throw new Error('the API restarted or hot-reloaded during the run: restart the stack and run again');
+  }
   if (env.BENCH_API_LOG) {
     await sleep(2000); // the last delivery line flushes after its turn ends
     attachLogTimelines(sessions, env.BENCH_API_LOG);
