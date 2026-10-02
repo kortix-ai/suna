@@ -1,6 +1,6 @@
 {
-  "id": "18cb7a9b-29d1-4a73-922c-e1a26b48fa7b",
-  "prevId": "e80f6c0a-4d81-4413-9a1f-9c2313f15fe1",
+  "id": "dba14e1e-7d91-4eb6-a0f9-d3cf46fad18c",
+  "prevId": "f437005a-e96a-4699-9de8-5d61be349e22",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2374,6 +2374,38 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_service_account": {
+          "name": "idx_account_tokens_service_account",
+          "columns": [
+            {
+              "expression": "service_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"service_account_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_on_behalf_of_user": {
+          "name": "idx_account_tokens_on_behalf_of_user",
+          "columns": [
+            {
+              "expression": "on_behalf_of_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"on_behalf_of_user_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

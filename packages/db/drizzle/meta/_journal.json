@@ -782,8 +782,15 @@
     {
       "idx": 111,
       "version": "7",
-      "when": 1790976989937,
-      "tag": "20261002213629_session_presence_leases_session_fk_index",
+      "when": 1790976647914,
+      "tag": "20261002213047_account_tokens_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1790984105789,
+      "tag": "20261002233505_session_presence_leases_session_fk_index",
       "breakpoints": true
     }
   ]
