@@ -1,5 +1,5 @@
-import { auditEvents } from '@kortix/db';
-import { sql, type SQL } from 'drizzle-orm';
+import { type Database, auditEvents } from '@kortix/db';
+import { and, asc, eq, gt, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { isUuid } from './validate';
 
 const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -78,6 +78,72 @@ export function parseAuditSessionCursor(
   return { sequence, eventId };
 }
 
+/**
+ * One page of a session's audit log, in a stable total order and without a lock.
+ *
+ * Two groups, in this order:
+ *  1. rows with a `session_sequence` (written before the sequence allocator left the
+ *     ingest path), ascending by (session_sequence, event_id);
+ *  2. every later row, which has NO sequence, ascending by event_id. The id is a
+ *     UUIDv7 (migration 20261001222932237): time-ordered, and ordered inside one
+ *     INSERT statement, so this is creation order.
+ * That is `ORDER BY session_sequence ASC NULLS LAST, event_id` and it walks
+ * `idx_audit_events_session_sequence` (session_id, session_sequence, event_id) in
+ * both groups. One query per group, not one query with an OR keyset: an OR over the
+ * two groups cannot use the index order, and a session holds up to 1.7M rows.
+ *
+ * The cursor stays `<sequence>|<event_id>`. Sequence `0` means "the sequenced group
+ * is exhausted; resume the unsequenced group after this event". Real sequences start
+ * at 1, so `0` is free.
+ */
+export async function readSessionAuditEvents(
+  database: Pick<Database, 'select'>,
+  sessionId: string,
+  cursor: { sequence: number; eventId: string } | null,
+  limit: number,
+): Promise<{ rows: AuditEventRow[]; nextCursor: string | null }> {
+  const take = limit + 1;
+  const rows: AuditEventRow[] = [];
+  if (!cursor || cursor.sequence > 0) {
+    // A row comparison is one index range; the `a > x OR (a = x AND b > y)` form
+    // plans as BitmapOr + Sort and re-sorts the rest of a 1.6M-row session per page.
+    const after = cursor
+      ? sql`(${auditEvents.sessionSequence}, ${auditEvents.eventId}) > (${cursor.sequence}, ${cursor.eventId}::uuid)`
+      : undefined;
+    rows.push(
+      ...(await database
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.sessionId, sessionId), isNotNull(auditEvents.sessionSequence), after))
+        .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
+        .limit(take)),
+    );
+  }
+  if (rows.length < take) {
+    const afterId = cursor && cursor.sequence === 0 ? cursor.eventId : null;
+    rows.push(
+      ...(await database
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.sessionId, sessionId),
+            isNull(auditEvents.sessionSequence),
+            afterId ? gt(auditEvents.eventId, afterId) : undefined,
+          ),
+        )
+        .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
+        .limit(take - rows.length)),
+    );
+  }
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    rows: page,
+    nextCursor: rows.length > limit && last ? `${last.sessionSequence ?? 0}|${last.eventId}` : null,
+  };
+}
+
 export function serializeAuditEvent(row: AuditEventRow, names?: Map<string, string>) {
   return {
     event_id: row.eventId,
@@ -91,6 +157,7 @@ export function serializeAuditEvent(row: AuditEventRow, names?: Map<string, stri
     message_id: row.messageId,
     tool_call_id: row.toolCallId,
     execution_id: row.executionId,
+    /** @deprecated Set only on rows written before 2026-10; NULL for new rows. */
     session_sequence: row.sessionSequence,
     actor_user_id: row.actorUserId,
     actor_type: row.actorType,
@@ -128,7 +195,9 @@ export function serializeAuditEvent(row: AuditEventRow, names?: Map<string, stri
     output_sha256: row.outputSha256,
     error_code: row.errorCode,
     error_message: row.errorMessage,
+    /** @deprecated The hash chain left ingestion (2026-10); NULL for new rows. */
     integrity_previous_hash: row.integrityPreviousHash,
+    /** @deprecated NULL for new rows. */
     integrity_hash: row.integrityHash,
     before: row.before,
     after: row.after,

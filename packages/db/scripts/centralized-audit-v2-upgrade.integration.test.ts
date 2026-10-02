@@ -85,7 +85,7 @@ function migrationOptions(url: string, directory: string) {
 
 describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledger', () => {
   test(
-    'backfills legacy session cursors and begins the integrity chain after legacy history',
+    'backfills legacy session cursors; rows written after the upgrade carry no sequence or hash',
     async () => {
       const databaseName = `audit_v2_upgrade_${randomUUID().replaceAll('-', '')}`;
       const runtimeMigrations = materializeMigrationRuntimeDirectory(migrationsDir);
@@ -175,43 +175,30 @@ describe.skipIf(!databaseUrl)('centralized audit v2 — upgrade from the v1 ledg
             { action: 'legacy.second', session_sequence: '2', integrity_hash: null },
           ]);
 
-          const firstV2 = await verified.query<{
-            session_sequence: string;
+          // Since the lock-free prepare trigger (20261001223552613) a new row gets no
+          // sequence and no chain hash. The legacy rows above keep theirs.
+          const later = await verified.query<{
+            action: string;
+            session_sequence: string | null;
             integrity_previous_hash: string | null;
-            integrity_hash: string;
+            integrity_hash: string | null;
           }>(`
             INSERT INTO kortix.audit_events(
               account_id, action, resource_type, project_id, session_id,
               actor_type, authoritative_source, outcome
-            ) VALUES (
-              'd7100000-0000-4000-a000-000000000001', 'v2.first', 'test',
-              'd7200000-0000-4000-a000-000000000001', 'legacy-session',
-              'system', 'system', 'success'
-            )
-            RETURNING session_sequence, integrity_previous_hash, integrity_hash
+            ) VALUES
+              ('d7100000-0000-4000-a000-000000000001', 'v2.first', 'test',
+               'd7200000-0000-4000-a000-000000000001', 'legacy-session',
+               'system', 'system', 'success'),
+              ('d7100000-0000-4000-a000-000000000001', 'v2.second', 'test',
+               'd7200000-0000-4000-a000-000000000001', 'legacy-session',
+               'system', 'system', 'success')
+            RETURNING action, session_sequence, integrity_previous_hash, integrity_hash
           `);
-          expect(firstV2.rows[0]?.session_sequence).toBe('3');
-          expect(firstV2.rows[0]?.integrity_previous_hash).toBeNull();
-          expect(firstV2.rows[0]?.integrity_hash).toHaveLength(64);
-
-          const secondV2 = await verified.query<{
-            session_sequence: string;
-            integrity_previous_hash: string | null;
-          }>(`
-            INSERT INTO kortix.audit_events(
-              account_id, action, resource_type, project_id, session_id,
-              actor_type, authoritative_source, outcome
-            ) VALUES (
-              'd7100000-0000-4000-a000-000000000001', 'v2.second', 'test',
-              'd7200000-0000-4000-a000-000000000001', 'legacy-session',
-              'system', 'system', 'success'
-            )
-            RETURNING session_sequence, integrity_previous_hash
-          `);
-          expect(secondV2.rows[0]).toEqual({
-            session_sequence: '4',
-            integrity_previous_hash: firstV2.rows[0]?.integrity_hash,
-          });
+          expect(later.rows).toEqual([
+            { action: 'v2.first', session_sequence: null, integrity_previous_hash: null, integrity_hash: null },
+            { action: 'v2.second', session_sequence: null, integrity_previous_hash: null, integrity_hash: null },
+          ]);
         } finally {
           await verified.end();
         }

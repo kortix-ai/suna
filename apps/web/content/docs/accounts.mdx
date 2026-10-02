@@ -186,6 +186,8 @@ Each row also records the credential the API authenticated, in `credential_kind`
 
 The API never reads `X-Kortix-Client`. The CLI, the MCP server, and the web app all call the same API, and any client can send any header value, so the log records what the API can prove. Rows written before 2026-09-30 may carry a self-reported `client_reported_source`. New rows leave it empty. Filter by credential with `?credential_kind=oauth_app` on `GET /v1/accounts/:accountId/audit`, or `kortix audit ls --credential-kind oauth_app`.
 
+Rows written before 2026-10 carry `session_sequence`, `integrity_previous_hash`, and `integrity_hash`: a per-session counter and a hash chain. New rows leave all three empty, and the fields are deprecated. Nothing verified the chain, and maintaining it serialized every write of a session. A session's log is ordered by creation time: rows with a `session_sequence` come first, in that order, then newer rows in the order the API created them.
+
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
 
 ### Actions

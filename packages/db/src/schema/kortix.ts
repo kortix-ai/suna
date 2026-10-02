@@ -3278,6 +3278,8 @@ export const auditEvents = kortixSchema.table(
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
     executionId: text('execution_id'),
+    /** Deprecated: set only on rows written before 2026-10 (the allocator and its lock left
+     *  the ingest path). NULL for newer rows; the session log orders those by event_id. */
     sessionSequence: bigint('session_sequence', { mode: 'number' }),
     actorUserId: uuid('actor_user_id'),
     actorType: text('actor_type'),
@@ -3320,7 +3322,9 @@ export const auditEvents = kortixSchema.table(
     outputSha256: varchar('output_sha256', { length: 64 }),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
+    /** Deprecated: the hash chain left ingestion in 2026-10. NULL for newer rows. */
     integrityPreviousHash: varchar('integrity_previous_hash', { length: 64 }),
+    /** Deprecated: see integrityPreviousHash. */
     integrityHash: varchar('integrity_hash', { length: 64 }),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
@@ -3355,7 +3359,7 @@ export const auditEvents = kortixSchema.table(
     // filters on `session_id` ALONE and orders by (session_sequence, event_id)
     // — deliberately without an account predicate, because chain rows written
     // before account resolution (auth.login.success) or from project-neutral
-    // endpoints would vanish from the middle of the integrity chain. Every
+    // endpoints would vanish from the session's log. Every
     // other index on this table leads with account_id/actor/resource, so that
     // query seq-scanned the whole ledger and died on the 25 s statement
     // timeout (57014) on the request path (prod, 2026-09-25). This index leads
@@ -3406,6 +3410,8 @@ export const auditEvents = kortixSchema.table(
   ],
 );
 
+/** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
+ *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */
 export const auditSessionSequences = kortixSchema.table('audit_session_sequences', {
   sessionId: text('session_id').primaryKey(),
   lastSequence: bigint('last_sequence', { mode: 'number' }).default(0).notNull(),
