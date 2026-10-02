@@ -17,6 +17,7 @@ import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import {
   deleteInboxPrompt,
+  editInboxPrompt,
   drainSessionLifecycleQueue,
   enqueueContinueSessionCommand,
   enqueueReleasingHold,
@@ -516,6 +517,70 @@ projectsApp.openapi(
         },
         409,
       );
+    }
+    return c.json({ error: 'Not found' }, 404);
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/sessions/{sessionId}/prompts/{promptId}',
+    tags: ['sessions'],
+    summary: 'Edit a queued prompt',
+    description:
+      'Replace the text of a prompt still waiting in the queue. The prompt keeps its place, its files and any hold, and is not sent.',
+    ...auth,
+    request: {
+      params: z.object({
+        projectId: z.string(),
+        sessionId: z.string(),
+        promptId: z.string(),
+      }),
+      body: { content: { 'application/json': { schema: lenientBody({
+          text: z.string().openapi({ description: 'The new text of the prompt.' }),
+        }) } }, required: true },
+    },
+    responses: {
+      200: json(SessionPromptSchema, 'Prompt edited'),
+      ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    const promptId = c.req.param('promptId');
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!isUuid(promptId)) return c.json({ error: 'Invalid prompt id' }, 400);
+
+    // Floor 'session' — see the POST /prompts gate comment. Editing your own
+    // queued message is running the session, not editing the project.
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+    );
+    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readJsonObject(c);
+    // The same limits a sent text part meets.
+    const sanitized = sanitizeInboxPromptParts([{ type: 'text', text: body.text }]);
+    if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
+    const text = flattenPromptText(sanitized.parts);
+    if (!text.trim()) return c.json({ error: 'text is required' }, 400);
+
+    // No drain kick and no hold release: an edit changes a waiting message,
+    // it does not send one. `POST /prompts` would do both.
+    const outcome = await editInboxPrompt(sessionId, promptId, text);
+    if (outcome.outcome === 'edited') return c.json(serializePrompt(outcome.row), 200);
+    if (outcome.outcome === 'delivering') {
+      return c.json({ error: 'Prompt is already with the agent' }, 409);
     }
     return c.json({ error: 'Not found' }, 404);
   },
