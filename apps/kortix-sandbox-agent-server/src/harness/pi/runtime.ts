@@ -20,9 +20,9 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import type { Agent, AgentEvent, AgentMessage, AgentOptions, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from '@earendil-works/pi-agent-core'
 import type { ImageContent, ModelThinkingLevel } from '@earendil-works/pi-ai'
-import type { SessionEntry, Skill } from '@earendil-works/pi-coding-agent'
+import type { AgentSessionEvent, SessionEntry, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, type CompiledAgent, type CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
-import type { KortixMessage, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
+import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
@@ -36,9 +36,10 @@ import { PermissionBroker, QuestionBroker, compilePermissionPolicy, resolvePolic
 import type { PiModels, SelectedModel } from './model'
 import { nativeModelId } from './model'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
-import { PiTurnEvents, assistantMessageError, type TurnEventEmission } from './turn-events'
+import { PiTurnEvents, assistantInfoFields, assistantMessageError, type TurnEventEmission } from './turn-events'
 import { withAgentSampling } from './sampling'
 import { TransientRetry, type RetryPlan } from './transient-retry'
+import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { MESSAGE_ID, MessageIdClock, mintChildId, mintRootId } from './message-id'
 
 import { PI_HARNESS_VERSION } from './version'
@@ -270,6 +271,10 @@ export class PiRuntime {
   private turnRetry: TransientRetry | null = null
   /** The last assistant message of the root turn in flight. The context is no index: a retry or a compaction rewrites it. */
   private turnAssistant: AgentMessage | null = null
+  /** pi already compacted once for the failed attempt in flight; a second failure is final (pi's own rule). */
+  private recoveryTried = false
+  /** The compaction in flight: its summary message on the wire. */
+  private compaction: KortixAssistantMessageInfo | null = null
   private resetProgressWatchdog: (() => void) | null = null
   private workspaceReady = true
 
@@ -391,6 +396,7 @@ export class PiRuntime {
         now: this.now,
         publish: (frame) => this.publish(frame),
         retryPlan: (message) => retryStatus(this.turnRetry?.plan(message)),
+        recovers: (message) => this.recovers(message),
       })
       this.workspaceTools = createWorkspaceTools(this.workspace)
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
@@ -448,6 +454,7 @@ export class PiRuntime {
       // The session installed the extension tool hooks; the permission policy runs first.
       agent.beforeToolCall = this.toolGate((tool, args) => this.compiledAgent()?.tools?.[tool] === false ? 'deny' : this.permissions.rule(tool, args), true, agent.beforeToolCall)
       agent.subscribe((event) => this.onAgentEvent(event))
+      this.pi.session.subscribe((event) => this.onSessionEvent(event))
       this.state = 'ok'
       logger.info('[pi] runtime ready', {
         rootId: this.rootId,
@@ -582,8 +589,26 @@ export class PiRuntime {
     return { messageId, done: outcome }
   }
 
+  /**
+   * Summarize the conversation now (`/session/:id/summarize`). It runs between
+   * turns on the serial queue; the wire carries its progress and its result.
+   */
+  compact(): void {
+    if (!this.pi || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
+    const session = this.pi.session
+    this.pendingTurns += 1
+    this.queue = this.queue
+      .then(() => session.compact())
+      // The failure is on the wire (`compaction_end`); nothing else waits for it.
+      .catch((err) => logger.warn('[pi] compaction failed', { err: err instanceof Error ? err.message : String(err) }))
+      .finally(() => {
+        this.pendingTurns -= 1
+      })
+  }
+
   /** Stop the run in flight. Idempotent: aborting an idle agent is a no-op. */
   async abort(): Promise<boolean> {
+    this.pi?.session.abortCompaction()
     if (!this.active) return false
     this.permissions.rejectAll()
     this.questions.rejectAll()
@@ -630,6 +655,7 @@ export class PiRuntime {
     let outcome: TurnOutcome = 'completed'
     let error: TurnEnd['error'] | undefined
     this.turnAssistant = null
+    this.recoveryTried = false
     const retry = new TransientRetry({
       baseDelayMs: this.cfg.piTurnRetryBaseMs,
       contextWindow: () => this.selected?.model.contextWindow ?? 0,
@@ -710,8 +736,90 @@ export class PiRuntime {
     session.refreshContext()
   }
 
+  /**
+   * pi compacts and retries a failed model attempt once: a context overflow, or
+   * a reply cut by the length limit. True for the attempt it will try to recover.
+   */
+  private recovers(message: AgentMessage): boolean {
+    if (this.recoveryTried || !this.pi?.session.autoCompactionEnabled || message.role !== 'assistant') return false
+    if (message.stopReason !== 'length' && !isContextOverflow(message, this.selected?.model.contextWindow ?? 0)) return false
+    this.recoveryTried = true
+    return true
+  }
+
+  /**
+   * pi's compaction on the wire, in OpenCode's shape: a user message whose one
+   * part is `compaction` (the request), an assistant message flagged `summary`
+   * that ends with the summary text or an error, `time.compacting` on the
+   * session while it runs, and `session.compacted` when it is over. The
+   * transcript keeps every message; only the model's context gets shorter.
+   */
+  private onSessionEvent(event: AgentSessionEvent): void {
+    const sessionID = this.rootId
+    if (event.type === 'compaction_start') {
+      const created = this.now()
+      const markerId = this.clock.mint(created)
+      const model = { providerID: this.selected!.providerID, modelID: this.selected!.modelID }
+      this.compaction = {
+        id: this.clock.mint(created),
+        role: 'assistant',
+        sessionID,
+        parentID: markerId,
+        summary: true,
+        time: { created },
+        ...model,
+        ...assistantInfoFields(undefined, { agent: this.agentName, workspace: this.workspace }),
+      }
+      this.publish({ type: 'session.updated', properties: { sessionID, info: this.sessionObject() } })
+      this.publish({ type: 'message.updated', properties: { sessionID, info: { id: markerId, role: 'user', sessionID, time: { created }, agent: this.agentName, model } } })
+      this.publish({
+        type: 'message.part.updated',
+        properties: {
+          sessionID,
+          time: created,
+          part: { id: `${markerId}-p0`, messageID: markerId, sessionID, type: 'compaction', auto: event.reason !== 'manual', ...(event.reason === 'overflow' ? { overflow: true } : {}) },
+        },
+      })
+      this.publish({ type: 'message.updated', properties: { sessionID, info: this.compaction } })
+      return
+    }
+    if (event.type !== 'compaction_end' || !this.compaction) return
+    const info = this.compaction
+    this.compaction = null
+    const completed = this.now()
+    const error: KortixMessageError | undefined = event.result
+      ? undefined
+      : event.aborted
+        ? { name: 'MessageAbortedError', data: { message: 'The compaction was stopped' }, code: 'aborted' }
+        : { name: 'UnknownError', data: { message: event.errorMessage ?? 'The compaction failed' } }
+    if (event.result) {
+      this.publish({
+        type: 'message.part.updated',
+        properties: { sessionID, time: completed, part: { id: `${info.id}-p0`, messageID: info.id, sessionID, type: 'text', text: event.result.summary } },
+      })
+    }
+    this.publish({
+      type: 'message.updated',
+      properties: {
+        sessionID,
+        info: {
+          ...info,
+          ...assistantInfoFields(event.result?.usage, { agent: this.agentName, workspace: this.workspace }),
+          time: { created: info.time.created, completed },
+          ...(error ? { error } : {}),
+        },
+      },
+    })
+    this.publish({ type: 'session.updated', properties: { sessionID, info: this.sessionObject() } })
+    this.publish({ type: 'session.compacted', properties: { sessionID } })
+    this.persist()
+  }
+
   private onAgentEvent(event: AgentEvent): void {
-    if (event.type === 'message_end' && event.message.role === 'assistant') this.turnAssistant = event.message
+    if (event.type === 'message_end' && event.message.role === 'assistant') {
+      this.turnAssistant = event.message
+      if (event.message.stopReason !== 'error' && event.message.stopReason !== 'length') this.recoveryTried = false
+    }
     if (event.type === 'tool_execution_start') this.runningTools += 1
     if (event.type === 'tool_execution_end') this.runningTools = Math.max(0, this.runningTools - 1)
     if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end' || event.type === 'message_update') this.resetProgressWatchdog?.()
@@ -1160,7 +1268,7 @@ export class PiRuntime {
       directory: this.workspace,
       title: this.title,
       version: PI_HARNESS_VERSION,
-      time: { created: this.createdAt, updated: this.updatedAt },
+      time: { created: this.createdAt, updated: this.updatedAt, ...(this.compaction ? { compacting: this.compaction.time.created } : {}) },
     }
   }
 
@@ -1218,7 +1326,7 @@ export class PiRuntime {
             title: this.title,
             parent_id: null,
             directory: this.workspace,
-            time: { created: this.createdAt, updated: this.updatedAt, compacting: null, archived: null },
+            time: { created: this.createdAt, updated: this.updatedAt, compacting: this.compaction?.time.created ?? null, archived: null },
             revert: null,
           },
           ...[...this.children.values()].map((child) => ({

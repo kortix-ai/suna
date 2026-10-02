@@ -48,15 +48,16 @@ type ToolCall = { tool: string; args: Record<string, unknown> }
  * One scripted model reply: text, a tool call, several tool calls, or text ending on `finish`.
  * `cut` streams its text, then closes the stream with no `finish_reason` (an upstream
  * cut; pi-ai throws "Stream ended without finish_reason"). `cutMidLine` streams its text, then
- * half of the next data line, and closes (a cut inside a JSON chunk). `status` answers with that HTTP error.
+ * half of the next data line, and closes (a cut inside a JSON chunk). `status` answers with that HTTP error
+ * (`message` is its error text). `promptTokens` is the context size the reply reports in its usage.
  */
 type Step =
-  | { text: string; finish?: 'stop' | 'length' }
+  | { text: string; finish?: 'stop' | 'length'; promptTokens?: number }
   | ToolCall
   | { tools: ToolCall[] }
   | { cut: string }
   | { cutMidLine: string }
-  | { status: number }
+  | { status: number; message?: string }
   | { stall: true }
 
 /**
@@ -84,7 +85,7 @@ function startFakeGateway() {
       requests.push({ path: url.pathname, auth: req.headers.get('authorization') })
       const step: Step = script.shift() ?? { text: '' }
       calls += 1
-      if ('status' in step) return new Response(JSON.stringify({ error: { message: 'scripted failure' } }), { status: step.status })
+      if ('status' in step) return new Response(JSON.stringify({ error: { message: step.message ?? 'scripted failure' } }), { status: step.status })
       if ('stall' in step) return new Promise<Response>((resolve) => {
         req.signal.addEventListener('abort', () => resolve(new Response('aborted', { status: 499 })), { once: true })
       })
@@ -115,7 +116,8 @@ function startFakeGateway() {
         if (step.text.length > half) body += chunk({ content: step.text.slice(half) })
         body += chunk({}, step.finish ?? 'stop')
       }
-      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`
+      const promptTokens = 'promptTokens' in step && step.promptTokens ? step.promptTokens : 1
+      body += `data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 0, model: MODEL_ID, choices: [], usage: { prompt_tokens: promptTokens, completion_tokens: 1, total_tokens: promptTokens + 1 } })}\n\n`
       body += 'data: [DONE]\n\n'
       return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
     },
@@ -293,10 +295,10 @@ describe('pi harness', () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
     const before = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
     expect(before.harness).toMatchObject({ id: 'pi', version: expect.stringContaining('pi-agent-core@'), state: 'down', ready: false })
-    // E1: pi serves subagents and none of the features its surface answers 501 for.
+    // E1: pi serves subagents and compaction, and none of the features its surface answers 501 for.
     expect(before.capabilities).toContain('session.subagents')
+    expect(before.capabilities).toContain('session.compact')
     expect(before.capabilities).not.toContain('session.rewind')
-    expect(before.capabilities).not.toContain('session.compact')
     expect(before.capabilities).not.toContain('session.commands')
     expect(before.capabilities).not.toContain('session.attach')
     expect(before.runtimeReady).toBe(false)
@@ -1123,6 +1125,10 @@ describe('pi harness', () => {
     const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_in_flight).toBe(false)
     expect(probe.turn_end).toBe('failed')
+    // Nothing to compact, so pi does not recover it: the withheld error lands on the message.
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.at(-1)!.info.error).toMatchObject({ name: 'MessageOutputLengthError' })
+    expect(page.messages.some((m) => m.parts.some((part) => part.type === 'compaction'))).toBe(false)
   })
 })
 
@@ -2025,5 +2031,167 @@ describe('config releases on pi', () => {
     }
     expect(pulled.repo.after.commit).toBe(secondCommit)
     expect(head()).toBe(secondCommit)
+  })
+})
+
+/**
+ * pi keeps the last `keepRecentTokens` of a conversation; 1 makes every earlier turn summarizable.
+ * The cut then falls inside the last turn, so one compaction asks the model twice: for the history
+ * and for that turn's head. A script gives both replies (`SUMMARY`).
+ */
+const SUMMARY: Step[] = [{ text: 'SUMMARY-ONE' }, { text: 'SUMMARY-TWO' }]
+const compactEverything = (workspace: string) => {
+  mkdirSync(join(workspace, 'harnesses/pi'), { recursive: true })
+  writeFileSync(join(workspace, 'harnesses/pi/settings.json'), JSON.stringify({ compaction: { keepRecentTokens: 1 } }))
+}
+const summarize = (r: Rig, root: string) => r.user(`/session/${root}/summarize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+const sentText = (messages: Array<{ role: string; content: unknown }>) => JSON.stringify(messages)
+const compactionTurns = (page: WirePage) =>
+  page.messages.flatMap((marker) => {
+    const part = marker.parts.find((p) => p.type === 'compaction')
+    return part ? [{ part, summary: page.messages.find((m) => m.info.parentID === marker.info.id)! }] : []
+  })
+
+describe('pi compaction', () => {
+  test('health lists session.compact', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('session.compact')
+  })
+
+  test('summarize compacts on demand: the wire shows the request and the summary, and the model gets the summary', async () => {
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY, { text: 'third answer' }], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+
+    expect(await summarize(r, root).then((res) => res.json())).toBe(true)
+    const text = await readSse(events, (t) => t.includes('event: session.compacted'))
+    expect(text).toContain('event: session.compacted')
+    await waitFor(() => r.service.runtime()!.idle())
+
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false })
+    expect(turn!.summary.info).toMatchObject({ role: 'assistant', summary: true, time: { completed: expect.any(Number) } })
+    expect(turn!.summary.info.error).toBeUndefined()
+    expect(turn!.summary.parts.map((p) => p.type)).toEqual(['text'])
+    expect(turn!.summary.parts[0]!.text).toContain('SUMMARY-ONE')
+    expect(turn!.summary.parts[0]!.text).toContain('SUMMARY-TWO')
+    // The transcript keeps every message; only the model's context is shorter.
+    expect(page.messages.filter((m) => m.info.role === 'user' && m.parts.some((p) => p.type === 'text'))).toHaveLength(2)
+    const session = (await r.user(`/session/${root}`).then((res) => res.json())) as { time: Record<string, unknown> }
+    expect(session.time.compacting).toBeUndefined()
+
+    await promptAndSettle(r, 'GAMMA question')
+    const next = sentText(gateway.sent.at(-1)!)
+    expect(next).toContain('SUMMARY-ONE')
+    expect(next).toContain('GAMMA question')
+    expect(next).not.toContain('ALPHA question')
+  })
+
+  test('a compacted conversation survives a daemon restart', async () => {
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, ...SUMMARY], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    expect((await summarize(r, root)).status).toBe(200)
+    await waitFor(() => r.service.runtime()!.idle())
+    await r.service.lifecycle.stop()
+
+    const restarted = await boot({ script: [{ text: 'after restart' }], workspace: r.workspace })
+    rigs.splice(rigs.indexOf(r), 1)
+    await promptAndSettle(restarted, 'GAMMA question')
+    const next = sentText(gateway.sent.at(-1)!)
+    expect(next).toContain('SUMMARY-ONE')
+    expect(next).not.toContain('ALPHA question')
+  })
+
+  test('a dump written before pi 1.0 restores its conversation from agentMessages', async () => {
+    const r = await boot({ script: [{ text: 'first answer' }] })
+    await promptAndSettle(r, 'ALPHA question')
+    await r.service.lifecycle.stop()
+    const dumpPath = join(r.workspace, '.state', 'sess-pi-test.json')
+    const { entries, ...legacy } = JSON.parse(readFileSync(dumpPath, 'utf8')) as Record<string, unknown>
+    expect(Array.isArray(entries)).toBe(true)
+    writeFileSync(dumpPath, JSON.stringify(legacy))
+
+    const restarted = await boot({ script: [{ text: 'after restart' }], workspace: r.workspace })
+    rigs.splice(rigs.indexOf(r), 1)
+    await promptAndSettle(restarted, 'BETA question')
+    const next = sentText(gateway.sent.at(-1)!)
+    expect(next).toContain('ALPHA question')
+    expect(next).toContain('first answer')
+  })
+
+  test('stop ends a compaction in flight: the summary message carries the abort, and the context is unchanged', async () => {
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }, { stall: true }, { stall: true }, { text: 'third answer' }], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    const calls = gateway.requests.length
+    expect((await summarize(r, root)).status).toBe(200)
+    await waitFor(() => gateway.requests.length > calls)
+    const session = (await r.user(`/session/${root}`).then((res) => res.json())) as { time: Record<string, unknown> }
+    expect(session.time.compacting).toEqual(expect.any(Number))
+    expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
+    await waitFor(() => r.service.runtime()!.idle())
+
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(page)[0]!.summary.info.error).toMatchObject({ name: 'MessageAbortedError' })
+    gateway.script([{ text: 'third answer' }])
+    await promptAndSettle(r, 'GAMMA question')
+    expect(sentText(gateway.sent.at(-1)!)).toContain('ALPHA question')
+  })
+
+  test('a context past the model threshold compacts by itself after the turn', async () => {
+    // The catalog window is 64,000 and pi reserves 16,384: a reply that reports 60,000 is over.
+    const r = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 60_000 }, ...SUMMARY], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    expect(turn!.summary.parts[0]!.text).toContain('SUMMARY-ONE')
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+  })
+
+  test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
+    const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
+    const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const messageID = 'msg_0198e2a4b0e1ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'BETA question' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('completed')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error)).toEqual([])
+    expect(compactionTurns(page)[0]!.part).toMatchObject({ type: 'compaction', auto: true, overflow: true })
+    expect(page.messages.at(-1)!.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'answer after compaction' })
+    const text = await readSse(events, (t) => t.includes('answer after compaction') && t.includes('event: session.idle'))
+    expect(text).not.toContain('event: session.error')
+  })
+
+  test('an overflow with nothing to compact fails the turn with ContextOverflowError', async () => {
+    const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
+    const r = await boot({ script: [overflow] })
+    const root = r.service.runtime()!.rootId
+    const events = await r.bearer('/kortix/opencode/events?since=0')
+    const messageID = 'msg_0198e2a4b0e2ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID, parts: [{ type: 'text', text: 'ALPHA question' }] })).status).toBe(204)
+    await waitFor(() => r.service.runtime()!.idle())
+    const probe = (await r.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
+    expect(probe.turn_end).toBe('failed')
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.error).map((m) => m.info.error.name)).toContain('ContextOverflowError')
+    const text = await readSse(events, (t) => t.includes('event: session.error') && t.includes('event: session.idle'))
+    expect(text).toContain('ContextOverflowError')
   })
 })
