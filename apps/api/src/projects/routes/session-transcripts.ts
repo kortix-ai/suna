@@ -3,9 +3,10 @@
  */
 
 import { PROJECT_ACTIONS } from '../../iam';
+import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { AnyObject, projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
@@ -15,6 +16,7 @@ import {
   buildSessionTranscriptSyncEnvelope,
 } from '../lib/session-transcript';
 import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
+import { sessionMessageAuthors } from '../lib/session-message-authors';
 
 // GET /v1/projects/:projectId/sessions/:sessionId/transcript
 // Server-side transcript read for project automation. Unlike the raw /v1/p
@@ -72,8 +74,9 @@ projectsApp.openapi(
     const maxChars = parseBoundedPositiveInt(c.req.query('chars'), 700, 80, 5000, 'chars');
     if (!maxChars.ok) return c.json({ error: maxChars.error }, 400);
 
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -137,5 +140,34 @@ projectsApp.openapi(
       full: c.req.query('detail') === 'full',
     });
     return c.json(transcript);
+  },
+);
+
+// GET /v1/projects/:projectId/sessions/:sessionId/message-authors
+// Who wrote each message, from the authenticated prompt ledger: a member, or
+// another session's agent. The live runtime carries no author.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/message-authors',
+    tags: ['sessions'],
+    summary: 'Read who wrote each message of a session',
+    description:
+      'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null.',
+    ...auth,
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: { 200: json(AnyObject, 'Message authors'), ...errors(400, 403, 404) },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
+    if (binding.kind === 'error') return binding.response as never;
+    const { loaded } = binding;
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    return c.json(await sessionMessageAuthors(visible.row));
   },
 );

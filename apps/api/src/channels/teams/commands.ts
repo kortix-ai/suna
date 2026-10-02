@@ -14,7 +14,7 @@ import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './mode
 import { messageAfterFreshStart, startFreshTeamsConversation } from './fresh-start';
 import { createOrJoinTeamsConversationSession } from './session';
 import { conversationPolicyLabel, normalizeConversationPolicy } from './participants';
-import { sendCard } from '../teams-api';
+import { replyPrivately } from './private-reply';
 import {
   type TeamsPanel,
   buildHelpCard,
@@ -35,7 +35,7 @@ import {
 } from './binding';
 import { teamsUserId } from './identity';
 import { type ChatUser, chatUser, lookupChatIdentity, revokeChatIdentity } from '../core/identity';
-import { teamsLoginCard } from './login-card';
+import { sendTeamsLoginPrompt } from './login-card';
 import { conversationScope, describeTeamsConversation, type TeamsCommand } from './util';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 
@@ -52,6 +52,8 @@ function conversationRef(activity: TeamsActivity, projectId?: string): TeamsConv
     projectId,
   };
 }
+
+const OWN_PROJECT_NOTICE = 'This bot always runs its own project, so there is no other project to pick here.';
 
 function dashboardBase(): string {
   return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
@@ -75,16 +77,16 @@ export async function handleTeamsCommand(input: {
   const actor = chatUser('teams', input.tenantId, userId ?? '');
   const settings = teamsSettingsChannel(input.activity, input.tenantId, conversationId);
 
-  const post = (card: unknown) => sendCard(ref, card as Record<string, unknown>);
+  // A command answers the person who typed it, as Slack's slash commands do:
+  // in a channel or group chat only they see the reply.
+  const post = (card: unknown) => replyPrivately(ref, input.activity, card);
 
   try {
     switch (verb) {
       case 'login':
       case 'connect': {
-        // The sign-in link only in a one-to-one chat (login-card.ts).
-        if (userId) {
-          await post(await teamsLoginCard({ activity: input.activity, tenantId: input.tenantId, teamsUserId: userId, projectId: input.projectId }));
-        }
+        // The sign-in link only where this person alone sees it (login-card.ts).
+        if (userId) await sendTeamsLoginPrompt({ ref, activity: input.activity, tenantId: input.tenantId, teamsUserId: userId });
         return true;
       }
       case 'logout':
@@ -94,9 +96,12 @@ export async function handleTeamsCommand(input: {
         return true;
       }
       case 'whoami':
-      case 'who':
-        await post(await buildWhoamiCard(ctx, input.activity, input.tenantId, conversationId, userId, input.projectId));
+      case 'who': {
+        const card = await buildWhoamiCard(input.tenantId, userId, input.projectId);
+        if (card) await post(card);
+        else if (userId) await sendTeamsLoginPrompt({ ref, activity: input.activity, tenantId: input.tenantId, teamsUserId: userId });
         return true;
+      }
       case 'help':
         await post(helpCard());
         return true;
@@ -159,6 +164,7 @@ export async function handleTeamsCommand(input: {
             tenantId: input.tenantId,
             conversationId,
             activity: { ...input.activity, text: message, id: `${input.activity.id ?? 'new'}:new` },
+            ownThreadsOnly: input.projectScoped,
           });
         }
         return true;
@@ -210,11 +216,20 @@ export async function handleTeamsCommand(input: {
         await post(await setAgent(settings, actor, arg));
         return true;
       case 'projects':
-        await post(await buildProjectsCard(input.tenantId, input.projectId));
-        return true;
       case 'use':
       case 'switch':
-        await post(await switchProject(actor, settings, arg));
+        // A per-project bot runs only its own project. `/use` used to bind the
+        // conversation to another project, after which this bot declined the
+        // conversation for good, and `/unbind` (refused here) could not undo it.
+        if (sessionProjectId) {
+          await post(buildNoticeCard(OWN_PROJECT_NOTICE));
+          return true;
+        }
+        await post(
+          verb === 'projects'
+            ? await buildProjectsCard(input.tenantId, input.projectId)
+            : await switchProject(actor, settings, arg),
+        );
         return true;
       case 'policy':
         await ensureBinding(input.tenantId, conversationId, input.projectId, input.activity);
@@ -301,7 +316,7 @@ async function buildStatusCard(
     actions: [
       openPanelAction('Change model', 'models'),
       openPanelAction('Change agent', 'agents'),
-      ...(projects.length > 1 ? [openPanelAction('Switch project', 'projects')] : []),
+      ...(projects.length > 1 && !sessionProjectId ? [openPanelAction('Switch project', 'projects')] : []),
     ],
     // Deep-link to the run when there is one: the project page is a detour
     // from the thing the card is about.
@@ -383,16 +398,10 @@ function describeConversationSession(session: TeamsConversationSession | null): 
   return `${glyph} ${label}${when}`;
 }
 
-async function buildWhoamiCard(
-  ctx: ReturnType<typeof teamsChannelCtx>,
-  activity: TeamsActivity,
-  tenantId: string,
-  conversationId: string,
-  userId: string | null,
-  projectId: string,
-) {
+/** Who this Teams user is linked as; null when they are not linked. */
+async function buildWhoamiCard(tenantId: string, userId: string | null, projectId: string) {
   const identity = userId ? await lookupChatIdentity(chatUser('teams', tenantId, userId)) : null;
-  if (!identity) return teamsLoginCard({ activity, tenantId, teamsUserId: userId ?? '', projectId });
+  if (!identity) return null;
   const email = (await lookupEmailsByUserIds([identity.userId]).catch(() => null))?.get(identity.userId);
   return buildPanelCard({
     emoji: '👤',

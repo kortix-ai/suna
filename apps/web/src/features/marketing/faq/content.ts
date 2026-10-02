@@ -6,7 +6,7 @@
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  *
  * WHY IT EXISTS. Everything above it on the page is an argument. By the time a
  * reader reaches the end they have stopped listening to arguments and started
@@ -76,9 +76,9 @@
  *    true for the Platinum provider (Cloud Hypervisor) and not for the default.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
- *  - HARNESS. OpenCode only. ACP, `kortix_version: 3` and the Claude Code /
- *    Codex / Pi harnesses sit behind `KORTIX_ACP_RUNTIME` (default false) and
- *    are not shipped. Never name them.
+ *  - HARNESS. OpenCode only. pi is an experimental, opt-in harness
+ *    (`pi_harness` flag or `runtime: pi`); brand decision D9 is open, so do
+ *    not name it. No Claude Code or Codex harness exists. Never name them.
  *  - LICENCE. Say "open source" and stop. Never name one.
  *  - NO CUSTOMER NAMES. NO INVENTED METRICS. The live GitHub star count is the
  *    only sanctioned figure on the site and it belongs to the open-source

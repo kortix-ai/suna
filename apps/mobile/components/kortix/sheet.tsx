@@ -1,6 +1,6 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Keyboard, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
@@ -237,7 +237,21 @@ export const KortixBottomSheetModal = React.forwardRef<
   // expands any sheet. Keyed by value: most call sites pass an inline array.
   const key = detentsKey(snapPoints);
   const detents = React.useMemo(() => withFullDetent(snapPoints), [key]);
-  React.useImperativeHandle(ref, () => innerRef.current as BottomSheetModal, []);
+  // Opening a sheet closes the keyboard. A sheet is a new context: a keyboard
+  // left up from the screen behind covers the sheet's lower half, and its field
+  // keeps the focus. Set HERE so no call site has to remember it. A sheet's own
+  // auto-focused field mounts after this and raises the keyboard again.
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      ...(innerRef.current as BottomSheetModal),
+      present: (...args: Parameters<BottomSheetModal['present']>) => {
+        Keyboard.dismiss();
+        innerRef.current?.present(...args);
+      },
+    }),
+    []
+  );
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const background = getSheetBg(isDark);
@@ -356,6 +370,9 @@ export interface SheetRef {
   open: () => void;
   close: () => void;
 }
+
+export { useCloseThen } from './use-close-then';
+
 interface SheetProps {
   snapPoints?: (string | number)[];
   /** Present at full screen height (100%) with a safe-area top inset. */

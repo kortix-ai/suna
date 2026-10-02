@@ -30,8 +30,10 @@ Every authenticated API request is recorded, plus semantic session, connector,
 and approval events. The account trail requires the Enterprise plan.
 
 Subcommands:
-  ls [filters] [--json]           List audit events, newest first.
-  export [filters] [--out <f>]    Export matching events as CSV or JSONL.
+  ls [filters] [--json]           List audit events of the last 90 days, newest first.
+  export [filters] [--out <f>]    Export matching events as CSV or JSONL. Reaches back
+                                  365 days: events older than 90 days come from the
+                                  archive.
   project <project-id> [--json]   One project's canonical audit log.
   session <session-id> --project <project-id> [--json]
                                    One session's canonical ordered timeline.
@@ -56,8 +58,11 @@ Filters (ls, export, project):
   --outcome <o>        success | failure | denied | pending
   --project <id>       Only this project.
   --session <id>       Only this session.
-  --source <s>         Trusted execution source or reported client surface,
-                       e.g. "agent", "opencode", "cli", "web".
+  --source <s>         Trusted execution source, e.g. "human", "agent",
+                       "api_key", "opencode".
+  --credential-kind <k>  What the API authenticated: browser_session,
+                       personal_access_token, oauth_app, session_token,
+                       api_key, service_account, scim_token.
   --phase <p>          Lifecycle phase, e.g. pending, completed, failed.
   --resource-type <t>  Only this resource type.
   --request-id <id>    One request.
@@ -145,6 +150,7 @@ export function buildAuditQuery(
     ['project_id', flags.project],
     ['session_id', flags.session],
     ['source', flags.source],
+    ['credential_kind', flags.credentialKind],
     ['phase', flags.phase],
     ['outcome', flags.outcome],
     ['resource_type', flags.resourceType],
@@ -346,6 +352,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.project = takeFlagValue(rest, ['--project']);
     f.session = takeFlagValue(rest, ['--session']);
     f.source = takeFlagValue(rest, ['--source']);
+    f.credentialKind = takeFlagValue(rest, ['--credential-kind']);
     f.phase = takeFlagValue(rest, ['--phase']);
     f.outcome = takeFlagValue(rest, ['--outcome']);
     f.resourceType = takeFlagValue(rest, ['--resource-type']);
@@ -476,6 +483,7 @@ export async function runAudit(argv: string[]): Promise<number> {
                 | 'anonymous'
                 | undefined,
               source: search.get('source') ?? undefined,
+              credential_kind: search.get('credential_kind') ?? undefined,
               phase: search.get('phase') ?? undefined,
               outcome: search.get('outcome') as
                 | 'success'

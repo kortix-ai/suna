@@ -2,7 +2,8 @@ import type { ProjectSession } from '@kortix/sdk';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { ApiError } from '../api/client.ts';
 import { hasEnvTokenHost } from '../api/config.ts';
-import { kortixFromAuth, unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
+import { sendAndWaitForReply } from './sessions-chat.ts';
 import type { MeResponse, ProjectSummary } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { resolveProjectContext, shortId, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
@@ -116,14 +117,14 @@ export async function runDoctor(argv: string[]): Promise<number> {
   };
 
   try {
-    // ── 5. Resolve the session-scoped OpenCode runtime ──────────────────
+    // ── 5. Resolve the session-scoped runtime ──────────────────────────
     process.stdout.write(`  ${C.dim}waiting for sandbox to come up…${C.reset}\n`);
-    let opencodeSessionId: string;
+    let runtimeSessionId: string;
     try {
       const ready = await withKortixScope(auth, () =>
         handle.ensureReady({ readyTimeoutMs: flags.timeoutSec * 1000 }),
       );
-      opencodeSessionId = ready.opencodeSessionId;
+      runtimeSessionId = ready.runtimeSessionId;
     } catch (error) {
       process.stdout.write(`${status.err(`session runtime failed: ${describe(error)}`)}\n`);
       failures += 1;
@@ -132,15 +133,16 @@ export async function runDoctor(argv: string[]): Promise<number> {
     const provisionMs = Date.now() - t0;
     process.stdout.write(`${status.ok(`sandbox running (${(provisionMs / 1000).toFixed(1)}s)`)}\n`);
     process.stdout.write(
-      `${status.ok(`opencode session ${C.faded}${opencodeSessionId}${C.reset}`)}\n`,
+      `${status.ok(`runtime session ${C.faded}${runtimeSessionId}${C.reset}`)}\n`,
     );
 
     // ── 6. Send through the session-scoped SDK handle ────────────────────
     process.stdout.write(`  ${C.dim}prompt: "${flags.prompt}"${C.reset}\n`);
     const sendStart = Date.now();
     try {
-      const reply = await withKortixScope(auth, async () =>
-        unwrapRuntime(await handle.send(flags.prompt)),
+      const reply = await sendAndWaitForReply(
+        { auth, handle, runtimeSessionId },
+        flags.prompt,
       );
       const text = reply.parts
         .map((p) => ('text' in p && typeof p.text === 'string' ? p.text : ''))

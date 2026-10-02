@@ -1,4 +1,5 @@
 import { connectors, connectorCalls, projectSessions, projects } from '@kortix/db';
+import { composioToolkitLogo } from '../connectors/composio';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
  *
@@ -137,14 +138,28 @@ approvalLinksApp.get('/:token', async (c) => {
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
+  // The connector's own name and logo, so the approval page can say WHICH
+  // connector for any of the catalogue's thousands, not only the ones a client
+  // could guess a logo for from the slug. Same source as the connect card: the
+  // row's stored icon, else the Composio catalogue logo for its app.
   let connectorSlug: string | null = null;
+  let connectorName: string | null = null;
+  let connectorIconUrl: string | null = null;
   if (row.connectorId) {
     const [connector] = await db
-      .select({ slug: connectors.slug })
+      .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
       .from(connectors)
       .where(eq(connectors.connectorId, row.connectorId))
       .limit(1);
     connectorSlug = connector?.slug ?? null;
+    connectorName = connector?.name ?? null;
+    const config = (connector?.config ?? {}) as { icon_url?: unknown; app?: unknown };
+    connectorIconUrl =
+      typeof config.icon_url === 'string' && config.icon_url
+        ? config.icon_url
+        : typeof config.app === 'string' && config.app
+          ? await composioToolkitLogo(config.app)
+          : null;
   }
 
   const summary =
@@ -164,6 +179,8 @@ approvalLinksApp.get('/:token', async (c) => {
     session_id: row.sessionId,
     action: row.actionPath,
     connector: connectorSlug,
+    connector_name: connectorName,
+    connector_icon_url: connectorIconUrl,
     risk: row.risk,
     // 'pending_approval' is actionable. Every terminal status renders a
     // read-only outcome instead of buttons that would return 409.

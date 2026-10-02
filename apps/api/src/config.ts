@@ -123,6 +123,17 @@ const optFallbackPolicies = z
  */
 export const MORPH_MANAGED_MODELS_DEFAULT = '';
 
+/**
+ * OpenCode Zen (https://opencode.ai/docs/zen: US-hosted, zero retention) is
+ * the FIRST candidate for these managed models; the OpenRouter pool is the
+ * fallback. At the prod request shape (~160k-token prompts, cached follow-up
+ * turns) Zen served 60 concurrent sessions (239/240, 404 req/min) while the
+ * OpenRouter GLM pool timed out or 429'd on 73/240 (2026-09-29). Zen serves
+ * the same model ids. Without OPENCODE_ZEN_API_KEY the list has no effect;
+ * an empty list is the kill switch.
+ */
+export const OPENCODE_ZEN_MANAGED_MODELS_DEFAULT = 'glm-5.3-flash';
+
 export function parseMorphManagedModels(value: string): string[] {
   return value.split(',').map((id) => id.trim()).filter(Boolean);
 }
@@ -169,7 +180,7 @@ const envSchema = z.object({
   // signed-out or deleted user's still-unexpired HS256 token keeps working on a
   // replica that already confirmed it. 0 = confirm with GoTrue on every request
   // (the pre-2026-09-23 behavior).
-  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(30_000),
+  SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
 
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
@@ -434,6 +445,10 @@ const envSchema = z.object({
   // An empty value disables Morph for every managed model — the default since
   // 2026-09-27 (see MORPH_MANAGED_MODELS_DEFAULT).
   MORPH_MANAGED_MODELS: z.string().default(MORPH_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
+  OPENCODE_ZEN_API_URL: optUrl('https://opencode.ai/zen/v1'),
+  OPENCODE_ZEN_API_KEY: optStr,
+  // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
+  OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -621,6 +636,21 @@ const envSchema = z.object({
   /** Lifetime of the presigned download URL handed to a sandbox. */
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
+
+  // ── Audit archive (optional) ────────────────────────────────────────────
+  // Weeks of kortix.audit_events older than 90 days are exported to this S3 bucket (Object Lock,
+  // retained until the week's end + 365 days) and their PostgreSQL partition is dropped. Off
+  // unless AUDIT_ARCHIVE_ENABLED is true AND the bucket is set AND the bucket has Object Lock.
+  // Credentials: the AWS SDK default chain (the ECS task role). Endpoint + path style: MinIO.
+  AUDIT_ARCHIVE_ENABLED: optBoolFalse,
+  AUDIT_ARCHIVE_BUCKET: optStr,
+  AUDIT_ARCHIVE_REGION: optStr,
+  AUDIT_ARCHIVE_ENDPOINT: optUrl(''),
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: optBoolFalse,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: optStr,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: optStr,
+  /** Export read rate cap (rows per second): the job must not compete with ingest for IO. */
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: optInt(5_000),
 
   // ── Config releases (optional) ──────────────────────────────────────────
   // Config archives go through the API's ONE object store
@@ -1297,6 +1327,9 @@ export const config = {
   MORPH_API_URL: env.MORPH_API_URL,
   MORPH_API_KEY: env.MORPH_API_KEY,
   MORPH_MANAGED_MODELS: env.MORPH_MANAGED_MODELS,
+  OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
+  OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
+  OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1352,6 +1385,14 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  AUDIT_ARCHIVE_ENABLED: env.AUDIT_ARCHIVE_ENABLED,
+  AUDIT_ARCHIVE_BUCKET: env.AUDIT_ARCHIVE_BUCKET,
+  AUDIT_ARCHIVE_REGION: env.AUDIT_ARCHIVE_REGION,
+  AUDIT_ARCHIVE_ENDPOINT: env.AUDIT_ARCHIVE_ENDPOINT,
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: env.AUDIT_ARCHIVE_FORCE_PATH_STYLE,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: env.AUDIT_ARCHIVE_ACCESS_KEY_ID,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: env.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: env.AUDIT_ARCHIVE_ROWS_PER_SECOND,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,

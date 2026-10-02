@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { TEAMS_STOP_VERB, buildPlanCard } from '../channels/teams/cards';
+import { chatIdentityStub } from './helpers/chat-identity-stub';
 
 // Every other Kortix surface can end a run the moment it goes wrong. In Teams
 // the only lever was to wait out the 30-minute GC — and a wedged turn swallows
@@ -28,6 +29,19 @@ mock.module('../shared/db', () => ({
     }),
   },
 }));
+
+// Whether the presser may still stop runs in the project (a linked account
+// with project.session.stop), and what was asked.
+let stopActor: { userId: string } | { reason: 'unlinked' | 'not_member' } = { userId: 'user-1' };
+const actorChecks: Array<{ user: string; projectId: string; action: string }> = [];
+mock.module('../channels/core/identity', () =>
+  chatIdentityStub({
+    resolveProjectChatActor: async (user: { platformUserId: string }, projectId: string, action: string) => {
+      actorChecks.push({ user: user.platformUserId, projectId, action });
+      return stopActor;
+    },
+  }),
+);
 
 let turn: Record<string, unknown> | null = null;
 const finalized: Array<Record<string, unknown>> = [];
@@ -63,6 +77,7 @@ mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
 const liveTurn = (fromId: string) => ({
   tenantId: TENANT_ID,
   conversationId: CONVERSATION_ID,
+  projectId: 'proj-1',
   sessionId: SESSION_ID,
   finalized: false,
   originatingActivity: { from: { id: fromId, name: 'Ivan' } },
@@ -73,6 +88,8 @@ const load = async () => await import('../channels/teams/stop');
 beforeEach(() => {
   participantRow = undefined;
   participantThrows = false;
+  stopActor = { userId: 'user-1' };
+  actorChecks.length = 0;
   turn = liveTurn('29:owner');
   abortResult = true;
   finalizeClaim = true;
@@ -173,6 +190,31 @@ describe('stopTeamsTurn', () => {
     expect(aborted).toEqual([]);
     expect(finalized).toEqual([]);
     expect(deleted).toEqual([]);
+  });
+
+  test('the sender must still be allowed to stop runs in the project', async () => {
+    // Removed from the project after sending, or never linked: refused, and
+    // the check asks for project.session.stop on the turn's own project.
+    for (const reason of ['not_member', 'unlinked'] as const) {
+      stopActor = { reason };
+      const { stopTeamsTurn } = await load();
+      expect((await stopTeamsTurn({ sessionId: SESSION_ID, teamsUserId: '29:owner' })).stopped).toBe(false);
+    }
+    expect(actorChecks).toEqual([
+      { user: '29:owner', projectId: 'proj-1', action: 'project.session.stop' },
+      { user: '29:owner', projectId: 'proj-1', action: 'project.session.stop' },
+    ]);
+    expect(aborted).toEqual([]);
+    expect(finalized).toEqual([]);
+  });
+
+  test('an approved participant without project access is refused', async () => {
+    participantRow = { status: 'approved' };
+    stopActor = { reason: 'not_member' };
+    const { stopTeamsTurn } = await load();
+
+    expect((await stopTeamsTurn({ sessionId: SESSION_ID, teamsUserId: '29:someone-else' })).stopped).toBe(false);
+    expect(aborted).toEqual([]);
   });
 
   test('a denied participant is refused too', async () => {

@@ -1,3 +1,4 @@
+import { debitAndCheckAutoTopup } from '../../billing/services/wallet-debits';
 import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
@@ -46,7 +47,7 @@ async function debitForRouter(
   kind: LedgerDebitType,
 ): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string }> {
   try {
-    const result = await wallet.debit({ accountId, amount, description, kind, key: null });
+    const result = await debitAndCheckAutoTopup({ accountId, amount, description, kind, key: null });
     return { ok: true, ...result };
   } catch (err) {
     if (err instanceof InsufficientCreditsError) return { ok: false, error: err.reason };

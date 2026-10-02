@@ -2,18 +2,21 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Agent } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import type { Agent } from '../../core/runtime/runtime-types';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
 import { getProjectDetail } from '../../core/rest/projects-client';
-import { projectConfigAgentsToOpenCodeAgents } from '../../core/agents/composer-agents';
+import {
+  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
+} from '../../core/agents/composer-agents';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
 
 // Re-export filtered agents hook for UI agent selectors
 export { useVisibleAgents } from '../use-visible-agents';
 // Framework-free since it moved to core; re-exported so `./react` keeps it.
-export { projectConfigAgentsToOpenCodeAgents };
+export { projectConfigAgentsToOpenCodeAgents, projectConfigAgentsToRuntimeAgents };
 
 // ============================================================================
 // Agent Hooks
@@ -25,11 +28,11 @@ export { projectConfigAgentsToOpenCodeAgents };
  * projects and OpenCode file discovery for legacy projects. Without `projectId`,
  * this falls back to the sandbox OpenCode runtime.
  */
-export function useOpenCodeAgents(options?: { directory?: string; projectId?: string | null }) {
+export function useRuntimeAgents(options?: { directory?: string; projectId?: string | null }) {
   const queryClient = useQueryClient();
   const directory = options?.directory;
   const projectId = options?.projectId ?? null;
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   const cacheScope = projectId
     ? `project:${projectId}`
     : directory
@@ -47,8 +50,8 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
     queryKey: projectId
       ? [...qk.project.detail(projectId), 'agents']
       : directory
-        ? [...opencodeKeys.agents(), 'dir', directory]
-        : opencodeKeys.agents(),
+        ? [...runtimeKeys.agents(), 'dir', directory]
+        : runtimeKeys.agents(),
     queryFn: async () => {
       if (projectId) {
         // Through the CANONICAL entry, not a private fetch. This slot keeps its
@@ -61,7 +64,7 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
           queryFn: () => getProjectDetail(projectId),
           ...contract('config'),
         });
-        const agents = projectConfigAgentsToOpenCodeAgents(detail.config);
+        const agents = projectConfigAgentsToRuntimeAgents(detail.config);
         setLSCache(LS_AGENTS, agents, cacheScope);
         return agents;
       }
@@ -87,10 +90,10 @@ export function useOpenCodeAgents(options?: { directory?: string; projectId?: st
   });
 }
 
-export function useOpenCodeAgent(agentName: string) {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeAgent(agentName: string) {
+  const runtimeReady = useRuntimeReady();
   return useQuery<Agent | undefined>({
-    queryKey: [...opencodeKeys.agents(), agentName],
+    queryKey: [...runtimeKeys.agents(), agentName],
     queryFn: async () => {
       const client = getClient();
       const result = await client.app.agents();
@@ -101,3 +104,9 @@ export function useOpenCodeAgent(agentName: string) {
     staleTime: Infinity,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeAgents`. Removed in the next major. */
+export const useOpenCodeAgents = useRuntimeAgents;
+/** @deprecated Renamed to `useRuntimeAgent`. Removed in the next major. */
+export const useOpenCodeAgent = useRuntimeAgent;

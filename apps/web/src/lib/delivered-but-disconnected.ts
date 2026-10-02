@@ -1,3 +1,5 @@
+import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
+
 /**
  * Did the prompt reach the agent before the connection gave up?
  *
@@ -19,7 +21,7 @@
  * aborts the one already running and stamps it "Interrupted".
  *
  * The inverse cases must stay failures, and they are distinguishable: a refusal
- * BEFORE delivery names itself (`opencode not ready`, a 401/403, a billing 402,
+ * BEFORE delivery names itself (the daemon's not-ready 503, a 401/403, a billing 402,
  * a connector gate). Those are listed explicitly rather than inferred, because
  * the cost of guessing wrong here is a silently dropped message.
  */
@@ -53,13 +55,15 @@ const DELIVERED_BUT_DISCONNECTED = [
 ];
 
 /**
- * The upstream refused BEFORE opencode saw anything. These win over the list
- * above — `opencode not ready` is a 503 the daemon returns without ever
+ * The upstream refused BEFORE the runtime saw anything. These win over the list
+ * above — the not-ready answer is a 503 the daemon returns without ever
  * forwarding, so nothing was delivered and the message really is lost.
  */
 const REFUSED_BEFORE_DELIVERY = [
-  'opencode not ready',
-  'sandbox runtime not ready',
+  // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+  ...RUNTIME_NOT_READY_MARKERS,
+  'initial_runtime_session',
+  // A daemon built before W4 names the same refusal this way.
   'initial_opencode_session',
   'econnrefused',
   'connection refused',

@@ -673,6 +673,97 @@
       "when": 1790686483090,
       "tag": "20260929125443_session_initiator",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790703018479,
+      "tag": "20260929173018_drizzle_snapshot_drop_opencode_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1790706996214,
+      "tag": "20260929183636_chat_identity_mfa_verified",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790731056771,
+      "tag": "20260930011736_tunnel_device_auth_machine_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790736323064,
+      "tag": "20260930024523_audit_events_credential_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790778759397,
+      "tag": "20260930143239_session_presence_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790781246005,
+      "tag": "20260930151406_session_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790813095392,
+      "tag": "20261001000455_audit_reconciliation_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790840217324,
+      "tag": "20261001073657_trigger_run_failing_since",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790854200000,
+      "tag": "20261001113000_session_runtime_projection_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790891254334,
+      "tag": "20261001214734_drop_unused_audit_events_indexes_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790893772228,
+      "tag": "20261001222932_audit_events_uuid_v7",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790896090063,
+      "tag": "20261001230810_audit_events_partition_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1790896776290,
+      "tag": "20261001231936_audit_archive_chunks",
+      "breakpoints": true
     }
   ]
 }

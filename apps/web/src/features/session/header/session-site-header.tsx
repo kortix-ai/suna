@@ -20,6 +20,7 @@ import { copyToClipboard } from '@/lib/utils/clipboard';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
 import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
+import { SessionParticipantStack } from '@/features/session/participants/session-participants';
 import { PreviousRepositoryNotice } from '@/features/session/previous-repository-session';
 import {
   SessionConfigIndicator,
@@ -29,7 +30,6 @@ import { SessionPendingApprovalsIndicator } from '@/features/session/header/sess
 import { SessionRemindersIndicator } from './session-reminders-indicator';
 import { SessionTitleInput } from '@/features/session/header/session-title-input';
 import { SubagentHoverCard, subagentTitle } from '@/features/session/header/subagent-hover-card';
-import { directSubsessions } from '@/components/projects/session-label';
 import { Home } from '@/features/icon/icons/home';
 import { openSessionQuickView } from '@/features/session/open-session-quick-view';
 import { useDesktopShell } from '@/features/workspace/project-layout/sidebar-opener';
@@ -46,8 +46,13 @@ import {
   useReadyChip,
   useToggleActionPanel,
 } from '@/stores/kortix-computer-store';
-import { restartProjectSession, stopProjectSession } from '@kortix/sdk';
-import { qk, useProjectSession } from '@kortix/sdk/react';
+import { directSubsessions, restartProjectSession, stopProjectSession } from '@kortix/sdk';
+import {
+  qk,
+  useProjectSession,
+  useRuntimeSupports,
+  useSessionParticipants,
+} from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
   CaretDoubleLeftIcon,
@@ -117,6 +122,8 @@ export function SessionSiteHeader({
 
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
+  // E1: a runtime without on-demand compaction (pi) offers no Compact item.
+  const canCompact = useRuntimeSupports('session.compact');
   const [shareOpen, setShareOpen] = useState(false);
   // The name edits in place: the name button swaps for a field. The menu's
   // Rename item opens the same field, so there is one rename surface.
@@ -148,6 +155,9 @@ export function SessionSiteHeader({
   // is the manager-tier right to stop/restart/reload it. Reading the first for
   // a lifecycle control would hide Stop and Reload from every project manager
   // who did not create the session.
+  const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId, {
+    enabled: isProjectSession,
+  });
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
   // The Share button's accessible name. A member who cannot change access
@@ -325,13 +335,15 @@ export function SessionSiteHeader({
         {tI18nHardcoded.raw('i18nComplete.text5d974f9e80c3')}
       </DropdownMenuItem>
 
-      <DropdownMenuItem
-        className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
-        onClick={() => setCompactOpen(true)}
-      >
-        <Layers />
-        {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
-      </DropdownMenuItem>
+      {canCompact && (
+        <DropdownMenuItem
+          className="text-muted-foreground hover:text-foreground/90 cursor-pointer [&_svg]:opacity-70"
+          onClick={() => setCompactOpen(true)}
+        >
+          <Layers />
+          {tI18nHardcoded.raw('i18nComplete.textca838377bb5a')}
+        </DropdownMenuItem>
+      )}
 
       {isProjectSession && (
         <>
@@ -568,6 +580,11 @@ export function SessionSiteHeader({
                 h-7, the row's 28px control size. Below `md` (the same 768px as
                 `isMobileViewport`) the label hides, the button goes square
                 like its size-7 siblings, and only then the Hint names it. */}
+            {/* Who can open the session; hover lists them. Renders for two or
+                more people. */}
+            {isProjectSession && projectSession && (
+              <SessionParticipantStack participants={sessionParticipants} />
+            )}
             {isProjectSession && projectSession && (
               <Hint
                 side="bottom"

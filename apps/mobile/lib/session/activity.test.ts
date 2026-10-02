@@ -11,7 +11,6 @@ import {
   fileChipRun,
   fileCategory,
   fileChipTypeLabel,
-  hideStepIcon,
   isFileChipPart,
   isStalePending,
   isToolRunning,
@@ -138,10 +137,10 @@ describe('burstView', () => {
     expect(view.title).toBe('Completed 1 step');
   });
 
-  test('a lone thought gets the summary line too', () => {
+  test('a lone thought gets the dedicated thinking label', () => {
     const view = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
     expect(view.hidden).toBe(false);
-    expect(view.title).toBe('Completed 1 step');
+    expect(view.title).toBe('Thinking');
     expect(view.steps[0]?.kind).toBe('thought');
   });
 
@@ -185,26 +184,6 @@ describe('burstView', () => {
       });
     const view = burstView([answered(), answered()], false, false);
     expect(view.steps.map((s) => s.kind)).toEqual(['part', 'part']);
-  });
-});
-
-// ─── Step icon ───────────────────────────────────────────────────────────────
-
-describe('hideStepIcon', () => {
-  test('a chained row always keeps its icon', () => {
-    expect(hideStepIcon(tool('bash', 'completed'), false)).toBe(false);
-  });
-
-  test('a bare successful row drops its icon', () => {
-    expect(hideStepIcon(tool('bash', 'completed'), true)).toBe(true);
-  });
-
-  test('a bare failed row keeps its outcome mark', () => {
-    expect(hideStepIcon(tool('bash', 'error'), true)).toBe(false);
-  });
-
-  test('a bare delegate row keeps its thread anchor', () => {
-    expect(hideStepIcon(tool('task', 'completed'), true)).toBe(false);
   });
 });
 

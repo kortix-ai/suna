@@ -273,6 +273,12 @@ flow(
       token.status(201);
       scim = ctx.client.withBearer(token.json<any>().secret, 'SCIM');
     });
+    await ctx.step('OWNER removes a malformed user id → 400, not 500', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: 'not-a-uuid' },
+      });
+      r.status(400).body().has('$.message', 'Validation failed');
+    });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
         params: { accountId: team.id, userId: member.userId! },
@@ -608,14 +614,12 @@ flow(
 // mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
-// deleteAccountImmediately() zeroes the credit account (balance/tier/status)
-// but does not remove the Supabase auth identity — the world fixture tears
-// that down via the admin API regardless of what this flow does to it.
+// Immediate self-deletion removes the auth identity and invalidates its token.
 flow(
   'DEL-4',
   {
     domain: 'accounts',
-    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/account/deletion-status'],
+    routes: ['DELETE /v1/account/delete-immediately', 'GET /v1/account/deletion-status', 'GET /v1/accounts/me'],
   },
   async (ctx) => {
     const victim = await ctx.fixtures.user({ label: 'DEL-4' });
@@ -641,17 +645,13 @@ flow(
       const r = await asVictim.del('/v1/account/delete-immediately');
       r.status(200).body().has('$.success', true).has('$.message', 'Account deleted');
     });
-    await ctx.step('deletion-status is still readable after immediate delete', async () => {
-      // No deletion REQUEST was ever scheduled, so the immediate delete doesn't
-      // flip has_pending_deletion — it just proves the account (and its token)
-      // are still usable, i.e. delete-immediately zeroes credits rather than
-      // hard-deleting the identity.
-      const r = await asVictim.get('/v1/account/deletion-status');
-      r.status(200).body().has('$.has_pending_deletion', false);
+    await ctx.step('old token cannot read account or deletion status → 401', async () => {
+      (await asVictim.get('/v1/accounts/me')).status(401);
+      (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('delete-immediately is idempotent → 200 again', async () => {
-      const r = await asVictim.del('/v1/account/delete-immediately');
-      r.status(200).body().has('$.success', true);
+    await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
+      (await asVictim.del('/v1/account/delete-immediately')).status(401);
+      (await asVictim.get('/v1/accounts/me')).status(401);
     });
   },
 );

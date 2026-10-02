@@ -138,7 +138,8 @@ describe('per-model wire format override', () => {
       ],
     }],
   };
-  const base = { envVar: 'OPENCODE_API_KEY', baseUrl: 'https://opencode.ai/zen/go/v1' };
+  // models.dev lists OPENCODE_API_KEY for Go too; Zen owns that name, so Go reads its own.
+  const base = { envVar: 'OPENCODE_GO_API_KEY', baseUrl: 'https://opencode.ai/zen/go/v1' };
 
   test.each([
     ['glm-5.3', { ...base, kind: 'openai-compat', npm: '@ai-sdk/openai-compatible' }],

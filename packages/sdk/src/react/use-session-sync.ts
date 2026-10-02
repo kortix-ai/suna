@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
-import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
+import type { SessionStatus, Todo } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
@@ -33,7 +33,7 @@ import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-
 import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
-import { canQueryOpenCodeSession } from './use-opencode-sessions';
+import { canQueryRuntimeSession } from './use-opencode-sessions';
 
 export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
@@ -44,7 +44,7 @@ interface SyncStoreShape {
   wasTranscriptEvicted: (sessionID: string) => boolean;
 }
 
-type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
+type FileDiff = Omit<import('../core/runtime/runtime-types').SnapshotFileDiff, 'patch'> & {
   patch?: string;
   before?: string;
   after?: string;
@@ -198,12 +198,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // disk paint exists for: eviction there would blank the transcript the user
   // is looking at. Consumers are consumers whether or not the runtime is up.
   useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId)) return;
+    if (!canQueryRuntimeSession(sessionId)) return;
     return useSyncStore.getState().retainSession(sessionId);
   }, [sessionId]);
 
   useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId) || !cacheOwnerScope) return;
+    if (!canQueryRuntimeSession(sessionId) || !cacheOwnerScope) return;
     const claim = claimSessionCacheOwnership(sessionId, cacheOwnerScope);
     if (!sessionCacheOwnerScopesConflict(claim.previousOwnerScope, cacheOwnerScope)) {
       return;
@@ -248,7 +248,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // A LAYOUT effect, so the copy kept on this device paints before the browser
   // does: the first frame of an open shows the transcript, not placeholder rows.
   useIsomorphicLayoutEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId) || !kortixSessionScope) return;
+    if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
     // An earlier SAVED copy is not a live read. The host's copy arrives in a
@@ -384,7 +384,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // and the controller retries with backoff until it lands, so readiness
   // becomes a byproduct of asking for what we wanted anyway.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId) || runtimeScope === 'none') return;
+    if (!networkEnabled || !canQueryRuntimeSession(sessionId) || runtimeScope === 'none') return;
     resetSessionSyncControllersForSession(sessionId, runtimeScope);
     const release = retainSessionSyncController(sessionId, runtimeScope);
     // The ONLY thing that fills the transcript. One bounded tail, so events
@@ -404,7 +404,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // component is already mounted. `hydrate` clears the mark, so the successful
   // read is what disarms this.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    if (!networkEnabled || !canQueryRuntimeSession(sessionId)) return;
     let repairing = false;
     const check = (state: SyncStoreShape) => {
       if (repairing) return;
@@ -432,7 +432,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // shows on return was assembled from a stream nobody was watching. One
   // bounded tail read settles it.
   useEffect(() => {
-    if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
+    if (!networkEnabled || !canQueryRuntimeSession(sessionId)) return;
     return onTabVisible(() => {
       void controller.reconcile('visible');
     });
@@ -475,7 +475,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // What the saved-copy paint came to. `painted` and "a read already landed"
   // are read off the store; only a refused or empty answer needs its own slot.
   const mirrorState: 'idle' | 'loading' | 'painted' | 'absent' =
-    !canQueryOpenCodeSession(sessionId) || !kortixSessionScope
+    !canQueryRuntimeSession(sessionId) || !kortixSessionScope
       ? 'idle'
       : messages.length > 0
         ? 'painted'
@@ -484,9 +484,12 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           : 'loading';
 
   useEffect(() => {
+    // No runtime session to read (`''` under `useSession({ chatEngine: false })`):
+    // the controller never goes busy, so no poll and no turn-end read start.
+    const readable = canQueryRuntimeSession(sessionId);
     controller.setBusy(
-      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
-      networkEnabled && canQueryOpenCodeSession(sessionId) && runtimeScope !== 'none',
+      readable && livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+      networkEnabled && readable && runtimeScope !== 'none',
     );
   }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn, sessionId, runtimeScope]);
 

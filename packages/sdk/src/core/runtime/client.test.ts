@@ -2,14 +2,14 @@ import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../http/config';
 import { setCurrentRuntime } from '../session/current-runtime';
 
-// This file used to fake `getActiveOpenCodeUrl` entirely via
+// This file used to fake `getActiveRuntimeUrl` entirely via
 // `mock.module('../session/server-store/active', ...)`. That's a process-wide,
 // permanent-for-the-sweep override (see the hermetic-pattern comment below) —
 // and since it replaced the WHOLE module with only one export, any other file
 // that imports `state/server-store/active` for real (e.g. a direct test of
 // that module) would see every other export silently gutted to `undefined`.
 // Driving the same "active runtime url" control through the REAL state seam
-// instead (`setCurrentRuntime` — the same primitive `getActiveOpenCodeUrl`
+// instead (`setCurrentRuntime` — the same primitive `getActiveRuntimeUrl`
 // itself reads — plus `configureKortix({ billingEnabled: true })` so "no
 // active session" resolves to '', matching the old default) gives this file
 // identical control with no mock at all — nothing left to collide with.
@@ -59,7 +59,7 @@ beforeEach(() => {
   resetPublicClient();
   setCurrentRuntime(null);
   authToken = 'test-token';
-  // billingEnabled: true so `getActiveOpenCodeUrl()` resolves to '' with no
+  // billingEnabled: true so `getActiveRuntimeUrl()` resolves to '' with no
   // active session (matching this file's old `activeUrl = ''` default),
   // instead of the self-hosted local-dev fallback sandbox url.
   configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => authToken ?? null, billingEnabled: true });
@@ -94,6 +94,42 @@ test('getClientForUrl injects the bearer token for a same-origin backend-proxied
   await client.session.abort({ sessionID: 'sess-1' });
 
   expect(calls[0].auth).toBe('Bearer test-token');
+});
+
+test('configureKortix({ eventStreamTransport }) carries the live stream with the platform headers; fetch is not called', async () => {
+  const calls = captureRequests();
+  const connects: Array<{ url: string; auth: string | null }> = [];
+  const rejected: string[] = [];
+  const getToken = Object.assign(async () => authToken ?? null, {
+    invalidate: (token: string) => {
+      rejected.push(token);
+      authToken = 'fresh-token';
+    },
+  });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken,
+    billingEnabled: true,
+    eventStreamTransport: async function* (request) {
+      connects.push({ url: request.url, auth: request.headers.get('authorization') });
+      if (connects.length === 1) throw Object.assign(new Error('unauthorized'), { status: 401 });
+      yield { data: '{"type":"server.connected","properties":{}}' };
+    },
+  });
+  const client = getClientForUrl('http://backend.local/v1/p/sb-1/8000');
+  const { stream } = await client.global.event({ sseMaxRetryAttempts: 2, sseDefaultRetryDelay: 1 });
+  const events: unknown[] = [];
+  for await (const event of stream) events.push(event);
+
+  expect(events).toEqual([{ type: 'server.connected', properties: {} }]);
+  const url = 'http://backend.local/v1/p/sb-1/8000/global/event';
+  // A 401 from the transport invalidates the rejected token; the reconnect sends the fresh one.
+  expect(connects).toEqual([
+    { url, auth: 'Bearer test-token' },
+    { url, auth: 'Bearer fresh-token' },
+  ]);
+  expect(rejected).toEqual(['test-token']);
+  expect(calls).toEqual([]);
 });
 
 test('getClientForUrl throws on an empty url', () => {

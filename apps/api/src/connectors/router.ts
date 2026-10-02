@@ -204,7 +204,7 @@ export interface ConnectorPrincipal {
    * (member-owned accounts, own computers) then key on `onBehalfOfUserId` AND
    * a private session, never on `userId` (the launcher). Absent = legacy.
    */
-  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
+  agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
 }
 
 interface CatalogAction {
@@ -504,7 +504,7 @@ export interface ConnectorRouterDeps {
     slug: string;
     userId: string;
     sessionId: string | null;
-    agentPrincipal?: { onBehalfOfUserId: string | null } | null;
+    agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
   }): Promise<
     Array<{
       connection_id: string;
@@ -1023,7 +1023,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
                 requestedAccount,
                 availableAccounts,
               })
-            : { ok: false, status: 'denied', reason: result.reason },
+            : {
+                ok: false,
+                status: 'denied',
+                reason: result.reason,
+                ...(result.message ? { message: result.message } : {}),
+              },
           result.reason === 'connector_not_found' || result.reason === 'action_not_found'
             ? 404
             : 403,

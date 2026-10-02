@@ -1,11 +1,12 @@
-import { TURN_INSTRUCTIONS } from './session';
+import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';
-import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { backfillSlackBindingLabel } from './binding-label';
 import { notifyAdminsOfAccessRequest } from './identity';
 import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
@@ -26,7 +27,7 @@ import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
 import { attachPendingSlackAuthResponseUrl } from './auth-resume';
-import { verifyLoginState } from './login';
+import { buildSlackLoginUrl, verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { handleSlashCommand } from './commands';
 import { agentChangeText, currentChannelProjectId } from './settings-commands';
@@ -93,22 +94,14 @@ async function handleAgentClick(
     return;
   }
 
-  // A click is a full turn: it gets the same channel/thread header and the
-  // same working instructions a message turn gets, so the agent knows it must
-  // stream progress with `slack step` and close the turn with `slack send`.
-  const lines = [
-    "You're answering a button click on Slack as a teammate.",
-    '',
-    `Workspace:  ${teamId}`,
-    `Channel:    ${channelId}`,
-    `User:       ${userId}`,
-    `Thread ts:  ${threadTs}`,
-    '',
-    `[Button click] The user clicked *${label || action.action_id}*.`,
-  ];
+  // A click is a full turn. `spawnAgentTurn` wraps this text the way it wraps
+  // a message: the header names the channel and the person beside their ids,
+  // and the working instructions follow, so the agent streams progress with
+  // `slack step` and closes the turn with `slack send`. The text is the click.
+  const lines = [`[Button click] The user clicked *${label || action.action_id}*.`];
   if (action.action_id) lines.push(`action_id: \`${action.action_id}\``);
   if (value) lines.push(`value: \`${value}\``);
-  lines.push('', 'Continue the turn based on this choice.', '', TURN_INSTRUCTIONS);
+  lines.push('', 'Continue the turn based on this choice.');
 
   const event: SlackEvent = {
     type: 'message',
@@ -265,7 +258,7 @@ async function handleReviewAction(
   // The actor must be a linked Kortix user with write access to this project.
   // Self-approve is allowed (launcher or any manager) — there's no separation-of-
   // duties gate. No live mapping → nudge to connect / request access.
-  const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId: thread.projectId, accountId: item.accountId });
+  const actor = await resolveChatActor(chatUser('slack', teamId, slackUserId), { projectId: thread.projectId, accountId: item.accountId }, PROJECT_ACTIONS.PROJECT_REVIEW_ACT);
   if ('reason' in actor) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
@@ -316,7 +309,7 @@ async function handleReviewAction(
     team: teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
-  await spawnAgentTurn(thread.projectId, envelope, event, turnScope(inbound));
+  await spawnAgentTurn(thread.projectId, envelope, event, { ...turnScope(inbound), authorizedResume: true });
 }
 
 async function handleSwitchProject(
@@ -354,7 +347,7 @@ async function handleSwitchProject(
     });
     return;
   }
-  await backfillChannelName(teamId, channelId, projectId);
+  await backfillSlackBindingLabel(teamId, channelId, projectId);
 
   const [p] = await db
     .select({ name: projects.name })
@@ -514,7 +507,9 @@ async function handleRequestAccess(
         ? "You've already requested access — it's pending an admin's review."
         : result.status === 'already-member'
           ? 'You already have access — send your message again and I’ll get on it.'
-          : 'I couldn’t request access — connect your Kortix account first, then try again.';
+          : result.status === 'no-project'
+            ? 'That project isn’t connected to this Slack workspace.'
+            : 'I couldn’t request access — connect your Kortix account first, then try again.';
   await respondViaUrl(payload.response_url, { replace_original: true, text: message });
 
   if (result.status === 'created') {
@@ -537,28 +532,16 @@ async function handleThreadJoinDecision(
   const teamId = payload.team?.id ?? '';
   const channelId = payload.channel?.id ?? '';
   const deciderSlackUserId = payload.user?.id ?? '';
-  let parsed: {
-    projectId?: string;
-    sessionId?: string;
-    threadId?: string;
-    requesterUserId?: string;
-    requesterSlackUserId?: string;
-  } = {};
+  // Only the thread and the requester's Slack id are read from the value; the
+  // session comes from the thread mapping and the requester's Kortix account
+  // from the pending request (decideSlackThreadJoin).
+  let parsed: { threadId?: string; requesterSlackUserId?: string } = {};
   try {
     parsed = JSON.parse(value || '{}') as typeof parsed;
   } catch {
     parsed = {};
   }
-  if (
-    !teamId ||
-    !channelId ||
-    !deciderSlackUserId ||
-    !parsed.projectId ||
-    !parsed.sessionId ||
-    !parsed.threadId ||
-    !parsed.requesterUserId ||
-    !parsed.requesterSlackUserId
-  ) {
+  if (!teamId || !channelId || !deciderSlackUserId || !parsed.threadId || !parsed.requesterSlackUserId) {
     await respondViaUrl(payload.response_url, {
       response_type: 'ephemeral',
       text: 'I could not read that approval request. Ask the person to request access again.',
@@ -566,22 +549,19 @@ async function handleThreadJoinDecision(
     return;
   }
 
-  if (!inboundAllowsProject(inbound, parsed.projectId)) {
-    await respondViaUrl(payload.response_url, { response_type: 'ephemeral', text: OTHER_PROJECT_NOTICE });
-    return;
-  }
-
-  const result = await decideSlackThreadJoin({
-    teamId,
-    channelId,
-    deciderSlackUserId,
-    projectId: parsed.projectId,
-    sessionId: parsed.sessionId,
-    threadId: parsed.threadId,
-    requesterUserId: parsed.requesterUserId,
-    requesterSlackUserId: parsed.requesterSlackUserId,
-    decision,
-  });
+  // A per-project app finds only its own project's threads.
+  const thread = await findSlackThread(inbound, teamId, parsed.threadId);
+  const result = thread
+    ? await decideSlackThreadJoin({
+        teamId,
+        channelId,
+        deciderSlackUserId,
+        sessionId: thread.sessionId,
+        threadId: parsed.threadId,
+        requesterSlackUserId: parsed.requesterSlackUserId,
+        decision,
+      })
+    : { ok: false as const, text: 'This request is no longer open.' };
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     replace_original: true,
@@ -615,9 +595,18 @@ async function handleSlackLoginConnect(
   payload: SlackInteractionPayload,
   action: NonNullable<SlackInteractionPayload['actions']>[number],
 ): Promise<void> {
-  const login = loginActionValue(action);
+  const parsed = loginActionValue(action);
   const teamId = payload.team?.id ?? '';
   const slackUserId = payload.user?.id ?? '';
+  // The link is built here, for the person who clicked. A button value is not
+  // proof: an agent can post a look-alike "Connect" button through the same
+  // bot, and Kortix would then present its URL as its own sign-in page.
+  const login = {
+    pendingId: parsed.pendingId,
+    url: teamId && slackUserId
+      ? buildSlackLoginUrl({ teamId, slackUserId, ...(parsed.pendingId ? { pendingId: parsed.pendingId } : {}) })
+      : undefined,
+  };
   await attachPendingSlackAuthResponseUrl({
     pendingId: login.pendingId,
     teamId,
@@ -739,7 +728,7 @@ export async function handleViewSubmission(
     return;
   }
 
-  const actor = await resolveChatActor(chatUser('slack', meta.teamId, slackUserId), { projectId: meta.projectId, accountId: item.accountId });
+  const actor = await resolveChatActor(chatUser('slack', meta.teamId, slackUserId), { projectId: meta.projectId, accountId: item.accountId }, PROJECT_ACTIONS.PROJECT_REVIEW_ACT);
   if ('reason' in actor) {
     await notify(
       actor.reason === 'unlinked'
@@ -779,7 +768,7 @@ export async function handleViewSubmission(
     team: meta.teamId,
   };
   const envelope: SlackEnvelope = { type: 'event_callback', team_id: meta.teamId, event };
-  await spawnAgentTurn(meta.projectId, envelope, event, turnScope(inbound));
+  await spawnAgentTurn(meta.projectId, envelope, event, { ...turnScope(inbound), authorizedResume: true });
 }
 
 export async function handleBlockAction(

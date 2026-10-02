@@ -330,14 +330,14 @@ describe('nothing re-hard-codes the band', () => {
     // not subtract from it. Blink maps `none` to no-drag, so only `initial`
     // resets the shell's injected rule.
     const reset = css.match(
-      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button, a, input[^)]*\)\s*\{([^}]*)\}/s,
+      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/s,
     );
     expect(reset?.[1]).toContain('-webkit-app-region: initial');
     expect(reset?.[1]).toContain('app-region: initial');
     expect(reset?.[1]).not.toMatch(/app-region:\s*none/);
 
     const scoped = css.match(
-      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button, a, input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
+      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
     );
     expect(scoped).not.toBeNull();
     for (const owner of [
@@ -360,7 +360,7 @@ describe('nothing re-hard-codes the band', () => {
     // The scroll reset stays scoped to owner pages, so visible controls under
     // the transparent root band keep the shell's no-drag rule.
     expect(css).toMatch(
-      /html\[data-desktop-platform='macos'\]\s*:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button, a,/,
+      /html\[data-desktop-platform='macos'\]\s*:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,/,
     );
   });
 
@@ -370,7 +370,7 @@ describe('nothing re-hard-codes the band', () => {
     // box. The grown strip and its child must be transparent to that test, or
     // Back is dead on auth, `/projects`, `/new`, and onboarding.
     const grown = css.match(
-      /html\[data-desktop-platform='macos'\] body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome,\s*html\[data-desktop-platform='macos'\] body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome > \* \{([^}]*)\}/,
+      /html\[data-desktop-platform='macos'\]\s+body:not\(:has\(\[data-kx-titlebar-owner\]\)\)\s+\.kx-desktop-chrome,\s*html\[data-desktop-platform='macos'\]\s+body:not\(:has\(\[data-kx-titlebar-owner\]\)\)\s+\.kx-desktop-chrome\s+>\s+\* \{([^}]*)\}/,
     );
     expect(grown?.[1]).toContain('pointer-events: none');
     // Back stays below the strip in z-order; only pointer-events makes it

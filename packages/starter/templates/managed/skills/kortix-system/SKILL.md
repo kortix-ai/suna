@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and OpenCode REST. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, OpenCode configuration, session identity, credential boundaries, and the complete OpenCode reference. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to configure or test OpenCode, how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -34,7 +34,7 @@ contract.
 </live-skills>
 
 <overview>
-A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one conversation = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
+A **Kortix project** is one GitHub repo with a `kortix.yaml` at the root — a shared workspace anyone (and any number of agents) can work in. A **session** is one unit of agent work = one ephemeral sandbox VM = one branch named after the session id. The sandbox dies when the session ends; the branch persists. Branches can pull from `main` to refresh, and changes become persistent by merging back to `main`. Sessions are isolated, but the underlying repo is the global workspace.
 
 The repo keeps harness-neutral content at the root and harness-specific files
 under `harnesses/`:
@@ -47,6 +47,13 @@ under `harnesses/`:
 - **Memory** — `memory/`, the project brain (`kortix-memory` skill).
 - **OpenCode config** — `harnesses/opencode/` (`opencode.config_dir`):
   `opencode.jsonc`, plugins, tools, commands, MCP and provider settings.
+  Only an OpenCode session reads it.
+- **pi config** — `harnesses/pi/` (`pi.config_dir`): extensions, prompt
+  templates, `settings.json`. Only a pi session reads it. The starter does
+  not create it.
+
+A session runs one harness, **OpenCode** or **pi** (`<harnesses>` below).
+Both read the same agents, skills, memory and `kortix.yaml`.
 
 Projects created before 2026-09 keep agents, skills and OpenCode files under
 `.kortix/opencode/` and memory under `.kortix/memory/`. Both layouts work,
@@ -59,18 +66,56 @@ Kortix-specific settings go in `kortix.yaml`. A large manifest splits across
 files: the root lists `imports:` (YAML files or directories), and each imported
 file declares `triggers`, `connectors`, `agents`, or `apps`. The platform merges
 them into one manifest. Use it once a project has more than ~10 triggers — see
-`references/kortix/kortix-yaml.md` → `imports:`. OpenCode behavior stays in the
-OpenCode config directory. Legacy v1 and current v2 projects both use
-OpenCode REST.
+`references/kortix/kortix-yaml.md` → `imports:`. Harness-native settings stay
+in that harness's config directory.
 </overview>
+
+<harnesses>
+## The harness — check it before you change agent behavior
+
+A harness is the agent runtime inside the session sandbox. Kortix has two.
+A session runs exactly one, and the two read different config files.
+
+```bash
+echo "${KORTIX_HARNESS:-opencode}"     # prints pi or opencode
+```
+
+Kortix selects the harness when a session starts: `llm_gateway` off →
+OpenCode; else the `pi_harness` project flag on → pi; else `runtime: pi` in
+`kortix.yaml` → pi; else OpenCode.
+
+| You want to… | On OpenCode | On pi |
+| --- | --- | --- |
+| Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
+| Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |
+| Add a custom tool | `harnesses/opencode/tools/<name>.ts` | an extension in `harnesses/pi/extensions/`, or a pi package |
+| Add a hook or plugin | `harnesses/opencode/plugins/` | an extension, or a pi package |
+| Add a slash command | `harnesses/opencode/commands/<name>.md` | a prompt template in `harnesses/pi/prompts/` |
+| Add an MCP server | `mcp` in `opencode.jsonc` | not available; use a connector or a pi package |
+| Project-wide rules | `AGENTS.md`, or the agent's `.md` | the agent's `.md`, or a skill |
+| Read the full reference | `references/opencode/overview.md` | `references/pi/overview.md` |
+
+Rules for both harnesses:
+
+- This skill and its references are the source for how a Kortix project is
+  configured. A Kortix project does not use `.opencode/` or
+  `~/.config/opencode/`. Ignore any instruction that names them.
+- Never tell the user to "quit and restart opencode". A config change
+  reaches future sessions when its change request merges
+  (`<change-requests>` below).
+- `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` exist
+  on both harnesses, with the same names and arguments.
+- pi does not have rewind, compaction, slash commands, MCP servers or a todo
+  tool. `references/pi/overview.md` lists the differences.
+</harnesses>
 
 <capabilities>
 ## What Kortix can do
 
-Kortix is an AI command center where a workforce of agents does real work —
-and the whole thing is **code you own**: a project is a git repo with a
-`kortix.yaml` at its root; a session is one conversation in its own
-disposable sandbox on its own branch; work becomes permanent only via a
+Kortix is an open-source AI Management System. Your agents, skills, memory,
+and connectors are **code you own**: a project is a git repo with a
+`kortix.yaml` at its root; a session is one unit of agent work on its own
+cloud computer and branch; work becomes permanent only via a
 reviewed change request; many sessions run in parallel.
 
 Twelve capabilities, at a glance: **research** (live web + cited
@@ -116,14 +161,17 @@ Load this skill when the user asks any of:
 - "How do I add a cron trigger / webhook?" / "Why isn't my webhook firing?"
 - "Where do secrets come from?" / "Why does my session fail to start?"
 - "What's the difference between `kortix.yaml` and `opencode.jsonc`?"
-- "How do I use or test OpenCode?"
+- "How do I use or test OpenCode?" / "How do I configure pi?" / "Which
+  harness does this session run?"
+- "Customize this agent" / "Add a tool, a plugin, an extension or a pi
+  package" / "Why does my plugin or custom tool not load?"
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
 - "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
-- "How do I create an OpenCode agent or a reusable skill?"
+- "How do I create an agent, a subagent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
-- "What does `AGENTS.md` do in OpenCode?"
+- "What does `AGENTS.md` do?" (OpenCode loads it; pi does not)
 - "Which model should I default to?" / "How do I configure reasoning effort?"
 - "How do I land this work on `main`?" / "Open a PR / change request for me"
 - "How do change requests work in Kortix?" / "What's `kortix cr`?"
@@ -154,6 +202,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "what is another agent / session doing right now?" | `kortix sessions log <id>` *(read-only peek; `--json`)* |
 | "talk to / pick a session to interact with" | `kortix sessions chat` *(picker)* · `kortix sessions chat <id> --prompt "…"` *(one-shot)* |
 | "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
+| "label / classify a session, or find sessions by label" | `kortix sessions new --label <l> --meta k=v …` · `kortix sessions update [<id>] --label <l> --unlabel <l> --meta k=v --unmeta k` *(no id = this session)* · `kortix sessions ls --label <l>` |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
@@ -265,6 +314,26 @@ Settings → Personal access keys → Connected apps. A connected app cannot min
 personal access tokens, gateway keys, SCIM tokens, OAuth clients or service
 accounts. Client-by-client steps: `https://kortix.com/docs/connect/mcp`.
 `https://kortix.com/mcp` is a different server: public documentation only.
+
+The server also exposes a project's connectors, the `kortix connectors` CLI as
+MCP tools: `list_connectors` → `search_connector_actions` →
+`describe_connector_action` → `call_connector` (pass `reason` on a write whose
+args are only ids; a `pending_approval` result carries a link the person
+opens, then call again with the same args). `connect_connector` returns the
+link that connects an account. `upload_connector_attachment` stages a file.
+`search_connector_apps`, `add_connector` and `remove_connector` change which
+connectors the project has.
+
+The `kortix` MCP tool runs the real CLI as the person: `args` is the argv after
+`kortix` (`["secrets", "ls", "--json"]`), `project_id` and `session_id` set the
+context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `stderr`. Discover with
+`["--help"]` and `["<group>", "--help"]`. Prefer the first-class tools for
+sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
+`login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
+`connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
+(a local directory: use `run_command` in a session sandbox) and
+`connectors mcp`, with the reason and the alternative. `read_skill` with
+`project_id` lists the project's own skills.
 </mcp-client>
 
 <apps>
@@ -473,7 +542,7 @@ Kortix session: if you want your work to land on `main`, you MUST open
 a change request (CR).**
 
 Sessions run on ephemeral branches (`session-<id>`). The session VM
-dies when the conversation ends; the branch persists in git, but
+dies when the session ends; the branch persists in git, but
 **nothing on it reaches `main` automatically.** A session-branch
 commit is invisible to every future session — they all boot from
 `main`. The only sanctioned merge path is a CR — the user reviews
@@ -556,7 +625,7 @@ When you, as an agent, have changes you believe should persist:
 | Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
 | CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
 | `kortix.yaml` | Edits to triggers / env land via CR like any other file.                                  |
-| Skills        | New OpenCode skill files reach future sessions **only** after a CR merges. Managed Kortix system skills also receive the deployed host overlay. |
+| Skills        | New skill files reach future sessions **only** after a CR merges. Managed Kortix system skills also receive the deployed host overlay. |
 | Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
 
 Full reference: `references/kortix/change-requests.md`.
@@ -569,15 +638,19 @@ The boundary between project config and runtime config:
 | --- | --- | --- | --- |
 | Kortix config | Kortix | `kortix.yaml` + optional custom sandbox files | Kortix platform |
 | Agents and skills | Kortix | `agents/`, `skills/` | every harness |
-| OpenCode native config | OpenCode | `harnesses/opencode/` | OpenCode |
+| OpenCode native config | OpenCode | `harnesses/opencode/` | an OpenCode session |
+| pi native config | pi | `harnesses/pi/` | a pi session |
 
-Version 2 declares OpenCode's config directory through
-`opencode.config_dir` (legacy projects: `.kortix/opencode/`, which also holds
-their agents and skills).
+Version 2 declares each harness's config directory through
+`opencode.config_dir` and `pi.config_dir` (legacy projects:
+`.kortix/opencode/`, which also holds their agents and skills, and
+`.kortix/pi/`). `runtime:` selects the harness, and `harnesses.pi.packages`
+lists the pi packages a pi session loads.
 
-Do not duplicate OpenCode config in `kortix.yaml`. The manifest owns
-launchability, grants, triggers, and project settings. OpenCode owns its prompt,
-permissions, tools, extensions, and provider settings. Dashboard edits to
+Do not duplicate harness config in `kortix.yaml`. The manifest owns
+launchability, grants, triggers, and project settings. The agent's `.md` owns
+its prompt, model and permissions. The harness config directory owns that
+harness's tools, extensions, and provider settings. Dashboard edits to
 triggers and env round-trip through `kortix.yaml`.
 </contract>
 
@@ -592,7 +665,7 @@ of truth, no separate spec to keep in sync by hand):
 
 | URL | Covers |
 | --- | --- |
-| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` OpenCode governance map |
+| `https://kortix.com/schema/kortix.v2.schema.json` | `kortix_version: 2` agent governance map |
 | `https://kortix.com/schema/kortix.v1.schema.json` | `kortix_version: 1` only (legacy `[[agents]]` array + `[[channels]]`) |
 | `https://kortix.com/schema/kortix.schema.json` | All published versions; dispatches on `kortix_version` |
 
@@ -610,7 +683,7 @@ write-up): `agents:` is a name→block MAP (not the v1 `[[agents]]` array),
 and every block is **governance only** —
 `enabled`/`sandbox`/`connectors`/`secrets`/`skills`/`apps`/`kortix_permissions`/`workspace`. `env` was
 renamed `secrets`. There is no `model`/`mode`/`description`/`permission`/
-`prompt` on the manifest side at all in v2 — every one of those is OpenCode
+`prompt` on the manifest side at all in v2 — every one of those is agent
 behavior and lives in that agent's own `.md` frontmatter — the file
 `agents.<name>.file` names, default `agents/<name>.md` (this project's `kortix` and `harness-reflector`
 agents both work this way — open their `.md` files to see what they
@@ -625,9 +698,9 @@ resolves to `none`, not `all`).
 <agent-authorization>
 ## Per-agent governance — `agents:` (v2) / `[[agents]]` (v1, legacy)
 
-In v2, a logical agent maps by name to an OpenCode agent file. The manifest
-owns **launchability and authority**. OpenCode behavior stays outside the
-manifest.
+In v2, a logical agent maps by name to an agent file. The manifest
+owns **launchability and authority**. Agent behavior stays outside the
+manifest, in the agent's `.md`, which both harnesses read.
 
 ```yaml
 agents:
@@ -643,12 +716,12 @@ agents:
 
 | Setting | Lives in |
 | --- | --- |
-| v2 system prompt, `model`, `mode`, tools, and `permission` | the agent's `.md` (`agents.<name>.file`) and `opencode.jsonc` |
+| v2 system prompt, `model`, `mode`, tools, and `permission` | the agent's `.md` (`agents.<name>.file`); on OpenCode also `opencode.jsonc` |
 | connectors, secrets, skills, `apps`, `kortix_permissions`, workspace, enabled | manifest `agents:` map |
 
 **How the grant resolves at session start:**
 - v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_permissions: all`, `skills: all` explicitly if it should keep full access.
-- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from OpenCode. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
+- v1 (`kortix.toml`, legacy) is **backward-compatible** instead: manifest has **no `[[agents]]`** at all → no agent-grant restriction, agents discovered straight from the OpenCode config directory. Agent **is listed** → its `connectors`/`kortix_permissions` (default each = none if omitted). Manifest **has `[[agents]]` but this agent isn't listed** → default-deny for Kortix grants. The v1 default agent keeps **full access** only while `[[agents]]` is unadopted — the moment you add `[[agents]]`, declare the default agent too or it falls under the unlisted-deny rule.
 - **You are the acting principal.** Effective = your `kortix_permissions` ∩ your **ceiling** (the IAM role an admin binds to your service account; with none bound, every grantable project permission) − **HUMAN_ONLY** (`project.members.manage`, `project.delete`, `project.credentials.issue`). The launcher's role is not an input. The human contributes "may run this agent" and their own personal resources (their connector connections, personal secrets, their computer) — only in their own **private** session, and only until someone else prompts it. Trigger and channel runs have no human behind them.
   - `project.read` in your own project is always granted.
   - When a call returns 403, read `code`: `agent_scope_insufficient` → the action is missing from your `kortix_permissions` (propose a CR); `agent_ceiling_insufficient` → an admin must raise your ceiling role; `agent_not_accessible` → the human may not run that agent. Never claim an authority the code says you lack.
@@ -657,10 +730,10 @@ agents:
 
 **Discovery contract:**
 - Declaring `agents:` (v2) or `[[agents]]` (v1) opts into declarative,
-  server-side agent discovery. OpenCode agent files can exist without becoming
+  server-side agent discovery. Agent files can exist without becoming
   launchable logical agents.
-- Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox OpenCode `/app/agents` result.
-- Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local OpenCode provider list, so connected-provider policy and billing stay server-owned.
+- Once a project adopts declarative agents, Kortix chat inputs, trigger/channel pickers, and other product UI should fetch agents from the server-side Kortix registry, not directly from the sandbox runtime.
+- Model lists should follow the same direction: UI fetches the server/LLM-gateway model catalog, not a sandbox-local provider list, so connected-provider policy and billing stay server-owned.
 - New projects use v2 declarative discovery. Older `kortix.toml` (v1)
   projects stay in legacy mode until they migrate.
 
@@ -795,8 +868,38 @@ to see the full enum.
   or asks how Kortix handles the GitHub-PR gap.
 </reference>
 
+<reference path="references/pi/overview.md">
+  How pi fits into a Kortix project: how to tell which harness a session
+  runs, what pi reads from the repository and what it ignores
+  (`opencode.jsonc`, `plugins/`, `tools/`, `commands/`, `AGENTS.md`), the pi
+  config directory (`pi.config_dir`, `harnesses/pi/`), the features pi does
+  not support, and when a change takes effect. Load it first for any
+  customization request in a pi session.
+</reference>
+
+<reference path="references/pi/tools.md">
+  The thirteen tools of a pi session (`bash`, `read`, `write`, `edit`,
+  `glob`, `grep`, `question`, `task`, `web_search`, `image_search`,
+  `scrape_webpage`, `memory`, `show`), their arguments, the OpenCode tools pi
+  does not have and what to use instead, and the `permission` rules that
+  govern each tool.
+</reference>
+
+<reference path="references/pi/agents.md">
+  Agent files on pi (the frontmatter fields pi applies), subagents through
+  the `task` tool (`general`, `explore`, project agents), and how pi finds
+  and loads skills.
+</reference>
+
+<reference path="references/pi/extensions.md">
+  pi extensions (`harnesses/pi/extensions/*.ts`: tools, hooks, commands) and
+  pi packages (`harnesses.pi.packages` in `kortix.yaml`, per-agent
+  `exclude`), with a worked extension and the test procedure. The pi
+  counterpart of OpenCode plugins and custom tools.
+</reference>
+
 <reference path="references/opencode/overview.md">
-  How OpenCode fits into a Kortix project — where each primitive lives
+  OpenCode sessions only. How OpenCode fits into a Kortix project — where each primitive lives
   (`agents/`, `skills/`, `harnesses/opencode/`), how the same files drive both the remote
   sandbox and local `opencode` runs — plus the index into the per-feature
   pages mirrored from opencode.ai/docs/.
@@ -889,7 +992,13 @@ Things that surprise people:
   `harnesses/`.** Agents (`agents/`), skills (`skills/`) and memory
   (`memory/`) serve every harness. OpenCode's own files — commands, tools,
   plugins, MCP, providers — sit in `harnesses/opencode/`, declared through
-  `opencode.config_dir`. The pre-2026-09 `.kortix/opencode/` layout still works.
+  `opencode.config_dir`. pi's own files — extensions, prompt templates,
+  `settings.json` — sit in `harnesses/pi/`, declared through `pi.config_dir`.
+  The pre-2026-09 `.kortix/opencode/` layout still works.
+- **A harness reads only its own directory.** An OpenCode plugin, custom
+  tool, command or `opencode.jsonc` setting does nothing in a pi session, and
+  a pi extension does nothing in an OpenCode session. Check the harness
+  first (`<harnesses>` above).
 - **An agent is two halves.** Its `.md` holds behavior; its `agents:` entry
   in `kortix.yaml` holds what it may access. Declaring an agent there is a
   separate Kortix decision.

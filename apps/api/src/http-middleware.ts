@@ -23,7 +23,7 @@ import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
-import { PROXY_HOP_HEADER } from './sandbox-proxy/proxy-hop';
+import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
 import { auditApiRequest } from './shared/audit';
 import { isUuid } from './shared/validate';
@@ -233,6 +233,14 @@ app.use('*', async (c, next) => {
       ...getDiagnosticFields(),
       ...requestClientLogFields((name) => c.req.header(name)),
       ...(serverTiming ? { server_timing: serverTiming } : {}),
+      // Only on failed proxy requests: identify the failing hop without logging
+      // request bodies, response bodies, or any sandbox identity.
+      ...(status >= 500 && path.startsWith('/v1/p/')
+        ? {
+            proxy_hop: c.res.headers.get(PROXY_HOP_HEADER) ?? 'unknown',
+            upstream_status: c.res.headers.get(PROXY_UPSTREAM_STATUS_HEADER) ?? '',
+          }
+        : {}),
     });
     void emitOtelSpan({
       name: `${method} ${path}`,

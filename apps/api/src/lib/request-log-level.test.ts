@@ -170,9 +170,13 @@ describe('requestClientLogFields', () => {
   const headers = (map: Record<string, string>) => (name: string) => map[name];
 
   test('logs the reported surface and version so a route can be retired on data', () => {
-    expect(
-      requestClientLogFields(headers({ 'x-kortix-client': 'cli', 'x-kortix-client-version': '0.13.42-dev.ab12cd3' })),
-    ).toEqual({ client: 'cli', client_version: '0.13.42-dev.ab12cd3' });
+    expect(requestClientLogFields(headers({ 'x-kortix-client-version': 'cli/0.13.42-dev.ab12cd3' }))).toEqual({
+      client_version: 'cli/0.13.42-dev.ab12cd3',
+    });
+  });
+
+  test('ignores the retired X-Kortix-Client header', () => {
+    expect(requestClientLogFields(headers({ 'x-kortix-client': 'cli' }))).toEqual({});
   });
 
   test('omits a missing, malformed or credential-shaped value', () => {

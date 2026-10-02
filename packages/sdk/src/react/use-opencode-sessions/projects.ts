@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Project, Path as PathInfo } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import type { Project, Path as PathInfo } from '../../core/runtime/runtime-types';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
 
 // ============================================================================
@@ -12,9 +12,9 @@ import { unwrap } from './shared';
 
 /** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeProjects() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   return useQuery<Project[]>({
-    queryKey: opencodeKeys.projects(),
+    queryKey: runtimeKeys.projects(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.project.list();
@@ -26,10 +26,10 @@ export function useOpenCodeProjects() {
   });
 }
 
-export function useOpenCodeCurrentProject() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeCurrentProject() {
+  const runtimeReady = useRuntimeReady();
   return useQuery<Project>({
-    queryKey: opencodeKeys.currentProject(),
+    queryKey: runtimeKeys.currentProject(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.project.current();
@@ -45,10 +45,10 @@ export function useOpenCodeCurrentProject() {
 // Path Info Hook
 // ============================================================================
 
-export function useOpenCodePathInfo() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimePathInfo() {
+  const runtimeReady = useRuntimeReady();
   return useQuery<PathInfo>({
-    queryKey: opencodeKeys.pathInfo(),
+    queryKey: runtimeKeys.pathInfo(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.path.get();
@@ -59,3 +59,9 @@ export function useOpenCodePathInfo() {
     gcTime: 10 * 60 * 1000,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeCurrentProject`. Removed in the next major. */
+export const useOpenCodeCurrentProject = useRuntimeCurrentProject;
+/** @deprecated Renamed to `useRuntimePathInfo`. Removed in the next major. */
+export const useOpenCodePathInfo = useRuntimePathInfo;

@@ -915,11 +915,16 @@ flow(
       'anon: the transcript share reads the conversation → 503 until the sandbox is active, then a 200 digest from the live sandbox or the saved transcript',
       async () => {
         // The fixture session was created moments ago; while its sandbox starts
-        // and nothing is saved, the contract answers 503.
+        // and nothing is saved, the contract answers 503. Once the sandbox is
+        // active but its runtime has no root conversation yet, it answers 200
+        // `source:"none"` (the spec's retry signal) — a box that turns active
+        // in ~5 s (a warm Platinum claim) sits in that window for seconds.
         const r = await waitFor(
           () => anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId: transcriptShareId } }),
           {
-            until: (res) => res.statusCode !== 503,
+            until: (res) =>
+              res.statusCode !== 503 &&
+              !(res.statusCode === 200 && res.json<{ source?: string }>().source === 'none'),
             timeoutMs: 180_000,
             intervalMs: 2_000,
             description: 'the shared session to become readable',
@@ -2102,5 +2107,302 @@ flow(
       const flat = await rows(owner, {});
       if (flat.length !== 6) throw new Error(`flat ${flat.length}`);
     });
+  },
+);
+
+/**
+ * SESS-38 — Session labels and client metadata. Labels are a free-form list a
+ * member, an agent or an SDK caller sets at create or with PATCH, and the list
+ * filters on server-side. Client metadata is a free-form object PATCH merges
+ * per key; a `null` value removes the key.
+ */
+flow(
+  'SESS-38',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const seed = async (input: Omit<Parameters<typeof createDatabaseSession>[1], 'projectId' | 'accountId'>) => {
+      const id = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, ...input });
+      ctx.track('session', id, { projectId: project.id });
+      return id;
+    };
+    const coordinator = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Coordinator' } });
+    const worker = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', parentSessionId: coordinator, metadata: { source: 'agent', name: 'Worker' } });
+    const shared = await seed({ userId: ctx.P.OWNER.userId!, visibility: 'project', metadata: { name: 'Shared' } });
+    const secret = await seed({ userId: ctx.P.OWNER.userId! });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const list = '/v1/projects/:projectId/sessions';
+    const one = '/v1/projects/:projectId/sessions/:sessionId';
+    const params = { projectId: project.id };
+    type Row = { session_id: string; labels: string[]; metadata: Record<string, unknown>; search_match?: string };
+    const patch = (as: typeof owner, sessionId: string, body: unknown) => as.patch(one, body, { params: { ...params, sessionId } });
+    const ids = async (as: typeof owner, query: string) => {
+      const r = await as.get(`${list}?${query}`, { params });
+      r.status(200);
+      return r.json<Row[]>().map((row) => row.session_id).sort();
+    };
+    const expectIds = (got: string[], want: string[], what: string) => {
+      if (JSON.stringify(got) !== JSON.stringify([...want].sort())) throw new Error(`${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    };
+
+    await ctx.step('PATCH labels trims each label, drops duplicates, keeps order, and answers the saved list', async () => {
+      const r = await patch(owner, coordinator, { labels: [' bug ', 'urgent', 'bug', 'customer: acme/eu'] });
+      r.status(200);
+      const labels = r.json<Row>().labels;
+      if (JSON.stringify(labels) !== JSON.stringify(['bug', 'urgent', 'customer: acme/eu'])) throw new Error(`labels ${JSON.stringify(labels)}`);
+    });
+
+    await ctx.step('PATCH metadata merges free-form keys and leaves labels and system keys alone', async () => {
+      const r = await patch(owner, coordinator, { metadata: { ticket: 'T-1', priority: 2, ui: { color: 'red' } } });
+      r.status(200);
+      const row = r.json<Row>();
+      if (row.metadata.ticket !== 'T-1' || row.metadata.priority !== 2) throw new Error(`metadata ${JSON.stringify(row.metadata)}`);
+      if ((row.metadata.ui as { color?: string })?.color !== 'red') throw new Error('nested metadata');
+      if (row.metadata.name !== 'Coordinator') throw new Error('system key lost');
+      if (row.labels.length !== 3) throw new Error('labels changed by a metadata PATCH');
+    });
+
+    await ctx.step('a null metadata value removes that key; GET reads back labels and metadata', async () => {
+      (await patch(owner, coordinator, { metadata: { priority: null } })).status(200);
+      const r = await owner.get(one, { params: { ...params, sessionId: coordinator } });
+      r.status(200);
+      const row = r.json<Row>();
+      if ('priority' in row.metadata) throw new Error(`priority kept: ${JSON.stringify(row.metadata)}`);
+      if (row.metadata.ticket !== 'T-1') throw new Error('ticket lost');
+      if (!row.labels.includes('urgent')) throw new Error('labels not read back');
+    });
+
+    await ctx.step('?label= filters server-side; repeated labels AND together; an unknown label lists nothing', async () => {
+      (await patch(owner, shared, { labels: ['bug'] })).status(200);
+      (await patch(owner, secret, { labels: ['bug'] })).status(200);
+      (await patch(owner, worker, { labels: ['worker'] })).status(200);
+      expectIds(await ids(owner, 'label=bug'), [coordinator, shared, secret], 'bug');
+      expectIds(await ids(owner, 'label=bug&label=urgent'), [coordinator], 'bug+urgent');
+      expectIds(await ids(owner, `label=${encodeURIComponent('customer: acme/eu')}`), [coordinator], 'free-form label');
+      expectIds(await ids(owner, 'label=nope'), [], 'unknown');
+    });
+
+    await ctx.step('a flat list filtered by label never adds an unlabeled coordinator as tree context', async () => {
+      expectIds(await ids(owner, 'label=worker'), [worker], 'flat worker');
+    });
+
+    await ctx.step('with parent=root a label on a worker lists its coordinator, like q', async () => {
+      expectIds(await ids(owner, 'parent=root&label=worker'), [coordinator], 'root via child');
+      expectIds(await ids(owner, `parent=${coordinator}&label=worker`), [worker], 'children');
+    });
+
+    await ctx.step('q matches a label', async () => {
+      expectIds(await ids(owner, 'parent=root&q=URGENT'), [coordinator], 'q label');
+    });
+
+    await ctx.step('the MEMBER filters by label but never sees the OWNER’s private session', async () => {
+      expectIds(await ids(ctx.client.as(member), 'label=bug'), [coordinator, shared], 'member');
+    });
+
+    await ctx.step('the MEMBER may label a session it can see, like a rename', async () => {
+      const r = await patch(ctx.client.as(member), shared, { labels: ['bug', 'triaged'] });
+      r.status(200);
+      if (!r.json<Row>().labels.includes('triaged')) throw new Error('member label');
+    });
+
+    await ctx.step('invalid labels and oversized metadata → 400, nothing saved', async () => {
+      const tooMany = Array.from({ length: 21 }, (_, i) => `l${i}`);
+      (await patch(owner, shared, { labels: tooMany })).status(400);
+      (await patch(owner, shared, { labels: ['x'.repeat(65)] })).status(400);
+      (await patch(owner, shared, { labels: ['  '] })).status(400);
+      (await patch(owner, shared, { labels: 'bug' })).status(400);
+      (await patch(owner, shared, { labels: [1] })).status(400);
+      (await patch(owner, shared, { metadata: { blob: 'x'.repeat(16_385) } })).status(400);
+      (await owner.get(`${list}?label=${'x'.repeat(65)}`, { params })).status(400);
+      (await owner.post(list, { labels: tooMany }, { params })).status(400);
+      const r = await owner.get(one, { params: { ...params, sessionId: shared } });
+      if (JSON.stringify(r.json<Row>().labels) !== JSON.stringify(['bug', 'triaged'])) throw new Error('invalid PATCH wrote');
+      if ('blob' in r.json<Row>().metadata) throw new Error('oversized metadata wrote');
+    });
+
+    await ctx.step('PATCH labels [] clears them', async () => {
+      const r = await patch(owner, shared, { labels: [] });
+      r.status(200);
+      if (r.json<Row>().labels.length !== 0) throw new Error('labels not cleared');
+    });
+  },
+);
+
+/**
+ * SESS-40 — browser tab presence lease (KRTX-588). A visible tab renews a
+ * 90-second lease; hiding the tab clears it. Only a human login may hold one.
+ */
+flow(
+  'SESS-40',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/presence'],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const project = await ctx.fixtures.project();
+    if (!project.accountId) throw new Error('presence fixture project is missing accountId');
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: project.accountId,
+      userId: ctx.P.OWNER.userId!,
+      visibility: 'project',
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const url = '/v1/projects/:projectId/sessions/:sessionId/presence';
+    const put = (as: typeof owner, body: unknown, id = sessionId) =>
+      as.put(url, body, { params: { projectId: project.id, sessionId: id } });
+    const tabId = crypto.randomUUID();
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    await db.connect();
+    const leases = async () =>
+      (await db.query('SELECT expires_at FROM kortix.session_presence_leases WHERE session_id = $1 AND tab_id = $2', [sessionId, tabId])).rows;
+    try {
+      await ctx.step('an anonymous caller is rejected with 401', async () => {
+        (await put(ctx.client.as(ctx.P.ANON), { tab_id: tabId, active: true })).status(401);
+      });
+
+      await ctx.step('a body without a UUID tab_id is rejected with 400 and writes nothing', async () => {
+        (await put(owner, { tab_id: 'not-a-uuid', active: true })).status(400);
+        if ((await leases()).length !== 0) throw new Error('invalid body wrote a lease');
+      });
+
+      await ctx.step('an unknown session answers 404', async () => {
+        (await put(owner, { tab_id: tabId, active: true }, 'ses_unknown')).status(404);
+      });
+
+      await ctx.step('active=true stores one lease that expires in the future; renewing keeps one row', async () => {
+        (await put(owner, { tab_id: tabId, active: true })).status(200).body().has('$.ok', true);
+        (await put(owner, { tab_id: tabId, active: true })).status(200);
+        const rows = await leases();
+        if (rows.length !== 1 || new Date(rows[0].expires_at).getTime() <= Date.now()) {
+          throw new Error(`expected one live lease, got ${JSON.stringify(rows)}`);
+        }
+      });
+
+      await ctx.step('active=false clears the lease', async () => {
+        (await put(owner, { tab_id: tabId, active: false })).status(200).body().has('$.ok', true);
+        if ((await leases()).length !== 0) throw new Error('lease not cleared');
+      });
+    } finally {
+      await db.end();
+    }
+  },
+);
+
+/**
+ * SESS-44 — session participants. One read answers who can open a session,
+ * for the header's avatar stack. `multi_user` is the gate: a session with one
+ * person renders as before. Who wrote each message is SESS-42.
+ */
+flow(
+  'SESS-44',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId/sessions/:sessionId/participants',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+    ],
+  },
+  async (ctx) => {
+    const { Client } = await import('pg');
+    const databaseUrl = ctx.env.databaseUrl as string;
+    const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+    const db = new Client({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const member = await team.addMember('member');
+    await team.grantProjectRole(project.id, member.userId!, 'member');
+    const sessionId = await createDatabaseSession(ctx.env, {
+      projectId: project.id,
+      accountId: team.id,
+      userId: ctx.P.OWNER.userId!,
+    });
+    ctx.track('session', sessionId, { projectId: project.id });
+
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const asMember = ctx.client.as(member);
+    const params = { projectId: project.id, sessionId };
+    const path = '/v1/projects/:projectId/sessions/:sessionId/participants';
+    type Person = { user_id: string; name: string | null; email: string | null; avatar_url: string | null; is_viewer: boolean };
+    type View = { participants: Person[]; total: number; multi_user: boolean };
+    const read = async (as: typeof owner) => {
+      const r = await as.get(path, { params });
+      r.status(200);
+      return r.json<View>();
+    };
+    const share = (body: unknown) =>
+      owner.put('/v1/projects/:projectId/sessions/:sessionId/sharing', body, { params });
+
+    await db.connect();
+    try {
+      await ctx.step('a private session has one participant, the OWNER, and is not multi-user', async () => {
+        const view = await read(owner);
+        if (view.total !== 1 || view.multi_user) throw new Error(`private: ${JSON.stringify(view)}`);
+        const [only] = view.participants;
+        if (only?.user_id !== ctx.P.OWNER.userId || !only.is_viewer) throw new Error(`owner row: ${JSON.stringify(only)}`);
+      });
+
+      await ctx.step('the MEMBER cannot read the participants of a session it cannot open → 404', async () => {
+        (await asMember.get(path, { params })).status(404);
+      });
+
+      await ctx.step('sharing with the MEMBER lists two people, OWNER first, each flagged for its own viewer', async () => {
+        (await share({ mode: 'members', memberIds: [member.userId] })).status(200);
+        const mine = await read(owner);
+        if (mine.total !== 2 || !mine.multi_user) throw new Error(`shared: ${JSON.stringify(mine)}`);
+        const ids = mine.participants.map((person) => person.user_id);
+        if (JSON.stringify(ids) !== JSON.stringify([ctx.P.OWNER.userId, member.userId])) throw new Error(`order ${ids}`);
+        if (!mine.participants[0].is_viewer || mine.participants[1].is_viewer) throw new Error('owner viewer flag');
+        const theirs = await read(asMember);
+        if (theirs.participants[0].is_viewer || !theirs.participants[1].is_viewer) throw new Error('member viewer flag');
+      });
+
+      await ctx.step('each participant carries the name, email and profile picture from the auth profile', async () => {
+        await db.query(
+          `UPDATE auth.users SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb)
+             || '{"full_name":"Sess44 Member","avatar_url":"https://img.example.test/sess44.png"}'::jsonb
+           WHERE id = $1`,
+          [member.userId],
+        );
+        const person = (await read(owner)).participants.find((p) => p.user_id === member.userId);
+        if (person?.name !== 'Sess44 Member' || person.avatar_url !== 'https://img.example.test/sess44.png')
+          throw new Error(`profile: ${JSON.stringify(person)}`);
+        if (!person.email) throw new Error('email missing');
+      });
+
+      await ctx.step('after unsharing, the MEMBER gets 404 and the OWNER reads one person again', async () => {
+        (await share({ mode: 'private' })).status(200);
+        (await asMember.get(path, { params })).status(404);
+        const view = await read(owner);
+        if (view.total !== 1 || view.multi_user) throw new Error(`unshared: ${JSON.stringify(view)}`);
+      });
+
+      await ctx.step('unknown session → 404; NONMEMBER → 403; ANON → 401', async () => {
+        (await owner.get(path, { params: { projectId: project.id, sessionId: crypto.randomUUID() } })).status(404);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params })).status(403);
+        (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
+      });
+    } finally {
+      await db.end();
+    }
   },
 );

@@ -5,11 +5,15 @@ import { join } from 'node:path';
 import {
   DOT_MATRIX_CATALOG,
   SESSION_DOT_MATRIX_POOL,
+  TRACK_STEP_MS,
+  buildDotMatrixTrack,
+  dotMatrixTrack,
   cubicBezier,
   dotMatrixLayout,
   remapOpacityToTriplet,
   sessionDotMatrixIndex,
   sessionDotMatrixVariant,
+  trackSampleIndex,
   type DotMatrixVariant,
 } from './dot-matrix';
 
@@ -205,5 +209,51 @@ describe('JS-driven variants follow the web hooks', () => {
   test('glyph spin cycles through four quarter turns every 720ms at speed 1', () => {
     const v = variant('dotm-3x3-18');
     expect(v.frame(0, false)).toEqual(v.frame(720, false));
+  });
+});
+
+describe('UI-thread playback track', () => {
+  test('every variant: the track equals frame() at each sample, across three loops', () => {
+    for (const entry of DOT_MATRIX_CATALOG) {
+      const track = buildDotMatrixTrack(entry, false);
+      for (let t = 0; t < track.periodMs * 3; t += TRACK_STEP_MS * 3.7) {
+        const sample = trackSampleIndex(track.periodMs, t);
+        const expected = entry.frame(sample * TRACK_STEP_MS, false);
+        const got = track.data.slice(sample * track.cells, (sample + 1) * track.cells);
+        expected.forEach((value, i) => {
+          expect(got[i]).toBeCloseTo(value ?? 0, 6);
+        });
+      }
+    }
+  });
+
+  test('every variant repeats exactly after its period', () => {
+    for (const entry of DOT_MATRIX_CATALOG) {
+      const { periodMs } = buildDotMatrixTrack(entry, false);
+      for (const t of [periodMs * 1.01, periodMs * 1.37, periodMs * 1.9]) {
+        const now = entry.frame(t, false);
+        const later = entry.frame(t + periodMs, false);
+        now.forEach((value, i) => {
+          if (value === null) expect(later[i]).toBeNull();
+          else expect(later[i]).toBeCloseTo(value, 6);
+        });
+      }
+    }
+  });
+
+  test('the cache builds each variant and mode once', () => {
+    const entry = variant('dotm-3x3-10');
+    expect(dotMatrixTrack(entry, false)).toBe(dotMatrixTrack(entry, false));
+    expect(dotMatrixTrack(entry, true)).toBe(dotMatrixTrack(entry, true));
+    expect(dotMatrixTrack(entry, true)).not.toBe(dotMatrixTrack(entry, false));
+    expect(dotMatrixTrack(entry, false).data).toEqual(buildDotMatrixTrack(entry, false).data);
+  });
+
+  test('a still track is the idle frame', () => {
+    const entry = variant('dotm-3x3-2');
+    const track = buildDotMatrixTrack(entry, true);
+    expect(track.periodMs).toBe(0);
+    expect(track.data).toEqual(entry.frame(0, true).map((value) => value ?? 0));
+    expect(trackSampleIndex(0, 5000)).toBe(0);
   });
 });

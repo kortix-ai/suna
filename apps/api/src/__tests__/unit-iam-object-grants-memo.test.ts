@@ -9,9 +9,11 @@
 // one TTL (observed on dev 2026-08-19 for `agent`; observed on the v0.13.34
 // release gate, CONN-28, for `connection` — a group member's own `GET
 // /connections` immediately after the owner's grant answered `shared_with:[]`
-// on a replica that had not yet re-queried). Types with no per-object grant
-// writer today (skill/secret/app/trigger) keep caching the empty map — it can
-// never go stale. Source pin, because the memo's `enableInTests` is off by
+// on a replica that had not yet re-queried). `secret` joined them when a
+// secret value gained an audience (projects/lib/secret-audience.ts): the same
+// open-until-first-grant shape as `connection`. Types with no per-object grant
+// writer today (skill/app/trigger) keep caching the empty map — it can never
+// go stale. Source pin, because the memo's `enableInTests` is off by
 // design and the rule is one line.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -27,7 +29,7 @@ describe('loadObjectGrants memo — empty map caching', () => {
       "shouldCache: (map, _projectId, objectType) => map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType)",
     );
     expect(flat).toContain(
-      "NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection'])",
+      "NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection', 'secret'])",
     );
   });
 

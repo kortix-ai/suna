@@ -19,7 +19,8 @@ import { db } from '../../shared/db';
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { SessionUpdateInputSchema } from '@kortix/api-contract';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { callerHasManagerStanding, loadProjectForUser, loadVisibleSession, resolveSessionOwnerIdentities, assertProjectCapability, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { OkSchema, SessionCreateAcceptedSchema, SessionCreateInputSchema, SessionSchema, projectsApp } from '../lib/app';
 import {
@@ -34,6 +35,7 @@ import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -260,6 +262,10 @@ projectsApp.openapi(
           started_by: z.enum(['me', 'others', 'automated']).optional(),
           // Server-side search over every session the viewer may see.
           q: z.string().trim().min(1).max(200).optional(),
+          // Repeatable; a session must carry every given label. Exact match.
+          label: z
+            .union([z.string().min(1).max(64), z.array(z.string().min(1).max(64)).max(20)])
+            .optional(),
         }),
       },
     responses: {
@@ -288,7 +294,12 @@ projectsApp.openapi(
     orderByActivity: loaded.row.metadata?.session_list_order === 'activity',
     limit: query.limit,
     cursor: query.cursor ?? null,
-    filter: { parent: query.parent ?? null, startedBy: query.started_by ?? null, q: query.q ?? null },
+    filter: {
+      parent: query.parent ?? null,
+      startedBy: query.started_by ?? null,
+      q: query.q ?? null,
+      labels: query.label === undefined ? null : [query.label].flat(),
+    },
     boundCredentialSessionId: callerKortixSessionId(c),
     agentPrincipal: loaded.actor ? isAgentPrincipalActor(loaded.actor) : false,
     probeManageCapability: () =>
@@ -317,6 +328,7 @@ projectsApp.openapi(
       ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
       ownerEmail: owner?.email ?? null,
       ownerName: owner?.name ?? null,
+      ownerAvatarUrl: owner?.avatarUrl ?? null,
       ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
       canAccess: item.canAccess,
       runtimeStatus: item.runtimeStatus,
@@ -405,6 +417,7 @@ projectsApp.openapi(
     ownerIsMachine: visible.ownerIsMachine,
     ownerEmail: owner?.email ?? null,
     ownerName: owner?.name ?? null,
+    ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
   }));
 },
@@ -485,6 +498,27 @@ projectsApp.openapi(
     );
   }
 
+  // A value shared only with this session's person sits in the sandbox as
+  // plaintext; sharing the session would hand it to every new viewer, and an
+  // env var cannot be taken back out of a running box (secret-audience.ts).
+  if (intent.mode !== 'private') {
+    const held = await sessionPersonOnlyPlaintextSecrets({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+    });
+    if (held.length > 0) {
+      return c.json(
+        {
+          error: `This session holds ${held.join(', ')}, shared only with you. Sharing it would let others read ${held.length === 1 ? 'it' : 'them'}. Start a new session to share, or share ${held.length === 1 ? 'that secret' : 'those secrets'} with everyone first.`,
+          code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+          secrets: held,
+        },
+        409,
+      );
+    }
+  }
+
   // Sharing takes the owner's personal keys away from the session (spec
   // 2026-09-22 §2.3). A model that ran only on them switches to the keys shared
   // with the whole project, or the share is refused (lib/session-model-keys.ts).
@@ -559,7 +593,8 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().optional().openapi({ description: 'New display name. Empty string or null clears the rename.' }),
-            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata. Server-managed keys are rejected.' }),
+            labels: z.array(z.string()).optional().openapi({ description: 'Replaces the session labels. Each is trimmed, 1..64 characters; at most 20; duplicates drop. [] clears them.' }),
+            metadata: z.record(z.string(), z.any()).optional().openapi({ description: 'Keys merged into the session metadata; a null value removes that key. Server-managed keys are rejected. At most 16,384 characters of JSON.' }),
           }) } } },
       },
     responses: {
@@ -592,10 +627,15 @@ projectsApp.openapi(
     return c.json({ error: `field is server-managed: ${opencodeManagedField}` }, 400);
   }
 
-  const allowedFields = ['name', 'metadata'];
+  const allowedFields = ['name', 'labels', 'metadata'];
   const unknownField = Object.keys(body).find((field) => !allowedFields.includes(field));
   if (unknownField) {
     return c.json({ error: `field is not user-editable: ${unknownField}` }, 400);
+  }
+  const parsed = SessionUpdateInputSchema.safeParse(body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    return c.json({ error: `${issue.path.join('.') || 'body'}: ${issue.message}` }, 400);
   }
 
   // metadata.deletedAt / deletedBy are SERVER-MANAGED soft-delete markers.
@@ -644,18 +684,24 @@ projectsApp.openapi(
   const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
 
+  if (parsed.data.labels) updates.labels = parsed.data.labels;
+
   if (hasNameField || metadata) {
     // Merge in SQL, never write back the whole object read above: the read and
     // this UPDATE are not atomic, and the first-prompt title generator commits
     // `metadata.name` between them. A read-modify-write here would drop that
     // committed title (or another writer's keys) for a session with no later
     // prompt to re-trigger titling. `||` evaluates after the row lock.
-    const patch: Record<string, unknown> = { ...(metadata ?? {}) };
-    // null (not a deleted key) is the clear signal every reader already treats
-    // as absent: `serializeSession` reads it as no override, `needsTitle` and
-    // the CAS read `metadata->>'custom_name'` as NULL.
+    // A null client value removes that key (JSON merge patch). custom_name
+    // keeps its explicit null: every reader already treats it as no override.
+    const patch: Record<string, unknown> = {};
+    const removed: string[] = [];
+    for (const [key, value] of Object.entries(metadata ?? {})) {
+      if (value === null) removed.push(key);
+      else patch[key] = value;
+    }
     if (hasNameField) patch.custom_name = name || null;
-    updates.metadata = projectSessionMetadataMerge(patch) as unknown as typeof updates.metadata;
+    updates.metadata = sql`(${projectSessionMetadataMerge(patch)}) - array(select jsonb_array_elements_text(${JSON.stringify(removed)}::jsonb))` as unknown as typeof updates.metadata;
   }
 
   const [row] = await db

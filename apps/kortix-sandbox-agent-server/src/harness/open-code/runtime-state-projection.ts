@@ -33,6 +33,7 @@
  * `open-bundle` already carries the same discipline
  * (`session-open-bundle.ts:32-35`).
  */
+import { KORTIX_RUNTIME_SCHEMA } from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
@@ -70,13 +71,20 @@ export interface Known<T> {
 }
 
 export interface RuntimeStateDoc {
+  /** The document format (`@kortix/api-contract/runtime-relay`). */
+  schema: typeof KORTIX_RUNTIME_SCHEMA
   /** The daemon boot this projection belongs to; `seq` is only valid inside it. */
   epoch: string
   /** Bus watermark at build time — the client's starting cursor for `/events`. */
   seq: number
   built_at: string
   identity: {
+    harness: 'opencode'
     /** The OpenCode conversation this box is pinned to. */
+    runtime_session_id: string | null
+    /** The OpenCode release serving it. */
+    harness_version: string | null
+    /** Pre-W3 names of the two fields above, for an API that predates them. */
     opencode_session_id: string | null
     opencode_version: string | null
     /** Manifest epoch of the daemon binary, from the convergence report. */
@@ -363,10 +371,14 @@ export class RuntimeStateStore {
         : base?.identity.opencode_version ?? null
 
     const doc: RuntimeStateDoc = {
+      schema: KORTIX_RUNTIME_SCHEMA,
       epoch: kortixEventBus().epoch,
       seq: kortixEventBus().headSeq,
       built_at: new Date(this.now()).toISOString(),
       identity: {
+        harness: 'opencode',
+        runtime_session_id: this.deps.pinnedSessionId(),
+        harness_version: version,
         opencode_session_id: this.deps.pinnedSessionId(),
         opencode_version: version,
         daemon_build:

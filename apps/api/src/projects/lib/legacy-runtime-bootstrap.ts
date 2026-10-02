@@ -40,6 +40,7 @@
  * and in the audit ledger, never silent. The script restores the legacy
  * entrypoint and relaunches the old chain if the new daemon does not answer.
  */
+import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
@@ -208,7 +209,7 @@ export function classifyDaemonHealth(
     return { klass: 'unreachable', ...empty };
   }
   const h = body as Record<string, unknown>;
-  const opencode = typeof h.opencode === 'string' ? h.opencode : null;
+  const opencode = healthRuntimeState(h);
   if (h.daemon !== 'ok') {
     return { klass: 'not-ok', ...empty, opencode };
   }
@@ -267,10 +268,11 @@ export function classifyDaemonHealth(
   const capabilities = Array.isArray(h.capabilities)
     ? h.capabilities.filter((c): c is string => typeof c === 'string')
     : [];
-  // Config releases are an OpenCode-runtime capability. pi has none yet
-  // (decoupling plan B6), and a pi box that answers is as current as its
-  // daemon build: requiring it relaunched every idle pi box on session open.
-  const required = h.harness === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
+  // pi daemons advertise `config.release.v1` since pi applies config releases
+  // (harness/pi/config-release.ts). It is still not REQUIRED of a pi box: one
+  // that runs an older daemon gets it through its runtime-assets update, and
+  // requiring it relaunched every idle pi box on session open (W0).
+  const required = healthHarnessId(h) === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
   const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {
     staleReasons.push('missing_capability');
@@ -305,6 +307,9 @@ export function classifyDaemonHealth(
 
 /** Gap between the two health reads that must BOTH be silent before a relaunch. */
 export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+/** The daemon as the box itself sees it — no provider ingress in the path. */
+const LOOPBACK_HEALTH_URL = 'http://127.0.0.1:8000/kortix/health';
+const LOOPBACK_PROBE_TIMEOUT_MS = 15_000;
 
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
@@ -744,6 +749,20 @@ export async function bootstrapLegacyRuntime(
     await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
     const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification };
+      }
       deadDaemonOnRunningBox = true;
       deps.log('daemon gone on a running box; relaunching the runtime chain', {
         sandboxId: input.sandboxId,

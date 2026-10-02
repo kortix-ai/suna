@@ -10,7 +10,7 @@ import type { Context, Next } from 'hono';
 import { matchedRoutes } from 'hono/route';
 import { getRequestContext, runWithContext } from '../lib/request-context';
 import type { AppEnv } from '../types';
-import { normalizeAuditClientSource, normalizeClientVersion } from './audit-client-source';
+import { credentialFromContext } from './audit-credential';
 import { type AuditRow, getAuditQueue } from './audit-queue';
 import { AnonymousAuditBudget, type AnonymousAuditSummary } from './audit-anonymous-budget';
 import {
@@ -55,7 +55,9 @@ export interface AuditEventInput {
   /** Compatibility alias. New writers should use authoritativeSource. */
   source?: string | null;
   authoritativeSource?: string | null;
-  clientReportedSource?: string | null;
+  /** What the API authenticated. Never client-reported. */
+  credentialKind?: string | null;
+  credentialId?: string | null;
   outcome?: AuditOutcome | null;
   action: string;
   phase?: string;
@@ -149,6 +151,7 @@ function honoIdentitySnapshot(c: AuditContext): HonoIdentitySnapshot {
     sessionIdVar: c.get('sessionId') ?? null,
     hasAgentGrant: c.get('agentGrant') != null,
     actor: get('actor'),
+    credential: credentialFromContext(get),
     onBehalfOfUserIdVar: get('onBehalfOfUserId') as string | null | undefined,
     path: c.req.path,
   };
@@ -372,6 +375,11 @@ function withInheritedPrincipal(input: AuditEventInput): AuditEventInput {
   if (out.authoritativeSource === undefined && out.source === undefined && principal.authoritativeSource) {
     out.authoritativeSource = principal.authoritativeSource;
   }
+  // The credential proved the request, whoever the row names as its actor.
+  if (out.credentialKind === undefined && principal.credentialKind) {
+    out.credentialKind = principal.credentialKind;
+    if (out.credentialId === undefined) out.credentialId = principal.credentialId;
+  }
   if (out.actorType === undefined && principal.actorType != null) {
     out.actorType = principal.actorType;
     for (const key of INHERITED_IDENTITY_FIELDS) {
@@ -386,7 +394,7 @@ function withInheritedPrincipal(input: AuditEventInput): AuditEventInput {
 
 /**
  * An event written while a request runs happened in that request: it carries
- * the request's IP, user agent and reported client, unless it names its own.
+ * the request's IP and user agent, unless it names its own.
  * A worker tick has no request, so its scope lends none.
  */
 function withRequestTransport(input: AuditEventInput): AuditEventInput {
@@ -396,8 +404,6 @@ function withRequestTransport(input: AuditEventInput): AuditEventInput {
     ...input,
     ip: input.ip || scope.ip,
     userAgent: input.userAgent ?? scope.userAgent,
-    clientReportedSource:
-      input.clientReportedSource ?? normalizeAuditClientSource(scope.clientSourceHeader ?? undefined),
   };
 }
 
@@ -414,7 +420,7 @@ function buildAuditRow(rawInput: AuditEventInput): AuditRow {
     accountId: uuidOrNull(input.accountId || request?.accountId),
     projectId: uuidOrNull(input.projectId || request?.projectId),
     sessionId: input.sessionId || request?.sessionId || null,
-    opencodeSessionId: input.opencodeSessionId ?? null,
+    runtimeSessionId: input.opencodeSessionId ?? null,
     turnId: input.turnId ?? null,
     messageId: input.messageId ?? null,
     toolCallId: input.toolCallId ?? null,
@@ -430,7 +436,8 @@ function buildAuditRow(rawInput: AuditEventInput): AuditRow {
     delegationDepth: input.delegationDepth ?? 0,
     source: authoritativeSource,
     authoritativeSource,
-    clientReportedSource: input.clientReportedSource ?? null,
+    credentialKind: input.credentialKind ?? null,
+    credentialId: input.credentialId ?? null,
     outcome: input.outcome ?? 'success',
     action: input.action,
     phase: input.phase ?? 'completed',
@@ -505,12 +512,12 @@ export function auditWritesAreSynchronous(): boolean {
  */
 export async function recordAuditEvent(input: AuditEventInput): Promise<void> {
   const scope = currentInboundAuditScope();
-  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
   if (auditWritesAreSynchronous()) {
     await insertAuditEvent(auditDb(), input);
-    return;
+  } else {
+    getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
   }
-  getAuditQueue(auditDb()).enqueue(buildAuditRow(input));
+  if (scope && scope.owner !== 'worker') scope.recordedActions.add(input.action);
 }
 
 /**
@@ -534,10 +541,10 @@ async function settlePendingInboundEmissions(): Promise<void> {
 /**
  * How long a READ route's flush barrier may wait.
  *
- * A read route awaits `flushAuditEvents()` for read-your-writes. The queue's
- * per-session serialize waits without a timeout (see audit-session-serial.ts)
- * and each snapshot chains onto the in-flight one, so under the per-session
- * write convoy the barrier can wait far past the request deadline: prod,
+ * A read route awaits `flushAuditEvents()` for read-your-writes. Each snapshot
+ * chains onto the in-flight one, so while the audit pool's INSERT is slow (cold
+ * cache IO, up to the 10 s statement timeout) the barrier can wait far past the
+ * request deadline: prod,
  * 2026-09-28 — `GET /v1/accounts/:id/audit` answered 16× 503 "25s deadline" +
  * 3× 57014 statement timeouts in one minute while its workspace's audit ingest
  * was contended (KRTX-631). Read routes therefore pass this bound: a healthy
@@ -748,7 +755,6 @@ async function inboundAuditInput(
     ? inferResource(hono.path)
     : { resourceType: ENTRYPOINT_RESOURCE_TYPE[scope.entrypoint], resourceId: null };
 
-  const clientVersion = normalizeClientVersion(scope.clientVersionHeader);
   const metadata: Record<string, unknown> = {
     ...annotation.metadata,
     method: scope.method,
@@ -756,7 +762,6 @@ async function inboundAuditInput(
     ...(action !== httpAction ? { http: httpAction } : {}),
     ...(scope.entrypoint !== 'http' ? { entrypoint: scope.entrypoint } : {}),
     ...(bound.authMethod ? { auth: bound.authMethod } : {}),
-    ...(clientVersion ? { client_version: clientVersion } : {}),
   };
 
   return {
@@ -781,7 +786,11 @@ async function inboundAuditInput(
     initiatorActorId:
       bound.initiatorActorId !== undefined ? bound.initiatorActorId : agent?.initiatorActorId,
     authoritativeSource: source,
-    clientReportedSource: normalizeAuditClientSource(scope.clientSourceHeader ?? undefined),
+    credentialKind: bound.credentialKind ?? hono?.credential.credentialKind ?? null,
+    credentialId:
+      bound.credentialKind !== undefined
+        ? (bound.credentialId ?? null)
+        : (hono?.credential.credentialId ?? null),
     outcome: annotation.outcome ?? outcomeForStatus(status),
     action,
     resourceType: annotation.resourceType ?? inferred.resourceType,
@@ -818,6 +827,9 @@ function anonymousSummaryEvent(summary: AnonymousAuditSummary): AuditEventInput 
   };
 }
 
+/** Route-label action of `POST /v1/projects/:p/sessions/:s/audit/events` (packages/shared audit-route-labels). */
+const AUDIT_INGEST_ACTION = 'audit.session.ingest';
+
 /**
  * Write the one row for an inbound request. Idempotent per scope, and never
  * throws: an audit failure must not fail the request it describes.
@@ -834,6 +846,11 @@ export async function emitInboundAuditRow(scope: InboundAuditScope, status: numb
     // failed or refused request keeps its own row, with the status.
     const standIns = [input.action, ...(routeLabel(scope)?.events ?? [])];
     if (status < 400 && standIns.some((action) => scope.recordedActions.has(action))) return;
+    // The sandbox relay's own delivery of audit events is not an action: the
+    // events it carries are the record. A row per batch (one per 10 s per busy
+    // session) only added load on the table it writes to. A refused or failed
+    // batch (status >= 400) keeps its row.
+    if (status < 400 && input.action === AUDIT_INGEST_ACTION) return;
     // A deployed app's public traffic is the customer's end users, not a
     // principal acting on the account. A signed-in viewer is still audited.
     if (scope.entrypoint === 'app_origin' && input.actorType === 'anonymous') return;

@@ -15,17 +15,84 @@
  */
 
 import { authenticatedFetch } from '../http/auth';
-import { getActiveOpenCodeUrl } from './server-store/active';
+import { getActiveRuntimeUrl } from './server-store/active';
 
 export type SessionHealthResponse = {
   status?: string;
   runtimeReady?: boolean;
   version?: string;
+  /**
+   * The session runtime's own report (daemons since W3). `ready` means the
+   * harness can take a prompt; `runtimeReady` adds the host's workspace checks.
+   */
+  harness?: {
+    /** `opencode` or `pi`. */
+    id: string;
+    version: string | null;
+    /** The runtime process: `starting`, `ok`, `down` or `error`. */
+    state: string;
+    ready: boolean;
+    error: string | null;
+    session: { id: string | null; required: boolean };
+    turn: { in_flight: boolean | null; end: string | null; orphaned_prompt: boolean } | null;
+    details: Record<string, unknown>;
+  };
+  /** @deprecated The runtime process state before W3. Read `harness.state`. */
   opencode?: string | boolean;
   boot_error?: string | null;
   reason?: string | null;
   message?: string | null;
+  /**
+   * What the daemon serves: host routes (`file.import`, ...) and, since W3,
+   * the session features of its runtime (`session.rewind`, ...). Read it with
+   * {@link runtimeSupports}.
+   */
+  capabilities?: string[];
 };
+
+/**
+ * A session feature a runtime may or may not serve. Mirrors
+ * `RUNTIME_CAPABILITIES` in `@kortix/api-contract/runtime-relay`.
+ *
+ *   - `session.rewind`    revert to a message, and restore it
+ *   - `session.compact`   summarize the conversation on demand
+ *   - `session.commands`  project slash commands
+ *   - `session.fork`      fork a session at a message
+ *   - `session.subagents` subagent child sessions
+ *   - `session.mcp`       MCP servers the runtime connects itself
+ *   - `session.todo`      the runtime's todo list
+ *   - `session.shell`     a shell command run as a turn
+ *   - `session.attach`    attach the harness's own terminal client
+ *   - `session.config`    a runtime config document (`/global/config`)
+ */
+export type RuntimeCapability =
+  | 'session.rewind'
+  | 'session.compact'
+  | 'session.commands'
+  | 'session.fork'
+  | 'session.subagents'
+  | 'session.mcp'
+  | 'session.todo'
+  | 'session.shell'
+  | 'session.attach'
+  | 'session.config';
+
+/**
+ * Does the session's runtime serve `capability`? Pass the health
+ * `capabilities` list. A host hides the control of an absent feature instead
+ * of letting it fail with `501 feature_not_supported`.
+ *
+ * A list with no `session.*` entry comes from a daemon built before runtime
+ * capabilities existed; that daemon runs OpenCode, which serves every
+ * feature. `null`/`undefined` (no probe answered yet) hides nothing either.
+ */
+export function runtimeSupports(
+  capabilities: readonly string[] | null | undefined,
+  capability: RuntimeCapability,
+): boolean {
+  if (!capabilities?.some((entry) => entry.startsWith('session.'))) return true;
+  return capabilities.includes(capability);
+}
 
 /**
  * Which hop of the sandbox proxy produced a failure, as the proxy itself
@@ -70,10 +137,14 @@ export interface SessionHealthResult {
   upstreamStatus: number | null;
 }
 
-/** Whether a health payload indicates the OpenCode runtime is ready. */
+/**
+ * Whether a health payload indicates the session runtime is ready: the host's
+ * `runtimeReady`, else the `harness` block, else the pre-W3 `opencode` field.
+ */
 export function isRuntimeReady(health: SessionHealthResponse | null): boolean {
   if (!health) return false;
   if (health.runtimeReady !== undefined) return health.runtimeReady === true;
+  if (health.harness) return health.harness.ready === true;
   if (health.opencode !== undefined)
     return health.opencode === 'ok' || health.opencode === true;
   return (
@@ -99,7 +170,7 @@ export async function getSessionHealth(
   runtimeUrl?: string | null,
   init?: RequestInit,
 ): Promise<SessionHealthResult> {
-  const url = (runtimeUrl === undefined ? getActiveOpenCodeUrl() : runtimeUrl) || null;
+  const url = (runtimeUrl === undefined ? getActiveRuntimeUrl() : runtimeUrl) || null;
   if (!url)
     return { status: 0, ok: false, health: null, body: '', hop: null, upstreamStatus: null };
   const res = await authenticatedFetch(

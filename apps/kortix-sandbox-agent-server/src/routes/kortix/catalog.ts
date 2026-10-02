@@ -15,10 +15,12 @@ import { authorizeControl } from './control-auth'
  * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts) for the full
  * design and its non-blocking sibling call in `control.refresh()`.
  *
- * The request body is never read, same reasoning as `/kortix/config/converge`:
- * the daemon fetches the live lineup itself, so a caller that can reach this
- * route cannot choose what it converges to.
+ * An optional body `{ "model": "<wire id>" }` names the one model a turn
+ * asks for, of any provider. It only selects WHICH id to check for: the
+ * daemon still fetches the catalog itself, so a caller cannot choose what it
+ * converges to. Without it, the route converges the managed lineup.
  */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,255}$/
 export function createCatalogRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
 
@@ -29,7 +31,9 @@ export function createCatalogRouter(cfg: Config, control: HarnessControlOperatio
       return c.json({ error: 'managed-model catalog convergence is not supported by this runtime' }, 404)
     }
     try {
-      return c.json(await control.convergeCatalog())
+      const body = (await c.req.json().catch(() => null)) as { model?: unknown } | null
+      const model = typeof body?.model === 'string' && MODEL_ID.test(body.model) ? body.model : undefined
+      return c.json(await control.convergeCatalog(model ? { model } : undefined))
     } catch (err) {
       logger.error('[catalog] convergence failed', err)
       return c.json({ error: 'catalog convergence failed', message: (err as Error).message }, 500)

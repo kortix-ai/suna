@@ -14,7 +14,6 @@ import type { SessionPromptOverrides } from '@kortix/sdk';
 import type { AttachmentSubmission } from './composer/attachment-submission';
 import type { ComposerSendReset } from './composer-reset';
 import { type Command, type ModelKey, useProjectConfig, useRuntimeAgents, useRuntimeCommands, useRuntimeConfig, useRuntimeProviders, useSessionModelSelection } from '@kortix/sdk/react';
-import { isMetaAgentName } from '@kortix/shared';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 import type { DraftScope } from './composer/draft/composer-draft';
 
@@ -134,7 +133,7 @@ export function ComposerChatInput({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
   });
   const restoredOptions = prefill?.options;
   const setAgent = local.agent.set;
@@ -147,9 +146,7 @@ export function ComposerChatInput({
     setVariant(restoredOptions.variant ?? undefined);
   }, [restoredOptions, setAgent, setModel, setVariant]);
 
-  // The meta agent is the only thing that pins the picker: a meta session must
-  // keep running its own agent. Every other session is freely switchable.
-  const lockedAgentName = isMetaAgentName(boundAgentName) ? boundAgentName?.trim() || null : null;
+  const lockedAgentName = boundAgentName?.trim() || null;
   /**
    * What will ACTUALLY run — see `composer-agent-access.ts`.
    *
@@ -165,7 +162,7 @@ export function ComposerChatInput({
   const agentResolution = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const selectedAgentName = lockedAgentName ?? agentResolution.selected;

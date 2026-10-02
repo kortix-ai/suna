@@ -93,7 +93,7 @@ function overlayAssets(
   injectSkills: (configDir: string, bakedDir: string) => Promise<void>,
 ): HarnessAssetsService {
   return {
-    componentNames: [],
+    harness: 'test', componentNames: [],
     resolveConfigDir: async () => dir,
     injectSkills,
     reconcile: async () => ({ components: {}, reasons: {}, state: {} }),

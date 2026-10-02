@@ -79,10 +79,23 @@ const STRUCTURAL_WRAPPER_KEYS = new Set(['session', 'message', 'part', 'info', '
 
 type AuditInsert = typeof auditEvents.$inferInsert;
 
+/**
+ * `kortix.audit_events` is partitioned by week and keeps 90 days hot. An instant outside
+ * [now - 80 days, now + 1 day] (a sandbox offline for months, a skewed clock) has no weekly
+ * partition and would land in the default partition, where retention never reaches it.
+ * It is stored as the start of today (UTC) instead; the instant the sandbox reported stays in
+ * `metadata.original_occurred_at`. The value is the same for every re-send within the UTC
+ * day, so the unique dedupe key (source tuple + occurred_at) still matches a retry.
+ */
+const MAX_EVENT_AGE_MS = 80 * 86_400_000;
+const MAX_EVENT_SKEW_MS = 86_400_000;
+
 export interface OpenCodeAuditScope {
   accountId: string;
   projectId: string;
   sessionId: string;
+  /** Test seam: the clock the instant window is measured against. */
+  now?: Date;
   /** Canonical attribution resolved from server-owned rows. Payload fields are untrusted. */
   trustedProvenance?: {
     opencodeSessionId: string | null;
@@ -244,6 +257,13 @@ export function parseOpenCodeAuditBatch(
   if (!Array.isArray(events) || events.length === 0 || events.length > MAX_BATCH_SIZE) {
     throw new Error(`events must contain 1 to ${MAX_BATCH_SIZE} items`);
   }
+  // Since W3 the daemon tags a batch with `source: 'runtime'` and the harness
+  // that produced it. A batch without them comes from a daemon built before
+  // W3, which only ever ran OpenCode.
+  const batch = body as { source?: unknown; harness?: unknown };
+  const source = batch.source === 'runtime' ? 'runtime' : 'opencode';
+  const harness =
+    typeof batch.harness === 'string' && IDENTIFIER_RE.test(batch.harness) ? batch.harness : 'opencode';
 
   const values = events.map((item, index): AuditInsert => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -265,6 +285,13 @@ export function parseOpenCodeAuditBatch(
     ) {
       fail(index, 'has an invalid occurred_at');
     }
+    const now = scope.now ?? new Date();
+    const outOfRange =
+      occurredAt.getTime() < now.getTime() - MAX_EVENT_AGE_MS ||
+      occurredAt.getTime() > now.getTime() + MAX_EVENT_SKEW_MS;
+    const storedAt = outOfRange
+      ? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+      : occurredAt;
     const outcome = event.outcome ?? 'success';
     if (typeof outcome !== 'string' || !OUTCOMES.has(outcome)) {
       fail(index, 'has an invalid outcome');
@@ -297,10 +324,10 @@ export function parseOpenCodeAuditBatch(
     const inputSummary = sanitizeSummary(event.input_summary, index, 'input_summary');
     const outputSummary = sanitizeSummary(event.output_summary, index, 'output_summary');
     const reportedProvenance = {
-      opencode_session_id: optionalIdentifier(
-        event.opencode_session_id,
+      runtime_session_id: optionalIdentifier(
+        event.runtime_session_id ?? event.opencode_session_id,
         index,
-        'opencode_session_id',
+        'runtime_session_id',
       ),
       agent_id: optionalIdentifier(event.agent_id, index, 'agent_id'),
       agent_name: optionalIdentifier(event.agent_name, index, 'agent_name'),
@@ -316,7 +343,7 @@ export function parseOpenCodeAuditBatch(
       accountId: scope.accountId,
       projectId: scope.projectId,
       sessionId: scope.sessionId,
-      opencodeSessionId: trusted?.opencodeSessionId ?? null,
+      runtimeSessionId: trusted?.opencodeSessionId ?? null,
       turnId: optionalIdentifier(event.turn_id, index, 'turn_id'),
       messageId: optionalIdentifier(event.message_id, index, 'message_id'),
       toolCallId: optionalIdentifier(event.tool_call_id, index, 'tool_call_id'),
@@ -328,8 +355,8 @@ export function parseOpenCodeAuditBatch(
       initiatorActorId: trusted?.initiatorActorId ?? null,
       onBehalfOfUserId: trusted?.onBehalfOfUserId ?? null,
       delegationDepth: trusted?.delegationDepth ?? 0,
-      source: 'opencode',
-      authoritativeSource: 'opencode',
+      source,
+      authoritativeSource: source,
       outcome,
       action: canonicalOpenCodeAction(type, inputSummary),
       phase,
@@ -353,10 +380,12 @@ export function parseOpenCodeAuditBatch(
       errorMessage: null,
       metadata: {
         ...sanitizeMetadata(event.metadata, index),
+        ...(outOfRange ? { original_occurred_at: occurredAt.toISOString() } : {}),
         provenance_trust: 'sandbox_reported',
         reported_provenance: reportedProvenance,
+        harness,
       },
-      occurredAt,
+      occurredAt: storedAt,
     };
   });
 

@@ -646,7 +646,7 @@ export async function reconcileEmailConnections(
   projectId: string,
   accountId: string,
 ): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId).catch(() => []);
+  const installs = await listAgentMailInstalls(projectId);
   const canonicalSlug = channelDefaultSlug('email');
   const [connector] = await db
     .select({ connectorId: connectors.connectorId })
@@ -1165,7 +1165,8 @@ export async function ensureProjectComputer(projectId: string, userId: string | 
       .from(connectors)
       .where(eq(connectors.connectorId, connectorId))
       .for('update');
-    // Re-read under the lock: a concurrent ensure may have created them.
+    // Re-read under the lock: a concurrent ensure may have created them. A
+    // machine unpaired meanwhile is skipped by the attach (its key-share lock).
     for (const machine of await missing(tx)) {
       await attachComputerConnection(tx, {
         accountId: project.accountId,

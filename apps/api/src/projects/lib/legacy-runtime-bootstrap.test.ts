@@ -174,6 +174,15 @@ describe('classifyDaemonHealth', () => {
     expect(opencode.staleReasons).toEqual(['missing_capability']);
   });
 
+  test('a W3 daemon names its harness in the closed block; the classifier reads id and state from it', () => {
+    const block = (id: string) => ({ id, version: null, state: 'ok', ready: true, error: null, session: { id: null, required: false }, turn: null, details: {} });
+    const pi = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: block('pi'), opencode: undefined, capabilities: ['file.import'] }, MANIFEST);
+    expect(pi.klass).toBe('current');
+    expect(pi.opencode).toBe('ok');
+    const opencode = classifyDaemonHealth({ ...CURRENT_HEALTH, harness: block('opencode'), capabilities: [] }, MANIFEST);
+    expect(opencode.staleReasons).toEqual(['missing_capability']);
+  });
+
   test('agentSwapPending: true is stale immediately — no grace window; a running box has no natural self-promotion path', () => {
     const health = { ...CURRENT_HEALTH, runtime: { ...CURRENT_HEALTH.runtime, components: { ...CURRENT_HEALTH.runtime.components, agent: 'staged' }, agentSwapPending: true } };
     const c = classifyDaemonHealth(health, MANIFEST);
@@ -551,5 +560,61 @@ describe('bootstrapLegacyRuntime', () => {
     const forced = await bootstrapLegacyRuntime({ ...input(), force: true }, makeDeps({ health: [pinned] }, calls));
     expect(forced.outcome).toBe('skipped-blocked');
     expect(calls.execs).toHaveLength(0);
+  });
+});
+
+describe('bootstrapLegacyRuntime — dead daemon on a running box', () => {
+  const LOOPBACK = 'http://127.0.0.1:8000/kortix/health';
+
+  test('a daemon alive on the box loopback ends the pass before any record, token or script', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    let minted = 0;
+    const r = await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null],
+          providerRunning: async () => true,
+          rotateKortixToken: async () => {
+            minted++;
+            return 'kortix_pat_x';
+          },
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return { exitCode: 0, stdout: '', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(r.outcome).toBe('not-legacy');
+    expect(calls.execs).toHaveLength(1);
+    expect(calls.execs[0]!.join(' ')).toContain(LOOPBACK);
+    expect(calls.patches).toHaveLength(0);
+    expect(calls.audits).toHaveLength(0);
+    expect(minted).toBe(0);
+  });
+
+  test('a daemon silent on the loopback too is relaunched', async () => {
+    const calls: Calls = { patches: [], audits: [], execs: [] };
+    await bootstrapLegacyRuntime(
+      input(),
+      makeDeps(
+        {
+          health: [null, null, CURRENT_HEALTH],
+          providerRunning: async () => true,
+          exec: async (cmd) => {
+            calls.execs.push(cmd);
+            return cmd.join(' ').includes(LOOPBACK)
+              ? { exitCode: 7, stdout: '', stderr: 'connection refused' }
+              : { exitCode: 0, stdout: '{"ok":true,"stage":"relaunched","agent_sha256":"a","entrypoint_sha256":"e"}\n', stderr: '' };
+          },
+        },
+        calls,
+      ),
+    );
+    expect(calls.execs).toHaveLength(2);
+    expect(calls.execs[1]![0]).toBe('bash');
+    expect(calls.execs[1]!.join(' ')).not.toContain(LOOPBACK);
   });
 });

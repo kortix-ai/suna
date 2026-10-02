@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { listSessionRow, listSessionsQuery } from './index';
+import { listSessionRow, listSessionsQuery, startSessionBody } from './index';
 
 describe('list_sessions', () => {
   test('defaults to top-level sessions', () => {
@@ -31,5 +31,28 @@ describe('list_sessions', () => {
     expect(row).toMatchObject({ started_by: 'nightly', parent_session_id: null, child_count: 3, search_match: 'child' });
     expect(listSessionRow({ session_id: 's3', branch_name: 'b', created_at: 'c' })).toMatchObject({ branch: 'b', created_at: 'c' });
     expect(listSessionRow({ session_id: 's2' })).toMatchObject({ started_by: null, child_count: 0 });
+  });
+  test('labels filter passes through as a repeated label query', () => {
+    expect(listSessionsQuery({ labels: ['bug', 'customer: eu'] }).label).toEqual(['bug', 'customer: eu']);
+    expect(listSessionsQuery({ labels: [] })).not.toHaveProperty('label');
+    expect(() => listSessionsQuery({ labels: 'bug' })).toThrow('labels');
+  });
+  test('row carries labels, [] when the server sent none', () => {
+    expect(listSessionRow({ session_id: 's1', labels: ['bug'] }).labels).toEqual(['bug']);
+    expect(listSessionRow({ session_id: 's2' }).labels).toEqual([]);
+  });
+});
+
+describe('start_session', () => {
+  test('forwards labels and metadata to the create body', () => {
+    expect(startSessionBody({ prompt: 'fix it', labels: ['bug'], metadata: { ticket: 'T-1' } })).toEqual({
+      initial_prompt: 'fix it',
+      labels: ['bug'],
+      metadata: { ticket: 'T-1' },
+    });
+  });
+  test('rejects labels that are not a string list and metadata that is not an object', () => {
+    expect(() => startSessionBody({ prompt: 'x', labels: [1] })).toThrow('labels');
+    expect(() => startSessionBody({ prompt: 'x', metadata: ['a'] })).toThrow('metadata');
   });
 });

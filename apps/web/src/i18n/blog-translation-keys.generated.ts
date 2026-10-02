@@ -111,4 +111,16 @@ export const BLOG_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Why consultancies and AI-transformation teams need one Git-backed workspace for agents, memory, connectors, policy, and auditable work.':
     'text8c03a1555d80',
   'Your company needs two kinds of capital: human and token': 'text692782334677',
+  'Kortix is the open-source AI Management System — self-hostable, any model. Start one project free.':
+    'textbc0deb1bab41',
+  'Introducing Kortix: the open-source AI Management System': 'text0c5b38410c06',
+  'Start with one department, connect the tools it already uses, and turn the workflow into a git-backed project the client can own.':
+    'textf216fe1b31a2',
+  'Kortix vs Claude Cowork: a desktop assistant, or an AI Management System for the company?':
+    'text1345783053b5',
+  "Claude Cowork runs Anthropic models only, in Anthropic's cloud or your Bedrock, Google Cloud, or Microsoft Foundry account, with no self-host. Here is where a company outgrows it.":
+    'textd90da51ca5c2',
+  'Consultancies need one repo for their clients’ agents': 'text0216eab899cb',
+  'Why consultancies need one git repo for their clients’ agents, memory, connectors, policy, and auditable work.':
+    'text3059f4c530b3',
 };

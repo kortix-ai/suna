@@ -140,7 +140,7 @@ describe('loadProjectConfig characterization', () => {
     expect(config.manifest_raw).toBe(ROOT);
     expect(config.manifest_version).toEqual({
       version: 2,
-      latest_version: 2,
+      latest_version: 3,
       migration_offered: false,
       target_version: null,
       unknown_reason: null,
@@ -158,6 +158,7 @@ describe('loadProjectConfig characterization', () => {
     expect(config.env).toEqual({ required: ['FOO_TOKEN', 'BAR_KEY'], optional: ['OPTIONAL_ONE'] });
     expect(config.open_code_raw).toBe(OPENCODE_JSONC);
     expect(config.open_code_default_agent).toBe('builder');
+    expect(config.default_agent).toBe('builder');
   });
 
   test('pins the agents list and its ordering (sorted by path)', async () => {

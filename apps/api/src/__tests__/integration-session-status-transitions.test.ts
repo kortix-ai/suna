@@ -231,7 +231,6 @@ describe('stop (applyStoppedState)', () => {
     for (const key of [
       'runtimeWakeId',
       'runtimeWakeStartedAt',
-      'activeTurn',
       'activeTurns',
       'lifecycleStopClaim',
       'pendingStopObservedAtMs',
@@ -425,7 +424,7 @@ describe('park (parkEstablishedRuntime)', () => {
         | undefined;
       promptDuringStop = await beginSandboxTurn(
         { sandboxId: f.sandboxId },
-        { token: crypto.randomUUID(), opencodeSessionId: 'ses_root', messageId: 'msg_during_stop' },
+        { token: crypto.randomUUID(), runtimeSessionId: 'ses_root', messageId: 'msg_during_stop' },
         60_000,
       );
       const startedAt = new Date();

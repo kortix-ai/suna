@@ -1,5 +1,5 @@
 import type { ProjectSession, ProjectSessionInitiator } from '../api/types.ts';
-import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 
 export type StartedByFilter = 'me' | 'others' | 'automated';
 
@@ -7,6 +7,8 @@ export interface SessionListFlags {
   startedBy?: StartedByFilter;
   search?: string;
   children?: string;
+  /** Sessions carrying every one of these labels. */
+  labels?: string[];
 }
 
 /** Consume the `sessions ls` list flags from argv. Throws a usage message. */
@@ -22,7 +24,8 @@ export function takeSessionListFlags(rest: string[]): SessionListFlags {
   }
   const children = takeFlagValue(rest, ['--children']);
   if (children && picked.length) throw new Error('--children cannot be combined with --mine, --shared or --automated');
-  return { startedBy: picked[0], search, children };
+  const labels = takeFlagValues(rest, ['--label']);
+  return { startedBy: picked[0], search, children, ...(labels.length ? { labels } : {}) };
 }
 
 /**
@@ -37,6 +40,7 @@ export function sessionListQuery(flags: SessionListFlags, parentId?: string): st
   else if (flags.startedBy) params.set('parent', 'root');
   if (flags.startedBy) params.set('started_by', flags.startedBy);
   if (flags.search) params.set('q', flags.search);
+  for (const label of flags.labels ?? []) params.append('label', label);
   return params.size > 0 ? `?${params}` : '';
 }
 

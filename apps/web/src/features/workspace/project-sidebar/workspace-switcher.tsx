@@ -64,11 +64,14 @@ import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { ConnectMcpModal } from '@/features/layout/connect-mcp-modal';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import {
+  COMPUTER_SETUP_EVENT,
+  ComputerConnectModal,
   ComputerStateDot,
-  useDesktopComputer,
+  useOwnsPairedComputer,
   useThisComputerState,
+  yourComputerMenu,
 } from '@/features/tunnel/computer-connect';
-import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
+import { LocalComputerModal, YourComputersModal } from '@/features/tunnel/local-computer-modal';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
@@ -86,17 +89,17 @@ import {
   ArrowsLeftRightIcon,
   CaretUpDownIcon,
   GearSixIcon as CogOne,
-  DownloadSimple,
   SignOutIcon as LogOut,
   MonitorIcon,
-  PlugsConnectedIcon,
+  CodeSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
@@ -122,9 +125,13 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const accountsQueryKey = useAccountsQueryKey();
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [connectMcpOpen, setConnectMcpOpen] = useState(false);
-  const [localComputerOpen, setLocalComputerOpen] = useState(false);
-  // Non-null only inside a desktop app that bundles the computer agent.
-  const desktopComputer = useDesktopComputer();
+  const [computerDialog, setComputerDialog] = useState<ComputerDialog | null>(null);
+  // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
+  useEffect(() => {
+    const openSetup = () => setComputerDialog('this');
+    window.addEventListener(COMPUTER_SETUP_EVENT, openSetup);
+    return () => window.removeEventListener(COMPUTER_SETUP_EVENT, openSetup);
+  }, []);
   const { data: adminRole } = useAdminRole();
   // Self-host hides the row for non-admins when account creation is restricted
   // — admins are exempt (see `isAccountCreationRestricted()` /
@@ -176,7 +183,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <SidebarMenuButton
                 aria-label={t('workspace.switch')}
                 className={cn(
-                  'group/workspace hover:bg-card relative flex cursor-pointer items-center gap-2 rounded-md px-1',
+                  'group/workspace hover:bg-sidebar-row relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
@@ -310,7 +317,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   intent would cache nothing for a dynamic route. */}
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                 <Link href="/download" prefetch data-desktop-hidden>
-                  <DownloadSimple />
+                  <Download />
                   {t('workspace.downloadApp')}
                 </Link>
               </DropdownMenuItem>
@@ -319,15 +326,13 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
                 size="sm"
               >
-                <PlugsConnectedIcon />
+                <CodeSimpleIcon />
                 {t('workspace.connectMcp')}
               </DropdownMenuItem>
 
-              {desktopComputer.data ? (
-                <YourComputerMenuItem
-                  onSelect={() => deferAfterClose(() => setLocalComputerOpen(true))}
-                />
-              ) : null}
+              <YourComputerMenuItem
+                onSelect={(dialog) => deferAfterClose(() => setComputerDialog(dialog))}
+              />
 
               <ThemeSubmenu />
 
@@ -353,8 +358,19 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
       <ConnectMcpModal open={connectMcpOpen} onOpenChange={setConnectMcpOpen} />
       <LocalComputerModal
         projectId={projectId}
-        open={localComputerOpen}
-        onOpenChange={setLocalComputerOpen}
+        open={computerDialog === 'this'}
+        onOpenChange={(open) => setComputerDialog(open ? 'this' : null)}
+      />
+      <YourComputersModal
+        projectId={projectId}
+        open={computerDialog === 'mine'}
+        onOpenChange={(open) => setComputerDialog(open ? 'mine' : null)}
+        onConnectAnother={() => setComputerDialog('connect')}
+      />
+      <ComputerConnectModal
+        projectId={projectId}
+        open={computerDialog === 'connect'}
+        onOpenChange={(open) => setComputerDialog(open ? 'connect' : null)}
       />
 
       <CreateAccountModal
@@ -391,19 +407,28 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   );
 }
 
+type ComputerDialog = ReturnType<typeof yourComputerMenu>['dialog'];
+
 /**
- * Desktop app only: mounted only there, so a browser never polls machine
- * status. Hidden on a deployment with computers disabled, like the promo.
+ * "Your computer", on the web and in the desktop app. Hidden on a deployment
+ * with computers disabled, like the promo.
  */
-function YourComputerMenuItem({ onSelect }: { onSelect: () => void }) {
+function YourComputerMenuItem({ onSelect }: { onSelect: (dialog: ComputerDialog) => void }) {
   const t = useI18nTranslations('sidebar');
-  const { state, computersEnabled } = useThisComputerState();
+  const { status, tunnelId, state, computersEnabled } = useThisComputerState();
+  const { owned } = useOwnsPairedComputer();
   if (!computersEnabled) return null;
+  const { dialog, dot } = yourComputerMenu({
+    tunnelId,
+    state,
+    oneClickHere: Boolean(status?.available),
+    owned,
+  });
   return (
-    <DropdownMenuItem onSelect={onSelect} size="sm">
+    <DropdownMenuItem onSelect={() => onSelect(dialog)} size="sm">
       <MonitorIcon />
       {t('workspace.localComputer')}
-      {state ? <ComputerStateDot state={state} className="ml-auto" /> : null}
+      {dot ? <ComputerStateDot state={dot} className="ml-auto" /> : null}
     </DropdownMenuItem>
   );
 }

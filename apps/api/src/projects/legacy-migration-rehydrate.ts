@@ -202,7 +202,7 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   if (spec.opencodeSessionId) {
     await db
       .update(projectSessions)
-      .set({ opencodeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
+      .set({ runtimeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, sessionId));
   }
 }

@@ -244,43 +244,63 @@ describe('initiateTeamsUpload', () => {
 });
 
 describe('handleFileConsentInvoke', () => {
+  const MANAGED = { kind: 'managed' } as const;
+  const UPLOAD_URL = 'https://example-my.sharepoint.com/personal/upload/slot';
+  const pendingRow = (over: Record<string, unknown> = {}) => ({
+    uploadId: 'u1',
+    projectId: 'proj-1',
+    filename: 'r.pdf',
+    contentBase64: Buffer.from('hi').toString('base64'),
+    conversationId: 'conv-1',
+    ...over,
+  });
+  const accept = (over: { conversationId?: string; uploadUrl?: string } = {}) =>
+    ({
+      type: 'invoke',
+      conversation: { id: over.conversationId ?? 'conv-1' },
+      value: {
+        action: 'accept',
+        context: { uploadId: 'u1' },
+        uploadInfo: { uploadUrl: over.uploadUrl ?? UPLOAD_URL, contentUrl: 'https://sp/r.pdf', name: 'r.pdf' },
+      },
+    }) as TeamsActivity;
+
   test('decline deletes the pending upload, no PUT', async () => {
     await handleFileConsentInvoke({
       type: 'invoke',
       value: { action: 'decline', context: { uploadId: 'u1' } },
-    } as TeamsActivity);
+    } as TeamsActivity, MANAGED);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
     expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
   });
 
   test('accept loads the row, PUTs the bytes, posts a file-info card, deletes the row', async () => {
-    dbResults = [
-      [
-        {
-          uploadId: 'u1',
-          filename: 'r.pdf',
-          contentBase64: Buffer.from('hi').toString('base64'),
-          conversationId: 'conv-1',
-        },
-      ],
-    ];
-    await handleFileConsentInvoke({
-      type: 'invoke',
-      conversation: { id: 'conv-1' },
-      value: {
-        action: 'accept',
-        context: { uploadId: 'u1' },
-        uploadInfo: {
-          uploadUrl: 'https://upload/slot',
-          contentUrl: 'https://sp/r.pdf',
-          name: 'r.pdf',
-        },
-      },
-    } as TeamsActivity);
-    expect(fetchCalls.some((f) => f.method === 'PUT' && f.url === 'https://upload/slot')).toBe(
-      true,
-    );
+    dbResults = [[pendingRow()]];
+    await handleFileConsentInvoke(accept(), MANAGED);
+    expect(fetchCalls.some((f) => f.method === 'PUT' && f.url === UPLOAD_URL)).toBe(true);
     expect(apiCalls.map((c) => c.fn)).toEqual(['sendActivity']);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
+  });
+
+  test('an answer from another conversation leaves the upload alone', async () => {
+    dbResults = [[pendingRow()]];
+    await handleFileConsentInvoke(accept({ conversationId: 'conv-other' }), MANAGED);
+    expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+    expect(apiCalls).toEqual([]);
+  });
+
+  test("a bring-your-own bot cannot answer another project's upload", async () => {
+    dbResults = [[pendingRow({ projectId: 'proj-other' })]];
+    await handleFileConsentInvoke(accept(), { kind: 'project', projectId: 'proj-1', tenantId: 'tenant-1' });
+    expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+  });
+
+  test('the file is PUT only to a Microsoft 365 upload URL', async () => {
+    dbResults = [[pendingRow()]];
+    await handleFileConsentInvoke(accept({ uploadUrl: 'https://collector.example.test/slot' }), MANAGED);
+    expect(fetchCalls.some((f) => f.method === 'PUT')).toBe(false);
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
   });
 });
@@ -424,7 +444,7 @@ describe('file proxy — token and drive authorization', () => {
 
   test('a non-channel conversation id can never select a drive', async () => {
     const r = await initiateTeamsUpload('proj-1', {
-      conversationId: 'a:1FQyR2jW1pEUK',
+      conversationId: 'a:1SyntheticPersonalChat_00000000000',
       conversationType: 'channel',
       teamGroupId: 'group-1',
       filename: 'report.pdf',

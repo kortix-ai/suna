@@ -29,6 +29,7 @@ import {
   useSessionAudit,
   useSessionAuditTimeline,
 } from '@/features/session/session-audit-shared';
+import { credentialVia } from '@/components/iam/audit-credential-label';
 import { useTranslations } from '@/i18n/use-translations';
 import type { AuditEvent, SessionAuditAction } from '@kortix/sdk';
 import { CaretRightIcon, ShieldCheckIcon } from '@phosphor-icons/react';
@@ -178,7 +179,7 @@ export function SessionAuditPanel({
                   </Badge>
                 </div>
                 <ul className="bg-popover overflow-hidden rounded-md border">
-                  {events.map((event) => (
+                  {events.map((event, index) => (
                     <li key={event.event_id} className="border-border border-b last:border-b-0">
                       <button
                         type="button"
@@ -186,7 +187,7 @@ export function SessionAuditPanel({
                         onClick={() => setSelectedEvent(event)}
                       >
                         <span className="text-muted-foreground w-8 shrink-0 text-right font-mono text-xs tabular-nums">
-                          {event.session_sequence ?? '—'}
+                          {event.session_sequence ?? index + 1}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -215,7 +216,11 @@ export function SessionAuditPanel({
                             </Badge>
                           </div>
                           <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                            {event.authoritative_source ?? event.source ?? 'system'} ·{' '}
+                            {credentialVia(event, (key) => tI18nComplete.raw(key) as string) ??
+                              event.authoritative_source ??
+                              event.source ??
+                              'system'}{' '}
+                            ·{' '}
                             {relativeTime(event.occurred_at)}
                           </p>
                         </div>
@@ -327,7 +332,7 @@ export function SessionAuditPanel({
             <ModalTitle>{tI18nComplete.raw('text7ed62f13532a')}</ModalTitle>
             <ModalDescription>
               {tI18nComplete.raw('text20cec9e797c9')}
-              {selectedEvent?.session_sequence ?? '—'} {tI18nComplete.raw('text28419d670fef')}
+              {selectedEvent ? (selectedEvent.session_sequence ?? events.indexOf(selectedEvent) + 1) : '—'} {tI18nComplete.raw('text28419d670fef')}
             </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[70vh] space-y-4 overflow-y-auto">
@@ -337,9 +342,14 @@ export function SessionAuditPanel({
                   {[
                     ['Action', selectedEvent.action],
                     ['Phase', selectedEvent.phase],
-                    ['Source', selectedEvent.authoritative_source ?? selectedEvent.source],
+                    [
+                      tI18nComplete.raw('text2ed8b8066255'),
+                      credentialVia(selectedEvent, (key) => tI18nComplete.raw(key) as string) ??
+                        selectedEvent.authoritative_source ??
+                        selectedEvent.source,
+                    ],
                     [tI18nComplete.raw('text3045abafb173'), selectedEvent.event_id],
-                    [tI18nComplete.raw('text5a26f4425c82'), selectedEvent.opencode_session_id],
+                    [tI18nComplete.raw('text92fbc8484002'), selectedEvent.runtime_session_id ?? selectedEvent.opencode_session_id],
                     [tI18nComplete.raw('text11d5959da5d3'), selectedEvent.message_id],
                     [tI18nComplete.raw('textfce8323af972'), selectedEvent.tool_call_id],
                     [tI18nComplete.raw('texte8c80b20c2f7'), selectedEvent.execution_id],

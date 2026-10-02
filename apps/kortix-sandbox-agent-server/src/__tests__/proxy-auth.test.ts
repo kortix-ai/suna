@@ -65,20 +65,26 @@ describe('daemon proxy auth gate', () => {
       auth: string
       compiled_boot_mode: string
       compiled_checkout: boolean
-      compiled_runtime: boolean
+      harness: { details: { compiled_runtime: boolean } }
     }
     expect(body.daemon).toBe('ok')
     expect(body.auth).toBe('configured')
     expect(body.compiled_boot_mode).toBe('off')
     expect(body.compiled_checkout).toBe(false)
-    expect(body.compiled_runtime).toBe(false)
+    expect(body.harness.details.compiled_runtime).toBe(false)
   })
 
   it('reports the same host facts as every harness, naming itself', async () => {
     const cfg = baseConfig()
     const app = buildOpenCodeTestApp(cfg, fakeOpencode(), Date.now())
-    const body = (await (await app.request('/kortix/health')).json()) as Record<string, unknown>
-    expect(body.harness).toBe('opencode')
+    const body = (await (await app.request('/kortix/health')).json()) as Record<string, any>
+    expect(body.harness).toMatchObject({ id: 'opencode', session: { id: null, required: false }, turn: null })
+    expect(body.harness.details).toMatchObject({ pid: null, port: 4096 })
+    // E1: OpenCode serves every session feature.
+    expect(body.capabilities).toEqual(expect.arrayContaining(['session.rewind', 'session.compact', 'session.commands', 'session.attach']))
+    // The pre-W3 flat fields an older API reads, composed from the block.
+    expect(body.opencode_pid).toBe(body.harness.details.pid)
+    expect(body.opencode_port).toBe(body.harness.details.port)
     expect(body.runtime_truth).toBeDefined()
     const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
     expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))
@@ -194,7 +200,7 @@ describe('daemon proxy auth gate', () => {
         baseConfig({ autoClone: false, projectTarget: target }),
         fakeOpencode('ok'),
         Date.now(),
-        { repoMaterializationError: null, timeline, initialOpenCodeSessionRequired: true, initialOpenCodeSessionId: null },
+        { repoMaterializationError: null, timeline, initialRuntimeSessionRequired: true, initialRuntimeSessionId: null },
       )
       const third = await answering.request('/session?directory=%2Fworkspace', {
         headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
@@ -215,8 +221,8 @@ describe('daemon proxy auth gate', () => {
       {
         repoMaterializationError: null,
         timeline: [],
-        initialOpenCodeSessionRequired: true,
-        initialOpenCodeSessionId: null,
+        initialRuntimeSessionRequired: true,
+        initialRuntimeSessionId: null,
       },
     )
 
@@ -239,7 +245,7 @@ describe('daemon proxy auth gate', () => {
     })
     expect(res.status).toBe(503)
     const body = (await res.json()) as { reason: string }
-    expect(body.reason).toBe('initial_opencode_session_pending')
+    expect(body.reason).toBe('initial_runtime_session_pending')
   })
 
   it('holds every caller off until the workspace is complete, then lets them through', async () => {
@@ -267,9 +273,9 @@ describe('daemon proxy auth gate', () => {
     const bootState = {
       repoMaterializationError: null,
       timeline: [],
-      initialOpenCodeSessionRequired: true,
-      initialOpenCodeSessionId: null as string | null,
-      initialOpenCodeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
+      initialRuntimeSessionRequired: true,
+      initialRuntimeSessionId: null as string | null,
+      initialRuntimeSessionError: 'ECONNREFUSED on attempt 1' as string | null,
     }
     const app = buildOpenCodeTestApp(baseConfig(), fakeOpencode('ok'), Date.now(), bootState)
     const signed = signTestUserContext({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
@@ -278,7 +284,7 @@ describe('daemon proxy auth gate', () => {
 
     const failed = await request()
     expect(failed.status).toBe(503)
-    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_opencode_session_failed')
+    expect(((await failed.json()) as { reason: string }).reason).toBe('initial_runtime_session_failed')
 
     finalizeInitialSession(bootState, 'ses_root_abc')
 

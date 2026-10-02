@@ -64,7 +64,7 @@ function RowList({
  *
  * Copy lives in `features/marketing/security-page/content.ts` and every claim on
  * it is traced to code in that file's header, including the seven places where
- * a neighbouring page or the `comms` skill says more than the code supports.
+ * a neighbouring page or the `kortix-brand` skill says more than the code supports.
  * Read that header before editing a single line here.
  */
 export default function SecurityPage(): ReactNode {

@@ -15,7 +15,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../core/runtime/client';
-import { opencodeKeys, useOpenCodeMcpStatus } from './use-opencode-sessions';
+import { runtimeKeys, useOpenCodeMcpStatus } from './use-opencode-sessions';
 import type { McpStatus } from './use-opencode-sessions';
 
 // ============================================================================
@@ -100,9 +100,9 @@ export function useAddMcpServer() {
     },
     onSuccess: (data) => {
       // Optimistically set the full status map returned by add()
-      queryClient.setQueryData(opencodeKeys.mcpStatus(), data);
+      queryClient.setQueryData(runtimeKeys.mcpStatus(), data);
       // Also refresh tool IDs since new server may expose tools
-      queryClient.refetchQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.toolIds(), type: 'active' });
     },
   });
 }
@@ -123,10 +123,10 @@ export function useConnectMcpServer() {
     },
     onMutate: async (name) => {
       // Optimistic update: set status to "connected"
-      await queryClient.cancelQueries({ queryKey: opencodeKeys.mcpStatus() });
-      const prev = queryClient.getQueryData<Record<string, McpStatus>>(opencodeKeys.mcpStatus());
+      await queryClient.cancelQueries({ queryKey: runtimeKeys.mcpStatus() });
+      const prev = queryClient.getQueryData<Record<string, McpStatus>>(runtimeKeys.mcpStatus());
       if (prev) {
-        queryClient.setQueryData(opencodeKeys.mcpStatus(), {
+        queryClient.setQueryData(runtimeKeys.mcpStatus(), {
           ...prev,
           [name]: { status: 'connected' } as McpStatus,
         });
@@ -136,12 +136,12 @@ export function useConnectMcpServer() {
     onError: (_err, _name, context) => {
       // Rollback on error
       if (context?.prev) {
-        queryClient.setQueryData(opencodeKeys.mcpStatus(), context.prev);
+        queryClient.setQueryData(runtimeKeys.mcpStatus(), context.prev);
       }
     },
     onSettled: () => {
-      queryClient.refetchQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
-      queryClient.refetchQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.mcpStatus(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.toolIds(), type: 'active' });
     },
   });
 }
@@ -162,10 +162,10 @@ export function useDisconnectMcpServer() {
     },
     onMutate: async (name) => {
       // Optimistic update: set status to "disabled"
-      await queryClient.cancelQueries({ queryKey: opencodeKeys.mcpStatus() });
-      const prev = queryClient.getQueryData<Record<string, McpStatus>>(opencodeKeys.mcpStatus());
+      await queryClient.cancelQueries({ queryKey: runtimeKeys.mcpStatus() });
+      const prev = queryClient.getQueryData<Record<string, McpStatus>>(runtimeKeys.mcpStatus());
       if (prev) {
-        queryClient.setQueryData(opencodeKeys.mcpStatus(), {
+        queryClient.setQueryData(runtimeKeys.mcpStatus(), {
           ...prev,
           [name]: { status: 'disabled' } as McpStatus,
         });
@@ -174,12 +174,12 @@ export function useDisconnectMcpServer() {
     },
     onError: (_err, _name, context) => {
       if (context?.prev) {
-        queryClient.setQueryData(opencodeKeys.mcpStatus(), context.prev);
+        queryClient.setQueryData(runtimeKeys.mcpStatus(), context.prev);
       }
     },
     onSettled: () => {
-      queryClient.refetchQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
-      queryClient.refetchQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.mcpStatus(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.toolIds(), type: 'active' });
     },
   });
 }
@@ -214,8 +214,8 @@ export function useMcpAuthCallback() {
       return unwrap(result) as McpStatus;
     },
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
-      queryClient.refetchQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.mcpStatus(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.toolIds(), type: 'active' });
     },
   });
 }
@@ -235,7 +235,7 @@ export function useMcpAuthRemove() {
       return unwrap(result);
     },
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
+      queryClient.refetchQueries({ queryKey: runtimeKeys.mcpStatus(), type: 'active' });
     },
   });
 }

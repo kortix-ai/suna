@@ -13,6 +13,8 @@ import {
   startAuditReconciliationWorker,
   stopAuditReconciliationWorker,
 } from './shared/audit-reconciliation-worker';
+import { startAuditPartitionWorker, stopAuditPartitionWorker } from './shared/audit-partition-worker';
+import { startAuditArchiveWorker, stopAuditArchiveWorker } from './shared/audit-archive/worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
 import {
   startProjectSnapshotWorker,
@@ -200,6 +202,10 @@ async function startSingletonWorkers() {
   startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
+  // Weekly partitions of kortix.audit_events, 8 weeks ahead.
+  startAuditPartitionWorker();
+  // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
+  startAuditArchiveWorker();
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
   // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
   startProjectSnapshotWorker();
@@ -208,6 +214,9 @@ async function startSingletonWorkers() {
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+  // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
+  const { startOAuthSweeper } = await import('./oauth/sweeper');
+  startOAuthSweeper();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -222,9 +231,13 @@ async function stopSingletonWorkers() {
   stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
+  stopAuditPartitionWorker();
+  stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
+  const { stopOAuthSweeper } = await import('./oauth/sweeper');
+  stopOAuthSweeper();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the

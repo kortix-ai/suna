@@ -29,6 +29,7 @@
 // assertProjectCapability so the agent-grant fold fires.
 
 import { createRoute, z } from '@hono/zod-openapi';
+import { ignoredAgentSettings } from '@kortix/api-contract/runtime-relay';
 import { projects } from '@kortix/db';
 import {
   type AgentBlockV2,
@@ -37,7 +38,9 @@ import {
   validateAgentMdFrontmatter,
 } from '@kortix/manifest-schema';
 import { eq } from 'drizzle-orm';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { PROJECT_ACTIONS } from '../../iam/actions';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { resolveTemplateBySlug } from '../../snapshots/templates';
@@ -53,6 +56,7 @@ import {
   applyAgentBlockV2,
   applyDefaultAgentV2,
   normalizeRequiredConnectorAliases,
+  resolveBehaviorDraft,
   readAgentBlockV2,
 } from '../lib/agent-config-v2';
 import { parseAgentMarkdown, serializeAgentMarkdown } from '../lib/agent-markdown';
@@ -61,6 +65,8 @@ import {
   KNOWN_BEHAVIOR_KEYS,
   OpencodeAgentConfigSchema,
   readAgentMarkdownFile,
+  manifestRuntime,
+  selectSessionHarness,
 } from '../lib/compile-agent-config';
 import { withProjectGitAuth } from '../lib/git';
 import { metadataMerge } from '../lib/metadata-merge';
@@ -85,6 +91,7 @@ const GrantSetSchema = z.union([
 const AgentBlockSchema = z
   .object({
     enabled: z.boolean().optional(),
+    tools: z.record(z.string(), z.boolean()).optional(),
     sandbox: z.string().min(1).max(128).regex(SLUG_RE).optional(),
     connectors: GrantSetSchema.optional(),
     connectors_required: z.array(z.string().trim().min(1).max(200)).max(500).optional(),
@@ -104,6 +111,9 @@ const AgentBlockSchema = z
     // Server-owned; accepted so a GET → PUT round trip keeps working. Only the
     // value already in effect is allowed (see the PUT handler).
     file: z.string().max(1024).optional(),
+    // The agent's behavior half (`.md` frontmatter + body as `prompt`).
+    behavior: OpencodeAgentConfigSchema.optional(),
+    // The pre-W4 name of `behavior`; see resolveBehaviorDraft.
     opencode: OpencodeAgentConfigSchema.optional(),
   })
   .strict();
@@ -169,13 +179,20 @@ function mergeFrontmatter(
 }
 
 /** Project the recognized behavior fields out of a `.md`'s parsed
- *  frontmatter, for the GET response's `block.opencode`. */
+ *  frontmatter, for the GET response's `block.behavior`. */
 function pickBehaviorFields(frontmatter: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of KNOWN_BEHAVIOR_KEYS) {
     if (frontmatter[key] !== undefined) out[key] = frontmatter[key];
   }
   return out;
+}
+
+/** The behavior half as GET serves it: the picked frontmatter, plus the body as `prompt`. */
+function behaviorOf(md: { frontmatter: Record<string, unknown>; body: string }): Record<string, unknown> {
+  const behavior = pickBehaviorFields(md.frontmatter);
+  if (md.body.trim()) behavior.prompt = md.body;
+  return behavior;
 }
 
 // GET /v1/projects/:projectId/agents/:agentName/config
@@ -222,18 +239,29 @@ projectsApp.openapi(
     const read = readAgentBlockV2(manifest, agentName);
     if (!read.ok) return c.json({ error: read.error, code: 'manifest_malformed' }, 400);
 
-    let block: (AgentBlockV2 & { opencode?: Record<string, unknown> }) | null = read.block;
+    let block:
+      | (AgentBlockV2 & { behavior?: Record<string, unknown>; opencode?: Record<string, unknown> })
+      | null = read.block;
     if (read.schemaVersion === 2) {
-      const { frontmatter, body } = await readAgentMarkdown(
-        gitProject,
-        loaded.row.defaultBranch,
-        manifest.raw,
-        agentName,
-      ).catch(() => ({ frontmatter: {}, body: '' }));
-      const opencode = pickBehaviorFields(frontmatter);
-      if (body.trim()) opencode.prompt = body;
-      block = { ...(read.block ?? {}), opencode };
+      const behavior = behaviorOf(
+        await readAgentMarkdown(
+          gitProject,
+          loaded.row.defaultBranch,
+          manifest.raw,
+          agentName,
+        ).catch(() => ({ frontmatter: {}, body: '' })),
+      );
+      // `opencode` is the pre-W4 name of `behavior`, served until clients move.
+      block = { ...(read.block ?? {}), behavior, opencode: behavior };
     }
+
+    // The harness a new session of this project runs, and the agent settings
+    // it ignores, so the editor marks them instead of letting them look applied.
+    const harness = selectSessionHarness({
+      piHarnessFlag: resolveFeatureFlag(loaded.row.metadata, 'pi_harness'),
+      runtime: manifestRuntime(manifest.raw),
+      llmGateway: projectLlmGatewayEnabled(loaded.row.metadata),
+    });
 
     return c.json({
       agent: agentName,
@@ -241,6 +269,8 @@ projectsApp.openapi(
       editable: read.schemaVersion === 2,
       default_agent: read.defaultAgent,
       block,
+      harness,
+      ignored_settings: ignoredAgentSettings(harness),
     });
   },
 );
@@ -396,7 +426,14 @@ projectsApp.openapi(
     // Split the wire body into its two homes. Drop undefined keys
     // (governance side) so an omitted field never serializes as an explicit
     // `null`/`undefined` into the YAML block.
-    const { opencode: opencodeDraft, file: requestedFile, ...governanceRaw } = parsed.data;
+    const {
+      behavior: behaviorName,
+      opencode: preW4BehaviorName,
+      file: requestedFile,
+      ...governanceRaw
+    } = parsed.data;
+    // Resolved against the current `.md` below, once it is read (v2 only).
+    let behaviorDraft = behaviorName ?? preW4BehaviorName;
     const normalizedGovernance = normalizeRequiredConnectorAliases(governanceRaw);
     if (!normalizedGovernance.ok) {
       return c.json({ error: normalizedGovernance.error, code: 'invalid_body' }, 400);
@@ -450,10 +487,16 @@ projectsApp.openapi(
           502,
         );
       }
+      const resolved = resolveBehaviorDraft(
+        { behavior: behaviorName, opencode: preW4BehaviorName },
+        behaviorOf(agentMd),
+      );
+      if (!resolved.ok) return c.json({ error: resolved.error, code: 'invalid_body' }, 400);
+      behaviorDraft = resolved.draft;
       const currentBlock = readAgentBlockV2(manifest, agentName);
       const explicitFile = currentBlock.ok ? currentBlock.block?.file : undefined;
       if (explicitFile !== undefined) governanceBlock.file = explicitFile;
-      else if (agentMd.exists || opencodeDraft !== undefined) governanceBlock.file = agentMd.path;
+      else if (agentMd.exists || behaviorDraft !== undefined) governanceBlock.file = agentMd.path;
       if (requestedFile !== undefined && requestedFile !== governanceBlock.file) {
         return c.json(
           {
@@ -483,13 +526,13 @@ projectsApp.openapi(
     let mdPath: string | null = null;
     let nextFrontmatter: Record<string, unknown> | null = null;
     let nextBody: string | null = null;
-    if (opencodeDraft !== undefined && agentMd) {
+    if (behaviorDraft !== undefined && agentMd) {
       mdPath = agentMd.path;
       const existing = agentMd;
-      const draftRecord: Record<string, unknown> = { ...opencodeDraft };
+      const draftRecord: Record<string, unknown> = { ...behaviorDraft };
       delete draftRecord.prompt;
       nextFrontmatter = mergeFrontmatter(existing.frontmatter, draftRecord);
-      nextBody = opencodeDraft.prompt ?? '';
+      nextBody = behaviorDraft.prompt ?? '';
 
       const issues: ManifestIssue[] = [];
       validateAgentMdFrontmatter(nextFrontmatter, `agents.${agentName}`, issues);
@@ -555,7 +598,7 @@ projectsApp.openapi(
     }
 
     const read = readAgentBlockV2(manifest, agentName);
-    const responseOpencode =
+    const responseBehavior =
       nextFrontmatter !== null
         ? { ...pickBehaviorFields(nextFrontmatter), ...(nextBody ? { prompt: nextBody } : {}) }
         : undefined;
@@ -564,7 +607,10 @@ projectsApp.openapi(
       agent: agentName,
       schema_version: manifest.schemaVersion,
       block: read.ok
-        ? { ...(read.block ?? {}), ...(responseOpencode ? { opencode: responseOpencode } : {}) }
+        ? {
+            ...(read.block ?? {}),
+            ...(responseBehavior ? { behavior: responseBehavior, opencode: responseBehavior } : {}),
+          }
         : governanceBlock,
     });
   },

@@ -2,18 +2,18 @@
 
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '../../core/runtime/runtime-types';
 import { getClient } from '../../core/runtime/client';
 import { logger } from '../../core/http/logger';
 import { isAbortError } from '../../core/http/abort-error';
 import { useSyncStore, type MessageWithParts } from '../../browser/stores/sync-store';
 import { mintWireMessageId } from '../../core/session/wire-message-id';
 import type { PromptPart, SendMessageOptions } from './keys';
-import { canQueryOpenCodeSession, unwrap } from './shared';
+import { canQueryRuntimeSession, unwrap } from './shared';
 
 // ============================================================================
 // Send retry policy — ported from apps/web's `opencode-send-retry.ts` so every
-// host that sends a prompt through `promptOpenCodeMessage` inherits it, not
+// host that sends a prompt through `promptRuntimeMessage` inherits it, not
 // just apps/web.
 //
 // Two failure shapes flow through here:
@@ -66,7 +66,7 @@ export function extractSendErrorMessage(error: unknown): string {
  * waking from auto-stop and rebinding its port. Match the common "not ready /
  * waking / booting / provisioning" shapes, not just the exact string.
  */
-export function isOpenCodeNotReadyError(error: unknown): boolean {
+export function isRuntimeNotReadyError(error: unknown): boolean {
   return /opencode not ready|not ready|not yet ready|waking|booting|still booting|provision/i.test(
     extractSendErrorMessage(error),
   );
@@ -98,7 +98,7 @@ export function getSendRetryDelayMs(
   // not the short transient one, even when the error body didn't carry a tidy
   // message. Giving up early here is exactly what reverted a prompt that then
   // landed once the box finished waking.
-  const isBoot = status === 503 || isOpenCodeNotReadyError(error);
+  const isBoot = status === 503 || isRuntimeNotReadyError(error);
   const schedule = isBoot
     ? BOOT_BACKOFF_MS
     : isTransientSendStatus(status)
@@ -129,7 +129,7 @@ export function getSendRetryDelayMs(
  * for backward compatibility with consumers (session-layout, tool-renderers,
  * snapshot-dialog, session-diff-viewer).
  */
-export function useOpenCodeMessages(
+export function useRuntimeMessages(
   sessionId: string,
   options: {
     /**
@@ -160,7 +160,7 @@ export function useOpenCodeMessages(
   // would park a permanently empty id in the detach window on unmount, spending
   // a slot and evicting a real transcript one navigation early.
   useEffect(() => {
-    if (!canQueryOpenCodeSession(sessionId)) return;
+    if (!canQueryRuntimeSession(sessionId)) return;
     return useSyncStore.getState().retainSession(sessionId);
   }, [sessionId]);
 
@@ -267,7 +267,12 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   let rand = '';
-  for (let i = 0; i < 14; i++) rand += chars[Math.floor(Math.random() * 62)];
+  // Rejection sampling keeps the 62 characters uniform (248 = 4 * 62).
+  const bytes = new Uint8Array(32);
+  while (rand.length < 14) {
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) if (b < 248 && rand.length < 14) rand += chars[b % 62];
+  }
   return `${prefix}_${hex}${rand}`;
 }
 
@@ -394,7 +399,7 @@ function submissionWireId(sessionId: string, clientMessageId: string | undefined
 
 /**
  * The wire `messageID` for one submission, for a host that does NOT send
- * through `promptOpenCodeMessage`.
+ * through `promptRuntimeMessage`.
  *
  * The server-side prompt inbox (`createSessionPrompt`) needs the id up front:
  * the control plane cannot mint one, because placing an id correctly means
@@ -417,7 +422,7 @@ export function mintSessionWireMessageId(
 // ============================================================================
 // T9 — cancel() cancels in-flight delivery.
 //
-// Before this, `promptOpenCodeMessage`'s boot/wake retry loop (below) had no
+// Before this, `promptRuntimeMessage`'s boot/wake retry loop (below) had no
 // `AbortSignal` at all: a prompt still retrying its ~30s backoff when the
 // user hit Stop kept going, and — if the sandbox woke up mid-retry — landed
 // AFTER the abort and ran the stale text. This registry lets `cancel()`
@@ -450,7 +455,7 @@ function registerDelivery(sessionId: string, controller: AbortController): () =>
 }
 
 /**
- * Abort every in-flight `promptOpenCodeMessage` delivery for a session — the
+ * Abort every in-flight `promptRuntimeMessage` delivery for a session — the
  * primary effect `cancel()`/`stop()` need before the abort even reaches the
  * server: a delivery that has not yet started its next attempt when this
  * runs never starts one, and a delivery mid-network-call gets its underlying
@@ -469,8 +474,8 @@ export function abortInFlightDeliveries(sessionId: string): number {
 
 /** The shape `isAbortError` (`@kortix/sdk` core) recognizes on identity alone
  *  — matches a real `AbortController`/`fetch` abort's `.name`. */
-function deliveryAbortError(): SendOpenCodeMessageError {
-  const err = new Error('The operation was aborted.') as SendOpenCodeMessageError;
+function deliveryAbortError(): SendRuntimeMessageError {
+  const err = new Error('The operation was aborted.') as SendRuntimeMessageError;
   err.name = 'AbortError';
   return err;
 }
@@ -492,7 +497,7 @@ function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export interface SendOpenCodeMessageArgs {
+export interface SendRuntimeMessageArgs {
   sessionId: string;
   parts: PromptPart[];
   options?: SendMessageOptions;
@@ -532,10 +537,10 @@ export interface SendOpenCodeMessageArgs {
   clientMessageId?: string;
 }
 
-/** Error thrown by `promptOpenCodeMessage` on a non-2xx response — carries the
+/** Error thrown by `promptRuntimeMessage` on a non-2xx response — carries the
  * HTTP status (mirroring `response`/`status` so `parseBillingError` can detect
  * a 402) alongside the raw error payload. */
-export interface SendOpenCodeMessageError extends Error {
+export interface SendRuntimeMessageError extends Error {
   status?: number;
   response?: { status: number };
   data?: unknown;
@@ -559,16 +564,16 @@ export interface SendOpenCodeMessageError extends Error {
  * brand-new session's very first prompt can race — gets the same boot-window
  * retry treatment instead of propagating instantly with zero retries.
  *
- * Extracted from `useSendOpenCodeMessage`'s mutationFn so it's a plain async
+ * Extracted from `useSendRuntimeMessage`'s mutationFn so it's a plain async
  * function callable — and unit-testable — without a mutation/hook context.
  */
-export async function promptOpenCodeMessage({
+export async function promptRuntimeMessage({
   sessionId,
   parts,
   options,
   messageID,
   clientMessageId,
-}: SendOpenCodeMessageArgs): Promise<void> {
+}: SendRuntimeMessageArgs): Promise<void> {
   const mappedParts = parts.map((p) => {
     if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
     if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
@@ -635,7 +640,7 @@ export async function promptOpenCodeMessage({
         const message = errData?.message || err?.message || 'Failed to send message';
         const wrapped = new Error(
           typeof message === 'string' ? message : 'Failed to send message',
-        ) as SendOpenCodeMessageError;
+        ) as SendRuntimeMessageError;
         if (status) {
           wrapped.status = status;
           wrapped.response = { status };
@@ -643,7 +648,7 @@ export async function promptOpenCodeMessage({
         wrapped.data = err?.data ?? err;
         throw wrapped;
       }
-      logger.warn('promptOpenCodeMessage retrying send', { sessionId, attempt, status });
+      logger.warn('promptRuntimeMessage retrying send', { sessionId, attempt, status });
       // Abortable — a cancel arriving while this delivery is waiting out its
       // backoff must reject IMMEDIATELY, not wait out the remaining delay.
       await abortableDelay(delay, controller.signal);
@@ -653,10 +658,10 @@ export async function promptOpenCodeMessage({
   }
 }
 
-export function useSendOpenCodeMessage() {
+export function useSendRuntimeMessage() {
   return useMutation({
-    mutationFn: promptOpenCodeMessage,
-    // Same rationale as `useExecuteOpenCodeCommand`: this POSTs `prompt_async`,
+    mutationFn: promptRuntimeMessage,
+    // Same rationale as `useExecuteRuntimeCommand`: this POSTs `prompt_async`,
     // which CREATES a user message. Retrying it sends the prompt twice.
     //
     // It is stated here rather than left to the host because a host default
@@ -668,7 +673,7 @@ export function useSendOpenCodeMessage() {
     // absorbing that, which is the same "one layer relying on another's guard"
     // shape that let a `/command` execute four times.
     //
-    // `promptOpenCodeMessage` already runs its own bounded boot-window retry
+    // `promptRuntimeMessage` already runs its own bounded boot-window retry
     // for the states that ARE safe to repeat (`opencode not ready`, sandbox
     // still waking), so nothing is lost by switching the outer one off.
     retry: false,
@@ -680,8 +685,8 @@ export function useSendOpenCodeMessage() {
  * force-update the store if it still reports busy (the SSE `session.idle`
  * event should arrive on its own; this is the fallback for a missed one).
  *
- * Extracted from `useAbortOpenCodeSession`'s mutationFn — same reasoning as
- * `promptOpenCodeMessage`: a plain async function is directly testable
+ * Extracted from `useAbortRuntimeSession`'s mutationFn — same reasoning as
+ * `promptRuntimeMessage`: a plain async function is directly testable
  * without a mutation/hook context, and `awaitAbortSettlement` below calls it
  * (via the mutation's `mutateAsync`, so retry/pending state stay react-query-
  * driven) without needing to render a hook to prove the failure path.
@@ -690,7 +695,7 @@ export function useSendOpenCodeMessage() {
  * then `awaitAbortSettlement`) decides what to do with that; this function
  * itself never swallows it.
  */
-export async function abortOpenCodeSession(sessionId: string): Promise<void> {
+export async function abortRuntimeSession(sessionId: string): Promise<void> {
   const client = getClient();
   const result = await client.session.abort({ sessionID: sessionId });
   unwrap(result);
@@ -713,9 +718,9 @@ export async function abortOpenCodeSession(sessionId: string): Promise<void> {
   }
 }
 
-export function useAbortOpenCodeSession() {
+export function useAbortRuntimeSession() {
   return useMutation({
-    mutationFn: abortOpenCodeSession,
+    mutationFn: abortRuntimeSession,
     retry: 2,
     retryDelay: 300,
     // Kept — apps/web's `session-chat.tsx` calls `.mutate(sessionId)`
@@ -773,3 +778,21 @@ export async function awaitAbortSettlement(
     if (timer !== undefined) clearTimeout(timer);
   }
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `isRuntimeNotReadyError`. Removed in the next major. */
+export const isOpenCodeNotReadyError = isRuntimeNotReadyError;
+/** @deprecated Renamed to `useRuntimeMessages`. Removed in the next major. */
+export const useOpenCodeMessages = useRuntimeMessages;
+/** @deprecated Renamed to `SendRuntimeMessageArgs`. Removed in the next major. */
+export type SendOpenCodeMessageArgs = SendRuntimeMessageArgs;
+/** @deprecated Renamed to `SendRuntimeMessageError`. Removed in the next major. */
+export type SendOpenCodeMessageError = SendRuntimeMessageError;
+/** @deprecated Renamed to `promptRuntimeMessage`. Removed in the next major. */
+export const promptOpenCodeMessage = promptRuntimeMessage;
+/** @deprecated Renamed to `useSendRuntimeMessage`. Removed in the next major. */
+export const useSendOpenCodeMessage = useSendRuntimeMessage;
+/** @deprecated Renamed to `abortRuntimeSession`. Removed in the next major. */
+export const abortOpenCodeSession = abortRuntimeSession;
+/** @deprecated Renamed to `useAbortRuntimeSession`. Removed in the next major. */
+export const useAbortOpenCodeSession = useAbortRuntimeSession;

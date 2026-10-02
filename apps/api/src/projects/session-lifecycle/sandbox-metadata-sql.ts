@@ -6,7 +6,7 @@ import { sql, type SQL } from 'drizzle-orm';
  *
  * Hand-written `-` chains are how the readiness clocks drifted apart: the wake
  * claim stripped four of the ten, `clearRuntimeReadinessClocks` stripped eight
- * by hardcoded index, and `opencodeBootWaitFirstSeenAt` was therefore cleared
+ * by hardcoded index, and `runtimeBootWaitFirstSeenAt` was therefore cleared
  * by nothing except a human Restart. That immortal clock parked a SampleCo
  * session's second attempt 14 ms before its daemon claimed its first turn
  * (2026-08-26). One generator, one list, no drift.

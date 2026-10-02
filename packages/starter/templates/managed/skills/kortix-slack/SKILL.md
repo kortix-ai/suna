@@ -322,7 +322,7 @@ A `slack send` with no `--channel` is the turn's answer. When it cannot be deliv
 </final-answer>
 
 <asking-the-user>
-### Use opencode's built-in `question` tool — Slack renders the buttons
+### Use the built-in `question` tool — Slack renders the buttons
 
 **Rule: if your reply asks the user to choose, call the `question` tool. Never put a list of choices inside `slack send`.**
 
@@ -345,7 +345,7 @@ The answer arrives as your NEXT turn, with full context:
 
 ### Calling the `question` tool
 
-Per opencode's schema, every option has a `label` (1–5 words) and a `description`:
+Per the tool's schema, every option has a `label` (1–5 words) and a `description`:
 
 ```jsonc
 {
@@ -401,9 +401,19 @@ Reach for these only when the task explicitly asks for them.
 ### Read prior thread context
 
 ```sh
-slack history --channel "$SLACK_CHANNEL_ID" --thread "$SLACK_THREAD_TS"
-slack thread   --channel "$SLACK_CHANNEL_ID" --ts     "$SLACK_THREAD_TS"
+slack history --channel "$SLACK_CHANNEL_ID" --limit 20            # the channel's recent messages
+slack thread  --channel "$SLACK_CHANNEL_ID" --ts "$SLACK_THREAD_TS"  # this thread's replies
 ```
+
+Each message carries `user`, the author's id, and `user_name`, the author's display name when Slack has one. Write people's names from `user_name` in an answer. Use `<@user>` only to mention someone, because a mention notifies them.
+
+### Reads and writes stay inside this project
+
+Every Kortix project in a Slack workspace shares one bot, so reads reach only this project's conversations: the channels and DMs connected to it, and the threads its sessions started or joined. `slack history`, `slack thread`, `slack channel-info`, `slack file-info` and `slack search` refuse anything else with `conversation_not_in_project`, and `slack channels` lists public channels plus this project's private ones.
+
+Writes never act inside another project's channel or thread: `slack send` (text or `--file`), `slack edit`, `slack delete`, `slack react`, `slack unreact`, `slack join` and `slack bind-thread` refuse them with the same `conversation_not_in_project`. A channel no project is connected to and a DM with a person are fine. Pass `--channel` as the id (`C0123ABCD`, or a user id `U0123ABCD` for a DM), never a channel name.
+
+On that error, do not retry with another id. Tell the user what the error message says: the conversation belongs to another project, or they can connect it by running `/kortix switch` in it.
 
 ### React to a message
 
@@ -419,6 +429,8 @@ A "seen it" reaction (`eyes`, `hourglass`, `thinking_face`, …) is temporary. T
 ```sh
 slack send --channel "C0123ABCD" --text "Heads up: rolled api@a3f1 forward."
 ```
+
+A channel of another Kortix project refuses the post (see "Reads and writes stay inside this project").
 
 ### Edit / delete a message you posted earlier
 
@@ -437,7 +449,7 @@ slack search --query "deploy api@"
 
 ```sh
 slack users
-slack user        --user "U0123ABCD"
+slack user        --id "U0123ABCD"
 slack channels
 slack channel-info --channel "C0123ABCD"
 slack me

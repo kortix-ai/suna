@@ -6,7 +6,7 @@ import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
-import { settleOpenSandboxTurns } from './sandbox-turn-lifecycle';
+import { settleOpenSandboxTurns } from './session-turn-ledger';
 import type { StopReason } from './stop-reason';
 import {
   STAMPED_RUNTIME_FAILURE_STOP_REASONS,
@@ -23,6 +23,7 @@ import {
   noLiveStopClaim,
   stopClaimMetadata,
 } from './session-lifecycle/stop-claim';
+import { PROVIDER_REMOVAL_PENDING_KEY } from './reaping/archived-box-removal';
 import { isAlreadyNotRunning } from './reaping/policy';
 import { sessionHoldsTurnAuthority } from './session-lifecycle/inbox-admission';
 
@@ -35,7 +36,25 @@ export const RUNTIME_IDENTITY_ERROR =
 type RuntimeIdentityRow = Pick<
   typeof sessionSandboxes.$inferSelect,
   'sandboxId' | 'sessionId' | 'externalId' | 'metadata'
->;
+> & { status?: string | null };
+
+/**
+ * Stamped on a row BEFORE Kortix asks the provider to stop/remove its box
+ * (account deletion). The provider's `removed` webhook can land before the
+ * deleting request settles the row; this stamp tells the classifier the removal
+ * is ours, not a lost runtime.
+ */
+export const KORTIX_REMOVAL_INTENT_KEY = 'kortixRemovalIntentAt';
+
+/** A removal Kortix itself started: deleted/archived session or account teardown. */
+export function isKortixInitiatedRemoval(row: Pick<RuntimeIdentityRow, 'status' | 'metadata'>): boolean {
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+  return (
+    row.status === 'archived' ||
+    metadata[KORTIX_REMOVAL_INTENT_KEY] != null ||
+    metadata[PROVIDER_REMOVAL_PENDING_KEY] != null
+  );
+}
 
 type RecoverableRuntimeIdentityRow = typeof sessionSandboxes.$inferSelect;
 
@@ -220,7 +239,22 @@ export async function preserveEstablishedRuntime(
   const before = (row.metadata as Record<string, unknown> | null) ?? {};
   const alreadyReported =
     before.runtimeIdentityState === 'unavailable' && before.preservedExternalId === externalId;
-  if (!alreadyReported) reportLostRuntime(preserved, reason, stopReason, now);
+  if (!alreadyReported) {
+    // A removal Kortix started is an expected teardown, not lost user work.
+    if (isKortixInitiatedRemoval(row)) {
+      logger.info('Session runtime removed by Kortix-initiated teardown', {
+        event: 'runtime.removed_expected',
+        provider: preserved.provider,
+        externalId,
+        sandboxId: row.sandboxId,
+        sessionId: row.sessionId,
+        reason,
+        stopReason,
+      });
+    } else {
+      reportLostRuntime(preserved, reason, stopReason, now);
+    }
+  }
   return preserved;
 }
 

@@ -10,6 +10,7 @@ import { resolveTeamsProjectConversation } from './post';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { botConnectorToken, graphToken } from '../teams-auth';
 import type { TeamsActivity, TeamsConversationRef } from './types';
+import type { TeamsInbound } from './inbound';
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
@@ -391,7 +392,17 @@ interface FileConsentValue {
   };
 }
 
-export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<void> {
+/** Where a consent card's file may be PUT: a Microsoft 365 upload session over https. */
+function isMicrosoftUploadUrl(url: string | undefined): url is string {
+  try {
+    const parsed = new URL(url ?? '');
+    return parsed.protocol === 'https:' && ALLOWED_DOWNLOAD_HOST.test(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export async function handleFileConsentInvoke(activity: TeamsActivity, inbound: TeamsInbound): Promise<void> {
   const value = (activity as unknown as { value?: FileConsentValue }).value ?? {};
   const uploadId = value.context?.uploadId;
   if (!uploadId) return;
@@ -401,6 +412,16 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     .from(teamsPendingUploads)
     .where(eq(teamsPendingUploads.uploadId, uploadId))
     .limit(1);
+  // A consent card is answered from the conversation it went to, through the
+  // bot that sent it. An answer from anywhere else leaves the upload alone: a
+  // bring-your-own bot's owner can write any activity body to its endpoint.
+  if (
+    row &&
+    (row.conversationId !== activity.conversation?.id ||
+      (inbound.kind === 'project' && row.projectId !== inbound.projectId))
+  ) {
+    return;
+  }
 
   const ref: TeamsConversationRef = {
     serviceUrl: activity.serviceUrl ?? row?.serviceUrl ?? '',
@@ -416,7 +437,9 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
       .catch(() => {});
     return;
   }
-  if (!row || !value.uploadInfo?.uploadUrl) {
+  const info = value.uploadInfo ?? {};
+  const uploadUrl = info.uploadUrl;
+  if (!row || !isMicrosoftUploadUrl(uploadUrl)) {
     if (ref.serviceUrl && ref.conversationId) {
       await sendActivity(ref, {
         type: 'message',
@@ -431,7 +454,7 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
   }
 
   const bytes = Buffer.from(row.contentBase64, 'base64');
-  const put = await fetch(value.uploadInfo.uploadUrl, {
+  const put = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
       'Content-Length': String(bytes.length),
@@ -458,9 +481,9 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     attachments: [
       {
         contentType: 'application/vnd.microsoft.teams.card.file.info',
-        contentUrl: value.uploadInfo.contentUrl,
-        name: value.uploadInfo.name ?? row.filename,
-        content: { uniqueId: value.uploadInfo.uniqueId, fileType: value.uploadInfo.fileType },
+        contentUrl: info.contentUrl,
+        name: info.name ?? row.filename,
+        content: { uniqueId: info.uniqueId, fileType: info.fileType },
       },
     ],
   });

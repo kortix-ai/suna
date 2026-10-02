@@ -18,11 +18,6 @@ import { accountGithubInstallationStates, accountGithubInstallations, accountTok
 import type { AgentGrant } from '@kortix/db';
 import { and, countDistinct, desc, eq, gt, inArray, isNull, ne } from 'drizzle-orm';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { ttlMemo } from '../../shared/ttl-memo';
-import {
-  isImpersonatingAccount,
-  isImpersonationBlockedAccount,
-} from '../../shared/impersonation';
 // Imported from the leaf modules, not the `../../iam` barrel: this file is
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
@@ -32,8 +27,6 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
 import type { RequestContext } from '../../iam/actor';
-import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
-import { accountRoleFor } from '../../iam/read-models';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
 import type { GitPrincipal } from '../../git-proxy/ref-policy';
@@ -41,47 +34,6 @@ import {
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
 import { repositoryGeneration } from './repository-generation';
-
-// Memoized briefly (positive hits only): this runs on every project-scoped
-// request. Each DB statement is a fast same-region roundtrip (~3ms measured,
-// not the cross-region cost this comment used to claim), but the same
-// lookup repeats across a burst of parallel requests, so caching still cuts
-// redundant query volume. A revoked membership lingers for at most one TTL
-// window; a fresh grant is visible immediately because null results are
-// never cached.
-const loadAccountMembership = ttlMemo({
-  ttlMs: 15_000,
-  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
-  loader: async (userId: string, accountId: string) => {
-    // Membership IS the account-scope assignment (spec §1). The
-    // `account_members.account_role` column this used to read is no longer
-    // written by every path — an assignment made through `assignRole()` leaves
-    // it stale on purpose — so reading it here would hand a project request a
-    // role the engine disagrees with.
-    const accountRole = await accountRoleFor(accountId, userId);
-    return accountRole ? { accountId, accountRole } : null;
-  },
-  shouldCache: (membership) => membership !== null,
-});
-// Key is `${userId}|${accountId}` → bust per principal on account-member changes.
-registerPrincipalScopedMemo(loadAccountMembership);
-
-export async function getAccountMembership(userId: string, accountId: string) {
-  // Act-as: a platform admin holding a live grant on this account resolves as
-  // its owner. Checked BEFORE the memo, never inside it — `loadAccountMembership`
-  // is keyed `${userId}|${accountId}` and shared across requests, so caching an
-  // impersonation-derived membership would hand the operator owner rights on
-  // their own later, non-impersonated requests for the whole TTL window.
-  if (isImpersonatingAccount(userId, accountId)) {
-    return { accountId, accountRole: 'owner' as const };
-  }
-  // …and CONFINES: while a grant is live, the operator's own memberships are
-  // out of reach. Otherwise "open the app" lands on their last project (a
-  // cookie), which is theirs, under a banner naming the customer.
-  if (isImpersonationBlockedAccount(userId, accountId)) return null;
-  return loadAccountMembership(userId, accountId);
-}
-
 
 /**
  * Every account connection, NEWEST first. The order is explicit because
@@ -852,6 +804,9 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     accountId: project.accountId,
     name: PROJECT_GIT_AUTH_SECRET_NAME,
     consumer: 'git_proxy',
+    // An optional legacy fallback checked on every git request: its absence is
+    // the normal case, not an access attempt, so it writes no missing row.
+    probe: true,
   });
   if (legacyToken) {
     return {

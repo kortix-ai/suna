@@ -14,6 +14,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
+import { SessionLabelsModal } from '@/features/workspace/project-sidebar/modal/session-labels-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
 import {
@@ -39,6 +40,7 @@ import {
   selectHiddenSections,
   selectOrderMode,
   selectSourceFilters,
+  selectLabelFilters,
   selectAccessFilters,
   selectOwnerFilters,
   selectStatusFilters,
@@ -267,6 +269,9 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
+  const [sessionToLabel, setSessionToLabel] = useState<ProjectSession | null>(null);
+  // Server-side facet, like search: a label match on an unloaded page still lists.
+  const labelFilters = useSessionFilterStore(selectLabelFilters(projectId, SURFACE));
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
   );
@@ -292,6 +297,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     parent: 'root',
     startedBy: startedBy === 'all' ? undefined : startedBy,
     q: searchQuery || undefined,
+    labels: labelFilters.length > 0 ? labelFilters : undefined,
     // The shared policy, not a local copy of the provisioning rule. This view
     // stopped polling the moment every session settled, so a title written
     // seconds later (server-side, with no event — see `sessionTitleHasLanded`)
@@ -400,6 +406,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
     isError: sessionsQuery.isError,
     totalCount: sessions.length,
     visibleCount: visibleSessions.length,
+    serverFiltered: labelFilters.length > 0,
   });
 
   // Selection must never outlive its own visibility: narrowing the filter after
@@ -531,6 +538,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const rowActions: SessionRowActions = useMemo(
     () => ({
       onRename: (id, name) => setSessionToRename({ id, name }),
+      onEditLabels: setSessionToLabel,
       onShare: setSessionToShare,
       onDelete: (id, label) => setSessionToDelete({ id, label }),
       onRestart: (sessionId, label) => restart({ sessionId, label }),
@@ -808,6 +816,12 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
         open={!!sessionToShare}
         onOpenChange={(open) => !open && setSessionToShare(null)}
         onSaved={invalidateSessions}
+      />
+      <SessionLabelsModal
+        projectId={projectId}
+        session={sessionToLabel}
+        open={!!sessionToLabel}
+        onOpenChange={(open) => !open && setSessionToLabel(null)}
       />
       <RenameSessionModal
         projectId={projectId}

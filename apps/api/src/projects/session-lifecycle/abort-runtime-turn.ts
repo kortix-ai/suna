@@ -1,5 +1,6 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
+import { runtimeServesTurnVerbs, runtimeVerbPaths, sessionRuntimeFetch, turnVerbMissing } from './runtime-fetch';
+import { legacyRuntimePaths } from './legacy-runtime-rest';
 
 /**
  * Abort whatever turn the runtime still thinks is running for this session.
@@ -37,7 +38,7 @@ export async function abortRuntimeTurn(
     if (!resolved) return false;
     if (opts.requestedStop) {
       try {
-        const { markTurnStopRequested } = await import('../sandbox-turn-lifecycle');
+        const { markTurnStopRequested } = await import('../session-turn-ledger');
         await markTurnStopRequested(sessionId, 'UserStop', {
           opencodeSessionId: resolved.opencodeSessionId,
         });
@@ -48,11 +49,11 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    const res = await sessionRuntimeFetch(
-      resolved.endpoint,
-      'POST',
-      `/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`,
-    );
+    if (await runtimeServesTurnVerbs(resolved.externalId, async () => resolved.endpoint)) {
+      const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.opencodeSessionId));
+      if (!turnVerbMissing(resolved.externalId, res)) return res.ok;
+    }
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', legacyRuntimePaths.abort(resolved.opencodeSessionId));
     return res.ok;
   } catch {
     return false;

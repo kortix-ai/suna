@@ -1,4 +1,5 @@
-import type { Model } from '@opencode-ai/sdk/v2/client';
+import type { Model } from '../runtime/runtime-types';
+import { modelKeyToWire } from './model-key';
 import { GATEWAY_PROVIDER_IDS, type ProviderListResponse } from './provider-selection';
 
 /**
@@ -33,6 +34,7 @@ type LooseModel =
       open_weights?: boolean;
       last_updated?: string;
       enabled?: boolean;
+      free?: boolean;
     };
 
 function hasCapabilities(model: LooseModel): model is Model {
@@ -96,6 +98,15 @@ export interface FlatModel {
    * `/model-picker`), which callers read as "not applicable".
    */
   enabled?: boolean;
+  free?: boolean;
+}
+
+/**
+ * One entry of the model picker: a `FlatModel` plus `id`, the ref a pick
+ * stores and sends (the gateway wire id, or the native `provider/model`).
+ */
+export interface ModelOption extends FlatModel {
+  id: string;
 }
 
 /**
@@ -126,6 +137,7 @@ type WithGatewayFields = {
   open_weights?: boolean;
   last_updated?: string;
   enabled?: boolean;
+  free?: boolean;
   attachment?: boolean;
 };
 
@@ -145,12 +157,12 @@ export function flattenModels(
      */
     providerMode?: 'gateway' | 'native';
   },
-): FlatModel[] {
+): ModelOption[] {
   if (!providers) return [];
   const providerMode = opts?.providerMode ?? 'gateway';
   const all = Array.isArray(providers.all) ? providers.all : [];
   const connected = Array.isArray(providers.connected) ? providers.connected : [];
-  const result: FlatModel[] = [];
+  const result: ModelOption[] = [];
   for (const p of all) {
     if (!connected.includes(p.id)) continue;
     if (providerMode === 'gateway' ? !GATEWAY_PROVIDER_IDS.has(p.id) : GATEWAY_PROVIDER_IDS.has(p.id))
@@ -184,6 +196,7 @@ export function flattenModels(
         };
       }
       result.push({
+        id: modelKeyToWire({ providerID: p.id, modelID }),
         providerID: p.id,
         // The gateway lists every model under one synthetic `kortix` provider;
         // a BYOK model names its real provider instead.
@@ -208,6 +221,7 @@ export function flattenModels(
         openWeights: (model as WithGatewayFields).open_weights,
         lastUpdated: (model as WithGatewayFields).last_updated,
         enabled: (model as WithGatewayFields).enabled,
+        free: (model as WithGatewayFields).free === true,
       });
     }
   }

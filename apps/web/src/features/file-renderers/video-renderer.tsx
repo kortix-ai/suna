@@ -8,7 +8,6 @@ import { Slider } from '@/components/ui/slider';
 import { usePreviewFit } from '@/features/file-viewer/preview-fit';
 import { cn } from '@/lib/utils';
 import {
-  DownloadIcon as Download,
   InfoIcon as Info,
   CornersOutIcon as Maximize,
   CornersInIcon as Minimize,
@@ -19,6 +18,7 @@ import {
   SpeakerSlashIcon as VolumeX,
 } from '@phosphor-icons/react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Download } from '@/features/icon/icons/download';
 
 interface VideoRendererProps {
   url: string;
@@ -48,6 +48,10 @@ const VIDEO_SLIDER = cn(
   '[&_[data-slot=slider-thumb]]:hover:ring-white/25 [&_[data-slot=slider-thumb]]:active:ring-white/35',
   '[&_[data-slot=slider-thumb]]:focus:ring-offset-black/60',
 );
+
+export async function requestVideoFullscreen(element: { requestFullscreen?: () => Promise<void> }) {
+  await element.requestFullscreen?.();
+}
 
 export function VideoRenderer({
   url,
@@ -213,7 +217,7 @@ export function VideoRenderer({
     if (isFullscreen) {
       await document.exitFullscreen();
     } else {
-      await containerRef.current.requestFullscreen();
+      await requestVideoFullscreen(containerRef.current);
     }
   };
 
@@ -478,20 +482,5 @@ export function VideoRenderer({
         </>
       )}
     </div>
-  );
-}
-
-// Compact video player for inline tool views
-export function InlineVideoPlayer({ url, className }: { url: string; className?: string }) {
-  return (
-    <VideoRenderer
-      url={url}
-      className={cn(
-        'aspect-video w-80 rounded-2xl border border-neutral-200 dark:border-neutral-700/50',
-        className,
-      )}
-      compact
-      loop
-    />
   );
 }

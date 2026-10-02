@@ -3,7 +3,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(import.meta.dir + '/ProjectScreen.tsx', 'utf8') + readFileSync(import.meta.dir + '/../../lib/session/project-connect.ts', 'utf8');
+const source = readFileSync(import.meta.dir + '/ProjectScreen.tsx', 'utf8') + readFileSync(import.meta.dir + '/../../lib/session/project-connect.ts', 'utf8') + readFileSync(import.meta.dir + '/use-project-stack.ts', 'utf8') + readFileSync(import.meta.dir + '/use-project-home-send.ts', 'utf8');
 const calls: { name: string; args: any[] }[] = [];
 const spy = (name: string) => (...args: any[]) => { calls.push({ name, args }); };
 const seen = (name: string) => calls.filter((call) => call.name === name);
@@ -18,6 +18,7 @@ let routes: any[];
 let tab: any;
 let response: () => Promise<any>;
 let health: () => Promise<any>;
+let homeRenders = 0;
 let tree: ReactTestRenderer | undefined;
 let ProjectScreen: typeof import('./ProjectScreen').ProjectScreen;
 
@@ -30,7 +31,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
     StackActions: { push: (...args: any[]) => ({ type: 'push', args }), replace: (...args: any[]) => ({ type: 'replace', args }), popTo: (...args: any[]) => ({ type: 'popTo', args }) },
     CommonActions: { reset: (value: any) => ({ type: 'reset', value }) } },
   '@/components/session/ProjectRoutes': { PROJECT_HOME_ROUTE: 'index', PROJECT_VIEW_ROUTE: 'view', PROJECT_PAGE_ROUTE: 'page', PROJECT_SESSIONS_ROUTE: 'sessions', PROJECT_FILES_ROUTE: 'files', PROJECT_ACCOUNT_ROUTE: 'account', ProjectRouteProvider: ({ value, children }: any) => { route = value; return React.createElement(React.Fragment, null, value.home, value.view, children); }, backFromSubPage: spy('backSubPage') },
-  '@/components/session/ProjectHome': { ProjectHome: (props: any) => { home = props; return null; } },
+  '@/components/session/ProjectHome': { ProjectHome: (props: any) => { homeRenders++; home = props; return null; } },
   '@/components/session/SessionConnecting': { SessionConnecting: (props: any) => { connecting = props; return null; } },
   '@/components/session/SessionPage': { SessionPage: Empty },
   '@/components/session/ProjectLeftDrawer': { ProjectLeftDrawer: (props: any) => { drawer = props; return null; } },
@@ -43,9 +44,11 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen: null }), { getState: () => ({ setViewingSessionId() {}, takeOpen: () => null }) }) },
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector({ openUpgradeSheet: spy('upgrade') }) },
   '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
-  '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate') }) },
+  '@tanstack/react-query': { useQueryClient: () => ({ invalidateQueries: spy('invalidate'), setQueryData: spy('setQueryData') }) },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: [] }) },
-  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' } },
+  '@kortix/sdk': { countReviewItemsBySegment: () => ({ needs_you: 0 }), sessionConnectionLabel: () => null, SESSION_NOTICE: { waking: 'Waking' }, isRuntimeReady: () => false,
+    sessionStartKey: (projectId: string, sessionId: string) => ['start', projectId, sessionId],
+    getSessionHealth: async (url: string, init?: RequestInit) => { const res = await globalThis.fetch(`${url}/kortix/health`, init); return { status: res.status, ok: res.ok, health: await res.json(), body: '' }; } },
   '@/components/kortix/toast-provider': { useToast: () => ({ error: spy('toast') }) },
   '@/lib/billing/upgrade-gate': { getUpgradeGate: (error: any) => error?.upgrade ? { reason: 'upgrade' } : null },
   '@/lib/platform/client': { getSandboxUrl: (id: string) => `https://sandbox.test/p/${id}/8000` },
@@ -55,8 +58,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/hooks/useWarmProjectSession': { useWarmProjectSession() {} },
   '@/lib/haptics': { haptics: { tap: spy('tap') } },
   '@/lib/logger': { log: { log() {}, warn() {}, error() {} } },
-  '@/lib/opencode/sync-store': { useSyncStore: Object.assign((selector: any) => selector({ messages: {} }), { getState: () => ({ messages: {} }) }) },
-  '@/lib/session/saved-copy': { loadSavedCopy: async () => ({ empty: false }) },
+  '@kortix/sdk/react': { KortixProjectProvider: ({ children }: any) => children },
+  '@/hooks/useSavedCopy': { useSavedCopy: () => ({ messages: undefined, empty: false }) },
+  '@/lib/session/session-store': { addOptimisticMessage: spy('optimistic'), markOptimisticAccepted() {}, sessionMessageIds: () => [], sessionRows: () => [], sessionStatus: () => undefined, setLocalSessionStatus() {} },
   '@/lib/notifications/registration': { requestPushPermissionOnce() {} },
   '@/stores/composer-draft-store': { clearComposerDraftIfSent: spy('clearDraft') },
   '@/lib/session/create-session': { createSessionCommitted: async () => 'fresh-1' },
@@ -66,7 +70,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
 };
 
 for (const [, name] of source.matchAll(/from ['"]([^'"]+)['"]/g)) {
-  if (name === 'react' || name === '@/lib/session/project-connect' || name.startsWith('@/lib/session/') && ['project-stack', 'connect-step'].some((part) => name.endsWith(part))) continue;
+  if (name === 'react' || name === '@/lib/session/project-connect' || name.startsWith('@/lib/session/') && ['project-stack', 'connect-step'].some((part) => name.endsWith(part)) || name === '@/components/session/use-project-stack' || name === '@/components/session/use-project-home-send') continue;
   const values = moduleMocks[name] ?? {};
   if (name !== 'react-native' && name !== 'expo-router' && name !== 'expo-router/react-navigation') {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -86,6 +90,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   calls.length = 0;
+  homeRenders = 0;
   route = drawer = home = connecting = back = stackListener = undefined;
   tab = { activeSessionId: null, activePageId: null, setScope: spy('scope'), navigateToSession: spy('navigateSession') };
   routes = [{ key: 'home-key', name: 'index', params: { id: 'project-1' } }];
@@ -109,6 +114,9 @@ describe('ProjectScreen connect and stack', () => {
     await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
     expect(seen('start')[0]?.args).toEqual(['project-1', 'ps-1']);
     expect(seen('switchSandbox')[0]?.args[0]).toMatchObject({ external_id: 'box-1', status: 'running' });
+    // The SDK binds to the session the sandbox runs, and starts from this `/start` answer.
+    expect(seen('switchSandbox')[0]?.args[1]).toEqual({ projectId: 'project-1', sessionId: 'ps-1' });
+    expect(seen('setQueryData')[0]?.args).toEqual([['start', 'project-1', 'ps-1'], expect.objectContaining({ stage: 'ready' })]);
     expect(seen('navigateSession').at(-1)?.args).toEqual(['oc-1']);
     expect(seen('health')).toHaveLength(1);
     await act(async () => finish({ ok: true, status: 200, json: async () => ({ runtimeReady: true }) }));
@@ -146,7 +154,7 @@ describe('ProjectScreen connect and stack', () => {
     response = async () => ({ stage: 'starting', retriable: true, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1' } });
     health = async () => ({ ok: true, status: 200, json: async () => ({ boot_error: 'runtime failed' }) });
     await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-2' }));
-    expect(connecting.error).toMatchObject({ title: 'OpenCode runtime is not ready', detail: 'runtime failed' });
+    expect(connecting.error).toMatchObject({ title: 'Session runtime is not ready', detail: 'runtime failed' });
     expect(seen('switchSandbox')).toHaveLength(0);
   });
 
@@ -179,5 +187,13 @@ describe('ProjectScreen connect and stack', () => {
     expect(seen('dispatch').at(-1)?.args[0].type).toBe('popTo');
     await focus(['index']);
     expect(back?.()).toBe(false);
+  });
+
+  test('opening the drawer does not re-render project home', async () => {
+    await renderHook();
+    const before = homeRenders;
+    await act(async () => route.openDrawer());
+    expect(route.isDrawerOpen).toBe(true);
+    expect(homeRenders).toBe(before);
   });
 });

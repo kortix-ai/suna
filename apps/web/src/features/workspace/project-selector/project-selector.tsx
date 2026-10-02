@@ -2,7 +2,6 @@
 
 import {
   acceptAccountInvite,
-  updateAccountName,
   type KortixProject,
   type MyAccountInvite,
 } from '@kortix/sdk';
@@ -30,7 +29,6 @@ import { AccountTopBar } from '@/features/workspace/account-top-bar';
 import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { updateProfileMetadata } from '@/lib/auth/update-profile';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
@@ -39,9 +37,7 @@ import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 import {
-  ACCOUNT_NAME_MAX_LENGTH,
   COLLAPSED_PROJECT_LIMIT,
-  accountNameStepAccount,
   SEARCH_THRESHOLD,
   countProjects,
   filterSections,
@@ -60,6 +56,7 @@ import { useProjectSelectorData } from './use-project-selector-data';
  */
 export interface ProjectSelectorViewProps {
   email: string | null;
+  name?: string | null;
   loading: boolean;
   loadFailed: boolean;
   sections: AccountSection[];
@@ -74,8 +71,6 @@ export interface ProjectSelectorViewProps {
   onRetryAccount: (accountId: string) => void;
   onRetryAll: () => void;
   onLogOut: () => void;
-  /** The onboarding name step (KRTX-638). Set only for a brand-new user. */
-  accountStep?: AccountNameStepProps | null;
 }
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
@@ -106,15 +101,13 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-lg flex-col px-6 py-20">
-      <AccountTopBar email={email} signingOut={props.signingOut} onLogOut={props.onLogOut} />
+      <AccountTopBar email={email} name={props.name} signingOut={props.signingOut} onLogOut={props.onLogOut} />
 
       {/* `my-auto` centers the block in the viewport while it fits, and lets
           it start at the top and scroll once the project list is taller.
           Blank while the reads resolve (one round trip): a centered block
           that changes height would slide the header down under the eye. */}
-      {loading ? null : props.accountStep ? (
-        <AccountNameStep {...props.accountStep} />
-      ) : (
+      {loading ? null : (
         <div className="my-auto w-full">
           <header className="flex flex-col items-center gap-2 text-center">
             <KortixLogo size={28} variant="icon" className="mb-3" />
@@ -200,75 +193,6 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
         </div>
       )}
     </main>
-  );
-}
-
-interface AccountNameStepProps {
-  /** Pre-filled: the API's suggested name, never the email. */
-  initialName: string;
-  saving: boolean;
-  error: string | null;
-  onSubmit: (name: string) => void;
-}
-
-/**
- * Onboarding step one for a brand-new user: what to call their account
- * (KRTX-638). The same field treatment as `/new`, which is step two.
- */
-function AccountNameStep({ initialName, saving, error, onSubmit }: AccountNameStepProps) {
-  const t = useTranslations('projectSelector');
-  const tNew = useTranslations('newWorkspace');
-  const [name, setName] = useState(initialName);
-  const [touched, setTouched] = useState(false);
-  const missing = name.trim().length === 0;
-  const showError = Boolean(error) || (touched && missing);
-
-  return (
-    <div className="my-auto w-full">
-      <header className="flex flex-col items-center gap-2 text-center">
-        <KortixLogo size={28} variant="icon" className="mb-3" />
-        <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-          {t('nameAccountTitle')}
-        </h1>
-        <p className="text-muted-foreground text-sm text-balance">{t('nameAccountBody')}</p>
-      </header>
-
-      <form
-        className="mt-10 flex flex-col space-y-8"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setTouched(true);
-          if (missing || saving) return;
-          onSubmit(name.trim());
-        }}
-      >
-        <div className="flex flex-col space-y-3">
-          <Label htmlFor="account-name">{tNew('account.nameLabel')}</Label>
-          <Input
-            id="account-name"
-            autoFocus
-            size="md"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onBlur={() => setTouched(true)}
-            maxLength={ACCOUNT_NAME_MAX_LENGTH}
-            aria-invalid={showError ? true : undefined}
-            aria-describedby="account-name-hint"
-          />
-          <p
-            id="account-name-hint"
-            className={cn('text-xs', showError ? 'text-destructive' : 'text-muted-foreground')}
-          >
-            {error ??
-              (touched && missing ? tNew('account.nameRequired') : tNew('account.nameHint'))}
-          </p>
-        </div>
-        <Button type="submit" size="lg" className="w-full" disabled={saving}>
-          {saving ? <Loading className="size-4 shrink-0" /> : null}
-          {t('nameAccountContinue')}
-        </Button>
-      </form>
-    </div>
   );
 }
 
@@ -489,10 +413,9 @@ function ProjectRow({
 /** The stateful half: reads, Join, open-project bookkeeping, sign-out. */
 export function ProjectSelector() {
   const t = useTranslations('projectSelector');
-  const tNew = useTranslations('newWorkspace');
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
   const data = useProjectSelectorData();
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
@@ -503,35 +426,6 @@ export function ProjectSelector() {
 
   const createAccount = data.sections.find((section) => section.canCreate);
   const createHref = createAccount ? newWorkspacePathForAccount(createAccount.accountId) : null;
-
-  // KRTX-638: a brand-new user names their account first.
-  const stepAccount =
-    authLoading || data.listsLoading || data.invitesQuery.isLoading
-      ? null
-      : accountNameStepAccount({
-          sections: data.sections,
-          inviteCount: data.invites.length,
-          userId: user?.id ?? null,
-          namedAt:
-            (user?.user_metadata as { account_named_at?: string } | undefined)
-              ?.account_named_at ?? null,
-        });
-  const nameAccount = useMutation({
-    mutationFn: async ({ accountId, name }: { accountId: string; name: string }) => {
-      // Through the SDK (`PATCH /v1/accounts/:accountId`). Skipped when the
-      // user kept the suggestion — it is already the stored name.
-      if (name !== stepAccount?.accountName) await updateAccountName(accountId, name);
-      // The "never ask again" mark lives on the auth user, not the account:
-      // it is about this person's onboarding, not the account's state.
-      await updateProfileMetadata({ account_named_at: new Date().toISOString() });
-    },
-    onSuccess: async (_result, { accountId }) => {
-      await queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-      setSelectedAccountId(accountId);
-      // Step two: the first project, in the account they just named.
-      router.push(newWorkspacePathForAccount(accountId));
-    },
-  });
 
   const join = useMutation({
     mutationFn: (invite: MyAccountInvite) => acceptAccountInvite(invite.invite_id),
@@ -554,10 +448,8 @@ export function ProjectSelector() {
   return (
     <ProjectSelectorView
       email={user?.email ?? null}
-      // `authLoading` too: until the user is known, whether this is a new user
-      // (the name step) or not (the selector) is unknown — rendering either
-      // early flashed the selector's "No project yet" before the step.
-      loading={authLoading || data.listsLoading || data.invitesQuery.isLoading}
+      name={user?.user_metadata?.name}
+      loading={data.listsLoading || data.invitesQuery.isLoading}
       loadFailed={data.accountsQuery.isError || data.allListsFailed}
       sections={data.sections}
       invites={data.invites}
@@ -579,19 +471,6 @@ export function ProjectSelector() {
         setSigningOut(true);
         void performSignOut();
       }}
-      accountStep={
-        stepAccount
-          ? {
-              initialName: stepAccount.accountName,
-              // Held through the navigation to `/new`: dropping the step on
-              // success painted the selector ("No project yet") for the
-              // frames before the route changed.
-              saving: nameAccount.isPending || nameAccount.isSuccess,
-              error: nameAccount.isError ? tNew('account.renameFailed') : null,
-              onSubmit: (name) => nameAccount.mutate({ accountId: stepAccount.accountId, name }),
-            }
-          : null
-      }
     />
   );
 }

@@ -2,9 +2,7 @@
 
 import { listConnections, type Connection } from '@kortix/sdk';
 import {
-  CheckIcon,
   CursorClickIcon,
-  DownloadSimpleIcon,
   FolderIcon,
   LaptopIcon,
   MonitorIcon,
@@ -15,19 +13,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
+import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
+import { BeamsShader } from '@/components/ui/paper-wallpaper-shaders';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { Download } from '@/features/icon/icons/download';
+import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
-import { tunnelKeys, useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
+import { tunnelKeys, useTunnelConnections, type TunnelConnection } from '@/hooks/tunnel/use-tunnel';
+import { useCopy } from '@/hooks/use-copy';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   desktopComputerConnect,
@@ -37,8 +31,9 @@ import {
   startDownload,
   type DesktopComputerStatus,
 } from '@/lib/desktop';
+import { getEnv } from '@/lib/env-config';
 import { cn } from '@/lib/utils';
-import { ConnectCommandPanel } from './tunnel-connect-panel';
+import { buildTunnelConnectCommand } from './tunnel-connect-command';
 
 /**
  * A computer is an ACCOUNT of the project's `computer` connector: one
@@ -48,6 +43,9 @@ import { ConnectCommandPanel } from './tunnel-connect-panel';
  */
 
 export const DESKTOP_STATUS_KEY = ['desktop-computer-status'] as const;
+
+/** Fired after this desktop pairs: the workspace menu opens computer setup. */
+export const COMPUTER_SETUP_EVENT = 'kortix:computer-setup';
 
 /** Same key and fetcher as `ConnectionsList`, so both share one cache entry. */
 function connectionsQueryOptions(projectId: string) {
@@ -128,18 +126,59 @@ export function useProjectComputerAccounts(
   };
 }
 
+/**
+ * The caller's machines as people think of them: one entry per physical
+ * computer. `computers`: registrations that name their hardware (one per
+ * hardware id, the live or most recently seen one), plus any online now.
+ * `older`: registrations from agents older than hardware ids that are offline;
+ * nothing can tell which computer they were, so they are listed apart. Both
+ * live first, then most recently seen.
+ */
+export function groupOwnedComputers(machines: readonly TunnelConnection[]): {
+  computers: TunnelConnection[];
+  older: TunnelConnection[];
+} {
+  const seen = (machine: TunnelConnection) =>
+    machine.isLive ? Number.MAX_SAFE_INTEGER : Date.parse(machine.lastHeartbeatAt ?? machine.createdAt) || 0;
+  const byRecency = [...machines].sort((a, b) => seen(b) - seen(a));
+  const hardware = (machine: TunnelConnection) =>
+    typeof machine.machineInfo?.machineId === 'string' ? machine.machineInfo.machineId : null;
+  const counted = new Set<string>();
+  const computers: TunnelConnection[] = [];
+  const older: TunnelConnection[] = [];
+  for (const machine of byRecency) {
+    const id = hardware(machine);
+    if (id) {
+      if (!counted.has(id)) computers.push(machine);
+      counted.add(id);
+    } else if (machine.isLive) {
+      computers.push(machine);
+    } else {
+      older.push(machine);
+    }
+  }
+  return { computers, older };
+}
+
 /** True once the caller owns a paired machine, in any project. Polls once a
  *  minute until they do: the sidebar promo mounts it for every signed-in user
  *  and hides for good once they own one, so polling then would be waste. The
  *  connect dialog's own 5 s observer takes over while it is open. */
-export function useOwnsPairedComputer(): { isSuccess: boolean; owns: boolean } {
+export function useOwnsPairedComputer(): {
+  isSuccess: boolean;
+  owns: boolean;
+  /** The machines the caller paired, the live ones first. */
+  owned: TunnelConnection[];
+} {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const ownsAny = (machines: readonly { ownerUserId?: string | null }[] | undefined) =>
-    Boolean(user && machines?.some((machine) => machine.ownerUserId === user.id));
-  const known = ownsAny(queryClient.getQueryData(tunnelKeys.connections()));
+  const ownedBy = (machines: readonly TunnelConnection[] | undefined) =>
+    user ? (machines ?? []).filter((machine) => machine.ownerUserId === user.id) : [];
+  const known =
+    ownedBy(queryClient.getQueryData<TunnelConnection[]>(tunnelKeys.connections())).length > 0;
   const machines = useTunnelConnections({ refetchInterval: known ? false : 60_000 });
-  return { isSuccess: machines.isSuccess, owns: ownsAny(machines.data) };
+  const owned = ownedBy(machines.data).sort((a, b) => Number(b.isLive) - Number(a.isLive));
+  return { isSuccess: machines.isSuccess, owns: owned.length > 0, owned };
 }
 
 /**
@@ -183,7 +222,11 @@ export function useConnectDesktopComputer(projectId: string) {
       return result;
     },
     onSuccess: (result) => {
-      if (result.ok) successToast(t('connected'));
+      if (!result.ok) return;
+      successToast(t('connected'));
+      // Setup comes next, on the spot: the "Your computer" dialog asks macOS
+      // for every permission the approved access needs.
+      window.dispatchEvent(new Event(COMPUTER_SETUP_EVENT));
     },
     onError: (error: Error) => errorToast(error.message || t('connectFailed')),
     onSettled: () => {
@@ -251,6 +294,32 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
   };
 }
 
+/**
+ * What the workspace menu's "Your computer" row opens, and its dot:
+ * - `this`: this desktop's own paired machine, with its own state.
+ * - `mine`: the machines the caller paired, where this machine cannot pair in
+ *   one click (a browser, or a desktop build without the agent). The dot is
+ *   online when any of them is.
+ * - `connect`: the connect dialog, when there is nothing to show yet.
+ */
+export function yourComputerMenu({
+  tunnelId,
+  state,
+  oneClickHere,
+  owned,
+}: {
+  tunnelId?: string;
+  state?: ComputerState | null;
+  oneClickHere: boolean;
+  owned: readonly { isLive: boolean }[];
+}): { dialog: 'this' | 'mine' | 'connect'; dot: ComputerState | null } {
+  if (tunnelId) return { dialog: 'this', dot: state ?? null };
+  if (!oneClickHere && owned.length > 0) {
+    return { dialog: 'mine', dot: owned.some((machine) => machine.isLive) ? 'online' : 'offline' };
+  }
+  return { dialog: 'connect', dot: null };
+}
+
 /** Status dot, e.g. in the workspace menu, the "Your computer" dialog, account rows. */
 export function ComputerStateDot({
   state,
@@ -302,16 +371,26 @@ const CAPABILITIES: readonly { key: 'filesystem' | 'shell' | 'desktop'; icon: Ic
  * What Kortix can use on a computer. With `granted` (the capabilities approved
  * at pairing) each row says Allowed / Not allowed; without it, it is a preview.
  */
-export function ComputerCapabilities({ granted }: { granted?: readonly string[] }) {
+export function ComputerCapabilities({
+  granted,
+  needsSetup,
+}: {
+  granted?: readonly string[];
+  /** Approved, but the macOS permission it needs is still missing (setup). */
+  needsSetup?: readonly string[];
+}) {
   const t = useTranslations('computers');
   return (
-    <ul className="bg-popover divide-border divide-y rounded-md border">
+    <ul className="divide-border divide-y">
       {CAPABILITIES.map(({ key, icon: CapabilityIcon }) => {
-        const allowed = granted?.includes(key);
+        const allowed = granted?.includes(key) && !needsSetup?.includes(key);
+        const pending = granted?.includes(key) && needsSetup?.includes(key);
         return (
-          <li key={key} className="flex items-center gap-3 px-4 py-2.5">
-            <CapabilityIcon className="text-muted-foreground size-4 shrink-0" />
-            <div className="min-w-0 flex-1">
+          <li key={key} className="flex items-center gap-3 py-3">
+            <span className="bg-muted text-muted-foreground flex size-10 shrink-0 items-center justify-center rounded-sm">
+              <CapabilityIcon className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1 space-y-0.5">
               <p className="text-sm font-medium">{t(`capability.${key}`)}</p>
               <p className="text-muted-foreground truncate text-xs">
                 {t(`capability.${key}Description`)}
@@ -324,8 +403,12 @@ export function ComputerCapabilities({ granted }: { granted?: readonly string[] 
                   allowed ? 'text-foreground' : 'text-muted-foreground',
                 )}
               >
-                {allowed ? <CheckIcon className="text-kortix-green size-3.5 shrink-0" /> : null}
-                {allowed ? t('capability.allowed') : t('capability.notAllowed')}
+                {allowed ? <SolidCheckIcon className="text-kortix-green size-3.5" /> : null}
+                {allowed
+                  ? t('capability.allowed')
+                  : pending
+                    ? t('capability.needsSetup')
+                    : t('capability.notAllowed')}
               </span>
             ) : null}
           </li>
@@ -358,25 +441,43 @@ export function ComputerConnectModal({
   const t = useTranslations('computers');
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="lg:max-w-lg">
-        <ModalHeader className="flex-row items-center gap-3 pr-12">
-          <ComputerGlyph />
-          <div className="min-w-0 space-y-0.5">
-            <ModalTitle>{t('connectTitle')}</ModalTitle>
-            <ModalDescription className="text-xs">{t('connectDescription')}</ModalDescription>
+      <ModalContent
+        className="space-y-0 lg:max-w-3xl"
+        closeClassName="max-sm:bg-background border-0 overflow-hidden"
+      >
+        {/* Art beside the content from `sm`; a short banner above it on a phone.
+            The art is dark in both themes, so its tokens resolve under `dark`.
+            It rounds its own outer corners: the modal is a scroll container,
+            and its rounded clip does not reach the shader's WebGL canvas. */}
+        <div className="grid sm:grid-cols-5 lg:min-h-128">
+          <div
+            aria-hidden="true"
+            className="dark bg-background relative isolate flex h-48 items-center justify-center overflow-hidden rounded-t-xl border-b sm:col-span-2 sm:h-auto sm:rounded-tr-none sm:border-r sm:border-b-0 lg:rounded-bl-xl"
+          >
+            <BeamsShader />
+            <span className="bg-foreground text-background relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium">
+              <LaptopIcon className="size-4 shrink-0" />
+              {t('localComputerTitle')}
+            </span>
           </div>
-        </ModalHeader>
-        <ModalBody className="space-y-5">
-          {open ? (
-            <ComputerConnectOptions
-              projectId={projectId}
-              onConnected={(connection) => {
-                onConnected?.(connection);
-                onOpenChange(false);
-              }}
-            />
-          ) : null}
-        </ModalBody>
+          <div className="flex min-w-0 flex-col gap-5 p-5 sm:col-span-3 lg:p-8">
+            <header className="space-y-1.5 pr-10">
+              <ModalTitle className="text-lg font-medium text-balance">
+                {t('connectTitle')}
+              </ModalTitle>
+              <ModalDescription className="text-pretty">{t('connectDescription')}</ModalDescription>
+            </header>
+            {open ? (
+              <ComputerConnectOptions
+                projectId={projectId}
+                onConnected={(connection) => {
+                  onConnected?.(connection);
+                  onOpenChange(false);
+                }}
+              />
+            ) : null}
+          </div>
+        </div>
       </ModalContent>
     </Modal>
   );
@@ -413,55 +514,67 @@ function ComputerConnectOptions({
   }, [addedId]);
 
   const inBrowser = desktop.isSuccess && !desktop.data && !isDesktop();
-  // The CLI is the fallback: shown on request, or when nothing else applies
-  // (this desktop is already paired, or its build lacks the bundled agent).
-  const [cliOpen, setCliOpen] = useState(false);
-  const showCli = cliOpen || (desktop.isSuccess && !inBrowser && !oneClick);
+  // The CLI fallback is one click: it copies the pairing command. The command
+  // prints its own instructions when it runs.
+  // The button itself confirms the copy; no toast.
+  const { copied, copy } = useCopy({ toast: false });
+  const copyCliCommand = () =>
+    copy(
+      buildTunnelConnectCommand({
+        backendUrl: getEnv().BACKEND_URL || '',
+        origin: window.location.origin,
+        projectId,
+      }),
+    );
 
   return (
     <>
-      <section className="space-y-2">
-        <ComputerCapabilities />
-        <p className="text-muted-foreground text-xs text-pretty">{t('scopeLine')}</p>
-      </section>
+      <ComputerCapabilities />
 
-      {oneClick ? (
-        <Button
-          className="w-full"
-          disabled={connectDesktop.isPending}
-          onClick={() => connectDesktop.mutate({ reauth: stale })}
-        >
-          {connectDesktop.isPending ? (
-            <Loading className="size-4 shrink-0" />
-          ) : (
-            <MonitorIcon className="size-4 shrink-0" />
-          )}
-          {connectDesktop.isPending ? t('connecting') : t('connectThisComputer')}
-        </Button>
-      ) : null}
-
-      {inBrowser ? (
-        <section className="space-y-2">
-          <Button className="w-full" onClick={() => startDownload(desktopDownloadUrl())}>
-            <DownloadSimpleIcon className="size-4 shrink-0" />
+      {/* Actions sit on the bottom edge, level with the foot of the art. */}
+      <div className="mt-auto space-y-2">
+        {oneClick ? (
+          <Button
+            size="lg"
+            className="w-full"
+            disabled={connectDesktop.isPending}
+            onClick={() => connectDesktop.mutate({ reauth: stale })}
+          >
+            {connectDesktop.isPending ? (
+              <Loading className="size-4 shrink-0" />
+            ) : (
+              <MonitorIcon className="size-4 shrink-0" />
+            )}
+            {connectDesktop.isPending ? t('connecting') : t('connectThisComputer')}
+          </Button>
+        ) : null}
+        {inBrowser ? (
+          <Button size="lg" className="w-full" onClick={() => startDownload(desktopDownloadUrl())}>
+            <Download className="shrink-0" />
             {t('downloadDesktop')}
           </Button>
-          <p className="text-muted-foreground text-xs text-pretty">{t('downloadHint')}</p>
-        </section>
-      ) : null}
-
-      {showCli ? (
-        <section className="space-y-2 border-t pt-5">
-          <Label>{t('runCommand')}</Label>
-          <p className="text-muted-foreground text-xs text-pretty">{t('cliHint')}</p>
-          <ConnectCommandPanel projectId={projectId} />
-        </section>
-      ) : (
-        <Button variant="ghost" size="sm" className="w-full" onClick={() => setCliOpen(true)}>
-          <TerminalWindowIcon className="size-4 shrink-0" />
-          {t('useCliInstead')}
-        </Button>
-      )}
+        ) : null}
+        {/* The CLI is the alternative: a quiet text action under the primary
+            one. It is the only action where the desktop app cannot pair. */}
+        {oneClick || inBrowser ? (
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground gap-1.5"
+              onClick={copyCliCommand}
+            >
+              {copied ? <SolidCheckIcon /> : <TerminalWindowIcon className="size-3.5 shrink-0" />}
+              {copied ? t('commandCopied') : t('copyCliCommand')}
+            </Button>
+          </div>
+        ) : (
+          <Button variant="secondary" size="lg" className="w-full" onClick={copyCliCommand}>
+            {copied ? <SolidCheckIcon /> : null}
+            {copied ? t('commandCopied') : t('copyCliCommand')}
+          </Button>
+        )}
+      </div>
     </>
   );
 }

@@ -1,8 +1,16 @@
 import { testUiTranslator } from '@/i18n/test-translator';
 import { describe, expect, test } from 'bun:test';
-import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
+import { commandBlocker, runtimePermissionLocksComposer, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 const clear = { hasActiveQuestion: false, pendingPermissionCount: 0, readOnly: false };
+
+describe('runtimePermissionLocksComposer', () => {
+  test('only an active runtime permission locks the composer', () => {
+    expect(runtimePermissionLocksComposer(0, true)).toBe(false);
+    expect(runtimePermissionLocksComposer(1, true)).toBe(true);
+    expect(runtimePermissionLocksComposer(1, false)).toBe(false);
+  });
+});
 
 describe('sendBlocker', () => {
   test('nothing blocks an ordinary send', () => {

@@ -19,7 +19,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import { relayQuestionToApi } from '@/harness/open-code/question-relay'
-import { relayQuestion } from '@/harness/pi/relay'
+import { relayQuestion } from '@/harness/shared/turn-relay'
 
 type Recorded = { method: string; path: string; search: string; auth: string | null; body: any }
 
@@ -75,8 +75,8 @@ const REQUEST = {
   id: 'que_1',
   sessionID: 'ses_root',
   questions: [
-    { question: 'Which branch?', header: 'Branch', options: [{ value: 'main' }] },
-    { question: 'Ship it?', header: 'Ship', options: [{ value: 'yes' }, { value: 'no' }] },
+    { question: 'Which branch?', header: 'Branch', options: [{ label: 'main', description: '' }] },
+    { question: 'Ship it?', header: 'Ship', options: [{ label: 'yes', description: '' }, { label: 'no', description: '' }] },
   ],
 }
 
@@ -104,7 +104,7 @@ describe('OpenCode adapter: relayQuestionToApi', () => {
     expect(reported[0]!.body).toEqual({
       session_id: 'sess-1',
       request_id: 'que_1',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       questions: REQUEST.questions,
     })
 
@@ -131,25 +131,26 @@ describe('OpenCode adapter: relayQuestionToApi', () => {
   })
 })
 
-describe('pi adapter: relayQuestion', () => {
+describe('shared relay (pi calls it directly): relayQuestion', () => {
   test.each(ROWS)('%s: reports the question; answers it only in a channel', async (_name, env, channel) => {
     Object.assign(process.env, env)
-    const answered: string[][][] = []
 
-    await relayQuestion(REQUEST, (answers) => answered.push(answers))
+    const answers = await relayQuestion(REQUEST)
 
     const reported = requests.filter((r) => r.path === '/v1/projects/proj-1/turn-question')
     expect(reported).toHaveLength(1)
     expect(reported[0]!.auth).toBe('Bearer sandbox-token')
-    expect(reported[0]!.body).toMatchObject({ session_id: 'sess-1', request_id: 'que_1', opencode_session_id: 'ses_root' })
+    expect(reported[0]!.body).toMatchObject({ session_id: 'sess-1', request_id: 'que_1', runtime_session_id: 'ses_root' })
+    // Kortix names only: the pre-W3 field is gone from the wire.
+    expect(reported[0]!.body).not.toHaveProperty('opencode_session_id')
 
     if (channel === null) {
-      expect(answered).toHaveLength(0)
+      expect(answers).toBeNull()
       return
     }
-    expect(answered).toHaveLength(1)
-    const sentinel = answered[0]![0]![0]!
-    expect(sentinel).toContain(channel === 'Teams' ? 'the Teams conversation' : 'the Slack thread')
+    expect(answers).toHaveLength(REQUEST.questions.length)
+    const sentinel = answers![0]![0]!
+    expect(sentinel).toContain(`Posted to the ${channel} conversation`)
     // Both channel prompts tell the agent to USE the question tool.
     expect(sentinel).not.toContain('rather than the question tool')
   })

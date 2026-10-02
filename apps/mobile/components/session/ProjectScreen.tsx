@@ -25,27 +25,18 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useProjectSessionConnect } from '@/lib/session/project-connect';
-import { newConfigPrompt } from '@kortix/shared';
-import { View, BackHandler, Platform } from 'react-native';
-import { Stack, useIsFocused, useLocalSearchParams, useRouter } from 'expo-router';
+import { useProjectHomeSend } from '@/components/session/use-project-home-send';
+import { useProjectStack } from '@/components/session/use-project-stack';
+import { View } from 'react-native';
+import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 
-import { getAuthToken } from '@/api/config';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { SessionPage } from '@/components/session/SessionPage';
-import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
+import { SessionConnecting } from '@/components/session/SessionConnecting';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
 import { appIsActive, useWarmProjectSession } from '@/hooks/useWarmProjectSession';
 import { warmSessionPool } from '@/lib/session/warm-session-pool';
-import {
-  CommonActions,
-  StackActions,
-  useFocusEffect,
-  useNavigation,
-  type NavigationProp,
-  type ParamListBase,
-} from 'expo-router/react-navigation';
 import { useAuthContext } from '@/contexts';
-import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { usePushStore } from '@/stores/push-store';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useLastProjectStore } from '@/stores/last-project-store';
@@ -57,25 +48,15 @@ import {
   PROJECT_SESSIONS_ROUTE,
   PROJECT_VIEW_ROUTE,
   ProjectRouteProvider,
-  backFromSubPage,
   type ProjectRouteValue,
 } from '@/components/session/ProjectRoutes';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
 import {
-  androidBackMove,
   pageBackMove,
-  returnThreadForPage,
-  drawerRouteMove,
   drawerSessionRowMove,
   drawerThreadMove,
-  threadOpenTarget,
-  type PendingThreadFocus,
-  returnHomeMove,
   shownProjectSessionId,
   projectEdgeGesture,
-  homeAndRoute,
-  subPageOpenMove,
-  type ProjectDrawerRoute,
   type SubPageId,
 } from '@/lib/session/project-stack';
 import { ProjectSwitcherSheet } from '@/components/projects/ProjectSwitcherSheet';
@@ -86,11 +67,8 @@ import {
   threadSandboxReady,
   type OpenedThread,
 } from '@/lib/session/session-sandbox';
-import { ProjectHome, type ProjectHomeSubmit } from '@/components/session/ProjectHome';
-import type { AttachedFile } from '@/lib/session/attachments';
-import { newSessionCreateInput } from '@/lib/session/new-session-input';
+import { ProjectHome } from '@/components/session/ProjectHome';
 import {
-  projectSessionForOpenCodeId,
   resolveSessionTitle,
   sessionDisplayTitle,
   subsessionTitle,
@@ -104,52 +82,22 @@ import {
 } from '@/components/session/SessionActionsSheet';
 import { Drawer } from 'react-native-drawer-layout';
 import { haptics } from '@/lib/haptics';
-import { log } from '@/lib/logger';
-import { useQueryClient } from '@tanstack/react-query';
 import {
-  listCreatedSession,
-  projectKeys,
   useAccounts,
   useProject,
   useProjectSessions,
-  useCreateProjectSession,
 } from '@/lib/projects/hooks';
 import { DRAWER_CLOSE, DRAWER_OPEN } from '@/lib/ui/drawer-springs';
 import { useReviewItems } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import {
   countReviewItemsBySegment,
-  getProjectSession,
-  SESSION_NOTICE,
-  sessionConnectionLabel,
+  runtimeSessionsOf,
   sessionParentId,
 } from '@kortix/sdk';
-import { queuePromptWhileWaking } from '@/lib/session/connecting-send';
-import { loadSavedCopy } from '@/lib/session/saved-copy';
-import * as Crypto from 'expo-crypto';
-import {
-  deleteProjectSession,
-  startProjectSession,
-  restartProjectSession,
-} from '@/lib/projects/projects-client';
-import type {
-  ProjectSession,
-  SessionStartResult,
-} from '@/lib/projects/projects-client';
-import {
-  connectStepFromRequestError,
-  connectStepFromStart,
-  shouldAwaitHealthProbe,
-  startPollDelayMs,
-} from '@/lib/session/connect-step';
-import { createSessionCommitted } from '@/lib/session/create-session';
-import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from '@/lib/session/first-prompt-seed';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import { useToast } from '@/components/kortix/toast-provider';
-import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
-import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
-import { clearComposerDraftIfSent } from '@/stores/composer-draft-store';
-import { draftKey } from '@/lib/session/composer-draft';
+import { KortixProjectProvider } from '@kortix/sdk/react';
+import { useSavedCopy } from '@/hooks/useSavedCopy';
+import type { ProjectSession } from '@/lib/projects/projects-client';
 import { getSandboxUrl } from '@/lib/platform/client';
 import type { SandboxProviderName } from '@/lib/platform/client';
 
@@ -193,6 +141,13 @@ const Pages = {
 
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
+
+/**
+ * What the waking view says. The composer there is disabled, so it promises
+ * no send (the SDK's `SESSION_NOTICE.waking` says messages queue; web keeps
+ * its live send button, mobile does not).
+ */
+const WAKING_NOTICE = "Waking this session's computer. You can send messages when it's ready.";
 
 export function ProjectScreen() {
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
@@ -306,8 +261,10 @@ export function ProjectScreen() {
   // session) is off.
   const activeSubsession = useMemo(
     () =>
-      activeProjectSession && activeSessionId && activeSessionId !== activeProjectSession.opencode_session_id
-        ? ((activeProjectSession.opencode_sessions ?? []).find((item) => item.id === activeSessionId) ?? null)
+      activeProjectSession &&
+      activeSessionId &&
+      activeSessionId !== (activeProjectSession.runtime_session_id ?? activeProjectSession.opencode_session_id)
+        ? (runtimeSessionsOf(activeProjectSession).find((item) => item.id === activeSessionId) ?? null)
         : null,
     [activeProjectSession, activeSessionId]
   );
@@ -347,277 +304,18 @@ export function ProjectScreen() {
   }, [returnToThread, goHome]);
 
 
-  // Simplified project-home send flow (ported from web 3f150e0). Creates a
-  // project session with the first prompt and drops into the connecting
-  // state — the effect provisions and opens it once ready. Resolves `true`
-  // once the session exists, `false` on any failure (ProjectHome then keeps
-  // the draft and hands its uploads back to the composer).
-  const [isDashboardSending, setIsDashboardSending] = useState(false);
-  const createProjectSession = useCreateProjectSession(projectId);
-  const queryClient = useQueryClient();
-  const toast = useToast();
-
-  const handleDashboardSend = useCallback(
-    async ({ text, files, fileParts, model, picks, agent }: ProjectHomeSubmit): Promise<boolean> => {
-      if (!projectId || isDashboardSending) return false;
-      if (!text.trim() && files.length === 0) return false;
-
-      setIsDashboardSending(true);
-      try {
-        // Files are already uploaded (ProjectHome's `useComposerAttachments`)
-        // and ride the create as `pending_prompt.parts`, which the server
-        // delivers once the runtime is up. The model is baked in at create.
-        // A thinking level cannot ride `initial_prompt` (it carries text only),
-        // so a send with a level uses `pending_prompt` too
-        // (`lib/session/new-session-input.ts`).
-        const hasFiles = files.length > 0;
-        // Warm path (web parity, `lib/session/warm-session.ts`): the project
-        // keeps one session booted while this screen is open. A send on the
-        // project defaults claims it with its first prompt, so the sandbox
-        // boot is already done. A send with files never fits it
-        // (`warmFitsSend`). Anything it does not fit, or a refused claim,
-        // runs the ordinary create below with the same prompt.
-        const warm = warmSessionPool.take(
-          projectId,
-          { agentName: agent, model, hasFiles },
-          { replenish: appIsActive() },
-        );
-        const claimedWarm =
-          warm &&
-          (await warmSessionPool.prime(
-            projectId,
-            warm,
-            { text, agent, model: picks?.model ?? null, variant: picks?.variant ?? null },
-            agent,
-          ))
-            ? warm.sessionId
-            : null;
-        if (claimedWarm) {
-          log.log('🔥 [Project] Home send took the warm session');
-        }
-        // Ordinary create (web parity, COR-185): the client mints the id, so a
-        // timed-out create that committed is read back and used instead of
-        // letting a re-send create a second session. Created FIRST, then the
-        // connecting state below: a failed create never shows a live-looking
-        // session. The composer's send slot shows the spinner meanwhile.
-        const createNew = async (): Promise<string> => {
-          const sessionId = Crypto.randomUUID();
-          const input = newSessionCreateInput({
-            sessionId,
-            text,
-            fileParts,
-            fileNames: files.map((f) => f.name),
-            model,
-            picks,
-            agent,
-          });
-          return createSessionCommitted(
-            {
-              create: (body) => createProjectSession.mutateAsync(body),
-              read: async (id) => {
-                const row = await getProjectSession(projectId, id, { showErrors: false });
-                // A create that timed out but committed: listed now, like
-                // one that answered (`useCreateProjectSession`).
-                listCreatedSession(queryClient, projectId, row);
-                return row;
-              },
-            },
-            { ...input, session_id: sessionId },
-          );
-        };
-        const session = { session_id: claimedWarm ?? (await createNew()) };
-        // The lists learn of the new session now, not at their next poll —
-        // also after a timed-out create that committed (`createSessionCommitted`).
-        refreshSessionLists();
-        // The loading page's first message and file tiles, and "Back to
-        // project"'s draft restore, all key off this. An image-only send
-        // sets it too, so the loading page shows the photo.
-        if (text.trim() || hasFiles) {
-          firstPromptRef.current[session.session_id] = { text: text.trim(), files };
-        }
-        // Enter the connecting state — the effect drives provisioning and opens
-        // the server-created session once ready.
-        navigateToSession(null);
-        setConnectError(null);
-        erroredSessionRef.current = null;
-        freshSessionIdRef.current = session.session_id;
-        setConnectingProjectSessionId(session.session_id);
-        // The session holds the prompt now: drop the home's saved draft
-        // (COR-143). Cancel hands the text back through `takeInitialDraft`.
-        clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), text);
-        // The first send asks for notification permission, once per install.
-        void requestPushPermissionOnce();
-        return true;
-      } catch (err: any) {
-        if (showUpgradeForError(err)) return false;
-        log.error('❌ [Project] Home send failed:', err?.message || err);
-        toast.error(err?.message || 'Failed to start session');
-        return false;
-      } finally {
-        setIsDashboardSending(false);
-      }
-    },
-    [projectId, isDashboardSending, createProjectSession, queryClient, navigateToSession, showUpgradeForError, toast, refreshSessionLists]
-  );
-
-  // The model sheet's Agent tab `+` (thread and home alike): a new session on
-  // the shared "configure a new agent" prompt, web's Agents page "New". Same
-  // create + connecting path as a project-home send.
-  const handleCreateAgent = useCallback(() => {
-    void handleDashboardSend({
-      text: newConfigPrompt('agent'),
-      files: [],
-      fileParts: [],
-      model: null,
-      picks: null,
-      agent: null,
-    });
-  }, [handleDashboardSend]);
+  const { isDashboardSending, handleDashboardSend, handleCreateAgent } = useProjectHomeSend(projectId, {
+    refreshSessionLists, firstPromptRef, navigateToSession, setConnectError,
+    erroredSessionRef, freshSessionIdRef, setConnectingProjectSessionId, showUpgradeForError,
+  });
   // Left drawer open state (ProjectLeftDrawer).
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Stable handlers, so a memoized SessionPage skips parent re-renders.
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
-
-
-  // The top (focused) route of the project stack and its navigation object,
-  // captured from the stack's focus events (screenListeners below). This
-  // layout's own `useNavigation()` is the root stack and cannot see the
-  // project stack; the listener's `navigation` is the project stack screen's
-  // (useNavigationBuilder: `descriptors[route.key].navigation`). Refs, not
-  // state: nothing renders from them, the drawer and back handler read them
-  // when they run. Null until the stack's first focus event (home).
-  const topRouteRef = useRef<string | null>(null);
-  const topNavigationRef = useRef<NavigationProp<ParamListBase> | null>(null);
-  // What the left edge does on the focused route (projectEdgeGesture): the
-  // drawer, or back on a sub-page (iOS swipe-back). State, not a ref: the
-  // drawer's swipeEnabled renders from it.
-  const [edgeGesture, setEdgeGesture] = useState<'drawer' | 'back'>('drawer');
-  // This layout's own screen in the root stack (/projects/[id]).
-  const navigation = useNavigation();
-  const router = useRouter();
-
-  // The switcher's pick of another project: replace this whole project in the
-  // root stack, so ProjectScreen remounts on the new `id`.
-  // `router.replace(projectHref(id))` cannot do it from here: expo-router
-  // treats `projects/[id]` → `projects/[id]` as the same route whatever the
-  // `id`, and dispatches into the project stack (ProjectSwitcherSheet,
-  // `openProjectRoute`).
-  const replaceProject = useCallback(
-    (nextProjectId: string) => {
-      navigation.dispatch(StackActions.replace('projects/[id]', { id: nextProjectId }));
-    },
-    [navigation]
-  );
-
-  // Back to project home from any project route: reset the store, then pop a
-  // covering route. popTo keeps home's params and, when home is not in the
-  // stack (a deep link straight to a covering route), replaces the top with it.
-  // The view's `beforeRemove` also resets the store; running goHome twice is
-  // harmless.
-  const returnHome = useCallback(() => {
-    goHome();
-    const top = topNavigationRef.current;
-    if (!top || returnHomeMove(topRouteRef.current) === 'none') return;
-    top.dispatch(StackActions.popTo(PROJECT_HOME_ROUTE, undefined, { merge: true }));
-  }, [goHome]);
-
-  // The drawer's Sessions, Files, and avatar (Account): push over home,
-  // replace the covering route, pop back to it under sub-pages, or reset to
-  // [home, route], so the drawer never deepens the stack
-  // (lib/session/project-stack). Leaving the view resets the store first, so
-  // the new route never mounts while the store still shows a session (a
-  // covering route replaces itself with the view when the store is off home).
-  // A session row needs no stack move here: home pushes the view, an open
-  // view swaps its content, and a covering route replaces itself with the view
-  // (useCoveringRoute).
-  const navigateProjectRoute = useCallback(
-    (route: ProjectDrawerRoute, routeParams?: Record<string, string>) => {
-      const top = topNavigationRef.current;
-      const stack = top ? top.getState().routes : null;
-      const move = drawerRouteMove(stack?.map((r) => r.name) ?? null, route);
-      if (move === 'none') return;
-      const params = { id: projectId, ...routeParams };
-      if (!top || !stack) {
-        // No focus event yet: the stack is on project home. `route` is the
-        // ProjectDrawerRoute union, so this template literal matches one of
-        // the typed router's declared `/projects/[id]/<route>` pathnames.
-        router.push({ pathname: `/projects/[id]/${route}`, params });
-        return;
-      }
-      if (move === 'push') {
-        top.dispatch(StackActions.push(route, params));
-        return;
-      }
-      if (move === 'pop-to') {
-        top.dispatch(StackActions.popTo(route, params, { merge: true }));
-        return;
-      }
-      // replace and reset remove the view when it is in the stack.
-      if (stack.some((r) => r.name === PROJECT_VIEW_ROUTE)) goHome();
-      if (move === 'replace') {
-        top.dispatch(StackActions.replace(route, params));
-        return;
-      }
-      // reset: keep project home mounted (its route object keeps its key).
-      top.dispatch(CommonActions.reset(homeAndRoute(stack[0], { name: route, params })));
-    },
-    [goHome, router, projectId]
-  );
-
-  // Push a sub-page over the focused route: project Settings from Settings,
-  // Schedules or Secrets from project Settings. Back pops exactly this one.
-  // Reads the live stack, not topRouteRef: a double tap lands before the
-  // first push's focus event.
-  const openSubPage = useCallback(
-    (pageId: SubPageId) => {
-      const top = topNavigationRef.current;
-      if (!top) return;
-      const state = top.getState();
-      const last = state.routes[state.routes.length - 1];
-      const lastPageId = (last?.params as { pageId?: string } | undefined)?.pageId ?? null;
-      const move = subPageOpenMove(last ? { name: last.name, pageId: lastPageId } : null, pageId);
-      if (move === 'none') return;
-      top.dispatch(StackActions.push(PROJECT_PAGE_ROUTE, { id: projectId, pageId }));
-    },
-    [projectId]
-  );
-
-  // Back never leaves the project. iOS: the root stack registers
-  // /projects/[id] with swipe-back off (app/_layout.tsx), and the project
-  // stack has swipe-back off too: the left edge opens the drawer on every
-  // project route. Android back: closes the drawer; on a covering route (the
-  // view, Sessions, Files, or Account) returns to project home; on project
-  // home it is never allowed to pop to a screen below, and with nothing below
-  // the system handles it (app to background).
-  // Only the drawer's switcher row (a picked project) leaves this project;
-  // the project stack itself never pops below it.
-  const drawerOpenRef = useRef(drawerOpen);
-  drawerOpenRef.current = drawerOpen;
-  useFocusEffect(
-    useCallback(() => {
-      if (Platform.OS !== 'android') return undefined;
-      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-        switch (androidBackMove(topRouteRef.current, drawerOpenRef.current)) {
-          case 'close-drawer':
-            setDrawerOpen(false);
-            return true;
-          case 'pop':
-            // A sub-page: back to the screen it was opened from.
-            if (topNavigationRef.current) backFromSubPage(topNavigationRef.current);
-            return true;
-          case 'pop-home':
-            // A page opened over a thread returns to that thread, not to home.
-            if (!returnToThread()) returnHome();
-            return true;
-          case 'home':
-            // `navigation` is the root stack: never pop below the project.
-            return navigation.canGoBack();
-        }
-      });
-      return () => subscription.remove();
-    }, [navigation, returnHome, returnToThread])
+  const { topRouteRef, topNavigationRef, edgeGesture, setEdgeGesture, replaceProject, returnHome, navigateProjectRoute, openSubPage } = useProjectStack(
+    projectId, goHome, returnToThread, drawerOpen, setDrawerOpen,
   );
 
   // ── Presentation glue ──
@@ -631,11 +329,11 @@ export function ProjectScreen() {
   });
   const shownSessionIdRef = useRef(shownSessionId);
   shownSessionIdRef.current = shownSessionId;
-  // The OpenCode id the thread on screen shows (null under a tool page or
+  // The runtime session id the thread on screen shows (null under a tool page or
   // while connecting): which drawer sub-session row is highlighted.
-  const shownOpenCodeId = shownSessionId && !activePageId ? activeSessionId : null;
-  const shownOpenCodeIdRef = useRef(shownOpenCodeId);
-  shownOpenCodeIdRef.current = shownOpenCodeId;
+  const shownRuntimeId = shownSessionId && !activePageId ? activeSessionId : null;
+  const shownRuntimeIdRef = useRef(shownRuntimeId);
+  shownRuntimeIdRef.current = shownRuntimeId;
 
   // Push (components/notifications/PushNotificationsBridge): the session on
   // screen suppresses its own notification banner while this project is on top.
@@ -657,9 +355,9 @@ export function ProjectScreen() {
   }, [pushOpen, projectId, scopeReady, isFocused, handleOpenSessionById]);
 
   // A drawer row (the drawer has already closed itself) that targets one
-  // OpenCode session of `ps`: its root (a session row) or a sub-session (a
+  // runtime session of `ps`: its root (a session row) or a sub-session (a
   // row under it). Another session opens through the connect path. On the
-  // session on screen, another OpenCode session of it only swaps the thread's
+  // session on screen, another runtime session of it only swaps the thread's
   // active id — the same sandbox, no reconnect (the task tool's View does the
   // same) — and the one already showing does nothing more: reopening it would
   // unmount the thread, show Connecting, and rerun the connect loop. While
@@ -667,30 +365,31 @@ export function ProjectScreen() {
   // (`queue`). A sub-session row of another session opens that session and
   // then shows the sub-session (`handleOpenProjectSession` focus).
   const openThreadFromDrawer = useCallback(
-    (ps: ProjectSession, targetOpenCodeId: string | null) => {
+    (ps: ProjectSession, targetRuntimeId: string | null) => {
       const move = drawerThreadMove({
         rowSessionId: ps.session_id,
-        targetOpenCodeId,
+        targetRuntimeId,
         shownSessionId: shownSessionIdRef.current,
-        activeOpenCodeId: shownOpenCodeIdRef.current,
+        activeRuntimeId: shownRuntimeIdRef.current,
       });
       if (move === 'open') {
         // A sub-session row: open its parent, then show the sub-session.
-        const focus = targetOpenCodeId && targetOpenCodeId !== ps.opencode_session_id ? targetOpenCodeId : undefined;
+        const rootId = ps.runtime_session_id ?? ps.opencode_session_id;
+        const focus = targetRuntimeId && targetRuntimeId !== rootId ? targetRuntimeId : undefined;
         handleOpenProjectSession(ps, focus);
         return;
       }
       haptics.tap();
-      if (move === 'focus' && targetOpenCodeId) navigateToSession(targetOpenCodeId);
+      if (move === 'focus' && targetRuntimeId) navigateToSession(targetRuntimeId);
       // Still connecting: the thread opens on the target when it connects.
-      if (move === 'queue' && targetOpenCodeId) {
-        pendingThreadFocusRef.current = { sessionId: ps.session_id, openCodeId: targetOpenCodeId };
+      if (move === 'queue' && targetRuntimeId) {
+        pendingThreadFocusRef.current = { sessionId: ps.session_id, runtimeId: targetRuntimeId };
       }
     },
     [handleOpenProjectSession, navigateToSession]
   );
   const openSessionFromDrawer = useCallback(
-    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.opencode_session_id ?? null),
+    (ps: ProjectSession) => openThreadFromDrawer(ps, ps.runtime_session_id ?? ps.opencode_session_id ?? null),
     [openThreadFromDrawer]
   );
   const openSubsessionFromDrawer = useCallback(
@@ -706,7 +405,7 @@ export function ProjectScreen() {
       <ProjectLeftDrawer
         projectId={projectId}
         activeProjectSessionId={shownSessionId}
-        activeOpenCodeSessionId={shownOpenCodeId}
+        activeRuntimeSessionId={shownRuntimeId}
         activeParentSessionId={activeProjectSession ? sessionParentId(activeProjectSession) : null}
         reviewNeedsYouCount={reviewNeedsYouCount}
         needsYouBySession={needsYouSessions}
@@ -724,7 +423,7 @@ export function ProjectScreen() {
     [
       projectId,
       shownSessionId,
-      shownOpenCodeId,
+      shownRuntimeId,
       drawerOpen,
       reviewNeedsYouCount,
       returnHome,
@@ -780,8 +479,8 @@ export function ProjectScreen() {
   }, [renderedOpenedThread, keptOpenedThread]);
 
   // While the computer wakes, the connecting view shows the session's saved
-  // copy (lib/session/saved-copy.ts): the one this device kept, then the
-  // server's, painted into the sync store under the session's OpenCode root.
+  // copy (hooks/useSavedCopy.ts): the one this device kept, then the server's,
+  // painted into the SDK's session store under the session's runtime root.
   // `SessionPage` then opens on the same messages and its first runtime read
   // settles them. Only while the connecting view is on screen. A sub-agent's
   // thread reads its own saved window (`child`).
@@ -789,59 +488,29 @@ export function ProjectScreen() {
   const savedCopyTarget = !showingConnecting
     ? null
     : connectingProjectSessionId
-      ? { sessionId: connectingProjectSessionId, rootId: connectingRow?.opencode_session_id ?? null, child: false }
+      ? {
+          sessionId: connectingProjectSessionId,
+          rootId: connectingRow?.runtime_session_id ?? connectingRow?.opencode_session_id ?? null,
+          child: false,
+        }
       : activeProjectSession && activeSessionId
         ? { sessionId: activeProjectSession.session_id, rootId: activeSessionId, child: !!activeSubsession }
         : null;
   const savedCopySessionId = savedCopyTarget?.sessionId ?? null;
   const savedCopyRootId = savedCopyTarget?.rootId ?? null;
   const savedCopyChild = savedCopyTarget?.child ?? false;
-  // The root a saved copy proved empty (`SavedCopyOutcome.empty`): the view
-  // opens on its composer instead of a loader.
-  const [emptyProvenFor, setEmptyProvenFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-    let current = true;
-    void loadSavedCopy({
-      projectId,
-      sessionId: savedCopySessionId,
-      rootId: savedCopyRootId,
-      child: savedCopyChild,
-    }).then((outcome) => {
-      if (current && outcome.empty) setEmptyProvenFor(savedCopyRootId);
-    });
-    return () => {
-      current = false;
-    };
-  }, [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]);
-  const savedCopyMessages = useSyncStore((state) =>
-    savedCopyRootId ? state.messages[savedCopyRootId] : undefined
+  // `empty`: the saved copy proved the root empty (`SavedCopyRead.empty`), so
+  // the view opens on its composer instead of a loader.
+  const savedCopyHookTarget = useMemo(
+    () =>
+      projectId && savedCopySessionId && savedCopyRootId
+        ? { projectId, sessionId: savedCopySessionId, rootId: savedCopyRootId, child: savedCopyChild }
+        : null,
+    [projectId, savedCopySessionId, savedCopyRootId, savedCopyChild]
   );
-  const connectingEmpty = !!savedCopyRootId && emptyProvenFor === savedCopyRootId && !connectingFirstPrompt;
-  // A message typed while the computer wakes queues through the prompt inbox
-  // (lib/session/connecting-send.ts), as the web does: never to a sub-agent,
-  // never over a failure, and only where the thread is on screen.
-  const canQueueWhileWaking =
-    !!projectId &&
-    !!savedCopySessionId &&
-    !!savedCopyRootId &&
-    !savedCopyChild &&
-    !connectError &&
-    (connectingEmpty || (savedCopyMessages?.length ?? 0) > 0);
-  const handleWakingSend = useCallback(
-    (text: string) => {
-      if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-      void queuePromptWhileWaking({
-        projectId,
-        projectSessionId: savedCopySessionId,
-        rootId: savedCopyRootId,
-        text,
-        randomUUID: Crypto.randomUUID,
-      });
-    },
-    [projectId, savedCopySessionId, savedCopyRootId]
-  );
-
+  const savedCopy = useSavedCopy(savedCopyHookTarget);
+  const savedCopyMessages = savedCopy.messages;
+  const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
@@ -933,12 +602,16 @@ export function ProjectScreen() {
               restarting={restartingSession}
               showLoader={!drawerOpen}
               messages={savedCopyMessages}
-              statusLabel={
-                canQueueWhileWaking ? SESSION_NOTICE.waking : (sessionConnectionLabel('waking')?.label ?? null)
-              }
+              statusLabel={WAKING_NOTICE}
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
-              onSend={canQueueWhileWaking ? handleWakingSend : undefined}
+              projectId={projectId}
+              projectSessionId={
+                activeProjectSession?.session_id ??
+                connectingProjectSessionId ??
+                (activeSessionId ? openedProjectSessionIdsRef.current[activeSessionId] : undefined) ??
+                undefined
+              }
             />
           </View>
         ) : null}
@@ -969,16 +642,29 @@ export function ProjectScreen() {
   );
 
   // Project home — Kortix symbol, composer.
-  const homeContent = (
-    <View className="flex-1 bg-background">
-      <ProjectHome
-        projectId={projectId}
-        sending={isDashboardSending}
-        onSubmitNewSession={handleDashboardSend}
-        onOpenDrawer={openDrawer}
-        takeInitialDraft={takeInitialDraft}
-      />
-    </View>
+  // Memoized: `projectRoute` is a new object each render, so a stable element
+  // is what lets React skip home when only `drawerOpen` or a poll changed.
+  // `handleDashboardSend` changes with the create mutation and toast objects,
+  // so home gets a stable wrapper that calls the latest one.
+  const dashboardSendRef = useRef(handleDashboardSend);
+  dashboardSendRef.current = handleDashboardSend;
+  const submitNewSession = useCallback<typeof handleDashboardSend>(
+    (submit) => dashboardSendRef.current(submit),
+    []
+  );
+  const homeContent = useMemo(
+    () => (
+      <View className="flex-1 bg-background">
+        <ProjectHome
+          projectId={projectId}
+          sending={isDashboardSending}
+          onSubmitNewSession={submitNewSession}
+          onOpenDrawer={openDrawer}
+          takeInitialDraft={takeInitialDraft}
+        />
+      </View>
+    ),
+    [projectId, isDashboardSending, submitNewSession, openDrawer, takeInitialDraft]
   );
 
   const projectRoute: ProjectRouteValue = {
@@ -1037,6 +723,9 @@ export function ProjectScreen() {
         openSpringConfig={DRAWER_OPEN}
         closeSpringConfig={DRAWER_CLOSE}
         renderDrawerContent={renderDrawer}>
+        {/* The SDK's project scope: its runtime hooks read this project's model
+            mode from it (`useRuntimeProviders`). */}
+        <KortixProjectProvider projectId={projectId}>
         <ProjectRouteProvider value={projectRoute}>
           {/* Native Stack: platform default push/pop. No iOS swipe-back: the
               left edge belongs to the drawer on every project route, except
@@ -1063,6 +752,7 @@ export function ProjectScreen() {
             <Stack.Screen name={PROJECT_PAGE_ROUTE} options={{ gestureEnabled: true }} />
           </Stack>
         </ProjectRouteProvider>
+        </KortixProjectProvider>
       </Drawer>
 
       {/* One session actions sheet (COR-140 Task 5): the thread's "···", the

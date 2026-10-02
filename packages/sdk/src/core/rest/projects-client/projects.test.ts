@@ -975,7 +975,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'pi_harness',
     'agent_principal',
-    'teams',
+    'us_region',
     'warm_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
@@ -1011,6 +1011,12 @@ test('session_transcript_history graduated: saved history is always on, the key 
   // Every session saves its transcript and shows it while its computer is off.
   // The API no longer serves `session_transcript_history`.
   const graduated: FeatureFlagKey = 'session_transcript_history';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
+test('teams graduated: Microsoft Teams needs no flag, the key still typechecks', () => {
+  // Every project can connect Teams. The API no longer serves `teams`.
+  const graduated: FeatureFlagKey = 'teams';
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 

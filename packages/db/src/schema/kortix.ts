@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -20,6 +21,11 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export const kortixSchema = pgSchema('kortix');
+
+export const usedRefreshTokens = kortixSchema.table('used_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
 
 export const sandboxStatusEnum = kortixSchema.enum('sandbox_status', [
   'provisioning',
@@ -1028,10 +1034,11 @@ export const projectSessions = kortixSchema.table(
     sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
     sandboxId: text('sandbox_id'),
     sandboxUrl: text('sandbox_url'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     agentName: text('agent_name').default('default').notNull(),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
+    labels: jsonb('labels').$type<string[]>().default([]).notNull(),
     // Session ownership + org-visibility (default private to the creator).
     createdBy: uuid('created_by'),
     visibility: projectSessionVisibilityEnum('visibility').default('private').notNull(),
@@ -1464,6 +1471,10 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastStatus: varchar('last_status', { length: 32 }),
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+    // When the current streak of failed RUNS began; null once a run finishes.
+    // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
+    // owner is pushed only when it goes from null to set.
+    runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
     // Account-local sharing policy for sessions created by this trigger. The
     // portable manifest cannot contain member/group ids from one account.
     sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
@@ -1801,7 +1812,7 @@ export const chatChannelBindings = kortixSchema.table(
     // default. Sessions started from this channel inherit these so different
     // channels bound to the same project can run different agents/models.
     agentName: varchar('agent_name', { length: 128 }),
-    opencodeModel: varchar('opencode_model', { length: 128 }),
+    model: varchar('opencode_model', { length: 128 }),
     // How Slack users may participate in sessions started from this channel.
     // Default is project-wide sharing: linked project members can join the
     // Slack thread. Teams can opt into owner approval or owner-only.
@@ -1924,6 +1935,12 @@ export const chatUserIdentities = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     linkedAt: timestamp('linked_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // When the Kortix session that made this link had passed a second factor
+    // (Supabase `aal2`). An account that requires MFA accepts chat actions
+    // only through a link made that way: a chat message carries no factor of
+    // its own. Null for a link made without one, and for links older than
+    // this column.
+    mfaVerifiedAt: timestamp('mfa_verified_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('idx_chat_user_identities_platform_user').on(
@@ -2177,7 +2194,7 @@ export const sessionTurns = kortixSchema.table(
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
     // OpenCode root this turn runs in. Null until the daemon reports it.
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     // Client-minted OpenCode user message id. Null for command turns.
     messageId: text('message_id'),
     state: varchar('state', { length: 16 }).default('delivering').notNull(),
@@ -2252,7 +2269,7 @@ export const sessionTranscriptMirrors = kortixSchema.table(
     // The OpenCode root the captured messages belong to. A re-pin (a restarted
     // box adopting a different root) makes the previous rows unreachable, so
     // the writer clears them when this changes.
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     // TRUE only when a capture proved it had seen the session's FIRST message
     // (the box returned fewer messages than the capture window). This is the
     // single bit `complete` is derived from; it is never assumed. Retention
@@ -2307,7 +2324,7 @@ export const sessionTranscriptMessages = kortixSchema.table(
     // `info.parentID` — the turn linkage OpenCode itself records (which user
     // message a step was parented on). Null on messages that carry none.
     parentMessageId: text('parent_message_id'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     role: text('role').notNull(),
     // Denormalized out of `info` so ordering and retention are index reads.
     // Order is (message_created_at, message_id) — the order OpenCode's own
@@ -2373,8 +2390,12 @@ export const sessionRuntimeProjections = kortixSchema.table(
     /** The sandbox that produced it. Names the winner when a warm fork adopts. */
     externalId: text('external_id').notNull(),
     // ── identity (the freshness check reads these, never the jsonb) ──────────
-    opencodeSessionId: text('opencode_session_id'),
-    opencodeVersion: text('opencode_version'),
+    /** The document format, `kortix.runtime.v1`. Null on a row a pre-W5 daemon wrote. */
+    schema: text('schema'),
+    /** `opencode` or `pi`. Null on a row a pre-W5 daemon wrote. */
+    harness: text('harness'),
+    runtimeSessionId: text('opencode_session_id'),
+    harnessVersion: text('opencode_version'),
     agentConfigEtag: text('agent_config_etag'),
     daemonBuild: bigint('daemon_build', { mode: 'number' }),
     /** Daemon boot id. `seq` is meaningless outside it. */
@@ -2733,9 +2754,6 @@ export const legacySandboxMigrations = kortixSchema.table(
     mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
     plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
     rollback: jsonb('rollback').default({}).$type<Record<string, unknown>>().notNull(),
-    // base64 tar.gz of the legacy OpenCode store; source for on-open chat
-    // rehydrate (see migration 00000000000097). Large — select explicitly.
-    opencodeArchive: text('opencode_archive'),
     error: text('error'),
     // Durable runner state (see migration 00000000000096). `phase` is the current
     // step the resume worker continues from; `progress` accumulates per-step
@@ -3245,19 +3263,29 @@ export const accountGithubInstallationsRelations = relations(
   }),
 );
 
-export const auditEvents = kortixSchema.table(
-  'audit_events',
-  {
-    eventId: uuid('event_id').defaultRandom().primaryKey(),
+/**
+ * The columns of an audit event, as fresh builders on every call. One definition for
+ * `audit_events` (the table writers use) and the read view `audit_events_all`, so the two can
+ * never drift in this file. The database side, including `audit_events_legacy`, is guarded by
+ * audit-events-partitioned.integration.test.ts.
+ */
+function auditEventColumns() {
+  return {
+    // UUIDv7 (migration 20261002..._audit_events_uuid_v7): the leading 48 bits are the
+    // creation time in ms, so new ids append at the right edge of the pkey btree
+    // instead of landing on a random cold page. Rows written before it keep their v4 id.
+    eventId: uuid('event_id').default(sql`kortix.uuid_v7()`).notNull(),
     // Deliberately no FK. Account deletion must not rewrite or delete forensic history.
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
     sessionId: text('session_id'),
-    opencodeSessionId: text('opencode_session_id'),
+    runtimeSessionId: text('opencode_session_id'),
     turnId: text('turn_id'),
     messageId: text('message_id'),
     toolCallId: text('tool_call_id'),
     executionId: text('execution_id'),
+    /** Deprecated: set only on rows written before 2026-10 (the allocator and its lock left
+     *  the ingest path). NULL for newer rows; the session log orders those by event_id. */
     sessionSequence: bigint('session_sequence', { mode: 'number' }),
     actorUserId: uuid('actor_user_id'),
     actorType: text('actor_type'),
@@ -3273,7 +3301,13 @@ export const auditEvents = kortixSchema.table(
     delegationDepth: integer('delegation_depth').default(0).notNull(),
     source: text('source'),
     authoritativeSource: text('authoritative_source'),
+    /** Deprecated: never written since the credential-source audit. Phase 2 drops it. */
     clientReportedSource: text('client_reported_source'),
+    /** What the API authenticated: browser_session | personal_access_token | oauth_app |
+     *  session_token | api_key | service_account | scim_token. NULL = not known. */
+    credentialKind: text('credential_kind'),
+    /** Identifier of that credential (token id, OAuth client id, session id, key id). Never a secret. */
+    credentialId: text('credential_id'),
     outcome: text('outcome'),
     action: text('action').notNull(),
     phase: text('phase').default('completed').notNull(),
@@ -3294,7 +3328,9 @@ export const auditEvents = kortixSchema.table(
     outputSha256: varchar('output_sha256', { length: 64 }),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
+    /** Deprecated: the hash chain left ingestion in 2026-10. NULL for newer rows. */
     integrityPreviousHash: varchar('integrity_previous_hash', { length: 64 }),
+    /** Deprecated: see integrityPreviousHash. */
     integrityHash: varchar('integrity_hash', { length: 64 }),
     before: jsonb('before').$type<Record<string, unknown> | null>(),
     after: jsonb('after').$type<Record<string, unknown> | null>(),
@@ -3302,11 +3338,21 @@ export const auditEvents = kortixSchema.table(
     userAgent: text('user_agent'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
-  },
+  };
+}
+
+export const auditEvents = kortixSchema.table(
+  'audit_events',
+  auditEventColumns(),
   (table) => [
+    // `audit_events` is RANGE-partitioned by occurred_at, one partition per week (migrations
+    // 20261001225732505 and 20261001225732973). drizzle-kit has no syntax for that: this
+    // declares the parent's columns and indexes, which PostgreSQL copies onto every partition.
+    // A unique index on a partitioned table must contain the partition key, so the primary key
+    // and the dedupe index below carry occurred_at.
+    primaryKey({ name: 'audit_events_pkey', columns: [table.eventId, table.occurredAt] }),
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
-    index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
     index('idx_audit_events_account_project_time').on(
       table.accountId,
       table.projectId,
@@ -3317,21 +3363,20 @@ export const auditEvents = kortixSchema.table(
       table.sessionId,
       table.occurredAt,
     ),
-    index('idx_audit_events_account_project_sequence').on(
-      table.accountId,
-      table.projectId,
-      table.sessionSequence,
-    ),
-    index('idx_audit_events_account_session_sequence').on(
-      table.accountId,
-      table.sessionId,
-      table.sessionSequence,
-    ),
+    // Dropped 2026-10-01 (migration 20261001214716390_drop_unused_audit_events_indexes):
+    // `idx_audit_events_account_project_sequence` (account_id, project_id,
+    // session_sequence), `idx_audit_events_account_session_sequence` (account_id,
+    // session_id, session_sequence) and `idx_audit_events_resource` (resource_type,
+    // resource_id). 22 GB, one index write each on every audit row. No query orders
+    // by session_sequence under an account/project predicate (the only
+    // session_sequence read is the session_id-only index below), and no query
+    // filters resource_id; resource_type is matched with LIKE 'x%', which a
+    // default-collation (en_US.UTF-8) btree cannot serve.
     // The per-session audit read (GET /v1/projects/:id/sessions/:id/audit)
     // filters on `session_id` ALONE and orders by (session_sequence, event_id)
     // — deliberately without an account predicate, because chain rows written
     // before account resolution (auth.login.success) or from project-neutral
-    // endpoints would vanish from the middle of the integrity chain. Every
+    // endpoints would vanish from the session's log. Every
     // other index on this table leads with account_id/actor/resource, so that
     // query seq-scanned the whole ledger and died on the 25 s statement
     // timeout (57014) on the request path (prod, 2026-09-25). This index leads
@@ -3365,11 +3410,14 @@ export const auditEvents = kortixSchema.table(
         table.sourceRecordId,
         table.phase,
         sql`coalesce(${table.sourceRevision}, '')`,
+        table.occurredAt,
       )
       .where(sql`${table.sourceLedger} is not null and ${table.sourceRecordId} is not null`),
     index('idx_audit_events_action_pattern').using('btree', sql`${table.action} text_pattern_ops`),
-    index('idx_audit_events_request').on(table.requestId),
-    index('idx_audit_events_correlation').on(table.correlationId),
+    index('idx_audit_events_request').on(table.requestId).where(sql`${table.requestId} is not null`),
+    index('idx_audit_events_correlation')
+      .on(table.correlationId)
+      .where(sql`${table.correlationId} is not null`),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
@@ -3382,6 +3430,38 @@ export const auditEvents = kortixSchema.table(
   ],
 );
 
+/**
+ * The relation every audit READ goes through (`SELECT * FROM audit_events` today; after the
+ * partition cutover, the partitioned table UNION ALL `audit_events_legacy`). Writers keep
+ * using `auditEvents`. Migration 20261001225220282_audit_events_all_view.
+ */
+export const auditEventsAll = kortixSchema.view('audit_events_all', auditEventColumns()).existing();
+
+/**
+ * One row per week of audit history the archive job has exported to S3 (weeks start Monday 00:00
+ * UTC). `status`: exporting -> archived (verified in S3, still readable in PostgreSQL) -> removed
+ * (the partition, and the legacy table for weeks it covered, are gone from PostgreSQL) or expired
+ * (older than the 365-day retention: dropped, never exported). A reader serves a week from S3 only
+ * when `archived`/`removed` AND the PostgreSQL relations that held it are gone.
+ */
+export const auditArchiveChunks = kortixSchema.table('audit_archive_chunks', {
+  weekStart: date('week_start', { mode: 'string' }).primaryKey(),
+  status: text('status').notNull(),
+  rowCount: bigint('row_count', { mode: 'number' }).default(0).notNull(),
+  legacyRowCount: bigint('legacy_row_count', { mode: 'number' }).default(0).notNull(),
+  objectCount: integer('object_count').default(0).notNull(),
+  byteCount: bigint('byte_count', { mode: 'number' }).default(0).notNull(),
+  manifestKey: text('manifest_key'),
+  /** sha256 hex of the manifest object. */
+  manifestSha256: varchar('manifest_sha256', { length: 64 }),
+  retainUntil: timestamp('retain_until', { withTimezone: true }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  removedAt: timestamp('removed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
+ *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */
 export const auditSessionSequences = kortixSchema.table('audit_session_sequences', {
   sessionId: text('session_id').primaryKey(),
   lastSequence: bigint('last_sequence', { mode: 'number' }).default(0).notNull(),
@@ -3834,9 +3914,9 @@ export const sessionPendingQuestions = kortixSchema.table(
     sessionId: text('session_id').notNull(),
     /** opencode's `question.asked` request id — the dedupe key with sessionId. */
     requestId: text('request_id').notNull(),
-    /** The opencode session that asked; survives an opencode restart changing it. */
-    opencodeSessionId: text('opencode_session_id'),
-    /** The raw QuestionInfo[] as opencode reported it. */
+    /** The runtime session that asked; survives a runtime restart changing it. */
+    runtimeSessionId: text('opencode_session_id'),
+    /** RuntimeQuestion[] (`@kortix/api-contract/transcript`), as `/turn-question` coerced it. */
     questions: jsonb().notNull(),
     askedAt: timestamp('asked_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
     /** Null while the question is still open — the index keys on this. */
@@ -4352,6 +4432,8 @@ export interface TunnelMachineInfo {
   osVersion?: string;
   nodeVersion?: string;
   agentVersion?: string;
+  /** sha256 of the hardware id (IOPlatformUUID, /etc/machine-id, MachineGuid). */
+  machineId?: string;
   [key: string]: unknown;
 }
 
@@ -4536,6 +4618,10 @@ export const tunnelDeviceAuthRequests = kortixSchema.table(
     deviceSecretHash: varchar('device_secret_hash', { length: 128 }).notNull(),
     status: tunnelDeviceAuthStatusEnum('status').default('pending').notNull(),
     machineHostname: varchar('machine_hostname', { length: 255 }),
+    /** sha256 of the machine's hardware id, sent by the agent. Approval reuses
+     *  the approver's existing registration of the same machine
+     *  (`tunnel_connections.machine_info.machineId`) instead of pairing a new one. */
+    machineId: varchar('machine_id', { length: 64 }),
     accountId: uuid('account_id'),
     /** Project the machine asked to join (`connect --project-id`). Untrusted
      *  until a human approves; the approver's project access is checked then. */
@@ -5338,11 +5424,8 @@ export const auditWebhookDeliveries = kortixSchema.table(
       columns: [table.webhookId],
       foreignColumns: [auditWebhooks.webhookId],
     }).onDelete('cascade'),
-    foreignKey({
-      name: 'audit_delivery_event_fk',
-      columns: [table.eventId],
-      foreignColumns: [auditEvents.eventId],
-    }).onDelete('cascade'),
+    // No FK on event_id: audit_events is partitioned, so event_id alone is not unique
+    // (migration 20261001225732090).
     uniqueIndex('idx_audit_webhook_delivery_event').on(table.webhookId, table.eventId),
     index('idx_audit_webhook_delivery_due').on(
       table.status,
@@ -6403,6 +6486,31 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
   }).onDelete('cascade'),
   index('session_user_provider_connections_connection').on(table.connectionId),
 ]);
+
+/** One lease per signed-in user's visible browser tab and session. */
+export const sessionPresenceLeases = kortixSchema.table('session_presence_leases', {
+  userId: uuid('user_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  tabId: uuid('tab_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.sessionId, table.tabId] }),
+  // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
+  foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_presence_session_fk' }).onDelete('cascade'),
+]);
+
+/**
+ * Audit reconciliation high-water mark, one row per account. `checked_at` is
+ * the start of the account's last COMPLETE pass: the next pass scans only
+ * source rows newer than it (minus a lookback). `full_scan_at` is the start of
+ * the last pass over the whole history, which re-verifies old rows weekly.
+ * Written only when a pass completes, so a crash resumes from the old mark.
+ */
+export const auditReconciliationState = kortixSchema.table('audit_reconciliation_state', {
+  accountId: uuid('account_id').primaryKey(),
+  checkedAt: timestamp('checked_at', { withTimezone: true }).notNull(),
+  fullScanAt: timestamp('full_scan_at', { withTimezone: true }).notNull(),
+});
 
 /**
  * A user's Expo push device token plus that device's per-event notification

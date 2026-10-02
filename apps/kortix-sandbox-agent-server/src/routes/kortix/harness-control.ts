@@ -14,6 +14,8 @@ import { createPartRouter } from './part'
 import { createLogsRouter } from './logs'
 import { createDiagRouter } from './diag'
 import { createRuntimeRouter } from './runtime'
+import { LEGACY_RUNTIME_MOUNT } from './legacy-names'
+import { RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay'
 
 export interface HarnessRouteContext {
   cfg: Config
@@ -36,7 +38,9 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   }
   // `config.release.v1`: the API may send POST /kortix/config/converge.
   // Advertised only by a control that implements it.
-  mount('/health', createHealthRouter(context, harness.diagnostics, control.convergeConfig ? ['config.release.v1'] : []))
+  // `runtime.turns.v1`: the Kortix turn verbs below. Both harnesses serve them.
+  const capabilities = [RUNTIME_TURNS_CAPABILITY, ...(control.convergeConfig ? ['config.release.v1'] : [])]
+  mount('/health', createHealthRouter(context, harness.diagnostics, capabilities))
   mount('/refresh', createRefreshRouter(context.cfg, control))
   mount('/config', createConfigRouter(context.cfg, control))
   mount('/catalog', createCatalogRouter(context.cfg, control))
@@ -45,7 +49,12 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   mount('/logs', createLogsRouter(context.cfg, harness.diagnostics))
   mount('/diag', createDiagRouter(context, harness.diagnostics))
   if (context.projectEnv) mount('/env', createEnvRouter(context.cfg, control))
-  // Preserve the existing URL. It is a compatibility contract, not selection.
-  mount('/opencode', createRuntimeRouter(context.cfg, queries))
+  // The Runtime API, and its pre-W3 mount that an older API still calls.
+  const runtimeRouter = createRuntimeRouter(context.cfg, queries, {
+    turns: harness.turns,
+    readiness: () => harness.proxy.readiness(context),
+  })
+  mount('/runtime', runtimeRouter)
+  mount(LEGACY_RUNTIME_MOUNT, runtimeRouter)
   return router
 }

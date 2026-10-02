@@ -8,15 +8,15 @@ import { mentionsUser } from '../channels/slack/util';
 // reply this predicate was extracted for).
 describe('mentionsUser', () => {
   test('the plain render', () => {
-    expect(mentionsUser('<@U0KORTIXBOT> hey man', 'U0KORTIXBOT')).toBe(true);
+    expect(mentionsUser('<@U0TESTKRTX1> hey man', 'U0TESTKRTX1')).toBe(true);
   });
 
   test('the <@ID|label> render Slack still emits', () => {
-    expect(mentionsUser('<@U0KORTIXBOT|kortix> hey', 'U0KORTIXBOT')).toBe(true);
+    expect(mentionsUser('<@U0TESTKRTX1|kortix> hey', 'U0TESTKRTX1')).toBe(true);
   });
 
   test('a different bot in the same message is not us', () => {
-    expect(mentionsUser('<@U0KORTIXBOT> hey man', 'U0REPORTBOT')).toBe(false);
+    expect(mentionsUser('<@U0TESTKRTX1> hey man', 'U0TESTOTHR1')).toBe(false);
   });
 
   test('mentioned among others', () => {
@@ -26,17 +26,17 @@ describe('mentionsUser', () => {
   // A prefix must not match a longer id, or every project whose bot id starts
   // with another's would answer for it.
   test('a prefix of a longer id is not a match', () => {
-    expect(mentionsUser('<@U0KORTIXBOT> hi', 'U0KORTIXBO')).toBe(false);
+    expect(mentionsUser('<@U0TESTKRTX1> hi', 'U0TESTKRTX')).toBe(false);
   });
 
   test('the bare id without Slack’s wrapper is not a mention', () => {
-    expect(mentionsUser('talk to U0KORTIXBOT about it', 'U0KORTIXBOT')).toBe(false);
+    expect(mentionsUser('talk to U0TESTKRTX1 about it', 'U0TESTKRTX1')).toBe(false);
   });
 
   test('an empty or malformed id never matches', () => {
-    expect(mentionsUser('<@U0KORTIXBOT> hi', '')).toBe(false);
+    expect(mentionsUser('<@U0TESTKRTX1> hi', '')).toBe(false);
     // Regex metacharacters must not be able to widen the pattern into a wildcard.
-    expect(mentionsUser('<@U0KORTIXBOT> hi', '.*')).toBe(false);
-    expect(mentionsUser('<@U0KORTIXBOT> hi', 'U0KORTIXBOT|X')).toBe(false);
+    expect(mentionsUser('<@U0TESTKRTX1> hi', '.*')).toBe(false);
+    expect(mentionsUser('<@U0TESTKRTX1> hi', 'U0TESTKRTX1|X')).toBe(false);
   });
 });

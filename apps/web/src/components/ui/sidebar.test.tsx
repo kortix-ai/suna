@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Sidebar, SidebarEdgePeek, SidebarProvider, SidebarRail } from './sidebar';
+import { Sidebar, SidebarEdgePeek, SidebarInset, SidebarProvider, SidebarRail, SidebarTrigger } from './sidebar';
 import { SIDEBAR_MAX_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, SIDEBAR_WIDTH_PX } from './sidebar-width';
 
 function renderShell(defaultOpen: boolean) {
@@ -134,15 +134,16 @@ describe('Sidebar motion contract', () => {
 
   test('a keyboard-initiated collapse zeroes the slide', () => {
     const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const panel = readFileSync(new URL('./sidebar-panel.tsx', import.meta.url), 'utf8');
     const context = readFileSync(new URL('./sidebar-context.tsx', import.meta.url), 'utf8');
     // ⌘B sets the flag...
     expect(source).toContain('toggleSidebar({ instant: true })');
     // ...an Enter/Space click on a toggle button sets it via `detail === 0`...
     expect(context).toContain('options?.instant ?? options?.detail === 0');
     // ...and the flag wins the twMerge duration group.
-    expect(source).toContain("instantToggle && 'duration-0'");
+    expect(panel).toContain("instantToggle && 'duration-0'");
     // The undocking window is skipped too, so nothing is left mid-slide.
-    expect(source).toContain("slides && state === 'collapsed' && !instantToggle");
+    expect(panel).toContain("slides && state === 'collapsed' && !instantToggle");
   });
 
   test('the instant flag is released after a paint, not on a timeout', () => {
@@ -170,7 +171,7 @@ describe('Sidebar motion contract', () => {
     expect(declared).toBe('240');
     // Same number, in the class the timer has to outlive. If one moves without
     // the other, the flyout card lands while the panel is still on screen.
-    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./sidebar-panel.tsx', import.meta.url), 'utf8');
     expect(source).toContain("undocking ? 'duration-[240ms]' : 'duration-[200ms]'");
   });
 
@@ -181,7 +182,7 @@ describe('Sidebar motion contract', () => {
   test('the flyout card chrome is gated on the flyout box, not on being collapsed', () => {
     // `flyout` excludes the undocking window, so the exit slide keeps flush
     // docked chrome and no radius/shadow appears mid-flight.
-    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./sidebar-panel.tsx', import.meta.url), 'utf8');
     expect(source).toContain(
       "flyout && 'border-border overflow-hidden rounded-lg border shadow-xl'",
     );
@@ -190,7 +191,7 @@ describe('Sidebar motion contract', () => {
   test('the collapse phase is derived during render, never in an effect', () => {
     // An effect would commit one frame in flyout geometry first, and that
     // single frame IS the pop.
-    const source = readFileSync(new URL('./sidebar.tsx', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./sidebar-panel.tsx', import.meta.url), 'utf8');
     expect(source).toContain('if (renderedState !== state) {');
   });
 });
@@ -229,5 +230,20 @@ describe('SidebarRail', () => {
 describe('SidebarProvider width', () => {
   test('renders the default width when no cookie has been written', () => {
     expect(renderShell(true)).toContain('--sidebar-width:20rem');
+  });
+});
+
+// Public barrel consumers must retain panel slots and trigger semantics after extraction.
+describe('Sidebar panel barrel contract', () => {
+  test('trigger and inset keep their slots and accessibility label', () => {
+    const html = renderToStaticMarkup(
+      <SidebarProvider>
+        <SidebarTrigger />
+        <SidebarInset>panel content</SidebarInset>
+      </SidebarProvider>,
+    );
+    expect(html).toContain('data-slot="sidebar-trigger"');
+    expect(html).toContain('data-slot="sidebar-inset"');
+    expect(html).toContain('panel content');
   });
 });

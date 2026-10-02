@@ -6,7 +6,7 @@ import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
 import { contract } from '../query-contracts';
 import { qk } from '../query-keys';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
@@ -34,9 +34,9 @@ import { shouldLoadProjectModelPicker } from './provider-load-plan';
 
 export { GATEWAY_PROVIDER_IDS };
 
-export function useOpenCodeProviders() {
+export function useRuntimeProviders() {
   const queryClient = useQueryClient();
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   const projectId = useKortixRouteProjectId();
   const projectDetailQuery = useQuery({
     // Same fetcher and same response shape every other `getProjectDetail`
@@ -92,7 +92,7 @@ export function useOpenCodeProviders() {
   // in one project must not leak into another or remain after removal.
   const nativeCacheScope = projectId ? `proj:${projectId}:native` : CACHE_SCOPE_GLOBAL;
   const nativeProvidersQuery = useQuery<ProviderListResponse>({
-    queryKey: projectId ? ['project-providers', projectId, 'native'] : opencodeKeys.providers(),
+    queryKey: projectId ? ['project-providers', projectId, 'native'] : runtimeKeys.providers(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
@@ -197,3 +197,7 @@ export function useOpenCodeProviders() {
   }
   return nativeProvidersQuery;
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `useRuntimeProviders`. Removed in the next major. */
+export const useOpenCodeProviders = useRuntimeProviders;

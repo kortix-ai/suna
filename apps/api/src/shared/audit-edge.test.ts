@@ -15,7 +15,16 @@ let auditRows: Array<Record<string, unknown>> = [];
 function captured(values: Record<string, unknown> | Array<Record<string, unknown>>) {
   for (const row of Array.isArray(values) ? values : [values]) auditRows.push(row);
   return {
-    returning: async () => [{ eventId: 'audit_test' }],
+    returning: async () => {
+      if (
+        !Array.isArray(values) &&
+        (values.metadata as Record<string, unknown> | undefined)?.fail
+      ) {
+        auditRows.pop();
+        throw new Error('audit insert failed');
+      }
+      return [{ eventId: 'audit_test' }];
+    },
     onConflictDoNothing: async () => undefined,
   };
 }
@@ -36,7 +45,9 @@ mock.module('./db', () => ({
 
 const { runInboundAudit } = await import('./audit-edge');
 const { auditApiRequest, flushAuditEvents } = await import('./audit');
-const { bindAuditPrincipal, setInboundAuditEntrypoint } = await import('./audit-scope');
+const { annotateAuditEvent, bindAuditPrincipal, setInboundAuditEntrypoint } = await import(
+  './audit-scope'
+);
 
 const USER = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
@@ -107,7 +118,11 @@ describe('every entrypoint is written exactly once', () => {
     });
 
     expect(auditRows).toHaveLength(1);
-    expect(auditRows[0]).toMatchObject({ actorType: 'anonymous', outcome: 'denied', httpStatus: 401 });
+    expect(auditRows[0]).toMatchObject({
+      actorType: 'anonymous',
+      outcome: 'denied',
+      httpStatus: 401,
+    });
   });
 
   test('a request dispatched into Hono is written once, with the status Hono saw', async () => {
@@ -137,6 +152,25 @@ describe('every entrypoint is written exactly once', () => {
       actorType: 'human',
       httpStatus: 502,
     });
+  });
+
+  test('a failed explicit audit write does not suppress the implicit request row', async () => {
+    const [req, url] = inbound('/v1/projects');
+    await runInboundAudit(req, url, async () => {
+      const { recordAuditEvent } = await import('./audit');
+      annotateAuditEvent({ action: 'project.list' });
+      // The explicit event fails before persistence; the request row remains required.
+      await expect(
+        recordAuditEvent({
+          action: 'project.list',
+          resourceType: 'project',
+          metadata: { fail: true },
+        }),
+      ).rejects.toThrow('audit insert failed');
+      return new Response('ok');
+    });
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]).toMatchObject({ httpStatus: 200 });
   });
 
   test('a dispatcher that throws is written as a 500, and the error still propagates', async () => {

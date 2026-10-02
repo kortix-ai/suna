@@ -111,11 +111,19 @@ interface TeamsInstallation {
   /** Outcome of the one-click org-catalog publish; null for manual/BYO installs. */
   publishState?: 'publishing' | 'published' | 'review' | 'failed' | null;
   publishError?: string | null;
+  /** The app version the org catalog serves; null when no publish recorded it. */
+  appVersion?: string | null;
+  latestAppVersion?: string;
+  /** The catalog serves an older app than this server publishes. */
+  appUpdateAvailable?: boolean;
   installedAt: string | null;
 }
 
 interface TeamsMode {
-  /** The project's `teams` experimental feature. Off ⇒ the channel is dark. */
+  /**
+   * Always true on current servers: the `teams` feature flag graduated on
+   * 2026-10-01. An older server reports its per-project flag here.
+   */
   enabled: boolean;
   /** Server (or bring-your-own) bot credentials resolve ⇒ an install can run. */
   available: boolean;
@@ -170,6 +178,8 @@ interface ChannelBinding {
   channelId: string;
   channelName: string | null;
   channelType: string | null;
+  /** Slack answered that the conversation is deleted or out of the bot's reach. */
+  channelUnavailable?: boolean;
   agentName: string | null;
   opencodeModel: string | null;
   conversationPolicy: ConversationPolicy;
@@ -624,6 +634,15 @@ async function teamsStatus(
 
 function teamsPublishLine(install: TeamsInstallation): string | null {
   const retry = `${C.cyan}kortix channels connect --platform teams${C.reset}`;
+  // The server sets this only for a settled install in the org catalog,
+  // including one published before Kortix recorded the publish state.
+  if (install.appUpdateAvailable) {
+    const served = install.appVersion ? `app ${install.appVersion}` : 'no recorded app version';
+    return (
+      `${C.yellow}Catalog: ${served}; ${install.latestAppVersion ?? 'a newer version'} is the latest${C.reset}\n` +
+      `       A Teams admin re-runs ${retry} to publish it. Then a team owner updates the app in each team where Teams offers it.`
+    );
+  }
   switch (install.publishState) {
     case 'publishing':
       return `${C.dim}Catalog: publishing the app to the org Teams catalog… (re-run status in a minute)${C.reset}`;
@@ -634,8 +653,11 @@ function teamsPublishLine(install: TeamsInstallation): string | null {
         `${status.err('Catalog publish failed')} ${install.publishError ?? 'no reason recorded'}\n` +
         `       Fix the cause, then re-run ${retry} to publish again.`
       );
-    case 'published':
-      return install.orgInstalled ? `${C.dim}Catalog: published to the org Teams catalog${C.reset}` : null;
+    case 'published': {
+      if (!install.orgInstalled) return null;
+      const version = install.appVersion ? ` (app ${install.appVersion})` : '';
+      return `${C.dim}Catalog: published to the org Teams catalog${version}${C.reset}`;
+    }
     default:
       return install.orgInstalled
         ? null
@@ -653,9 +675,10 @@ async function teamsConnect(
     const mode = await ctx.client.get<TeamsMode>(
       `/projects/${ctx.projectId}/channels/teams/mode`,
     );
-    // Client-side pre-check, worded exactly like the server's feature-flag gate
-    // (feature-flags/gate.ts). It is a failure, so it goes to stderr like every
-    // other CLI error — stdout stays reserved for the command's own output.
+    // Only an older server (before the `teams` flag graduated) answers
+    // `enabled: false`. Worded like that server's feature-flag gate. It is a
+    // failure, so it goes to stderr like every other CLI error — stdout stays
+    // reserved for the command's own output.
     if (!mode.enabled) {
       process.stderr.write(
         `${status.err('Microsoft Teams is not enabled for this project. Enable it in Settings → Feature flags.')}\n`,
@@ -721,8 +744,7 @@ async function teamsManifest(
 
 // ─── Microsoft Teams: disconnect ─────────────────────────────────────────
 // DELETE /projects/:id/channels/teams/installation (channel-teams.ts). Needs the
-// 'manage' project role + `project.connector.write`; no feature-flag gate, so
-// a project whose `teams` flag was turned off can still clean up its install.
+// 'manage' project role + `project.connector.write`.
 
 async function teamsDisconnect(
   ctxOpts: { projectArg?: string; hostArg?: string },
@@ -905,6 +927,15 @@ async function emailCommand(
 
 // ─── Channel bindings ────────────────────────────────────────────────────
 
+/** `#general`, a person's name for a Slack DM, or the id when nothing names it. */
+function bindingLabel(b: ChannelBinding): string {
+  if (b.platform === 'slack') {
+    if (b.channelName) return b.channelType === 'im' || b.channelType === 'mpim' ? b.channelName : `#${b.channelName}`;
+    if (b.channelUnavailable) return `unavailable (${b.channelId})`;
+  }
+  return b.channelName ?? b.channelId;
+}
+
 async function bindingsLs(
   ctxOpts: { projectArg?: string; hostArg?: string },
   rest: string[],
@@ -935,7 +966,7 @@ async function bindingsLs(
     return 0;
   }
   const idW = Math.max(...resp.bindings.map((b) => b.bindingId.length), 10);
-  const chW = Math.max(...resp.bindings.map((b) => (b.channelName ?? b.channelId).length), 7);
+  const chW = Math.max(...resp.bindings.map((b) => bindingLabel(b).length), 7);
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.dim}${pad('BINDING', idW)}  ${pad('CHANNEL', chW)}  PLATFORM  AGENT             MODEL             POLICY${C.reset}\n`,
@@ -944,7 +975,7 @@ async function bindingsLs(
     const agent = `${b.effectiveAgent.agent}${b.agentName ? '' : ` ${C.faded}(${b.effectiveAgent.source})${C.reset}`}`;
     const model = `${b.effectiveModel.model ?? 'auto'}${b.opencodeModel ? '' : ` ${C.faded}(${b.effectiveModel.source})${C.reset}`}`;
     process.stdout.write(
-      `  ${pad(b.bindingId, idW)}  ${pad(b.channelName ?? b.channelId, chW)}  ` +
+      `  ${pad(b.bindingId, idW)}  ${pad(bindingLabel(b), chW)}  ` +
         `${pad(b.platform, 8)}  ${pad(agent, 26)}  ${pad(model, 26)}  ${C.faded}${b.conversationPolicy}${C.reset}\n`,
     );
   }
@@ -998,7 +1029,7 @@ async function bindingsPatch(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${C.bold}${binding.channelName ?? binding.channelId}${C.reset} updated`)}\n` +
+    `${status.ok(`${C.bold}${bindingLabel(binding)}${C.reset} updated`)}\n` +
       `         agent   ${C.cyan}${binding.effectiveAgent.agent}${C.reset} ${C.faded}(${binding.effectiveAgent.source})${C.reset}\n` +
       `         model   ${C.cyan}${binding.effectiveModel.model ?? 'auto'}${C.reset} ${C.faded}(${binding.effectiveModel.source})${C.reset}\n` +
       `         policy  ${C.dim}${binding.conversationPolicy}${C.reset}\n`,

@@ -196,6 +196,38 @@ export function buildFinalCard(opts: {
   return card(elements);
 }
 
+/** Buttons that post back to Kortix. Only cards Kortix builds may carry them. */
+const POSTBACK_ACTIONS: ReadonlySet<string> = new Set(['Action.Execute', 'Action.Submit']);
+
+function isPostback(value: unknown): boolean {
+  return !!value && typeof value === 'object' && POSTBACK_ACTIONS.has(String((value as { type?: unknown }).type));
+}
+
+/**
+ * An agent-built card (`teams send --card-file`, `teams post --card-file`)
+ * without the buttons that post back to Kortix. Kortix's own cards post its
+ * verbs (Stop, Approve, a join decision, a review); an agent could otherwise
+ * post a look-alike a person clicks. Agent buttons never had a handler of
+ * their own. Links (`Action.OpenUrl`) and show/hide stay.
+ */
+export function withoutPostbackActions<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => !isPostback(item))
+      .map((item) => withoutPostbackActions(item))
+      .filter((item) => !(item && typeof item === 'object' && (item as { type?: unknown }).type === 'ActionSet' && !((item as { actions?: unknown[] }).actions?.length))) as T;
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'selectAction' && isPostback(child)) continue;
+      out[key] = withoutPostbackActions(child);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 export function buildAnswerCard(
   body: string,
   sessionUrl?: string,
@@ -206,7 +238,7 @@ export function buildAnswerCard(
   // The agent handed us a full Adaptive Card (`teams send --card-file`): use
   // it verbatim, with the run's steps above it and the session link below.
   if (customCard && customCard.type === 'AdaptiveCard') {
-    const out = { ...customCard };
+    const out = { ...withoutPostbackActions(customCard) };
     const own = Array.isArray(out.body) ? (out.body as CardElement[]) : [];
     if (plan?.steps.length) {
       const [first, ...rest] = own;
@@ -251,21 +283,21 @@ function emphasisContainer(items: CardElement[]): CardElement {
   return { type: 'Container', style: 'emphasis', spacing: 'medium', bleed: true, items };
 }
 
-export function buildConnectAccountCard(loginUrl: string): Record<string, unknown> {
-  return card(
-    headerBlock(
-      '🔗',
-      'Connect your Kortix account',
-      'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
-    ),
-    [openUrlAction('Connect or create account', loginUrl)],
-  );
+export function buildConnectAccountCard(loginUrl: string, opts: { resumes?: boolean } = {}): Record<string, unknown> {
+  const lines = [
+    'Link once so I run as you — your own credentials, secrets and connected apps, never the installer’s.',
+    ...(opts.resumes ? ['What you sent runs once you connect, if you do so within 10 minutes.'] : []),
+  ];
+  return card(headerBlock('🔗', 'Connect your Kortix account', lines.join(' ')), [
+    openUrlAction('Connect or create account', loginUrl),
+  ]);
 }
 
 /**
- * The sign-in prompt in a channel or group chat. It carries no link: everyone
- * in the conversation sees the card, and the link links whoever opens it
- * (identity-routes.ts `/bind`). The link is shown only in a one-to-one chat.
+ * The sign-in prompt in a channel or group chat when Teams refuses the
+ * targeted message that carries the link (login-card.ts). It carries no link:
+ * everyone in the conversation sees this card, and the link links whoever
+ * opens it (identity-routes.ts `/bind`).
  */
 export function buildConnectPrivatelyCard(input: {
   /** A deep link that opens a one-to-one chat with the bot; null when unknown. */

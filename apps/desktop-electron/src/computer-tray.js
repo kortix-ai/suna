@@ -3,11 +3,24 @@
 // Rules and parsing live in computer.js (unit-tested); this file is the
 // Electron side effects.
 
-const { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, net, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  Notification,
+  Tray,
+  desktopCapturer,
+  dialog,
+  nativeImage,
+  net,
+  shell,
+  systemPreferences,
+} = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const computer = require('./computer');
+const { isApprovalDialogPath } = require('./nav-rules');
 
 const FULL_REFRESH_MS = 60_000;
 const STATE_POLL_MS = 5_000;
@@ -433,6 +446,83 @@ function setupComputer(deps) {
   const pause = () => serviceVerb('stop', (next) => next.paused === true || !next.serviceActive);
   const resume = () => serviceVerb('start', (next) => next.serviceActive === true);
 
+  /* ─── Computer setup: macOS grants (Kortix holds them) ───────────────── */
+
+  const grantsFile = path.join(userData, 'computer-grants.json');
+  /** macOS asks for these folders separately from the rest of the home folder. */
+  const PROTECTED_FOLDERS = ['Desktop', 'Documents', 'Downloads'];
+
+  /** Folder access as last answered; macOS has no way to read it without asking. */
+  function filesGrant() {
+    try {
+      const files = JSON.parse(fs.readFileSync(grantsFile, 'utf8')).files;
+      return typeof files === 'boolean' ? files : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The grants this machine's approved access needs, as macOS answers them for
+   * Kortix. The agent runs as this app's binary and starts the bundled driver
+   * as its own child, so they hold for the agent too. `null` off macOS.
+   */
+  async function grants() {
+    if (process.platform !== 'darwin') return null;
+    const { home } = await context();
+    const current = {
+      accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+      screenRecording: systemPreferences.getMediaAccessStatus('screen') === 'granted',
+      files: filesGrant(),
+    };
+    return { ...current, missing: computer.computerSetupMissing(home, current) };
+  }
+
+  let grantWatch = null;
+  /**
+   * Setup's "Allow all": asks macOS for every missing grant, one prompt at a
+   * time, while the person is looking at the setup screen. Each prompt names
+   * Kortix. Once Accessibility and Screen Recording hold, the agent restarts:
+   * macOS applies them only to a process launched after the grant.
+   */
+  async function requestGrants() {
+    const before = await grants();
+    if (!before) return null;
+    if (before.missing.includes('files')) {
+      // Each read of a protected folder raises its prompt once and waits for the answer.
+      let all = true;
+      for (const folder of PROTECTED_FOLDERS) {
+        all = (await fs.promises.readdir(path.join(os.homedir(), folder)).then(() => true, () => false)) && all;
+      }
+      if (!all) void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders');
+      fs.writeFileSync(grantsFile, JSON.stringify({ files: all }));
+    }
+    if (before.missing.includes('accessibility')) systemPreferences.isTrustedAccessibilityClient(true);
+    if (before.missing.includes('screenRecording')) {
+      // The first capture attempt adds Kortix to Screen Recording and shows the
+      // prompt. After a "Don't Allow", only System Settings can grant it.
+      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
+        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      } else {
+        void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+      }
+    }
+    const needsRestart = before.missing.includes('accessibility') || before.missing.includes('screenRecording');
+    if (needsRestart && !grantWatch) {
+      const until = Date.now() + 10 * 60_000;
+      grantWatch = setInterval(async () => {
+        const now = await grants();
+        const ready = now && now.accessibility && now.screenRecording;
+        if (ready) void serviceVerb('restart', (next) => next.serviceActive === true);
+        if (ready || Date.now() > until) {
+          clearInterval(grantWatch);
+          grantWatch = null;
+        }
+      }, 2_000);
+    }
+    return grants();
+  }
+
   /**
    * X4: `logout --json` unpairs on the server with the machine's own
    * credential FIRST, then clears it and removes the service.
@@ -519,11 +609,35 @@ function setupComputer(deps) {
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
-    const wc = approvalWindow.webContents;
+    const win = approvalWindow;
+    const wc = win.webContents;
+    // A dialog, not a second app window: leaving its pages (Back, a link into
+    // the app) is Cancel. On macOS a modal child is a sheet with no close
+    // button, so this and Esc are its way out.
+    const leavesDialog = (next) => {
+      try {
+        return !(deps.isConfiguredAppUrl(next, deps.appUrl()) && isApprovalDialogPath(new URL(next).pathname));
+      } catch {
+        return true;
+      }
+    };
+    const cancel = () => {
+      if (!win.isDestroyed()) win.close();
+    };
     wc.on('will-navigate', (event, next) => {
-      if (deps.shouldLoadInApp(next)) return;
+      if (!leavesDialog(next)) return;
       event.preventDefault();
-      if (/^https?:\/\//i.test(next)) void shell.openExternal(next);
+      if (deps.shouldLoadInApp(next)) cancel();
+      else if (/^https?:\/\//i.test(next)) void shell.openExternal(next);
+    });
+    // Client-side routing (the web Back's router.replace) never fires will-navigate.
+    wc.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && details.isSameDocument && leavesDialog(details.url)) cancel();
+    });
+    wc.on('before-input-event', (event, input) => {
+      if (input.key !== 'Escape' || (input.type !== 'keyDown' && input.type !== 'keyUp')) return;
+      event.preventDefault();
+      cancel();
     });
     wc.setWindowOpenHandler(({ url: next }) => {
       if (/^https?:\/\//i.test(next)) void shell.openExternal(next);
@@ -631,6 +745,10 @@ function setupComputer(deps) {
         return computer.accessView((await context()).home);
       case 'computer_access_set':
         return setAccessFromPage(args);
+      case 'computer_grants':
+        return grants();
+      case 'computer_grants_request':
+        return requestGrants();
       default:
         throw new Error(`Unknown command: ${cmd}`);
     }

@@ -63,6 +63,28 @@ describe('dispatch — session.error flattening', () => {
     expect(error).toBeUndefined()
   })
 
+  test('a ContextOverflowError is not a turn end: OpenCode compacts and continues the turn', () => {
+    const ended: string[] = []
+    const handlers = { onSessionError: (id: string) => ended.push(id) }
+    dispatch(
+      {
+        type: 'session.error',
+        properties: {
+          sessionID: 'ses_root',
+          error: { name: 'ContextOverflowError', data: { message: 'This request is longer than the glm-5.3-flash context window.' } },
+        },
+      },
+      handlers,
+    )
+    expect(ended).toEqual([])
+    // Every other terminal error still ends the turn.
+    dispatch(
+      { type: 'session.error', properties: { sessionID: 'ses_root', error: { name: 'UnknownError', data: { message: 'x' } } } },
+      handlers,
+    )
+    expect(ended).toEqual(['ses_root'])
+  })
+
   test('session.error without a sessionID is ignored (no root to close)', () => {
     let called = false
     dispatch(

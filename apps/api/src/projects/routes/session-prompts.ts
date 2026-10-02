@@ -6,11 +6,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { promptModelOverride } from '../lib/prompt-model';
-import { clearSessionOnBehalfOfForPrompt } from '../lib/on-behalf-of';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { projectsApp } from '../lib/app';
+import { currentInstanceId, sandboxBelongsToThisInstance, sandboxInstanceId } from '../instance-scope';
+import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-release';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
@@ -24,7 +25,7 @@ import {
   retryInboxPrompt,
 } from '../session-lifecycle';
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
-import { markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { markTurnStopRequested } from '../session-turn-ledger';
 import { disarmAllQuickQueueInterrupt, disarmQuickQueueInterrupt } from '../session-lifecycle/runtime-client';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
@@ -74,6 +75,7 @@ const SessionPromptSchema = z.object({
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  no_reply: z.boolean(),
   created_at: z.string(),
   available_at: z.string(),
 });
@@ -180,13 +182,38 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    // The session whose agent sends this, when it is not the target itself.
+    // From the credential, never the body: it becomes the message's author.
+    const callerSessionId = callerKortixSessionId(c);
+    const authorSessionId =
+      isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
+    const visible = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
     const metadata = (visible.row.metadata ?? {}) as Record<string, unknown>;
     if (typeof metadata.deletedAt === 'string') {
       return c.json({ error: 'Session is deleted' }, 409);
+    }
+    // Shared local DB (projects/instance-scope.ts). The drain never claims a
+    // command for a sandbox another API instance provisioned, so a prompt
+    // accepted here would stay `queued` for ever when that instance is down.
+    // Refuse it while the sender can still read why. The lookup runs only when
+    // `KORTIX_INSTANCE_ID` is set.
+    const thisInstance = currentInstanceId();
+    if (thisInstance) {
+      const box = (await loadSandboxMetadataForSessions([sessionId])).get(sessionId);
+      if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
+        const owner = sandboxInstanceId(box);
+        const message =
+          `This session's computer belongs to the local API instance "${owner}". ` +
+          `This instance ("${thisInstance}") cannot deliver prompts to it. ` +
+          'Send from that stack, or start a new session.';
+        return c.json(
+          { error: message, message, code: 'SESSION_OWNED_BY_OTHER_INSTANCE', owner_instance: owner },
+          409,
+        );
+      }
     }
 
     const body = await readJsonObject(c);
@@ -235,19 +262,6 @@ projectsApp.openapi(
     // back to the session's own agent when the prompt names none.
     await resolveAndAuthorizeAgent(c, loaded, projectId, overrides.agent, visible.row.agentName);
 
-    // Spec 2026-09-22 §2.3 (closes V6): the first prompt from a HUMAN other than
-    // the session's `on_behalf_of` clears it permanently. The agent keeps its
-    // own authority; it loses the creator's personal resources, so the person
-    // prompting never acts through another person's accounts. An agent-session
-    // credential is not a human prompter and clears nothing.
-    if (!isProjectSessionPrincipal(c)) {
-      await clearSessionOnBehalfOfForPrompt({
-        accountId: loaded.row.accountId,
-        sessionId,
-        prompterUserId: loaded.userId,
-      });
-    }
-
     // NO connector pre-flight here. A prompt used to be refused 409
     // `CONNECTOR_CONNECTION_REQUIRED` when a connector the session declared had
     // nothing connected. That gate could not be cleared from the product: a
@@ -293,6 +307,11 @@ projectsApp.openapi(
       accountId: loaded.row.accountId,
       sessionId,
       actorUserId: loaded.userId,
+      // Spec 2026-09-22 §2.3 (closes V6): the session token acts as the person
+      // who sent this prompt, from the moment its turn is delivered — not now,
+      // while it may still wait behind another member's turn. An agent-session
+      // credential is not a person and never changes the token's identity.
+      bindTurnIdentity: !isProjectSessionPrincipal(c),
       text,
       idempotencyKey,
       clientMessageId,
@@ -321,6 +340,7 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
+      authorSessionId,
     };
     const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
       enqueueContinueSessionCommand({ ...send, ...hold }),
@@ -625,7 +645,7 @@ projectsApp.openapi(
     // the proxy stamp. The write never throws.
     if (body.held) {
       await markTurnStopRequested(sessionId, 'UserStop', {
-        opencodeSessionId: visible.row.opencodeSessionId ?? null,
+        opencodeSessionId: visible.row.runtimeSessionId ?? null,
       });
     }
     await holdInboxPrompts(sessionId, body.held);

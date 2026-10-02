@@ -84,3 +84,17 @@ d9db615d7f26fc4a1aef21b8f0085e3ad37f0258:.gitleaksignore:generic-api-key:62
 # fetch.sh round-trips a multi-line value through GITHUB_ENV intact. Not a
 # credential. Reviewed 2026-09-26.
 5b7d58331842924dfd12344e34097e8a67b1037b:tests/unit/aws-env-action.test.ts:private-key:32
+#
+# apps/mobile/lib/markdown/setup-links.test.ts uses synthetic setup-link tokens
+# (`ksl_abc-DEF_123`): made-up fixture strings for the link parser, not
+# credentials. generic-api-key matches the `token: '...'` shape.
+7825f32d21eec310e8c594c2509026e2ef8b6264:apps/mobile/lib/markdown/setup-links.test.ts:generic-api-key:16
+7825f32d21eec310e8c594c2509026e2ef8b6264:apps/mobile/lib/markdown/setup-links.test.ts:generic-api-key:24
+7825f32d21eec310e8c594c2509026e2ef8b6264:apps/mobile/lib/markdown/setup-links.test.ts:generic-api-key:47
+#
+# apps/web/src/middleware-locale-routing.test.ts (#8611) held a synthetic chat
+# sign-in token: base64url of `{"tenantId":"tenant-1"}` and of the text
+# "signature-of-forty-three-characters". Not a credential. #8614 replaced it
+# with `payload.signature`; this entry clears the commit that still holds it,
+# which every promotion range to staging scans. Reviewed 2026-10-01.
+127d878b9bdb6e8888efd485a992dfe3a5a8e175:apps/web/src/middleware-locale-routing.test.ts:generic-api-key:89

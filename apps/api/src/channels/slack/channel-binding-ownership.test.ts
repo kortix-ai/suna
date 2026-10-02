@@ -11,9 +11,9 @@ import { describe, expect, test } from 'bun:test';
 // permanently dark there — no hourglass, no reply, no session, and no row
 // anywhere recording why.
 //
-// Prod, one workspace: `kortix-incident-reporter` (installed
-// 2026-08-17) held a channel where `Kortix Company` had run 71
-// sessions through 2026-08-14 and then went silent for 14 days.
+// Prod 2026-08-28: a project whose app was installed 2026-08-17 held a
+// channel where another project had run 71 sessions through 2026-08-14, and
+// that project then went silent there for 14 days.
 //
 // Re-assignment is a deliberate act with its own paths — the channel picker in
 // interactivity.ts and `/kortix use` / switch_project through

@@ -60,6 +60,24 @@ mock.module('../channels/teams/session', () => ({
   createOrJoinTeamsConversationSession: async () => {},
 }));
 
+// The conversation's session row: which project the card's session lives in.
+let threadRow: { sessionId: string; projectId: string } | null = null;
+const realThreads = await import('../channels/core/threads');
+mock.module('../channels/core/threads', () => ({
+  ...realThreads,
+  findChatThread: async () => threadRow,
+}));
+
+// The project's `teams` flag, which gates card actions as it gates messages.
+let teamsOn = true;
+const flagChecks: string[] = [];
+mock.module('../feature-flags/for-project', () => ({
+  projectFeatureFlagEnabled: async (projectId: string, key: string) => {
+    flagChecks.push(`${projectId}:${key}`);
+    return teamsOn;
+  },
+}));
+
 const activity = {
   type: 'invoke',
   id: 'act-1',
@@ -73,7 +91,10 @@ const load = async () => await import('../channels/teams/interactivity');
 beforeEach(() => {
   actorCalls.length = 0;
   verdicts.length = 0;
+  flagChecks.length = 0;
   actorResult = { userId: 'user-1' };
+  teamsOn = true;
+  threadRow = null;
 });
 
 afterEach(() => {
@@ -121,5 +142,30 @@ describe('a review decision is authorized on the press', () => {
     expect(actorCalls).toEqual([
       { tenantId: TENANT, uid: '29:presser', accountId: ITEM_ACCOUNT, projectId: PROJECT },
     ]);
+  });
+});
+
+describe('a review card acts on the project of the session that posted it', () => {
+  test('after a /use, the item and the actor check use the session`s project, not the conversation`s', async () => {
+    threadRow = { sessionId: 'sess-a', projectId: 'proj-a' };
+    const { handleAdaptiveCardAction } = await load();
+
+    await handleAdaptiveCardAction(activity as never);
+
+    expect(actorCalls).toEqual([{ tenantId: TENANT, uid: '29:presser', accountId: ITEM_ACCOUNT, projectId: 'proj-a' }]);
+    expect(verdicts).toHaveLength(1);
+  });
+});
+
+describe('Teams has no per-project switch', () => {
+  test("a manager's review press applies whatever a project stored for the old `teams` flag", async () => {
+    // The flag graduated on 2026-10-01: card actions never consult it.
+    teamsOn = false;
+    const { handleAdaptiveCardAction } = await load();
+
+    await handleAdaptiveCardAction(activity as never);
+
+    expect(flagChecks).toEqual([]);
+    expect(verdicts).toHaveLength(1);
   });
 });

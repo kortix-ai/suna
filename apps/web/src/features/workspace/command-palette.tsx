@@ -118,6 +118,7 @@ import {
   PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   listProjectsForAccount,
   normalizeAppPathname,
+  runtimeSupports,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
@@ -133,6 +134,7 @@ import {
   useCreateRuntimeSession,
   useModelStore,
   useProjectSessions,
+  useRuntimeConnectionStore,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
@@ -813,6 +815,19 @@ function FeatureFlagsPage({
   );
 }
 
+const sessionName = (s: ProjectSession) =>
+  s.name ||
+  (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
+  s.branch_name ||
+  s.session_id.slice(0, 8);
+
+export function sessionMatchesPaletteQuery(session: ProjectSession, query: string): boolean {
+  return (
+    sessionName(session).toLowerCase().includes(query) ||
+    session.session_id.toLowerCase().startsWith(query)
+  );
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -861,6 +876,8 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
+  // What the active session's runtime serves (E1): a pi session has no compact.
+  const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
   // SDK's one selectable-agent rule: the same list the composer offers. Never
@@ -1126,6 +1143,7 @@ export function CommandPalette() {
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
+      if (item.requiresRuntime && !runtimeSupports(runtimeCapabilities, item.requiresRuntime)) continue;
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
@@ -1154,6 +1172,7 @@ export function CommandPalette() {
   }, [
     billingEnabled,
     currentSessionId,
+    runtimeCapabilities,
     projectId,
     selectedAccountId,
     sidebarCtx,
@@ -1349,9 +1368,8 @@ export function CommandPalette() {
    *    keep answering for the account you just left.
    * 3. Navigate.
    *
-   * The already-active workspace never reaches here: `rootWorkspaceResults`
-   * drops it, and the dedicated page renders it as a checked, non-selectable
-   * row.
+   * Selecting the active workspace also opens its home page, including when
+   * the user is currently viewing a session or settings inside it.
    */
   const handleSelectWorkspace = useCallback(
     (workspace: KortixProject) => {
@@ -1393,12 +1411,6 @@ export function CommandPalette() {
     },
     [projectId, openProjectTab, router, close],
   );
-
-  const sessionName = (s: ProjectSession) =>
-    s.name ||
-    (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
-    s.branch_name ||
-    s.session_id.slice(0, 8);
 
   /**
    * Every workspace the user can switch to, in the sidebar's order — active
@@ -1468,7 +1480,7 @@ export function CommandPalette() {
     const sorted = sortSessionsByLastActivity(projectSessionsList ?? []);
     if (!q) return sorted.slice(0, 50);
     // Instant local matches first, then the server's answer for the rest.
-    const local = sorted.filter((s) => sessionName(s).toLowerCase().includes(q));
+    const local = sorted.filter((s) => sessionMatchesPaletteQuery(s, q));
     const seen = new Set(local.map((s) => s.session_id));
     const remote = serverSessionMatches.filter((s) => !seen.has(s.session_id));
     return [...local, ...remote].slice(0, 50);
@@ -1489,10 +1501,8 @@ export function CommandPalette() {
    * selecting a row buried in Navigation. Removing the `projectId` clause is
    * the single change that makes ⌘K → name → Enter work.
    *
-   * `rootWorkspaceResults` drops the active workspace (it matches its own name
-   * best and selecting it re-navigates to the page you are on) and caps the
-   * rest, so workspaces take a slice of the mixed root page rather than owning
-   * it.
+   * `rootWorkspaceResults` includes the active workspace and caps matches,
+   * so workspaces take a slice of the mixed root page rather than owning it.
    */
   const rootWorkspaceRows = useMemo(
     () => (hasQuery ? rootWorkspaceResults(workspaceRows, query) : []),
@@ -2000,13 +2010,6 @@ export function CommandPalette() {
     });
   }, [close]);
 
-  const handleGenerateSSHKey = useCallback(() => {
-    close();
-    import('@/stores/ssh-dialog-store').then(({ useSSHDialogStore }) => {
-      useSSHDialogStore.getState().openSSHDialog();
-    });
-  }, [close]);
-
   // A rejected promise is not guaranteed to carry an Error, and a toast reading
   // "undefined" is worse than a generic one.
   const reloadErrorMessage = (err: unknown): string =>
@@ -2068,7 +2071,6 @@ export function CommandPalette() {
       logout: handleLogout,
       openPlan: handleOpenPlan,
       openProviderModal: handleOpenProviderModal,
-      generateSSHKey: handleGenerateSSHKey,
       restartConfig: handleRestartConfig,
       reconcileSession: handleReconcileSession,
     }),
@@ -2090,7 +2092,6 @@ export function CommandPalette() {
       handleLogout,
       handleOpenPlan,
       handleOpenProviderModal,
-      handleGenerateSSHKey,
       handleRestartConfig,
       handleReconcileSession,
     ],
@@ -2936,9 +2937,8 @@ export function CommandPalette() {
                 One account gets a single "Workspaces" heading instead — a lone
                 account heading over the only list is noise, not structure.
 
-                Unlike the root results this KEEPS the workspace you are in, as
-                a checked row. A directory that omits where you are makes you
-                doubt the directory. */}
+                Like the root results this includes the workspace you are in,
+                marked here with a check. */}
             {page === 'workspaces' &&
               (workspacePageRows.length > 0 ? (
                 workspacePageGroups.map((group) => (

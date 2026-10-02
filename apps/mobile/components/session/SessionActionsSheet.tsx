@@ -25,9 +25,10 @@
  * session's changed files in place (`SessionChangesList`), and a file pushes
  * its diff (`SessionChangeFileView`); disabled with "No changes" when the
  * runtime reports none. Compact confirms (`useConfirmDialog`) after the sheet
- * has closed, then calls `useCompactSession`; the thread's compaction divider
+ * has closed, then calls `useSummarizeRuntimeSession`; the thread's compaction divider
  * is the progress, and only a failure toasts (web `compact-modal.tsx`).
- * Disabled while the session works. View changes and Compact need the live
+ * Disabled while the session works, hidden when the runtime does not serve
+ * `session.compact` (pi). View changes and Compact need the live
  * runtime, so they show only for the thread on screen; a drawer long press on
  * another session shows none of the three. Rules:
  * `lib/session/session-actions.ts`. Export transcript and Archive are not on
@@ -66,7 +67,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useCloseThen } from '@/components/kortix/sheet';
 import { POP_IN, PUSH_IN, SheetBackButton } from '@/components/kortix/sheet-push';
 import { useToast } from '@/components/kortix/toast-provider';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
@@ -81,9 +82,11 @@ import {
 } from '@/components/session/SessionPublicShareRows';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { haptics } from '@/lib/haptics';
-import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
-import { useSessionChanges } from '@/lib/opencode/hooks/use-session-changes';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
+import { useRuntimeSupports } from '@/lib/session/runtime-capabilities';
+import { useSessionChanges } from '@/hooks/useSessionChanges';
+import { sessionStatus as readSessionStatus, useSessionStatus } from '@/lib/session/session-store';
+import { useSessionRuntime } from '@/components/session/SessionRuntime';
 import {
   isOpenThreadSession,
   changeRequestBaseRef,
@@ -91,7 +94,6 @@ import {
   sessionActionRows,
   type ChangedFile,
 } from '@/lib/session/session-actions';
-import { useCompactionStore } from '@/stores/compaction-store';
 import { cachedSessionRow, projectKeys, sessionListKeys } from '@/lib/projects/hooks';
 import {
   deleteProjectSession,
@@ -162,13 +164,23 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     // page, a parent's children), and the sheet re-renders on any list write
     // so a rename shows at once. No query of its own.
     const [, bumpLists] = React.useReducer((n: number) => n + 1, 0);
-    React.useEffect(
-      () =>
-        queryClient.getQueryCache().subscribe((event) => {
-          if (event.query.queryKey[0] === 'project-sessions') bumpLists();
-        }),
-      [queryClient]
-    );
+    React.useEffect(() => {
+      // Structural sharing hands back the same data when a refetch changed
+      // nothing: that write must not re-render the sheet.
+      const seen = new WeakMap<object, unknown>();
+      return queryClient.getQueryCache().subscribe((event) => {
+        // Data writes only (a fetch result, `setQueryData`). Observer events
+        // fire while ProjectScreen and the drawer render, and every poll
+        // tick emits several: a bump on those re-rendered this sheet on each
+        // and set state during another component's render.
+        if (event.type !== 'updated' || event.action.type !== 'success') return;
+        if (event.query.queryKey[0] !== 'project-sessions') return;
+        const data = event.query.state.data;
+        if (seen.has(event.query) && seen.get(event.query) === data) return;
+        seen.set(event.query, data);
+        bumpLists();
+      });
+    }, [queryClient]);
     const liveRow = (session: ProjectSession) =>
       cachedSessionRow(queryClient, projectId, session.session_id) ?? session;
 
@@ -184,27 +196,31 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
     const [menuSession, setMenuSession] = React.useState<ProjectSession | null>(null);
     // The file pushed over the changes list (View changes → a file).
     const [changeFile, setChangeFile] = React.useState<ChangedFile | null>(null);
-    // Set before the sheet closes; read when its close animation ends.
     // Delete and Compact confirm in a dialog, and Open change request is its
-    // own sheet: each opens only after this sheet has closed.
-    const afterCloseRef = React.useRef<AfterClose>(null);
+    // own sheet: each opens only after this sheet has closed (`useCloseThen`,
+    // the shared slot — set before the sheet closes, taken when it has).
+    const { deferAfterClose, takeAfterClose } = useCloseThen<Exclude<AfterClose, null>>();
 
     // ── COR-148: Open change request · View changes · Compact ──
     const { sandboxUrl } = useSandboxContext();
-    // The thread on screen, keyed by its OpenCode id (SessionPage's `sessionId`).
+    // The thread on screen, keyed by its runtime session id (SessionPage's `sessionId`).
     const activeSessionId = useTabStore((s) => s.activeSessionId);
     const isOpenThread = !!menuSession && isOpenThreadSession(menuSession, activeSessionId);
     const liveSessionId = isOpenThread ? activeSessionId : null;
-    const changesQuery = useSessionChanges(sandboxUrl, isOpenThread);
-    const runtimeStatus = useSyncStore((s) => (liveSessionId ? s.sessionStatus[liveSessionId] : undefined));
+    // The bound session's runtime: the branch diff and the compaction state
+    // are read from it, so both wait for it.
+    const runtime = useSessionRuntime();
+    const changesQuery = useSessionChanges(isOpenThread && !!runtime?.switched);
+    const runtimeStatus = useSessionStatus(liveSessionId);
     const isBusy = runtimeStatus?.type === 'busy' || runtimeStatus?.type === 'retry';
-    const isCompacting = useCompactionStore((s) =>
-      liveSessionId ? Boolean(s.compactingBySession[liveSessionId]) : false
-    );
-    const compactSession = useCompactSession();
+    const isCompacting = !!liveSessionId && liveSessionId === runtime?.runtimeSessionId && runtime.isCompacting;
+    // The SDK picks the model (config default, the thread's last model, then the
+    // first connected one) and tracks the compaction it starts.
+    const compactSession = useSummarizeRuntimeSession();
+    const canCompact = useRuntimeSupports(sandboxUrl, 'session.compact');
     const { confirm, dialog: confirmDialog } = useConfirmDialog();
-    // The session and runtime a Compact tap was for, kept past the sheet's close.
-    const compactTargetRef = React.useRef<{ sessionId: string; sandboxUrl: string } | null>(null);
+    // The session a Compact tap was for, kept past the sheet's close.
+    const compactTargetRef = React.useRef<{ sessionId: string } | null>(null);
 
     const present = React.useCallback((session: ProjectSession, initialView?: SessionActionsInitialView) => {
       haptics.medium();
@@ -235,7 +251,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       compactTargetRef.current = null;
       if (!target) return;
       // The session may have started working while the dialog was up.
-      const status = useSyncStore.getState().sessionStatus[target.sessionId];
+      const status = readSessionStatus(target.sessionId);
       if (status?.type === 'busy' || status?.type === 'retry') {
         haptics.warning();
         toast.error('The session is working. Compact it when it stops.');
@@ -243,7 +259,8 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       }
       haptics.medium();
       // No progress or success toast: the thread's compaction divider mounts
-      // at once (`startCompaction`) and becomes the server's compaction turn.
+      // at once (the SDK marks the session compacting) and becomes the
+      // server's compaction turn.
       compactSession.mutate(target, {
         onError: (error) => {
           haptics.warning();
@@ -254,8 +271,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
 
     const handleSheetDismiss = React.useCallback(() => {
       const session = menuSession;
-      const next = afterCloseRef.current;
-      afterCloseRef.current = null;
+      const next = takeAfterClose();
       setMenuSession(null);
       setSheetView('options');
       setReturning(false);
@@ -281,7 +297,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
           onConfirm: runCompact,
         });
       }
-    }, [menuSession, confirm, runCompact, liveSessionId, toast]);
+    }, [menuSession, confirm, runCompact, liveSessionId, toast, takeAfterClose]);
 
     const pushView = React.useCallback((view: Exclude<SheetView, 'options'>) => {
       haptics.tap();
@@ -307,10 +323,13 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       },
       [pushView]
     );
-    const closeThen = React.useCallback((next: Exclude<AfterClose, null>) => {
-      afterCloseRef.current = next;
-      actionSheetRef.current?.dismiss();
-    }, []);
+    const closeThen = React.useCallback(
+      (next: Exclude<AfterClose, null>) => {
+        deferAfterClose(next);
+        actionSheetRef.current?.dismiss();
+      },
+      [deferAfterClose]
+    );
     const closeSheet = React.useCallback(() => actionSheetRef.current?.dismiss(), []);
 
     // Restart and Stop open no overlay: close the sheet and run at once.
@@ -394,8 +413,9 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
         // open thread: closing its tab clears `activeSessionId`, and the
         // project stack's view route pops itself back to home.
         const tabs = useTabStore.getState();
-        if (confirmDelete.opencode_session_id) {
-          tabs.closeTab(confirmDelete.opencode_session_id);
+        const rootId = confirmDelete.runtime_session_id ?? confirmDelete.opencode_session_id;
+        if (rootId) {
+          tabs.closeTab(rootId);
         } else if (tabs.activeSessionId === confirmDelete.session_id) {
           tabs.navigateToSession(null);
         }
@@ -419,6 +439,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
       isOpenThread,
       hasRuntime: !!sandboxUrl,
       canManageLifecycle,
+      canCompact,
       changes: {
         pending: changesQuery.isPending,
         error: changesQuery.isError,
@@ -503,7 +524,7 @@ export const SessionActionsSheet = React.forwardRef<SessionActionsSheetRef, Sess
                           onPress={() => {
                             if (!liveSessionId || !sandboxUrl) return;
                             haptics.tap();
-                            compactTargetRef.current = { sessionId: liveSessionId, sandboxUrl };
+                            compactTargetRef.current = { sessionId: liveSessionId };
                             closeThen('compact');
                           }}
                         />

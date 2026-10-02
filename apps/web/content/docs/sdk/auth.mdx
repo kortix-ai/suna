@@ -18,13 +18,14 @@ const kortix = createKortix({
 `backendUrl` and `getToken` are required. The SDK caches nothing: it calls
 `getToken` on every request, so your app owns token storage and refresh.
 
-Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
-separate source in the centralized audit log. This value identifies the client
-surface. It does not change the authenticated actor or their permissions.
+The audit log records the credential your `getToken` returns (a browser
+session, a personal access token, a connected app), not a label your host
+reports. `clientSource` is deprecated and does nothing.
 
-Set `clientVersion` to your app's release version, for example `1.4.0`. The SDK
-sends it as `X-Kortix-Client-Version` on every request. Kortix uses it to see
-which client versions still call an API route before that route is retired.
+Set `clientVersion` to your app's name and release version, for example
+`my-app/1.4.0`. The SDK sends it as `X-Kortix-Client-Version` on every request.
+Kortix writes it to request logs only, to see which client versions still call
+an API route before that route is retired. It never reaches the audit log.
 
 ## Personal access tokens
 

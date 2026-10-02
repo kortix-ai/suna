@@ -13,6 +13,7 @@ import {
 import { m, useReducedMotion } from 'motion/react';
 import { useRef } from 'react';
 
+import { inputFocusClasses, inputSurfaceClasses } from '@/components/ui/input';
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import {
   applyBackspace,
@@ -70,18 +71,30 @@ export function StepHeader({
   title,
   tagline,
   description,
+  mark,
 }: {
-  title: string;
+  /** A string, or a string led by a status mark (a decided approval). */
+  title: React.ReactNode;
+  /**
+   * Replaces the Kortix mark above the title, for a screen about two parties
+   * (the Kortix ··· Slack handshake on a channel install). Desktop only, like
+   * the mark it replaces: below `md` the frame's own corner logo stands.
+   */
+  mark?: React.ReactNode;
   /** Second line in the same size as the title, dimmed (entry step only). */
   tagline?: string;
   description?: React.ReactNode;
 }) {
   return (
     <div className="mb-10">
-      <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+      {mark ? (
+        <div className="hidden md:block">{mark}</div>
+      ) : (
+        <KortixLogo variant="icon" size={22} className="text-foreground hidden md:block" />
+      )}
       <h1 className="text-foreground text-2xl font-medium tracking-tight md:mt-6">{title}</h1>
       {tagline ? (
-        <p className="text-muted-foreground/60 text-2xl font-medium tracking-tight">{tagline}</p>
+        <p className="text-muted-foreground text-2xl font-medium tracking-tight text-balance">{tagline}</p>
       ) : null}
       {description ? (
         <p className="text-muted-foreground mt-2 text-sm text-pretty">{description}</p>
@@ -100,8 +113,8 @@ export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: R
 
 export function ErrorStrip({ message }: { message: string }) {
   return (
-    <div className="border-destructive/20 bg-destructive/10 text-destructive mb-5 flex items-center gap-2 rounded-md border px-3 py-2.5">
-      <DangerTriangleSolid weight="fill" className="size-4 shrink-0" />
+    <div className="bg-kortix-red/15 text-foreground mb-5 flex items-center gap-2 rounded-md px-3 py-2.5">
+      <DangerTriangleSolid weight="fill" className="text-kortix-red size-4 shrink-0" />
       <span className="text-sm">{message}</span>
     </div>
   );
@@ -109,8 +122,8 @@ export function ErrorStrip({ message }: { message: string }) {
 
 export function InfoStrip({ message }: { message: string }) {
   return (
-    <div className="border-border bg-muted/60 text-foreground/80 mb-5 flex items-center gap-2 rounded-md border px-3 py-2.5">
-      <InfoCircleSolid weight="fill" className="size-4 shrink-0" />
+    <div className="bg-muted text-foreground mb-5 flex items-center gap-2 rounded-md px-3 py-2.5">
+      <InfoCircleSolid weight="fill" className="text-muted-foreground size-4 shrink-0" />
       <span className="text-sm">{message}</span>
     </div>
   );
@@ -118,7 +131,7 @@ export function InfoStrip({ message }: { message: string }) {
 
 export function SuccessStrip({ message }: { message: string }) {
   return (
-    <div className="border-border bg-muted/60 text-foreground/80 mb-5 flex items-center gap-2 rounded-md border px-3 py-2.5">
+    <div className="bg-muted text-foreground mb-5 flex items-center gap-2 rounded-md px-3 py-2.5">
       <InfoCircleSolid weight="fill" className="text-kortix-green size-4 shrink-0" />
       <span className="text-sm">{message}</span>
     </div>
@@ -186,7 +199,11 @@ export function CodeInput({
           }}
           onFocus={(e) => e.currentTarget.select()}
           aria-invalid={invalid || undefined}
-          className="border-border bg-input text-foreground focus:border-kortix-blue aria-invalid:border-destructive size-12 rounded-md border text-center text-lg font-medium tabular-nums transition-[border-color] outline-none disabled:opacity-50"
+          className={cn(
+            inputSurfaceClasses,
+            inputFocusClasses,
+            'text-foreground aria-invalid:border-destructive size-12 text-center text-lg font-medium tabular-nums transition-[border-color,box-shadow] duration-(--duration-fast) disabled:opacity-50',
+          )}
         />
       ))}
     </div>

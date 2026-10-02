@@ -181,7 +181,9 @@ async function replacementCandidates(input: {
 }
 
 /**
- * The model this channel turn must run on, or `null` to leave it alone.
+ * The model this channel turn must run on: the servable pin, or a
+ * replacement. `null` only when there is nothing to send (no pin, no image)
+ * or nothing servable to send.
  *
  * Two things make a turn unanswerable before it starts, and both are
  * invisible to the person typing in Teams or Slack:
@@ -211,12 +213,6 @@ export async function channelTurnModel(input: {
   sessionId?: string;
   /** A session not created yet: the keys it will select count in the check. */
   providerSecretPools?: Record<string, string[]>;
-  /**
-   * The session does not run `currentModel` yet — a conversation's `/model`
-   * choice made after it started. A servable one is returned, so the choice
-   * travels with this prompt.
-   */
-  explicit?: boolean;
 }): Promise<string | null> {
   const { projectId, accountId, userId, currentModel, hasImage } = input;
   if (!userId) return null;
@@ -274,7 +270,12 @@ export async function channelTurnModel(input: {
   if (hasImage && effectiveReadsImages && pinServable && currentModel) {
     return wireModelId(currentModel);
   }
-  if (!hasImage && pinServable) return input.explicit && currentModel ? wireModelId(currentModel) : null;
+  // A text message carries its servable pin for the same reason: with no model
+  // on the prompt, OpenCode answers on the model of the session's last prompt.
+  // A Teams channel pinned to DeepSeek answered on `codex/gpt-6-astra` from
+  // 2026-09-24 to 2026-10-01, because one earlier prompt had carried it, and
+  // failed every turn with "Connect Codex".
+  if (!hasImage && pinServable) return currentModel ? wireModelId(currentModel) : null;
 
   const needsVision = hasImage;
   const candidates = await replacementCandidates({

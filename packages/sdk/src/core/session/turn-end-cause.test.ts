@@ -43,9 +43,9 @@ describe('turnEndCause', () => {
     expect(turnEndCause({ last_ended: ended({ end_reason: 'completed' }) }, 'msg_u2')).toBeNull();
   });
 
-  // `last_ended` is one row and is omitted while a turn runs. A queued prompt
-  // starts the next turn seconds after a guard abort, so the cause has to be
-  // found by message id in `recent_failures`, whatever `last_ended` says.
+  // `last_ended` is one row even when another turn runs. A queued prompt
+  // can start after a guard abort, so an older cause must remain findable
+  // by message id in `recent_failures`, whatever `last_ended` says.
   test('finds the cause of an OLDER turn in recent_failures while the next turn runs', () => {
     const observation = { recent_failures: [{ message_id: 'msg_u2', ended_at: null, error: GUARD }] };
     expect(turnEndCause(observation, 'msg_u2')).toEqual(GUARD);

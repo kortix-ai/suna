@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
@@ -33,6 +34,8 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
 import { db } from '../../shared/db';
@@ -75,7 +78,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../session-turn-ledger';
 import { canOverride, inheritParentOrigin, resolveSessionOrigin } from './session-origin';
 import { resolveRootSessionInitiator, type SessionInitiator } from './session-initiator';
 import { sessionCreatedAuditAttribution } from './session-audit';
@@ -367,7 +370,12 @@ export async function createProjectSession(input: {
   }
   const secretsAllowlist = parsedSecrets.value ?? null;
   if (secretsAllowlist && secretsAllowlist.length > 0) {
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId);
+    // The creator's own audience: a value shared only with them is a valid
+    // allowlist entry. Delivery re-applies the session's audience at boot.
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, {
+      personId: userId,
+      agentId: null,
+    });
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
@@ -502,7 +510,7 @@ export async function createProjectSession(input: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
+  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
   if (requestedModel) {
@@ -902,6 +910,7 @@ export async function createProjectSession(input: {
         accountId,
         sessionId,
         actorUserId: userId,
+        authorSessionId: input.callerSessionId ?? null,
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -944,7 +953,6 @@ export async function createProjectSession(input: {
     inSession: input.inSession,
     origin,
     invocationSource,
-    clientReportedSource: input.request?.clientReportedSource ?? null,
     callerSessionId: input.callerSessionId,
     agentName,
     visibility,
@@ -953,16 +961,11 @@ export async function createProjectSession(input: {
     secretAllowlistCount: secretsAllowlist?.length ?? 0,
   });
   // The surface the create came through. The route stamps every HTTP create
-  // `ui`; a spawn from another session's credential is an `agent`, and the CLI
-  // and MCP name themselves in X-Kortix-Client. Informational only: no policy
-  // reads these values (origin keys on `trigger:`/`system:` and channels).
+  // `ui`; a spawn from another session's credential is an `agent`. Derived from
+  // the authenticated credential, never a client header. Informational only:
+  // no policy reads these values (origin keys on `trigger:`/`system:` and channels).
   const sessionSource =
-    invocationSource === 'ui' && input.callerSessionId
-      ? 'agent'
-      : invocationSource === 'ui' &&
-          (input.request?.clientReportedSource === 'cli' || input.request?.clientReportedSource === 'mcp')
-        ? input.request.clientReportedSource
-        : invocationSource;
+    invocationSource === 'ui' && input.callerSessionId ? 'agent' : invocationSource;
   const initiator: SessionInitiator =
     parentSession?.initiator ??
     resolveRootSessionInitiator({
@@ -992,6 +995,10 @@ export async function createProjectSession(input: {
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     ...(input.metadata ?? {}),
+    // Server-owned creation intent, never caller metadata or actual placement.
+    ...((input.metadata?.[WARM_SESSION_METADATA_KEY] ?? requestMetadata[WARM_SESSION_METADATA_KEY]) === true
+      ? { [WARM_SESSION_LOCATION_KEY]: resolveSessionSandboxRegion(project.metadata) ?? 'home' }
+      : {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.
@@ -1005,7 +1012,6 @@ export async function createProjectSession(input: {
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
-      client_reported_source: auditAttribution.clientReportedSource,
       initiator_actor_type: auditAttribution.initiatorActorType,
       initiator_actor_id: auditAttribution.initiatorActorId,
       delegation_depth: auditAttribution.delegationDepth,
@@ -1060,6 +1066,7 @@ export async function createProjectSession(input: {
         initiatorType: initiator.type,
         initiatorId: initiator.id,
         secretsAllowlist,
+        labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
         connectorBindingsConfigured,
         connectorBindingsInheritUnbound: inheritUnbound,
         metadata,
@@ -1342,7 +1349,6 @@ export async function createProjectSession(input: {
             gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
-            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             repositoryAccess,

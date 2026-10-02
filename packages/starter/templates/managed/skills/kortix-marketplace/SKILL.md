@@ -44,7 +44,7 @@ adding an item is the import flow below.
 3. **Merge what fits into this project**, in the right place:
    - skills → `skills/<name>/`,
    - agents → `agents/<name>.md`, declared under `agents:` in `kortix.yaml`,
-   - tools → `harnesses/opencode/tools/`,
+   - tools → `harnesses/opencode/tools/` (an OpenCode tool file; a pi session does not load it — on pi a tool is an extension in `harnesses/pi/extensions/`),
    - for a **whole project**: pull in its skills/agents/tools and reconcile its
      `kortix.yaml` into this project's (merge connectors/triggers/agents — never
      blindly overwrite the user's manifest). Use judgment; keep what's relevant.

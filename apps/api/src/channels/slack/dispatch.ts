@@ -8,10 +8,12 @@ import {
 } from '../install-store';
 import {
   deleteMessage,
-  getChannelName,
+  describeSlackConversation,
   postBlocks,
   postMessage,
 } from '../slack-api';
+import { backfillSlackBindingLabel } from './binding-label';
+import { slackMessageLabels } from './labels';
 import { PICKER_TTL_MS } from './app';
 import { handleSlashCommand } from './commands';
 import {
@@ -51,67 +53,7 @@ import type {
 
 export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
-// Every path that creates/rebinds a chat_channel_bindings row calls this so the
-// web Channels settings page can show the real Slack channel name instead of
-// falling back to the raw channel id (e.g. `C0A1B2C3D4E`). Previously only the
-// multi-project "which project?" picker path persisted `channel_name` — the
-// common single-project auto-bind case left it NULL forever. Cheap by design:
-// a DB read first, and the Slack API call only fires when a name isn't already
-// stored, so steady-state dispatch (called on every event) costs one SELECT.
-// Best-effort — a Slack API hiccup here must never break message handling.
-// Returns the resolved (already-stored or freshly-fetched) name, or null, so
-// a caller that needs it for immediate display (the settings-page GET) doesn't
-// have to re-query after this writes it.
-//
-// `preloadedToken`: a caller iterating MANY bindings for the same project
-// (the channels/bindings list GET) resolves the bot token once and passes it
-// here, instead of every binding re-decrypting the same project secret. Absent
-// (the single-event dispatch/interactivity callers), the token loads as before.
-export async function backfillChannelName(
-  teamId: string,
-  channelId: string,
-  projectId: string,
-  preloadedToken?: string | null,
-): Promise<string | null> {
-  if (!teamId || !channelId || !projectId) return null;
-  try {
-    const [row] = await db
-      .select({ channelName: chatChannelBindings.channelName })
-      .from(chatChannelBindings)
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
-          eq(chatChannelBindings.channelId, channelId),
-        ),
-      )
-      .limit(1);
-    if (!row) return null;
-    if (row.channelName) return row.channelName;
-    const token = preloadedToken !== undefined ? preloadedToken : await loadSlackTokenForProject(projectId);
-    if (!token) return null;
-    // Returns null for DMs (no `name` field on the conversation) — fine, the
-    // UI's `channelName ?? channelId` fallback already handles that case.
-    const channelName = await getChannelName(token, channelId);
-    if (!channelName) return null;
-    await db
-      .update(chatChannelBindings)
-      .set({ channelName })
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
-          eq(chatChannelBindings.channelId, channelId),
-        ),
-      );
-    return channelName;
-  } catch (err) {
-    console.warn('[slack-webhook] channel-name backfill failed (non-fatal)', err);
-    return null;
-  }
-}
-
-// NOTE: deliberately does NOT call backfillChannelName — this runs on EVERY
+// NOTE: deliberately does NOT call backfillSlackBindingLabel — this runs on EVERY
 // Slack event, and the name is already captured on first-bind (the auto-bind
 // branch in resolveOauthProject below, or the picker flow in interactivity.ts)
 // plus lazily on the settings-page GET for any pre-existing NULL row. Adding a
@@ -131,10 +73,10 @@ export async function ensureProjectChannelBinding(
   // hourglass, no reply, no session, no row anywhere to explain it.
   //
   // Any project whose Slack app merely observes a channel (both manifests
-  // subscribe `message.channels`) was enough to take it. Prod 2026-08-28,
-  // one workspace: `kortix-incident-reporter` (installed 2026-08-17)
-  // held a channel where `Kortix Company` had run 71 sessions through
-  // 2026-08-14 and then went silent for 14 days.
+  // subscribe `message.channels`) was enough to take it. Prod 2026-08-28: a
+  // project whose app was installed 2026-08-17 held a channel where another
+  // project had run 71 sessions through 2026-08-14, and that project then went
+  // silent there for 14 days.
   //
   // Re-assignment is a DELIBERATE act and has its own paths, untouched by this:
   // the channel picker (`interactivity.ts` pick_project) and `/kortix use` /
@@ -197,7 +139,7 @@ export async function resolveOauthProject(
         .onConflictDoNothing({
           target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
         });
-      await backfillChannelName(teamId, channelId, onlyProjectId);
+      await backfillSlackBindingLabel(teamId, channelId, onlyProjectId);
     }
     return { kind: 'project', projectId: onlyProjectId };
   }
@@ -276,8 +218,15 @@ async function postProjectPicker(opts: {
     .where(inArray(projects.projectId, projectIds));
 
   const pickerId = randomUUID();
-  const channelName = isDm ? null : await getChannelName(token, channelId);
-  const channelLabel = isDm ? 'this DM' : channelName ? `#${channelName}` : `<#${channelId}>`;
+  const conversation = isDm ? null : await describeSlackConversation(token, channelId);
+  const channelName = conversation?.type === 'channel' || conversation?.type === 'private_channel' ? conversation.name : null;
+  const channelLabel = isDm
+    ? 'this DM'
+    : conversation?.type === 'mpim'
+      ? 'this group DM'
+      : channelName
+        ? `#${channelName}`
+        : `<#${channelId}>`;
 
   const blocks = [
     {
@@ -318,7 +267,11 @@ async function postProjectPicker(opts: {
   if (pickerTs) {
     await db
       .update(chatChannelBindings)
-      .set({ pickerTs, channelName: channelName ?? null })
+      .set({
+        pickerTs,
+        channelName: conversation?.name ?? null,
+        ...(conversation?.type ? { channelType: conversation.type } : {}),
+      })
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
@@ -465,9 +418,9 @@ export async function classifyEvent(
   // PROD 2026-08-20. A user typed `@Kortix hey man` in a channel that also has
   // the "Incident reporter" bot in it, and Incident reporter answered:
   //
-  //   mentioned bot   <kortix_bot_user_id>    (Kortix)
-  //   bot that replied <reporter_bot_user_id>  (Incident reporter)
-  //   session created inside kortix-incident-reporter
+  //   mentioned bot    <bot_user_id>        (Kortix)
+  //   bot that replied <other_bot_user_id>  (Incident reporter)
+  //   session created  inside the Incident reporter's project
   //
   // Two Kortix-platform apps in one workspace, each with its own BYO webhook at
   // /slack/events/{projectId}. Whichever project the callback lands on answers,
@@ -740,11 +693,16 @@ const FOREIGN_THREAD_NOTICE =
 // `ownThreadsOnly`: the per-project (BYO) webhook. Its requests may reach only
 // its own project, so a thread another project owns is refused, not joined.
 // `threadProjectResolved`: internal — set on the re-dispatch below.
+// `authorizedResume`: the decision this message reports (a review verdict, an
+// approval) was already authorized for this project. The join policy governs
+// who may TALK in a thread; it must not strand the agent after a manager who
+// is not a participant decided. The sender is still resolved as a linked
+// member below. Not carried into another project's thread on re-dispatch.
 export async function spawnAgentTurn(
   projectId: string,
   envelope: SlackEnvelope,
   event: SlackEvent,
-  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean } = {},
+  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean; authorizedResume?: boolean } = {},
 ): Promise<void> {
   const teamId = envelope.team_id ?? event.team ?? '';
   const threadId = event.thread_ts ?? event.ts ?? '';
@@ -771,20 +729,19 @@ export async function spawnAgentTurn(
       // to slackUserId, so for a bot sender both land where no human will ever
       // see them, and the mention reads as "Kortix ignored it" — which is how
       // this went undiagnosed. Link it with `<cmd> link-bot @TheBot` instead.
-      if (!event.bot_id) {
-        await postIdentityPrompt({
-          projectId,
-          teamId,
-          channel: event.channel,
-          // Top-level ephemeral prompts should render beside the message. Passing
-          // the message ts as thread_ts hides the auth prompt in a new thread.
-          threadTs: event.thread_ts,
-          slackUserId,
-          reason: actor.reason,
-          envelope,
-          event,
-        });
-      }
+      if (event.bot_id) return;
+      await postIdentityPrompt({
+        projectId,
+        teamId,
+        channel: event.channel,
+        // Top-level ephemeral prompts should render beside the message. Passing
+        // the message ts as thread_ts hides the auth prompt in a new thread.
+        threadTs: event.thread_ts,
+        slackUserId,
+        reason: actor.reason,
+        envelope,
+        event,
+      });
       return;
     }
     actorUserId = actor.userId;
@@ -797,6 +754,19 @@ export async function spawnAgentTurn(
     actorUserId = owner;
   }
 
+  await routeSlackThread(projectId, envelope, event, opts, project, actorUserId, teamId, threadId);
+}
+
+async function routeSlackThread(
+  projectId: string,
+  envelope: SlackEnvelope,
+  event: SlackEvent,
+  opts: { ownThreadsOnly?: boolean; threadProjectResolved?: boolean; authorizedResume?: boolean },
+  project: { accountId: string; metadata: typeof projects.$inferSelect.metadata },
+  actorUserId: string,
+  teamId: string,
+  threadId: string,
+): Promise<void> {
   let revived = false;
   if (teamId && threadId) {
     const thread = { platform: 'slack', workspaceId: teamId, threadId };
@@ -818,110 +788,10 @@ export async function spawnAgentTurn(
       return;
     }
     if (existing) {
-      if (config.SLACK_REQUIRE_USER_IDENTITY) {
-        const selection = event.channel
-          ? await currentChannelSelection({ teamId, channelId: event.channel })
-          : null;
-        const allowed = await ensureSlackThreadParticipant({
-          projectId,
-          teamId,
-          channel: event.channel,
-          threadId,
-          sessionId: existing.sessionId,
-          sessionOwnerId: existing.createdBy,
-          sessionMetadata: existing.metadata as Record<string, unknown> | null,
-          channelPolicy: selection?.conversationPolicy,
-          slackUserId: event.user ?? '',
-          actorUserId,
-        });
-        if (!allowed) return;
-      }
-      // A known thread maps PERMANENTLY to exactly one session. Route the message
-      // into that session and NEVER create a second one — the session is durable
-      // and resurrects its own sandbox (resume / reprovision) underneath; the
-      // channel never touches the sandbox. The only stream-level decision here is
-      // "is a turn already streaming?": if so, don't open a competing stream, just
-      // hand the message to the running session.
-      const inflight = await loadTurn(existing.sessionId);
-      const turnInFlight = !!inflight && !inflight.finalized;
-
-      const handle = turnInFlight
-        ? null
-        : await startTurn(projectId, teamId, event, 'On it');
-      if (handle) {
-        handle.sessionId = existing.sessionId;
-        await saveTurn(handle);
-      }
-      // Per-Slack-user identity: once a thread participant is authorized, deliver
-      // their follow-up as that validated Kortix user. The thread/session gate
-      // above decides whether they are allowed to join this conversation at all.
-      const outcome = await deliverSlackFollowUpToSession({
-        sessionId: existing.sessionId,
-        text: renderFollowUpPrompt(envelope, event),
-        userId: actorUserId,
-        // An image on a text-only model, a pin the session can no longer run.
-        model: await slackFollowUpModel({
-          project: { projectId, accountId: project.accountId, metadata: project.metadata },
-          userId: actorUserId,
-          sessionId: existing.sessionId,
-          event,
-          session: {
-            createdBy: existing.createdBy ?? null,
-            metadata: existing.metadata,
-            agentName: existing.agentName ?? null,
-          },
-        }),
-      });
-
-      if (outcome === 'delivered') {
-        await touchChatThread(thread);
-        return;
-      }
-
-      if (outcome === 'pending') {
-        // The session is ALIVE and owns this thread — it's just still coming up
-        // (provisioning / waking from hibernation). KEEP the mapping; do NOT
-        // recreate (recreating is exactly what orphaned the real session and
-        // produced a second reply from "a session you can never find"). Let the
-        // user know it's waking, only on a stream we own — never clobber an
-        // in-flight turn's stream.
-        if (handle) {
-          await deleteTurn(existing.sessionId);
-          await finalizeTurn(handle, {
-            error: "Still waking this thread's session back up — send that again in a moment.",
-          });
-        }
-        return;
-      }
-
-      if (outcome === 'failed') {
-        // The session is in a genuine terminal error (provisioning failed). This is
-        // the one honest failure — surface it; KEEP the mapping and never recreate
-        // (a new session wouldn't fix a real fault, and silently recreating is what
-        // we're eliminating). The thread stays bound to its session.
-        //
-        // But surface it ONCE. Because we keep the mapping, every later message in
-        // the thread lands right back here (`session.status === 'failed'` is sticky)
-        // and, unguarded, re-posts the identical line — the thread jammed on repeat.
-        // The first failure claims a durable per-thread notice and posts it with a
-        // direct link to open the session in Kortix; every later one just clears its
-        // ⏳ ack and stays silent, so the thread isn't spammed forever.
-        if (handle) {
-          await deleteTurn(existing.sessionId);
-          if (await claimThreadErrorNotice(teamId, threadId)) {
-            const url = sessionWebUrl(config.FRONTEND_URL, projectId, existing.sessionId);
-            await finalizeTurn(handle, {
-              error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
-            });
-          } else {
-            // Suppressing the repeated notice must not turn a failed start
-            // into "Task complete" on the card. Title only — honest, still
-            // silent. Teams carried the identical bug.
-            await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
-          }
-        }
-        return;
-      }
+      if (!(await mayJoinSlackThread(projectId, event, opts, actorUserId, teamId, threadId, existing))) return;
+      const delivery = await deliverToExistingThread(projectId, envelope, event, project, actorUserId, teamId, threadId, thread, existing);
+      if (delivery.handled) return;
+      const { handle } = delivery;
 
       // outcome === 'no-session': the durable projectSessions row itself is gone
       // (deleted; the chat_threads FK cascade should already have dropped this
@@ -946,4 +816,102 @@ export async function spawnAgentTurn(
   // No live mapping for this thread → create the session, or JOIN one that a
   // concurrent handler is creating this very moment. Single atomic create path.
   await createOrJoinThreadSession({ projectId, teamId, threadId, envelope, event, revived, actorUserId });
+}
+
+async function mayJoinSlackThread(
+  projectId: string,
+  event: SlackEvent,
+  opts: { authorizedResume?: boolean },
+  actorUserId: string,
+  teamId: string,
+  threadId: string,
+  existing: NonNullable<Awaited<ReturnType<typeof findChatThreadSession>>>,
+): Promise<boolean> {
+  if (!config.SLACK_REQUIRE_USER_IDENTITY || opts.authorizedResume) return true;
+  const selection = event.channel
+    ? await currentChannelSelection({ teamId, channelId: event.channel })
+    : null;
+  return ensureSlackThreadParticipant({
+    projectId,
+    teamId,
+    channel: event.channel,
+    threadId,
+    sessionId: existing.sessionId,
+    sessionOwnerId: existing.createdBy,
+    sessionMetadata: existing.metadata as Record<string, unknown> | null,
+    channelPolicy: selection?.conversationPolicy,
+    slackUserId: event.user ?? '',
+    actorUserId,
+  });
+}
+
+async function deliverToExistingThread(
+  projectId: string,
+  envelope: SlackEnvelope,
+  event: SlackEvent,
+  project: { accountId: string; metadata: typeof projects.$inferSelect.metadata },
+  actorUserId: string,
+  teamId: string,
+  threadId: string,
+  thread: Parameters<typeof touchChatThread>[0],
+  existing: NonNullable<Awaited<ReturnType<typeof findChatThreadSession>>>,
+) {
+  const inflight = await loadTurn(existing.sessionId);
+  const turnInFlight = !!inflight && !inflight.finalized;
+
+  const handle = turnInFlight
+    ? null
+    : await startTurn(projectId, teamId, event, 'On it');
+  if (handle) {
+    handle.sessionId = existing.sessionId;
+    await saveTurn(handle);
+  }
+  const outcome = await deliverSlackFollowUpToSession({
+    sessionId: existing.sessionId,
+    text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
+    userId: actorUserId,
+    model: await slackFollowUpModel({
+      project: { projectId, accountId: project.accountId, metadata: project.metadata },
+      userId: actorUserId,
+      sessionId: existing.sessionId,
+      event,
+      session: {
+        createdBy: existing.createdBy ?? null,
+        metadata: existing.metadata,
+        agentName: existing.agentName ?? null,
+      },
+    }),
+  });
+
+  if (outcome === 'delivered') {
+    await touchChatThread(thread);
+    return { handled: true as const, handle };
+  }
+
+  if (outcome === 'pending') {
+    if (handle) {
+      await deleteTurn(existing.sessionId);
+      await finalizeTurn(handle, {
+        error: "Still waking this thread's session back up — send that again in a moment.",
+      });
+    }
+    return { handled: true as const, handle };
+  }
+
+  if (outcome === 'failed') {
+    if (handle) {
+      await deleteTurn(existing.sessionId);
+      if (await claimThreadErrorNotice(teamId, threadId)) {
+        const url = sessionWebUrl(config.FRONTEND_URL, projectId, existing.sessionId);
+        await finalizeTurn(handle, {
+          error: `This thread's session hit an error and couldn't start. <${url}|Open it in Kortix> to see what happened.`,
+        });
+      } else {
+        await finalizeTurn(handle, { title: "Couldn't start", unfinished: true });
+      }
+    }
+    return { handled: true as const, handle };
+  }
+
+  return { handled: false as const, handle };
 }

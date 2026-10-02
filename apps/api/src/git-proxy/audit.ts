@@ -126,6 +126,11 @@ export function bindGitProxyPrincipal(principal: GitPrincipal, project: ProjectR
     actorType: envelope.actorType,
     actorUserId: envelope.actorUserId,
     authoritativeSource: envelope.source,
+    ...(principal.kind === 'session'
+      ? { credentialKind: 'session_token' as const, credentialId: principal.sessionId }
+      : principal.kind === 'user' && tokenId
+        ? { credentialKind: 'personal_access_token' as const, credentialId: tokenId }
+        : {}),
     authMethod: {
       kind: 'git',
       principal: principal.kind,

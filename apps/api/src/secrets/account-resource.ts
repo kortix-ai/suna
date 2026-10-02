@@ -73,11 +73,29 @@ export function personalKeyGranted(rowGrantUserId: string | null, grantUserId: s
   return grantUserId !== null && rowGrantUserId === grantUserId;
 }
 
-export async function memberMayReadProject(accountId: string, projectId: string, userId: string): Promise<boolean> {
+/**
+ * May `userId` read `projectId`? By default a question about a member, by
+ * role. Account-wide MFA (authorize step 6) guards a person's own browser
+ * requests, and the route that led here authorized its request with that
+ * request's level. Asked with no level, the gate refused every member of an
+ * account that requires MFA except a super admin. So no pooled key reached
+ * their sessions: a Teams channel never reached the ChatGPT login shared with
+ * the whole project, and failed every turn with "Connect Codex" (2026-10-01).
+ *
+ * A route that asks about the caller's own request, with no authorize call of
+ * its own, passes `request` with that request's level.
+ */
+export async function memberMayReadProject(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  request?: { mfaAal: string | undefined },
+): Promise<boolean> {
   const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
     import('../iam/actor'), import('../iam/authorize'), import('../iam/actions'),
   ]);
-  return (await authorize(actorForUser(userId, accountId), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
+  const mfaAal = request ? request.mfaAal : 'aal2';
+  return (await authorize(actorForUser(userId, accountId, { mfaAal }), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
 }
 
 export async function listGrantedGatewaySecretNames(

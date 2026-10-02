@@ -50,20 +50,41 @@ describe('harness ownership boundary', () => {
         }),
       },
       diagnostics: {
-        health: async () => ({ daemon: 'ok', status: 'ok', runtimeReady: true, uptime_s: 1, exclusiveFeature: 'preserved' }),
+        capabilities: ['session.subagents'],
+        health: async () => ({
+          harness: {
+            id: 'test-only-adapter', version: '1.0.0', state: 'ok', ready: true, error: null,
+            session: { id: 'ses_root', required: true }, turn: null, details: { exclusiveFeature: 'preserved' },
+          },
+        }),
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
+      turns: { prompt: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, agents: unexpected },
       background: { start: unexpected },
       assets: {
-        componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
+        harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
         reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
       },
     }
     const app = buildDaemonApp(cfg, service, 0)
     const response = await app.request('/kortix/health')
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ daemon: 'ok', capabilities: ['file.import', 'file.append'], status: 'ok', runtimeReady: true, uptime_s: 1, exclusiveFeature: 'preserved' })
+    // The route composes the host facts, the closed harness block (adapter
+    // facts ride in `details`) and one readiness verdict (E19).
+    expect(await response.json()).toMatchObject({
+      daemon: 'ok',
+      capabilities: ['file.import', 'file.append', 'runtime.turns.v1', 'session.subagents'],
+      status: 'ok',
+      runtimeReady: true,
+      boot_error: null,
+      workload: 'session',
+      harness: { id: 'test-only-adapter', version: '1.0.0', ready: true, details: { exclusiveFeature: 'preserved' } },
+      // The pre-W3 flat names, composed from the block for an older API.
+      opencode: 'ok',
+      opencode_session_id: 'ses_root',
+      opencode_session_required: true,
+    })
     expect((await app.request('/session/native-command')).status).toBe(503)
 
     // The transport controller preserves features that are not common methods.
@@ -72,5 +93,14 @@ describe('harness ownership boundary', () => {
     const native = await transport.request('/exclusive-feature', { method: 'POST', body: 'native input' })
     expect(native.status).toBe(201)
     expect(await native.json()).toEqual({ nativeFeature: '/exclusive-feature', input: 'native input' })
+
+    // A runtime that cannot take a request answers one machine code beside the adapter's own details.
+    const booting = createRuntimeProxyRouter(
+      { cfg, bootState: { repoMaterializationError: null, timeline: [] } },
+      { ...service.proxy, readiness: async () => ({ ready: false, phase: 'boot', details: { error: 'adapter wording' } }) },
+    )
+    const refused = await booting.request('/exclusive-feature')
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toEqual({ code: 'runtime_not_ready', error: 'adapter wording', phase: 'boot' })
   })
 })

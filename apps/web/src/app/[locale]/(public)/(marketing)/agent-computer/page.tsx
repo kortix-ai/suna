@@ -36,7 +36,7 @@ function SectionDivider(): ReactNode {
  * other page: a session is a machine.
  *
  * Copy lives in `features/marketing/agent-computer/content.ts` and is governed
- * by the `comms` skill. Three rules bite hardest here: never write "container"
+ * by the `kortix-brand` skill. Three rules bite hardest here: never write "container"
  * (the nouns are "agent computer", "cloud computer", "sandbox"); never invent a
  * number ("3,000+ apps" is the only sanctioned one); and never claim blanket
  * "microVM isolation" or a secret "the model never sees" — see the accuracy

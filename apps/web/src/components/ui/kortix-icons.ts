@@ -27,7 +27,6 @@ export {
   TrashIcon as IconDelete,
   RocketIcon as IconDeploy,
   CheckCircleIcon as IconDone,
-  DownloadIcon as IconDownload,
   PencilIcon as IconEdit,
   ArrowSquareOutIcon as IconExternal,
   WarningOctagonIcon as IconFailed,

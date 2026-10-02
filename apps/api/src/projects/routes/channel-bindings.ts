@@ -20,7 +20,7 @@ import {
   setChannelConversationPolicy,
   setChannelModel,
 } from "../../channels/slack/selection";
-import { backfillChannelName } from "../../channels/slack/dispatch";
+import { backfillSlackBindingLabel } from "../../channels/slack/binding-label";
 import { loadSlackTokenForProject } from "../../channels/install-store";
 import { requestMemo } from "../../lib/request-context";
 import {
@@ -34,7 +34,6 @@ import {
   type ModelSource,
   chooseEffectiveAgent,
   chooseEffectiveModel,
-  toOpencodeModelRef,
   toWireModel,
 } from "../../llm-gateway/resolution/effective";
 import { type AccountModelDefaults, getAccountModelDefaults } from "../../repositories/model-preferences";
@@ -177,24 +176,24 @@ function oneToOneConversation(row: ChannelBindingRow): boolean {
 }
 
 /**
- * Should `GET /channels/bindings` call `backfillChannelName` for this row?
+ * Should `GET /channels/bindings` ask Slack to name this row?
  *
- * A Slack DM (`oneToOneConversation`) never carries a `name` on the
- * conversation, so `backfillChannelName` always returns null for one — asking
- * anyway wastes one Slack API round trip per DM binding, on EVERY poll,
- * forever (measured prod: 29 HTTP calls / 453ms on a project whose bindings
- * were mostly DMs — see the call site's comment). Exported so the "which rows
- * get backfilled" rule has one definition, pinned by a test, instead of being
- * re-derived inline where it is easy to silently drop the DM exclusion again.
+ * Every Slack row without a stored name, DMs included: a DM is named after the
+ * other person (`users.info`). The answer is stored, so a row costs Slack calls
+ * once; a lookup that names nothing is not repeated for 10 minutes
+ * (`channels/slack/binding-label.ts`). Before that, DMs were excluded because
+ * their lookup never named anything and repeated on every poll (measured prod:
+ * 29 HTTP calls / 453 ms on one project).
  */
 export function needsSlackNameBackfill(binding: ChannelBindingRow): boolean {
-  return binding.platform === "slack" && !binding.channelName && !oneToOneConversation(binding);
+  return binding.platform === "slack" && !binding.channelName;
 }
 
 async function serializeBinding(
   row: ChannelBindingRow,
   projectDefaultAgent: string | null,
   modelCtx: ModelResolutionCtx,
+  channelUnavailable = false,
 ) {
   const effectiveAgent = chooseEffectiveAgent({
     explicit: row.agentName,
@@ -213,6 +212,8 @@ async function serializeBinding(
     channelId: row.channelId,
     channelName: row.channelName,
     channelType: row.channelType,
+    // Slack answered that the conversation is deleted or out of the bot's reach.
+    channelUnavailable,
     agentName: row.agentName,
     opencodeModel: row.opencodeModel,
     conversationPolicy: row.conversationPolicy,
@@ -248,30 +249,26 @@ projectsApp.openapi(
     const accountId = loaded.row.accountId as string;
     const projectDefaultAgent = projectDefaultAgentOf(loaded.row.metadata);
     const bindings = await listChannelBindingsForProject(projectId);
-    // Rows created before channel-name persistence existed on every bind path
-    // (or created before the project's Slack token was available) can still
-    // have `channelName === null`. Resolve those live on read so the settings
-    // page shows the real Slack channel name on the very next load instead of
-    // waiting for the channel's next Slack event.
-    //
-    // Slack DMs (`channelId` starts with `D`) never carry a `name` on the
-    // conversation — backfillChannelName always returns null for them (see its
-    // comment in channels/slack/dispatch.ts) — so calling it every single poll
-    // wasted one Slack API round trip per DM binding forever (measured: 29 HTTP
-    // calls / 453ms on a project whose bindings were mostly DMs). Skip those up
-    // front; the UI already falls back to `channelName ?? channelId`.
-    //
-    // The bot token is the SAME for every Slack binding in this one project —
-    // load it once instead of once per binding (each load decrypts a project
-    // secret, the other half of the 93-query N+1 measured on this route).
+    // A Slack row without a stored name is named on read, and the name is
+    // stored, so the settings page shows `#general` or a person's name on the
+    // very next load. The bot token is the SAME for every Slack binding in
+    // this project: load it once (each load decrypts a project secret). Five
+    // lookups at a time keep a first load with many DMs under Slack's rate
+    // limits.
     const needsBackfill = bindings.filter(needsSlackNameBackfill);
+    const unavailable = new Set<string>();
     if (needsBackfill.length > 0) {
       const slackToken = await loadSlackTokenForProject(projectId);
-      await Promise.all(
-        needsBackfill.map(async (b) => {
-          b.channelName = await backfillChannelName(b.workspaceId, b.channelId, projectId, slackToken);
-        }),
-      );
+      for (let i = 0; i < needsBackfill.length; i += 5) {
+        await Promise.all(
+          needsBackfill.slice(i, i + 5).map(async (b) => {
+            const label = await backfillSlackBindingLabel(b.workspaceId, b.channelId, projectId, slackToken);
+            b.channelName = label.name;
+            b.channelType = label.type ?? b.channelType;
+            if (label.unavailable) unavailable.add(b.bindingId);
+          }),
+        );
+      }
     }
     const [modelDefaults, mayUseManagedModels] = await Promise.all([
       getAccountModelDefaults(accountId, projectId),
@@ -288,7 +285,9 @@ projectsApp.openapi(
     };
     return c.json({
       projectDefaultAgent,
-      bindings: await Promise.all(bindings.map((b) => serializeBinding(b, projectDefaultAgent, modelCtx))),
+      bindings: await Promise.all(
+        bindings.map((b) => serializeBinding(b, projectDefaultAgent, modelCtx, unavailable.has(b.bindingId))),
+      ),
     });
   },
 );
@@ -403,7 +402,7 @@ projectsApp.openapi(
           );
         }
         // Same two-path gate as session create (lib/sessions.ts): gateway ON
-        // validates via the gateway resolver and stores `kortix/<wire>`;
+        // validates via the gateway resolver and stores the wire id;
         // gateway OFF (native OpenCode) enforces the native `provider/model`
         // shape and stores the ref verbatim.
         if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
@@ -431,7 +430,7 @@ projectsApp.openapi(
             409,
           );
         }
-        stored = toOpencodeModelRef(trimmed);
+        stored = toWireModel(trimmed);
         }
       }
       const ok = await setChannelModel(ctx, stored);

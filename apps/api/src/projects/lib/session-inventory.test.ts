@@ -27,7 +27,7 @@ function row(
     sandboxProvider: 'daytona',
     sandboxId: sessionId,
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'running',
     error: null,
@@ -42,6 +42,7 @@ function row(
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: {},
     createdAt: new Date('2026-07-21T00:00:00.000Z'),
     updatedAt: new Date('2026-07-21T00:00:00.000Z'),
@@ -317,7 +318,7 @@ describe('mergeSessionOwnerIdentities', () => {
     const identities = mergeSessionOwnerIdentities({
       ownerIds: [humanId, agentId, staleId],
       users: new Map([
-        [humanId, { exists: true, email: 'ari@kortix.ai', displayName: 'Ari' }],
+        [humanId, { exists: true, email: 'ari@kortix.ai', displayName: 'Ari', avatarUrl: 'https://img.example.test/ari.png' }],
         [agentId, { exists: false, email: null, displayName: null }],
         [staleId, { exists: false, email: null, displayName: null }],
       ]),
@@ -334,16 +335,19 @@ describe('mergeSessionOwnerIdentities', () => {
       type: 'user',
       name: 'Ari',
       email: 'ari@kortix.ai',
+      avatarUrl: 'https://img.example.test/ari.png',
     });
     expect(identities.get(agentId)).toEqual({
       type: 'service_account',
       name: 'backend-debugger',
       email: null,
+      avatarUrl: null,
     });
     expect(identities.get(staleId)).toEqual({
       type: 'unknown',
       name: null,
       email: null,
+      avatarUrl: null,
     });
   });
 });

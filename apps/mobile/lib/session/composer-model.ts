@@ -3,7 +3,7 @@
  *
  * The home lists the project's models (`useComposerModels`, the list web
  * shows) and resolves the default through `@kortix/sdk`
- * (`resolveComposerModel`). A pick is sent as `opencode_model` when the
+ * (`resolveComposerModel`). A pick is sent as the session's `model` when the
  * session is created.
  *
  * Pure data and pure functions only: `bun test` cannot load native modules.
@@ -19,10 +19,10 @@ export function selectComposerModel(key: string, defaultKey: string | null): str
 }
 
 /**
- * The `opencode_model` value of a pick. Gateway on: the bare gateway wire id
+ * The session `model` value of a pick. Gateway on: the bare gateway wire id
  * (the API stores `kortix/<wire>`). Gateway off: OpenCode's `provider/model`.
  */
-export function opencodeModelRef(model: { providerID: string; modelID: string }): string {
+export function sessionModelRef(model: { providerID: string; modelID: string }): string {
   return model.providerID === 'kortix' ? model.modelID : `${model.providerID}/${model.modelID}`;
 }
 

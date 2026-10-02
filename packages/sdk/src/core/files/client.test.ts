@@ -320,7 +320,7 @@ test('a ready-session upload crosses the sandbox edge in bounded chunks and repo
 
 // ── the runtime must be resolved before any byte leaves the client ───────────
 //
-// `getActiveOpenCodeUrl()` returns '' on a billing-enabled deployment until a
+// `getActiveRuntimeUrl()` returns '' on a billing-enabled deployment until a
 // session runtime is bound (see `session/server-store/active.ts`). Every op in
 // this module used to interpolate that '' straight into `fetch()`, which makes
 // the URL RELATIVE: the browser then POSTed the user's file AND their bearer
@@ -530,8 +530,7 @@ test('files namespace exposes write alongside upload', () => {
 //
 // `copyFile`'s upload called bare `fetch()` with a hand-rolled Authorization
 // header, so it silently skipped `platformConfig().fetch` (mobile/whitelabel
-// inject one), the size-scaled deadline, the 401 refresh-and-retry, and the
-// X-Kortix-Client header.
+// inject one), the size-scaled deadline, the 401 refresh-and-retry.
 
 test('copy uploads through platformConfig().fetch, not a bare global fetch', async () => {
   const seen: Array<{ url: string; clientHeader: string | null }> = [];
@@ -554,7 +553,7 @@ test('copy uploads through platformConfig().fetch, not a bare global fetch', asy
 
   const upload = seen.find((s) => s.url.endsWith('/file/upload'));
   expect(upload).toBeDefined();
-  expect(upload!.clientHeader).toBe('web');
+  expect(upload!.clientHeader).toBeNull();
   // The bare-fetch path would have gone to the global mock instead.
   expect(calls.filter((c) => c.url.endsWith('/file/upload'))).toEqual([]);
 });

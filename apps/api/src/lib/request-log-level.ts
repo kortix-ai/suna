@@ -1,7 +1,6 @@
 // Severity, suppression, and timing breakdown of the post-request
 // `Request completed:` line. `src/http-middleware.ts` owns the middleware that calls them.
 
-import { normalizeAuditClientSource, normalizeClientVersion } from '../shared/audit-client-source';
 import { formatStageEntries, stageSnapshot } from './server-timing';
 
 /**
@@ -108,16 +107,21 @@ export function shouldSuppressRequestLog(input: {
   );
 }
 
+const CLIENT_VERSION_RE = /^[0-9a-z][0-9a-z.+/-]{0,63}$/i;
+const CREDENTIAL_PREFIX_RE = /^(?:sk-|gh[opusr]_|kortix_(?:pat|sbx)_)/i;
+
 /**
- * The caller's reported surface (`X-Kortix-Client`) and release version
- * (`X-Kortix-Client-Version`) for the `Request completed:` line, so a route or
- * alias can be retired once no supported client version calls it. A missing
- * or malformed value is omitted.
+ * The caller's self-reported `<surface>/<version>` (`X-Kortix-Client-Version`,
+ * e.g. `cli/0.13.42`) for the `Request completed:` line, so a route or alias
+ * can be retired once no supported client version calls it. Telemetry only:
+ * any client can send any value, so it never reaches the audit trail, which
+ * records the authenticated credential. A missing, malformed or
+ * credential-shaped value is omitted.
  */
 export function requestClientLogFields(
   header: (name: string) => string | undefined,
-): { client?: string; client_version?: string } {
-  const client = normalizeAuditClientSource(header('x-kortix-client'));
-  const clientVersion = normalizeClientVersion(header('x-kortix-client-version'));
-  return { ...(client ? { client } : {}), ...(clientVersion ? { client_version: clientVersion } : {}) };
+): { client_version?: string } {
+  const value = header('x-kortix-client-version')?.trim() ?? '';
+  if (!CLIENT_VERSION_RE.test(value) || CREDENTIAL_PREFIX_RE.test(value)) return {};
+  return { client_version: value };
 }

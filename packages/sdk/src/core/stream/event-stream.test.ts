@@ -4,7 +4,7 @@ import {
   type EventStreamClient,
   type EventStreamTimerHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
+  type RuntimeEvent,
 } from './event-stream';
 
 // Mirrors event-stream.ts's default idle-watchdog budget (raised from 15s —
@@ -12,18 +12,18 @@ import {
 // sessions on a timer by design; see the HEARTBEAT_MS comment there).
 const HEARTBEAT_MS = 60_000;
 
-function sessionStatus(sessionID: string, statusType: string): OpenCodeEvent {
+function sessionStatus(sessionID: string, statusType: string): RuntimeEvent {
   return {
     type: 'session.status',
     properties: { sessionID, status: { type: statusType } },
-  } as unknown as OpenCodeEvent;
+  } as unknown as RuntimeEvent;
 }
 
-function partUpdated(partId: string): OpenCodeEvent {
+function partUpdated(partId: string): RuntimeEvent {
   return {
     type: 'message.part.updated',
     properties: { part: { id: partId } },
-  } as unknown as OpenCodeEvent;
+  } as unknown as RuntimeEvent;
 }
 
 class FakeEventChannel {
@@ -194,7 +194,7 @@ describe('openEventStream coalescing', () => {
   test('replaces earlier same-key events within a flush window, leaves other types untouched', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();
@@ -223,7 +223,7 @@ describe('openEventStream coalescing', () => {
   test('flushes on a 16ms cadence, not immediately on push', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();
@@ -244,7 +244,7 @@ describe('openEventStream coalescing', () => {
   test('swallows a throwing onEvent handler and keeps dispatching later events', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
     let throwOnce = true;
 
     const handle = openEventStream({
@@ -364,7 +364,7 @@ describe('openEventStream reconnect backoff', () => {
     const { timers, log } = createLoggingTimers(clock);
     const { client, channels } = createConnectableClient(() => log.push('connect'));
 
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers });
     await tick();
 
@@ -472,7 +472,7 @@ describe('openEventStream connect timeout', () => {
   test('a connect that resolves within the budget is unaffected — no spurious abort or retry', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({
       client,
@@ -564,7 +564,7 @@ describe('openEventStream heartbeat watchdog', () => {
   test('forces a reconnect and drops the event that surfaces after the idle deadline', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();
@@ -590,7 +590,7 @@ describe('openEventStream heartbeat watchdog', () => {
 
   test('reconnects off a permanently parked read that never resolves, errors, or closes', async () => {
     const clock = createFakeClock();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
     let attempts = 0;
 
     const client: EventStreamClient = {
@@ -661,7 +661,7 @@ describe('openEventStream heartbeat watchdog', () => {
   test('a genuine mid-stream rejection reconnects with backoff', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();
@@ -742,7 +742,7 @@ describe('openEventStream idle-disconnect backoff (reconnect-storm fix)', () => 
   test('a genuinely eventful connection still resets backoff to the 250ms fast path', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();
@@ -1193,7 +1193,7 @@ describe('openEventStream gap rehydrate', () => {
     await tick();
 
     // `server.connected` is the connection's own greeting, not missed work.
-    channels[0].push({ type: 'server.connected', properties: {} } as unknown as OpenCodeEvent);
+    channels[0].push({ type: 'server.connected', properties: {} } as unknown as RuntimeEvent);
     await tick();
     await clock.advance(1000);
     channels[0].end();
@@ -1246,6 +1246,83 @@ describe('openEventStream gap rehydrate', () => {
   });
 });
 
+describe('openEventStream connection state', () => {
+  test('reports connecting, open on the first frame, lost on a drop, and the same again on the reconnect', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const states: string[] = [];
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onConnectionChange: (state) => states.push(state),
+      timers: clock,
+    });
+    await tick();
+    // The connect call resolved, but no frame has arrived: not open yet.
+    expect(states).toEqual(['connecting']);
+
+    channels[0].push({ type: 'server.connected', properties: {} });
+    await tick();
+    expect(states).toEqual(['connecting', 'open']);
+    channels[0].push(partUpdated('p1'));
+    await tick();
+    expect(states).toEqual(['connecting', 'open']);
+
+    channels[0].end();
+    await tick();
+    expect(states).toEqual(['connecting', 'open', 'lost']);
+
+    await clock.advance(250);
+    await tick();
+    channels[1].push({ type: 'server.connected', properties: {} });
+    await tick();
+    expect(states).toEqual(['connecting', 'open', 'lost', 'connecting', 'open']);
+
+    handle.close();
+    await tick();
+    // A close is not a loss.
+    expect(states).toEqual(['connecting', 'open', 'lost', 'connecting', 'open']);
+  });
+
+  test('a park ends on onParked, with no lost after the final attempt', async () => {
+    const clock = createFakeClock();
+    const { client } = createDeadSandboxClient();
+    const signals: string[] = [];
+    const handle = openEventStream({
+      client,
+      onEvent: () => {},
+      onConnectionChange: (state) => signals.push(state),
+      onParked: () => signals.push('parked'),
+      maxConsecutiveHardFailures: 2,
+      timers: clock,
+    });
+    await tick();
+    await clock.advance(10_000);
+    await tick();
+    expect(signals).toEqual(['connecting', 'lost', 'connecting', 'parked']);
+    handle.close();
+  });
+
+  test('a subscriber that joins a live stream is told its current state', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const first = openEventStream({ client, onEvent: () => {}, timers: clock });
+    await tick();
+    channels[0].push({ type: 'server.connected', properties: {} });
+    await tick();
+    const states: string[] = [];
+    const second = openEventStream({
+      client,
+      onEvent: () => {},
+      onConnectionChange: (state) => states.push(state),
+      timers: clock,
+    });
+    expect(states).toEqual(['open']);
+    first.close();
+    second.close();
+  });
+});
+
 describe('openEventStream shared-stream fan-out (F5)', () => {
   // F5 review finding: the previous single-live-stream invariant SILENTLY
   // KILLED subscriber #1 the moment subscriber #2 opened a stream for the
@@ -1259,8 +1336,8 @@ describe('openEventStream shared-stream fan-out (F5)', () => {
   test('a second open for the SAME client SHARES the live stream — only one wire connection', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const firstDispatched: OpenCodeEvent[] = [];
-    const secondDispatched: OpenCodeEvent[] = [];
+    const firstDispatched: RuntimeEvent[] = [];
+    const secondDispatched: RuntimeEvent[] = [];
 
     const first = openEventStream({ client, onEvent: (e) => firstDispatched.push(e), timers: clock });
     await tick();
@@ -1292,8 +1369,8 @@ describe('openEventStream shared-stream fan-out (F5)', () => {
   test('closing ONE of two subscribers does not tear down the shared connection — the other keeps receiving', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const firstDispatched: OpenCodeEvent[] = [];
-    const secondDispatched: OpenCodeEvent[] = [];
+    const firstDispatched: RuntimeEvent[] = [];
+    const secondDispatched: RuntimeEvent[] = [];
 
     const first = openEventStream({ client, onEvent: (e) => firstDispatched.push(e), timers: clock });
     await tick();
@@ -1318,7 +1395,7 @@ describe('openEventStream shared-stream fan-out (F5)', () => {
   test('closing the LAST subscriber tears the shared connection down for good', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const first = openEventStream({ client, onEvent: () => {}, timers: clock });
     await tick();
@@ -1417,8 +1494,8 @@ describe('openEventStream shared-stream fan-out (F5)', () => {
     const clock = createFakeClock();
     const a = createConnectableClient();
     const b = createConnectableClient();
-    const dispatchedA: OpenCodeEvent[] = [];
-    const dispatchedB: OpenCodeEvent[] = [];
+    const dispatchedA: RuntimeEvent[] = [];
+    const dispatchedB: RuntimeEvent[] = [];
 
     const handleA = openEventStream({ client: a.client, onEvent: (e) => dispatchedA.push(e), timers: clock });
     const handleB = openEventStream({ client: b.client, onEvent: (e) => dispatchedB.push(e), timers: clock });
@@ -1460,7 +1537,7 @@ describe('openEventStream close()', () => {
   test('tears down cleanly: no further connects, timers, or dispatches', async () => {
     const clock = createFakeClock();
     const { client, channels } = createConnectableClient();
-    const dispatched: OpenCodeEvent[] = [];
+    const dispatched: RuntimeEvent[] = [];
 
     const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
     await tick();

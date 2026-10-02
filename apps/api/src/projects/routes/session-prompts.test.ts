@@ -332,11 +332,15 @@ mock.module('../lib/agent-access', () => ({
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
-mock.module('../sandbox-turn-lifecycle', () => ({
-  ...realTurnLifecycle,
+const realTurnLedger = await import('../session-turn-ledger');
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
   markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
     stopLog.push(['stamp', sessionId, name, scope]);
   },
+}));
+mock.module('../sandbox-turn-lifecycle', () => ({
+  ...realTurnLifecycle,
 }));
 mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   ...realHoldSettle,
@@ -615,6 +619,7 @@ describe('GET .../prompts', () => {
         // A text-only prompt names no files. The list is always present so a
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
+        no_reply: false,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },
@@ -950,7 +955,7 @@ describe('POST .../prompts/hold', () => {
     // prod 2026-09-25: the settle's abort reached OpenCode ~450 ms before the
     // client's proxied abort, the turn closed on a bare "Aborted" frame, and
     // the user's own Stop read as "stopped before it finished".
-    visibleSession = { row: { sessionId: SESSION_ID, opencodeSessionId: 'ses_root', metadata: {} } };
+    visibleSession = { row: { sessionId: SESSION_ID, runtimeSessionId: 'ses_root', metadata: {} } };
     commandTable = [
       row({ status: 'succeeded', result: { status: 'delivered', forwarded_message_id: WIRE_ID } }),
     ];
@@ -969,3 +974,39 @@ describe('POST .../prompts/hold', () => {
   });
 });
 
+describe('POST .../prompts authorship', () => {
+  const OTHER_SESSION = '77777777-7777-4777-8777-777777777777';
+
+  /** `fromSession` = the caller holds a session credential of that session. */
+  function send(fromSession?: string) {
+    loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: {} }, userId: USER_ID } as never;
+    visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
+    const application = new Hono<{ Variables: { userId: string; authType: string; sessionId?: string } }>();
+    application.use('*', async (c, next) => {
+      c.set('userId', USER_ID);
+      c.set('authType', 'pat');
+      if (fromSession) c.set('sessionId', fromSession);
+      await next();
+    });
+    application.route('/v1/projects', projectsApp);
+    return application.request(base(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...validBody, parts: [{ type: 'text', text: 'say hi' }] }),
+    });
+  }
+  const sentText = () => (enqueued.at(-1)?.parts as Array<{ text: string }>)[0]!.text;
+
+  test('sent by another session: the author is recorded and the text is unchanged', async () => {
+    expect((await send(OTHER_SESSION)).status).toBe(202);
+    expect(enqueued.at(-1)!.authorSessionId).toBe(OTHER_SESSION);
+    expect(sentText()).toBe('say hi');
+  });
+
+  test('sent by a person, or by the session into itself: no author session', async () => {
+    await send();
+    expect(enqueued.at(-1)!.authorSessionId).toBeNull();
+    await send(SESSION_ID);
+    expect(enqueued.at(-1)!.authorSessionId).toBeNull();
+  });
+});

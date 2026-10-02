@@ -8,6 +8,7 @@
  */
 
 import { unwrapError } from './errors';
+import { inputPath, toolKind } from './tool-kind';
 import { normalizeName } from './tools/tool-meta';
 import type {
   Diagnostic,
@@ -72,6 +73,13 @@ export function isSnapshotPart<P extends PartLike>(part: P): part is P & { type:
 
 export function isPatchPart<P extends PartLike>(part: P): part is P & { type: 'patch' } {
   return part.type === 'patch';
+}
+
+/** A model step boundary (`step-start` / `step-finish`): bookkeeping, never content. */
+export function isStepPart<P extends PartLike>(
+  part: P,
+): part is P & { type: 'step-start' | 'step-finish' } {
+  return part.type === 'step-start' || part.type === 'step-finish';
 }
 
 /** Get the text content from any part that has a `text` field. */
@@ -176,40 +184,35 @@ const CHILD_SESSION_TOOLS = new Set([
 ]);
 
 /**
- * Extract child session ID from a task tool part's metadata.
+ * The child session a delegating tool call runs: `state.metadata.sessionId`,
+ * which OpenCode's and pi's `task` both set.
  */
 export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): string | undefined {
-  // Native task tool, agent_spawn, or agent_task
-  if (!part.tool?.startsWith('oc-') && CHILD_SESSION_TOOLS.has(normalizeName(part.tool || ''))) {
-    // 1. Try metadata (ctx.metadata — available immediately for built-in tools)
+  const tool = part.tool || '';
+  // `oc-` twins of the plugin tools never name a child.
+  if (tool.startsWith('oc-')) return undefined;
+  const kind = toolKind(tool);
+  if (kind === 'task' || kind === 'delegate') {
     const metaSessionId = (part.state?.metadata as { sessionId?: unknown } | undefined)?.sessionId;
     if (typeof metaSessionId === 'string' && metaSessionId) return metaSessionId;
-
-    // 2. Try title (plugin tools embed session ID in title via ctx.metadata)
-    const title = part.state?.title;
-    if (title) {
-      const tm = title.match(/\bses_[a-zA-Z0-9]+/);
-      if (tm) return tm[0];
-    }
-
-    // 3. Try output text (available after tool completes)
-    const output = part.state?.output;
-    if (output) {
-      const m = output.match(/\bses_[a-zA-Z0-9]+/);
-      if (m) return m[0];
-    }
-    return undefined;
   }
-  // session_spawn / session_start_background: extract session ID from output text
-  // Output format: "- **Session:** ses_xxx" or "Session: ses_xxx"
-  const toolName = part.tool?.replace(/-/g, '_') || '';
-  if (toolName === 'session_spawn' || toolName === 'session_start_background') {
-    const output = part.state?.output;
-    if (output) {
-      const match = output.match(/\*?\*?Session:?\*?\*?\s*(ses_[a-zA-Z0-9]+)/);
-      if (match) return match[1];
-    }
-    return undefined;
+  return legacyChildSessionId(tool, part.state);
+}
+
+/**
+ * Retired plugin tools named their child only in text: in the title or output
+ * (`agent_*`, `task_*`), or as `Session: ses_…` in the output
+ * (`session_spawn`). Kept for transcripts they wrote.
+ */
+function legacyChildSessionId(tool: string, state: ToolPartLike['state'] | undefined): string | undefined {
+  const name = normalizeName(tool);
+  if (CHILD_SESSION_TOOLS.has(name)) {
+    const inTitle = state?.title?.match(/\bses_[a-zA-Z0-9]+/);
+    if (inTitle) return inTitle[0];
+    return state?.output?.match(/\bses_[a-zA-Z0-9]+/)?.[0];
+  }
+  if (name === 'session_spawn' || name === 'session_start_background') {
+    return state?.output?.match(/\*?\*?Session:?\*?\*?\s*(ses_[a-zA-Z0-9]+)/)?.[1];
   }
   return undefined;
 }
@@ -218,7 +221,7 @@ export function getChildSessionId(part: Pick<ToolPartLike, 'tool' | 'state'>): s
  * Extract the error message from a child (sub-agent) session's raw messages.
  *
  * Mirrors `getTurnError` but operates over the flat `MessageWithParts` list
- * returned by `useOpenCodeMessages`, so a parent thread can surface a sub-agent
+ * returned by `useRuntimeMessages`, so a parent thread can surface a sub-agent
  * failure (e.g. "Free usage exceeded, subscribe to Go") that otherwise only
  * lives on the child session and never reaches the parent's turn renderer.
  * Scans newest-first so the most recent failure wins.
@@ -271,14 +274,6 @@ export function getToolInfo(
   input: Record<string, any> = {},
 ): ToolInfo {
   switch (normalizeName(tool)) {
-    case 'read':
-      return { icon: 'glasses', title: 'Read', subtitle: getFilename(input.filePath) };
-    case 'list':
-      return { icon: 'list', title: 'List', subtitle: getDirectory(input.path) };
-    case 'glob':
-      return { icon: 'search', title: 'Glob', subtitle: input.pattern };
-    case 'grep':
-      return { icon: 'search', title: 'Grep', subtitle: input.pattern };
     case 'webfetch':
       return { icon: 'globe', title: 'Web Fetch', subtitle: input.url };
     case 'websearch':
@@ -323,13 +318,6 @@ export function getToolInfo(
         title: `Worker (${input.agent || 'KortixWorker'})`,
         subtitle: input.description || input.prompt?.slice(0, 60),
       };
-    case 'bash':
-      return { icon: 'terminal', title: 'Shell', subtitle: input.description };
-    case 'edit':
-    case 'morph_edit':
-      return { icon: 'file-pen', title: 'Edit', subtitle: getFileWithDir(input.filePath) };
-    case 'write':
-      return { icon: 'file-pen', title: 'Write', subtitle: getFileWithDir(input.filePath) };
     case 'apply_patch':
       return {
         icon: 'file-pen',
@@ -338,12 +326,8 @@ export function getToolInfo(
           ? `${input.files.length} file${input.files.length > 1 ? 's' : ''}`
           : undefined,
       };
-    case 'todowrite':
-      return { icon: 'check-square', title: 'Todos' };
     case 'todoread':
       return { icon: 'check-square', title: 'Todos (read)' };
-    case 'question':
-      return { icon: 'message-circle', title: 'Questions' };
     case 'prune':
       return { icon: 'scissors', title: 'DCP Prune', subtitle: input.reason };
     case 'distill':
@@ -458,6 +442,36 @@ export function getToolInfo(
       return { icon: 'terminal', title: 'Terminal Input', subtitle: input.id };
     case 'pty_kill':
       return { icon: 'terminal', title: 'Kill Process', subtitle: input.id };
+    default:
+      return coreToolInfo(tool, input);
+  }
+}
+
+/** The tool kinds every harness shares, by kind rather than by name. */
+function coreToolInfo(
+  tool: string,
+  // biome-ignore lint/suspicious/noExplicitAny: tool inputs are free-form wire data with heterogeneous shapes
+  input: Record<string, any>,
+): ToolInfo {
+  switch (toolKind(tool)) {
+    case 'read':
+      return { icon: 'glasses', title: 'Read', subtitle: getFilename(inputPath(input)) };
+    case 'list':
+      return { icon: 'list', title: 'List', subtitle: getDirectory(input.path) };
+    case 'glob':
+      return { icon: 'search', title: 'Glob', subtitle: input.pattern };
+    case 'grep':
+      return { icon: 'search', title: 'Grep', subtitle: input.pattern };
+    case 'bash':
+      return { icon: 'terminal', title: 'Shell', subtitle: input.description };
+    case 'edit':
+      return { icon: 'file-pen', title: 'Edit', subtitle: getFileWithDir(inputPath(input)) };
+    case 'write':
+      return { icon: 'file-pen', title: 'Write', subtitle: getFileWithDir(inputPath(input)) };
+    case 'todowrite':
+      return { icon: 'check-square', title: 'Todos' };
+    case 'question':
+      return { icon: 'message-circle', title: 'Questions' };
     default:
       return { icon: 'cpu', title: tool };
   }

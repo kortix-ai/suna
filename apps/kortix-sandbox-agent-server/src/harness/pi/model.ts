@@ -8,7 +8,7 @@
  * window) and at the gateway directly otherwise.
  *
  * The picker's catalog comes from the image-baked file the OpenCode path also
- * reads; the selected model comes from `KORTIX_OPENCODE_MODEL` (the control
+ * reads; the selected model comes from `KORTIX_MODEL` (the control
  * plane's resolved session model — the variable is named for the first
  * harness, the value is harness-neutral), then the compiled agent config.
  */
@@ -33,6 +33,8 @@ const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh',
 export interface CatalogModel {
   name?: string
   reasoning?: boolean
+  /** False when the model refuses a non-default temperature. */
+  temperature?: boolean
   attachment?: boolean
   limit?: { context?: number; input?: number; output?: number }
   variants?: Record<string, unknown>
@@ -137,7 +139,7 @@ export async function createPiModels(input: {
   models.setProvider(provider)
   await credentials.modify(KORTIX_PROVIDER_ID, async () => ({ type: 'api_key', key: target.apiKey }))
   const fallback = nativeModelId(input.defaultModelRef) ?? Object.keys(catalog)[0] ?? null
-  if (!fallback) throw new Error('pi harness has no model: no KORTIX_OPENCODE_MODEL and no baked catalog')
+  if (!fallback) throw new Error('pi harness has no model: no KORTIX_MODEL and no baked catalog')
   logger.info('[pi] gateway models ready', { baseUrl: target.baseUrl, catalog: Object.keys(catalog).length, fallback })
 
   return {

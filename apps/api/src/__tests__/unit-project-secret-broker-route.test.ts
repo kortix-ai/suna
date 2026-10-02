@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
   projectSecrets,
   projectSessionSecretHandles,
+  roleAssignments,
   projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
@@ -107,6 +108,8 @@ const databaseMock = {
         if (table === projectSessionSecretHandles) {
           return { orderBy: async () => handleRows };
         }
+        // Secret audiences (secret-audience.ts): this project narrows none.
+        if (table === roleAssignments) return Promise.resolve([]);
         throw new Error('unexpected table');
       },
     }),

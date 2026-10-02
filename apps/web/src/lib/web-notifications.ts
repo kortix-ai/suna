@@ -1,4 +1,5 @@
 import type { UiTranslator } from '@/i18n/translator';
+import { createElement } from 'react';
 /**
  * Web Notification utility module.
  *
@@ -14,11 +15,12 @@ import type { UiTranslator } from '@/i18n/translator';
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  */
 
+import { Button } from '@/components/ui/button';
+import { dismissToast, errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
 import { playSound } from '@/lib/sounds';
-import { toast } from '@/lib/toast';
 import type { SoundEvent } from '@/stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
@@ -308,36 +310,40 @@ export function sendWebNotification(
 // In-app toast fallback
 // ============================================================================
 
-const TOAST_TYPE_MAP: Record<WebNotificationType, 'info' | 'warning' | 'error' | 'success'> = {
-  completion: 'success',
-  error: 'error',
-  question: 'warning',
-  permission: 'warning',
+const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
+  completion: successToast,
+  error: errorToast,
+  question: warningToast,
+  permission: warningToast,
 };
 
 /**
- * Show an in-app toast notification via sonner.
+ * Show an in-app toast notification.
  * This always works regardless of OS notification settings.
  */
 function showInAppToast(payload: WebNotificationPayload) {
   try {
-    const variant = TOAST_TYPE_MAP[payload.type];
-    const toastFn = toast[variant] || toast;
-    toastFn(payload.title, {
+    const id = `web-notification-${payload.tag ?? Date.now()}`;
+    const { sessionId, actionLabel } = payload;
+    TOAST_BY_TYPE[payload.type](payload.title, {
+      id,
       description: payload.body,
       duration: 8000,
-      ...(payload.sessionId && payload.actionLabel
-        ? {
-            action: {
-              label: payload.actionLabel,
-              onClick: () => {
-                navigateToSession(payload.sessionId!, payload.body, {
-                  projectId: payload.projectId,
-                });
+      button:
+        sessionId && actionLabel
+          ? createElement(
+              Button,
+              {
+                size: 'sm',
+                variant: 'outline',
+                onClick: () => {
+                  dismissToast(id);
+                  navigateToSession(sessionId, payload.body, { projectId: payload.projectId });
+                },
               },
-            },
-          }
-        : {}),
+              actionLabel,
+            )
+          : undefined,
     });
   } catch {
     // Silently ignore — toast not critical

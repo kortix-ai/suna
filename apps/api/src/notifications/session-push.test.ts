@@ -40,6 +40,7 @@ function harness(opts: {
   session?: SessionPushTarget | null;
   rows?: PushDeviceTokenRow[];
   enabled?: boolean;
+  isPresent?: SessionPushDeps['isPresent'];
   send?: SessionPushDeps['send'];
 }) {
   const sent: ExpoPushMessage[][] = [];
@@ -47,6 +48,7 @@ function harness(opts: {
   const warnings: unknown[][] = [];
   const deps: SessionPushDeps = {
     enabled: opts.enabled ?? true,
+    isPresent: opts.isPresent,
     logger: { warn: (...args: unknown[]) => void warnings.push(args) },
     loadSession: async () => (opts.session === undefined ? { createdBy: USER, title: 'Fix the build' } : opts.session),
     store: {
@@ -201,6 +203,13 @@ describe('preference filtering', () => {
 describe('createSessionNotifier', () => {
   const event = { type: 'completion' as const, sessionId: SESSION, projectId: PROJECT };
 
+  test('suppresses only the present creator session', async () => {
+    const h = harness({ isPresent: async (user, session) => user === USER && session === SESSION });
+    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'present' });
+    expect(h.sent).toHaveLength(0);
+    expect(h.listed).toHaveLength(0);
+  });
+
   test('sends to every allowed device of the session creator', async () => {
     const h = harness({ rows: [row('a'), row('b', { platform: 'android', playSound: false })] });
     const outcome = await h.notify(event);
@@ -211,6 +220,19 @@ describe('createSessionNotifier', () => {
       ['a', 'session-complete'],
       ['b', 'session-silent'],
     ]);
+  });
+
+  test('recipients replace the creator: each present one is skipped', async () => {
+    const h = harness({ isPresent: async (user) => user === 'user-present' });
+    const outcome = await h.notify({ type: 'question', sessionId: SESSION, projectId: PROJECT, question: 'Which region?', recipients: ['user-a', 'user-present'] });
+    expect(outcome.reason).toBe('sent');
+    expect(h.listed).toEqual(['user-a']);
+    expect(h.sent[0]![0]!.body).toBe('Kortix has a question: Which region?');
+  });
+
+  test('every recipient present → no push', async () => {
+    const h = harness({ isPresent: async () => true });
+    expect(await h.notify({ ...event, recipients: ['user-a', 'user-b'] })).toEqual({ sent: 0, reason: 'present' });
   });
 
   test('kill switch: nothing is loaded or sent', async () => {

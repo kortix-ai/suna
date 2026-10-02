@@ -27,9 +27,8 @@ credentials and never executes pull request code. The assertions follow the new
 implementation files; each obsolete assertion is kept as a comment that records
 which rule replaced it.
 
-`infra/terraform/environments/preview` still exists and is still applied, so its
-guardrails are still asserted here. `infra/scripts/ecs-preview.sh` is no longer
-reachable from any workflow; this file asserts it stays disconnected.
+The ECS preview Terraform root and `infra/scripts/ecs-preview.sh` are deleted.
+This file asserts the workflow never reconnects to them.
 """
 
 from pathlib import Path
@@ -57,9 +56,6 @@ PREVIEW_SOURCES = {
     "tests/src/core/sandbox-preview-providers.ts": PREVIEW_PROVIDERS,
     "tests/src/core/preview-stack.ts": PREVIEW_STACK,
 }
-TERRAFORM = read("infra/terraform/environments/preview/main.tf")
-VARIABLES = read("infra/terraform/environments/preview/variables.tf")
-README = read("infra/terraform/environments/preview/README.md")
 
 JOB_HEADING = re.compile(r"^  [a-z][a-z0-9-]*:$", re.MULTILINE)
 
@@ -645,48 +641,6 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertNotIn("daytona", run.lower())
         self.assertIn("export type SandboxPreviewProvider = 'auto' | 'platinum';", PREVIEW_CORE)
         self.assertIn("PREVIEW_SANDBOX_PROVIDER must be auto or platinum", PREVIEW_CLI)
-
-
-class SharedPreviewEdge(unittest.TestCase):
-    """The ECS preview root no longer serves previews but is still applied."""
-
-    # `infra/terraform/environments/preview` provisions a real ALB, WAF, DNS
-    # records, and a GitHub OIDC role in account 935064898258. #6347 stopped
-    # using them; it did not destroy them. Until the root is removed, its
-    # guardrails stay gated here. Retiring it must delete this class and the
-    # root together.
-
-    def test_shared_edge_has_tls_waf_logs_and_preview_only_oidc_role(self):
-        for fragment in (
-            'name = "kortix-preview"',
-            "certificate_arn   = var.preview_certificate_arn",
-            'resource "aws_wafv2_web_acl_association" "preview"',
-            "drop_invalid_header_fields = true",
-            "enable_deletion_protection = true",
-            'name    = "*.preview-api"',
-            'name    = "*.preview"',
-            'domain_name = "*.preview.kortix.com"',
-            'resource "aws_lb_listener_certificate" "frontend"',
-            'data "aws_secretsmanager_secret" "web"',
-            'name = "kortix-preview-web-env"',
-            "proxied = false",
-            'name = "kortix-gha-preview-deploy"',
-            '"repo:kortix-ai/suna:pull_request"',
-            '"repo:kortix-ai/suna:ref:refs/heads/main"',
-            '"token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/main"',
-            'description = "DNS over UDP"',
-            'resource "aws_iam_role_policy" "execution_logs_kms"',
-            'resource "aws_wafv2_web_acl" "preview"',
-            'name        = "AWSManagedRulesKnownBadInputsRuleSet"',
-            'resource "aws_wafv2_web_acl_logging_configuration" "preview"',
-        ):
-            self.assertIn(fragment, TERRAFORM)
-
-    def test_database_egress_and_bootstrap_are_bounded(self):
-        self.assertIn("cidr_blocks = var.postgres_egress_cidrs", TERRAFORM)
-        self.assertIn('!contains(var.postgres_egress_cidrs, "0.0.0.0/0")', VARIABLES)
-        for heading in ("## Existing-resource import", "## Cutover", "## Reconciliation and rollback"):
-            self.assertIn(heading, README)
 
 
 if __name__ == "__main__":
