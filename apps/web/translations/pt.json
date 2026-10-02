@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Recolher citações",
     "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
     "queued": "Na fila",
-    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}"
+    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
+    "queuedCount": "{count} na fila",
+    "collapseQueue": "Recolher fila",
+    "expandQueue": "Expandir fila"
   },
   "billing": {
     "plan": {

@@ -301,6 +301,8 @@ export interface SessionChatInputProps {
    * "Show context" row.
    */
   onCompactClick?: () => void;
+  /** Its own full-width card above the composer stack — the queued messages. */
+  aboveSlot?: React.ReactNode;
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
