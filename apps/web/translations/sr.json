@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Скупи цитате",
     "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
     "queued": "На чекању",
-    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}"
+    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
+    "queuedCount": "{count} u redu",
+    "collapseQueue": "Skupi red",
+    "expandQueue": "Proširi red"
   },
   "billing": {
     "plan": {
@@ -18894,6 +18897,7 @@
       "text4150abdd6df8": "Kortix App прегледан",
       "text9c9027798e45": "Смерница приступа Kortix App-у прегледана",
       "text7a84bdb22767": "Постављање Kortix App-а прегледано",
+      "text516e80d9f8dc": "Постављање Kortix App-а обрисано",
       "text2d430c4c81a2": "Евиденције постављања Kortix App-а прегледане",
       "textea0b84c2ddf0": "Kortix системска вештина прегледана",
       "text16faff6ae525": "Датотека Kortix системске вештине прегледана",

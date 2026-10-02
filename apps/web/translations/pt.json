@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Recolher citações",
     "stopUnconfirmed": "Não foi possível confirmar a parada. O agente pode continuar em execução. Tente parar novamente.",
     "queued": "Na fila",
-    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}"
+    "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
+    "queuedCount": "{count} na fila",
+    "collapseQueue": "Recolher fila",
+    "expandQueue": "Expandir fila"
   },
   "billing": {
     "plan": {
@@ -18894,6 +18897,7 @@
       "text4150abdd6df8": "Kortix App visualizado",
       "text9c9027798e45": "Política de acesso do Kortix App visualizada",
       "text7a84bdb22767": "Implantação do Kortix App visualizada",
+      "text516e80d9f8dc": "Implantação do Kortix App excluída",
       "text2d430c4c81a2": "Logs de implantação do Kortix App visualizados",
       "textea0b84c2ddf0": "Skill de sistema da Kortix visualizada",
       "text16faff6ae525": "Arquivo de skill de sistema da Kortix visualizado",

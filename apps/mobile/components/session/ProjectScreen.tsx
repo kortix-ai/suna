@@ -93,14 +93,10 @@ import { needsYouBySession } from '@/lib/session/needs-you';
 import {
   countReviewItemsBySegment,
   runtimeSessionsOf,
-  SESSION_NOTICE,
-  sessionConnectionLabel,
   sessionParentId,
 } from '@kortix/sdk';
 import { KortixProjectProvider } from '@kortix/sdk/react';
-import { queuePromptWhileWaking } from '@/lib/session/connecting-send';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
-import * as Crypto from 'expo-crypto';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { getSandboxUrl } from '@/lib/platform/client';
 import type { SandboxProviderName } from '@/lib/platform/client';
@@ -145,6 +141,13 @@ const Pages = {
 
 /** Shared empty list: a fresh `[]` per render would re-render the thread. */
 const EMPTY_SUB_AGENTS: ProjectSession[] = [];
+
+/**
+ * What the waking view says. The composer there is disabled, so it promises
+ * no send (the SDK's `SESSION_NOTICE.waking` says messages queue; web keeps
+ * its live send button, mobile does not).
+ */
+const WAKING_NOTICE = "Waking this session's computer. You can send messages when it's ready.";
 
 export function ProjectScreen() {
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
@@ -508,30 +511,6 @@ export function ProjectScreen() {
   const savedCopy = useSavedCopy(savedCopyHookTarget);
   const savedCopyMessages = savedCopy.messages;
   const connectingEmpty = !!savedCopyRootId && savedCopy.empty && !connectingFirstPrompt;
-  // A message typed while the computer wakes queues through the prompt inbox
-  // (lib/session/connecting-send.ts), as the web does: never to a sub-agent,
-  // never over a failure, and only where the thread is on screen.
-  const canQueueWhileWaking =
-    !!projectId &&
-    !!savedCopySessionId &&
-    !!savedCopyRootId &&
-    !savedCopyChild &&
-    !connectError &&
-    (connectingEmpty || (savedCopyMessages?.length ?? 0) > 0);
-  const handleWakingSend = useCallback(
-    (text: string) => {
-      if (!projectId || !savedCopySessionId || !savedCopyRootId) return;
-      void queuePromptWhileWaking({
-        projectId,
-        projectSessionId: savedCopySessionId,
-        rootId: savedCopyRootId,
-        text,
-        randomUUID: Crypto.randomUUID,
-      });
-    },
-    [projectId, savedCopySessionId, savedCopyRootId]
-  );
-
   // The open page, thread, or connecting session: the view route's content.
   const viewContent = isHome ? null : (
         <View className="flex-1 bg-background">
@@ -623,12 +602,9 @@ export function ProjectScreen() {
               restarting={restartingSession}
               showLoader={!drawerOpen}
               messages={savedCopyMessages}
-              statusLabel={
-                canQueueWhileWaking ? SESSION_NOTICE.waking : (sessionConnectionLabel('waking')?.label ?? null)
-              }
+              statusLabel={WAKING_NOTICE}
               sessionId={savedCopyRootId ?? undefined}
               empty={connectingEmpty}
-              onSend={canQueueWhileWaking ? handleWakingSend : undefined}
               projectId={projectId}
               projectSessionId={
                 activeProjectSession?.session_id ??
@@ -666,16 +642,29 @@ export function ProjectScreen() {
   );
 
   // Project home — Kortix symbol, composer.
-  const homeContent = (
-    <View className="flex-1 bg-background">
-      <ProjectHome
-        projectId={projectId}
-        sending={isDashboardSending}
-        onSubmitNewSession={handleDashboardSend}
-        onOpenDrawer={openDrawer}
-        takeInitialDraft={takeInitialDraft}
-      />
-    </View>
+  // Memoized: `projectRoute` is a new object each render, so a stable element
+  // is what lets React skip home when only `drawerOpen` or a poll changed.
+  // `handleDashboardSend` changes with the create mutation and toast objects,
+  // so home gets a stable wrapper that calls the latest one.
+  const dashboardSendRef = useRef(handleDashboardSend);
+  dashboardSendRef.current = handleDashboardSend;
+  const submitNewSession = useCallback<typeof handleDashboardSend>(
+    (submit) => dashboardSendRef.current(submit),
+    []
+  );
+  const homeContent = useMemo(
+    () => (
+      <View className="flex-1 bg-background">
+        <ProjectHome
+          projectId={projectId}
+          sending={isDashboardSending}
+          onSubmitNewSession={submitNewSession}
+          onOpenDrawer={openDrawer}
+          takeInitialDraft={takeInitialDraft}
+        />
+      </View>
+    ),
+    [projectId, isDashboardSending, submitNewSession, openDrawer, takeInitialDraft]
   );
 
   const projectRoute: ProjectRouteValue = {

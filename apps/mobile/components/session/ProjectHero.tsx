@@ -77,7 +77,6 @@ export function ProjectHero() {
           delayLongPress={LOGO_SHEET_HOLD_MS}
           onLongPress={() => {
             haptics.success();
-            Keyboard.dismiss();
             sheetRef.current?.open();
           }}>
           <MetalKortixLogo

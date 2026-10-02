@@ -3614,22 +3614,35 @@ export function SessionChat({
     [projectId, projectSessionId, sessionScopeAgentName],
   );
 
+  // The queued messages and the one Resume while a Stop holds the queue: their
+  // own full-width card above the composer stack, not inside the strip.
+  const chatAboveSlot = useMemo(
+    () => (
+      <QueuedPromptList
+        rows={queueRows.rows}
+        heldCount={queueRows.heldCount}
+        resumePending={resumePending}
+        onResume={() => void handleResumeQueue()}
+        onEdit={(id) => {
+          handleTakeBackQueue(id);
+        }}
+        onRemove={(id) => void handleRemoveQueuedMessage(id)}
+        onRetry={handleRetryQueuedMessage}
+      />
+    ),
+    [
+      queueRows,
+      resumePending,
+      handleResumeQueue,
+      handleTakeBackQueue,
+      handleRemoveQueuedMessage,
+      handleRetryQueuedMessage,
+    ],
+  );
+
   const chatInputSlot = useMemo(
     () => (
       <>
-        {/* The queued messages, directly above the card — and the one Resume
-            while a Stop holds the queue. Renders nothing when neither applies. */}
-        <QueuedPromptList
-          rows={queueRows.rows}
-          heldCount={queueRows.heldCount}
-          resumePending={resumePending}
-          onResume={() => void handleResumeQueue()}
-          onEdit={(id) => {
-            handleTakeBackQueue(id);
-          }}
-          onRemove={(id) => void handleRemoveQueuedMessage(id)}
-          onRetry={handleRetryQueuedMessage}
-        />
         {/* Connector actions a policy gated for approval — pauses the run
             until the human decides. Self-hides when nothing's pending. */}
         <SessionApprovalPrompt />
@@ -3672,12 +3685,6 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      queueRows,
-      resumePending,
-      handleResumeQueue,
-      handleRemoveQueuedMessage,
-      handleTakeBackQueue,
-      handleRetryQueuedMessage,
       tHardcodedUi,
     ],
   );
@@ -4560,6 +4567,7 @@ export function SessionChat({
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionCanAct={questionAction.canAct}
                 onQuestionAction={handleQuestionAction}
+                aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
                 // The shell can now render on a cached transcript alone, i.e. before

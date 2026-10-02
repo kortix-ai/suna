@@ -1009,8 +1009,7 @@ function scanFile(file) {
           catalogRoot === 'DEFAULT_BUCKET_COPY') ||
         (file === path.join(srcDir, 'features/workspace/settings/tabs/profile-tab.tsx') &&
           catalogRoot === 'DEFAULT_PROFILE_TAB_COPY') ||
-        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata') ||
-        (file === path.join(srcDir, 'components/home/cli-demo.tsx') && catalogRoot === 'PALETTE');
+        (file === path.join(srcDir, 'lib/site-metadata.ts') && catalogRoot === 'siteMetadata');
       const coveredTechnicalCatalog =
         (file === path.join(srcDir, 'components/home/navbar.tsx') &&
           catalogRoot === 'DRAWER_SOCIALS') ||

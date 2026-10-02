@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 700,
+  "count": 701,
   "routes": [
     {
       "method": "GET",
@@ -1537,6 +1537,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId"
     },
     {
       "method": "GET",

@@ -1939,7 +1939,10 @@
     "collapseQuotes": "收起引用",
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
     "queued": "排队中",
-    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}"
+    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
+    "queuedCount": "{count} 条排队中",
+    "collapseQueue": "收起队列",
+    "expandQueue": "展开队列"
   },
   "billing": {
     "plan": {
@@ -18894,6 +18897,7 @@
       "text4150abdd6df8": "已查看 Kortix App",
       "text9c9027798e45": "已查看 Kortix App 访问策略",
       "text7a84bdb22767": "已查看 Kortix App 部署",
+      "text516e80d9f8dc": "已删除 Kortix App 部署",
       "text2d430c4c81a2": "已查看 Kortix App 部署日志",
       "textea0b84c2ddf0": "已查看 Kortix 系统技能",
       "text16faff6ae525": "已查看 Kortix 系统技能文件",

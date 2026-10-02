@@ -35,6 +35,9 @@ export function bindProjectAccessResources(projectId: string) {
           P.getAppDeployment(projectId, ...a),
         logs: (...a: DropFirst<Parameters<typeof P.getAppDeploymentLogs>>) =>
           P.getAppDeploymentLogs(projectId, ...a),
+        /** Delete one non-live deployment, its runtime, and its image. */
+        remove: (...a: DropFirst<Parameters<typeof P.deleteAppDeployment>>) =>
+          P.deleteAppDeployment(projectId, ...a),
       },
       start: (appId: string) => P.startApp(projectId, appId),
       stop: (appId: string) => P.stopApp(projectId, appId),
