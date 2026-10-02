@@ -1,14 +1,11 @@
 import type { Context } from 'hono';
 import { type SandboxRecord, loadSandbox } from './backend';
 
-// The sandbox row, read while the caller authenticates.
-//
-// A proxied request needs two things that do not depend on each other: the
-// caller's authentication and this sandbox's row. They used to run back to
-// back, so the row's round trip queued behind auth's. The proxy app starts the
-// read first (see `sandbox-proxy/index.ts`) and the route takes the result.
-// The row is still read during THIS request, never cached: its status must be
-// fresh, and it reaches nobody unless authentication and the checks in
+// The sandbox row, read as soon as the caller is authenticated and within its
+// rate limit (see `sandbox-proxy/index.ts` for the order), so the read
+// overlaps the rest of the request instead of starting when `forwardToSandbox`
+// needs it. The row is still read during THIS request, never cached: its
+// status must be fresh, and it reaches nobody unless the checks in
 // `forwardToSandbox` pass, exactly as before.
 
 const PREFETCHED_SANDBOX = 'prefetchedSandbox';

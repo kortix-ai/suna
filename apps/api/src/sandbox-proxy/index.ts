@@ -35,28 +35,24 @@ sandboxProxyApp.route('/share', shareApp);
 sandboxProxyApp.route('/public-share', publicShareApp);
 
 // ── Path-based proxy ────────────────────────────────────────────────────────
-// The sandbox row read starts BEFORE auth so the two overlap (prefetch.ts).
-// Measured on Dev, every statement here is a cross-region round trip, and auth
-// plus the row used to queue three of them back to back. Only a request that
-// presents a credential triggers the read, so an anonymous probe costs nothing
-// it did not cost before.
-sandboxProxyApp.use('/:sandboxId/:port/*', prefetchSandboxRow);
-sandboxProxyApp.use('/:sandboxId/:port', prefetchSandboxRow);
+// Order is load-bearing: authenticate, then rate-limit, and only then start
+// reading the sandbox row (prefetch.ts). A row read on a miss falls back to a
+// case-insensitive `external_id` scan, so it must never be reachable by an
+// unauthenticated or over-limit caller. Started here, the read overlaps the
+// rest of the request before `forwardToSandbox` needs it (the body read).
 // Auth middleware accepts Supabase JWT, kortix_ tokens, and cookies.
 sandboxProxyApp.use('/:sandboxId/:port/*', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port/*', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware());
-
-function presentsCredential(c: Context): boolean {
-  if (c.req.header('Authorization') || c.req.header('X-Kortix-Token')) return true;
-  if ((c.req.header('Cookie') ?? '').includes('__preview_session=')) return true;
-  return new URL(c.req.url).searchParams.has('token');
-}
+sandboxProxyApp.use('/:sandboxId/:port/*', prefetchSandboxRow);
+sandboxProxyApp.use('/:sandboxId/:port', prefetchSandboxRow);
 
 async function prefetchSandboxRow(c: Context, next: Next) {
   const sandboxId = c.req.param('sandboxId');
-  if (sandboxId && c.req.method !== 'OPTIONS' && presentsCredential(c)) {
+  // `combinedAuth` lets a CORS preflight through without a credential; an
+  // identity is set only by a credential that verified. Neither is forgeable.
+  if (sandboxId && c.req.method !== 'OPTIONS' && c.get('userId')) {
     prefetchSandbox(c, sandboxId);
   }
   await next();

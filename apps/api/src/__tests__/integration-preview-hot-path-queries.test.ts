@@ -1,18 +1,19 @@
 /**
- * Integration test (real local PostgreSQL): the database round trips one
- * proxied request costs on `/v1/p/<sandbox>/<port>/…`.
+ * Integration test (real local PostgreSQL): the database work one proxied
+ * request does on `/v1/p/<sandbox>/<port>/…`, and when the sandbox row read is
+ * allowed to start.
  *
  * Measured on Dev (2026-10-02), a tiny `/v1/p` call spent ~0.8–1.0 s of its
  * ~0.9–1.3 s total in the database, `db;desc="n=6"`, on a link where every
- * statement crosses a continent. On such a link the number of SEQUENTIAL
- * statements sets the latency, so this suite pins both the statements and
- * their overlap:
+ * statement crosses a continent. This suite pins:
  *
  *   - the PAT check reads the token row once: the IAM actor takes its binding
  *     from that read instead of selecting the same `account_tokens` row again;
- *   - the sandbox row read starts before authentication and overlaps it;
- *   - the ownership check reuses the row the proxy loaded instead of selecting
- *     it a second time.
+ *   - the ownership check reuses the row the proxy loaded;
+ *   - the sandbox row read starts only AFTER authentication and the rate
+ *     limiter (a miss can fall back to a case-insensitive scan, so it must not
+ *     be reachable unauthenticated or over the limit), and from there overlaps
+ *     the rest of the request, e.g. an upload body still arriving.
  *
  * Everything that reads the database is real. Only the provider's network call
  * that resolves the box's address is replaced, with a local fake box.
@@ -21,12 +22,11 @@ import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { createDb } from '@kortix/db';
 import { beginStage } from '../lib/server-timing';
 
-// Capture every statement this process sends and how many are in flight at
-// once. Installed before anything imports `shared/db`, which reuses the
-// instance it finds here for the same URL. Static imports above must not load
-// `shared/db` (they are hoisted ahead of this).
+// Capture every statement this process sends. Installed before anything
+// imports `shared/db`, which reuses the instance it finds here for the same
+// URL. Static imports above must not load `shared/db` (they are hoisted).
 const statements: string[] = [];
-const capture = { on: false, inflight: 0, maxInflight: 0 };
+const capture = { on: false };
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 const globalForDb = globalThis as typeof globalThis & {
   __kortixApiDb?: unknown;
@@ -39,21 +39,7 @@ globalForDb.__kortixApiDb = createDb(
       if (capture.on) statements.push(query.replace(/\s+/g, ' ').trim());
     },
   },
-  {
-    onQuery: () => {
-      const endStage = beginStage('db');
-      if (!capture.on) return endStage;
-      capture.inflight += 1;
-      capture.maxInflight = Math.max(capture.maxInflight, capture.inflight);
-      let done = false;
-      return () => {
-        if (done) return;
-        done = true;
-        capture.inflight -= 1;
-        endStage();
-      };
-    },
-  },
+  { onQuery: () => beginStage('db') },
 );
 globalForDb.__kortixApiDbUrl = DATABASE_URL;
 
@@ -71,13 +57,27 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
+// Count every prefetch the proxy app starts.
+const prefetched: string[] = [];
+// Bun patches a mocked module's namespace in place: keep the real functions.
+const { prefetchSandbox: realPrefetchSandbox, takePrefetchedSandbox } = await import(
+  '../sandbox-proxy/prefetch'
+);
+mock.module('../sandbox-proxy/prefetch', () => ({
+  takePrefetchedSandbox,
+  prefetchSandbox: (...args: Parameters<typeof realPrefetchSandbox>) => {
+    prefetched.push(args[1]);
+    return realPrefetchSandbox(...args);
+  },
+}));
+
 const { accounts, accountMembers, accountTokens, projects, projectSessions, sessionSandboxes } =
   await import('@kortix/db');
 const { eq } = await import('drizzle-orm');
 const { Hono } = await import('hono');
+const { config } = await import('../config');
 const { db } = await import('../shared/db');
 const { runWithContext } = await import('../lib/request-context');
-const { stageSnapshot } = await import('../lib/server-timing');
 const { createAccountToken } = await import('../repositories/account-tokens');
 const { sandboxProxyApp } = await import('../sandbox-proxy');
 const { insertIntoView } = await import('./helpers/compat-views');
@@ -94,27 +94,28 @@ let patTokenId = '';
 
 const app = new Hono().route('/v1/p', sandboxProxyApp);
 
-type Measured = { status: number; db: number; maxInflight: number; queries: string[] };
+type Measured = { status: number; queries: string[] };
 
-async function proxiedGet(path: string, headers: Record<string, string>): Promise<Measured> {
+async function proxied(
+  sandboxId: string,
+  path: string,
+  init: RequestInit & { duplex?: 'half' } = {},
+): Promise<Measured> {
   statements.length = 0;
   capture.on = true;
-  capture.inflight = 0;
-  capture.maxInflight = 0;
   try {
-    return await runWithContext('GET', `/v1/p/${EXTERNAL_ID}/8000${path}`, async () => {
-      const res = await app.request(`/v1/p/${EXTERNAL_ID}/8000${path}`, { headers });
-      await res.arrayBuffer();
-      // Fire-and-forget writes (activity touch, last-used, audit) run on the
-      // request's context; let them land so a cold run sees all of them.
-      await Bun.sleep(150);
-      return {
-        status: res.status,
-        db: stageSnapshot().db?.count ?? 0,
-        maxInflight: capture.maxInflight,
-        queries: [...statements],
-      };
-    });
+    return await runWithContext(
+      init.method ?? 'GET',
+      `/v1/p/${sandboxId}/8000${path}`,
+      async () => {
+        const res = await app.request(`/v1/p/${sandboxId}/8000${path}`, init);
+        await res.arrayBuffer();
+        // Fire-and-forget writes (activity touch, last-used, audit) run on the
+        // request's context; let them land so a cold run sees all of them.
+        await Bun.sleep(150);
+        return { status: res.status, queries: [...statements] };
+      },
+    );
   } finally {
     capture.on = false;
   }
@@ -181,9 +182,7 @@ afterAll(() => {
 
 describe('/v1/p hot path database round trips', () => {
   test('cold: the token row and the sandbox row are each read once', async () => {
-    const cold = await proxiedGet('/file?path=/workspace', asUser());
-    if (process.env.HOT_PATH_REPORT)
-      await Bun.write(`${process.env.HOT_PATH_REPORT}.cold.json`, JSON.stringify(cold, null, 2));
+    const cold = await proxied(EXTERNAL_ID, '/file?path=/workspace', { headers: asUser() });
     expect(cold.status).toBe(200);
     const queries = requestStatements(cold);
     expect(queries.filter(isTokenValidation)).toHaveLength(1);
@@ -192,25 +191,79 @@ describe('/v1/p hot path database round trips', () => {
     expect(queries.filter(isSandboxRefReread)).toHaveLength(0);
   });
 
-  test('warm: two reads, in flight together', async () => {
-    const warm = await proxiedGet('/file?path=/workspace', asUser());
-    if (process.env.HOT_PATH_REPORT)
-      await Bun.write(`${process.env.HOT_PATH_REPORT}.warm.json`, JSON.stringify(warm, null, 2));
+  test('warm: the token check, then the sandbox row, and nothing else', async () => {
+    const warm = await proxied(EXTERNAL_ID, '/file?path=/workspace', { headers: asUser() });
     expect(warm.status).toBe(200);
     const queries = requestStatements(warm);
-    // The PAT check and the sandbox row: nothing else on a warm request.
-    expect(queries.filter(isTokenValidation)).toHaveLength(1);
-    expect(queries.filter(isSandboxRowRead)).toHaveLength(1);
     expect(queries).toHaveLength(2);
-    // The sandbox row read no longer waits for authentication.
-    expect(warm.maxInflight).toBeGreaterThanOrEqual(2);
-    expect(isSandboxRowRead(queries[0] ?? '')).toBe(true);
+    // Authentication first: the row is never read before the caller is known.
+    expect(isTokenValidation(queries[0] ?? '')).toBe(true);
+    expect(isSandboxRowRead(queries[1] ?? '')).toBe(true);
   });
 
-  test('a request without a credential reads no sandbox row', async () => {
-    const anonymous = await proxiedGet('/file?path=/workspace', {});
+  test('the row read overlaps an upload body that is still arriving', async () => {
+    let rowReadBeforeBodyEnded = false;
+    let pulls = 0;
+    // `pull` runs only when the server reads the body, so it sees this
+    // request's statements, never an earlier test's.
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        pulls += 1;
+        if (pulls === 1) {
+          controller.enqueue(new TextEncoder().encode('first chunk;'));
+          return;
+        }
+        for (let waited = 0; waited < 2_000; waited += 20) {
+          if (statements.some(isSandboxRowRead)) {
+            rowReadBeforeBodyEnded = true;
+            break;
+          }
+          await Bun.sleep(20);
+        }
+        controller.enqueue(new TextEncoder().encode('last chunk'));
+        controller.close();
+      },
+    });
+    const upload = await proxied(EXTERNAL_ID, '/file/upload?path=/workspace/a.txt', {
+      method: 'POST',
+      headers: { ...asUser(), 'content-type': 'application/octet-stream' },
+      body,
+      duplex: 'half',
+    });
+    expect(upload.status).toBe(200);
+    expect(rowReadBeforeBodyEnded).toBe(true);
+  });
+
+  test('an unauthenticated request starts no prefetch and reads no sandbox row', async () => {
+    const before = prefetched.length;
+    // A forged credential (it does not verify) and no credential at all.
+    const forged = await proxied(EXTERNAL_ID, '/file?path=/workspace', {
+      headers: { Authorization: 'Bearer kortix_pat_forged', Cookie: '__preview_session=x' },
+    });
+    const anonymous = await proxied(EXTERNAL_ID, '/file?path=/workspace');
+    expect(forged.status).toBe(401);
     expect(anonymous.status).toBe(401);
+    expect(prefetched.length).toBe(before);
+    expect(requestStatements(forged).filter(isSandboxRowRead)).toHaveLength(0);
     expect(requestStatements(anonymous).filter(isSandboxRowRead)).toHaveLength(0);
+  });
+
+  test('a request over the rate limit starts no prefetch', async () => {
+    const key = `sbx_rate_limited_${run}`;
+    const limits = config as unknown as { KORTIX_PROXY_REQS_PER_MIN: number };
+    const previous = limits.KORTIX_PROXY_REQS_PER_MIN;
+    limits.KORTIX_PROXY_REQS_PER_MIN = 2;
+    try {
+      await proxied(key, '/file', { headers: asUser() });
+      await proxied(key, '/file', { headers: asUser() });
+      const before = prefetched.length;
+      const limited = await proxied(key, '/file', { headers: asUser() });
+      expect(limited.status).toBe(429);
+      expect(prefetched.length).toBe(before);
+      expect(requestStatements(limited).filter(isSandboxRowRead)).toHaveLength(0);
+    } finally {
+      limits.KORTIX_PROXY_REQS_PER_MIN = previous;
+    }
   });
 
   test('a revoked token is refused on its very next request', async () => {
@@ -218,7 +271,7 @@ describe('/v1/p hot path database round trips', () => {
       .update(accountTokens)
       .set({ status: 'revoked', revokedAt: new Date() })
       .where(eq(accountTokens.tokenId, patTokenId));
-    const revoked = await proxiedGet('/file?path=/workspace', asUser());
+    const revoked = await proxied(EXTERNAL_ID, '/file?path=/workspace', { headers: asUser() });
     expect(revoked.status).toBe(401);
   });
 });
