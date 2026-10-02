@@ -5096,7 +5096,15 @@ export const iamRoleActions = kortixSchema.table(
     /** A permission string from actions.ts VALID_ACTIONS (validated at write). */
     action: varchar('action', { length: 96 }).notNull(),
   },
-  (table) => [primaryKey({ columns: [table.roleId, table.action] })],
+  (table) => [
+    primaryKey({ columns: [table.roleId, table.action] }),
+    // Covers `role_permissions_action_permissions_fk` (action ->
+    // permissions.action): Postgres scans this table on every referenced-side
+    // rename or delete, and the PK leads with role_id so it cannot serve that
+    // scan (Supabase advisor: unindexed_foreign_keys). Built CONCURRENTLY by
+    // the role_permissions_action_index migration.
+    index('idx_role_permissions_action').on(table.action),
+  ],
 );
 
 /** Compatibility VIEW over custom-role `role_assignments`. `policy_id` is the assignment id. */

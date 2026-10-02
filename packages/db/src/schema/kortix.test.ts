@@ -4,6 +4,7 @@ import {
   permissions,
   objectPolicies,
   roleAssignments,
+  iamRoleActions,
   iamRoles,
   kortixSchema,
   sandboxStatusEnum,
@@ -755,6 +756,16 @@ describe('canonical RBAC tables (PR2)', () => {
     expect(names).toContain('idx_role_assignments_scope');
     expect(names).toContain('idx_role_assignments_role');
     expect(names).toContain('idx_role_assignments_account');
+  });
+
+  test('role_permissions indexes the action column its permissions FK checks', () => {
+    // role_permissions_action_permissions_fk (action -> permissions.action)
+    // makes Postgres scan this table on every referenced-side rename or delete.
+    // The PK is (role_id, action) and leads with role_id, so it cannot serve
+    // that scan; the Supabase unindexed_foreign_keys advisor flags exactly this
+    // gap. Built CONCURRENTLY by role_permissions_action_index.concurrent.ts.
+    const names = indexNames(iamRoleActions);
+    expect(names).toContain('idx_role_permissions_action');
   });
 
   test('roles.account_id is nullable so a system role can be one row', () => {
