@@ -25,6 +25,7 @@ import { db } from '../shared/db';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
 import { noteRunningRelease } from './running-release';
 import { isUuid } from '../shared/validate';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 /** Distinct failing sessions that quarantine a release in a project. Spec open decision 2. */
 export const PROJECT_QUARANTINE_SESSIONS = 2;
@@ -55,7 +56,7 @@ export interface ConfigReleaseLedger {
  * has no `bun`), and two such sessions quarantined a release that every other
  * session of the project loads. Those rows stay in the table.
  */
-const notFromMetaSession = sql`not exists (
+export const notFromMetaSession = sql`not exists (
   select 1 from ${projectSessions}
   where ${projectSessions.sessionId} = ${qualifiedColumn(configReleaseFailures.sessionId)}::text
     and ${projectSessions.agentName} = ${META_AGENT_NAME}
