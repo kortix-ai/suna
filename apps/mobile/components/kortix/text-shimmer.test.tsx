@@ -1,7 +1,6 @@
 /**
- * TextShimmer: iOS keeps the masked gradient sweep; Android pulses the opacity
- * of ONE text, because `RNCMaskedView` redraws an offscreen layer every frame
- * the band moves, and a burst of running tools draws several shimmers at once.
+ * TextShimmer: both platforms draw the masked gradient sweep while motion is on.
+ * A tool row in a finished turn turns motion off and gets still text.
  */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -77,50 +76,29 @@ const measure = () =>
   act(() => tree!.root.findAllByType('text' as never)[0].props.onLayout?.({ nativeEvent: { layout: { width: 80 } } }));
 const types = () => tree!.root.findAll(() => true).map((node: { type: unknown }) => String(node.type));
 
-describe('TextShimmer on Android', () => {
-  test('draws one text with an opacity pulse and no mask or gradient', () => {
+describe('TextShimmer while motion is on', () => {
+  for (const os of ['android', 'ios']) {
+    test(`${os}: draws the masked gradient sweep once the label is measured`, () => {
+      platform.OS = os;
+      act(() => {
+        tree = create(render('Working'));
+      });
+      expect(types()).not.toContain('masked-view');
+      measure();
+      expect(types()).toContain('masked-view');
+      expect(types()).toContain('linear-gradient');
+    });
+  }
+
+  test('reduce motion draws the base text with no mask or gradient', () => {
+    reduceMotion = true;
     act(() => {
       tree = create(render('Working'));
     });
     measure();
     expect(types()).not.toContain('masked-view');
     expect(types()).not.toContain('linear-gradient');
-    expect(types()).toContain('animated-view');
-    expect(tree!.root.findAllByType('text' as never)).toHaveLength(1);
-    expect(repeats).toHaveLength(1);
-    expect(repeats[0][1]).toBe(-1);
-  });
-
-  test('a label change updates the same instance and does not restart the pulse', () => {
-    act(() => {
-      tree = create(render('Reading'));
-    });
-    act(() => tree!.update(render('Writing')));
-    expect(tree!.root.findAllByType('text' as never)).toHaveLength(1);
-    expect(tree!.root.findByType('text' as never).props.children).toBe('Writing');
-    expect(repeats).toHaveLength(1);
-  });
-
-  test('reduce motion draws the text and starts no animation', () => {
-    reduceMotion = true;
-    act(() => {
-      tree = create(render('Working'));
-    });
-    expect(repeats).toHaveLength(0);
-    expect(tree!.root.findAllByType('text' as never)).toHaveLength(1);
-  });
-});
-
-describe('TextShimmer on iOS', () => {
-  test('keeps the masked gradient sweep once the label is measured', () => {
-    platform.OS = 'ios';
-    act(() => {
-      tree = create(render('Working'));
-    });
-    expect(types()).not.toContain('masked-view');
-    measure();
-    expect(types()).toContain('masked-view');
-    expect(types()).toContain('linear-gradient');
+    expect(tree!.root.findByType('text' as never).props.children).toBe('Working');
   });
 });
 

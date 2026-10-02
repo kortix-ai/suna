@@ -1125,6 +1125,20 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     workingTurnId,
     suppressWorkingTurnBusy: suppressWorkingBusy,
   });
+  // TEMP busy-trace (dev only): which signal holds the busy row back at session start.
+  useEffect(() => {
+    log.log('[busy-trace]', {
+      sessionId,
+      runtimeReady,
+      isBusy,
+      status: sessionStatus?.type ?? 'unknown',
+      turns: turns.length,
+      workingTurnId,
+      suppressWorkingBusy,
+      showTranscriptBusyRow,
+      queued: queuedMessages.length,
+    });
+  }, [sessionId, runtimeReady, isBusy, sessionStatus?.type, turns.length, workingTurnId, suppressWorkingBusy, showTranscriptBusyRow, queuedMessages.length]);
   // Web `hasCompactionTurn` / `lastCompactionTurnIndex`: a real compaction turn
   // replaces the optimistic marker; failed attempts before the last compaction
   // turn render nothing.
