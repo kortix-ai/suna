@@ -209,8 +209,6 @@ const SUBPATH_TIERS: Subpath[] = [
   // Zero imports: `apps/api` loads the wire-id clock without the whole root barrel.
   { name: './wire-message-id', file: 'core/session/wire-message-id.ts', tier: 'isomorphic-core' },
   { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },
-  // The framework-free image size gate + probe cache, moved from apps/mobile.
-  { name: './files/image-load', file: 'core/files/image-load.ts', tier: 'isomorphic-core' },
 ];
 
 test('SUBPATH_TIERS matches package.json exports (minus "." and "./react")', () => {

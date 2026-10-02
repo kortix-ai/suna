@@ -39,7 +39,7 @@ import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
 import { parseTriggerEvent } from '@kortix/shared';
 import { parseLegacyChannelMessage } from '@/lib/session/channel-message';
 import { detectCommandFromText } from '@/lib/session/detect-command';
-import { formatMegabytes } from '@kortix/sdk/files/image-load';
+import { formatMegabytes } from '@kortix/sdk/react';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
 import { participantName, type AvatarPerson } from '@/lib/session/participants';
 import {
