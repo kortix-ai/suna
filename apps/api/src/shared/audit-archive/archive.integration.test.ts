@@ -105,6 +105,8 @@ describe.skipIf(!databaseUrl)('audit archive — export, verify, remove (real Po
     const lines = decodeRows(store.objects.get(keys.find((k) => k.endsWith('.jsonl.gz'))!)!.body);
     expect(lines).toHaveLength(5);
     expect(lines.every((row) => row.account_id === A2 && row.action === 'partition.w3')).toBe(true);
+    // occurred_at is UTC with microseconds, whatever the session time zone: fixed width, so string order is time order.
+    expect(lines.every((row) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(String(row.occurred_at)))).toBe(true);
     // Ascending by (occurred_at, event_id).
     const times = lines.map((row) => new Date(String(row.occurred_at)).getTime());
     expect(times).toEqual([...times].sort((a, b) => a - b));

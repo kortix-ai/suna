@@ -650,7 +650,7 @@ const envSchema = z.object({
   AUDIT_ARCHIVE_ACCESS_KEY_ID: optStr,
   AUDIT_ARCHIVE_SECRET_ACCESS_KEY: optStr,
   /** Export read rate cap (rows per second): the job must not compete with ingest for IO. */
-  AUDIT_ARCHIVE_ROWS_PER_SECOND: optInt(20_000),
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: optInt(5_000),
 
   // ── Config releases (optional) ──────────────────────────────────────────
   // Config archives go through the API's ONE object store

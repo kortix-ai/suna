@@ -6,7 +6,7 @@
  * product owes for 365 days (privacy policy), so it moves to an Object Lock bucket (tamper
  * evidence: COMPLIANCE retention until the week's end + 365 days) instead of staying in a 2 TB
  * btree. Order of a week, each step safe to repeat:
- *   1. export  rows ascending by (account, occurred_at, event_id), at most ARCHIVE_PART_ROWS per
+ *   1. export  one account at a time, rows ascending by (occurred_at, event_id), at most ARCHIVE_PART_ROWS per
  *              object, written once (If-None-Match) with Object Lock; S3 verifies each SHA-256;
  *   2. verify  count and an order-free checksum of event ids, streamed vs. a second query;
  *   3. record  `audit_archive_chunks.status = archived` (PostgreSQL still serves the week);
@@ -22,7 +22,7 @@
  * (20,000), one week at a time, within `budgetMs` (3 h) per tick.
  */
 import type { Database } from '@kortix/db';
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import type { ObjectLockMode } from '../../object-store/s3';
 import {
   ARCHIVE_PART_ROWS,
@@ -91,14 +91,22 @@ async function partitionAttached(db: Db, week: string): Promise<boolean> {
   return Boolean(r?.present);
 }
 
-/** The rows of one week, from the partition and (while it exists) the legacy table. */
-function weekSource(week: string, partition: boolean, legacy: boolean) {
+/**
+ * The rows of one week, from the partition and (while it exists) the legacy table. `where` is
+ * applied INSIDE each branch, so each branch is an index range scan over (account_id, occurred_at)
+ * instead of a sort of the whole week.
+ */
+function weekSource(week: string, partition: boolean, legacy: boolean, where: SQL = sql`true`): SQL {
   const lo = `${assertWeek(week)} 00:00:00+00`;
   const hi = `${weekEnd(week).toISOString().slice(0, 10)} 00:00:00+00`;
-  const parts: string[] = [];
-  if (partition) parts.push(`SELECT * FROM kortix.${partitionName(week)}`);
-  if (legacy) parts.push(`SELECT * FROM kortix.audit_events_legacy WHERE occurred_at >= '${lo}' AND occurred_at < '${hi}'`);
-  return sql.raw(parts.length ? parts.join(' UNION ALL ') : 'SELECT * FROM kortix.audit_events WHERE false');
+  const parts: SQL[] = [];
+  if (partition) parts.push(sql`SELECT * FROM ${sql.raw(`kortix.${partitionName(week)}`)} WHERE ${where}`);
+  if (legacy) {
+    parts.push(
+      sql`SELECT * FROM kortix.audit_events_legacy WHERE occurred_at >= ${lo}::timestamptz AND occurred_at < ${hi}::timestamptz AND ${where}`,
+    );
+  }
+  return parts.length ? sql.join(parts, sql` UNION ALL `) : sql`SELECT * FROM kortix.audit_events WHERE false`;
 }
 
 const CHK = sql.raw(`(('x' || substr(md5(s.event_id::text), 1, 15))::bit(60)::bigint)`);
@@ -185,33 +193,36 @@ export async function exportWeek(deps: ArchiveDeps, week: string): Promise<WeekE
     }
   };
 
-  // Accounts first (ascending), then rows without an account.
-  for (const withAccount of [true, false]) {
-    let cursor = null as { account: string | null; at: string; id: string } | null;
+  // One account at a time: its rows are one index range, already in (occurred_at, event_id) order.
+  // The account list comes from one pass over the week (time-contiguous in the heap).
+  const accounts = rows<{ account_id: string | null }>(
+    await longRead(db, (tx) => tx.execute(sql`SELECT DISTINCT s.account_id::text AS account_id FROM (${source}) s ORDER BY 1`)),
+  ).map((r) => r.account_id);
+  const startedAt = Date.now();
+  for (const account of accounts) {
+    const accountWhere = account === null ? sql`account_id IS NULL` : sql`account_id = ${account}::uuid`;
+    let cursor = null as { at: string; id: string } | null;
     for (;;) {
-      const startedAt = Date.now();
-      const keyset: ReturnType<typeof sql> = cursor
-        ? withAccount
-          ? sql`AND (s.account_id, s.occurred_at, s.event_id) > (${cursor.account}::uuid, ${cursor.at}::timestamptz, ${cursor.id}::uuid)`
-          : sql`AND (s.occurred_at, s.event_id) > (${cursor.at}::timestamptz, ${cursor.id}::uuid)`
-        : sql``;
-      const page: ExportRow[] = rows<{ line: string; account_id: string | null; at: string; id: string; chk: string }>(
+      const where = cursor
+        ? sql`${accountWhere} AND (occurred_at, event_id) > (${cursor.at}::timestamptz, ${cursor.id}::uuid)`
+        : accountWhere;
+      const page: ExportRow[] = rows<ExportRow>(
         await db.execute(sql`
-          SELECT to_jsonb(s)::text AS line, s.account_id::text AS account_id, s.occurred_at::text AS at,
+          -- occurred_at as fixed-width UTC microseconds: to_jsonb would print it in the session time zone.
+          SELECT (to_jsonb(s) || jsonb_build_object('occurred_at', to_char(s.occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))::text AS line,
+                 s.account_id::text AS account_id, s.occurred_at::text AS at,
                  s.event_id::text AS id, ${CHK}::text AS chk
-            FROM (${source}) s
-           WHERE s.account_id IS ${withAccount ? sql`NOT NULL` : sql`NULL`} ${keyset}
-           ORDER BY s.account_id, s.occurred_at, s.event_id
+            FROM (${weekSource(week, partition, legacy, where)}) s
+           ORDER BY s.occurred_at, s.event_id
            LIMIT ${batch}`),
       );
       if (page.length === 0) break;
       await take(page);
       const last: ExportRow = page[page.length - 1]!;
-      cursor = { account: last.account_id, at: last.at, id: last.id };
-      // Rate cap: a batch of N rows may not finish faster than N / rowsPerSecond.
-      const minMs = (page.length / deps.rowsPerSecond) * 1000;
-      const spent = Date.now() - startedAt;
-      if (spent < minMs) await sleep(minMs - spent);
+      cursor = { at: last.at, id: last.id };
+      // Rate cap: rows read so far may not outrun rowsPerSecond. Sleep off what is owed, in lumps.
+      const owedMs = (totalRows / deps.rowsPerSecond) * 1000 - (Date.now() - startedAt);
+      if (owedMs > 5) await sleep(owedMs);
       if (page.length < batch) break;
     }
   }
