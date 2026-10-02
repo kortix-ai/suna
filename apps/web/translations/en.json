@@ -19106,6 +19106,7 @@
       "texte15f213fa506": "Publish app update",
       "textcafd830fcf85": "Listed project agent identities",
       "text7f755292bf51": "Could not download attachment",
+      "textd8b78d762ad0": "Events older than 90 days are not listed here. Export returns them from the archive, up to 365 days back.",
       "connectorSourceLabel": "Connector source",
       "connectorSourceManaged": "Managed",
       "connectorSourceDirect": "API / MCP"

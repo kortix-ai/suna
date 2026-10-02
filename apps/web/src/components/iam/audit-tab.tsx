@@ -355,6 +355,9 @@ export function AuditTab({ accountId }: { accountId: string }) {
           <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
             {tI18nComplete.raw('text862397da3718')}
           </p>
+          <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
+            {tI18nComplete.raw('textd8b78d762ad0')}
+          </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -3,28 +3,17 @@
 // per process; every step of a pass is idempotent, so a leader change mid-pass is safe.
 import { createDb } from '@kortix/db';
 import { config } from '../../config';
-import { ObjectStore, type ObjectLockMode } from '../../object-store/s3';
+import type { ObjectLockMode } from '../../object-store/s3';
 import { db as mainDb } from '../db';
 import { runWorkerTick } from '../audit-scope';
 import { type TickResult, runArchivePass } from './archive';
+import { auditArchiveStore } from './store';
 
 const TICK_MS = 24 * 3_600_000;
 const FIRST_TICK_MS = 10 * 60_000;
 const BUDGET_MS = 3 * 3_600_000;
 
-const store = new ObjectStore(() => ({
-  name: 'audit archive',
-  bucket: config.AUDIT_ARCHIVE_BUCKET,
-  region: config.AUDIT_ARCHIVE_REGION,
-  endpoint: config.AUDIT_ARCHIVE_ENDPOINT,
-  forcePathStyle: config.AUDIT_ARCHIVE_FORCE_PATH_STYLE,
-  accessKeyId: config.AUDIT_ARCHIVE_ACCESS_KEY_ID,
-  secretAccessKey: config.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
-}));
-
-export function auditArchiveStore(): ObjectStore {
-  return store;
-}
+const store = auditArchiveStore();
 
 let pool: typeof mainDb | null = null;
 /** The archive scans a week of rows: a pool of 2 with a 30 min statement timeout, not the API's 25 s. */

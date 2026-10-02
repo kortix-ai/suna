@@ -844,7 +844,7 @@ allow. See [One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bind
 The audit commands read the centralized reconstruction log. Account and project
 lists are newest first. A session timeline is ordered by creation time
 (`session_sequence` is set only on rows written before 2026-10, which come
-first). `--all` follows every continuation cursor. The table shows
+first). `--all` follows every continuation cursor. `ls` lists the last 90 days; `export` reaches back 365 days, and events older than 90 days come from the archive (see [Audit retention](/docs/accounts#retention)). The table shows
 each row's title (`EVENT`, for example "Revoked LLM gateway key") next to its
 `ACTION` (`gateway.key.revoke`); `--action` filters by action prefix. Every
 action and title: [Audit log actions](/docs/audit-actions).

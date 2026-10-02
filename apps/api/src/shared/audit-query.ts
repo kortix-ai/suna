@@ -26,7 +26,7 @@ export function parseAuditLimit(value: string | null, fallback = 50, maximum = 2
 
 export function parseAuditCursor(
   value: string | null,
-): { occurredAt: Date; eventId: string } | null {
+): { occurredAt: Date; eventId: string; instant: string } | null {
   if (value === null) return null;
   const separator = value.indexOf('|');
   if (separator <= 0 || separator !== value.lastIndexOf('|')) throw new Error('cursor is invalid');
@@ -34,7 +34,8 @@ export function parseAuditCursor(
   const eventId = value.slice(separator + 1);
   const occurredAt = parseAuditInstant(instant, 'cursor timestamp');
   if (!occurredAt || !isUuid(eventId)) throw new Error('cursor is invalid');
-  return { occurredAt, eventId };
+  // `instant` keeps the sub-millisecond digits the Date loses: archived rows are ordered by them.
+  return { occurredAt, eventId, instant };
 }
 
 /**

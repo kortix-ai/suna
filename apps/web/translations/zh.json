@@ -19093,6 +19093,7 @@
       "texte15f213fa506": "发布应用更新",
       "textcafd830fcf85": "已列出项目代理身份",
       "text7f755292bf51": "无法下载附件",
+      "textd8b78d762ad0": "此处不显示超过 90 天的事件。导出会从归档中返回最长 365 天前的事件。",
       "connectorSourceLabel": "连接器来源",
       "connectorSourceManaged": "托管",
       "connectorSourceDirect": "API / MCP"

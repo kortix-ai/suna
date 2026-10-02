@@ -190,6 +190,18 @@ Rows written before 2026-10 carry `session_sequence`, `integrity_previous_hash`,
 
 A refused request is a row with `outcome: denied`. `metadata.auth` records how the caller authenticated: the token id, never the secret. A Git clone is the action `git.clone`. A push is `git.push`, and `metadata.refs` lists each ref it created, updated, or deleted.
 
+### Retention
+
+| Age of an event | Where it lives | How you read it |
+| --- | --- | --- |
+| 0 to 90 days | PostgreSQL, one partition per week | The audit log in the web app, `GET /v1/accounts/:accountId/audit`, `kortix audit ls`, audit webhooks, and export |
+| 90 to 365 days | An S3 archive with Object Lock (compliance mode) | Export only: `GET /v1/accounts/:accountId/audit/export` or `kortix audit export` |
+| More than 365 days | Deleted | Not available |
+
+Weeks run Monday 00:00 UTC to Monday 00:00 UTC. A week moves to the archive once its last instant is 90 days old, so an event becomes export-only between 90 and 97 days after it happened. The archive keeps an event until 365 days after the end of its week, so an event is kept 365 to 372 days in total, and the retention lock means nobody, including Kortix staff, can shorten or delete it before then. The privacy policy states the same limit: application logs are kept up to 365 days.
+
+Export returns the archive and PostgreSQL as one list, oldest first, with the same filters, the same fields, and the same `X-Audit-Next-Cursor` paging. Both read paths need the `auditAccess` entitlement. Archived events carry the same fields as live ones; `session_sequence` and the integrity hashes are empty on events written since 2026-10 (see above).
+
 ### Actions
 
 Every row has an `action` named `domain.resource.verb`, and a title the web app and `kortix audit ls` show:

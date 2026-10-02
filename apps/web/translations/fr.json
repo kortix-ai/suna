@@ -19093,6 +19093,7 @@
       "texte15f213fa506": "Publier la mise à jour de l'application",
       "textcafd830fcf85": "Identités d’agent du projet répertoriées",
       "text7f755292bf51": "Impossible de télécharger la pièce jointe",
+      "textd8b78d762ad0": "Les événements de plus de 90 jours ne sont pas listés ici. L’export les renvoie depuis l’archive, jusqu’à 365 jours en arrière.",
       "connectorSourceLabel": "Source du connecteur",
       "connectorSourceManaged": "Gérés",
       "connectorSourceDirect": "API / MCP"
