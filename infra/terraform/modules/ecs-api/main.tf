@@ -248,6 +248,43 @@ resource "aws_iam_role_policy" "project_snapshots" {
   })
 }
 
+# The API exports weekly audit_events partitions to the audit-archive bucket
+# (modules/audit-archive-bucket) with Object Lock retention. Write, set
+# retention, read, list. NO s3:DeleteObject*, s3:BypassGovernanceRetention,
+# s3:PutObjectLegalHold, or any bucket-configuration action: the role cannot
+# shorten or remove a lock.
+resource "aws_iam_role_policy" "audit_archive" {
+  # A plan-time boolean, not the ARN: the ARN comes from a bucket created in the
+  # same apply, and count cannot depend on a value unknown until apply.
+  count = var.audit_archive_enabled ? 1 : 0
+  name  = "${local.name}-audit-archive"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "AuditArchiveObjects"
+      Effect = "Allow"
+      Action = [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+      ]
+      Resource = "${var.audit_archive_bucket_arn}/*"
+      }, {
+      Sid      = "AuditArchiveBucket"
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket", "s3:GetBucketObjectLockConfiguration"]
+      Resource = var.audit_archive_bucket_arn
+      }, {
+      Sid      = "AuditArchiveKms"
+      Effect   = "Allow"
+      Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+      Resource = var.audit_archive_kms_key_arn
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
