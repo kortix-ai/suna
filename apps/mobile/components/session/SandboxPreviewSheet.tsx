@@ -70,6 +70,10 @@ export function SandboxPreviewSheet() {
       snapPoints={['100%']}
       enableDynamicSizing={false}
       topInset={insets.top}
+      // The page scrolls inside the WebView. A content pan would take the drag
+      // on Android, so only the handle and title row drag the sheet.
+      enablePanDownToClose
+      enableContentPanningGesture={false}
       backgroundStyle={{ backgroundColor: pageBackground }}
       onDismiss={closePreview}>
       {url && authToken ? (

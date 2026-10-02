@@ -6,7 +6,7 @@
  *   (`text-muted-foreground/40`); open, the row drops the command (the card
  *   shows it). Live → "Running command" + the command shimmering (duration 1s,
  *   spread 2); open, the shimmer moves to the label. An input-less call from a
- *   finished turn shimmers "Working...". `text-xs` spans; `text-sm
+ *   finished turn is still muted "Working..." text (a stale call never animates). `text-xs` spans; `text-sm
  *   leading-[1.5]` inside a chain, as web's `activity-step` forces;
  * - card (`CommandBlock`): the frame (`border bg-popover rounded-md`, inline
  *   only); command pane `bg-muted/40` `max-h-64`, Shiki bash, mono `text-xs
@@ -168,7 +168,7 @@ function CommandBlock({
  * The words on the trigger row. Its own component because `useToolOpen()`
  * only answers truthfully inside `BasicTool`'s provider.
  */
-function BashTrigger(props: {
+export function BashTrigger(props: {
   command: string;
   running: boolean;
   status: string;
@@ -196,9 +196,14 @@ function BashTrigger(props: {
   if (content.kind === 'stale') {
     return (
       <View style={rowStyle}>
-        <TextShimmer duration={1} spread={2} style={chain ? TURN_TYPE.rowSm : TURN_TYPE.sm} numberOfLines={1}>
+        {/* The turn is over: this call will never finish, so it must not animate. */}
+        <Text
+          variant="muted"
+          numberOfLines={1}
+          style={[chain ? TURN_TYPE.rowSm : TURN_TYPE.sm, { color: palette.mutedForeground }]}
+        >
           {content.label}
-        </TextShimmer>
+        </Text>
       </View>
     );
   }

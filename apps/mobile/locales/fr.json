@@ -1182,5 +1182,11 @@
     "includes": "Inclus",
     "askOwner": "Demandez un siège à un propriétaire du compte",
     "notNow": "Pas maintenant"
+  },
+  "sessions": {
+    "showMoreSubsessions_one": "Afficher {{count}} de plus",
+    "showMoreSubsessions_other": "Afficher {{count}} de plus",
+    "showMoreSubsessionsLabel_one": "Afficher {{count}} sous-session de plus de {{title}}",
+    "showMoreSubsessionsLabel_other": "Afficher {{count}} sous-sessions de plus de {{title}}"
   }
 }
