@@ -12,6 +12,8 @@ import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';
 import { SendStopControl } from './send-stop-control';
+import { ServedModelBadge } from './served-model-badge';
+import type { ServedModelNotice } from '../turn/served-model';
 
 /**
  * The composer's bottom toolbar — the familiar one, now scoped to the two
@@ -87,6 +89,8 @@ export interface ComposerToolbarProps {
    *  placement the slot lives on `ComposerUnderbar` instead, and handing it to
    *  both would render it twice. */
   toolbarSlot?: React.ReactNode;
+  /** The newest answer came from a fallback model instead of the selected one. */
+  servedModel?: ServedModelNotice | null;
   /**
    * The session sits on a rewound path. A compact Restore control renders
    * beside send/stop because send is the action that commits the path — the
@@ -135,6 +139,7 @@ export function ComposerToolbar({
   onVariantChange,
   projectId,
   toolbarSlot,
+  servedModel,
   rewind,
   leading,
   isSending,
@@ -178,6 +183,8 @@ export function ComposerToolbar({
             onOpenChange={onModelMenuOpenChange}
           />
         )}
+
+        {showModel && servedModel ? <ServedModelBadge notice={servedModel} /> : null}
 
         <ReasoningEffortSelector
           variants={variants}

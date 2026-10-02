@@ -19110,7 +19110,11 @@
       "text4540af5229a8": "只有发起会话的人才能继续该会话。",
       "textda4bd8bdfe42": "其他人需要会话所有者批准才能加入。",
       "text5dae52a3f448": "{count, plural, one {# 个频道} other {# 个频道}}",
-      "text5097881a690f": "会话：{title}"
+      "text5097881a690f": "会话：{title}",
+      "servedModelRow": "模型",
+      "servedModelInPlaceOf": "替代",
+      "servedModelBadge": "正在使用 {model}",
+      "servedModelHint": "{requested} 未响应上一个请求。{model} 已通过此项目的备用链作出响应。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

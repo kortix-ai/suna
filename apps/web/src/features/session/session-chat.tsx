@@ -19,7 +19,7 @@ import {
   listSessionPrompts,
   projectSessionConnection,
 } from '@kortix/sdk';
-import { useProjectSession, useSessionMessageAuthors, useSessionParticipants } from '@kortix/sdk/react';
+import { useProjectSession, useSessionMessageAuthors, useSessionModelUsage, useSessionParticipants } from '@kortix/sdk/react';
 import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
@@ -110,6 +110,7 @@ import type { AttachmentUploadStatus } from '@/features/session/turn/user-messag
 import { SessionBusyIndicator } from './session-busy-indicator';
 import { useSessionBaseRef } from './session-changes-shared';
 import { resolveEffectiveBusy } from './session-chat-busy';
+import { MODEL_USAGE_SETTLE_MS, servedModelNotice, sessionBilledCost, turnServedModelResolver } from './turn/served-model';
 import { sessionTurnSpan } from './session-turn-meta-rows';
 
 import { Button } from '@/components/ui/button';
@@ -1068,6 +1069,34 @@ export function SessionChat({
   useEffect(() => {
     isBusyRef.current = effectiveBusy;
   }, [effectiveBusy]);
+
+  // Which model answered each turn, and what Kortix billed for it, from the
+  // gateway's request record. The transcript and the model selector name the
+  // model a turn ASKED for; a fallback chain decides what answers. A request's
+  // row is written as the request ends: read again on each new assistant
+  // message and at the end of a turn, then once more for its last request.
+  const newestAssistantMessageId = useMemo(
+    () => (messages ?? []).findLast((m) => m.info.role === 'assistant')?.info.id ?? '',
+    [messages],
+  );
+  const { data: modelUsage, refetch: refetchModelUsage } = useSessionModelUsage(projectId, projectSessionId);
+  useEffect(() => {
+    if (!newestAssistantMessageId) return;
+    void refetchModelUsage();
+    if (effectiveBusy) return;
+    const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [newestAssistantMessageId, effectiveBusy, refetchModelUsage]);
+  const servedNotice = useMemo(
+    () => servedModelNotice(modelUsage, local.model.currentKey, local.model.list),
+    [modelUsage, local.model.currentKey, local.model.list],
+  );
+  // Not gated on the composer's selection: the modal reports the session.
+  const sessionServedModel = useMemo(
+    () => servedModelNotice(modelUsage, null, local.model.list),
+    [modelUsage, local.model.list],
+  );
+  const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
 
   // Render-driven only: the session is working, or the transcript shows a user
   // message nothing has answered yet. The transcript-inference terms are gone —
@@ -4013,6 +4042,8 @@ export function SessionChat({
           session={session}
           providers={providers}
           allSessions={allSessions}
+          servedModel={sessionServedModel}
+          billedCost={sessionBilledCost(modelUsage)}
         />
 
         {/* Compact modal — opened from the composer's `/` palette */}
@@ -4290,6 +4321,7 @@ export function SessionChat({
                               turn={turn}
                               author={turnAuthor}
                               showAuthor={showAuthorName(turnAuthor, groupChat, viewer?.id)}
+                              servedModel={servedModelOfTurn(modelUsage, turn.userMessage.info.id)}
                               turnOutcome={turnOutcome}
                               isLast={turn.userMessage.info.id === lastUserMessageId}
                               ownsPlan={turn.userMessage.info.id === planAnchorId}
@@ -4570,6 +4602,7 @@ export function SessionChat({
                 aboveSlot={chatAboveSlot}
                 inputSlot={chatInputSlot}
                 toolbarSlot={chatToolbarSlot}
+                servedModel={servedNotice}
                 // The shell can now render on a cached transcript alone, i.e. before
                 // the sandbox answers — so sending has to be gated separately from
                 // reading. See sessionComposerReadiness.

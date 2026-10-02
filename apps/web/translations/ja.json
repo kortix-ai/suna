@@ -19110,7 +19110,11 @@
       "text4540af5229a8": "セッションを開始した人だけが、そのセッションを続けられます。",
       "textda4bd8bdfe42": "他の人が参加するには、セッションのオーナーの承認が必要です。",
       "text5dae52a3f448": "{count, plural, one {# チャンネル} other {# チャンネル}}",
-      "text5097881a690f": "スレッド: {title}"
+      "text5097881a690f": "スレッド: {title}",
+      "servedModelRow": "モデル",
+      "servedModelInPlaceOf": "代替元",
+      "servedModelBadge": "{model} で実行中",
+      "servedModelHint": "{requested} は直前のリクエストに応答しませんでした。このプロジェクトのフォールバックチェーンから {model} が応答しました。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

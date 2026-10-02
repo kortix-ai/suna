@@ -1203,10 +1203,20 @@ describe('model fallback chains (route.fallbackModels)', () => {
       attempts: 2,
       resolvedModel: 'fallback-model',
       candidatesTried: ['primary-upstream', 'fallback-upstream:fallback-model'],
+      // The route ids a session can show: what answered, and what it stood in for.
+      servedModel: 'fallback-model',
+      fallbackFrom: 'primary-model',
     });
     expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.routeModel, f.status])).toEqual([
       ['primary-upstream', 'primary-model', 503],
     ]);
+  });
+
+  test('a request its own model answers names that model and no fallback', async () => {
+    const { response, traces } = await run({ respond: () => ok('from primary') });
+    expect(response.status).toBe(200);
+    expect(traces.at(-1)).toMatchObject({ ok: true, servedModel: 'primary-model' });
+    expect(traces.at(-1)).not.toHaveProperty('fallbackFrom');
   });
 
   // Incident 2026-09-28: a routed model the provider would not serve (404 —
