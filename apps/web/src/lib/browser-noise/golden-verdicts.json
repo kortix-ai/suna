@@ -1,5 +1,9 @@
 [
-{"input":{"exception":{"values":[{"value":"Error in input stream","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Error in input stream","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false}}]}},"runtime":false,"sentry":true},
+{"input":{"exception":{"values":[{"value":"Error in input stream","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false},"stacktrace":{"frames":[{"filename":"apps/web/src/features/files/hooks/use-binary-blob.ts"}]}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Error in input stream","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false},"stacktrace":{"frames":[{"filename":"app:///_next/static/chunks/app.js"}]}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"error in input stream","mechanism":{"type":"auto.browser.global_handlers.onunhandledrejection","handled":false}}]}},"runtime":false,"sentry":false},
+{"input":{"exception":{"values":[{"value":"Error in input stream","mechanism":{"type":"generic","handled":true}}]}},"runtime":false,"sentry":false},
 {"input":{"message":"Invalid call to runtime.sendMessage(). Tab not found."},"runtime":true,"sentry":true},
 {"input":{"exception":{"values":[{"value":"Invalid call to runtime.sendMessage(). Tab not found."}]}},"runtime":false,"sentry":true},
 {"input":{"filename":"safari-web-extension://com.example.extension/content.js"},"runtime":false,"sentry":false},

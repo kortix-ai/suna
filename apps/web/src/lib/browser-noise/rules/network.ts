@@ -470,9 +470,102 @@ export function isSignalTimeoutNoise(input: {
   return true;
 }
 
+// The EXACT message Gecko throws at a fetch-response-body reader when the HTTP
+// input stream backing the ReadableStream fails with anything other than a
+// clean close: `TypeError: Error in input stream`, from
+// `InputToReadableStreamAlgorithms::ErrorPropagation` in
+// `dom/streams/UnderlyingSourceCallbackHelpers.cpp` (gecko-dev line 541 at
+// master, 2026-10) — `rv.ThrowTypeError("Error in input stream")`, right after
+// Gecko's own `// XXXbz can we come up with a better error message here to
+// tell the consumer what went wrong?`. It is a BROWSER-GENERATED message: the
+// only way app code can observe it is a rejecting body read (`reader.read()`,
+// `response.text()/blob()/json()`, or the internal `pipeThrough` pump), and its
+// prod form is FRAMELESS (the rejection reason is Gecko's own TypeError, which
+// carries no JS stack).
+//
+// This is the Firefox-only stream-interruption class reported web-wide
+// (graphql-sse#99 — idle keepalive timing; chatbot-ui#1170 — completion cut
+// mid-answer; gpt-researcher#288 — `Uncaught (in promise) TypeError: Error in
+// input stream`), always mechanism `onunhandledrejection`, always Firefox.
+// Better Stack pattern 58784c82b963a015b175cea01de43a25b595a0da4d17dc7157c4a173dfdae775
+// (Kortix Frontend prod, application_id 2346967, KRTX-984): 1 occurrence /
+// 3 days, 0 identified users, Firefox 140 / Windows 10, release `a0764e3`,
+// transaction `/:locale/projects/:id/sessions/:sessionId`, NO stacktrace. Both
+// recorded occurrences fire the moment a sandbox-proxied connection was torn
+// down and re-established while a body read was in flight: 2026-10-02 02:42:01Z
+// 5 ms after `GET /v1/p/<sandbox>/8000/session/…/message?limit=50` answered 200
+// (headers arrive, the body read then fails mid-transfer) after a 503 storm on
+// the same proxy; 2026-08-27 14:55:53Z 0.3 s after a `GET /kortix/health` 503 on
+// a sandbox that had been 503ing for hours. A local Firefox 133 repro confirmed
+// the message semantics: an SSE body truncated mid-transfer rejects a caught
+// `reader.read()` with exactly `TypeError: Error in input stream`, while the
+// sibling JSON mid-body failure modes produce DIFFERENT messages (truncation →
+// `Content-Length header of network response exceeds response Body`, an
+// abort-after-headers → `AbortError: The operation was aborted.`) — so the
+// exact message identifies the interrupted-stream class, not "any fetch
+// failure".
+//
+// WHY the rejection reaches the global handler at all: every first-party
+// consumer of a fetch body in the browser bundle already handles its own read
+// rejections — the SSE event-stream machine races reads against its abort
+// watch and retries (`core/stream/event-stream.ts`), the session-sync tail
+// poll catches through `loadTail` and re-schedules
+// (`core/session-sync/session-sync-controller.ts`), the health probe catches
+// its body read (`getSessionHealth`'s `.text().catch()`), the platform client
+// converts every body failure into an `ApiError` result (`makeRequest`), the
+// file/attachment readers await inside their callers' try/catch or React
+// Query (`readBlob`, `fetchSessionAttachment`), and the vendor OpenCode SSE
+// generator catches its own read failures and stops after one retry. The
+// rejection that still escapes is the browser-internal one — the pipe/pump
+// promise the spec's `pipeThrough` discards and no app handler can attach to —
+// which is precisely why it arrives frameless through the global rejection
+// handler instead of any app path. That browser-internal origin is the
+// expected-state signal: a real first-party stream bug would surface through
+// one of the handled readers above (and de-minify to `apps/web/src/…`), not as
+// a frameless global rejection of Gecko's own message.
+//
+// Anchors and NEGATIVE guard, mirroring `isFramelessNetworkErrorNoise`:
+// the EXACT message (case-sensitive — `error in input stream` keeps
+// reporting), the global unhandled-rejection mechanism with `handled: false`,
+// and NO resolvable frame: any frame that resolves to a de-minified first-party
+// `apps/web/src/…` source (or any resolvable location at all) keeps reporting.
+// Deliberately NOT in `sentry.client.config.ts`'s `ignoreErrors` — that gate
+// has no frame or mechanism context; the frame-aware `beforeSend` hook is the
+// only safe gate.
+const GECKO_INPUT_STREAM_MESSAGE = 'Error in input stream';
+const GECKO_INPUT_STREAM_MECHANISM = 'auto.browser.global_handlers.onunhandledrejection';
+
+export function isGeckoInputStreamRejectionNoise(input: {
+  message?: unknown;
+  mechanism?: unknown;
+  handled?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  if (normalizeString(input.message) !== GECKO_INPUT_STREAM_MESSAGE) {
+    return false;
+  }
+  if (input.mechanism !== GECKO_INPUT_STREAM_MECHANISM || input.handled !== false) {
+    return false;
+  }
+  const frames = input.frames ?? [];
+  // Negative guard #1: a resolved first-party frame means the rejection was
+  // captured from our own code — actionable; keep reporting.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  // Negative guard #2: any resolvable source location is an attributable stack;
+  // keep reporting. Only the frameless global capture (the production shape)
+  // classifies as expected.
+  if (frames.some((frame) => isResolvableFrameSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
 export const NETWORK_RULES: readonly NoiseRule[] = [
   { id: 'connection-closed', appliesTo: 'both', match: isConnectionClosedNoise },
   { id: 'failed-to-send-message', appliesTo: 'both', match: isFailedToSendMessageNoise },
   { id: 'frameless-network-error', appliesTo: 'sentry', match: isFramelessNetworkErrorNoise },
+  { id: 'gecko-input-stream-rejection', appliesTo: 'sentry', match: isGeckoInputStreamRejectionNoise },
   { id: 'signal-timeout', appliesTo: 'both', match: isSignalTimeoutNoise },
 ];
