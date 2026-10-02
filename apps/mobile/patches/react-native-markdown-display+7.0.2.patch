@@ -1,0 +1,75 @@
+diff --git a/node_modules/react-native-markdown-display/src/lib/AstRenderer.js b/node_modules/react-native-markdown-display/src/lib/AstRenderer.js
+index 608e945..581f527 100644
+--- a/node_modules/react-native-markdown-display/src/lib/AstRenderer.js
++++ b/node_modules/react-native-markdown-display/src/lib/AstRenderer.js
+@@ -1,6 +1,5 @@
+ import {StyleSheet} from 'react-native';
+ 
+-import getUniqueID from './util/getUniqueID';
+ import convertAdditionalStyles from './util/convertAdditionalStyles';
+ 
+ import textStyleProps from './data/textStyleProps';
+@@ -180,7 +179,7 @@ export default class AstRenderer {
+    * @return {*}
+    */
+   render = (nodes) => {
+-    const root = {type: 'body', key: getUniqueID(), children: nodes};
++    const root = {type: 'body', key: 'body', children: nodes};
+     return this.renderNode(root, [], true);
+   };
+ }
+diff --git a/node_modules/react-native-markdown-display/src/lib/util/tokensToAST.js b/node_modules/react-native-markdown-display/src/lib/util/tokensToAST.js
+index b0ed265..fe5baf8 100644
+--- a/node_modules/react-native-markdown-display/src/lib/util/tokensToAST.js
++++ b/node_modules/react-native-markdown-display/src/lib/util/tokensToAST.js
+@@ -1,4 +1,3 @@
+-import getUniqueID from './getUniqueID';
+ import getTokenTypeByToken from './getTokenTypeByToken';
+ 
+ /**
+@@ -27,21 +26,43 @@ function createNode(token, tokenIndex) {
+     sourceMeta: token.meta,
+     block: token.block,
+     markup: token.markup,
+-    key: getUniqueID() + '_' + type,
++    key: '',
+     content,
+     tokenIndex,
+     index: 0,
+     attributes,
+-    children: tokensToAST(token.children),
++    children: buildAST(token.children),
+   };
+ }
+ 
++/**
++ * Keys are the node's path: its parent's key, its index among its siblings,
++ * and its type. The same markdown always gets the same keys, so a re-parse
++ * (every render) updates the rendered views instead of remounting them.
++ *
++ * @param {Array} nodes
++ * @param {string} prefix
++ */
++function assignKeys(nodes, prefix) {
++  for (let i = 0; i < nodes.length; i++) {
++    const node = nodes[i];
++    node.key = prefix + i + '_' + node.type;
++    assignKeys(node.children, node.key + '-');
++  }
++}
++
+ /**
+  *
+  * @param {Array<{type: string, tag:string, content: string, children: *, attrs: Array}>}tokens
+  * @return {Array}
+  */
+ export default function tokensToAST(tokens) {
++  const nodes = buildAST(tokens);
++  assignKeys(nodes, '');
++  return nodes;
++}
++
++function buildAST(tokens) {
+   let stack = [];
+   let children = [];
+ 

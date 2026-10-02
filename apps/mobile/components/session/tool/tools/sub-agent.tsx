@@ -21,15 +21,16 @@
  * - `SubAgentStatusBanner` — the child's retry countdown or its last error.
  */
 
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 import { View } from 'react-native';
-import { getChildSessionError, getRetryInfo, getRetryMessage, type ToolPart } from '@kortix/sdk';
+import { getChildSessionError, getRetryInfo, getRetryMessage, getWorkingState, type ToolPart } from '@kortix/sdk';
 import { SessionRetryDisplay, useRetrySecondsLeft } from '@/components/session/session-retry-display';
 import { TurnErrorDisplay } from '@/components/session/SessionErrorBanner';
 import { useSessionRows, useSessionStatus } from '@/lib/session/session-store';
 import type { MessageWithParts } from '@/lib/session/types';
 import { childSessionToolParts } from '@/lib/session/tools/agents-task';
 import { webSpace } from '@/lib/session/user-message';
+import { TurnLiveContext } from '../shared/infrastructure';
 import { ToolNavigationContext } from '../shared/navigation';
 import { ToolSurfaceContext, useToolIndent } from '../shared/surface';
 import { ToolPartRenderer } from '../tool-part-renderer';
@@ -51,16 +52,23 @@ export function SubAgentActivity({ childSessionId, parts }: { childSessionId?: s
   // Read BEFORE the provider flips the surface: the offset belongs to the row
   // this list hangs under.
   const indent = useToolIndent();
+  // A background spawn returns at once: the parent's turn ends while the child
+  // keeps working. The child's rows are live while either one is.
+  const parentLive = useContext(TurnLiveContext);
+  const childStatus = useSessionStatus(childSessionId);
+  const childLive = parentLive || getWorkingState(childStatus, true);
 
   if (parts.length === 0) return null;
   return (
     <ToolSurfaceContext.Provider value="inline">
       <ToolNavigationContext.Provider value={false}>
-        <View style={{ rowGap: webSpace(1), marginLeft: indent }}>
-          {parts.map((tp) => (
-            <ToolPartRenderer key={tp.callID} part={tp} sessionId={childSessionId} />
-          ))}
-        </View>
+        <TurnLiveContext.Provider value={childLive}>
+          <View style={{ rowGap: webSpace(1), marginLeft: indent }}>
+            {parts.map((tp) => (
+              <ToolPartRenderer key={tp.callID} part={tp} sessionId={childSessionId} />
+            ))}
+          </View>
+        </TurnLiveContext.Provider>
       </ToolNavigationContext.Provider>
     </ToolSurfaceContext.Provider>
   );
