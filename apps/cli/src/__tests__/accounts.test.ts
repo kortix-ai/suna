@@ -163,6 +163,26 @@ describe('kortix accounts', () => {
     expect(code).toBe(0);
     expect(stripAnsi(stdout)).toContain('Kortix');
   });
+
+  test('current --json prints the account object and exits 0', async () => {
+    mockApi();
+    await runAccounts(['use', 'kortix']);
+    stdout = '';
+    const code = await runAccounts(['current', '--json']);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ account_id: 'account_2', slug: 'kortix', name: 'Kortix' });
+  });
+
+  test('current --json exits nonzero when no account is active', async () => {
+    mockApi();
+    // A `kortix login --no-project` on an account-less login leaves account_id empty.
+    writeConfig('');
+    const code = await runAccounts(['current', '--json']);
+    expect(code).toBe(1);
+    // stdout stays a valid JSON document; the failure is the exit code.
+    expect(JSON.parse(stdout)).toBeNull();
+    expect(stripAnsi(stderr)).toContain('No active account');
+  });
 });
 
 describe('kortix projects use', () => {

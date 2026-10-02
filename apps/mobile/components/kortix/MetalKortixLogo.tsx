@@ -253,8 +253,9 @@ function HeatmapCanvas({
 }
 
 function DitherCanvas({ size, tone, front, image, effect, sweep, angle }: CanvasProps & { front?: Rgba | null }) {
-  const box = symbolBox(size);
-  const colorFront: Rgba = front ?? LOGO_STYLE_COLORS[tone].dither.front;
+  // Memoized: a new array in the worklet's closure would rebuild the uniforms mapper.
+  const box = React.useMemo(() => symbolBox(size), [size]);
+  const colorFront: Rgba = React.useMemo(() => front ?? LOGO_STYLE_COLORS[tone].dither.front, [front, tone]);
   const imageWidth = image.width();
   const imageHeight = image.height();
 

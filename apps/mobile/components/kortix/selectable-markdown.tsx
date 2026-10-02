@@ -26,7 +26,10 @@
  * Streaming: the text is split into top-level blocks (`splitMarkdown`), and
  * each block renders in its own memoized component keyed by its position.
  * When a message grows, only the last block's string changes, so completed
- * blocks are neither re-parsed nor remounted. A block that appears after the
+ * blocks are neither re-parsed nor remounted. The last block re-parses on every
+ * change; its AST keys are node paths
+ * (`patches/react-native-markdown-display+7.0.2.patch`), so its native views
+ * update in place instead of remounting. A block that appears after the
  * message mounted fades in; a fence that is still open renders plain and
  * highlights once it closes.
  *
@@ -51,7 +54,7 @@ import {
 import { UITextView } from 'react-native-uitextview';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
-import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import type { MarkdownTextInput as MarkdownTextInputComponent } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
 import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
@@ -80,7 +83,7 @@ import { mathPlugin } from '@/lib/markdown/math-plugin';
 import { markdownPalette, type MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { isMarkdownSeparatorBlock, splitMarkdown } from '@/lib/markdown/split-blocks';
 import { isSafeExternalLink } from '@/lib/markdown/safe-link';
-import { groupImageBlocks } from '@/lib/markdown/markdown-image';
+import { groupImageBlocks, imageSourceKey } from '@/lib/markdown/markdown-image';
 import { MarkdownImage, MarkdownImageGallery, MarkdownImagesContext, type MarkdownRemoteImages } from '@/components/markdown/markdown-image';
 import {
   classifyBlock,
@@ -94,6 +97,13 @@ import {
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
 import { openLink } from '@/lib/utils/open-link';
+
+// The component's own module, not the package root: the root also exports
+// `parseExpensiMark`, which loads all of `expensify-common` (1.5 MB) at boot.
+// The app passes its own parser (`markdownParser`) and never calls it. A
+// `require`, so tsc reads the root's declarations and not the package source.
+const MarkdownTextInput: typeof MarkdownTextInputComponent =
+  require('@expensify/react-native-live-markdown/src/MarkdownTextInput').default;
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -293,10 +303,11 @@ const createMarkdownRules = (isDark: boolean) => {
       </MarkdownText>
     ),
     // Images: the image itself where it may load (`MarkdownImagesContext`),
-    // else the placeholder card.
+    // else the placeholder card. Node keys are positions, so the source is in
+    // the key: a different image at the same position mounts fresh load state.
     image: (node: AstNode) => (
       <MarkdownImage
-        key={node.key}
+        key={`${node.key}:${imageSourceKey(String(node.attributes?.src ?? ''))}`}
         src={typeof node.attributes?.src === 'string' ? node.attributes.src : ''}
         alt={typeof node.attributes?.alt === 'string' ? node.attributes.alt : ''}
         isDark={isDark}
@@ -905,6 +916,12 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
+type BlockKinds = { first: BlockKind; last: BlockKind };
+
+function blockKinds(block: string): BlockKinds {
+  return isMarkdownSeparatorBlock(block) ? { first: 'hr', last: 'hr' } : classifyBlock(block);
+}
+
 function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: boolean; isStreaming?: boolean }) {
   const { blocks, endsInOpenFence } = useMemo(() => splitMarkdown(prepareMarkdownForMath(text)), [text]);
   const fenceGrowing = useFenceStillGrowing(text, endsInOpenFence, isStreaming);
@@ -919,10 +936,9 @@ function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: b
   }
   previousText.current = text;
 
-  const kinds = useMemo(
-    () => blocks.map((block) => (isMarkdownSeparatorBlock(block) ? { first: 'hr', last: 'hr' } as const : classifyBlock(block))),
-    [blocks],
-  );
+  // `classifyBlock` reads only a block's first and last lines, so this costs
+  // little per block however long the message grows.
+  const kinds = useMemo(() => blocks.map(blockKinds), [blocks]);
 
   // A run of image-only blocks with two or more images is one swipeable
   // gallery; every other block renders as markdown.

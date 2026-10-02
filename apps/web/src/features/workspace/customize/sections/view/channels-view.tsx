@@ -432,7 +432,12 @@ function ChannelBindingsDialog({
           name: bindingName(binding, tI18nComplete),
           scope: bindingScope(binding, tI18nComplete),
         }))
-        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+        // Threads of one Teams channel share a name; their titles order them.
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(b.name, undefined, { numeric: true }) ||
+            a.scope.localeCompare(b.scope, undefined, { numeric: true }),
+        ),
     [bindingsQuery.data, tI18nComplete],
   );
   const tabs = bindingTabs(rows.map((row) => row.binding));
@@ -851,9 +856,14 @@ function bindingName(binding: ChannelBinding, tI18nComplete: UiTranslator): stri
   return binding.channelName ?? bindingFallbackName(binding, tI18nComplete);
 }
 
-/** The line under the name: the conversation's kind. */
+/** The line under the name: the conversation's kind, or a Teams channel thread's title. */
 function bindingScope(binding: ChannelBinding, tI18nComplete: UiTranslator): string {
-  if (binding.platform === 'teams') return bindingScopeLabel(binding.channelType, tI18nComplete);
+  if (binding.platform === 'teams') {
+    // Every thread of a channel is its own binding named `Team › Channel`;
+    // its session title tells them apart.
+    if (binding.threadTitle) return tI18nComplete('text5097881a690f', { title: binding.threadTitle });
+    return bindingScopeLabel(binding.channelType, tI18nComplete);
+  }
   if (binding.platform === 'slack') return slackScopeLabel(binding, tI18nComplete);
   return binding.workspaceId;
 }
@@ -873,7 +883,8 @@ function bindingFallbackName(
   tI18nComplete: UiTranslator,
 ): string {
   if (binding.platform !== 'teams') return binding.channelId;
-  if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
+  // A thread bound before its kind was read has none stored; its id says it.
+  if (binding.channelType === 'channel' || binding.channelId.includes(';messageid=')) return tI18nComplete.raw('text5cb103d6008c');
   return tI18nComplete.raw('text31d248c44579');
 }
 

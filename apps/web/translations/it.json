@@ -19109,7 +19109,8 @@
       "texte83e9ba50357": "Qualsiasi membro del progetto con account collegato può partecipare a una sessione qui.",
       "text4540af5229a8": "Solo la persona che ha avviato una sessione può continuarla.",
       "textda4bd8bdfe42": "Le altre persone hanno bisogno dell'approvazione del proprietario della sessione per partecipare.",
-      "text5dae52a3f448": "{count, plural, one {# canale} other {# canali}}"
+      "text5dae52a3f448": "{count, plural, one {# canale} other {# canali}}",
+      "text5097881a690f": "Thread: {title}"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

@@ -21,8 +21,12 @@ import {
   setChannelModel,
 } from "../../channels/slack/selection";
 import { backfillSlackBindingLabel } from "../../channels/slack/binding-label";
-import { loadSlackTokenForProject } from "../../channels/install-store";
+import { loadSlackTokenForProject, loadTeamsServiceUrlForProject } from "../../channels/install-store";
+import { teamsThreadTitles } from "../../channels/teams/binding";
+import { backfillTeamsBindingLabel, needsTeamsNameBackfill } from "../../channels/teams/channel-label";
+import { isTeamsChannelThreadId } from "../../channels/teams/util";
 import { requestMemo } from "../../lib/request-context";
+import { withTimeout } from "../../shared/with-timeout";
 import {
   isModelServableForAccount,
 } from "../../llm-gateway/resolution/default-model";
@@ -44,6 +48,9 @@ import { projectsApp } from "../lib/app";
 
 /** The three Slack conversation-join policies (channels/slack/participants.ts). */
 const CONVERSATION_POLICIES = ["owner_approval", "owner_only", "project_open"] as const;
+
+/** How long `GET /channels/bindings` waits for Teams to name unnamed threads. */
+const TEAMS_NAMING_BUDGET_MS = 2_500;
 
 function projectDefaultAgentOf(metadata: unknown): string | null {
   return typeof (metadata as Record<string, unknown> | null)?.default_agent === "string"
@@ -194,6 +201,7 @@ async function serializeBinding(
   projectDefaultAgent: string | null,
   modelCtx: ModelResolutionCtx,
   channelUnavailable = false,
+  threadTitle: string | null = null,
 ) {
   const effectiveAgent = chooseEffectiveAgent({
     explicit: row.agentName,
@@ -214,6 +222,9 @@ async function serializeBinding(
     channelType: row.channelType,
     // Slack answered that the conversation is deleted or out of the bot's reach.
     channelUnavailable,
+    // A Teams channel thread: its session's title. Every thread of a channel
+    // is its own binding named `Team › Channel`; this tells them apart.
+    threadTitle,
     agentName: row.agentName,
     opencodeModel: row.opencodeModel,
     conversationPolicy: row.conversationPolicy,
@@ -270,9 +281,37 @@ projectsApp.openapi(
         );
       }
     }
-    const [modelDefaults, mayUseManagedModels] = await Promise.all([
+    // A Teams channel thread whose name does not say its team is named on read
+    // when its id does: the General channel's id is the team's id. The name is
+    // stored, and one Teams read per team serves every thread in it. A cold
+    // read is ~1.4 s (token + connector, measured); the list waits for names
+    // at most TEAMS_NAMING_BUDGET_MS, and a lookup still running stores its
+    // name for the next load.
+    const teamsUnnamed = bindings.filter(needsTeamsNameBackfill);
+    const teamsServiceUrl = teamsUnnamed.length > 0 ? await loadTeamsServiceUrlForProject(projectId).catch(() => null) : null;
+    if (teamsServiceUrl) {
+      const naming = (async () => {
+        for (let i = 0; i < teamsUnnamed.length; i += 5) {
+          await Promise.all(
+            teamsUnnamed.slice(i, i + 5).map(async (b) => {
+              const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
+              if (name) {
+                b.channelName = name;
+                b.channelType = "channel";
+              }
+            }),
+          );
+        }
+      })();
+      await withTimeout(naming, TEAMS_NAMING_BUDGET_MS).catch(() => {});
+    }
+    const [modelDefaults, mayUseManagedModels, threadTitles] = await Promise.all([
       getAccountModelDefaults(accountId, projectId),
       accountMayUseManagedModels(accountId),
+      teamsThreadTitles(
+        projectId,
+        bindings.filter((b) => b.platform === "teams" && isTeamsChannelThreadId(b.channelId)).map((b) => b.channelId),
+      ),
     ]);
     const modelCtx: ModelResolutionCtx = {
       userId: loaded.userId,
@@ -286,7 +325,15 @@ projectsApp.openapi(
     return c.json({
       projectDefaultAgent,
       bindings: await Promise.all(
-        bindings.map((b) => serializeBinding(b, projectDefaultAgent, modelCtx, unavailable.has(b.bindingId))),
+        bindings.map((b) =>
+          serializeBinding(
+            b,
+            projectDefaultAgent,
+            modelCtx,
+            unavailable.has(b.bindingId),
+            threadTitles.get(b.channelId) ?? null,
+          ),
+        ),
       ),
     });
   },

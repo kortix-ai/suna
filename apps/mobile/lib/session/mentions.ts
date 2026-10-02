@@ -83,6 +83,8 @@ export function detectMentionTrigger(text: string, cursorPos: number, mentions: 
       return mentionQuery;
 }
 
+/** Returns `mentions` itself when nothing is pruned, so a keystroke keeps the state's identity. */
 export function pruneMentions(text: string, mentions: TrackedMention[]): TrackedMention[] {
-  return mentions.filter((m) => text.includes(`@${m.label}`));
+  const kept = mentions.filter((m) => text.includes(`@${m.label}`));
+  return kept.length === mentions.length ? mentions : kept;
 }

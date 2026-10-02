@@ -7,9 +7,28 @@ import { ExpandControl, StarterLabel } from '@/components/session/SessionTreePar
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { directSubsessions } from '@kortix/sdk';
 import { sessionDisplayStatus, sessionDisplayTitle, sessionStatusLabel } from '@/lib/session/session-list';
-import { childCountOf, type SessionStarter } from '@/lib/session/session-tree';
+import { childCountOf, sessionStarter, type SessionStarter } from '@/lib/session/session-tree';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
 import { cn } from '@/lib/utils/index';
+
+/**
+ * `sessionStarter`, cached per session row: a memoized row gets the same
+ * object while its row is unchanged, so it skips the list's re-renders.
+ */
+export function useSessionStarterOf(viewerId: string | null): (session: ProjectSession) => SessionStarter {
+  const cache = useMemo(() => new WeakMap<ProjectSession, SessionStarter>(), [viewerId]);
+  return useCallback(
+    (session: ProjectSession) => {
+      let starter = cache.get(session);
+      if (!starter) {
+        starter = sessionStarter(session, viewerId);
+        cache.set(session, starter);
+      }
+      return starter;
+    },
+    [cache, viewerId]
+  );
+}
 
 // ─── Session row ─────────────────────────────────────────────────────────────
 
@@ -139,9 +158,10 @@ const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
  * (web's `renderSessionNode` shows them for the open session only; the
  * owner wants them on every row, 2026-09-26). The row keeps its `bg-accent`
  * only while the thread shows its root; while a sub-session shows, that
- * sub-session's row carries it instead.
+ * sub-session's row carries it instead. Memoized: the drawer re-renders on
+ * each open, close, and poll, and an unchanged row skips it.
  */
-export function DrawerSessionNode({
+export const DrawerSessionNode = React.memo(function DrawerSessionNode({
   session,
   shown,
   activeRuntimeId,
@@ -178,6 +198,10 @@ export function DrawerSessionNode({
     (childId: string) => onPressSubsession(session, childId),
     [onPressSubsession, session]
   );
+  const handleToggleChildren = useCallback(
+    () => onToggleChildren?.(session),
+    [onToggleChildren, session]
+  );
   return (
     <View>
       {trunkBelow ? (
@@ -201,21 +225,21 @@ export function DrawerSessionNode({
         starter={starter}
         childCount={childCountOf(session)}
         expanded={expanded}
-        onToggleChildren={onToggleChildren ? () => onToggleChildren(session) : undefined}
+        onToggleChildren={onToggleChildren ? handleToggleChildren : undefined}
         onPress={onPress}
         onLongPress={onLongPress}
       />
       {subsessions.length > 0 ? (
         <SubsessionTree
+          parentId={session.session_id}
           subsessions={subsessions}
           parentTitle={sessionDisplayTitle(session)}
           activeRuntimeId={shown ? activeRuntimeId : null}
           trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
-          showTime={false}
           onPressSubsession={handlePressSubsession}
         />
       ) : null}
     </View>
   );
-}
+});
