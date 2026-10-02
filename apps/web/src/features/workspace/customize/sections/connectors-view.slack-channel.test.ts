@@ -20,10 +20,11 @@ describe('Slack channel connector catalogue', () => {
     expect(source).toContain('const discoverCards = [...connectorCards, ...pipedreamOAuthCards]');
   });
 
-  test('uses Slack branding for the built-in channel card', () => {
-    expect(source).toContain(
-      "SLACK_ICON_SRC = 'https://www.google.com/s2/favicons?domain=slack.com&sz=128'",
-    );
+  // The catalogue fetched Slack's favicon from Google on every view: a second
+  // Slack mark, a third-party request, and a blank tile with no internet.
+  test("uses Slack's own built-in mark for the built-in channel card, fetched from nowhere", () => {
+    expect(source).toMatch(/export function SlackLogo[\s\S]*?return <Slack className=/);
+    expect(source).not.toContain('google.com/s2/favicons');
     expect(source).toContain('<SlackIconTile />');
     expect(source).not.toContain('<EntityAvatar icon={Slack} size="sm" />');
   });

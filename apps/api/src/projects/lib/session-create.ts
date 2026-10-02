@@ -411,7 +411,9 @@ export async function createProjectSession(input: {
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   const loadedAgents = await loadProjectAgents(project, {
-    forceRefresh: true,
+    // The same freshness the per-prompt grant read asks for (`MirrorRefresh`):
+    // no `ls-remote` when the branch tip was proven inside the interval.
+    forceRefresh: 'tip-proof',
     rethrowReadErrors: true,
   });
   // The literal "default" is a non-binding legacy sentinel. It must not block
@@ -1405,7 +1407,21 @@ export async function createProjectSession(input: {
         }).catch(() => {});
       });
 
-      const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
+      // Not awaited here: provisioning reads it only when it builds the provider
+      // input, so the env build overlaps the image check and the token mint.
+      const extraEnvVars = envPromise.then((env) => {
+        const merged = mergeSessionSandboxEnv(env, input.extraEnvVars);
+        return piWorkerBoot && piWorkerSha
+          ? {
+              ...merged,
+              // The worker's entrypoint composes the artifact URL from these
+              // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
+              // already receives.
+              KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
+              KORTIX_PI_RUNTIME_SHA: piWorkerSha,
+            }
+          : merged;
+      });
 
       const provisionPromise = provisionSessionSandbox({
         sandboxId: sessionId,
@@ -1428,17 +1444,7 @@ export async function createProjectSession(input: {
           ...(input.metadata ?? {}),
         },
         initialTurn,
-        extraEnvVars:
-          piWorkerBoot && piWorkerSha
-            ? {
-                ...extraEnvVars,
-                // The worker's entrypoint composes the artifact URL from these
-                // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
-                // already receives.
-                KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
-                KORTIX_PI_RUNTIME_SHA: piWorkerSha,
-              }
-            : extraEnvVars,
+        extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {
           projectId,

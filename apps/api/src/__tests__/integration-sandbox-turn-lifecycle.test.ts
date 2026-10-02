@@ -1803,3 +1803,18 @@ test('terminal error cause is truncated to 1000 characters', async () => {
     error: `agent turn failed: APIError: ${message}`.slice(0, 1000),
   });
 });
+
+test('ledger insertion failure does not poison atomic admission and wake', async () => {
+  await db.execute(sql`UPDATE kortix.project_sessions SET status = 'stopped', error = 'old error' WHERE session_id = ${SESSION_ID}`);
+  await db.execute(sql`CREATE FUNCTION kortix.reject_turn_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic ledger failure'; END $$`);
+  await db.execute(sql`CREATE TRIGGER reject_turn_insert BEFORE INSERT ON kortix.session_turns FOR EACH ROW EXECUTE FUNCTION kortix.reject_turn_insert()`);
+  try {
+    expect(await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('ledger-fault'), runtimeSessionId: 'root', messageId: 'ledger-fault' })).toBe('granted');
+    expect(await sessionState()).toEqual({ status: 'running', error: null });
+    expect((await readRow()).metadata.activeTurns).toHaveProperty(t('ledger-fault'));
+    expect(await readTurn(t('ledger-fault'))).toBeUndefined();
+  } finally {
+    await db.execute(sql`DROP TRIGGER reject_turn_insert ON kortix.session_turns`);
+    await db.execute(sql`DROP FUNCTION kortix.reject_turn_insert()`);
+  }
+});

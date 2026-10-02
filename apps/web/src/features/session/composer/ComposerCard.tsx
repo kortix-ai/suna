@@ -153,6 +153,7 @@ export function ComposerCard({
   lockForQuestion = false,
   lockForApproval = false,
   questionButtonLabel = null,
+  submitLabel = null,
   questionCanAct = true,
   escCount = 0,
   isBusy = false,
@@ -380,6 +381,7 @@ export function ComposerCard({
             escCount={escCount}
             lockForQuestion={lockForQuestion}
             questionButtonLabel={questionButtonLabel}
+            submitLabel={submitLabel}
             questionCanAct={questionCanAct}
             hasText={!isEmpty}
             canSubmit={canSubmit}

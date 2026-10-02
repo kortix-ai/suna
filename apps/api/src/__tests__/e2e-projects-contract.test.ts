@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { authUsersRows } from './helpers/auth-users-execute';
 import { mockIamAssignments, mockIamReadModels } from './helpers/iam-mocks';
+import { projects } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -103,6 +104,12 @@ function resetState() {
   rejectedBranch = null;
 }
 
+// The list test holds the role-grant read open with the gate and counts the
+// reads of `projects` made meanwhile.
+let projectRoleGrantsGate: Promise<void> | null = null;
+let projectRoleGrantsReached = false;
+let projectRowReads = 0;
+
 // The engine module itself is the seam now — `../iam` re-exports it, and every
 // route calls it with the structured `Actor`. Mirror the role gate against the
 // test's mocked membership rows so viewer/non-member denial is still exercised.
@@ -123,6 +130,10 @@ mockIamReadModels({
       projectId: r.projectId,
       projectRole: r.projectRole,
     })),
+  holdProjectRoleGrants: () => {
+    projectRoleGrantsReached = true;
+    return projectRoleGrantsGate ?? undefined;
+  },
 });
 
 // A project role is one `assignRole` call now, not an INSERT into
@@ -414,6 +425,20 @@ const projectDbMock = createProjectsContractDbMock(dbState);
     baseExecute(query)) as typeof baseExecute;
 }
 
+{
+  const baseSelect = projectDbMock.select;
+  projectDbMock.select = (fields?: Record<string, unknown>) => {
+    const builder = baseSelect(fields);
+    return {
+      ...builder,
+      from: (table: unknown) => {
+        if (table === projects) projectRowReads += 1;
+        return builder.from(table);
+      },
+    };
+  };
+}
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: projectDbMock,
@@ -588,6 +613,36 @@ describe('projects API contract', () => {
       project_role: 'member',
       effective_project_role: 'member',
     });
+  });
+
+  // The two reads are independent. In series each one is a full round trip.
+  test('the list reads the role grants and the project rows together', async () => {
+    let release = () => {};
+    projectRoleGrantsGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    projectRoleGrantsReached = false;
+    projectRowReads = 0;
+    try {
+      const pending = createApp().request(`/v1/projects?account_id=${ACCOUNT_ID}`);
+      for (let tick = 0; tick < 50 && !projectRoleGrantsReached; tick += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(projectRoleGrantsReached).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The grants read is still held open; the row read has already started.
+      expect(projectRowReads).toBe(1);
+
+      release();
+      const res = await pending;
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.map((project: any) => project.project_id).sort()).toEqual([PROJECT_ID, OTHER_PROJECT_ID]);
+      expect(projectRowReads).toBe(1);
+    } finally {
+      release();
+      projectRoleGrantsGate = null;
+    }
   });
 
   test('returns detail, file listings, file content, and updates last_opened_at', async () => {

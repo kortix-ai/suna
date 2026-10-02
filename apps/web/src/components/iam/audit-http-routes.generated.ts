@@ -578,6 +578,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|projects|:projectId|sessions|:sessionId|prompts",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts",
   "DELETE|v1|projects|:projectId|sessions|:sessionId|prompts|:promptId",
+  "PATCH|v1|projects|:projectId|sessions|:sessionId|prompts|:promptId",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts|:promptId|retry",
   "POST|v1|projects|:projectId|sessions|:sessionId|prompts|hold",
   "GET|v1|projects|:projectId|sessions|:sessionId|provider-secret-pools",

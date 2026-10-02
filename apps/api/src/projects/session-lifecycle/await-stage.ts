@@ -1,11 +1,13 @@
 import type { SessionStartResult } from '../routes/shared';
 
 // startSession long-poll: bounded server-side wait so the client learns `ready`
-// the instant it flips instead of on its ~800ms poll tick. The cap stays well
+// the instant it flips instead of on its ~800ms poll tick. The cap is the
+// 15 s the SDK asks for (`useSession`'s `waitMs`): at 8 s every poll of a boot
+// ended early and paid the route's auth and load prologue again. It stays well
 // under the web client's 30s request timeout; the poll cadence is tight because
 // each tick is one cheap re-resolve (openSession re-reads live sandbox state).
 // Pure (type-only import) so it's unit-testable without the server env.
-export const START_AWAIT_MAX_MS = 8_000;
+export const START_AWAIT_MAX_MS = 15_000;
 export const START_AWAIT_POLL_MS = 200;
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
