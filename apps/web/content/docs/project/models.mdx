@@ -165,10 +165,9 @@ Two costs are easy to miss on a paid cloud account:
   also runs when they need reconnection. A Kortix model in that chain bills your
   credits, and runs only when your account can pay for it. The platform's own
   fallback never moves a BYOK or ChatGPT request onto credits. The chain covers
-  a request for the project's default model, from any session, trigger, or
-  agent. In an agent's session it also covers that agent's own default model.
-  Every other model runs without a project fallback until you add a
-  **Per-model override** for it.
+  every model in the project: the project default, an agent's default, and a
+  model that a session or trigger pins. A **Per-model override** replaces the
+  chain for one exact model.
 
 If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.

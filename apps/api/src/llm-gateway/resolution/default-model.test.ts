@@ -3,10 +3,8 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as resolveCandidatesModule from './resolve-candidates';
 import * as modelPreferencesModule from '../../repositories/model-preferences';
 import * as secretsModule from '../../projects/secrets';
-import { platformDefaultModelId } from '../models/served-managed-models';
 import {
   invalidateAccountModelDefaults,
-  isConfiguredDefaultModel,
   isModelServableForAccount,
   resolveDefaultModelForPrincipal,
   resolveEffectiveModel,
@@ -436,62 +434,4 @@ test('model validation carries prospective pool selections into credential resol
 test('existing session validation resolves that session’s pool', async () => {
   spyOn(resolveCandidatesModule, 'resolveCandidates').mockImplementation(async principal => principal.sessionId === 'pooled-session' ? [{ provider: 'anthropic' } as any] : []);
   expect(await isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'anthropic/claude-sonnet-4.6', sessionId: 'pooled-session' })).toBe(true);
-});
-
-// Incident 2026-10-02: the Routing chain of a project default never ran for a
-// session whose agent had its own default, and never for a default whose every
-// ChatGPT account was paused. Both left `resolveDefaultModelForPrincipal`
-// naming another model, so the gateway routed the request as explicit.
-describe('isConfiguredDefaultModel — the defaults as stored, not as served', () => {
-  const session = (sessionId: string) => ({ ...PRINCIPAL_BASE, sessionId, freeModelsOnly: false });
-  const onAgent = (agentName: string) =>
-    spyOn(modelPreferencesModule, 'getSessionAgentContext').mockImplementation(async () => ({
-      agentName,
-      opencodeModel: null,
-      projectDefaultAgent: null,
-    }));
-
-  test('the project default and the session agent default both count; another agent default does not', async () => {
-    accountDefaults = {
-      account: 'codex/account-default',
-      agents: { engineering: 'codex/agent-default', support: 'kortix/support-default' },
-      projects: { p1: 'codex/project-default' },
-    };
-    onAgent('engineering');
-    const principal = session('sess-configured-both');
-
-    expect(await isConfiguredDefaultModel(principal, 'codex/project-default')).toBe(true);
-    expect(await isConfiguredDefaultModel(principal, 'codex/agent-default')).toBe(true);
-    expect(await isConfiguredDefaultModel(principal, 'support-default')).toBe(false);
-    // The project default shadows the account default, as on the Routing screen.
-    expect(await isConfiguredDefaultModel(principal, 'codex/account-default')).toBe(false);
-  });
-
-  test('a default that cannot be served right now still counts', async () => {
-    accountDefaults = { account: null, agents: {}, projects: { p1: 'codex/project-default' } };
-    resolveCandidatesImpl = async () => {
-      throw new GatewayResolutionError('provider_pool_rate_limited', 'cooling down', 'wait');
-    };
-    const principal = session('sess-configured-paused');
-
-    expect(await resolveDefaultModelForPrincipal(principal)).toBeUndefined();
-    expect(await isConfiguredDefaultModel(principal, 'codex/project-default')).toBe(true);
-  });
-
-  test('a stored `kortix/` ref matches the wire id a session sends', async () => {
-    accountDefaults = { account: null, agents: { engineer: 'kortix/glm-5.2' }, projects: {} };
-    onAgent('engineer');
-
-    expect(await isConfiguredDefaultModel(session('sess-configured-prefix'), 'glm-5.2')).toBe(true);
-  });
-
-  test('with no project default the account default counts, then the platform default', async () => {
-    accountDefaults = { account: 'codex/account-default', agents: {}, projects: {} };
-    expect(await isConfiguredDefaultModel(PRINCIPAL_BASE, 'codex/account-default')).toBe(true);
-
-    invalidateAccountModelDefaults(PRINCIPAL_BASE.accountId);
-    accountDefaults = { account: null, agents: {}, projects: {} };
-    expect(await isConfiguredDefaultModel(PRINCIPAL_BASE, platformDefaultModelId())).toBe(true);
-    expect(await isConfiguredDefaultModel(PRINCIPAL_BASE, 'codex/account-default')).toBe(false);
-  });
 });

@@ -421,6 +421,23 @@ flow(
         .has('$.route.fallbackOn', 'transient');
     });
 
+    await ctx.step('the project chain covers a model that is not the default and has no override', async () => {
+      const other = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          { requestedModel: 'anthropic/claude-sonnet-4-6', imageInput: false },
+          { params },
+        );
+      other
+        .status(200)
+        .body()
+        .has('$.route.policyId', 'project:default')
+        .has('$.route.primaryModel', 'anthropic/claude-sonnet-4-6')
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
+        .has('$.route.fallbackOn', 'any-error');
+    });
+
     await ctx.step('invalid self-loop is rejected without replacing the saved policy', async () => {
       const invalid = await ctx.client.as(ctx.P.OWNER).put(
         '/v1/projects/:projectId/gateway/routing-policy',

@@ -24,14 +24,6 @@ export interface GatewayRouteResolverOptions {
   supportsImage: (model: string) => boolean;
   getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
   /**
-   * Whether `model` is a default configured for the principal, as stored.
-   * `principal.defaultModel` is one model: the most specific default that can
-   * be served right now. A session whose agent has its own default, or whose
-   * default has no usable account left, still requests a default when it
-   * names the project's.
-   */
-  isConfiguredDefault?: (principal: AuthedPrincipal, model: string) => Promise<boolean>;
-  /**
    * Resolve `model`'s live catalog capability record (reasoning_options,
    * temperature, limit.output, ...) — used ONLY to clamp a project's
    * configured generation defaults before they're injected into a request
@@ -78,9 +70,7 @@ export function createGatewayRouteResolver(
       ? await options.getProjectPolicy(principal.projectId)
       : null;
     const concreteDefault = principal.defaultModel || options.defaultModel;
-    const isDefaultRequest =
-      input.requestedModel === concreteDefault ||
-      ((await options.isConfiguredDefault?.(principal, input.requestedModel)) ?? false);
+    const isDefaultRequest = input.requestedModel === concreteDefault;
     let primaryModel = input.requestedModel;
 
     if (isDefaultRequest && input.requires.imageInput && !options.supportsImage(primaryModel)) {
@@ -111,7 +101,12 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isDefaultRequest && projectPolicy?.defaultFallback) {
+    // The project's chain is a catch-all: it covers every model that has no
+    // exact rule. It never depends on `isDefaultRequest`, because the
+    // principal's default is one model. An agent with its own default, or a
+    // default with every account paused, would otherwise take a request for
+    // the project's own model out of the chain.
+    if (projectPolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,
