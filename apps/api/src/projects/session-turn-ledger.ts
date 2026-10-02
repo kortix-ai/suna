@@ -817,7 +817,7 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
 
 /**
  * A second end frame for a turn that is already closed may still be the only one
- * that says WHY. Session ad02e053 (2026-09-18): OpenCode's own "Aborted" frame
+ * that says WHY. A session on 2026-09-18: OpenCode's own "Aborted" frame
  * closed the turn 476 ms before the memory guard's frame named the cause. Same
  * identity match as `wasSandboxTurnAlreadyClosed`; touches `failed` rows only,
  * and only to replace a missing or abort-only error with a named cause.

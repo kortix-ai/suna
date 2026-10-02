@@ -984,7 +984,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (!isMissingSandboxError(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:
