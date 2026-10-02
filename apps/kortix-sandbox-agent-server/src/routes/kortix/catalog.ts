@@ -5,20 +5,13 @@ import { logger } from '@/lib/log/logger'
 import { authorizeControl } from './control-auth'
 
 /**
- * `/kortix/catalog` — the managed-model catalog's on-demand converge.
+ * `/kortix/catalog` — the model catalog's on-demand converge.
  *
- * `POST /converge` fetches the live managed lineup and, ONLY if the box's
- * booted provider map is missing something it serves, repairs the overlay
- * file and takes one verified OpenCode restart (idle-gated, never across a
- * running turn). The API's turn-start gate calls this AWAITED, and only when
- * the model THIS turn asked for is the one missing — see
- * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts) for the full
- * design and its non-blocking sibling call in `control.refresh()`.
- *
- * An optional body `{ "model": "<wire id>" }` names the one model a turn
- * asks for, of any provider. It only selects WHICH id to check for: the
- * daemon still fetches the catalog itself, so a caller cannot choose what it
- * converges to. Without it, the route converges the managed lineup.
+ * `POST /converge` with a body `{ "model": "<wire id>" }` registers the one
+ * model a turn asks for, of any provider. The API's turn-start gate awaits it.
+ * Without a body it registers everything the project's listing serves. Both
+ * apply by one idle-gated config reload, never across a running turn. See
+ * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts).
  */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,255}$/
 export function createCatalogRouter(cfg: Config, control: HarnessControlOperations): Hono {
