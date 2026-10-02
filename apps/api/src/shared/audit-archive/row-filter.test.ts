@@ -76,3 +76,24 @@ describe('rowMatches mirrors the SQL filters of buildFilters', () => {
     expect(match({ credentialKind: 'api_key' }, { ...row, credential_kind: 'api_key', occurred_at: '2026-10-02T00:00:00.000000Z' })).toBe(true);
   });
 });
+
+describe('LIKE matching is linear (no regex built from user input)', () => {
+  test('a pathological q term against a long value finishes fast and does not match', () => {
+    const row = { account_id: 'acct', occurred_at: '2026-07-01T00:00:00.000Z', action: 'a'.repeat(20_000) };
+    const started = performance.now();
+    const matched = rowMatches(row, 'acct', { q: '%a'.repeat(40) + 'b' } as never);
+    expect(matched).toBe(false);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  test('LIKE semantics hold: % any run, _ one char, literal regex metacharacters, case-insensitive q', () => {
+    const row = { account_id: 'acct', occurred_at: '2026-07-01T00:00:00.000Z', action: 'iam.role.(create)+', resource_type: 'role' };
+    expect(rowMatches(row, 'acct', { q: 'ROLE.(C' } as never)).toBe(true);
+    expect(rowMatches(row, 'acct', { q: 'r_le.(' } as never)).toBe(true);
+    expect(rowMatches(row, 'acct', { q: 'role.x' } as never)).toBe(false);
+    expect(rowMatches(row, 'acct', { actionPrefix: 'iam.' } as never)).toBe(true);
+    expect(rowMatches(row, 'acct', { actionPrefix: 'Iam.' } as never)).toBe(false);
+    expect(rowMatches(row, 'acct', { resourceType: 'ro' } as never)).toBe(true);
+  });
+});
+

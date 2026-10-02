@@ -15,14 +15,36 @@ export function normalizeInstant(value: string): string {
   return `${whole}.${fraction.padEnd(6, '0').slice(0, 6)}Z`;
 }
 
-function likeToRegExp(pattern: string, caseInsensitive: boolean): RegExp {
-  let source = '';
-  for (const ch of pattern) {
-    if (ch === '%') source += '.*';
-    else if (ch === '_') source += '.';
-    else source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * SQL LIKE (`%` any run, `_` one character, no escape character) without building a RegExp from
+ * user input: a greedy two-pointer match that backtracks only to the last `%`, so it is
+ * O(value x pattern) worst case and never exponential (CodeQL/strix ReDoS, CWE-1333).
+ */
+export function matchesLike(value: string, pattern: string, caseInsensitive: boolean): boolean {
+  const v = caseInsensitive ? value.toLowerCase() : value;
+  const p = caseInsensitive ? pattern.toLowerCase() : pattern;
+  let vi = 0;
+  let pi = 0;
+  let starP = -1;
+  let starV = 0;
+  while (vi < v.length) {
+    if (pi < p.length && (p[pi] === '_' || (p[pi] !== '%' && p[pi] === v[vi]))) {
+      vi += 1;
+      pi += 1;
+    } else if (pi < p.length && p[pi] === '%') {
+      starP = pi;
+      starV = vi;
+      pi += 1;
+    } else if (starP !== -1) {
+      pi = starP + 1;
+      starV += 1;
+      vi = starV;
+    } else {
+      return false;
+    }
   }
-  return new RegExp(`^${source}$`, caseInsensitive ? 'is' : 's');
+  while (pi < p.length && p[pi] === '%') pi += 1;
+  return pi === p.length;
 }
 
 const text = (value: unknown): string | null => (value === null || value === undefined ? null : String(value));
@@ -45,14 +67,14 @@ export function rowMatches(row: Record<string, unknown>, accountId: string, inpu
   const action = text(row.action) ?? '';
   if (input.actionPrefix) {
     const prefix = input.actionPrefix;
-    const like = (value: string) => likeToRegExp(value, false).test(action);
+    const like = (pattern: string) => matchesLike(action, pattern, false);
     if (prefix === 'connector.') {
       if (!(like('connector.%') || like('computer.%'))) return false;
     } else if (prefix.includes('.') && !prefix.endsWith('.')) {
       if (!(action === prefix || like(`${prefix}.%`))) return false;
     } else if (!like(`${prefix}%`)) return false;
   }
-  if (input.resourceType && !likeToRegExp(`${input.resourceType}%`, false).test(text(row.resource_type) ?? '')) return false;
+  if (input.resourceType && !matchesLike(text(row.resource_type) ?? '', `${input.resourceType}%`, false)) return false;
 
   // Compare microsecond strings; a Date bound is milliseconds, like the SQL parameter.
   if (input.sinceRaw) {
@@ -64,9 +86,9 @@ export function rowMatches(row: Record<string, unknown>, accountId: string, inpu
     if (!Number.isNaN(until.getTime()) && at > normalizeInstant(until.toISOString())) return false;
   }
   if (input.q) {
-    const term = likeToRegExp(`%${input.q}%`, true);
+    const term = `%${input.q}%`;
     const columns = ['action', 'resource_type', 'resource_id', 'session_id', 'request_id', 'trace_id', 'correlation_id', 'project_id'];
-    if (!columns.some((column) => term.test(text(row[column]) ?? ''))) return false;
+    if (!columns.some((column) => matchesLike(text(row[column]) ?? '', term, true))) return false;
   }
   return true;
 }
