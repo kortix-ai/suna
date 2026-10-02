@@ -474,9 +474,11 @@ export class PlatinumProvider implements SandboxProvider {
       auto_resume: workloadType === 'app',
       // The project's `us_region` flag (platform/services/sandbox-region.ts).
       // Absent ⇒ Platinum places the box in its home region, exactly as
-      // before. PLATINUM_API_URL forwards a regional create to that region's
-      // control plane; the answer names the owner (`api_url`), and every
-      // later call by id goes straight to it (shared/platinum.ts).
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.

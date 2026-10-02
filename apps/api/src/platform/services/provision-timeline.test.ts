@@ -23,6 +23,19 @@ describe('ProvisionTimeline', () => {
     }
   });
 
+  test('a parallel-branch note never moves the sequential cursor', async () => {
+    const ptl = new ProvisionTimeline('sandbox-3', 'provision');
+    ptl.mark('row+tokens');
+    await Bun.sleep(15);
+    ptl.note('image:resolved');
+    ptl.mark('image-cached');
+    const [row, note, image] = ptl.summary().marks;
+    expect(note?.deltaMs).toBe(note?.atMs); // measured from the start, not from row+tokens
+    // The main path's delta still spans everything since row+tokens.
+    expect(image!.deltaMs).toBeGreaterThanOrEqual(image!.atMs - row!.atMs - 1);
+    expect(image!.deltaMs).toBeGreaterThanOrEqual(14);
+  });
+
   test('log() returns the same summary it prints', () => {
     const ptl = new ProvisionTimeline('sandbox-2', 'proxy');
     ptl.mark('turn-begin');

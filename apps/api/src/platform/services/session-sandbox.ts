@@ -458,7 +458,11 @@ export async function provisionSessionSandbox(opts: {
   // path.
   let firstImagePromise: Promise<FirstImage> | null = (async () => {
     const gitProject = await resolveGitProject();
+    // Parallel branch: note() keeps the main path's deltas truthful. These two
+    // marks split what used to show up as one opaque `image-cached` wait.
+    tl.note('image:git-project');
     const image = await resolveImage(gitProject, providerName);
+    tl.note('image:resolved');
     return { ...image, gitProject };
   })();
   // Swallow the unhandled-rejection warning; the IIFE's try/catch owns the error
@@ -664,6 +668,7 @@ export async function provisionSessionSandbox(opts: {
       // one mechanism serves daytona, e2b and platinum alike: the guest gets a HANDLE
       // and the broker route substitutes the real value server-side.
       await resolveSessionNetworkBoundary(projectId, sandbox.sandboxId);
+      tl.note('network-boundary');
 
       // Stateless image resolution: ask Daytona if it has the image; build if not.
       // No DB lookup, no degraded fallback — the snapshot is either there or we
