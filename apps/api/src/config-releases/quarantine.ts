@@ -18,6 +18,7 @@
 
 import { configReleaseFailures, configReleases, projectSessions } from '@kortix/db';
 import { META_AGENT_NAME } from '@kortix/shared';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
@@ -56,7 +57,7 @@ export interface ConfigReleaseLedger {
  */
 const notFromMetaSession = sql`not exists (
   select 1 from ${projectSessions}
-  where ${projectSessions.sessionId} = ${configReleaseFailures.sessionId}::text
+  where ${projectSessions.sessionId} = ${qualifiedColumn(configReleaseFailures.sessionId)}::text
     and ${projectSessions.agentName} = ${META_AGENT_NAME}
 )`;
 

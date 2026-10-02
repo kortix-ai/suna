@@ -189,8 +189,12 @@ export async function checkConcurrentSessionCap(
   error?: SessionCreateError;
   headers: Record<string, string>;
 }> {
-  const { limit } = await resolveAccountSessionLimit(accountId);
-  const activeSessions = await countActiveProjectSessions(accountId);
+  // Three independent reads. They ran one after another on every create.
+  const [{ limit }, activeSessions, activeInProject] = await Promise.all([
+    resolveAccountSessionLimit(accountId),
+    countActiveProjectSessions(accountId),
+    projectId ? countActiveSessionsInProject(projectId) : Promise.resolve(0),
+  ]);
   const remainingAfterCreate = Math.max(limit - activeSessions - 1, 0);
   const headers = {
     'X-RateLimit-Limit': String(limit),
@@ -202,7 +206,6 @@ export async function checkConcurrentSessionCap(
   // is exactly the account whose runaway project these exist to clip.
   if (projectId) {
     const projectLimit = projectActiveSessionLimit();
-    const activeInProject = await countActiveSessionsInProject(projectId);
     if (activeInProject >= projectLimit) {
       recordAuditEvent({
         accountId,
