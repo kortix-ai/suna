@@ -130,7 +130,9 @@ async function runTurn(sessionId: string, spec: { label: string; text: string },
   const t0 = performance.now();
   const r = await api(`/projects/${PROJECT}/sessions/${sessionId}/prompts`, {
     method: 'POST',
-    body: JSON.stringify({ client_message_id: crypto.randomUUID(), message_id: messageId, parts: [{ type: 'text', text: spec.text }], overrides: model }),
+    // `client_sent_at_ms` as the web composer sends it: the prompt route reads it to
+    // tell a lone send from a possible burst.
+    body: JSON.stringify({ client_message_id: crypto.randomUUID(), message_id: messageId, parts: [{ type: 'text', text: spec.text }], overrides: model, client_sent_at_ms: Date.now() }),
   });
   const turn: Turn = {
     label: spec.label, status: r.status, postMs: r.ms, timing: r.timing, promptId: r.body?.prompt_id ?? null,
