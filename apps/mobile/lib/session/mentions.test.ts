@@ -12,3 +12,9 @@ test('does not retrigger tracked labels and prunes deleted labels', () => {
   expect(pruneMentions('deleted', tracked)).toEqual([]);
   expect(pruneMentions('keep @file', tracked)).toEqual(tracked);
 });
+test('prune returns the same array when nothing is pruned, so a keystroke keeps its identity', () => {
+  const tracked = [{ kind: 'file' as const, label: 'file' }];
+  expect(pruneMentions('keep @file', tracked)).toBe(tracked);
+  const none: typeof tracked = [];
+  expect(pruneMentions('any text', none)).toBe(none);
+});

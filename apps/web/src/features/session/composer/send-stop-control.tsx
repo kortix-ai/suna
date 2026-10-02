@@ -33,6 +33,12 @@ export interface SendStopControlProps {
   escCount: number;
   lockForQuestion: boolean;
   questionButtonLabel?: string | null;
+  /**
+   * A labeled button that submits, shown in place of send AND stop. Set while
+   * the composer edits a queued message: the send saves the edit back into
+   * the queue, so a busy turn's Stop is not the action on offer.
+   */
+  submitLabel?: string | null;
   questionCanAct: boolean;
   hasText: boolean;
   canSubmit: boolean;
@@ -60,6 +66,7 @@ export function SendStopControl({
   escCount,
   lockForQuestion,
   questionButtonLabel,
+  submitLabel = null,
   questionCanAct,
   hasText,
   canSubmit,
@@ -93,6 +100,24 @@ export function SendStopControl({
           </m.span>
         </AnimatePresence>
       </Button>
+    );
+  }
+
+  if (submitLabel && !lockForQuestion) {
+    return (
+      <Hint side="top" label={refusal ?? submitLabel}>
+        <span className="inline-flex">
+          <Button
+            size="sm"
+            disabled={!canSubmit || submitDisabled}
+            onClick={onSubmit}
+            title={refusal ?? undefined}
+            className="hit-area-1 shrink-0 rounded-lg transition-[color,background-color,opacity,scale] duration-(--duration-slow) ease-out active:scale-[0.96] active:duration-(--duration-normal)"
+          >
+            {submitLabel}
+          </Button>
+        </span>
+      </Hint>
     );
   }
 

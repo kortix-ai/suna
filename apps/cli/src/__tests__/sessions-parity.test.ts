@@ -117,15 +117,25 @@ function queuedPrompt() {
   };
 }
 
+/** Bytes of each multipart body's file parts, so the fake daemon answers like the real one. */
+const multipartFileBytes = new WeakMap<object, number>();
+
 async function bodyOf(req: Request): Promise<unknown> {
   const type = req.headers.get('content-type') ?? '';
   if (type.includes('application/json')) return req.json().catch(() => null);
   if (type.includes('multipart/form-data')) {
     const form = await req.formData();
     const out: Record<string, unknown> = {};
+    let fileBytes = 0;
     for (const [key, value] of form.entries()) {
-      out[key] = typeof value === 'string' ? value : `<file:${(value as File).name}>`;
+      if (typeof value === 'string') {
+        out[key] = value;
+      } else {
+        out[key] = `<file:${(value as File).name}>`;
+        fileBytes += (value as File).size;
+      }
     }
+    multipartFileBytes.set(out, fileBytes);
     return out;
   }
   return null;
@@ -328,7 +338,10 @@ function startServer(): string {
         const form = (body ?? {}) as Record<string, unknown>;
         const parent = typeof form.path === 'string' ? form.path : '/workspace';
         const name = typeof form.filename === 'string' ? form.filename : 'uploaded';
-        return Response.json([{ path: `${parent}/${name}`.replace('//', '/'), size: 5 }]);
+        // The real daemon answers with the bytes it wrote (`buffer.byteLength`).
+        return Response.json([
+          { path: `${parent}/${name}`.replace('//', '/'), size: multipartFileBytes.get(form) ?? 0 },
+        ]);
       }
       if (method === 'POST' && path === `${daemon}/session/ses_oc/summarize`) {
         return Response.json({});

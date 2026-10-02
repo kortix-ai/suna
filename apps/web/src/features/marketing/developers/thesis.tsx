@@ -12,10 +12,11 @@ import {
   type MotionValue,
 } from 'motion/react';
 import { useEffect, useId, useRef, useState } from 'react';
-import { thesis } from './content';
+import type { ThesisStatement } from './content';
+import { useDevelopersCopy } from './use-developers-copy';
 import { SECTION_HEADING } from './shared';
 
-type Statement = (typeof thesis.statements)[number];
+type Statement = ThesisStatement;
 
 const lineClass = SECTION_HEADING;
 
@@ -226,6 +227,7 @@ function Hosts({ from, to }: { from: string; to: string }) {
 
 /** Below lg and under reduced motion: every statement in full ink, each followed by its proof. */
 function Stacked() {
+  const { thesis } = useDevelopersCopy();
   return (
     <div className="flex flex-col gap-12 sm:gap-16 lg:motion-reduce:grid lg:motion-reduce:grid-cols-12 lg:motion-reduce:gap-x-12">
       {thesis.statements.map((s, i) => (
@@ -254,6 +256,7 @@ function PinnedLine({
   index: number;
   progress: MotionValue<number>;
 }) {
+  const { thesis } = useDevelopersCopy();
   const n = thesis.statements.length;
   // Snap stops sit at progress i / (n - 1); each line is full ink at its stop.
   const center = index / (n - 1);
@@ -291,6 +294,7 @@ function PinnedProof({ s, offset }: { s: Statement; offset: number }) {
 
 /** lg+: 300vh section with a sticky inner block. */
 function Pinned() {
+  const { thesis } = useDevelopersCopy();
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start start', 'end end'] });
   // Light spring: smooths wheel/trackpad bursts without feeling laggy.

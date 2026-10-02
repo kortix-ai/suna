@@ -593,7 +593,7 @@ describe('session_turns ledger dual-write', () => {
     expect(executed[0]).toContain('s.account_id');
   });
 
-  test('beginSandboxTurn inserts a delivering ledger row', async () => {
+  test('beginSandboxTurn grants and writes the delivering ledger row in one statement', async () => {
     executeResults = [[{ ...OWNER, granted: true }]];
     expect(
       await beginSandboxTurn(
@@ -602,26 +602,26 @@ describe('session_turns ledger dual-write', () => {
       ),
     ).toBe('granted');
 
-    expect(executed).toHaveLength(2);
-    expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
-    expect(executed[1]).toContain('delivering');
-    expect(executed[1]).toContain('turn-token');
-    expect(executed[1]).toContain('ON CONFLICT');
-    // This INSERT is a SECOND round trip; a stop can commit before it lands and
-    // would leave a row nothing could ever close. It therefore selects its
-    // identity from the sandbox that still holds this token's authority, and
-    // LOCKS that row so a stop mid-commit is waited for instead of raced.
-    expect(executed[1]).toContain('FROM kortix.session_sandboxes');
-    expect(executed[1]).toContain("s.status IN ('active', 'provisioning')");
-    expect(executed[1]).toContain("s.metadata->'activeTurns'->");
-    expect(executed[1]).toContain('FOR UPDATE');
-    // Identity is read from that same locked row, never re-bound from the
-    // authority write's RETURNING: one read cannot disagree with itself.
-    expect(executed[1]).toContain('owner.session_id');
-    expect(executed[1]).not.toContain('sess-1');
+    // It was a second round trip before the upstream call; a stop could commit
+    // in the gap, so the INSERT had to re-read and lock the sandbox row. In one
+    // statement the ledger row is written from the rows the grant returned: a
+    // stop waits on the grant's row lock, or lands first and the grant matches
+    // nothing.
+    expect(executed).toHaveLength(1);
+    expect(executed[0]).toContain('WITH granted AS');
+    expect(executed[0]).toContain('UPDATE kortix.session_sandboxes');
+    expect(executed[0]).toContain('INSERT INTO kortix.session_turns');
+    expect(executed[0]).toContain('delivering');
+    expect(executed[0]).toContain('turn-token');
+    expect(executed[0]).toContain('ON CONFLICT (turn_token) DO NOTHING');
+    expect(executed[0]).toContain("s.status IN ('active', 'provisioning')");
+    // Identity comes from the grant's own rows, never re-bound from JS.
+    expect(executed[0]).toContain('FROM granted');
+    expect(executed[0]).toContain('granted.session_id');
+    expect(executed[0]).not.toContain('sess-1');
   });
 
-  test('beginSandboxTurn skips the ledger when the authority write returned no identity', async () => {
+  test('beginSandboxTurn writes no ledger row for a grant without a full identity', async () => {
     executeResults = [[{ live: true }]];
     expect(
       await beginSandboxTurn(
@@ -631,11 +631,15 @@ describe('session_turns ledger dual-write', () => {
     ).toBe('granted');
 
     expect(executed).toHaveLength(1);
+    expect(executed[0]).toContain('granted.session_id IS NOT NULL');
+    expect(executed[0]).toContain('granted.project_id IS NOT NULL');
+    expect(executed[0]).toContain('granted.account_id IS NOT NULL');
   });
 
   test('a failed ledger insert never fails the prompt path', async () => {
+    // The combined statement fails; the authority write then runs alone.
+    executeErrorByIndex = { 0: new Error('ledger down') };
     executeResults = [[{ ...OWNER, granted: true }]];
-    executeErrorByIndex = { 1: new Error('ledger down') };
 
     expect(
       await beginSandboxTurn(
@@ -644,9 +648,20 @@ describe('session_turns ledger dual-write', () => {
       ),
     ).toBe('granted');
     expect(executed).toHaveLength(2);
+    expect(executed[1]).toContain('UPDATE kortix.session_sandboxes');
+    expect(executed[1]).not.toContain('session_turns');
   });
 
-  test('acceptSandboxTurn upserts the ledger row to active', async () => {
+  test('a failed ledger upsert never fails a turn acceptance', async () => {
+    executeErrorByIndex = { 0: new Error('ledger down') };
+    executeResults = [[{ ...OWNER, accepted: true }]];
+
+    expect(await acceptSandboxTurn({ externalId: 'ext-1' }, 'turn-token')).toBe(true);
+    expect(executed).toHaveLength(2);
+    expect(executed[1]).not.toContain('session_turns');
+  });
+
+  test('acceptSandboxTurn promotes and upserts the ledger row to active in one statement', async () => {
     executeResults = [[{ ...OWNER, accepted: true }]];
     expect(
       await acceptSandboxTurn({ externalId: 'ext-1' }, 'turn-token', {
@@ -655,10 +670,12 @@ describe('session_turns ledger dual-write', () => {
       }),
     ).toBe(true);
 
-    expect(executed[1]).toContain('ON CONFLICT (turn_token) DO UPDATE');
-    expect(executed[1]).toContain('active');
-    expect(executed[1]).toContain('accepted_at');
-    expect(executed[1]).toContain("state <> 'ended'");
+    expect(executed).toHaveLength(1);
+    expect(executed[0]).toContain('WITH accepted AS');
+    expect(executed[0]).toContain('ON CONFLICT (turn_token) DO UPDATE');
+    expect(executed[0]).toContain('active');
+    expect(executed[0]).toContain('accepted_at');
+    expect(executed[0]).toContain("state <> 'ended'");
   });
 
   test('acceptSandboxTurn creates the ledger row for a daemon-delivered initial turn', async () => {
@@ -670,24 +687,24 @@ describe('session_turns ledger dual-write', () => {
 
     // The boot turn is written straight into metadata by
     // initialSandboxTurnMetadata, so acceptance is its FIRST ledger write.
-    expect(executed[1]).toContain('INSERT INTO kortix.session_turns');
-    expect(executed[1]).toContain('boot-token');
-    expect(executed[1]).toContain('msg_boot');
+    expect(executed[0]).toContain('INSERT INTO kortix.session_turns');
+    expect(executed[0]).toContain('boot-token');
+    expect(executed[0]).toContain('msg_boot');
   });
 
-  test("acceptSandboxTurn's insert carries the same authority guard as begin's", async () => {
-    // Being an INSERT in a second round trip, it can open a row after a stop has
-    // committed — a row on a parked box that no settle can ever reach again.
+  test("acceptSandboxTurn's ledger row is written from the promotion's own rows", async () => {
+    // A row opened after a stop committed is one no settle can reach again. The
+    // promotion and the row are one statement, so that order cannot happen.
     executeResults = [[{ ...OWNER, accepted: true }]];
     await acceptSandboxTurn({ externalId: 'ext-1' }, 'boot-token', {
       runtimeSessionId: 'ses_root',
       messageId: 'msg_boot',
     });
 
-    expect(executed[1]).toContain("s.status IN ('active', 'provisioning')");
-    expect(executed[1]).toContain('FOR UPDATE');
-    expect(executed[1]).toContain("s.metadata->'activeTurns'->");
-    expect(executed[1]).not.toMatch(/'activeTurn'->/);
+    expect(executed[0]).toContain("s.status IN ('active', 'provisioning')");
+    expect(executed[0]).toContain('FROM accepted');
+    expect(executed[0]).toContain("s.metadata->'activeTurns'->");
+    expect(executed[0]).not.toMatch(/'activeTurn'->/);
   });
 
   const ENDED_TURN = {

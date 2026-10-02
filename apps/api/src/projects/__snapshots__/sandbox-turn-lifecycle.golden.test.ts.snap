@@ -3,7 +3,7 @@
 exports[`golden SQL: turn authority statements beginSandboxTurn grants and inserts the delivering ledger row 1`] = `
 [
   
-"
+"WITH granted AS ( 
       UPDATE kortix.session_sandboxes s
          SET metadata = jsonb_set(
                 CASE
@@ -35,23 +35,20 @@ exports[`golden SQL: turn authority statements beginSandboxTurn grants and inser
           OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
-      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted"
-,
-  
-"INSERT INTO kortix.session_turns
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
+          INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
              opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  turn-token , owner.session_id, owner.sandbox_id,
-                 owner.project_id, owner.account_id,
+          SELECT  turn-token , granted.session_id, granted.sandbox_id,
+                 granted.project_id, granted.account_id,
                   ses_root ,  msg_turn_1 , 'delivering',
                    2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
-            FROM ( SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
-               FROM kortix.session_sandboxes s
-              WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
-                AND s.status IN ('active', 'provisioning')
-                AND s.metadata->'activeTurns'-> turn-token  IS NOT NULL
-              FOR UPDATE ) owner
-          ON CONFLICT (turn_token) DO NOTHING"
+            FROM granted
+           WHERE granted.session_id IS NOT NULL
+             AND granted.project_id IS NOT NULL
+             AND granted.account_id IS NOT NULL
+          ON CONFLICT (turn_token) DO NOTHING)
+        SELECT * FROM granted"
 ,
 ]
 `;
@@ -59,7 +56,7 @@ exports[`golden SQL: turn authority statements beginSandboxTurn grants and inser
 exports[`golden SQL: turn authority statements beginSandboxTurn with no matching box writes one statement 1`] = `
 [
   
-"
+"WITH granted AS ( 
       UPDATE kortix.session_sandboxes s
          SET metadata = jsonb_set(
                 CASE
@@ -91,7 +88,20 @@ exports[`golden SQL: turn authority statements beginSandboxTurn with no matching
           OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
-      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted"
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
+          INSERT INTO kortix.session_turns
+            (turn_token, session_id, sandbox_id, project_id, account_id,
+             opencode_session_id, message_id, state, started_at, created_at, updated_at)
+          SELECT  turn-token , granted.session_id, granted.sandbox_id,
+                 granted.project_id, granted.account_id,
+                  ses_root ,  msg_turn_1 , 'delivering',
+                   2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
+            FROM granted
+           WHERE granted.session_id IS NOT NULL
+             AND granted.project_id IS NOT NULL
+             AND granted.account_id IS NOT NULL
+          ON CONFLICT (turn_token) DO NOTHING)
+        SELECT * FROM granted"
 ,
 ]
 `;
@@ -99,7 +109,7 @@ exports[`golden SQL: turn authority statements beginSandboxTurn with no matching
 exports[`golden SQL: turn authority statements acceptSandboxTurn promotes the token and upserts the ledger row 1`] = `
 [
   
-"
+"WITH accepted AS ( 
     UPDATE kortix.session_sandboxes s
        SET metadata = jsonb_set(
              s.metadata,
@@ -119,29 +129,26 @@ exports[`golden SQL: turn authority statements acceptSandboxTurn promotes the to
        AND s.metadata->'activeTurns'-> turn-token ->>'token' =  turn-token 
        AND s.metadata->'activeTurns'-> turn-token ->>'state' IN ('delivering', 'active')
     RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
-              s.metadata->'activeTurns'-> turn-token ->>'messageId' AS turn_message_id"
-,
-  
-"INSERT INTO kortix.session_turns
+              s.metadata->'activeTurns'-> turn-token ->>'messageId' AS turn_message_id ), ledger AS (
+          INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
              opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
-          SELECT  turn-token , owner.session_id, owner.sandbox_id,
-                 owner.project_id, owner.account_id,
+          SELECT  turn-token , accepted.session_id, accepted.sandbox_id,
+                 accepted.project_id, accepted.account_id,
                   ses_root ,  msg_turn_1 ,
                  'active', now(), now(), now(), now()
-            FROM ( SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
-               FROM kortix.session_sandboxes s
-              WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
-                AND s.status IN ('active', 'provisioning')
-                AND s.metadata->'activeTurns'-> turn-token  IS NOT NULL
-              FOR UPDATE ) owner
+            FROM accepted
+           WHERE accepted.session_id IS NOT NULL
+             AND accepted.project_id IS NOT NULL
+             AND accepted.account_id IS NOT NULL
           ON CONFLICT (turn_token) DO UPDATE SET
                 state = 'active',
                 accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
                 opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
                 message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
                 updated_at = now()
-          WHERE kortix.session_turns.state <> 'ended'"
+          WHERE kortix.session_turns.state <> 'ended')
+        SELECT * FROM accepted"
 ,
 ]
 `;
@@ -149,7 +156,7 @@ exports[`golden SQL: turn authority statements acceptSandboxTurn promotes the to
 exports[`golden SQL: turn authority statements acceptSandboxTurn with no matching record writes one statement 1`] = `
 [
   
-"
+"WITH accepted AS ( 
     UPDATE kortix.session_sandboxes s
        SET metadata = jsonb_set(
              s.metadata,
@@ -169,7 +176,26 @@ exports[`golden SQL: turn authority statements acceptSandboxTurn with no matchin
        AND s.metadata->'activeTurns'-> turn-token ->>'token' =  turn-token 
        AND s.metadata->'activeTurns'-> turn-token ->>'state' IN ('delivering', 'active')
     RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
-              s.metadata->'activeTurns'-> turn-token ->>'messageId' AS turn_message_id"
+              s.metadata->'activeTurns'-> turn-token ->>'messageId' AS turn_message_id ), ledger AS (
+          INSERT INTO kortix.session_turns
+            (turn_token, session_id, sandbox_id, project_id, account_id,
+             opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
+          SELECT  turn-token , accepted.session_id, accepted.sandbox_id,
+                 accepted.project_id, accepted.account_id,
+                   ,   ,
+                 'active', now(), now(), now(), now()
+            FROM accepted
+           WHERE accepted.session_id IS NOT NULL
+             AND accepted.project_id IS NOT NULL
+             AND accepted.account_id IS NOT NULL
+          ON CONFLICT (turn_token) DO UPDATE SET
+                state = 'active',
+                accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
+                opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
+                message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
+                updated_at = now()
+          WHERE kortix.session_turns.state <> 'ended')
+        SELECT * FROM accepted"
 ,
 ]
 `;
@@ -1179,7 +1205,7 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
            AND t.state <> 'ended') AS open"
 ,
   
-"
+"WITH granted AS ( 
       UPDATE kortix.session_sandboxes s
          SET metadata = jsonb_set(
                 CASE
@@ -1211,26 +1237,23 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
           OR s.metadata->'lifecycleStopClaim'->>'claimedAtMs' !~ '^[0-9]+$'
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from  now() ) * 1000) -  120000 )
-      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted"
-,
-  
-"INSERT INTO kortix.session_turns
+      RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
+          INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
              opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  adopt-token , owner.session_id, owner.sandbox_id,
-                 owner.project_id, owner.account_id,
+          SELECT  adopt-token , granted.session_id, granted.sandbox_id,
+                 granted.project_id, granted.account_id,
                   ses_root ,  msg_adopt , 'delivering',
                   now() , now(), now()
-            FROM ( SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
-               FROM kortix.session_sandboxes s
-              WHERE s.sandbox_id =  11111111-1111-4111-8111-111111111111 ::uuid
-                AND s.status IN ('active', 'provisioning')
-                AND s.metadata->'activeTurns'-> adopt-token  IS NOT NULL
-              FOR UPDATE ) owner
-          ON CONFLICT (turn_token) DO NOTHING"
+            FROM granted
+           WHERE granted.session_id IS NOT NULL
+             AND granted.project_id IS NOT NULL
+             AND granted.account_id IS NOT NULL
+          ON CONFLICT (turn_token) DO NOTHING)
+        SELECT * FROM granted"
 ,
   
-"
+"WITH accepted AS ( 
     UPDATE kortix.session_sandboxes s
        SET metadata = jsonb_set(
              s.metadata,
@@ -1250,7 +1273,26 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
        AND s.metadata->'activeTurns'-> adopt-token ->>'token' =  adopt-token 
        AND s.metadata->'activeTurns'-> adopt-token ->>'state' IN ('delivering', 'active')
     RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS accepted,
-              s.metadata->'activeTurns'-> adopt-token ->>'messageId' AS turn_message_id"
+              s.metadata->'activeTurns'-> adopt-token ->>'messageId' AS turn_message_id ), ledger AS (
+          INSERT INTO kortix.session_turns
+            (turn_token, session_id, sandbox_id, project_id, account_id,
+             opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
+          SELECT  adopt-token , accepted.session_id, accepted.sandbox_id,
+                 accepted.project_id, accepted.account_id,
+                  ses_root ,  msg_adopt ,
+                 'active', now(), now(), now(), now()
+            FROM accepted
+           WHERE accepted.session_id IS NOT NULL
+             AND accepted.project_id IS NOT NULL
+             AND accepted.account_id IS NOT NULL
+          ON CONFLICT (turn_token) DO UPDATE SET
+                state = 'active',
+                accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
+                opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
+                message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
+                updated_at = now()
+          WHERE kortix.session_turns.state <> 'ended')
+        SELECT * FROM accepted"
 ,
 ]
 `;

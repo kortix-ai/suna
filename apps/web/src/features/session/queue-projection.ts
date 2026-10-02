@@ -1,7 +1,6 @@
 import type { QueuedDraft } from '@/stores/queued-draft-store';
-import type { RemovedSessionPrompt, SessionPrompt } from '@kortix/sdk';
+import type { SessionPrompt } from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
-import type { AttachedFile } from './composer/types';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -54,8 +53,15 @@ export interface QueueRow {
   lastError?: string;
   /** The server can still remove this prompt. */
   removable: boolean;
-  /** Up takes it back into the composer without losing anything. */
+  /** Up (or the pencil) opens it in the composer for an in-place edit. */
   takeBackEligible: boolean;
+  /** The prompt's whole text as the server holds it: quotes, file and
+   *  mention markup included. */
+  rawText: string;
+  /** The words the composer edits — one verbatim run of `rawText`, so an edit
+   *  swaps exactly them and every quote or reference around them survives.
+   *  `null` when the visible words are not one run, so no edit is offered. */
+  editText: string | null;
 }
 
 export interface QueueProjection {
@@ -109,7 +115,9 @@ export function projectQueueRows(input: {
     if (onScreen(prompt, input.transcriptMessageIds)) continue;
 
     const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;
-    const cleaned = cleanPromptText(prompt.full_text ?? prompt.text);
+    const rawText = prompt.full_text ?? prompt.text;
+    const cleaned = cleanPromptText(rawText);
+    const editText = cleaned.text && rawText.includes(cleaned.text) ? cleaned.text : null;
     const state: QueueRowState =
       prompt.state === 'failed'
         ? 'failed'
@@ -130,10 +138,10 @@ export function projectQueueRows(input: {
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
       removable: state === 'queued' || state === 'failed',
-      // A row from another tab or from before a reload comes back only when
-      // its text is all there is: its files live as sandbox paths the composer
-      // cannot re-attach.
-      takeBackEligible: state === 'queued' && (Boolean(draft) || attachmentCount === 0),
+      // The edit changes the text in place on the server; files stay on the row.
+      takeBackEligible: state === 'queued' && editText !== null,
+      rawText,
+      editText,
     });
   }
 
@@ -149,50 +157,10 @@ export function projectQueueRows(input: {
       state: 'sending',
       removable: false,
       takeBackEligible: false,
+      rawText: draft.text,
+      editText: null,
     });
   }
 
   return { rows, heldCount };
-}
-
-/**
- * What Up puts back into the composer, from the prompts the DELETE removed (in
- * queue order).
- *
- * This tab's own drafts come back exactly as typed, with their original files.
- * A removed prompt with no draft comes back as its visible text only when that
- * text is the whole prompt. Anything carrying files is returned in `requeue`
- * instead: the caller re-POSTs it, so a take-back can never silently drop an
- * attachment.
- */
-export function composeTakeBack(input: {
-  removed: readonly RemovedSessionPrompt[];
-  drafts: readonly QueuedDraft[];
-}): { text: string; files: AttachedFile[]; requeue: RemovedSessionPrompt[] } {
-  const draftsById = new Map(input.drafts.map((d) => [d.clientMessageId, d] as const));
-  const texts: string[] = [];
-  const files: AttachedFile[] = [];
-  const requeue: RemovedSessionPrompt[] = [];
-
-  for (const removed of input.removed) {
-    const draft = draftsById.get(removed.client_message_id);
-    if (draft) {
-      if (draft.text) texts.push(draft.text);
-      files.push(...draft.files);
-      continue;
-    }
-    const raw = removed.parts
-      .filter((part) => part.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text as string)
-      .join('\n');
-    const cleaned = cleanPromptText(raw);
-    const fileParts = removed.parts.filter((part) => part.type === 'file');
-    if (cleaned.fileCount > 0 || fileParts.length > 0) {
-      requeue.push(removed);
-      continue;
-    }
-    if (cleaned.text) texts.push(cleaned.text);
-  }
-
-  return { text: texts.join('\n'), files, requeue };
 }

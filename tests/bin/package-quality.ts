@@ -172,6 +172,11 @@ await runAll([
     await runWorkspaceTests(['kortixd'], 1);
   })(),
 ]);
+// The root `.npmrc` sets `ignore-scripts=true`, so `pnpm install` never runs
+// apps/mobile's `postinstall: patch-package`. Its tests assert the patched
+// libraries (`lib/markdown/markdown-keys.test.ts`), so apply the patches here.
+// patch-package is idempotent: a checkout that already applied them passes.
+await run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']);
 await runAll([
   // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
   // `tests/migration` run in the `db-suites` lane of the core run.

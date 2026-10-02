@@ -23,6 +23,7 @@ import {
   sessionPromptsPollMs,
   startSessionWithPrompt,
   tombstoneRemovedPrompt,
+  withEditedPromptText,
   withoutRemovedPrompts,
 } from './use-session-prompts';
 
@@ -784,5 +785,25 @@ describe('the drain stamp survives the readings that follow it', () => {
     applyInboxObservation('sess_1', [], [prompt({ prompt_id: 'p2' })], 700);
 
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 700 });
+  });
+});
+
+describe('withEditedPromptText', () => {
+  const row = (id: string, text: string) =>
+    ({ prompt_id: id, text, state: 'queued', reason: null }) as SessionPrompt;
+
+  test('replaces the text of the edited row only, in place', () => {
+    const before = [row('a', 'one'), row('b', 'two'), row('c', 'three')];
+    const after = withEditedPromptText(before, 'b', 'TWO');
+    expect(after.map((prompt) => [prompt.prompt_id, prompt.text])).toEqual([
+      ['a', 'one'],
+      ['b', 'TWO'],
+      ['c', 'three'],
+    ]);
+    expect(before[1].text).toBe('two');
+  });
+
+  test('a row that is gone stays gone', () => {
+    expect(withEditedPromptText([row('a', 'one')], 'zz', 'x')).toEqual([row('a', 'one')]);
   });
 });

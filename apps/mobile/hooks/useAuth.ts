@@ -205,13 +205,37 @@ async function createSessionFromUrl(url: string) {
   return data.session;
 }
 
+/**
+ * What the auth context shows. No `session`: a token refresh replaces it about
+ * once an hour, and code that needs the token reads it at call time
+ * (`getAuthToken`, `api/config.ts`).
+ */
+export type UserState = Omit<AuthState, 'session'>;
+
+/**
+ * The state for a session from the restore or an auth event. The same user
+ * with the same data keeps the previous object, so a token refresh does not
+ * re-render every consumer of the auth context. Another user, changed user
+ * data, or a change of signed-in state replaces it.
+ */
+function nextAuthState(prev: UserState, session: Session | null): UserState {
+  const user = session?.user ?? null;
+  if (
+    !prev.isLoading &&
+    prev.isAuthenticated === !!session &&
+    JSON.stringify(prev.user) === JSON.stringify(user)
+  ) {
+    return prev;
+  }
+  return { user, isLoading: false, isAuthenticated: !!session };
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
   const { canTrack, isLoading: trackingLoading } = trackingState;
-  const [authState, setAuthState] = useState<AuthState>({
+  const [authState, setAuthState] = useState<UserState>({
     user: null,
-    session: null,
     isLoading: true,
     isAuthenticated: false,
   });
@@ -245,12 +269,7 @@ export function useAuth() {
       // Update logger with user ID
       setLoggerUserId(session?.user?.id || null);
 
-      setAuthState({
-        user: session?.user ?? null,
-        session,
-        isLoading: false,
-        isAuthenticated: !!session,
-      });
+      setAuthState((prev) => nextAuthState(prev, session));
       void applyProfileLocale(session?.user);
 
       if (session?.user && shouldUseRevenueCat()) {
@@ -277,12 +296,7 @@ export function useAuth() {
       const session = parsePersistedSession(await readStoredSessionRaw());
       if (!mounted || authResolvedRef.current) return;
       setLoggerUserId(session?.user?.id || null);
-      setAuthState({
-        user: session?.user ?? null,
-        session,
-        isLoading: false,
-        isAuthenticated: !!session,
-      });
+      setAuthState((prev) => nextAuthState(prev, session));
       void applyProfileLocale(session?.user);
     };
 
@@ -350,12 +364,7 @@ export function useAuth() {
         setLoggerUserId(session?.user?.id || null);
 
         authResolvedRef.current = true;
-        setAuthState({
-          user: session?.user ?? null,
-          session,
-          isLoading: false,
-          isAuthenticated: !!session,
-        });
+        setAuthState((prev) => nextAuthState(prev, session));
         void applyProfileLocale(session?.user);
 
         if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
@@ -1046,7 +1055,6 @@ export function useAuth() {
       setLoggerUserId(null); // Clear logger user ID
       setAuthState({
         user: null,
-        session: null,
         isLoading: false,
         isAuthenticated: false,
       });

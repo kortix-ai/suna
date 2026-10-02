@@ -30,10 +30,11 @@
  * network calls.
  *
  * WHAT IT NEVER DOES. `POST /kortix/catalog/converge` — the one call this
- * gate can make — is idle-gated and verified-swap based on the daemon side
- * (`convergeManagedModelCatalog` in the sandbox agent server), exactly like
- * `config-release.ts`: it never ends a running turn, and it takes ONE
- * attempt with a bounded timeout, never a retry ladder.
+ * gate can make — is idle-gated on the daemon side
+ * (`convergeManagedModelCatalog` in the sandbox agent server): it never ends
+ * a running turn, and it takes ONE attempt with a bounded timeout, never a
+ * retry ladder. The daemon registers the id and reloads OpenCode's config in
+ * place; it decides nothing about whether the gateway serves the model.
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
@@ -138,7 +139,8 @@ export type ModelCatalogTurnStartDecision =
  * whether the repair actually landed IN TIME for the request it is about to
  * forward, so it can refuse with a diagnosable error instead of proxying
  * into a guaranteed failure:
- *   - `'restarted'` — a fresh OpenCode is up with the model. Forward normally.
+ *   - `'reloaded'` / `'restarted'` — the running OpenCode registers the model
+ *     (config reloaded in place, or a verified swap). Forward normally.
  *   - `'unchanged'` / `'file-updated'` — nothing to swap, or the file is
  *     staged for the box's NEXT natural restart. Forward normally; if the
  *     model was genuinely absent this is `declined`/`no-gateway`, not these.

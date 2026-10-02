@@ -360,9 +360,36 @@ export interface UploadFileOptions {
   onProgress?: (event: UploadProgressEvent) => void;
 }
 
-// Requests above this size are not reliable through the sandbox edge. Keep
-// every multipart body below the measured boundary and verify each append.
-const SANDBOX_UPLOAD_CHUNK_BYTES = 64 * 1024;
+// The most bytes one upload request carries; a larger file is reserved, then
+// appended in chunks of this size, and every append's landed size is verified.
+//
+// This was 64 KiB: on 2026-09-04 the Platinum sandbox edge silently dropped
+// request bodies above ~104 KB. Platinum fixed that (#923 drains the request
+// body across backpressure, #1077 streams proxy and edge bodies), and 64 KiB
+// then cost one ~0.9-1.3 s proxied round trip per 64 KiB: 17 sequential
+// requests and 17-19 s for a 1 MiB file. Measured 2026-10-02 through the real
+// route (Kortix API → Platinum edge → daemon), single requests landed byte-exact
+// at 1, 4, 8 and 16 MiB in both eu-west and us-east (1 MiB in 1.5-2 s, 16 MiB in
+// 5-7 s). 8 MiB keeps a 2x margin under the largest size proven, and a short or
+// lost body still fails loudly: the size check below and on every append.
+const SANDBOX_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Refuse a single-request upload whose body arrived SHORT.
+ *
+ * Only `landed < sent` is truncation. An empty file legitimately lands 0 of 0,
+ * and a Blob whose length the host could not know up front (a pipe-backed file
+ * reports 0 or a non-finite size) can land MORE than it claimed; neither is a
+ * cut body. A daemon that reports no size is not checked.
+ */
+function verifyLandedSize(result: UploadResult | undefined, expected: number): void {
+  if (typeof result?.size !== 'number' || !Number.isFinite(expected)) return;
+  if (result.size >= expected) return;
+  throw new ApiError(
+    `Upload verification failed for ${result.path}: expected ${expected} bytes, received ${result.size}`,
+    { code: 'UPLOAD_SIZE_MISMATCH' },
+  );
+}
 
 function notifyUploadProgress(options: UploadFileOptions | undefined, event: UploadProgressEvent): void {
   try {
@@ -420,6 +447,7 @@ export async function uploadFile(
       (form) =>
         authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
     );
+    verifyLandedSize(result[0], file.size);
     notifyUploadProgress(options, { loadedBytes: file.size, totalBytes: file.size });
     return result;
   }

@@ -1,7 +1,7 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, hasEnvTokenHost, listHosts } from './api/config.ts';
+import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
@@ -70,17 +70,40 @@ export async function resolveProjectContext(
     }
     return null;
   }
-  let projectId = resolveProjectId(opts.projectArg);
-  if (!projectId) {
-    // The always-bound invariant: recover by binding a default project right
-    // here instead of dead-ending. (Inside a sandbox the env-token host
-    // always carries KORTIX_PROJECT_ID, so this never fires there; on a
-    // non-TTY it degrades to a hint and the error below.)
-    const outcome = await ensureDefaultProjectBinding(auth, {
-      promptTitle: 'No project bound — pick one for this command',
-      quiet: opts.quietWhenUnresolved,
-    });
-    projectId = outcome.project?.project_id ?? null;
+  // An explicit --host names a different deployment: every ambient project id
+  // (KORTIX_PROJECT_ID, a link bound to another host, the active host's
+  // default) lives on the caller's own host and only 404s against the named
+  // host's token. Resolve the project from the named host's own context — a
+  // --project pin, a link bound to that same host, or that host's stored
+  // default — and say so clearly when it has none.
+  let projectId: string | null;
+  if (opts.hostArg && !opts.projectArg) {
+    const link = loadLink();
+    const linkProject = link?.host === opts.hostArg ? link.project_id : undefined;
+    const hostDefault = getHost(opts.hostArg)?.default_project;
+    projectId = linkProject ?? hostDefault?.project_id ?? null;
+    if (!projectId) {
+      if (!opts.quietWhenUnresolved) {
+        process.stderr.write(
+          `${status.err(`No project context on host "${opts.hostArg}".`)} Pass ` +
+            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls --host ${opts.hostArg}${C.reset} lists them).\n`,
+        );
+      }
+      return null;
+    }
+  } else {
+    projectId = resolveProjectId(opts.projectArg);
+    if (!projectId) {
+      // The always-bound invariant: recover by binding a default project right
+      // here instead of dead-ending. (Inside a sandbox the env-token host
+      // always carries KORTIX_PROJECT_ID, so this never fires there; on a
+      // non-TTY it degrades to a hint and the error below.)
+      const outcome = await ensureDefaultProjectBinding(auth, {
+        promptTitle: 'No project bound — pick one for this command',
+        quiet: opts.quietWhenUnresolved,
+      });
+      projectId = outcome.project?.project_id ?? null;
+    }
   }
   if (!projectId) {
     if (!opts.quietWhenUnresolved) {

@@ -206,6 +206,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Downloaded the sandbox agent': 'texte080f87e22ad',
   'Downloaded the sandbox entrypoint': 'text21d6e0d7c87a',
   'Edited Microsoft Teams message': 'textda0af072ec8c',
+  'Edited a queued session prompt': 'text414cc580557b',
   'Enabled Enterprise preview': 'text4feba398b495',
   'Enrolled a second factor': 'textf2b760a63dfe',
   'Expired a role': 'text32c94e9eb5f4',

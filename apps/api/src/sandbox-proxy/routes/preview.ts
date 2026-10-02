@@ -46,6 +46,7 @@ import {
   markSandboxUsed,
   resolveSandboxIngress,
   routeSandboxIngress,
+  type SandboxRecord,
   wakeSandbox,
 } from '../backend';
 import {
@@ -483,7 +484,12 @@ export async function forwardToSandbox(
   // alone on that origin. Two things become both safe and necessary there —
   // forwarding the app's cookies (see appCookieHeader) and leaving same-origin
   // responses free of injected CORS headers.
-  opts: { originMode?: boolean } = {},
+  //
+  // `record`: the sandbox row, when the caller read it moments ago. Only the
+  // server-side prompt delivery passes one, for the active box it just picked
+  // as its target. The turn-begin write below re-checks the box's status in
+  // the database, so a row that went stale in between cannot deliver a turn.
+  opts: { originMode?: boolean; record?: SandboxRecord } = {},
 ): Promise<Response> {
   let requestBody = body;
 
@@ -491,7 +497,7 @@ export async function forwardToSandbox(
   // active state, and yields the service key for upstream auth. (Previously two
   // separate queries for the same row.)
   const ptl = new ProvisionTimeline(sandboxId, 'proxy');
-  let record = await loadSandbox(sandboxId);
+  let record = opts.record?.externalId === sandboxId ? opts.record : await loadSandbox(sandboxId);
   ptl.mark('load-sandbox');
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404, origin);

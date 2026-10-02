@@ -16,13 +16,16 @@
  * a base commit that produces a new release ID is assignable again.
  */
 
-import { configReleaseFailures, configReleases } from '@kortix/db';
+import { configReleaseFailures, configReleases, projectSessions } from '@kortix/db';
+import { META_AGENT_NAME } from '@kortix/shared';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
 import { noteRunningRelease } from './running-release';
 import { isUuid } from '../shared/validate';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 /** Distinct failing sessions that quarantine a release in a project. Spec open decision 2. */
 export const PROJECT_QUARANTINE_SESSIONS = 2;
@@ -46,6 +49,18 @@ export interface ConfigReleaseLedger {
   /** The newest proven release of `variant`, skipping quarantined ones. */
   lastProven(projectId: string, variant: string, threshold: number): Promise<ProvenRelease | null>;
 }
+
+/**
+ * A failure the meta coordinator reported does not count. Until 2026-10-02 its
+ * box was assigned the `project` release, which it cannot load (the meta image
+ * has no `bun`), and two such sessions quarantined a release that every other
+ * session of the project loads. Those rows stay in the table.
+ */
+export const notFromMetaSession = sql`not exists (
+  select 1 from ${projectSessions}
+  where ${projectSessions.sessionId} = ${qualifiedColumn(configReleaseFailures.sessionId)}::text
+    and ${projectSessions.agentName} = ${META_AGENT_NAME}
+)`;
 
 export const dbConfigReleaseLedger: ConfigReleaseLedger = {
   async recordAssigned(input) {
@@ -87,7 +102,13 @@ export const dbConfigReleaseLedger: ConfigReleaseLedger = {
     const rows = await db
       .select({ releaseId: configReleaseFailures.releaseId })
       .from(configReleaseFailures)
-      .where(and(eq(configReleaseFailures.projectId, projectId), inArray(configReleaseFailures.releaseId, releaseIds)))
+      .where(
+        and(
+          eq(configReleaseFailures.projectId, projectId),
+          inArray(configReleaseFailures.releaseId, releaseIds),
+          notFromMetaSession,
+        ),
+      )
       .groupBy(configReleaseFailures.releaseId)
       .having(sql`count(distinct ${configReleaseFailures.sessionId}) >= ${threshold}`);
     return new Set(rows.map((row) => row.releaseId));
@@ -96,7 +117,7 @@ export const dbConfigReleaseLedger: ConfigReleaseLedger = {
     const quarantinedIds = db
       .select({ releaseId: configReleaseFailures.releaseId })
       .from(configReleaseFailures)
-      .where(eq(configReleaseFailures.projectId, projectId))
+      .where(and(eq(configReleaseFailures.projectId, projectId), notFromMetaSession))
       .groupBy(configReleaseFailures.releaseId)
       .having(sql`count(distinct ${configReleaseFailures.sessionId}) >= ${threshold}`);
     const [row] = await db
@@ -116,7 +137,7 @@ export const dbConfigReleaseLedger: ConfigReleaseLedger = {
   },
 };
 
-/** An in-memory ledger for tests. Same semantics as the DB one. */
+/** An in-memory ledger for tests. Same semantics as the DB one, except that it knows no session's agent, so it counts every failure. */
 export class MemoryConfigReleaseLedger implements ConfigReleaseLedger {
   assigned: Array<{ projectId: string; releaseId: string; variant: string; sourceCommit: string; order: number; provenAt: number | null }> = [];
   failures: Array<{ projectId: string; releaseId: string; sessionId: string; reason: string | null }> = [];
