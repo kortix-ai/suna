@@ -8,7 +8,8 @@
  */
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
-import { getSupabaseAccessToken } from '@/lib/auth-token';
+import type { KortixPlatformConfig } from '@kortix/sdk';
+import { getSupabaseAccessToken, invalidateTokenCache } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import { handleApiError } from '@/lib/error-handler';
@@ -24,6 +25,20 @@ import { configureKortix, parseFlagOverride } from '@kortix/sdk';
 let configured = false;
 let uiTranslator: UiTranslator | null = null;
 
+/**
+ * The bearer getter the SDK's `send()` resolves for every request, carrying the
+ * hook its one 401 replay needs: `invalidate(rejectedToken)` drops the 30 s
+ * token cache so the replay fetches a FRESH token instead of re-sending the
+ * dead one the API just refused. Without it, a page-load fan-out against a
+ * dead session re-sends the same rejected credential on every request until
+ * the cache TTL lapses, and the API warn-logs each rejection (KRTX-1040).
+ * The transport skips the replay when the re-fetch returns the same token
+ * (an unexpired token whose session the server rejected), so this hook costs
+ * at most one extra token read.
+ */
+const getToken: KortixPlatformConfig['getToken'] = () => getSupabaseAccessToken();
+getToken.invalidate = () => invalidateTokenCache();
+
 export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
   uiTranslator = tI18nComplete;
   if (configured) return;
@@ -31,7 +46,7 @@ export function ensureKortixConfigured(tI18nComplete: UiTranslator): void {
 
   configureKortix({
     backendUrl: getEnv().BACKEND_URL,
-    getToken: () => getSupabaseAccessToken(),
+    getToken,
     getUserId: async () => {
       try {
         const {

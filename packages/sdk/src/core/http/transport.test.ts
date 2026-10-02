@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { backendApi, setAdminBypass } from './api-client';
 import { ApiError, AuthError, BillingError } from './api/errors';
 import { authenticatedFetch } from './auth';
-import { configureKortix } from './config';
+import { configureKortix, type KortixPlatformConfig } from './config';
 import { clearImpersonationSession, setImpersonationSession } from './impersonation';
 import { send } from './transport';
 
@@ -223,6 +223,65 @@ describe('send: 401 replay', () => {
     const response = await send('http://backend.test/v1/x', {}, { retryOnAuthError: false });
     expect(response.status).toBe(401);
     expect(seen).toHaveLength(1);
+  });
+
+  // A host whose getter caches (web's 30 s token cache), driving the module-level
+  // `seen`/`statuses` state like `configure` does, but with the host's own getter.
+  function configureCaching(getToken: KortixPlatformConfig['getToken']) {
+    configureKortix({
+      backendUrl: 'http://backend.test/v1',
+      getToken,
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : null;
+        seen.push({
+          url: request ? request.url : String(input),
+          headers: new Headers(request ? request.headers : init?.headers),
+          body: null,
+          signal: null,
+        });
+        const status = statuses.length > 1 ? statuses.shift()! : (statuses[0] ?? 200);
+        return new Response('{}', { status });
+      },
+    });
+  }
+
+  test('the replay invalidates the rejected token on a caching getToken before re-asking', async () => {
+    // The replay must first drop the rejected token, otherwise `getToken()`
+    // serves the same dead credential and `fresh === token` skips the replay
+    // entirely — every request of a fan-out keeps 401ing on one dead session
+    // (KRTX-1040).
+    let cached = 'dead-token';
+    const invalidated: string[] = [];
+    configureCaching(
+      Object.assign(async () => cached, {
+        invalidate: (rejected: string) => {
+          invalidated.push(rejected);
+          cached = 'fresh-token';
+        },
+      }),
+    );
+    statuses = [401, 200];
+
+    const response = await send('http://backend.test/v1/x');
+
+    expect(response.status).toBe(200);
+    expect(invalidated).toEqual(['dead-token']);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual(['Bearer dead-token', 'Bearer fresh-token']);
+  });
+
+  test('a caching getter without invalidate cannot refresh, so the 401 stands after one request', async () => {
+    // The pre-KRTX-1040 web shape: a bare getter, no `invalidate`. The replay
+    // re-asks for the SAME token, `fresh === token` skips the replay, and the
+    // caller sees the original 401 with exactly one request on the wire.
+    const cached = 'dead-token';
+    configureCaching(async () => cached);
+    statuses = [401];
+
+    const response = await send('http://backend.test/v1/x');
+
+    expect(response.status).toBe(401);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].headers.get('authorization')).toBe('Bearer dead-token');
   });
 });
 
