@@ -4008,6 +4008,20 @@ export const sandboxComputeSessions = kortixSchema.table(
     index('idx_sandbox_compute_sessions_last_billed')
       .on(table.lastBilledAt)
       .where(sql`${table.state} = 'active'`),
+    // Cover the two foreign keys the Supabase advisor flags as unindexed
+    // (unindexed_foreign_keys): a referencing-side index is what lets Postgres
+    // find the rows to null when a credit_ledger or app_runtimes row goes away
+    // (both FKs are ON DELETE SET NULL). Partial on `IS NOT NULL`: session rows
+    // carry both columns NULL (ledger_id has no writer yet at all), so the
+    // index stays out of the hot insert path and only holds billed/app rows.
+    // Built CONCURRENTLY by 20261002214537536_sandbox_compute_sessions_ledger_id_index.concurrent.ts
+    // and 20261002214538167_sandbox_compute_sessions_app_runtime_id_index.concurrent.ts.
+    index('idx_sandbox_compute_sessions_ledger_id')
+      .on(table.ledgerId)
+      .where(sql`${table.ledgerId} IS NOT NULL`),
+    index('idx_sandbox_compute_sessions_app_runtime_id')
+      .on(table.appRuntimeId)
+      .where(sql`${table.appRuntimeId} IS NOT NULL`),
   ],
 );
 
