@@ -2567,6 +2567,7 @@ export const sandboxTemplates = kortixSchema.table(
   (table) => [
     index('idx_sandbox_templates_project').on(table.projectId),
     index('idx_sandbox_templates_shared').on(table.isShared),
+    index('idx_sandbox_templates_account').on(table.accountId),
     uniqueIndex('idx_sandbox_templates_project_slug').on(table.projectId, table.slug),
   ],
 );
