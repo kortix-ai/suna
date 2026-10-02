@@ -338,6 +338,20 @@ test('a 1 MiB upload is a single request, not a chunk train', async () => {
   expect(calls.filter((call) => call.url.endsWith('/file/append'))).toHaveLength(0);
 });
 
+test('an empty file uploads: 0 of 0 bytes is not a truncated body', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/empty.txt', size: 0 }]) : undefined));
+  const result = await F.uploadFile(new Blob([]), '/workspace', 'empty.txt');
+  expect(result).toEqual([{ path: '/workspace/empty.txt', size: 0 }]);
+});
+
+// A host can hand over a Blob whose length it did not know up front (a pipe-backed
+// file reports 0). Landing MORE than the claimed size is not truncation.
+test('a body that lands more bytes than its claimed size is not refused', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/piped.txt', size: 11 }]) : undefined));
+  const result = await F.uploadFile(new Blob([]), '/workspace', 'piped.txt');
+  expect(result).toEqual([{ path: '/workspace/piped.txt', size: 11 }]);
+});
+
 test('a single-request upload whose landed size disagrees fails instead of reporting success', async () => {
   routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/cut.bin', size: 1000 }]) : undefined));
   const err = await F.uploadFile(new Blob([new Uint8Array(4096)]), '/workspace', 'cut.bin').catch((e) => e);

@@ -466,3 +466,19 @@ test('a whole-file upload that landed short fails and deletes its temp file', as
   expect(String(error)).toContain('landed 1000 of 4096 bytes');
   expect(routes).toEqual(['POST /file/upload', 'DELETE /file']);
 });
+
+// An empty attachment is not a truncated one: 0 bytes sent, 0 landed, renamed into place.
+test('an empty attachment uploads, lands 0 of 0 and is renamed into place', async () => {
+  const routes: string[] = [];
+  const result = await writeRuntimePromptFile(
+    { ...input, bytes: new Uint8Array(0) },
+    async (_externalId, _port, _access, method, route) => {
+      routes.push(`${method} ${route}`);
+      if (route === '/file/upload') return Response.json([{ path: '/tmp/empty', size: 0 }]);
+      return Response.json(true);
+    },
+    () => 'fixed',
+  );
+  expect(result).toEqual({ path: input.targetPath, size: 0 });
+  expect(routes).toEqual(['POST /file/upload', 'POST /file/rename']);
+});

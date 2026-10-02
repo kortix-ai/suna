@@ -374,9 +374,17 @@ export interface UploadFileOptions {
 // lost body still fails loudly: the size check below and on every append.
 const SANDBOX_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
 
-/** A daemon upload result whose size disagrees with what was sent is a truncated body, never a success. */
+/**
+ * Refuse a single-request upload whose body arrived SHORT.
+ *
+ * Only `landed < sent` is truncation. An empty file legitimately lands 0 of 0,
+ * and a Blob whose length the host could not know up front (a pipe-backed file
+ * reports 0 or a non-finite size) can land MORE than it claimed; neither is a
+ * cut body. A daemon that reports no size is not checked.
+ */
 function verifyLandedSize(result: UploadResult | undefined, expected: number): void {
-  if (typeof result?.size !== 'number' || result.size === expected) return;
+  if (typeof result?.size !== 'number' || !Number.isFinite(expected)) return;
+  if (result.size >= expected) return;
   throw new ApiError(
     `Upload verification failed for ${result.path}: expected ${expected} bytes, received ${result.size}`,
     { code: 'UPLOAD_SIZE_MISMATCH' },

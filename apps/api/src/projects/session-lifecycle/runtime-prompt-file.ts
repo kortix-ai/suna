@@ -216,8 +216,10 @@ async function uploadWhole(
   });
   const temporaryPath = rows[0]?.path;
   if (!temporaryPath) throw new Error('runtime upload returned no file path');
+  // Only a SHORT landing is a cut body: an empty attachment lands 0 of 0, and
+  // a daemon that reports no size is not checked.
   const landed = rows[0]?.size;
-  if (typeof landed === 'number' && landed !== fileBytes.byteLength) {
+  if (typeof landed === 'number' && landed < fileBytes.byteLength) {
     // A cut body still wrote a short temp file; remove it before failing.
     const deleteBody = new TextEncoder().encode(JSON.stringify({ path: temporaryPath }));
     await forwarded(
