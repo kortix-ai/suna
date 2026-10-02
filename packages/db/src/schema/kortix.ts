@@ -3083,6 +3083,9 @@ export const oauthConsents = kortixSchema.table(
   },
   (table) => [
     uniqueIndex('idx_oauth_consents_user_client').on(table.userId, table.clientId),
+    // Covers the client FK (oauth_consents_client_fk): a client delete cascades
+    // by client_id, and the (user_id, client_id) unique index does not lead with it.
+    index('idx_oauth_consents_client').on(table.clientId),
     foreignKey({
       columns: [table.clientId],
       foreignColumns: [oauthClients.clientId],
