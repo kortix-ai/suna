@@ -298,8 +298,8 @@ describe('pi harness', () => {
     // E1: pi serves subagents and compaction, and none of the features its surface answers 501 for.
     expect(before.capabilities).toContain('session.subagents')
     expect(before.capabilities).toContain('session.compact')
+    expect(before.capabilities).toContain('session.commands')
     expect(before.capabilities).not.toContain('session.rewind')
-    expect(before.capabilities).not.toContain('session.commands')
     expect(before.capabilities).not.toContain('session.attach')
     expect(before.runtimeReady).toBe(false)
     expect(before.opencode).toBe('down')
@@ -576,14 +576,15 @@ describe('pi harness', () => {
     expect((await post(`/kortix/opencode/sessions/${root}/abort`, {})).status).toBe(200)
   })
 
-  test('the catalogs are the project\'s: pi serves no config, agent, provider or command document', async () => {
-    // Pickers read the API (`/detail`, `/model-picker`); slash commands are
-    // an OpenCode capability pi does not advertise. The routes 404 instead of
-    // answering with objects pi would have to invent.
+  test('the catalogs are the project\'s: pi serves no config, agent or provider document', async () => {
+    // Pickers read the API (`/detail`, `/model-picker`). The routes 404 instead
+    // of answering with objects pi would have to invent. The command list is
+    // pi's own prompt templates: empty for a project with none.
     const r = await boot({ script: [{ text: 'ok' }], env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { prompt: 'You code.', description: 'Writes code' } } }) } })
-    for (const path of ['/config', '/global/config', '/agent', '/provider', '/config/providers', '/command']) {
+    for (const path of ['/config', '/global/config', '/agent', '/provider', '/config/providers']) {
       expect({ path, status: (await r.user(path)).status }).toEqual({ path, status: 404 })
     }
+    expect(await r.user('/command').then((res) => res.json())).toEqual([])
     const tools = (await r.user('/tool/ids').then((res) => res.json())) as string[]
     expect([...tools]).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'question', 'task'])
     expect((await r.user('/session/status').then((res) => res.json()))).toEqual({})
@@ -2193,5 +2194,55 @@ describe('pi compaction', () => {
     expect(page.messages.filter((m) => m.info.error).map((m) => m.info.error.name)).toContain('ContextOverflowError')
     const text = await readSse(events, (t) => t.includes('event: session.error') && t.includes('event: session.idle'))
     expect(text).toContain('ContextOverflowError')
+  })
+})
+
+describe('pi slash commands', () => {
+  const TEMPLATE = 'Review the change named $1 and list its risks.\n\nFocus: $ARGUMENTS'
+  const withReviewCommand = (workspace: string) => {
+    mkdirSync(join(workspace, 'harnesses/pi/prompts'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/pi/prompts/review.md'), `---\ndescription: Review a change\n---\n${TEMPLATE}\n`)
+  }
+  const command = (r: Rig, root: string, body: Record<string, unknown>) =>
+    r.user(`/session/${root}/command`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+  test('the command list is the prompt templates of the pi config directory', async () => {
+    const r = await boot({ script: [], prepare: withReviewCommand })
+    expect(await r.user('/command').then((res) => res.json())).toEqual([
+      { name: 'review', description: 'Review a change', source: 'command', template: TEMPLATE, hints: ['$1', '$ARGUMENTS'] },
+    ])
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { commands: { known: boolean; value: unknown[] } }
+    expect(state.commands).toEqual({
+      known: true,
+      value: [{ name: 'review', description: 'Review a change', agent: null, model: null, source: 'command', subtask: null, hints: ['$1', '$ARGUMENTS'], template_bytes: TEMPLATE.length }],
+    })
+  })
+
+  test('a command runs its template: the model and the transcript get the expanded text', async () => {
+    const r = await boot({ script: [{ text: 'Two risks.' }], prepare: withReviewCommand })
+    const root = r.service.runtime()!.rootId
+    const messageID = 'msg_0198e2a4b0e3ABCDEFGHIJKLMN'
+    const res = await command(r, root, { command: 'review', arguments: 'auth-fix', messageID })
+    expect(res.status).toBe(200)
+    const reply = (await res.json()) as WirePage['messages'][number]
+    expect(reply.info).toMatchObject({ role: 'assistant', parentID: messageID })
+    expect(reply.parts.find((p) => p.type === 'text')!.text).toBe('Two risks.')
+
+    const expanded = 'Review the change named auth-fix and list its risks.\n\nFocus: auth-fix'
+    expect(sentText(gateway.sent.at(-1)!)).toContain(JSON.stringify(expanded).slice(1, -1))
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const user = page.messages.find((m) => m.info.id === messageID)!
+    expect(user.parts.map((p) => p.text)).toEqual([expanded])
+  })
+
+  test('a command pi does not have is refused with 400 and runs no turn', async () => {
+    const r = await boot({ script: [{ text: 'never' }], prepare: withReviewCommand })
+    const root = r.service.runtime()!.rootId
+    const calls = gateway.requests.length
+    const res = await command(r, root, { command: 'deploy', arguments: '' })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { error: string }).error).toContain('deploy')
+    expect(gateway.requests.length).toBe(calls)
+    expect((await command(r, root, { arguments: 'x' })).status).toBe(400)
   })
 })

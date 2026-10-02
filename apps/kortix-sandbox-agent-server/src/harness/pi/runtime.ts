@@ -76,6 +76,8 @@ export interface PromptInput {
   system?: string
   /** OpenCode `noReply`: the message joins the conversation, no turn runs. */
   noReply?: boolean
+  /** A slash command (`/name arguments`): the user message on the wire becomes the text pi expands it to. */
+  command?: boolean
 }
 
 export class PromptRejected extends Error {}
@@ -606,6 +608,36 @@ export class PiRuntime {
       })
   }
 
+  /** pi's prompt templates, as the command list a client reads (`GET /command`). */
+  commandList(): Array<{ name: string; description: string; source: 'command'; template: string; hints: string[] }> {
+    return (this.pi?.session.promptTemplates ?? []).map((template) => ({
+      name: template.name,
+      description: template.description,
+      source: 'command' as const,
+      template: template.content,
+      hints: [...new Set(template.content.match(/\$(\d+|ARGUMENTS)/g) ?? [])],
+    }))
+  }
+
+  /** The prompt a `POST /session/:id/command` body asks for: `/name arguments`, which pi expands. */
+  commandPrompt(raw: unknown): PromptInput {
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+    const name = typeof body.command === 'string' ? body.command : ''
+    if (!this.commandList().some((command) => command.name === name)) throw new PromptRejected(`unknown command "${name}"`)
+    const args = typeof body.arguments === 'string' ? body.arguments.trim() : ''
+    const [providerID, ...model] = typeof body.model === 'string' ? body.model.split('/') : []
+    return {
+      ...parsePromptBody({
+        parts: [{ type: 'text', text: `/${name}${args ? ` ${args}` : ''}` }],
+        ...(body.messageID !== undefined ? { messageID: body.messageID } : {}),
+        ...(body.agent !== undefined ? { agent: body.agent } : {}),
+        ...(body.variant !== undefined ? { variant: body.variant } : {}),
+        ...(providerID && model.length ? { model: { providerID, modelID: model.join('/') } } : {}),
+      }),
+      command: true,
+    }
+  }
+
   /** Stop the run in flight. Idempotent: aborting an idle agent is a no-op. */
   async abort(): Promise<boolean> {
     this.pi?.session.abortCompaction()
@@ -816,6 +848,12 @@ export class PiRuntime {
   }
 
   private onAgentEvent(event: AgentEvent): void {
+    if (event.type === 'message_start' && event.message.role === 'user' && this.active?.input.command) {
+      const { content } = event.message
+      const text = typeof content === 'string' ? content : content.map((block) => (block.type === 'text' ? block.text : '')).join('')
+      const messageID = this.active.messageId
+      this.publish({ type: 'message.part.updated', properties: { sessionID: this.rootId, time: this.now(), part: { id: `${messageID}-p0`, messageID, sessionID: this.rootId, type: 'text', text } } })
+    }
     if (event.type === 'message_end' && event.message.role === 'assistant') {
       this.turnAssistant = event.message
       if (event.message.stopReason !== 'error' && event.message.stopReason !== 'length') this.recoveryTried = false
@@ -1306,7 +1344,10 @@ export class PiRuntime {
         head_seq: null,
       },
       agents: { known: true, value: agents },
-      commands: { known: true, value: [] },
+      commands: {
+        known: true,
+        value: this.commandList().map(({ template, ...command }) => ({ ...command, agent: null, model: null, subtask: null, template_bytes: template.length })),
+      },
       config: {
         known: true,
         value: {
