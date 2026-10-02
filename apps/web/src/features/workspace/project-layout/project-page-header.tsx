@@ -12,6 +12,14 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
  * Same title-bar classes, so it has the same height and clears the desktop
  * window controls the same way; same sidebar toggle; same underline tab.
  * `children` sit at the trailing edge (page actions, a docs link).
+ *
+ * The page's heading is the `<h1>` below, visually hidden: the tab is the
+ * visible title, but a tab cannot carry it — `role="tab"` flattens its
+ * children (ARIA "children presentational"), so a heading inside the link
+ * would vanish from the accessibility tree. These pages had a real `<h1>`
+ * before they moved onto this header (#8761), and screen-reader heading
+ * navigation and the e2e journeys (`18-apps-ui`, `36-reminders-ui`) find the
+ * page by it.
  */
 export function ProjectPageHeader({
   title,
@@ -29,6 +37,7 @@ export function ProjectPageHeader({
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
       <SidebarToggle />
+      <h1 className="sr-only">{title}</h1>
       <Tabs value="page" className="min-w-0 flex-1">
         <TabsList
           type="underline"
