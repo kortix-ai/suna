@@ -1,10 +1,9 @@
 'use client';
 
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component } from '@/lib/dotmatrix-core';
 
-export type DotmSquare18Props = DotMatrixCommonProps;
 
 const BASE_OPACITY = 0.08;
 const LIT_OPACITY = 0.94;

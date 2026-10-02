@@ -1,10 +1,9 @@
 'use client';
 
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component, MATRIX_SIZE } from '@/lib/dotmatrix-core';
 
-export type DotmSquare10Props = DotMatrixCommonProps;
 
 const ROWS = MATRIX_SIZE;
 

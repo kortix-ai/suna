@@ -1,9 +1,7 @@
 'use client';
 
-import type { DotMatrixCommonProps } from '@/lib/dotmatrix-core';
 import { createGlyphSpin3Component } from '@/lib/dotmatrix-core';
 
-export type Dotm3x3_19Props = DotMatrixCommonProps;
 
 /** Right arrow — row-major 0/1 form. */
 const ARROW_GLYPH = [0, 1, 0, 0, 1, 1, 0, 1, 0] as const;

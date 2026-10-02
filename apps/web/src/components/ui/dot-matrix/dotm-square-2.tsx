@@ -1,10 +1,9 @@
 'use client';
 
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmSquare2Props = DotMatrixCommonProps;
 
 const SNAKE_TAIL = [1, 0.82, 0.68, 0.54, 0.42, 0.31, 0.22, 0.14] as const;
 const BASE_OPACITY = 0.08;
