@@ -6418,6 +6418,15 @@ export const sessionUserProviderConnections = kortixSchema.table('session_user_p
     name: 'session_user_provider_connections_owner_fk',
   }).onDelete('cascade'),
   index('session_user_provider_connections_connection').on(table.connectionId),
+  // Covers session_user_provider_connections_owner_fk: the cascade when a
+  // user_provider_connections row goes away, and the connection+user binds
+  // in apps/api/src/iam/account-identity.ts. Built by
+  // 20261002213250043_session_user_provider_connections_owner_index.concurrent.ts.
+  index('idx_session_user_provider_connections_owner').on(
+    table.connectionId,
+    table.userId,
+    table.providerId,
+  ),
 ]);
 
 /** One lease per signed-in user's visible browser tab and session. */

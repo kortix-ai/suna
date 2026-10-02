@@ -39,3 +39,17 @@ test('session membership binds the credential owner and cascades after credentia
   ]);
   expect(table.foreignKeys.map((key) => key.onDelete)).toEqual(['cascade', 'cascade']);
 });
+
+test('the session owner FK is covered by an index leading with its FK columns', () => {
+  const table = getTableConfig(sessionUserProviderConnections);
+  const fkColumns = ['connection_id', 'user_id', 'provider_id'];
+  const covered = table.indexes.some(
+    (index) =>
+      index.config.columns.length >= fkColumns.length &&
+      fkColumns.every((column, position) => {
+        const indexed = index.config.columns[position];
+        return 'name' in indexed && indexed.name === column;
+      }),
+  );
+  expect(covered).toBe(true);
+});
