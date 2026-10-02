@@ -37,6 +37,8 @@ function archiveDb(): typeof mainDb {
 export interface TickGate {
   enabled: boolean;
   configured: boolean;
+  /** Prod: the archive is the only copy once a week is dropped, so a bypassable GOVERNANCE lock is not enough. */
+  requireCompliance?: boolean;
   lockMode: () => Promise<ObjectLockMode | null>;
   run: (mode: ObjectLockMode, budgetMs: number) => Promise<TickResult>;
 }
@@ -48,6 +50,9 @@ export async function runArchiveTick(gate: TickGate): Promise<TickOutcome> {
   if (!gate.configured) return { ran: false, reason: 'no bucket configured' };
   const mode = await gate.lockMode();
   if (!mode) return { ran: false, reason: 'bucket has no Object Lock configuration' };
+  if (gate.requireCompliance && mode !== 'COMPLIANCE') {
+    return { ran: false, reason: `bucket uses ${mode} Object Lock; this environment requires COMPLIANCE` };
+  }
   return { ran: true, ...(await gate.run(mode, BUDGET_MS)) };
 }
 
@@ -57,6 +62,7 @@ async function tickAndRearm(): Promise<void> {
       runArchiveTick({
         enabled: config.AUDIT_ARCHIVE_ENABLED,
         configured: store.configured,
+        requireCompliance: config.INTERNAL_KORTIX_ENV === 'prod',
         lockMode: () => store.lockMode(),
         run: (mode, budgetMs) =>
           runArchivePass(

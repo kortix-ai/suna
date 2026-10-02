@@ -20,6 +20,22 @@ describe('audit archive worker gating', () => {
     expect(result).toEqual({ ran: false, reason: 'bucket has no Object Lock configuration' });
   });
 
+  test('in prod, refuses a GOVERNANCE bucket: a bypassable lock is not evidence before the source rows are dropped', async () => {
+    const result = await runArchiveTick({ enabled: true, configured: true, requireCompliance: true, lockMode: async () => 'GOVERNANCE', run: never });
+    expect(result).toEqual({ ran: false, reason: 'bucket uses GOVERNANCE Object Lock; this environment requires COMPLIANCE' });
+  });
+
+  test('in prod, runs with a COMPLIANCE bucket', async () => {
+    const result = await runArchiveTick({
+      enabled: true,
+      configured: true,
+      requireCompliance: true,
+      lockMode: async () => 'COMPLIANCE',
+      run: async () => ({ archived: [], removed: [], expired: [], legacyRetired: false }),
+    });
+    expect(result).toMatchObject({ ran: true });
+  });
+
   test('runs one pass with the bucket default lock mode and a 3 hour budget', async () => {
     const seen: Array<{ mode: string; budgetMs: number }> = [];
     const result = await runArchiveTick({
