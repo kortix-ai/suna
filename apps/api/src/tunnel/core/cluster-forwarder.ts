@@ -6,13 +6,29 @@ import { db } from '../../shared/db';
 import { runWorkerTick } from '../../shared/audit-scope';
 import { fingerprintTunnelCredentialHash } from '../../shared/crypto';
 import { API_INSTANCE, API_INSTANCE_ID, API_STARTED_AT } from '../../shared/instance';
+import {
+  TUNNEL_FORWARD_CHANNEL,
+  isPgBroadcastListening,
+  onTunnelForwardNotify,
+} from '../../shared/pg-broadcast';
 import { tunnelRelay } from './relay';
 
+// A NOTIFY on TUNNEL_FORWARD_CHANNEL wakes both loops: the owner's forwarder
+// when a row is queued for it, the requester when its result is written. The
+// NOTIFY is an optimisation, never an authority, so both loops still poll.
+// Without the LISTEN (a transaction pooler, a failed subscription) they poll
+// every FORWARD_POLL_MS, the rate before NOTIFY existed. With it, the poll only
+// covers a lost NOTIFY: at most FORWARDER_FALLBACK_MS added to the pickup and
+// FORWARD_RESULT_FALLBACK_MS to the result. Both stay under FORWARD_TTL_PAD_MS.
 const FORWARD_POLL_MS = 100;
+const FORWARDER_FALLBACK_MS = 1_000;
+const FORWARD_RESULT_FALLBACK_MS = 1_000;
 const FORWARD_BATCH_SIZE = 16;
-const FORWARDER_IDLE_MS = 100;
 const FORWARDER_ERROR_MS = 1_000;
 const FORWARD_TTL_PAD_MS = 5_000;
+// Expired rows are rows whose requester died. One sweep per interval removes
+// them; it does not need to run on every tick.
+const FORWARD_EXPIRY_SWEEP_MS = 30_000;
 
 const rpcTimeoutMs = (requested?: number) => Math.max(1_000, requested ?? config.TUNNEL_RPC_TIMEOUT_MS);
 
@@ -21,6 +37,21 @@ type ForwardRow = typeof tunnelRpcForwards.$inferSelect;
 let forwarderTimer: ReturnType<typeof setTimeout> | null = null;
 let forwarderRunning = false;
 let forwarderStopped = true;
+let forwarderWoken = false;
+let lastExpirySweepAt = 0;
+/** One entry per forward this replica waits on, keyed by request id. */
+const resultWaiters = new Map<string, () => void>();
+
+/** The poll interval of a loop whose LISTEN-backed fallback is `fallbackMs`. */
+export function forwardPollMs(fallbackMs: number, listening = isPgBroadcastListening()): number {
+  return listening ? fallbackMs : FORWARD_POLL_MS;
+}
+
+// Payload = this replica's id: a row is queued for it. Otherwise a request id.
+onTunnelForwardNotify((payload) => {
+  if (payload === API_INSTANCE_ID) wakeForwarder();
+  else resultWaiters.get(payload)?.();
+});
 
 export function tunnelLiveWindowMs(): number {
   return config.TUNNEL_HEARTBEAT_INTERVAL_MS * (config.TUNNEL_HEARTBEAT_MAX_MISSED + 1) + 15_000;
@@ -196,38 +227,63 @@ async function forwardRpcToOwner(input: {
       params: input.params,
       expiresAt,
     })
-    .returning({ requestId: tunnelRpcForwards.requestId });
+    .returning({
+      requestId: tunnelRpcForwards.requestId,
+      // Wakes the owner's forwarder in the statement that queues the row. The
+      // payload is the owner's instance id only.
+      woke: sql`pg_notify(${TUNNEL_FORWARD_CHANNEL}, ${input.targetRelayOwnerId})`,
+    });
 
   if (!request) {
     throw new TunnelRelayError(TunnelErrorCode.LOCAL_ERROR, 'Failed to queue tunnel RPC forward');
   }
 
   const deadline = Date.now() + timeoutMs + FORWARD_TTL_PAD_MS;
-  while (Date.now() < deadline) {
-    const [row] = await db
-      .select()
-      .from(tunnelRpcForwards)
-      .where(eq(tunnelRpcForwards.requestId, request.requestId))
-      .limit(1);
+  let notified = false;
+  let wake = () => {};
+  resultWaiters.set(request.requestId, () => {
+    notified = true;
+    wake();
+  });
+  try {
+    while (Date.now() < deadline) {
+      notified = false;
+      const [row] = await db
+        .select()
+        .from(tunnelRpcForwards)
+        .where(eq(tunnelRpcForwards.requestId, request.requestId))
+        .limit(1);
 
-    if (!row) {
-      throw new TunnelRelayError(TunnelErrorCode.LOCAL_ERROR, 'Tunnel RPC forward disappeared');
-    }
-    if (row.status === 'completed') {
-      await deleteForwardBestEffort(request.requestId);
-      return row.result;
-    }
-    if (row.status === 'error') {
-      await deleteForwardBestEffort(request.requestId);
-      const error = row.error ?? {};
-      throw new TunnelRelayError(
-        typeof error.code === 'number' ? error.code : TunnelErrorCode.LOCAL_ERROR,
-        typeof error.message === 'string' ? error.message : 'Tunnel RPC forward failed',
-        error.data,
-      );
-    }
+      if (!row) {
+        throw new TunnelRelayError(TunnelErrorCode.LOCAL_ERROR, 'Tunnel RPC forward disappeared');
+      }
+      if (row.status === 'completed') {
+        await deleteForwardBestEffort(request.requestId);
+        return row.result;
+      }
+      if (row.status === 'error') {
+        await deleteForwardBestEffort(request.requestId);
+        const error = row.error ?? {};
+        throw new TunnelRelayError(
+          typeof error.code === 'number' ? error.code : TunnelErrorCode.LOCAL_ERROR,
+          typeof error.message === 'string' ? error.message : 'Tunnel RPC forward failed',
+          error.data,
+        );
+      }
 
-    await sleep(FORWARD_POLL_MS);
+      // A NOTIFY that arrived during the read above skips the wait: the read
+      // may predate the result.
+      if (notified) continue;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, forwardPollMs(FORWARD_RESULT_FALLBACK_MS));
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    }
+  } finally {
+    resultWaiters.delete(request.requestId);
   }
 
   await db.delete(tunnelRpcForwards).where(eq(tunnelRpcForwards.requestId, request.requestId));
@@ -254,20 +310,34 @@ export function stopTunnelRpcForwarder(): void {
 
 function scheduleForwarder(delayMs: number): void {
   if (forwarderStopped) return;
+  // One pending timer at most: a wake replaces the idle timer, never adds one.
+  if (forwarderTimer) clearTimeout(forwarderTimer);
   forwarderTimer = setTimeout(() => {
     void runWorkerTick('tunnel-rpc-forwarder', runForwarderTick);
   }, delayMs);
   forwarderTimer.unref?.();
 }
 
+function wakeForwarder(): void {
+  // Mid-tick, the claim may predate the new row: run one more tick after it.
+  if (forwarderRunning) forwarderWoken = true;
+  else scheduleForwarder(0);
+}
+
 async function runForwarderTick(): Promise<void> {
   if (forwarderRunning || forwarderStopped) return;
   forwarderRunning = true;
+  forwarderWoken = false;
   try {
     const rows = await claimPendingForwards();
     await Promise.all(rows.map(processForward));
-    await expireOldForwards();
-    scheduleForwarder(rows.length > 0 ? 0 : FORWARDER_IDLE_MS);
+    if (Date.now() - lastExpirySweepAt >= FORWARD_EXPIRY_SWEEP_MS) {
+      lastExpirySweepAt = Date.now();
+      await expireOldForwards();
+    }
+    scheduleForwarder(
+      rows.length > 0 || forwarderWoken ? 0 : forwardPollMs(FORWARDER_FALLBACK_MS),
+    );
   } catch (err) {
     console.warn('[tunnel-forwarder] tick failed:', err instanceof Error ? err.message : err);
     scheduleForwarder(FORWARDER_ERROR_MS);
@@ -361,40 +431,34 @@ async function processForward(row: ForwardRow): Promise<void> {
     const result = await tunnelRelay.relayRPC(row.tunnelId, row.method, row.params ?? {}, {
       timeoutMs: Math.max(1_000, new Date(row.expiresAt).getTime() - Date.now() - FORWARD_TTL_PAD_MS),
     });
-    await db
-      .update(tunnelRpcForwards)
-      .set({
-        status: 'completed',
-        result,
-        updatedAt: new Date(),
-        completedAt: new Date(),
-      })
-      .where(eq(tunnelRpcForwards.requestId, row.requestId));
+    await finishForward(row.requestId, { status: 'completed', result });
   } catch (err) {
     const code = err instanceof TunnelRelayError ? err.code : TunnelErrorCode.LOCAL_ERROR;
     const message = err instanceof Error ? err.message : String(err);
     const data = err instanceof TunnelRelayError ? err.data : undefined;
-    await db
-      .update(tunnelRpcForwards)
-      .set({
-        status: 'error',
-        error: { code, message, data },
-        updatedAt: new Date(),
-        completedAt: new Date(),
-      })
-      .where(eq(tunnelRpcForwards.requestId, row.requestId));
+    await finishForward(row.requestId, { status: 'error', error: { code, message, data } });
   }
+}
+
+async function finishForward(
+  requestId: string,
+  outcome: Pick<typeof tunnelRpcForwards.$inferInsert, 'status' | 'result' | 'error'>,
+): Promise<void> {
+  await db
+    .update(tunnelRpcForwards)
+    .set({ ...outcome, updatedAt: new Date(), completedAt: new Date() })
+    .where(eq(tunnelRpcForwards.requestId, requestId))
+    // Wakes the requester in the statement that writes its result. The payload
+    // is the request id only.
+    .returning({ woke: sql`pg_notify(${TUNNEL_FORWARD_CHANNEL}, ${requestId})` });
 }
 
 async function expireOldForwards(): Promise<void> {
   // Forward rows contain raw RPC parameters and results. They are transport,
-  // not an audit ledger. Remove abandoned rows as soon as their short relay
-  // window closes instead of retaining file contents or shell output.
+  // not an audit ledger. Remove abandoned rows within FORWARD_EXPIRY_SWEEP_MS
+  // of their short relay window closing instead of retaining file contents or
+  // shell output.
   await db.delete(tunnelRpcForwards).where(lt(tunnelRpcForwards.expiresAt, new Date()));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function deleteForwardBestEffort(requestId: string): Promise<void> {
