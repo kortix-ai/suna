@@ -49,6 +49,7 @@ import {
   type SandboxRecord,
   wakeSandbox,
 } from '../backend';
+import { takePrefetchedSandbox } from '../prefetch';
 import {
   recordSseStreamEnd,
   shouldBypassIngressCache,
@@ -485,10 +486,11 @@ export async function forwardToSandbox(
   // forwarding the app's cookies (see appCookieHeader) and leaving same-origin
   // responses free of injected CORS headers.
   //
-  // `record`: the sandbox row, when the caller read it moments ago. Only the
-  // server-side prompt delivery passes one, for the active box it just picked
-  // as its target. The turn-begin write below re-checks the box's status in
-  // the database, so a row that went stale in between cannot deliver a turn.
+  // `record`: the sandbox row, when the caller read it moments ago: the
+  // server-side prompt delivery (the active box it just picked as its target)
+  // and the HTTP route (the row read while this request authenticated). The
+  // turn-begin write below re-checks the box's status in the database, so a
+  // row that went stale in between cannot deliver a turn.
   opts: { originMode?: boolean; record?: SandboxRecord } = {},
 ): Promise<Response> {
   let requestBody = body;
@@ -509,7 +511,11 @@ export async function forwardToSandbox(
     access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
-    !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+    !(await canAccessPreviewSandbox({
+      previewSandboxId: sandboxId,
+      userId,
+      sandbox: { sandboxId: record.sandboxId, accountId: record.accountId, projectId: record.projectId },
+    }))
   ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
@@ -1945,6 +1951,8 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
+    // The row the proxy app started reading while auth ran (index.ts).
+    { record: await takePrefetchedSandbox(c, sandboxId) },
   );
 });
 

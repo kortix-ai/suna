@@ -374,9 +374,12 @@ async function isAccountServiceAccount(userId: string, accountId: string): Promi
   return !!row;
 }
 
+type SandboxRef = { sandboxId: string; accountId: string; projectId: string };
+
 async function computeEntry(
   previewSandboxId: string,
   userId: string,
+  known?: SandboxRef,
 ): Promise<CacheEntry> {
   const expiresAt = Date.now() + CACHE_TTL_MS;
 
@@ -385,7 +388,9 @@ async function computeEntry(
   // starts as soon as the row names the account, so a cold check is 2 round
   // trips instead of 4. Awaited in the original order: the same error surfaces
   // first.
-  const refRead = resolveSandboxRef(previewSandboxId);
+  // A caller that just read the sandbox row (the proxy) passes it, and the
+  // membership read then starts with the admin read: one round trip, not two.
+  const refRead = known ? Promise.resolve(known) : resolveSandboxRef(previewSandboxId);
   const adminRead = resolveAccountId(userId).then(isPlatformAdmin);
   adminRead.catch(() => undefined);
   const ref = await refRead;
@@ -441,13 +446,14 @@ const previewContextInFlight = new Map<string, Promise<CacheEntry>>();
 async function getOrCompute(
   previewSandboxId: string,
   userId: string,
+  known?: SandboxRef,
 ): Promise<CacheEntry> {
   const key = cacheKey(previewSandboxId, userId);
   const cached = previewContextCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached;
   const joined = previewContextInFlight.get(key);
   if (joined) return joined;
-  const pending: Promise<CacheEntry> = computeEntry(previewSandboxId, userId)
+  const pending: Promise<CacheEntry> = computeEntry(previewSandboxId, userId, known)
     .then((fresh) => {
       // An invalidation during the check removed this entry: the verdict goes
       // to the callers already waiting on it and is not cached.
@@ -467,13 +473,16 @@ export async function canAccessPreviewSandbox(input: {
   previewSandboxId: string;
   userId?: string;
   accountId?: string;
+  /** The sandbox row for `previewSandboxId`, when the caller already read it
+   *  in this request. Saves re-reading it; the verdict is the same. */
+  sandbox?: SandboxRef;
 }): Promise<boolean> {
   if (!input.userId) {
     if (!input.accountId) return false;
-    const ref = await resolveSandboxRef(input.previewSandboxId);
+    const ref = input.sandbox ?? (await resolveSandboxRef(input.previewSandboxId));
     return !!ref && ref.accountId === input.accountId;
   }
-  const entry = await getOrCompute(input.previewSandboxId, input.userId);
+  const entry = await getOrCompute(input.previewSandboxId, input.userId, input.sandbox);
   return entry.allowed;
 }
 

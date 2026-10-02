@@ -511,8 +511,26 @@ export async function recordTemplateBuilt(
   // lazy, pressure-gated GC eventually notices.
   const oldName = prev?.providerSnapshotName ?? null;
   if (oldName && oldName !== args.snapshotName) {
-    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'daytona');
+    // Off the caller's path: the first session after every deploy lands here
+    // (the release gate builds the new image unpublished), and the reap is a
+    // provider lookup + delete that session never needed. It is best-effort by
+    // construction (reapPredecessorSnapshot catches and logs everything; quota
+    // GC collects whatever it leaves), so a session must not wait on it.
+    const reap = reapPredecessorSnapshot(
+      templateId,
+      oldName,
+      args.provider ?? prev?.provider ?? 'daytona',
+    );
+    pendingPredecessorReaps.add(reap);
+    void reap.finally(() => pendingPredecessorReaps.delete(reap));
   }
+}
+
+const pendingPredecessorReaps = new Set<Promise<void>>();
+
+/** Test hook: settle every predecessor reap kicked by recordTemplateBuilt. */
+export async function settlePredecessorReapsForTests(): Promise<void> {
+  while (pendingPredecessorReaps.size > 0) await Promise.all([...pendingPredecessorReaps]);
 }
 
 /**
