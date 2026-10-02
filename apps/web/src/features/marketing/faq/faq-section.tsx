@@ -16,9 +16,10 @@ type FaqSectionProps = {
   eyebrow?: string;
   title?: string;
   items?: readonly FaqItem[];
+  titleClassName?: string;
 };
 
-export function FaqSection({ eyebrow, title, items }: FaqSectionProps): ReactNode {
+export function FaqSection({ eyebrow, title, items, titleClassName }: FaqSectionProps): ReactNode {
   const localizedFaq = useLocalizedUiCatalog(faq);
   const resolvedEyebrow = eyebrow ?? localizedFaq.eyebrow;
   const resolvedTitle = title ?? localizedFaq.title;
@@ -29,7 +30,11 @@ export function FaqSection({ eyebrow, title, items }: FaqSectionProps): ReactNod
       className="mx-auto grid w-full max-w-7xl grid-cols-1 px-6 py-24 md:py-30 lg:grid-cols-[35%_minmax(0,1fr)] lg:gap-x-12"
     >
       <div className="w-full min-w-0">
-        <SectionHeader eyebrow={resolvedEyebrow} title={resolvedTitle} />
+        <SectionHeader
+          eyebrow={resolvedEyebrow}
+          title={resolvedTitle}
+          titleClassName={titleClassName}
+        />
       </div>
 
       <Reveal delay={0.06} className="mt-10 w-full min-w-0 lg:mt-0">

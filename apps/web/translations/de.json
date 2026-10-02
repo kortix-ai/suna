@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Zitate einklappen",
     "stopUnconfirmed": "Stopp konnte nicht bestätigt werden. Der Agent läuft möglicherweise noch. Versuche es erneut.",
     "queued": "In Warteschlange",
-    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}"
+    "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}",
+    "queuedCount": "{count} in Warteschlange",
+    "collapseQueue": "Warteschlange einklappen",
+    "expandQueue": "Warteschlange ausklappen"
   },
   "billing": {
     "plan": {
@@ -18894,6 +18897,7 @@
       "text4150abdd6df8": "Kortix App angezeigt",
       "text9c9027798e45": "Zugriffsrichtlinie der Kortix App angezeigt",
       "text7a84bdb22767": "Deployment der Kortix App angezeigt",
+      "text516e80d9f8dc": "Deployment der Kortix App gelöscht",
       "text2d430c4c81a2": "Deployment-Protokolle der Kortix App angezeigt",
       "textea0b84c2ddf0": "Kortix-System-Skill angezeigt",
       "text16faff6ae525": "Datei des Kortix-System-Skills angezeigt",
