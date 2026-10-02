@@ -8,7 +8,7 @@
 // `resource_type` has no index: it is matched with LIKE 'x%' under an account
 // predicate, and the account_time index serves that.
 
-import { auditEvents } from '@kortix/db';
+import { auditEventsAll } from '@kortix/db';
 import { type SQL, eq, gte, ilike, like, lte, or, sql } from 'drizzle-orm';
 
 export interface AuditFilterInput {
@@ -41,7 +41,7 @@ export interface AuditFilterInput {
 const CREDENTIAL_KIND_SINCE = new Date('2026-09-30T00:00:00Z');
 
 export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] {
-  const conditions: SQL[] = [eq(auditEvents.accountId, accountId)];
+  const conditions: SQL[] = [eq(auditEventsAll.accountId, accountId)];
   // `or`/`and` are typed `SQL | undefined` in drizzle (a 0-arg call is
   // meaningless), so push through a guard rather than non-null-assert.
   const push = (...sqls: Array<SQL | undefined>) => {
@@ -49,37 +49,37 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
   };
 
   if (input.actor) {
-    push(eq(auditEvents.actorUserId, input.actor));
+    push(eq(auditEventsAll.actorUserId, input.actor));
   }
-  if (input.projectId) push(eq(auditEvents.projectId, input.projectId));
-  if (input.sessionId) push(eq(auditEvents.sessionId, input.sessionId));
-  if (input.actorType) push(eq(auditEvents.actorType, input.actorType));
-  if (input.source) push(eq(auditEvents.authoritativeSource, input.source));
+  if (input.projectId) push(eq(auditEventsAll.projectId, input.projectId));
+  if (input.sessionId) push(eq(auditEventsAll.sessionId, input.sessionId));
+  if (input.actorType) push(eq(auditEventsAll.actorType, input.actorType));
+  if (input.source) push(eq(auditEventsAll.authoritativeSource, input.source));
   if (input.credentialKind) {
     // credential_kind is NULL on every row written before it existed, so no
     // older row can match. The floor keeps an unindexed filter from scanning
     // that whole history (it ran into the 25 s request deadline on dev).
-    push(eq(auditEvents.credentialKind, input.credentialKind), gte(auditEvents.occurredAt, CREDENTIAL_KIND_SINCE));
+    push(eq(auditEventsAll.credentialKind, input.credentialKind), gte(auditEventsAll.occurredAt, CREDENTIAL_KIND_SINCE));
   }
-  if (input.phase) push(eq(auditEvents.phase, input.phase));
-  if (input.outcome) push(eq(auditEvents.outcome, input.outcome));
-  if (input.requestId) push(eq(auditEvents.requestId, input.requestId));
-  if (input.correlationId) push(eq(auditEvents.correlationId, input.correlationId));
+  if (input.phase) push(eq(auditEventsAll.phase, input.phase));
+  if (input.outcome) push(eq(auditEventsAll.outcome, input.outcome));
+  if (input.requestId) push(eq(auditEventsAll.requestId, input.requestId));
+  if (input.correlationId) push(eq(auditEventsAll.correlationId, input.correlationId));
 
   if (input.actionPrefix) {
     // `computer.*` was the pre-profile audit namespace. Computer operations are
     // connector activity now. Keep historical rows inside the Connectors filter
     // while every new writer emits `connector.computer.*`.
     if (input.actionPrefix === 'connector.') {
-      push(or(like(auditEvents.action, 'connector.%'), like(auditEvents.action, 'computer.%')));
+      push(or(like(auditEventsAll.action, 'connector.%'), like(auditEventsAll.action, 'computer.%')));
     } else {
       push(
         input.actionPrefix.includes('.') && !input.actionPrefix.endsWith('.')
           ? or(
-              eq(auditEvents.action, input.actionPrefix),
-              like(auditEvents.action, `${input.actionPrefix}.%`),
+              eq(auditEventsAll.action, input.actionPrefix),
+              like(auditEventsAll.action, `${input.actionPrefix}.%`),
             )
-          : like(auditEvents.action, `${input.actionPrefix}%`),
+          : like(auditEventsAll.action, `${input.actionPrefix}%`),
       );
     }
   }
@@ -88,16 +88,16 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
     // Prefix match so a caller can pass "project" and catch project,
     // project_session, etc. Plain `like` (case-sensitive by convention —
     // resource types are snake_case identifiers).
-    push(like(auditEvents.resourceType, `${input.resourceType}%`));
+    push(like(auditEventsAll.resourceType, `${input.resourceType}%`));
   }
 
   if (input.sinceRaw) {
     const since = new Date(input.sinceRaw);
-    if (!Number.isNaN(since.getTime())) push(gte(auditEvents.occurredAt, since));
+    if (!Number.isNaN(since.getTime())) push(gte(auditEventsAll.occurredAt, since));
   }
   if (input.untilRaw) {
     const until = new Date(input.untilRaw);
-    if (!Number.isNaN(until.getTime())) push(lte(auditEvents.occurredAt, until));
+    if (!Number.isNaN(until.getTime())) push(lte(auditEventsAll.occurredAt, until));
   }
 
   if (input.q) {
@@ -107,14 +107,14 @@ export function buildFilters(accountId: string, input: AuditFilterInput): SQL[] 
     // resource ids / user-supplied names are not).
     push(
       or(
-        ilike(auditEvents.action, term),
-        ilike(auditEvents.resourceType, term),
-        ilike(auditEvents.resourceId, term),
-        ilike(auditEvents.sessionId, term),
-        ilike(auditEvents.requestId, term),
-        ilike(auditEvents.traceId, term),
-        ilike(auditEvents.correlationId, term),
-        sql`${auditEvents.projectId}::text ilike ${term}`,
+        ilike(auditEventsAll.action, term),
+        ilike(auditEventsAll.resourceType, term),
+        ilike(auditEventsAll.resourceId, term),
+        ilike(auditEventsAll.sessionId, term),
+        ilike(auditEventsAll.requestId, term),
+        ilike(auditEventsAll.traceId, term),
+        ilike(auditEventsAll.correlationId, term),
+        sql`${auditEventsAll.projectId}::text ilike ${term}`,
       ),
     );
   }

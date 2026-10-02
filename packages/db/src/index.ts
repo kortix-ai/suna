@@ -30,6 +30,7 @@ export {
   accountsRelations,
   accountGithubInstallationsRelations,
   auditEvents,
+  auditEventsAll,
   auditSessionSequences,
   usageEvents,
   gatewayRequestLogs,

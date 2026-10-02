@@ -12,7 +12,7 @@
 //   - DELETE /:accountId/audit/webhooks/:id
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
@@ -211,9 +211,9 @@ auditRouter.openapi(
 
     const rows = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
@@ -406,11 +406,11 @@ auditRouter.openapi(
 
     const fetched = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
       // Export is chronological (oldest → newest) — that's the order humans
       // expect when grepping through a CSV; pagination uses reverse order.
-      .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
+      .orderBy(asc(auditEventsAll.occurredAt), asc(auditEventsAll.eventId))
       .limit(exportLimit + 1);
     const hasMore = fetched.length > exportLimit;
     const rows = hasMore ? fetched.slice(0, exportLimit) : fetched;

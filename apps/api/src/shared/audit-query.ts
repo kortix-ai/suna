@@ -1,4 +1,4 @@
-import { type Database, auditEvents } from '@kortix/db';
+import { type Database, auditEvents, auditEventsAll } from '@kortix/db';
 import { and, asc, eq, gt, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { isUuid } from './validate';
 
@@ -52,18 +52,25 @@ export function buildAuditCursorCondition(
   accountId: string,
   direction: 'ascending' | 'descending',
 ): SQL {
+  // The stored instant lies in [cursor, cursor + 1 ms): JavaScript truncates it to the
+  // millisecond. Bounding the lookup by that window lets the partitioned table prune to
+  // one weekly partition (two at a boundary) and use the (event_id, occurred_at) key; a
+  // lookup by event_id alone probes the primary key of every partition.
+  const instant = cursor.occurredAt.toISOString();
   const exactOccurredAt = sql`coalesce(
     (
       select cursor_event.occurred_at
-      from kortix.audit_events as cursor_event
+      from kortix.audit_events_all as cursor_event
       where cursor_event.event_id = ${cursor.eventId}::uuid
         and cursor_event.account_id = ${accountId}::uuid
+        and cursor_event.occurred_at >= ${instant}::timestamptz
+        and cursor_event.occurred_at < ${instant}::timestamptz + interval '1 millisecond'
     ),
-    ${cursor.occurredAt.toISOString()}::timestamptz
+    ${instant}::timestamptz
   )`;
   return direction === 'ascending'
-    ? sql`(${auditEvents.occurredAt}, ${auditEvents.eventId}) > (${exactOccurredAt}, ${cursor.eventId}::uuid)`
-    : sql`(${auditEvents.occurredAt}, ${auditEvents.eventId}) < (${exactOccurredAt}, ${cursor.eventId}::uuid)`;
+    ? sql`(${auditEventsAll.occurredAt}, ${auditEventsAll.eventId}) > (${exactOccurredAt}, ${cursor.eventId}::uuid)`
+    : sql`(${auditEventsAll.occurredAt}, ${auditEventsAll.eventId}) < (${exactOccurredAt}, ${cursor.eventId}::uuid)`;
 }
 
 export function parseAuditSessionCursor(
@@ -108,14 +115,14 @@ export async function readSessionAuditEvents(
     // A row comparison is one index range; the `a > x OR (a = x AND b > y)` form
     // plans as BitmapOr + Sort and re-sorts the rest of a 1.6M-row session per page.
     const after = cursor
-      ? sql`(${auditEvents.sessionSequence}, ${auditEvents.eventId}) > (${cursor.sequence}, ${cursor.eventId}::uuid)`
+      ? sql`(${auditEventsAll.sessionSequence}, ${auditEventsAll.eventId}) > (${cursor.sequence}, ${cursor.eventId}::uuid)`
       : undefined;
     rows.push(
       ...(await database
         .select()
-        .from(auditEvents)
-        .where(and(eq(auditEvents.sessionId, sessionId), isNotNull(auditEvents.sessionSequence), after))
-        .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
+        .from(auditEventsAll)
+        .where(and(eq(auditEventsAll.sessionId, sessionId), isNotNull(auditEventsAll.sessionSequence), after))
+        .orderBy(asc(auditEventsAll.sessionSequence), asc(auditEventsAll.eventId))
         .limit(take)),
     );
   }
@@ -124,15 +131,15 @@ export async function readSessionAuditEvents(
     rows.push(
       ...(await database
         .select()
-        .from(auditEvents)
+        .from(auditEventsAll)
         .where(
           and(
-            eq(auditEvents.sessionId, sessionId),
-            isNull(auditEvents.sessionSequence),
-            afterId ? gt(auditEvents.eventId, afterId) : undefined,
+            eq(auditEventsAll.sessionId, sessionId),
+            isNull(auditEventsAll.sessionSequence),
+            afterId ? gt(auditEventsAll.eventId, afterId) : undefined,
           ),
         )
-        .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
+        .orderBy(asc(auditEventsAll.sessionSequence), asc(auditEventsAll.eventId))
         .limit(take - rows.length)),
     );
   }

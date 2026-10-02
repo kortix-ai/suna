@@ -3262,13 +3262,18 @@ export const accountGithubInstallationsRelations = relations(
   }),
 );
 
-export const auditEvents = kortixSchema.table(
-  'audit_events',
-  {
+/**
+ * The columns of an audit event, as fresh builders on every call. One definition for
+ * `audit_events` (the table writers use) and the read view `audit_events_all`, so the two can
+ * never drift in this file. The database side, including `audit_events_legacy`, is guarded by
+ * audit-events-partitioned.integration.test.ts.
+ */
+function auditEventColumns() {
+  return {
     // UUIDv7 (migration 20261002..._audit_events_uuid_v7): the leading 48 bits are the
     // creation time in ms, so new ids append at the right edge of the pkey btree
     // instead of landing on a random cold page. Rows written before it keep their v4 id.
-    eventId: uuid('event_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+    eventId: uuid('event_id').default(sql`kortix.uuid_v7()`).notNull(),
     // Deliberately no FK. Account deletion must not rewrite or delete forensic history.
     accountId: uuid('account_id'),
     projectId: uuid('project_id'),
@@ -3332,8 +3337,19 @@ export const auditEvents = kortixSchema.table(
     userAgent: text('user_agent'),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
-  },
+  };
+}
+
+export const auditEvents = kortixSchema.table(
+  'audit_events',
+  auditEventColumns(),
   (table) => [
+    // `audit_events` is RANGE-partitioned by occurred_at, one partition per week (migrations
+    // 20261001225732505 and 20261001225732973). drizzle-kit has no syntax for that: this
+    // declares the parent's columns and indexes, which PostgreSQL copies onto every partition.
+    // A unique index on a partitioned table must contain the partition key, so the primary key
+    // and the dedupe index below carry occurred_at.
+    primaryKey({ name: 'audit_events_pkey', columns: [table.eventId, table.occurredAt] }),
     index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
     index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
     index('idx_audit_events_account_project_time').on(
@@ -3393,11 +3409,14 @@ export const auditEvents = kortixSchema.table(
         table.sourceRecordId,
         table.phase,
         sql`coalesce(${table.sourceRevision}, '')`,
+        table.occurredAt,
       )
       .where(sql`${table.sourceLedger} is not null and ${table.sourceRecordId} is not null`),
     index('idx_audit_events_action_pattern').using('btree', sql`${table.action} text_pattern_ops`),
-    index('idx_audit_events_request').on(table.requestId),
-    index('idx_audit_events_correlation').on(table.correlationId),
+    index('idx_audit_events_request').on(table.requestId).where(sql`${table.requestId} is not null`),
+    index('idx_audit_events_correlation')
+      .on(table.correlationId)
+      .where(sql`${table.correlationId} is not null`),
     // Standalone index on occurred_at so the admin ops dashboard's account-
     // agnostic "audit events in the last 24h" count
     // (apps/api/src/ops/index.ts) is an index-only scan instead of a full
@@ -3409,6 +3428,13 @@ export const auditEvents = kortixSchema.table(
     index('idx_audit_events_occurred_at').on(table.occurredAt),
   ],
 );
+
+/**
+ * The relation every audit READ goes through (`SELECT * FROM audit_events` today; after the
+ * partition cutover, the partitioned table UNION ALL `audit_events_legacy`). Writers keep
+ * using `auditEvents`. Migration 20261001225220282_audit_events_all_view.
+ */
+export const auditEventsAll = kortixSchema.view('audit_events_all', auditEventColumns()).existing();
 
 /** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
  *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */
@@ -5374,11 +5400,8 @@ export const auditWebhookDeliveries = kortixSchema.table(
       columns: [table.webhookId],
       foreignColumns: [auditWebhooks.webhookId],
     }).onDelete('cascade'),
-    foreignKey({
-      name: 'audit_delivery_event_fk',
-      columns: [table.eventId],
-      foreignColumns: [auditEvents.eventId],
-    }).onDelete('cascade'),
+    // No FK on event_id: audit_events is partitioned, so event_id alone is not unique
+    // (migration 20261001225732090).
     uniqueIndex('idx_audit_webhook_delivery_event').on(table.webhookId, table.eventId),
     index('idx_audit_webhook_delivery_due').on(
       table.status,

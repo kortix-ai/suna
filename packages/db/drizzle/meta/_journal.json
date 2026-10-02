@@ -750,6 +750,13 @@
       "when": 1790893772228,
       "tag": "20261001222932_audit_events_uuid_v7",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790896090063,
+      "tag": "20261001230810_audit_events_partition_snapshot",
+      "breakpoints": true
     }
   ]
 }
