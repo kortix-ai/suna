@@ -242,7 +242,7 @@ build the new table empty and swap names. Locks on PostgreSQL 15, each verified 
 | `ALTER TABLE ... DROP CONSTRAINT` of a foreign key | `ACCESS EXCLUSIVE` on both tables | until commit |
 | `ALTER TABLE ... RENAME`, `ALTER INDEX ... RENAME` | `ACCESS EXCLUSIVE` on that relation | until commit |
 | `ALTER COLUMN ... SET DEFAULT` | `ACCESS EXCLUSIVE` | until commit |
-| `DETACH PARTITION ... CONCURRENTLY` | `SHARE UPDATE EXCLUSIVE` on the parent (two transactions, not in a transaction block) | short |
+| `DETACH PARTITION` | `ACCESS EXCLUSIVE` on the parent (`CONCURRENTLY` is refused while a DEFAULT partition exists) | until commit; run it under `lock_timeout` and retry |
 
 Rules from that work:
 

@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  date,
   foreignKey,
   index,
   integer,
@@ -3435,6 +3436,29 @@ export const auditEvents = kortixSchema.table(
  * using `auditEvents`. Migration 20261001225220282_audit_events_all_view.
  */
 export const auditEventsAll = kortixSchema.view('audit_events_all', auditEventColumns()).existing();
+
+/**
+ * One row per week of audit history the archive job has exported to S3 (weeks start Monday 00:00
+ * UTC). `status`: exporting -> archived (verified in S3, still readable in PostgreSQL) -> removed
+ * (the partition, and the legacy table for weeks it covered, are gone from PostgreSQL) or expired
+ * (older than the 365-day retention: dropped, never exported). A reader serves a week from S3 only
+ * when `archived`/`removed` AND the PostgreSQL relations that held it are gone.
+ */
+export const auditArchiveChunks = kortixSchema.table('audit_archive_chunks', {
+  weekStart: date('week_start', { mode: 'string' }).primaryKey(),
+  status: text('status').notNull(),
+  rowCount: bigint('row_count', { mode: 'number' }).default(0).notNull(),
+  legacyRowCount: bigint('legacy_row_count', { mode: 'number' }).default(0).notNull(),
+  objectCount: integer('object_count').default(0).notNull(),
+  byteCount: bigint('byte_count', { mode: 'number' }).default(0).notNull(),
+  manifestKey: text('manifest_key'),
+  /** sha256 hex of the manifest object. */
+  manifestSha256: varchar('manifest_sha256', { length: 64 }),
+  retainUntil: timestamp('retain_until', { withTimezone: true }),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  removedAt: timestamp('removed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 /** Deprecated: nothing writes it since migration 20261001223552613 (the prepare trigger no
  *  longer allocates sequences). Kept for old rows; drop it in a later forward migration. */

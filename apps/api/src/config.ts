@@ -637,6 +637,21 @@ const envSchema = z.object({
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: optInt(900),
   KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES: optInt(512 * 1024 * 1024),
 
+  // ── Audit archive (optional) ────────────────────────────────────────────
+  // Weeks of kortix.audit_events older than 90 days are exported to this S3 bucket (Object Lock,
+  // retained until the week's end + 365 days) and their PostgreSQL partition is dropped. Off
+  // unless AUDIT_ARCHIVE_ENABLED is true AND the bucket is set AND the bucket has Object Lock.
+  // Credentials: the AWS SDK default chain (the ECS task role). Endpoint + path style: MinIO.
+  AUDIT_ARCHIVE_ENABLED: optBoolFalse,
+  AUDIT_ARCHIVE_BUCKET: optStr,
+  AUDIT_ARCHIVE_REGION: optStr,
+  AUDIT_ARCHIVE_ENDPOINT: optUrl(''),
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: optBoolFalse,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: optStr,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: optStr,
+  /** Export read rate cap (rows per second): the job must not compete with ingest for IO. */
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: optInt(20_000),
+
   // ── Config releases (optional) ──────────────────────────────────────────
   // Config archives go through the API's ONE object store
   // (src/object-store/s3.ts), same as project snapshots above, with their own
@@ -1370,6 +1385,14 @@ export const config = {
   KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID: env.KORTIX_PROJECT_SNAPSHOT_S3_ACCESS_KEY_ID,
   KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY: env.KORTIX_PROJECT_SNAPSHOT_S3_SECRET_ACCESS_KEY,
   KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS: env.KORTIX_PROJECT_SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+  AUDIT_ARCHIVE_ENABLED: env.AUDIT_ARCHIVE_ENABLED,
+  AUDIT_ARCHIVE_BUCKET: env.AUDIT_ARCHIVE_BUCKET,
+  AUDIT_ARCHIVE_REGION: env.AUDIT_ARCHIVE_REGION,
+  AUDIT_ARCHIVE_ENDPOINT: env.AUDIT_ARCHIVE_ENDPOINT,
+  AUDIT_ARCHIVE_FORCE_PATH_STYLE: env.AUDIT_ARCHIVE_FORCE_PATH_STYLE,
+  AUDIT_ARCHIVE_ACCESS_KEY_ID: env.AUDIT_ARCHIVE_ACCESS_KEY_ID,
+  AUDIT_ARCHIVE_SECRET_ACCESS_KEY: env.AUDIT_ARCHIVE_SECRET_ACCESS_KEY,
+  AUDIT_ARCHIVE_ROWS_PER_SECOND: env.AUDIT_ARCHIVE_ROWS_PER_SECOND,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,

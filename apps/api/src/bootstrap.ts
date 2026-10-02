@@ -14,6 +14,7 @@ import {
   stopAuditReconciliationWorker,
 } from './shared/audit-reconciliation-worker';
 import { startAuditPartitionWorker, stopAuditPartitionWorker } from './shared/audit-partition-worker';
+import { startAuditArchiveWorker, stopAuditArchiveWorker } from './shared/audit-archive/worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
 import {
   startProjectSnapshotWorker,
@@ -203,6 +204,8 @@ async function startSingletonWorkers() {
   startAuditReconciliationWorker();
   // Weekly partitions of kortix.audit_events, 8 weeks ahead.
   startAuditPartitionWorker();
+  // Archive weeks older than 90 days to S3 (Object Lock) and drop their partitions. Off by default.
+  startAuditArchiveWorker();
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
   // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
   startProjectSnapshotWorker();
@@ -229,6 +232,7 @@ async function stopSingletonWorkers() {
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   stopAuditPartitionWorker();
+  stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
