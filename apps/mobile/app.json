@@ -56,7 +56,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#F0F0E9"
       },
-      "package": "com.kortix.app",
+      "package": "com.kortix.android",
       "intentFilters": [
         {
           "action": "VIEW",

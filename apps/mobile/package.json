@@ -1,7 +1,6 @@
 {
   "name": "kortix",
   "main": "expo-router/entry",
-  "version": "1.0.0",
   "scripts": {
     "postinstall": "patch-package",
     "eas-build-post-install": "patch-package",
