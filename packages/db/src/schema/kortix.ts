@@ -953,6 +953,11 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
 }, (table) => [
   index('account_secret_resources_account_provider').on(table.accountId, table.providerId),
   unique('account_secret_resources_account_identity').on(table.secretId, table.accountId),
+  // Covers the project_id FK (account_secret_resources_project_id_projects_project_id_fk,
+  // built by 20261002212755055_account_secret_project_id_index.concurrent.ts): a
+  // project delete cascades here by project_id, and that lookup otherwise seq-scans
+  // the table (Supabase advisor: unindexed_foreign_keys).
+  index('idx_account_secret_resources_project_id').on(table.projectId),
 ]);
 
 /** A member's permission to use one account secret resource. */
