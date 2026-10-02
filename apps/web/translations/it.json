@@ -9405,6 +9405,8 @@
       "checkConnection": "Controlla la connessione, poi riprova."
     },
     "i18nComplete": {
+      "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",
+      "authRequestRateLimit": "Troppe richieste. Riprova tra qualche minuto.",
       "text25ab55af92b1": "Caricamento allegato avviato",
       "text40078a553439": "Blocco dell’allegato caricato",
       "text4c7f8000aabd": "Caricamento allegato completato",

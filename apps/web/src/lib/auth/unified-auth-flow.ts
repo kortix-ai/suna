@@ -31,9 +31,6 @@ export const SSO_REQUIRED_MESSAGE =
 const WRONG_PASSWORD_MESSAGE =
   'Incorrect password. Try again, or reset it via “Forgot your password?”.';
 
-const EMAIL_RATE_LIMIT_MESSAGE = 'Could not send the email. Try again in about an hour.';
-const REQUEST_RATE_LIMIT_MESSAGE = 'Too many requests. Try again in a few minutes.';
-
 /** Parse `KORTIX_PUBLIC_AUTH_METHODS` ("magic,password") with a safe default. */
 export function parseAuthMethods(raw: string | null | undefined): AuthMethod[] {
   const parsed = (raw || 'magic,password')
@@ -70,19 +67,20 @@ export function resolveEmailFlowMode(check: unknown): EmailFlowMode {
  */
 export function authRateLimitCopy(
   error: { code?: string | null; message?: string | null } | null | undefined,
+  tI18nComplete: UiTranslator,
 ): string | null {
   if (!error) return null;
   const code = (error.code || '').toLowerCase();
   const message = (error.message || '').toLowerCase();
   if (code === 'over_email_send_rate_limit' || message.includes('email rate limit')) {
-    return EMAIL_RATE_LIMIT_MESSAGE;
+    return tI18nComplete.raw('authEmailRateLimit');
   }
   if (
     code === 'over_request_rate_limit' ||
     code === 'over_sms_send_rate_limit' ||
     message.includes('rate limit')
   ) {
-    return REQUEST_RATE_LIMIT_MESSAGE;
+    return tI18nComplete.raw('authRequestRateLimit');
   }
   return null;
 }

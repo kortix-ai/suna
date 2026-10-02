@@ -9418,6 +9418,8 @@
       "checkConnection": "Check your connection, then retry."
     },
     "i18nComplete": {
+      "authEmailRateLimit": "Could not send the email. Try again in about an hour.",
+      "authRequestRateLimit": "Too many requests. Try again in a few minutes.",
       "text25ab55af92b1": "Started attachment upload",
       "text40078a553439": "Uploaded attachment chunk",
       "text4c7f8000aabd": "Completed attachment upload",

@@ -21,6 +21,7 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, fetchAccountStateWithToken, submitAccessRequest } from '@kortix/sdk';
 import { getTranslations } from '@/i18n/get-translations';
+import type { UiTranslator } from '@/i18n/translator';
 import { cookies, headers } from 'next/headers';
 
 /**
@@ -38,9 +39,13 @@ async function readBouncedOwnerId(): Promise<string> {
  * raw code stays in the server log only. Anything else keeps GoTrue's
  * message, the pre-existing behavior.
  */
-function authFailure(error: { code?: string | null; message?: string | null }, fallback: string) {
-  const human = authRateLimitCopy(error);
-  if (human) console.warn(`[auth] rate limited: ${error.code ?? ''} ${error.message ?? ''}`.trim());
+function authFailure(
+  error: { code?: string | null; message?: string | null },
+  fallback: string,
+  tI18nComplete: UiTranslator,
+) {
+  const human = authRateLimitCopy(error, tI18nComplete);
+  if (human) console.warn('[auth] rate limited', error.code);
   return { message: human || error.message || fallback };
 }
 
@@ -222,7 +227,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return authFailure(error, 'Could not send the link');
+    return authFailure(error, 'Could not send the link', tI18nComplete);
   }
 
   return {
@@ -277,7 +282,7 @@ export async function forgotPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return authFailure(error, 'Could not send password reset email');
+    return authFailure(error, 'Could not send password reset email', tI18nComplete);
   }
 
   return {
@@ -306,7 +311,7 @@ export async function resetPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return authFailure(error, 'Could not update password');
+    return authFailure(error, 'Could not update password', tI18nComplete);
   }
 
   return {
@@ -356,7 +361,8 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
       (error.message?.toLowerCase().includes('invalid login credentials')
         ? 'invalid_credentials'
         : null);
-    return { ...authFailure(error, 'Invalid email or password'), code };
+    const failure = authFailure(error, 'Invalid email or password', tI18nComplete);
+    return { ...failure, code: authRateLimitCopy(error, tI18nComplete) ? null : code };
   }
 
   // Determine if new user (for analytics)
@@ -464,7 +470,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       signUpError.status === 422);
 
   if (signUpError && !alreadyExists) {
-    return authFailure(signUpError, 'Could not create account');
+    return authFailure(signUpError, 'Could not create account', tI18nComplete);
   }
 
   const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -473,6 +479,9 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   });
 
   if (signInError) {
+    if (authRateLimitCopy(signInError, tI18nComplete)) {
+      return authFailure(signInError, 'Could not sign in', tI18nComplete);
+    }
     if (
       signInError.message?.toLowerCase().includes('email_not_confirmed') ||
       signInError.message?.toLowerCase().includes('not confirmed')
@@ -567,7 +576,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return authFailure(error, 'Invalid or expired code');
+    return authFailure(error, 'Invalid or expired code', tI18nComplete);
   }
 
   // Determine if new user (for analytics)

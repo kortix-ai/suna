@@ -9405,6 +9405,8 @@
       "checkConnection": "Verifique sua conexão e tente novamente."
     },
     "i18nComplete": {
+      "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",
+      "authRequestRateLimit": "Muitas solicitações. Tente novamente em alguns minutos.",
       "text25ab55af92b1": "Envio do anexo iniciado",
       "text40078a553439": "Bloco do anexo enviado",
       "text4c7f8000aabd": "Envio do anexo concluído",
