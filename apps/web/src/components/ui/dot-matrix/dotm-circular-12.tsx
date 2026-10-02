@@ -1,9 +1,8 @@
 'use client';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component, isWithinCircularMask } from '@/lib/dotmatrix-core';
 
-export type DotmCircular12Props = DotMatrixCommonProps;
 
 const STEP_COUNT = 36;
 const BASE_OPACITY = 0.06;

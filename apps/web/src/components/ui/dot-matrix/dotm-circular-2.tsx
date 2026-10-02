@@ -2,10 +2,9 @@
 
 import type { CSSProperties } from 'react';
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component, isWithinCircularMask, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmCircular2Props = DotMatrixCommonProps;
 
 const RING_PATH: readonly number[] = [
   rowMajorIndex(0, 1),
@@ -44,7 +43,7 @@ function makeResolver(_cycle: number, reducedMotion: boolean): DotAnimationResol
       className: 'dmx-circular2-ring',
       style: { '--dmx-ring-order': onRing } as CSSProperties,
     };
-};
+  };
 }
 
 export const DotmCircular2 = createDotm5x5Component('DotmCircular2', makeResolver, { speed: 1.8, lockedPattern: 'full' });
