@@ -5976,6 +5976,13 @@ export const connectionCredentials = kortixSchema.table(
       foreignColumns: [connectorConnections.connectorId, connectorConnections.connectionId],
       name: 'connection_credentials_connector_connection_fk',
     }).onDelete('cascade'),
+    // Covers connection_credentials_connector_connection_fk: the ON DELETE
+    // cascade from connector_connections looks up rows by this column pair,
+    // and the two single-column/partial indexes above cannot serve it.
+    index('idx_connection_credentials_connector_connection').on(
+      table.connectorId,
+      table.connectionId,
+    ),
     uniqueIndex('idx_connection_credentials_legacy_connector_unique')
       .on(table.connectorId)
       .where(sql`${table.connectionId} is null`),
