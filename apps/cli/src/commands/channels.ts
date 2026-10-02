@@ -180,6 +180,8 @@ interface ChannelBinding {
   channelType: string | null;
   /** Slack answered that the conversation is deleted or out of the bot's reach. */
   channelUnavailable?: boolean;
+  /** A Teams channel thread: its session's title, which tells threads of one channel apart. */
+  threadTitle?: string | null;
   agentName: string | null;
   opencodeModel: string | null;
   conversationPolicy: ConversationPolicy;
@@ -933,6 +935,7 @@ function bindingLabel(b: ChannelBinding): string {
     if (b.channelName) return b.channelType === 'im' || b.channelType === 'mpim' ? b.channelName : `#${b.channelName}`;
     if (b.channelUnavailable) return `unavailable (${b.channelId})`;
   }
+  if (b.threadTitle) return `${b.channelName ?? b.channelId} · ${b.threadTitle}`;
   return b.channelName ?? b.channelId;
 }
 
