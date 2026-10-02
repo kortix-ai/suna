@@ -30,8 +30,10 @@ Every authenticated API request is recorded, plus semantic session, connector,
 and approval events. The account trail requires the Enterprise plan.
 
 Subcommands:
-  ls [filters] [--json]           List audit events, newest first.
-  export [filters] [--out <f>]    Export matching events as CSV or JSONL.
+  ls [filters] [--json]           List audit events of the last 90 days, newest first.
+  export [filters] [--out <f>]    Export matching events as CSV or JSONL. Reaches back
+                                  365 days: events older than 90 days come from the
+                                  archive.
   project <project-id> [--json]   One project's canonical audit log.
   session <session-id> --project <project-id> [--json]
                                    One session's canonical ordered timeline.

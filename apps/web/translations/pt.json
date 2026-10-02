@@ -19093,6 +19093,7 @@
       "texte15f213fa506": "Publicar atualização do app",
       "textcafd830fcf85": "Identidades de agente do projeto listadas",
       "text7f755292bf51": "Não foi possível baixar o anexo",
+      "textd8b78d762ad0": "Eventos com mais de 90 dias não são listados aqui. A exportação os retorna do arquivo, até 365 dias atrás.",
       "connectorSourceLabel": "Origem do conector",
       "connectorSourceManaged": "Geridos",
       "connectorSourceDirect": "API / MCP"

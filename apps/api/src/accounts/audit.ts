@@ -310,6 +310,8 @@ auditRouter.openapi(
     path: '/{accountId}/audit/export',
     tags: ['accounts'],
     summary: 'Export audit events as CSV or JSONL',
+    description:
+      'Oldest first, 10,000 events per page (follow X-Audit-Next-Cursor). Reaches back 365 days: events older than 90 days are read from the S3 archive. The list endpoint covers the last 90 days only.',
     ...auth,
     request: {
       params: AccountIdParam,
