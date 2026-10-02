@@ -18,7 +18,7 @@ import {
 } from '../lib/on-behalf-of';
 import { logger } from '../../lib/logger';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
-import { confirmPromptLanded } from './prompt-landing-proof';
+import { confirmPromptLanded, promptNeedsLandingProof } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
 import { db } from '../../shared/db';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
@@ -187,6 +187,7 @@ export async function continueSession(
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
     await beforeSend?.();
     await turnIdentity;
+    let bodyBytes = 0;
     const delivery = await postPrompt(
       externalId,
       opencodeSessionId,
@@ -202,6 +203,9 @@ export async function continueSession(
         noReply: command.noReply,
         accountId: session.accountId,
         projectId: session.projectId,
+        onBodyBytes: (bytes) => {
+          bodyBytes = Math.max(bodyBytes, bytes);
+        },
       },
     );
     // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
@@ -216,8 +220,10 @@ export async function continueSession(
     // proxy's claim answers `duplicate`, and the row closed as delivered anyway
     // — 3.6 s later (review finding, 2026-09-05). The throw escapes the loop so
     // the row can go back out under a fresh attempt, key and wire id.
-    if (delivery === 'accepted' || delivery === 'deduplicated') {
-      const landed = await confirmPromptLanded({
+    //
+    // Only a body the edge can drop is read back: see `promptNeedsLandingProof`.
+    if ((delivery === 'accepted' || delivery === 'deduplicated') && promptNeedsLandingProof(bodyBytes)) {
+      const landing = await confirmPromptLanded({
         messageId: command.wireMessageId,
         readMessage: (messageId) =>
           readLegacyRuntimeMessage({
@@ -228,7 +234,15 @@ export async function continueSession(
             messageId,
           }),
       });
-      if (!landed) {
+      if (landing === 'unknown') {
+        logger.warn('[session-lifecycle] large prompt accepted; the landing read could not answer', {
+          session_id: sessionId,
+          wire_message_id: command.wireMessageId,
+          delivery,
+          body_bytes: bodyBytes,
+        });
+      }
+      if (landing === 'missing') {
         logger.error('[session-lifecycle] prompt accepted but never became a message', {
           session_id: sessionId,
           wire_message_id: command.wireMessageId,

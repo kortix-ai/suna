@@ -583,6 +583,9 @@ export async function postPrompt(
     noReply?: boolean;
     accountId?: string;
     projectId?: string;
+    /** Told the size of each body that goes on the wire (attachments
+     *  materialized), so the caller can decide whether to prove landing. */
+    onBodyBytes?: (bytes: number) => void;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
@@ -666,6 +669,7 @@ export async function postPrompt(
             },
       ),
     );
+    prompt?.onBodyBytes?.(body.byteLength);
     return forwardToSandbox(
       externalId,
       DAEMON_PORT,
