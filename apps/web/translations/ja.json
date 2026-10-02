@@ -1941,6 +1941,8 @@
     "queued": "待機中",
     "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
     "queuedCount": "{count} 件キュー中",
+    "editingQueued": "編集中",
+    "submitEdit": "送信",
     "collapseQueue": "キューを折りたたむ",
     "expandQueue": "キューを展開"
   },

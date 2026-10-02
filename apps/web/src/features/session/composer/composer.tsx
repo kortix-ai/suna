@@ -359,6 +359,12 @@ export interface SessionChatInputProps {
   lockForApproval?: boolean;
   onCustomAnswer?: (text: string) => void;
   questionButtonLabel?: string | null;
+  /**
+   * A labeled submit button replaces the icon send/stop control, busy or
+   * not. Set while the composer edits a queued message: its send saves the
+   * edit, so Stop is the wrong control there.
+   */
+  submitLabel?: string | null;
   questionCanAct?: boolean;
   onQuestionAction?: () => void;
   escCount?: number;

@@ -1941,6 +1941,8 @@
     "queued": "На чекању",
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",
+    "editingQueued": "Уређивање",
+    "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
     "expandQueue": "Proširi red"
   },

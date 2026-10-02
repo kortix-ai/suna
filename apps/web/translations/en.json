@@ -1918,6 +1918,8 @@
     "queued": "Queued",
     "queuedFiles": "{count, plural, one {# file} other {# files}}",
     "queuedCount": "{count} Queued",
+    "editingQueued": "Editing",
+    "submitEdit": "Submit",
     "collapseQueue": "Collapse queue",
     "expandQueue": "Expand queue",
     "placeholder": "Type your message...",

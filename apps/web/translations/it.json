@@ -1941,6 +1941,8 @@
     "queued": "In coda",
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
+    "editingQueued": "In modifica",
+    "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda"
   },

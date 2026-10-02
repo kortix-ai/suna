@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 701,
+  "count": 702,
   "routes": [
     {
       "method": "GET",
@@ -2304,6 +2304,10 @@
     },
     {
       "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
+    },
+    {
+      "method": "PATCH",
       "path": "/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId"
     },
     {

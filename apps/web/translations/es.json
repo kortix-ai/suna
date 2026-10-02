@@ -1941,6 +1941,8 @@
     "queued": "En cola",
     "queuedFiles": "{count, plural, one {# archivo} other {# archivos}}",
     "queuedCount": "{count} en cola",
+    "editingQueued": "Editando",
+    "submitEdit": "Enviar",
     "collapseQueue": "Contraer cola",
     "expandQueue": "Expandir cola"
   },
