@@ -6,8 +6,10 @@ import { previewConfig } from './routes/preview-config';
 import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
+import { prefetchSandbox } from './prefetch';
 import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
 import { makeOpenApiApp } from '../openapi';
+import type { Context, Next } from 'hono';
 
 // OpenAPIHono root: the /auth + /share sub-apps contribute typed route defs to
 // the spec; the path-based `preview` proxy stays a raw streaming Hono catch-all
@@ -33,11 +35,32 @@ sandboxProxyApp.route('/share', shareApp);
 sandboxProxyApp.route('/public-share', publicShareApp);
 
 // ── Path-based proxy ────────────────────────────────────────────────────────
+// The sandbox row read starts BEFORE auth so the two overlap (prefetch.ts).
+// Measured on Dev, every statement here is a cross-region round trip, and auth
+// plus the row used to queue three of them back to back. Only a request that
+// presents a credential triggers the read, so an anonymous probe costs nothing
+// it did not cost before.
+sandboxProxyApp.use('/:sandboxId/:port/*', prefetchSandboxRow);
+sandboxProxyApp.use('/:sandboxId/:port', prefetchSandboxRow);
 // Auth middleware accepts Supabase JWT, kortix_ tokens, and cookies.
 sandboxProxyApp.use('/:sandboxId/:port/*', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port', combinedAuth);
 sandboxProxyApp.use('/:sandboxId/:port/*', createSandboxProxyRateLimitMiddleware());
 sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware());
+
+function presentsCredential(c: Context): boolean {
+  if (c.req.header('Authorization') || c.req.header('X-Kortix-Token')) return true;
+  if ((c.req.header('Cookie') ?? '').includes('__preview_session=')) return true;
+  return new URL(c.req.url).searchParams.has('token');
+}
+
+async function prefetchSandboxRow(c: Context, next: Next) {
+  const sandboxId = c.req.param('sandboxId');
+  if (sandboxId && c.req.method !== 'OPTIONS' && presentsCredential(c)) {
+    prefetchSandbox(c, sandboxId);
+  }
+  await next();
+}
 
 // ── Provider resolution (share endpoints) ─────────────────────────────────────
 // A thin policy layer over the single backend row loader: the share routes only

@@ -34,6 +34,17 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
   }
   c.set('agentGrant', result.agentGrant ?? null);
   c.set('onBehalfOfUserId', result.onBehalfOfUserId ?? null);
+  // The token's IAM binding, from the row validation just read: `buildActor`
+  // uses it instead of reading the same `account_tokens` row again.
+  if (result.tokenId) {
+    c.set('iamTokenBinding', {
+      tokenId: result.tokenId,
+      projectId: result.projectId ?? null,
+      agentGrant: result.agentGrant ?? null,
+      serviceAccountId: result.serviceAccountId ?? null,
+      onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+    });
+  }
   setSentryUser({ id: userId, accountId: result.accountId });
   setContextField('userId', userId);
   if (result.accountId) setContextField('accountId', result.accountId);
