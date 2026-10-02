@@ -900,7 +900,7 @@ describe('pi harness', () => {
     expect(text).toContain('finished normally')
   })
 
-  test('a restarted daemon restores the transcript, title and turn verdicts from the state dir', async () => {
+  test('a restarted daemon restores the transcript and turn verdicts from the state dir', async () => {
     // A daemon restart is a new process: a second service on the same state
     // dir must restore what the first one persisted, not reuse its memory.
     const r = await boot({ script: [{ text: 'first answer' }] })
@@ -917,8 +917,10 @@ describe('pi harness', () => {
     const page = (await restarted.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> }
     expect(page.messages.map((m) => m.info.role)).toEqual(['user', 'assistant'])
     expect(page.messages[1]!.parts[0]).toMatchObject({ type: 'text', text: 'first answer' })
+    // pi does not title a session: apps/api generates the name, and a runtime title would
+    // outrank it in every reader. The placeholder reads as "no title" to all of them.
     const sessions = (await restarted.user('/session').then((res) => res.json())) as Array<{ title: string }>
-    expect(sessions[0]!.title).toBe('remember me')
+    expect(sessions[0]!.title).toBe('New session')
     const probe = (await restarted.bearer(`/kortix/health?turn=1&turn_message_id=${messageID}`).then((res) => res.json())) as Record<string, unknown>
     expect(probe.turn_end).toBe('completed')
 
@@ -2070,11 +2072,9 @@ describe('pi compaction', () => {
     expect(await summarize(r, root).then((res) => res.json())).toBe(true)
     const text = await readSse(events, (t) => t.includes('event: session.compacted'))
     expect(text).toContain('event: session.compacted')
-    // pi does not title a session (apps/api does), and a client renames the session to the
-    // title of a `session.updated`: the frames carry `time.compacting` and no title.
+    // The session row says when a compaction runs: `time.compacting` on the first frame, gone on the second.
     const updates = text.split('\n\n').filter((frame) => frame.includes('event: session.updated')).map((frame) => frame.slice(frame.indexOf('data: ') + 6))
     expect(updates).toHaveLength(2)
-    expect(updates.map((data) => data.includes('"title"'))).toEqual([false, false])
     expect(updates[0]).toContain('"compacting"')
     expect(updates[1]).not.toContain('"compacting"')
     await waitFor(() => r.service.runtime()!.idle())

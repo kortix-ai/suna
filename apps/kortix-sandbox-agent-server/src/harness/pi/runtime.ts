@@ -226,7 +226,12 @@ export class PiRuntime {
   readonly questions: QuestionBroker
   readonly createdAt: number
   updatedAt: number
-  title: string
+  /**
+   * Always the placeholder. pi does not title a session: apps/api generates the
+   * name, and every reader (the API serializer, the SDK) prefers a runtime title
+   * over it unless it is this placeholder.
+   */
+  readonly title = 'New session'
 
   private readonly cfg: PiConfig
   private readonly env: NodeJS.ProcessEnv
@@ -289,7 +294,6 @@ export class PiRuntime {
     this.rootId = mintRootId(opts.sessionId)
     this.createdAt = this.now()
     this.updatedAt = this.createdAt
-    this.title = 'New session'
     this.permissions = new PermissionBroker(this.rootId, (frame) => this.publish(frame), {}, (request) => this.hooks.onPermissionAsked?.(request))
     this.questions = new QuestionBroker(this.rootId, (frame) => this.publish(frame), (request) => {
       this.hooks.onQuestionAsked?.(request, (answers) => void this.questions.reply(request.id, answers))
@@ -847,14 +851,9 @@ export class PiRuntime {
     this.persist()
   }
 
-  /**
-   * The session row changed (`time.compacting`). The frame names no title: pi
-   * does not title a session, apps/api does, and a client takes the title of a
-   * `session.updated` as the session's new name.
-   */
+  /** The session row changed (`time.compacting`). */
   private publishSessionUpdated(): void {
-    const { title: _working, ...info } = this.sessionObject()
-    this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info } })
+    this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info: this.sessionObject() } })
   }
 
   private onAgentEvent(event: AgentEvent): void {
@@ -1131,10 +1130,6 @@ export class PiRuntime {
     as: { agent: string; selected: SelectedModel } = { agent: this.agentName, selected: this.selected! },
   ): void {
     const created = this.now()
-    if (sessionID === this.rootId && this.title === 'New session') {
-      const line = input.text.trim().split('\n')[0] ?? ''
-      if (line) this.title = line.length > 80 ? `${line.slice(0, 77)}…` : line
-    }
     this.publish({
       type: 'message.updated',
       properties: {
@@ -1494,7 +1489,6 @@ export class PiRuntime {
         const { transcript: _saved, ...rest } = saved
         this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null })
       }
-      this.title = dump.title
       return dump
     } catch (err) {
       logger.warn('[pi] transcript restore failed; starting empty', { err: (err as Error).message })
