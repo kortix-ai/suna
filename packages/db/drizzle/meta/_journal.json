@@ -743,6 +743,13 @@
       "when": 1790891254334,
       "tag": "20261001214734_drop_unused_audit_events_indexes_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790893772228,
+      "tag": "20261001222932_audit_events_uuid_v7",
+      "breakpoints": true
     }
   ]
 }
