@@ -1,23 +1,7 @@
-/**
- * Regression guard for the dead-credential warn-log spike (KRTX-1039).
- *
- * A client that keeps calling with a credential the API can never take back
- * (revoked session PAT, closed sandbox lease) got one `warn` line per refusal:
- * one enterprise workspace's stuck retry loop produced ~1.19M
- * `-> 401 [HTTPException] PAT not found or revoked` lines in ten days across
- * turn-stream, audit/events, runtime-projection and boot-timeline, and the
- * log-anomaly sweep pages on exactly that volume. The response is already the
- * typed dead-credential 401 (`code: session_token_revoked`, KRTX-446); what
- * the retry loop must not get is a fresh log line per attempt.
- *
- * House rule (learnings): an alertable line marks the transition into a state,
- * never a repeat of it, and expected-backpressure warnings are rate-limited to
- * first occurrence + one per interval with the accounting kept. The throttle
- * therefore logs the FIRST refusal per message, then at most one line per
- * window, carrying the suppressed count in a structured `suppressed` field so
- * the true volume stays queryable. The message text never changes: a new text
- * starts a fresh Better Stack baseline and reads as a spike (2026-09-28
- * learning).
+/** Regression coverage for best-effort dead-credential warning suppression.
+ * Pending counts are emitted only when another refusal opens the next window;
+ * quiet bursts, eviction and restart can lose counts. Auth audits and
+ * request-completion logs remain the exact accounting surfaces.
  */
 import { describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -169,9 +153,24 @@ describe('dead-credential exceptions are marked and throttled at the error handl
     });
     const warns = logged.slice(before).filter((l) => l.level === 'warn');
     expect(warns).toHaveLength(1);
-    expect(warns[0]!.message).toContain('-> 401 [HTTPException] PAT not found or revoked');
-    expect(warns[0]!.context?.suppressed).toBe(0);
-    expect(warns[0]!.context?.reason).toBe('PAT not found or revoked');
+    const first = warns[0];
+    if (!first) throw new Error('expected the first refusal warning');
+    expect(first.message).toContain('-> 401 [HTTPException] PAT not found or revoked');
+    expect(first.context?.suppressed).toBe(0);
+    expect(first.context?.reason).toBe('PAT not found or revoked');
+  });
+
+  test('fifteen project paths share one refusal window', async () => {
+    resetDeadCredentialLogForTests();
+    const app = appWithDeadCredentialThrow();
+    const before = logged.length;
+    for (let i = 0; i < 15; i += 1) {
+      const projectId = `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+      const response = await app.request(`/v1/projects/${projectId}/turn-stream`, { method: 'POST' });
+      expect(response.status).toBe(401);
+      expect((await response.json()).code).toBe('session_token_revoked');
+    }
+    expect(logged.slice(before).filter((entry) => entry.level === 'warn')).toHaveLength(1);
   });
 
   test('marking is what routes the line through the throttle', () => {

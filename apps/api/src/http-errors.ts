@@ -253,11 +253,11 @@ function handleHttpException(err: HTTPException, c: Context, method: string, pat
     // but a caller that does not read it — an in-sandbox agent CLI retrying
     // per streamed step — turns every refusal into a warn line, ~1.19M in ten
     // days across the sandbox relay routes (KRTX-1039). Rate-limit the LINE
-    // (first per window per message, the count kept in `suppressed`), never
+    // (first per window per normalized key, best-effort count in `suppressed`), never
     // the response; see shared/dead-credential-log.ts. Every other HTTPException
     // keeps its per-request line.
     if (isDeadCredential(err)) {
-      const { log, suppressed } = deadCredentialLogDecision(line, Date.now());
+      const { log, suppressed } = deadCredentialLogDecision(`${method} ${path.replace(/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/gi, ':id')} ${err.status} ${reason}`, Date.now());
       if (log) appLogger.warn(line, { ...fields, suppressed });
     } else {
       appLogger[level](line, fields);
