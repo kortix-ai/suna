@@ -527,7 +527,10 @@ test('runProjectProviderOAuthFlow resolves the challenge before the first poll',
   const result = await runProjectProviderOAuthFlow({
     projectId: 'P1',
     provider: 'openai',
-    onChallenge: (challenge) => challenges.push(challenge),
+    onChallenge: (challenge) => {
+      expect(patch('POST', pollRoute)).toBe(0);
+      challenges.push(challenge);
+    },
     ...clock,
   });
   expect(result).toEqual({

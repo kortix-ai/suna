@@ -375,7 +375,7 @@ export async function runProjectProviderOAuthFlow(
   while (!cancelled() && now() < deadline) {
     await sleep(interval);
     if (cancelled()) return { status: 'cancelled' };
-    let poll;
+    let poll: ProviderOAuthPoll;
     try {
       poll = await pollProjectProviderOAuth(projectId, provider, start.flow_id);
     } catch {
