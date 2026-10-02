@@ -79,6 +79,7 @@ export function ApprovalDecisionModal({
               onDecision={onDecision}
               onOpenSession={onOpenSession}
               previewAuthorized={previewAuthorized}
+              markOnMobile
             />
           </div>
         ) : null}

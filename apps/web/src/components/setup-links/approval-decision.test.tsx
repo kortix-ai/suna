@@ -240,6 +240,15 @@ describe('ApprovalDecisionPanel', () => {
     expect(panel({})).not.toContain('Open session');
   });
 
+  test('the connector mark hides on mobile on the page, and stays in the modal', () => {
+    // The page's AuthFrame pins a Kortix logo in the mobile corner instead;
+    // the modal has no frame, so its mark must not hide below `md`.
+    expect(panel({})).toContain('hidden md:block');
+    const modal = panel({ markOnMobile: true });
+    expect(modal).not.toContain('hidden md:block');
+    expect(modal).toContain('logos.composio.dev/api/github');
+  });
+
   test('a viewer without argument visibility is told why, not that nothing was recorded', () => {
     const html = panel({
       details: { ...pending, args_preview: null, review_complete: false },

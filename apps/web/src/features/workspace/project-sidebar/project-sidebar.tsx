@@ -236,7 +236,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               </SidebarMenuItem>
 
               <ProjectCustomizeNavItem />
-              <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem />
             </SidebarMenu>
           </SidebarGroup>
@@ -248,6 +247,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <SidebarGroup className="mt-auto">
             <SidebarMenu className="gap-1">
               <ProjectSandboxAlert projectId={projectId} />
+              <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
               <ProjectRemindersNavItem />

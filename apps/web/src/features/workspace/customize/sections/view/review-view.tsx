@@ -1,9 +1,9 @@
 'use client';
 
-import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { ProjectFilesProvider } from '@/features/project-files';
 import { ReviewCenterConnected } from '@/features/review-center/review-center-connected';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { reviewHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -11,24 +11,15 @@ import { useProjectName } from '@kortix/sdk/react';
 
 /**
  * `/projects/[id]/review` — the Review Center as a project page of its own,
- * outside Customize: the full window height, a title band like Reminders, and
+ * outside Customize: the full window height, the Customize tab bar, and
  * the inbox below it. Agents send their approvals, change requests and outputs
  * here, so it is a primary surface, not a configuration tab.
  */
 export function ReviewPage({ projectId }: { projectId: string }) {
   const t = useTranslations('sidebar');
-  const sidebar = useOptionalSidebar();
   return (
     <div className="flex h-svh flex-col overflow-hidden">
-      <div
-        className="kx-titlebar-row kx-titlebar-band-height relative flex shrink-0 items-center gap-1 border-b px-2"
-        data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
-      >
-        <SidebarToggle />
-        <h1 className="text-foreground min-w-0 truncate px-3 py-2 text-sm font-medium">
-          {t('review')}
-        </h1>
-      </div>
+      <ProjectPageHeader title={t('review')} href={reviewHref(projectId)} />
       <div className="min-h-0 flex-1">
         <ReviewView projectId={projectId} />
       </div>

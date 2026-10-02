@@ -240,6 +240,7 @@ export function ApprovalDecisionPanel({
   onDecision,
   onOpenSession,
   previewAuthorized = true,
+  markOnMobile = false,
 }: {
   details: ApprovalLinkDetails;
   outcome: ApprovalDecisionValue | null;
@@ -250,6 +251,8 @@ export function ApprovalDecisionPanel({
   onOpenSession?: () => void;
   /** False when this viewer may not see the call's arguments at all. */
   previewAuthorized?: boolean;
+  /** Keep the connector mark on mobile (the modal has no corner logo). */
+  markOnMobile?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -289,6 +292,7 @@ export function ApprovalDecisionPanel({
     <>
       <Rise>
         <StepHeader
+          markOnMobile={markOnMobile}
           mark={
             <ConnectorHandshake
               name={details.connector_name ?? details.connector ?? details.action}

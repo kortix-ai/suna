@@ -16,9 +16,9 @@ import { useProjectCan } from '@/lib/use-project-can';
 /**
  * The sidebar's "Review" row: the one entry point into the Review Center, a
  * project page of its own (`reviewHref`). Change requests, approvals and agent
- * outputs all live there. It sits in the top group beside Customize and is
- * always listed for a person who may read reviews — an empty inbox is still a
- * place to go. Its badge counts the SAME unified `needs_you` set the
+ * outputs all live there. It sits in the footer group, above Reminders and
+ * Files, and is always listed for a person who may read reviews — an empty
+ * inbox is still a place to go. Its badge counts the SAME unified `needs_you` set the
  * per-session row dots read, so the row and the dots agree on one number.
  */
 export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string }) {

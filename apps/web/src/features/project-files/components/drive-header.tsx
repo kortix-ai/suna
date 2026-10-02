@@ -4,9 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
+import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { useParams } from 'next/navigation';
 import {
   GitDiffIcon as FileDiff,
   ClockCounterClockwiseIcon as History,
@@ -82,6 +84,80 @@ export function DriveHeader({
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
   const reviewCount = reviewsToggle.openCount ?? 0;
+  const params = useParams<{ id?: string }>();
+
+  const actions = (
+    <div className="flex shrink-0 items-center gap-1">
+      <VersionSelector />
+
+      <Hint label={tI18nComplete.raw('text635261ece1f6')} side="bottom">
+        <Button
+          type="button"
+          aria-label={tI18nComplete.raw('texta6df11e706c5')}
+          aria-pressed={historyToggle.open}
+          variant={historyToggle.open ? 'secondary' : 'ghost'}
+          size="icon-sm"
+          onClick={historyToggle.onToggle}
+          className={cn(
+            'active:scale-[0.96]',
+            !historyToggle.open && 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <History className="size-4" />
+        </Button>
+      </Hint>
+
+      <Button
+        type="button"
+        aria-pressed={reviewsToggle.open}
+        variant={reviewsToggle.open ? 'secondary' : 'ghost'}
+        size="sm"
+        onClick={reviewsToggle.onToggle}
+        title={
+          reviewCount > 0
+            ? tI18nComplete('text03fbe991de6e', {
+                value0: reviewCount,
+                value1: reviewCount === 1 ? '' : 's',
+              })
+            : tI18nComplete.raw('text1d826553e961')
+        }
+        className={cn(
+          'active:scale-[0.96]',
+          !reviewsToggle.open &&
+            reviewCount === 0 &&
+            'text-muted-foreground hover:text-foreground',
+        )}
+      >
+        <FileDiff className="size-4 shrink-0" />
+        <span className="hidden sm:inline">{tI18nComplete.raw('text486f49f03bf7')}</span>
+        {reviewCount > 0 && (
+          <Badge variant="success" size="tabular" className="ml-0.5">
+            {reviewCount}
+          </Badge>
+        )}
+      </Button>
+
+      <DriveViewMenu
+        onRefresh={onRefresh}
+        onDownloadDir={onDownloadDir}
+        isDownloading={isDownloading}
+      />
+    </div>
+  );
+
+  // The standalone page: the shared project page header, with the folder path
+  // in its own strip below it, shown only inside a subfolder.
+  if (offsetForSidebarToggle && params?.id) {
+    const title = tI18nComplete.raw('textabc7e9892806');
+    return (
+      <>
+        <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>
+          {actions}
+        </ProjectPageHeader>
+        <DrivePathBar rootLabel={title} as="row" />
+      </>
+    );
+  }
 
   return (
     <header
@@ -94,62 +170,7 @@ export function DriveHeader({
 
       <DrivePathBar rootLabel={tI18nComplete.raw('textabc7e9892806')} />
 
-      <div className="flex shrink-0 items-center gap-1">
-        <VersionSelector />
-
-        <Hint label={tI18nComplete.raw('text635261ece1f6')} side="bottom">
-          <Button
-            type="button"
-            aria-label={tI18nComplete.raw('texta6df11e706c5')}
-            aria-pressed={historyToggle.open}
-            variant={historyToggle.open ? 'secondary' : 'ghost'}
-            size="icon-sm"
-            onClick={historyToggle.onToggle}
-            className={cn(
-              'active:scale-[0.96]',
-              !historyToggle.open && 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <History className="size-4" />
-          </Button>
-        </Hint>
-
-        <Button
-          type="button"
-          aria-pressed={reviewsToggle.open}
-          variant={reviewsToggle.open ? 'secondary' : 'ghost'}
-          size="sm"
-          onClick={reviewsToggle.onToggle}
-          title={
-            reviewCount > 0
-              ? tI18nComplete('text03fbe991de6e', {
-                  value0: reviewCount,
-                  value1: reviewCount === 1 ? '' : 's',
-                })
-              : tI18nComplete.raw('text1d826553e961')
-          }
-          className={cn(
-            'active:scale-[0.96]',
-            !reviewsToggle.open &&
-              reviewCount === 0 &&
-              'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <FileDiff className="size-4 shrink-0" />
-          <span className="hidden sm:inline">{tI18nComplete.raw('text486f49f03bf7')}</span>
-          {reviewCount > 0 && (
-            <Badge variant="success" size="tabular" className="ml-0.5">
-              {reviewCount}
-            </Badge>
-          )}
-        </Button>
-
-        <DriveViewMenu
-          onRefresh={onRefresh}
-          onDownloadDir={onDownloadDir}
-          isDownloading={isDownloading}
-        />
-      </div>
+      {actions}
     </header>
   );
 }
