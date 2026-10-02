@@ -4842,6 +4842,11 @@ export const changeRequests = kortixSchema.table(
   (table) => [
     index('idx_change_requests_account').on(table.accountId),
     index('idx_change_requests_project').on(table.projectId),
+    // Covers the origin_session_id FK (change_requests_origin_session_id_fkey,
+    // ON DELETE SET NULL): the Supabase performance advisor flagged it as
+    // unindexed (unindexed_foreign_keys). See the accompanying `.concurrent.ts`
+    // migration for the CONCURRENTLY build.
+    index('idx_change_requests_origin_session').on(table.originSessionId),
     index('idx_change_requests_project_status').on(table.projectId, table.status),
     uniqueIndex('idx_change_requests_project_number').on(table.projectId, table.number),
   ],

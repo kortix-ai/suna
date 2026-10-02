@@ -19,6 +19,7 @@ import {
   tunnelStatusEnum,
   platformRoleEnum,
   changeRequestStatusEnum,
+  changeRequests,
   accounts,
   accountMembers,
   accountMemberships,
@@ -271,6 +272,26 @@ describe('canonical audit ledger', () => {
         'delivered_at',
       ]),
     );
+  });
+});
+
+describe('change requests', () => {
+  test('indexes every foreign key column', () => {
+    // The Supabase advisor's unindexed_foreign_keys lint (KRTX-1096): an FK
+    // column without a covering index makes the parent-side ON DELETE action
+    // and every join through it seq-scan this table. origin_session_id was the
+    // one uncovered FK column; the migration builds its index CONCURRENTLY.
+    const cfg = getTableConfig(changeRequests);
+    const leadingColumns = new Set(
+      cfg.indexes.flatMap((i) => {
+        const first = i.config.columns[0];
+        return first && 'name' in first ? [first.name] : [];
+      }),
+    );
+    for (const fk of cfg.foreignKeys) {
+      const column = fk.reference().columns[0]?.name;
+      expect(leadingColumns).toContain(column);
+    }
   });
 });
 
