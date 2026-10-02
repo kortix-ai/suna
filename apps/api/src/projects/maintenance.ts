@@ -7,6 +7,7 @@ import { recordAuditEvent } from '../shared/audit';
 import { runWorkerTick } from '../shared/audit-scope';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
+import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
@@ -278,6 +279,7 @@ export async function runProjectMaintenance(): Promise<void> {
       computeTick,
       staleBuilds,
       snapshotGc,
+      appImages,
       connectorAttachments,
       promptAttachments,
       runtimeWakes,
@@ -386,6 +388,18 @@ export async function runProjectMaintenance(): Promise<void> {
           dryRun: false,
         };
       }),
+      // App deployment images (`kortix-app-<deploymentId>`): one per build,
+      // counted against Platinum's per-org template cap, never reclaimed by the
+      // Daytona-only quota GC above. Deletes only images whose deployment THIS
+      // database holds as unservable (App deleted, deployment failed/deleted),
+      // after removing any runtime that still pins one. Bounded per pass.
+      reclaimAppDeploymentImages().catch((err) => {
+        console.warn(
+          '[project-maintenance] App image reclaim failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
+      }),
       // Private Connector email attachments expire after 24 hours. Successful
       // sends become non-replayable immediately, then this sweep deletes them
       // after the signed-URL ingestion grace window.
@@ -481,6 +495,9 @@ export async function runProjectMaintenance(): Promise<void> {
         staleBuilds.closedReady ||
         staleBuilds.closedFailed ||
         snapshotGc.deleted ||
+        appImages.released ||
+        appImages.runtimesRemoved ||
+        appImages.errors ||
         connectorAttachments.deleted ||
         connectorAttachments.errors ||
         promptAttachments.deleted ||
@@ -515,6 +532,7 @@ export async function runProjectMaintenance(): Promise<void> {
         computeTick,
         staleBuilds,
         snapshotGc,
+        appImages,
         connectorAttachments,
         promptAttachments,
         runtimeWakes,
@@ -555,6 +573,13 @@ export async function runProjectMaintenance(): Promise<void> {
       `archived_boxes_removed=${archivedRemovals.removed}`,
       `archived_box_remove_failures=${archivedRemovals.failed}`,
       `stuck_provisioning_converged=${stuckProvisioning.examined}`,
+      // A reclaimable App image that stays `pending` pass after pass is one a
+      // sandbox still pins; a growing `listed` with zero `released` is an App
+      // image leak against the provider's template cap.
+      `app_images_listed=${appImages.listed}`,
+      `app_images_released=${appImages.released}`,
+      `app_images_pending=${appImages.pending}`,
+      `app_images_deferred=${appImages.deferred}`,
       // A monitor box only stays billable while this sweep observes it, so
       // `monitor_observed` going flat while boxes exist is the signal that
       // monitor billing has silently stopped earning.

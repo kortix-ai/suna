@@ -394,6 +394,15 @@ export async function deleteDatabaseProject(
   const databaseUrl = assertDatabaseFixtureAllowed(env, "delete");
   const client = await open(databaseUrl);
   try {
+    // Apps first: an App delete is soft, so its deployment rows survive it, and
+    // `app_deployments.artifact_id` RESTRICTs the artifact delete the project
+    // cascade would otherwise attempt first. Deleting the apps cascades the
+    // deployments away before the project row goes.
+    await client.query(
+      `DELETE FROM kortix.apps
+       WHERE project_id = $1::uuid`,
+      [projectId],
+    );
     await client.query(
       `DELETE FROM kortix.projects
        WHERE project_id = $1::uuid`,
