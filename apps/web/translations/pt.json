@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "Eventos com mais de 90 dias não são listados aqui. A exportação os retorna do arquivo, até 365 dias atrás.",
       "connectorSourceLabel": "Origem do conector",
       "connectorSourceManaged": "Geridos",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "Canal privado",
+      "textcd3e16057d09": "Mensagem direta",
+      "textcbe7c5d45160": "Mensagem direta em grupo",
+      "textf5738ddc651d": "Canal indisponível"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

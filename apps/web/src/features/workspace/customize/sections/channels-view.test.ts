@@ -400,6 +400,29 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("'text28c7d3f8b75d'");
   });
 
+  // Every Slack row on dev read `C0…` over `T0…` (2026-10-02): no Slack name
+  // lookup had ever succeeded. A Slack row now reads like a Teams row.
+  test('a Slack row shows #channel, a person, or a group DM, over its kind, not its workspace id', () => {
+    expect(channelsSource).toContain('slackBindingName(binding, tI18nComplete)');
+    expect(channelsSource).toContain('slackScopeLabel(binding, tI18nComplete)');
+    // The `#name` / person / group-DM rule is `slackConversationName`, shared
+    // with the session's `slack send` card (channel-message.test.ts).
+    expect(channelsSource).toContain('slackConversationName(binding)');
+    expect(channelsSource).toMatch(/binding\.platform === 'slack'\s*\?\s*slackScopeLabel\(binding, tI18nComplete\)/);
+    for (const key of [
+      'text87f9f3ba9b60', // Private channel
+      'textcd3e16057d09', // Direct message
+      'textcbe7c5d45160', // Group DM
+      'textf5738ddc651d', // Unavailable channel
+    ]) {
+      expect(channelsSource).toContain(key);
+    }
+  });
+
+  test('a deleted Slack channel says so and still shows its id', () => {
+    expect(channelsSource).toContain('binding.channelUnavailable');
+  });
+
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {
     expect(channelsSource).toContain("from '@/hooks/channels/use-channel-bindings'");
     expect(channelsSource).toContain('useChannelBindings');

@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "此处不显示超过 90 天的事件。导出会从归档中返回最长 365 天前的事件。",
       "connectorSourceLabel": "连接器来源",
       "connectorSourceManaged": "托管",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "私有频道",
+      "textcd3e16057d09": "私信",
+      "textcbe7c5d45160": "群组私信",
+      "textf5738ddc651d": "不可用的频道"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

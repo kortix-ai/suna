@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "Ereignisse, die älter als 90 Tage sind, werden hier nicht aufgelistet. Der Export liefert sie aus dem Archiv, bis zu 365 Tage zurück.",
       "connectorSourceLabel": "Connector-Quelle",
       "connectorSourceManaged": "Verwaltet",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "Privater Kanal",
+      "textcd3e16057d09": "Direktnachricht",
+      "textcbe7c5d45160": "Gruppen-Direktnachricht",
+      "textf5738ddc651d": "Nicht verfügbarer Kanal"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

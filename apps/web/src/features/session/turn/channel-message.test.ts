@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseChannelMessage } from './channel-message';
+import { parseChannelMessage, slackConversationName } from './channel-message';
 
 /**
  * The scaffolds below are copied from the API renderers that produce them:
@@ -17,9 +17,9 @@ const TURN_INSTRUCTIONS = [
 const TEAMS_FIRST = [
   "You're answering a message on Microsoft Teams as a teammate.",
   '',
-  'Tenant:        36009a52-46d2-44bc-ba56-57a87e485e0a',
-  'Conversation:  a:1FQyR2jW1pEUK_1d5ElylXF7Su1cgPbKpna',
-  'User:          Ivan Bagaric',
+  'Tenant:        00000000-0000-4000-8000-00000000a11c',
+  'Conversation:  a:1TESTCONVERSATIONID',
+  'User:          Jordan Lee',
   '',
   'Message:',
   'List the files in this repo and summarize the README',
@@ -28,7 +28,7 @@ const TEAMS_FIRST = [
 ].join('\n');
 
 const TEAMS_FOLLOW_UP = [
-  'New message from Ivan Bagaric in the same Teams conversation:',
+  'New message from Jordan Lee in the same Teams conversation:',
   '',
   'Now count the lines in the README',
   '',
@@ -38,15 +38,15 @@ const TEAMS_FOLLOW_UP = [
 const TEAMS_WITH_ATTACHMENT = [
   "You're answering a message on Microsoft Teams as a teammate.",
   '',
-  'Tenant:        36009a52-46d2-44bc-ba56-57a87e485e0a',
+  'Tenant:        00000000-0000-4000-8000-00000000a11c',
   'Conversation:  19:abc@thread.tacv2',
-  'User:          Marko',
+  'User:          Alex',
   '',
   'Message:',
   'Summarize this',
   '',
   'Attached files (download with `teams download --url <url> --out <path>`):',
-  '- report.pdf — https://kortixssotest-my.sharepoint.com/personal/x/report.pdf',
+  '- report.pdf — https://example-my.sharepoint.com/personal/x/report.pdf',
   '',
   TURN_INSTRUCTIONS,
 ].join('\n');
@@ -56,7 +56,7 @@ const SLACK_FIRST = [
   '',
   'Workspace:  T0AB12CD',
   'Channel:    C0DEV',
-  'User:       U0IVAN',
+  'User:       U0TESTUSER',
   'Thread ts:  1789650000.000100',
   '',
   'Message:',
@@ -81,7 +81,7 @@ const SLACK_REVIVED = [
   '',
   'Workspace:  T0AB12CD',
   'Channel:    C0DEV',
-  'User:       U0IVAN',
+  'User:       U0TESTUSER',
   '',
   'Message:',
   'still there?',
@@ -91,13 +91,48 @@ const SLACK_REVIVED = [
 ].join('\n');
 
 const SLACK_FOLLOW_UP = [
-  'New message from U0IVAN in the same Slack thread:',
+  'New message from U0TESTUSER in the same Slack thread:',
   '',
   'and the one before that',
   '',
   'How to work:',
   '- Post progress with `slack step`.',
 ].join('\n');
+
+// The shapes `channels/slack/session.ts` writes since Slack prompts carry
+// names: the label beside each id, and the follow-up header that names the
+// channel and thread the reply goes to.
+const SLACK_FIRST_LABELLED = [
+  "You're answering a message on Slack as a teammate.",
+  '',
+  'Workspace:  T0AB12CD',
+  'Channel:    #general (C0DEV)',
+  'User:       Sam Rivera (U0TESTUSER)',
+  'Thread ts:  1789650000.000100',
+  '',
+  'Message:',
+  '<@U0BOT|Kortix> what changed in <#C0OPS|ops> since <https://example.test/deploy|the deploy>? <!here> a &lt;b&gt; &amp; c',
+  '',
+  'How to work:',
+  '- Post progress with `slack step`.',
+].join('\n');
+
+const SLACK_FOLLOW_UP_LABELLED = [
+  'New message from Sam Rivera (U0TESTUSER) in Slack channel #general (C0DEV), thread 1789650000.000100:',
+  'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
+  'slack send --channel C0DEV --thread 1789650000.000100 --text "<answer>"',
+  "The live slack step stream follows this message automatically. Do not use the session's original Slack thread for this reply.",
+  '',
+  'and the one before that',
+  '',
+  'How to work:',
+  '- Post progress with `slack step`.',
+].join('\n');
+
+const SLACK_FOLLOW_UP_BARE = SLACK_FOLLOW_UP_LABELLED.replace(
+  'New message from Sam Rivera (U0TESTUSER) in Slack channel #general (C0DEV),',
+  'New message from U0TESTUSER in Slack channel C0DEV,',
+);
 
 const TELEGRAM = [
   'You received a message on Telegram.',
@@ -117,8 +152,8 @@ describe('parseChannelMessage — Microsoft Teams', () => {
   test('first message: platform, sender, conversation, and the bare message text', () => {
     expect(parseChannelMessage(TEAMS_FIRST)).toEqual({
       platform: 'Teams',
-      context: 'a:1FQyR2jW1pEUK_1d5ElylXF7Su1cgPbKpna',
-      userName: 'Ivan Bagaric',
+      context: 'a:1TESTCONVERSATIONID',
+      userName: 'Jordan Lee',
       messageText: 'List the files in this repo and summarize the README',
       followUp: false,
     });
@@ -128,7 +163,7 @@ describe('parseChannelMessage — Microsoft Teams', () => {
     expect(parseChannelMessage(TEAMS_FOLLOW_UP)).toEqual({
       platform: 'Teams',
       context: '',
-      userName: 'Ivan Bagaric',
+      userName: 'Jordan Lee',
       messageText: 'Now count the lines in the README',
       followUp: true,
     });
@@ -144,16 +179,45 @@ describe('parseChannelMessage — Slack', () => {
     expect(parseChannelMessage(SLACK_FIRST)).toEqual({
       platform: 'Slack',
       context: 'C0DEV',
-      userName: 'U0IVAN',
-      messageText: '<@U0BOT> what changed in the last deploy?',
+      userName: 'U0TESTUSER',
+      messageText: '@U0BOT what changed in the last deploy?',
       followUp: false,
+    });
+  });
+
+  test('a labelled first message shows names, not ids, and Slack markup as a person reads it', () => {
+    expect(parseChannelMessage(SLACK_FIRST_LABELLED)).toEqual({
+      platform: 'Slack',
+      context: '#general',
+      userName: 'Sam Rivera',
+      messageText: '@Kortix what changed in #ops since the deploy? @here a <b> & c',
+      followUp: false,
+    });
+  });
+
+  test("a follow-up in the API's current shape names the sender and the channel", () => {
+    expect(parseChannelMessage(SLACK_FOLLOW_UP_LABELLED)).toEqual({
+      platform: 'Slack',
+      context: '#general',
+      userName: 'Sam Rivera',
+      messageText: 'and the one before that',
+      followUp: true,
+    });
+  });
+
+  test('an unlabelled follow-up in the current shape keeps the ids', () => {
+    expect(parseChannelMessage(SLACK_FOLLOW_UP_BARE)).toMatchObject({
+      platform: 'Slack',
+      context: 'C0DEV',
+      userName: 'U0TESTUSER',
+      followUp: true,
     });
   });
 
   test('a revived thread (NOTE prefix) still parses', () => {
     expect(parseChannelMessage(SLACK_REVIVED)).toMatchObject({
       platform: 'Slack',
-      userName: 'U0IVAN',
+      userName: 'U0TESTUSER',
       messageText: 'still there?',
     });
   });
@@ -162,7 +226,7 @@ describe('parseChannelMessage — Slack', () => {
     expect(parseChannelMessage(SLACK_FOLLOW_UP)).toEqual({
       platform: 'Slack',
       context: '',
-      userName: 'U0IVAN',
+      userName: 'U0TESTUSER',
       messageText: 'and the one before that',
       followUp: true,
     });
@@ -344,4 +408,29 @@ describe('no channel message can freeze the tab that parses it', () => {
   within('80k <at openers and no >', () => parseChannelMessage(`[Slack · c · message from a] ${'<at'.repeat(80_000)}`));
   within('60k <at> openers, each on its own line', () =>
     parseChannelMessage(`[Slack · c · message from a] ${'<at>\n'.repeat(48_000)}</at>`));
+  within('a Slack follow-up header with 13k channel separators', () =>
+    parseChannelMessage(`New message from a${' in Slack channel b'.repeat(13_000)}, thread 1:\n\nhi`));
+  within('a Slack message with 80k < openers and no >', () =>
+    parseChannelMessage(`[Slack · c · message from a] ${'<@U0'.repeat(80_000)}`));
+  within('a Slack message with 60k nested < openers before one >', () =>
+    parseChannelMessage(`[Slack · c · message from a] ${'<'.repeat(60_000)}@U0>`));
+});
+
+// The agent's own Slack replies and the Channels page name a conversation the
+// way the incoming card does.
+describe('slackConversationName', () => {
+  test('a channel reads #name, a DM its person, a group DM its members', () => {
+    expect(slackConversationName({ channelName: 'general', channelType: 'channel' })).toBe('#general');
+    expect(slackConversationName({ channelName: 'launch-plan', channelType: 'private_channel' })).toBe('#launch-plan');
+    expect(slackConversationName({ channelName: 'Sam Rivera', channelType: 'im' })).toBe('Sam Rivera');
+    expect(slackConversationName({ channelName: 'sam, alex', channelType: 'mpim' })).toBe('sam, alex');
+  });
+
+  test('a name stored before Slack types were recorded is still a channel', () => {
+    expect(slackConversationName({ channelName: 'general', channelType: null })).toBe('#general');
+  });
+
+  test('no stored name is no label', () => {
+    expect(slackConversationName({ channelName: null, channelType: 'channel' })).toBeNull();
+  });
 });
