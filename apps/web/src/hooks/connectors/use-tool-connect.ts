@@ -1,22 +1,15 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
-
 import {
   type ConnectorConnectResult,
   type ConnectorFinalizeResult,
-  connectorConnect,
-  connectorFinalize,
-  createConnector,
+  type connectorConnect,
+  type connectorFinalize,
 } from '@kortix/sdk';
 
-import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import {
   buildEasyConnectConnectorDraft,
-  connectorSyncErrorForSlug,
 } from '@/features/workspace/customize/sections/connector-connection-form';
-import { runConnectLinkFlow } from '@/hooks/connectors/use-connect-link';
 
 export interface ToolConnectInput {
   appSlug: string;
@@ -91,68 +84,4 @@ export function toolConnectSteps(
         ...(connectionId ? { connectionId } : {}),
       }),
   };
-}
-
-const sdkToolConnectDeps: ToolConnectDeps = {
-  connectProject: connectorConnect,
-  finalizeProject: connectorFinalize,
-};
-
-export function useToolConnect(projectId: string, onConnected: () => void) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return useMutation({
-    mutationFn: async (input: ToolConnectInput) => {
-      const draft = buildToolConnectorDraft(input);
-      const created = await createConnector(projectId, draft);
-      const syncError = connectorSyncErrorForSlug(created, draft.slug);
-      if (syncError) {
-        return {
-          slug: draft.slug,
-          connected: false,
-          syncError,
-          connectError: null,
-        };
-      }
-
-      try {
-        const steps = toolConnectSteps(projectId, draft.slug, sdkToolConnectDeps);
-        const connected = await runConnectLinkFlow(steps.start, steps.finalize);
-
-        if (!connected.connected) {
-          return {
-            slug: draft.slug,
-            connected: false,
-            syncError: null,
-            connectError: null,
-          };
-        }
-        return {
-          slug: draft.slug,
-          connected: true,
-          syncError: null,
-          connectError: null,
-        };
-      } catch (error) {
-        return {
-          slug: draft.slug,
-          connected: false,
-          syncError: null,
-          connectError: error instanceof Error ? error.message : String(error),
-        };
-      }
-    },
-    onSuccess: (res) => {
-      onConnected();
-      if (res.syncError) {
-        warningToast(tI18nComplete('text1a425eb8b2b6', { value0: res.syncError }));
-        return;
-      }
-      if (res.connectError) {
-        warningToast(tI18nComplete('text7d870610b59d', { value0: res.connectError }));
-        return;
-      }
-      if (res.connected) successToast(tI18nComplete.raw('text22965568d22a'));
-    },
-    onError: (err: Error) => errorToast(err.message),
-  });
 }
