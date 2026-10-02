@@ -4648,6 +4648,8 @@ export const tunnelDeviceAuthRequests = kortixSchema.table(
     uniqueIndex('idx_tunnel_device_auth_code').on(table.deviceCode),
     index('idx_tunnel_device_auth_status').on(table.status),
     index('idx_tunnel_device_auth_expires').on(table.expiresAt),
+    // Covers the tunnel_id FK: a DELETE on tunnel_connections runs ON DELETE SET NULL here.
+    index('idx_tunnel_device_auth_tunnel').on(table.tunnelId),
   ],
 );
 
