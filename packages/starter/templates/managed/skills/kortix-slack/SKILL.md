@@ -129,6 +129,10 @@ slack step "Cross-referencing the timeline" \
   --output "Tied to <https://github.com/acme/api/commit/a3f1|api@a3f1> — auth middleware"
 ```
 
+### People and channels in a step
+
+A step never notifies anyone. `<@U0123ABCD>` in a step's title, `--detail` or `--output` shows as the person's name (`@Sam Rivera`), and `<!here>` shows as text. `<#C0123ABCD>` shows as the channel. To notify someone, mention them in `slack send`.
+
 ### `--source URL|TITLE` — citation footer (repeatable)
 
 Attach structured citations to the *closing* task. Slack renders them as a sources strip under that task's card. Pass multiple `--source` lines separated by newlines (use shell heredoc or repeat the flag in a wrapper).
