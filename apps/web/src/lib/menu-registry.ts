@@ -226,7 +226,7 @@ export interface MenuItemDef {
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
   /** If set, the item is only shown when the session's runtime serves this
-   *  feature (`runtimeSupports`; a pi session has no compact). */
+   *  feature (`runtimeSupports`). */
   requiresRuntime?: RuntimeCapability;
   /** If true, item is only shown when a project is active (new project shell).
    *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */

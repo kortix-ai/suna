@@ -62,9 +62,17 @@ when the project needs one of these:
 | Path in the directory | Contents |
 | --- | --- |
 | `extensions/*.ts` | pi extensions: tools, hooks and commands. See `extensions.md`. |
-| `prompts/*.md` | pi prompt templates. A prompt that starts with `/<name>` expands the template. |
+| `prompts/*.md` | pi prompt templates. Each one is a slash command: the composer lists it, and a prompt that starts with `/<name>` expands the template. `$1`, `$2` and `$ARGUMENTS` take the arguments. |
 | `skills/<name>/SKILL.md` | Skills only pi sessions load. Prefer the root `skills/`, which both harnesses load. |
-| `settings.json` | pi settings. Kortix turns off pi's own compaction and retry, whatever the file says. Only `./` entries of `packages` load from this file; declare npm packages in `kortix.yaml`. |
+| `settings.json` | pi settings. `compaction` (`enabled`, `reserveTokens`, `keepRecentTokens`) applies. Kortix turns off pi's own retry, whatever the file says. Only `./` entries of `packages` load from this file; declare npm packages in `kortix.yaml`. |
+
+## Compaction
+
+pi summarizes the older part of a long conversation by itself: when the
+context nears the model's window, and when a model request overflows it (pi
+then retries that request once). `kortix sessions compact <id>` and the
+dashboard's "Compact" do it on demand. The transcript keeps every message;
+only the model's context gets shorter.
 
 ## What pi does not support
 
@@ -74,8 +82,7 @@ pi answers a request for a feature it does not have with
 | Feature | On pi |
 | --- | --- |
 | Rewind to a message, edit-and-resend | Not supported. |
-| Compaction | Not supported. A turn that exceeds the model's context window ends with `ContextOverflowError`. Start a new session for a long task. |
-| Slash commands (`commands/*.md`) | Not supported. Use a prompt template in `harnesses/pi/prompts/`. |
+| OpenCode command files (`harnesses/opencode/commands/*.md`) | Not read. Put the command in `harnesses/pi/prompts/` as a prompt template. |
 | MCP servers | No MCP client. Use connectors through `kortix connectors`, or a pi package. |
 | Todo list (`todowrite`) | No tool. |
 | `opencode attach` | Not supported. |
