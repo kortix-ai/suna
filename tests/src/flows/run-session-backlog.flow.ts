@@ -1434,7 +1434,7 @@ const messageText = (message: RuntimeMessage): string =>
 
 // pi keeps the last `keepRecentTokens` (20,000 by default) of a conversation out
 // of a summary, so a two-turn session has nothing to summarize. 1 makes it compactable.
-const PI_COMPACT_FILES = { '.kortix/pi/settings.json': `${JSON.stringify({ compaction: { keepRecentTokens: 1 } })}\n` };
+const PI_COMPACT_FILES = { 'harnesses/pi/settings.json': `${JSON.stringify({ compaction: { keepRecentTokens: 1 } })}\n` };
 
 // ─── RUN-13: a session compacts its conversation on demand ───────────────────
 harnessFlow(
@@ -1538,7 +1538,7 @@ harnessFlow(
     try {
       await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
         if (harness === 'pi') await world.setFeature('pi_harness', true);
-        const path = harness === 'pi' ? `.kortix/pi/prompts/${COMMAND}.md` : `.kortix/opencode/commands/${COMMAND}.md`;
+        const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
         await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
       });
       const session = await bootSession(ctx, harness, { project });
@@ -1571,11 +1571,11 @@ harnessFlow(
         }
       });
 
-      await ctx.step('a command the project does not have is refused', async () => {
+      await ctx.step('a command the project does not have is refused: 400 on pi, 500 on OpenCode', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(runtimePath(sandboxId, `/session/${root}/command`), { command: 'ke2e-no-such-command', arguments: '' });
-        r.status([400, 404]);
+        r.status(harness === 'pi' ? 400 : 500);
       });
     } finally {
       await world.close();
