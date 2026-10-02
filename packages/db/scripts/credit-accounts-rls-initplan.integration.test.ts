@@ -57,8 +57,9 @@ function applyMigration(database: string) {
 /**
  * The where-clause of supabase/splinter lints/0003_auth_rls_initplan.sql
  * (the predicate the prod advisor runs), on the core catalog. A policy is
- * flagged when it names an auth function (or current_setting) and the call is
- * not wrapped in a `select` subquery.
+ * flagged when its qual or with_check names an auth function (or
+ * current_setting) and the call is not wrapped in a `select` subquery. A NULL
+ * with_check matches nothing, exactly as in the lint's own SQL.
  */
 function advisorFlags(database: string): number {
   return Number(
@@ -76,6 +77,11 @@ function advisorFlags(database: string): number {
          OR (pg_get_expr(pa.polqual, pa.polrelid) LIKE '%auth.role()%' AND lower(pg_get_expr(pa.polqual, pa.polrelid)) NOT LIKE '%select auth.role()%')
          OR (pg_get_expr(pa.polqual, pa.polrelid) LIKE '%auth.email()%' AND lower(pg_get_expr(pa.polqual, pa.polrelid)) NOT LIKE '%select auth.email()%')
          OR (pg_get_expr(pa.polqual, pa.polrelid) LIKE '%current\\_setting(%' AND lower(pg_get_expr(pa.polqual, pa.polrelid)) NOT LIKE '%select current\\_setting(%')
+         OR (pg_get_expr(pa.polwithcheck, pa.polrelid) LIKE '%auth.uid()%' AND lower(pg_get_expr(pa.polwithcheck, pa.polrelid)) NOT LIKE '%select auth.uid()%')
+         OR (pg_get_expr(pa.polwithcheck, pa.polrelid) LIKE '%auth.jwt()%' AND lower(pg_get_expr(pa.polwithcheck, pa.polrelid)) NOT LIKE '%select auth.jwt()%')
+         OR (pg_get_expr(pa.polwithcheck, pa.polrelid) LIKE '%auth.role()%' AND lower(pg_get_expr(pa.polwithcheck, pa.polrelid)) NOT LIKE '%select auth.role()%')
+         OR (pg_get_expr(pa.polwithcheck, pa.polrelid) LIKE '%auth.email()%' AND lower(pg_get_expr(pa.polwithcheck, pa.polrelid)) NOT LIKE '%select auth.email()%')
+         OR (pg_get_expr(pa.polwithcheck, pa.polrelid) LIKE '%current\\_setting(%' AND lower(pg_get_expr(pa.polwithcheck, pa.polrelid)) NOT LIKE '%select current\\_setting(%')
           );`,
     ),
   );
@@ -189,8 +195,10 @@ describe.skipIf(!dockerAvailable)(
         'Users can view own credit account [SELECT roles={public} PERMISSIVE]',
       );
       // The remediation itself: every auth call sits inside a select subquery.
-      expect(shape).toContain('select auth.role()');
-      expect(shape).toContain('select auth.uid()');
+      // Postgres deparses to `( SELECT auth.role() AS role)` — uppercase, with
+      // an alias — so match lowercased, the way the advisor's predicate reads it.
+      expect(shape.toLowerCase()).toContain('select auth.role()');
+      expect(shape.toLowerCase()).toContain('select auth.uid()');
 
       applyMigration('legacy_db');
       expect(advisorFlags('legacy_db')).toBe(0);
