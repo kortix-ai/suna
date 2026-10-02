@@ -2056,7 +2056,18 @@ export const teamsPendingUploads = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
-  (table) => [index('idx_teams_pending_uploads_expiry').on(table.expiresAt)],
+  //
+  // `idx_teams_pending_uploads_expiry` (expires_at, btree) was dropped
+  // 2026-10-02 (migration
+  // 20261002214509036_drop_teams_pending_uploads_expiry_index): the Supabase
+  // `unused_index` advisor flagged it and prod confirms it has never been
+  // used -- idx_scan = 0 with stats_reset null (never reset since database
+  // creation), the table has never held a row (n_tup_ins = 0), and the only
+  // query shaped for it (the expired cleanup delete in
+  // apps/api/src/channels/teams/file-proxy.ts) is served by a sequential
+  // scan over an empty heap. Do not re-add it here without evidence: a
+  // future `drizzle-kit generate` would emit a plain DROP INDEX for a schema
+  // entry this migration no longer creates.
 );
 
 // Cross-replica dedup of inbound Slack event deliveries. Slack can deliver the
