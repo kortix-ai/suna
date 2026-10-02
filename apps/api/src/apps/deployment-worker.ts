@@ -26,6 +26,7 @@ import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
+import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
 
 export const APP_RUNTIME_VERSION =
   process.env.KORTIX_APP_RUNTIME_VERSION
@@ -434,7 +435,7 @@ export async function driveAppDeployment(
       throw error;
     }
 
-    const snapshotName = `kortix-app-${claimed.deploymentId.replaceAll('-', '')}`;
+    const snapshotName = appDeploymentSnapshotName(claimed.deploymentId);
     await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
       sourceKind: normalized.sourceKind,
       runtimeSpec: normalized.runtimeSpec,
