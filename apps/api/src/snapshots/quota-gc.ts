@@ -30,7 +30,7 @@ import {
 } from '../shared/daytona';
 import { db } from '../shared/db';
 import {
-  APP_DEPLOYMENT_PREFIX,
+  appDeploymentSnapshotName,
   DAYTONA_ORG_SNAPSHOT_LIMIT,
   QUOTA_GC_MAX_PER_PASS,
   QUOTA_GC_ORG_TARGET,
@@ -85,13 +85,10 @@ export interface SnapshotQuotaIo {
 
 /**
  * The name of the App-deployment snapshot a `ready` deployment row still
- * needs — must match `deployment-worker.ts`'s
- * `` `kortix-app-${deploymentId.replaceAll('-', '')}` `` exactly, or a live
- * rollback target would silently fall out of `referenced` and get reaped.
+ * needs. `deployment-worker.ts` builds with the same function, so a live
+ * rollback target can never fall out of `referenced` by a naming drift.
  */
-export function appDeploymentSnapshotName(deploymentId: string): string {
-  return `${APP_DEPLOYMENT_PREFIX}${deploymentId.replaceAll('-', '')}`;
-}
+export { appDeploymentSnapshotName };
 
 /** Exported for the integration test — hits the real DB, no provider IO. */
 export async function loadReferencedSnapshotNames(now: number): Promise<Set<string>> {

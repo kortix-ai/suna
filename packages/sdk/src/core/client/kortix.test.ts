@@ -81,6 +81,17 @@ test('project(id).apps exposes the complete App lifecycle with the project id bo
   });
 });
 
+test('project(id).apps.deployments.remove deletes one deployment with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  await apps.deployments.remove('APP1', 'DEP1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments/DEP1',
+  });
+});
+
 test('project(id).connectors exposes the complete connector data plane', async () => {
   const connectors = kortix.project('PID123').connectors;
 

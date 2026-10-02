@@ -1181,6 +1181,28 @@ that token gets **403** on a project route. `off` → `/_kortix/viewer` **404**
 token revoked elsewhere) is proven in
 `apps/api/src/apps/viewer-token.integration.test.ts`.
 
+`APP-7` Deleting an App or one deployment releases its provider images. Every
+deployment build mints one provider image (`kortix-app-<deploymentId>`), and
+providers cap how many an organization may hold (Platinum: per-org template
+count). `DELETE /projects/:projectId/apps/:appId/deployments/:deploymentId`
+deletes one deployment, its runtime, and its image. A deployment still in
+progress → **409** `{code:'deployment_in_progress', status:<in-progress status>}`
+and it stays listed; an unknown deployment → **404**; `NONMEMBER` → **403**;
+the live deployment → **409** `deployment_live`. The real CLI process
+`kortix apps delete <slug> --deployment <id|vN> --yes` exits non-zero without
+`--yes`, names the existing deployments for an unknown target (`Deployment v9
+not found (deployments: v1)`), and relays the in-progress 409. `kortix apps delete <slug> --yes --json` deletes the
+App during its build and returns `{ok, app_id, slug, images:{released, pending}}`
+with `released: 0`: a build still in progress may register its image after the
+delete, so its image is reported `pending` for project maintenance, never
+`released`, and the worker refuses to start a runtime for the deleted App. The App and its
+deployment list then answer **404**. A
+deleted deployment leaves the list, detail, and logs reads and is never a
+rollback target. The local profile cannot finish a build, so a deployed
+environment proves a `released` image and a successful single-deployment
+delete; `apps/api/src/apps/images.integration.test.ts` proves the maintenance
+sweep that retries `pending` images.
+
 ---
 
 ## 29. Additional executable product contracts

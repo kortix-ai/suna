@@ -152,6 +152,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Deleted IAM policy': 'textbb4db6a8ee1a',
   'Deleted IAM role': 'text0975bebd3619',
   'Deleted Kortix App': 'text2fa5960eb241',
+  'Deleted Kortix App deployment': 'text516e80d9f8dc',
   'Deleted LLM gateway budget': 'text8a18f907f571',
   'Deleted Microsoft Teams message': 'text3fb4073453fc',
   'Deleted SCIM group': 'text960b49e3fb03',
