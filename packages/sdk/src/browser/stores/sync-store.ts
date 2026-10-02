@@ -1178,6 +1178,79 @@ function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 
 // ============================================================================
 
+/**
+ * Append wire deltas to one part field in ONE store update. `applyPartDelta`
+ * passes one; a coalesced `message.part.delta` passes the run it stands for.
+ * Each piece keeps its own duplicate-delivery check (`deltaEventTails`).
+ */
+function appendPartDeltas(
+	sessionID: string,
+	messageID: string,
+	partID: string,
+	field: string,
+	pieces: readonly { id?: string; delta: string }[],
+) {
+	trackId(deltaActiveParts, sessionID, partID);
+	let applied = false;
+	useSyncStore.setState((s) => {
+		const list = s.parts[messageID];
+		if (!list) return s;
+		const result = Binary.search(list, partID, (p) => p.id);
+		if (!result.found) return s;
+		let delta = "";
+		for (const piece of pieces) {
+			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
+			// when the caller supplied an event id (every real wire delta does);
+			// a delta with no id gets no protection here, same as before this
+			// change. Checked and RECORDED here, inside the actual-apply
+			// branch (after the list/found checks above), not before `setState()`
+			// runs at all: recording it earlier marked an event id "applied"
+			// even on the not-found path — a delta whose target part doesn't
+			// exist yet (or was dropped) — which then permanently blocked a
+			// later LEGITIMATE redelivery of that same event once the part
+			// did exist. See "a delta that finds no target part does not
+			// consume the event id" in the test file.
+			if (piece.id) {
+				const tailKey = `${messageID}:${partID}:${field}`;
+				let sessionTails = deltaEventTails.get(sessionID);
+				if (!sessionTails) {
+					sessionTails = new Map();
+					deltaEventTails.set(sessionID, sessionTails);
+				}
+				let appliedIds = sessionTails.get(tailKey);
+				if (appliedIds?.has(piece.id)) continue;
+				if (!appliedIds) {
+					appliedIds = new Set();
+					sessionTails.set(tailKey, appliedIds);
+				}
+				appliedIds.add(piece.id);
+				// Bounded window: a Set iterates in insertion order, so the
+				// first key is the oldest applied id.
+				if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
+					const oldest = appliedIds.values().next().value;
+					if (oldest !== undefined) appliedIds.delete(oldest);
+				}
+			}
+			delta += piece.delta;
+			applied = true;
+		}
+		if (!applied) return s;
+		const next = [...list];
+		const part = { ...next[result.index] };
+		const existing = (part as Record<string, unknown>)[field] as
+			| string
+			| undefined;
+		(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
+		next[result.index] = part as Part;
+		return { parts: { ...s.parts, [messageID]: next } };
+	});
+	// The delta changed the visible transcript. This is the runtime itself
+	// producing output, so it refreshes the activity evidence used by
+	// `projectWorking`. Stamp only after a real apply: reconnect replays with
+	// an already-consumed event id are history, not current activity.
+	if (applied) useSyncStore.getState().noteSessionActivity(sessionID);
+}
+
 export const useSyncStore = create<SyncState>()((set, get) => ({
 	messages: {},
 	parts: {},
@@ -1350,62 +1423,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			return { parts: { ...s.parts, [messageID]: next } };
 		}),
 
-	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
-		trackId(deltaActiveParts, sessionID, partID);
-		let applied = false;
-		set((s) => {
-			const list = s.parts[messageID];
-			if (!list) return s;
-			const result = Binary.search(list, partID, (p) => p.id);
-			if (!result.found) return s;
-			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts
-			// when the caller supplied an event id (every real wire delta does);
-			// a delta with no id gets no protection here, same as before this
-			// change. Checked and RECORDED here, inside the actual-apply
-			// branch (after the list/found checks above), not before `set()`
-			// runs at all: recording it earlier marked an event id "applied"
-			// even on the not-found path — a delta whose target part doesn't
-			// exist yet (or was dropped) — which then permanently blocked a
-			// later LEGITIMATE redelivery of that same event once the part
-			// did exist. See "a delta that finds no target part does not
-			// consume the event id" in the test file.
-			if (eventID) {
-				const tailKey = `${messageID}:${partID}:${field}`;
-				let sessionTails = deltaEventTails.get(sessionID);
-				if (!sessionTails) {
-					sessionTails = new Map();
-					deltaEventTails.set(sessionID, sessionTails);
-				}
-				let appliedIds = sessionTails.get(tailKey);
-				if (appliedIds?.has(eventID)) return s;
-				if (!appliedIds) {
-					appliedIds = new Set();
-					sessionTails.set(tailKey, appliedIds);
-				}
-				appliedIds.add(eventID);
-				// Bounded window: a Set iterates in insertion order, so the
-				// first key is the oldest applied id.
-				if (appliedIds.size > DELTA_EVENT_TAIL_LIMIT) {
-					const oldest = appliedIds.values().next().value;
-					if (oldest !== undefined) appliedIds.delete(oldest);
-				}
-			}
-			const next = [...list];
-			const part = { ...next[result.index] };
-			const existing = (part as Record<string, unknown>)[field] as
-				| string
-				| undefined;
-			(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
-			next[result.index] = part as Part;
-			applied = true;
-			return { parts: { ...s.parts, [messageID]: next } };
-		});
-		// The delta changed the visible transcript. This is the runtime itself
-		// producing output, so it refreshes the activity evidence used by
-		// `projectWorking`. Stamp only after a real apply: reconnect replays with
-		// an already-consumed event id are history, not current activity.
-		if (applied) get().noteSessionActivity(sessionID);
-	},
+	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) =>
+		appendPartDeltas(sessionID, messageID, partID, field, [{ id: eventID, delta }]),
 
 	setStatus: (sessionID, status, origin = "wire") =>
 		set((s) => {
@@ -2638,13 +2657,19 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// `event.id` is a top-level field of every wire event (see
 				// `deltaEventTails` above) — never inside `properties`, so it is
 				// read directly off `event`, not `props`.
-				store.applyPartDelta(
+				// A coalesced event (`core/stream/event-stream.ts`) lists the wire
+				// events it replaced: each is deduped by its own id, and the run
+				// lands in one update.
+				const wire = (event as { coalesced?: RuntimeEvent[] }).coalesced ?? [event];
+				appendPartDeltas(
 					props.sessionID,
 					props.messageID,
 					props.partID,
 					props.field,
-					props.delta,
-					event.id,
+					wire.map((e) => ({
+						id: (e as { id?: string }).id,
+						delta: (e.properties as { delta: string }).delta,
+					})),
 				);
 				if (props.field === "text") {
 					const updated = get().parts[props.messageID]?.find(
