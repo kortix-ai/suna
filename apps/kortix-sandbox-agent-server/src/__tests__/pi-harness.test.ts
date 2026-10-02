@@ -2070,6 +2070,13 @@ describe('pi compaction', () => {
     expect(await summarize(r, root).then((res) => res.json())).toBe(true)
     const text = await readSse(events, (t) => t.includes('event: session.compacted'))
     expect(text).toContain('event: session.compacted')
+    // pi does not title a session (apps/api does), and a client renames the session to the
+    // title of a `session.updated`: the frames carry `time.compacting` and no title.
+    const updates = text.split('\n\n').filter((frame) => frame.includes('event: session.updated')).map((frame) => frame.slice(frame.indexOf('data: ') + 6))
+    expect(updates).toHaveLength(2)
+    expect(updates.map((data) => data.includes('"title"'))).toEqual([false, false])
+    expect(updates[0]).toContain('"compacting"')
+    expect(updates[1]).not.toContain('"compacting"')
     await waitFor(() => r.service.runtime()!.idle())
 
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage

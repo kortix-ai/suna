@@ -802,7 +802,7 @@ export class PiRuntime {
         ...model,
         ...assistantInfoFields(undefined, { agent: this.agentName, workspace: this.workspace }),
       }
-      this.publish({ type: 'session.updated', properties: { sessionID, info: this.sessionObject() } })
+      this.publishSessionUpdated()
       this.publish({ type: 'message.updated', properties: { sessionID, info: { id: markerId, role: 'user', sessionID, time: { created }, agent: this.agentName, model } } })
       this.publish({
         type: 'message.part.updated',
@@ -842,9 +842,19 @@ export class PiRuntime {
         },
       },
     })
-    this.publish({ type: 'session.updated', properties: { sessionID, info: this.sessionObject() } })
+    this.publishSessionUpdated()
     this.publish({ type: 'session.compacted', properties: { sessionID } })
     this.persist()
+  }
+
+  /**
+   * The session row changed (`time.compacting`). The frame names no title: pi
+   * does not title a session, apps/api does, and a client takes the title of a
+   * `session.updated` as the session's new name.
+   */
+  private publishSessionUpdated(): void {
+    const { title: _working, ...info } = this.sessionObject()
+    this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info } })
   }
 
   private onAgentEvent(event: AgentEvent): void {
