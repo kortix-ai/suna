@@ -248,9 +248,11 @@ Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 the four that are real, and **API-MAP.md**'s Stability table for the full
 list of aliases (20 of them).
 
-> **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
-> no `response.body`. Use `createHttpSessionSyncController` for bounded history
-> synchronization. Keep the platform-specific event transport for live events.
+> **React Native / Expo:** REST works. Live streaming works with a host
+> transport: pass `configureKortix({ eventStreamTransport })` (one connection's
+> messages over the wire your runtime has, e.g. `react-native-sse`), and report
+> foreground and network changes with `notifyHostSignal`. `apps/mobile` runs
+> `useSession` from `@kortix/sdk/react` this way.
 
 ## Quick start
 
@@ -369,9 +371,9 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-For OpenCode REST sessions, `send()` reads the persisted session model and
+`send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
-OpenCode session from reusing stale snapshot defaults. A per-call choice
+runtime session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
@@ -402,13 +404,18 @@ In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads t
 
 ### React runtime
 
-`useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by
-`POST /start`. The hook owns messages, rewind and restore, cancellation,
-commands, permissions, and questions. Hosts do not construct runtime routes.
+`useSession(projectId, sessionId)` opens the session runtime returned by
+`POST /start`. The runtime is OpenCode or pi; the hook reads the same routes,
+transcript and events from both. The hook owns messages, rewind and restore,
+cancellation, commands, permissions, and questions. Hosts do not construct
+runtime routes. A feature one harness lacks is a capability: gate its control
+with `runtimeSupports(health?.capabilities, 'session.rewind')`. pi lists
+`session.subagents` only, so rewind, compaction, slash commands, the todo list
+and the runtime config document stay hidden or empty on a pi session.
 
 Every session saves its transcript at the end of each turn. `useSession` reads saved
 messages from the platform database while `/start` continues. It uses the
-server-validated OpenCode root and lets the live read reconcile the saved messages by ID.
+server-validated runtime session id and lets the live read reconcile the saved messages by ID.
 Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
@@ -426,20 +433,21 @@ the paged session list. Both are per user and bounded; clear both on sign-out. S
 states have one set of words for every host: `sessionListStatus`, `SESSION_LIST_STATUS`,
 `sessionConnectionLabel`, `SESSION_NOTICE`, and `turnRetryLabel`.
 
-A server-rendered host can seed a known OpenCode pin while `/start` runs:
+A server-rendered host can seed a known runtime session pin while `/start` runs:
 
 ```tsx
 useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
 Use only a pin that the host authorized for the same `(projectId, sessionId)`.
 The seed hydrates cached content. It does not choose the runtime identity.
 The pin returned by `/start` always replaces a stale seed. The SDK also scopes
-OpenCode query and synchronization controllers to the sandbox runtime. Two
+runtime query and synchronization controllers to the sandbox runtime. Two
 sandboxes cannot share browser cache state when a snapshot exposes the same
-OpenCode id during adoption.
+runtime session id during adoption. `opencode_session_id` is the older name
+of `runtime_session_id`; read it only as the fallback above.
 
 After a project replaces its repository, a session created before the
 replacement still starts. It runs the project's CURRENT config release and
@@ -477,8 +485,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · OpenCode REST compatibility escape hatches: `stream()` and `.runtime` |
-| `kortix.runtime()` | the OpenCode v2 compatibility client for the active sandbox; use a session-scoped handle in multi-tenant code |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
+| `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
 [`examples/`](./examples): list projects with a PAT, send + stream, the
@@ -555,7 +563,7 @@ restart. Credentials are encrypted server-side and are never returned, placed
 in `KORTIX_SESSION_CONTEXT`, or injected into the sandbox environment. Raw env
 and MCP configuration are not session-create inputs.
 
-For OpenCode REST sessions, `session.stream()` is a thin facade over the
+`session.stream()` is a thin facade over the
 framework-free `openEventStream`
 primitive (also exported directly, for hosts that want to manage the client
 themselves): it resolves THIS handle's own runtime (`ensureReady()`), connects
@@ -572,7 +580,9 @@ const handle = await kortix.session(pid, sid).stream({
 handle.close();
 ```
 
-`session.stream()` emits OpenCode v2 events. Use `useSession()` in React.
+`session.stream()` emits the runtime's events (`message.updated`,
+`message.part.updated`, `session.status`, `permission.*`, `question.*`, …),
+the same from OpenCode and pi. Use `useSession()` in React.
 
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
@@ -712,7 +722,7 @@ tree-shake (Metro) stays small.
 ## Errors
 
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
-`authenticatedFetch`, the files client, the opencode client, and
+`authenticatedFetch`, the files client, the runtime REST client, and
 `ensureReady()` all throw/return the same classes (from
 the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
@@ -765,7 +775,7 @@ LLM session retries can carry the gateway's structured failure chain. Use
 `provider`, gateway `code`, `requestId`, and ordered `attemptFailures`. Each
 failure identifies the provider, route model, resolved model, stage, upstream
 status when available, concrete code, and bounded message. Plain legacy retry
-messages remain supported and return `details: undefined`. When OpenCode keeps
+messages remain supported and return `details: undefined`. When the runtime keeps
 only the HTTP error message, `getRetryMessage(status)` still returns the full
 gateway composite. That message includes the request ID and each candidate's
 provider, resolved model, HTTP status, code, and bounded message.
@@ -843,10 +853,10 @@ The framework-free core — turn classification, session URLs and health, the
 REST clients, file operations, transcript formatting — has no React or DOM
 dependency and is usable from any JS host, all of it from the root entry;
 `apps/mobile` imports `classifyTurn` from `@kortix/sdk` this way.
-React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
-`createHttpSessionSyncController` for message history, status recovery, and older
-pagination. Mobile keeps its platform-specific event transport because React
-Native cannot consume the SDK's fetch-based SSE stream.
+`apps/mobile` (React Native) also runs `useSession` from `@kortix/sdk/react`.
+Its only platform code for the session runtime is the event transport
+(`eventStreamTransport`, `react-native-sse`) and the lifecycle signals
+(`notifyHostSignal` from `AppState` and its network listener).
 
 ## Rules of the road
 
@@ -935,7 +945,7 @@ pnpm --filter @kortix/sdk test   # facade, files, react hooks, turns, transcript
 ```
 
 See **`API-MAP.md`** for the complete endpoint catalogue. It covers the Kortix
-REST API and OpenCode REST runtime. See **`CHANGELOG.md`** for
+REST API and the session runtime's REST routes. See **`CHANGELOG.md`** for
 per-release changes.
 
 

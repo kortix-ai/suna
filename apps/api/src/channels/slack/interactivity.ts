@@ -1,12 +1,12 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
-import { TURN_INSTRUCTIONS } from './session';
 import { and, eq } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';
-import { backfillChannelName, dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { backfillSlackBindingLabel } from './binding-label';
 import { notifyAdminsOfAccessRequest } from './identity';
 import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
 import { parseReviewActionId, reviewVerbToVerdict, type ReviewVerb } from './review-cards';
@@ -94,22 +94,14 @@ async function handleAgentClick(
     return;
   }
 
-  // A click is a full turn: it gets the same channel/thread header and the
-  // same working instructions a message turn gets, so the agent knows it must
-  // stream progress with `slack step` and close the turn with `slack send`.
-  const lines = [
-    "You're answering a button click on Slack as a teammate.",
-    '',
-    `Workspace:  ${teamId}`,
-    `Channel:    ${channelId}`,
-    `User:       ${userId}`,
-    `Thread ts:  ${threadTs}`,
-    '',
-    `[Button click] The user clicked *${label || action.action_id}*.`,
-  ];
+  // A click is a full turn. `spawnAgentTurn` wraps this text the way it wraps
+  // a message: the header names the channel and the person beside their ids,
+  // and the working instructions follow, so the agent streams progress with
+  // `slack step` and closes the turn with `slack send`. The text is the click.
+  const lines = [`[Button click] The user clicked *${label || action.action_id}*.`];
   if (action.action_id) lines.push(`action_id: \`${action.action_id}\``);
   if (value) lines.push(`value: \`${value}\``);
-  lines.push('', 'Continue the turn based on this choice.', '', TURN_INSTRUCTIONS);
+  lines.push('', 'Continue the turn based on this choice.');
 
   const event: SlackEvent = {
     type: 'message',
@@ -355,7 +347,7 @@ async function handleSwitchProject(
     });
     return;
   }
-  await backfillChannelName(teamId, channelId, projectId);
+  await backfillSlackBindingLabel(teamId, channelId, projectId);
 
   const [p] = await db
     .select({ name: projects.name })

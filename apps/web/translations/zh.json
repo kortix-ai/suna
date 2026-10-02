@@ -12506,7 +12506,6 @@
       "text5a23444828db": "管理",
       "text92fbc8484002": "运行时会话",
       "text5a32374d30b4": "每日平台活动和信用消耗。每个桶都是 UTC 日。",
-      "text5a37d20f1235": "频道智能体已更新",
       "text5a41803b2dd1": "全部拒绝",
       "text5a4c567b2373": "具有“{value0}”声明的用户将不再自动加入“{value1}”。",
       "text5a4db0bfccdc": "这只会影响您的本地工作区。",
@@ -13140,7 +13139,6 @@
       "text6c612fd35781": "1 个应用匹配",
       "text6c627fe8f6cf": "你已经在运行的机器",
       "text6c6874dfe7ec": "按人员",
-      "text6c779d9f41fa": "频道模型已更新",
       "text6c848b936d1d": "隐藏 cron 表达式",
       "text6c8a12831e1d": "品牌与内容",
       "text6c94c3a6a6fa": "无论在哪里，都是同一个 Compose 项目。变化的只是域名指向哪里，以及您为它提供多少资源。",
@@ -16211,7 +16209,6 @@
       "textc416069b7f61": "调整",
       "textc41720e33d45": "项目的一部分",
       "textc417a3753a0b": "开源。自行托管完全相同的技术栈，使用你自己的运行时和模型密钥。没有黑箱，不受供应商锁定。",
-      "textc430cba8b89f": "加入策略已更新",
       "textc4320ecdd111": "为人员和智能体设置按资源划分的权限。密钥静态加密；连接器凭据由服务器端代理处理，绝不进入机器。",
       "textc432b8aea2f9": "决定",
       "textc436c2a32b85": "“Google Identity Provider details”步骤 → Download metadata（GoogleIDPMetadata.xml）。Google 不提供 metadata URL。",
@@ -19092,8 +19089,22 @@
       "textcd2c4b26eedd": "Kortix 没有记录你的 Teams 目录中的应用版本。{value0} 版包含你的智能体在 Teams 中使用的所有命令和权限。Teams 管理员发布更新。然后，团队所有者在 Teams 提供更新的每个团队中更新该应用：团队 → ⋯ → 管理团队 → 应用 → 更新。",
       "texte15f213fa506": "发布应用更新",
       "textcafd830fcf85": "已列出项目代理身份",
-      "textea2f51bfe21c": "查看了会话参与者",
-      "text7f755292bf51": "无法下载附件"
+      "text7f755292bf51": "无法下载附件",
+      "textd8b78d762ad0": "此处不显示超过 90 天的事件。导出会从归档中返回最长 365 天前的事件。",
+      "connectorSourceLabel": "连接器来源",
+      "connectorSourceManaged": "托管",
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "私有频道",
+      "textcd3e16057d09": "私信",
+      "textcbe7c5d45160": "群组私信",
+      "textf5738ddc651d": "不可用的频道",
+      "textafc219f2a1e7": "频道设置",
+      "text95112f275fba": "保存后，更改将应用于在此处启动的会话。",
+      "text255e5c59ef00": "频道设置已保存",
+      "text9116af1ce384": "对话是共享的，因此可以使用 Kortix 模型和与整个项目共享的密钥，不能使用个人密钥。",
+      "texte83e9ba50357": "任何已关联账号的项目成员都可以在此加入会话。",
+      "text4540af5229a8": "只有发起会话的人才能继续该会话。",
+      "textda4bd8bdfe42": "其他人需要会话所有者批准才能加入。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20357,6 +20368,15 @@
       "settingsHint": "如果打开了系统设置，请在列表中开启 Kortix。此页面会自动更新。",
       "doneTitle": "你的电脑已准备就绪",
       "doneHint": "Kortix 已获得所需的全部权限。代理现在可以使用这台电脑。"
+    },
+    "thisComputerBadge": "这台电脑",
+    "actionsFor": "{name} 的操作",
+    "older": {
+      "title": "旧连接",
+      "hint": "由无法区分电脑的旧版 Kortix 创建。它们都不在线。连续 30 天没有活动的连接会被 Kortix 自动移除。",
+      "removeAll": "全部移除",
+      "confirmTitle": "移除所有旧连接？",
+      "confirmDescription": "Kortix 会将它们及其账户从所有项目中移除。仍在使用其中之一的电脑可以重新连接。"
     }
   },
   "messageFrom": {

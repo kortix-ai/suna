@@ -8,11 +8,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import {
   accountTokens,
   auditEvents,
+  auditEventsAll,
   projectSessions,
   serviceAccounts,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { buildFilters } from '../../accounts/audit-filters';
 import { requireEntitlement } from '../../accounts/iam/helpers';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
@@ -34,12 +35,13 @@ import {
   parseAuditCursor,
   parseAuditInstant,
   parseAuditLimit,
+  type AuditEventRow,
   parseAuditSessionCursor,
+  readSessionAuditEvents,
   serializeAuditEvent,
 } from '../../shared/audit-query';
 import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { currentInboundAuditScope } from '../../shared/audit-scope';
-import { isAuditSessionLockTimeout, withAuditSessionLock } from '../../shared/audit-session-serial';
 import { db } from '../../shared/db';
 import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
@@ -83,67 +85,29 @@ async function ingestionOnBehalfOf(
 }
 
 /**
- * Rows per audit-ingest INSERT statement. Each statement holds this session's
- * `audit_session_sequences` row lock until it commits, so this is the knob that
- * bounds how long one ingest can block another.
- *
- * The default is the route's own batch ceiling (`MAX_BATCH_SIZE`): one accepted
- * relay batch is ONE statement. Every acquisition and every round trip is a
- * place a concurrent writer for the same session can interleave, and the lock
- * is re-queued between statements — so a batch split into 25-row statements
- * cost 8 acquisitions per POST and let concurrent POSTs alternate their way
- * past the request deadline (prod 2026-09-29: hot sessions posted full
- * 200-event batches back to back and `audit/events` burned 5,155 25 s-deadline
- * 503s in 3 h while every other DB-bound route's p95 rose with it). The row
- * lock is held only for the statement's own insert work, which is the same
- * total for the batch whatever the split, so the split bought nothing but
- * interleaving. Same-process writers already serialize on the in-process
- * session mutex (`shared/audit-session-serial.ts`), which removed the
- * dropped-queue-row failure the small chunk once guarded against.
+ * Rows per audit-ingest INSERT statement. The default is the route's own batch
+ * ceiling (`MAX_BATCH_SIZE`): one accepted relay batch is ONE statement. A statement
+ * takes no per-session lock (the BEFORE INSERT trigger only sets the source
+ * columns), so the size only trades round trips against the work one statement
+ * can lose to a statement timeout.
  *
  * Read per request, not at module load, so an operator can lower it
- * (`KORTIX_AUDIT_INGEST_CHUNK`) to trade round trips for shorter lock holds.
+ * (`KORTIX_AUDIT_INGEST_CHUNK`).
  */
 export function auditIngestChunkSize(): number {
   const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_CHUNK ?? '', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : MAX_BATCH_SIZE;
 }
 
-/** Advertised backoff when the session's sequence lock is contended. */
+/** Advertised backoff when the audit pool is contended (statement timeout, lock timeout). */
 const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
 
 /**
- * How long one chunk waits for the in-process per-session audit lock before it
- * reports contention (`shared/audit-session-serial.ts`). The holder is another
- * audit INSERT for the same session in this process — the request's own inbound
- * audit row the queue flushes, or a concurrent batch for the session. Waiting
- * in memory cannot be cut short by the pool's `lock_timeout`, so this budget
- * covers the holder's own statement budget (10 s) plus margin, while staying
- * under the 25 s request deadline.
- */
-const AUDIT_INGEST_LOCK_WAIT_MS = (() => {
-  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_LOCK_WAIT_MS ?? '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : 12_000;
-})();
-
-/**
- * The in-process lock wait is capped per attempt so a chunk's worst case (this
- * wait, plus the audit pool's statement timeout, plus a 1s response margin)
- * always fits inside the request's remaining budget. A chunk cannot consume
- * both bounds fully — a lock wait that exhausts its cap throws before any
- * insert — but a chunk that acquires the lock late and then writes into a slow
- * statement approaches it.
+ * A statement's worst case is the audit pool's statement timeout plus a 1 s
+ * response margin. A chunk starts only when that fits the request's remaining
+ * budget.
  */
 const AUDIT_INGEST_ATTEMPT_MARGIN_MS = 1_000;
-
-/**
- * The smallest in-process lock wait an ingest attempt still accepts. Below it
- * the request cannot afford another statement's worst case, so it answers with
- * the controlled contended 503 instead of racing its own deadline. A busy
- * mutex throws past this cap and is classified as contention, so a small floor
- * only bounds the wasted wait; it never forces a statement past the deadline.
- */
-const AUDIT_INGEST_MIN_LOCK_WAIT_MS = 250;
 
 /**
  * Rows in the smallest statement a contended ingest falls back to (half of the
@@ -158,8 +122,7 @@ const AUDIT_INGEST_MIN_CHUNK = 25;
  * Resolve with `{ timedOut: true }` if `work` is still pending after
  * `boundMs`, else with its value.
  *
- * The ingest chunk's own bounds (the in-process lock wait, the audit pool's
- * statement timeout) bound their waits, but the wait for one of the audit
+ * The ingest chunk's own bound (the audit pool's statement timeout) bounds its wait, but the wait for one of the audit
  * pool's backends has NO bound: postgres.js has no acquire-queue timeout, so
  * a statement whose two backends are busy queues for a connection for as
  * long as the convoy in front of it takes (prod 2026-09-29, hours after the
@@ -313,9 +276,9 @@ projectsApp.openapi(
     await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const fetched = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
     const hasMore = fetched.length > limit;
     const rows = hasMore ? fetched.slice(0, limit) : fetched;
@@ -344,7 +307,7 @@ projectsApp.openapi(
     },
     responses: {
       200: json(AnyObject, 'Batch ingestion result'),
-      // Lock contention on kortix.audit_session_sequences. Retryable: the relay
+      // Audit pool contention (statement or lock timeout). Retryable: the relay
       // still holds the batch in its own durable spool.
       503: json(AnyObject, 'Audit ingestion is contended'),
       ...errors(400, 403, 404),
@@ -493,10 +456,8 @@ projectsApp.openapi(
 
     // Write the batch in bounded statements. The first attempt carries
     // `auditIngestChunkSize()` rows — one statement per accepted batch by
-    // default. Each statement's rows lock this session's
-    // `audit_session_sequences` row until its COMMIT: the lock holds only the
-    // statement's own insert work, a rejected statement rolls back only its
-    // own rows, and the relay re-sends what did not land after its backoff.
+    // default. A rejected statement rolls back only its own rows, and the relay
+    // re-sends what did not land after its backoff.
     let attempted = 0;
     let insertedCount = 0;
     let contended = false;
@@ -504,30 +465,20 @@ projectsApp.openapi(
     let fallbacks = 0;
     for (let offset = 0; offset < toInsert.length; ) {
       // Stay inside the request's own 25s deadline. A chunk must not start
-      // unless its worst case (in-process lock wait + the audit pool's
+      // unless its worst case (the audit pool's
       // statement timeout + margin) fits the remaining budget; the deadline
       // middleware otherwise aborts mid-batch with an error-level
       // `request exceeded the 25s server processing deadline` line, no
       // `Retry-After: 5` pacing, and chunks that keep writing for a response
       // nobody reads (prod 2026-09-28: the aborts were this route's dominant
       // error class). Stop at that boundary and answer with the same
-      // controlled contended 503 the lock path returns — the relay holds the
+      // controlled contended 503 the contention path returns — the relay holds the
       // batch in its spool and retries with `Retry-After`, and committed
       // chunks stay committed.
       const remainingMs = remainingIngestBudgetMs(c);
-      // An attempt's worst case is its in-process lock wait plus the audit
-      // pool's statement timeout plus a 1s response margin. The wait is CAPPED
-      // to what the remaining budget affords, so a chunk never starts unless
-      // it can also finish inside the request deadline — and a request with
-      // less than a full 23s chunk left can still afford a smaller statement.
-      const lockWaitMs =
-        remainingMs === null
-          ? AUDIT_INGEST_LOCK_WAIT_MS
-          : Math.min(
-              AUDIT_INGEST_LOCK_WAIT_MS,
-              remainingMs - AUDIT_STATEMENT_TIMEOUT_MS - AUDIT_INGEST_ATTEMPT_MARGIN_MS,
-            );
-      if (remainingMs !== null && lockWaitMs < AUDIT_INGEST_MIN_LOCK_WAIT_MS) {
+      // A chunk never starts unless its worst case (the audit pool's statement
+      // timeout plus the response margin) fits the remaining budget.
+      if (remainingMs !== null && remainingMs < AUDIT_STATEMENT_TIMEOUT_MS + AUDIT_INGEST_ATTEMPT_MARGIN_MS) {
         appLogger.warn('[audit] ingest budget exhausted', {
           projectId,
           sessionId,
@@ -543,22 +494,12 @@ projectsApp.openapi(
       }
       const chunk = toInsert.slice(offset, offset + chunkSize);
       try {
-        // Hold the process-local session lock for the chunk's INSERT. The
-        // request's OWN inbound audit row is enqueued for this same session and
-        // would otherwise race this insert for the same
-        // `audit_session_sequences` row lock — the second writer lost at the
-        // pool's 2.5 s `lock_timeout` (55P03) and the queue dropped the row.
-        const chunkWork = withAuditSessionLock(
-          sessionId,
-          () =>
-            auditDb()
-              .insert(auditEvents)
-              .values(chunk)
-              .onConflictDoNothing()
-              .returning({ eventId: auditEvents.eventId }),
-          { timeoutMs: lockWaitMs },
-        );
-        // The chunk's own bounds (lock wait, statement timeout) do not bound
+        const chunkWork = auditDb()
+          .insert(auditEvents)
+          .values(chunk)
+          .onConflictDoNothing()
+          .returning({ eventId: auditEvents.eventId });
+        // The chunk's own bound (the statement timeout) does not bound
         // the wait for an audit-pool backend. Race the chunk against what is
         // left of the request deadline so a saturated pool degrades into the
         // controlled contended 503 instead of the deadline abort. When the
@@ -594,7 +535,7 @@ projectsApp.openapi(
         insertedCount += inserted.length;
         offset += chunk.length;
       } catch (error) {
-        if (!isAuditContentionError(error) && !isAuditSessionLockTimeout(error)) {
+        if (!isAuditContentionError(error)) {
           // A write that is NOT backpressure is a defect, and until now the
           // only trace of it was Drizzle's wrapper: `DrizzleQueryError: Failed
           // query: insert into "kortix"."audit_events" …` with the whole
@@ -651,10 +592,8 @@ projectsApp.openapi(
         appLogger.warn('[audit] ingest contended', {
           projectId,
           sessionId,
-          // `57xxx`/`55P03` came back from Postgres; a null SQLSTATE on a
-          // bounded in-process wait means the writer never reached the DB.
+          // `57xxx`/`55P03` came back from Postgres.
           sqlstate: auditErrorSqlstate(error),
-          contention_source: isAuditSessionLockTimeout(error) ? 'in_process' : 'postgres',
           accepted: parsed.accepted,
           attempted,
           inserted: insertedCount,
@@ -772,24 +711,12 @@ projectsApp.openapi(
     const audited = await accountHasEntitlement(loaded.row.accountId, 'auditAccess');
     const includeEvents = c.req.query('include_events') !== 'false';
 
-    // `session_id` is the integrity-chain scope and is globally unique. The
-    // visibility gate above already proves that the caller may read this
-    // project session. Some request-level events are written before account
-    // resolution (`auth.login.success`) or from a project-neutral endpoint
-    // (`GET /v1/skills`). Those rows still belong to this session's chain. An
-    // account/project predicate would remove the middle row while returning its
-    // successor, which makes a valid persisted chain impossible to verify.
-    const eventConditions = [eq(auditEvents.sessionId, sessionId)];
-    if (cursor) {
-      const cursorCondition = or(
-        gt(auditEvents.sessionSequence, cursor.sequence),
-        and(
-          eq(auditEvents.sessionSequence, cursor.sequence),
-          gt(auditEvents.eventId, cursor.eventId),
-        ),
-      );
-      if (cursorCondition) eventConditions.push(cursorCondition);
-    }
+    // `session_id` is globally unique and the visibility gate above already proves
+    // the caller may read this project session. Some request-level events are
+    // written before account resolution (`auth.login.success`) or from a
+    // project-neutral endpoint (`GET /v1/skills`); they still belong to this
+    // session's log, so the read filters on `session_id` alone, never on an
+    // account or project predicate.
     // Audit writes are buffered off the request path (shared/audit-queue.ts).
     // A reader of EVENTS must observe every event already emitted, so drain
     // the queue before querying them.
@@ -803,18 +730,10 @@ projectsApp.openapi(
     // per session open, forever (sampleco, 2026-08-24). A count of pending
     // connector calls does not depend on the audit queue at all.
     if (audited && includeEvents) await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
-    const fetchedEvents =
+    const { rows: eventRows, nextCursor } =
       audited && includeEvents
-        ? await db
-            .select()
-            .from(auditEvents)
-            .where(and(...eventConditions))
-            .orderBy(asc(auditEvents.sessionSequence), asc(auditEvents.eventId))
-            .limit(limit + 1)
-        : [];
-    const hasMoreEvents = fetchedEvents.length > limit;
-    const eventRows = hasMoreEvents ? fetchedEvents.slice(0, limit) : fetchedEvents;
-    const lastEvent = eventRows.at(-1);
+        ? await readSessionAuditEvents(db, sessionId, cursor, limit)
+        : { rows: [] as AuditEventRow[], nextCursor: null };
 
     // Same query, same batched email + connector-slug lookups, same
     // `approval_url` rule as before — now shared with the session-open
@@ -841,10 +760,7 @@ projectsApp.openapi(
       // poll), the PENDING-ACTIONS count otherwise.
       count: audited ? eventRows.length : auditActions.count,
       events: eventRows.map((row) => serializeAuditEvent(row, names)),
-      next_cursor:
-        hasMoreEvents && lastEvent?.sessionSequence != null
-          ? `${lastEvent.sessionSequence}|${lastEvent.eventId}`
-          : null,
+      next_cursor: nextCursor,
       // Most-recent-first trail of every connector-gated action this session took.
       actions: auditActions.actions,
     });

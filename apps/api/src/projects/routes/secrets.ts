@@ -139,12 +139,16 @@ projectsApp.openapi(
   }),
   async (c: any) => {
   const projectId = c.req.param('projectId');
+  const started = performance.now();
+  const stages: Record<string, number> = {};
   const loaded = await loadProjectForUser(c, projectId, 'read');
+  stages.project = Math.round(performance.now() - started);
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // Leaf-gate the read (a custom role can omit project.secret.read) — and, via
   // the central agent-grant fold, an agent token must hold it in its Kortix permissions.
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SECRET_READ);
 
+  stages.capability = Math.round(performance.now() - started);
   const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
 
   // Manifest is optional — a project without kortix.yaml just gets empty
@@ -165,7 +169,9 @@ projectsApp.openapi(
   // dominates this route's server time).
   const personalOwnerPromise = requestPersonalOwner(c, loaded);
   try {
-    const projectConfig = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
+    const gitRow = await withProjectGitAuth(loaded.row);
+    stages.git_auth = Math.round(performance.now() - started);
+    const projectConfig = await loadProjectConfig(gitRow, []);
     required = projectConfig?.env?.required ?? [];
     optional = projectConfig?.env?.optional ?? [];
     manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';
@@ -179,6 +185,8 @@ projectsApp.openapi(
       error: manifestError,
     });
   }
+
+  stages.manifest = Math.round(performance.now() - started);
 
   // Per-agent secrets scoping: a scoped agent token only sees the IDENTIFIERS
   // in its standing agent grant. A session secretsAllowlist is a delivery
@@ -229,6 +237,17 @@ projectsApp.openapi(
       usable: !item.secret_id || reachOf(item.secret_id) !== 'out',
     }))
     .filter((item) => item.usable || (canManageShared && !callerSessionId));
+
+  const elapsed = Math.round(performance.now() - started);
+  if (elapsed >= 3_000) {
+    console.warn('[projects] secrets: slow read', {
+      project_ms: stages.project,
+      capability_ms: stages.capability - stages.project,
+      git_auth_ms: (stages.git_auth ?? stages.manifest) - stages.capability,
+      manifest_ms: stages.manifest - (stages.git_auth ?? stages.manifest),
+      secrets_ms: elapsed - stages.manifest,
+    });
+  }
 
   return c.json({
     items,

@@ -75,13 +75,21 @@ import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Field, FieldDescription, FieldGroup, FieldTitle } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
+import {
+  InputGroupSearch,
+  InputGroupSearchClear,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import {
   Modal,
   ModalBody,
   ModalContent,
   ModalDescription,
+  ModalFooter,
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
@@ -116,6 +124,11 @@ import { EmailConnectForm } from '@/features/workspace/customize/sections/connec
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
 import {
+  type ChannelModelKey,
+  channelSettingsPatch,
+} from '@/features/workspace/customize/sections/view/channel-settings-patch';
+import { slackConversationName } from '@/features/session/turn/channel-message';
+import {
   type ChannelBinding,
   useChannelBindings,
   useUpdateChannelBinding,
@@ -138,14 +151,20 @@ import {
 import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
 import {
   type Agent,
-  modelKeyToWire,
   useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
-import { AtIcon, EnvelopeIcon } from '@phosphor-icons/react';
+import {
+  AtIcon,
+  CaretRightIcon,
+  EnvelopeIcon,
+  MagnifyingGlassIcon,
+  WarningCircleIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -350,15 +369,42 @@ function SlackFollowUp({ projectId, canWrite }: { projectId: string; canWrite: b
 }
 
 /**
- * Per-channel agent/model/join-policy overrides — the web management surface
- * for `chat_channel_bindings` (spec §2.5 "Channels become manageable"). Today
- * the only other way to change these is the in-Slack `/kortix agent|model|policy`
- * commands; this edits the same row through `PATCH …/channels/bindings/:id`.
+ * Per-conversation agent/model/join-policy overrides — the web management
+ * surface for `chat_channel_bindings` (spec §2.5 "Channels become
+ * manageable"). The in-chat `/kortix agent|model|policy` commands edit the
+ * same row; this edits it through `PATCH …/channels/bindings/:id`.
+ *
+ * The table is read-only and a row opens `ChannelSettingsModal`. It used to
+ * carry three live pickers per row: with ~30 conversations (a real project's
+ * count) that was ~90 controls, the join-policy column clipped off the right
+ * edge, and every pick saved at once with its own toast.
  */
 function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; canWrite: boolean }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const conversationPolicies = useLocalizedUiCatalog(CONVERSATION_POLICIES);
   const bindingsQuery = useChannelBindings(projectId);
-  const bindings = bindingsQuery.data?.bindings ?? [];
+  const projectDefaultAgent = bindingsQuery.data?.projectDefaultAgent ?? null;
+  const [query, setQuery] = useState('');
+  // Kept after close so the modal keeps its content through the exit animation.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const rows = useMemo(
+    () =>
+      (bindingsQuery.data?.bindings ?? [])
+        .map((binding) => ({
+          binding,
+          name: bindingName(binding, tI18nComplete),
+          scope: bindingScope(binding, tI18nComplete),
+        }))
+        // Slack, then Teams: the brand marks read as groups.
+        .sort((a, b) =>
+          a.binding.platform === b.binding.platform
+            ? a.name.localeCompare(b.name, undefined, { numeric: true })
+            : a.binding.platform.localeCompare(b.binding.platform),
+        ),
+    [bindingsQuery.data, tI18nComplete],
+  );
 
   if (bindingsQuery.isLoading) {
     return (
@@ -368,36 +414,159 @@ function ChannelBindingsSection({ projectId, canWrite }: { projectId: string; ca
       </div>
     );
   }
-  if (bindings.length === 0) return null;
+  if (rows.length === 0) return null;
+
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? rows.filter(({ binding, name, scope }) =>
+        [name, scope, binding.platform, binding.agentName ?? '', binding.opencodeModel ?? '']
+          .join(' ')
+          .toLowerCase()
+          .includes(needle),
+      )
+    : rows;
+  const selected = rows.find((r) => r.binding.bindingId === selectedId) ?? null;
+  const open = (bindingId: string) => {
+    setSelectedId(bindingId);
+    setModalOpen(true);
+  };
 
   return (
     <div className="space-y-2">
       <Label>{tI18nComplete.raw('text5f61b63c2c4a')}</Label>
       <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text1f2550ed44dc')}</p>
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead>{tI18nComplete.raw('textce4683e7013a')}</TableHead>
-            <TableHead>{tI18nComplete.raw('text11b39c93777e')}</TableHead>
-            <TableHead>{tI18nComplete.raw('text5e2c614c23f0')}</TableHead>
-            <TableHead>{tI18nComplete.raw('textb1ca871c6696')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {bindings.map((b) => (
-            <ChannelBindingTableRow
-              key={b.bindingId}
-              projectId={projectId}
-              binding={b}
-              projectDefaultAgent={bindingsQuery.data?.projectDefaultAgent ?? null}
-              canWrite={canWrite}
-            />
-          ))}
-        </TableBody>
-      </Table>
+      {rows.length >= BINDING_SEARCH_MIN ? (
+        <InputGroupSearch>
+          <InputGroupSearchIcon>
+            <MagnifyingGlassIcon />
+          </InputGroupSearchIcon>
+          <InputGroupSearchInput
+            placeholder={tI18nComplete.raw('text49c266baaaa7')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            size="sm"
+          />
+          <InputGroupSearchClear onClick={() => setQuery('')} />
+        </InputGroupSearch>
+      ) : null}
+      {visible.length === 0 ? (
+        <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+          {tI18nComplete.raw('texte8dd87902b91')}
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>{tI18nComplete.raw('textce4683e7013a')}</TableHead>
+              <TableHead className="hidden sm:table-cell">
+                {tI18nComplete.raw('text11b39c93777e')}
+              </TableHead>
+              <TableHead>{tI18nComplete.raw('text5e2c614c23f0')}</TableHead>
+              <TableHead className="hidden md:table-cell">
+                {tI18nComplete.raw('textb1ca871c6696')}
+              </TableHead>
+              <TableHead className="hidden w-0 sm:table-cell" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map(({ binding, name, scope }) => {
+              const modelUnavailable =
+                binding.opencodeModel !== null && binding.effectiveModel.source !== 'explicit';
+              return (
+                <TableRow
+                  key={binding.bindingId}
+                  className="cursor-pointer"
+                  onClick={() => open(binding.bindingId)}
+                >
+                  <TableCell className="max-w-[15rem]">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <BindingBrandMark platform={binding.platform} />
+                      <div className="min-w-0">
+                        {/* A real button, so the row is reachable by keyboard —
+                            a click handler on the <tr> alone never is. */}
+                        <button
+                          type="button"
+                          title={binding.channelId}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            open(binding.bindingId);
+                          }}
+                          className="block max-w-full truncate text-left text-sm font-medium outline-none focus-visible:underline"
+                        >
+                          {name}
+                        </button>
+                        <p className="text-muted-foreground truncate text-xs">{scope}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      'hidden max-w-[10rem] truncate text-xs sm:table-cell',
+                      !binding.agentName && 'text-muted-foreground',
+                    )}
+                  >
+                    {binding.agentName ?? agentDefaultLabel(projectDefaultAgent)}
+                  </TableCell>
+                  <TableCell
+                    title={describeEffectiveModel(binding)}
+                    className={cn(
+                      'max-w-[9rem] text-xs sm:max-w-[12rem]',
+                      !binding.opencodeModel && 'text-muted-foreground',
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {modelUnavailable ? (
+                        <WarningCircleIcon
+                          weight="fill"
+                          className="text-kortix-orange size-3.5 shrink-0"
+                        />
+                      ) : null}
+                      {/* The pin's name, not the long "(unavailable — using
+                          default)" form: truncation cut the word that mattered.
+                          The glyph says it; the title and the dialog spell it out. */}
+                      <span className="truncate">
+                        {modelUnavailable && binding.opencodeModel
+                          ? stripGatewayNamespace(binding.opencodeModel)
+                          : describeEffectiveModel(binding)}
+                      </span>
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
+                    {conversationPolicies.find((p) => p.value === binding.conversationPolicy)
+                      ?.label ?? binding.conversationPolicy}
+                  </TableCell>
+                  <TableCell className="hidden w-0 pl-0 sm:table-cell">
+                    <CaretRightIcon className="text-muted-foreground size-3.5 shrink-0" />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+      {/* `selected` goes null when the conversation was removed while open. */}
+      <Modal open={modalOpen && selected !== null} onOpenChange={setModalOpen}>
+        {selected ? (
+          <ChannelSettingsModalContent
+            projectId={projectId}
+            binding={selected.binding}
+            name={selected.name}
+            scope={selected.scope}
+            projectDefaultAgent={projectDefaultAgent}
+            canWrite={canWrite}
+            onDone={() => setModalOpen(false)}
+          />
+        ) : null}
+      </Modal>
     </div>
   );
 }
+
+/** The schedule modal's field frame, around each picker in the settings dialog. */
+const FIELD_FRAME = 'bg-popover flex w-full items-center rounded-md border px-2 py-1.5';
+
+/** Rows before the list grows a search field — the `AgentSelector` rule (7). */
+const BINDING_SEARCH_MIN = 7;
 
 const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
   [
@@ -406,13 +575,23 @@ const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']
     { value: 'owner_approval', label: 'Owner approval' },
   ];
 
+/** What a join policy does, under the picker (channels/teams/participants.ts). */
+function policyDescription(
+  policy: ChannelBinding['conversationPolicy'],
+  tI18nComplete: UiTranslator,
+): string {
+  if (policy === 'project_open') return tI18nComplete.raw('texte83e9ba50357');
+  if (policy === 'owner_only') return tI18nComplete.raw('text4540af5229a8');
+  return tI18nComplete.raw('textda4bd8bdfe42');
+}
+
 /** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
 function agentDefaultLabel(projectDefaultAgent: string | null): string {
   return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Project default';
 }
 
 /** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
-function stripOpencodeNamespace(model: string): string {
+function stripGatewayNamespace(model: string): string {
   return model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
 }
 
@@ -424,42 +603,56 @@ function stripOpencodeNamespace(model: string): string {
  */
 function describeEffectiveModel(binding: ChannelBinding): string {
   if (binding.opencodeModel) {
-    const label = stripOpencodeNamespace(binding.opencodeModel);
+    const label = stripGatewayNamespace(binding.opencodeModel);
     return binding.effectiveModel.source === 'explicit'
       ? label
       : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
-  return resolved ? `Project default (${stripOpencodeNamespace(resolved)})` : 'Project default';
+  return resolved ? `Project default (${stripGatewayNamespace(resolved)})` : 'Project default';
 }
 
-function ChannelBindingTableRow({
+function BindingBrandMark({ platform }: { platform: string }) {
+  if (platform !== 'teams' && platform !== 'slack') return null;
+  return <ChannelBrandMark platform={platform === 'teams' ? 'Teams' : 'Slack'} />;
+}
+
+/**
+ * One conversation's settings. A field holds `undefined` until it is touched,
+ * so it shows the live binding; Save sends only the fields that differ from
+ * it, in one PATCH. The route applies agent, model, then policy, so a refused
+ * model keeps an agent change — the list refetches either way
+ * (`useUpdateChannelBinding`), and the next Save sends what is still different.
+ */
+function ChannelSettingsModalContent({
   projectId,
   binding,
+  name,
+  scope,
   projectDefaultAgent,
   canWrite,
+  onDone,
 }: {
   projectId: string;
   binding: ChannelBinding;
+  name: string;
+  scope: string;
   projectDefaultAgent: string | null;
   canWrite: boolean;
+  onDone: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const conversationPolicies = useLocalizedUiCatalog(CONVERSATION_POLICIES);
-  // The binding PATCH route asserts `project.connector.write`, and `canWrite`
-  // already probes exactly that. This used to AND it with the roster's coarse
-  // `can_manage` flag — a role label by another name, and strictly redundant
-  // once the leaf is asked for directly.
-  const canManage = canWrite;
+  const defaultAgentLabel = agentDefaultLabel(projectDefaultAgent);
 
   // Same agent source as the chat input / schedules pickers (spec: "use the
   // same component everywhere"). `projectId` does a server-side fetch of the
   // declared manifest agents — no live sandbox/session required, so it works
   // on a settings page with nothing running.
   const visibleAgents = useVisibleAgents({ projectId });
-  const agentSelectorAgents = useMemo<Agent[]>(() => {
+  const agents = useMemo<Agent[]>(() => {
     const defaultEntry = {
-      name: agentDefaultLabel(projectDefaultAgent),
+      name: defaultAgentLabel,
       description: tI18nComplete.raw('text12dc6dbd8fc8'),
       mode: 'primary',
       permission: {},
@@ -480,8 +673,7 @@ function ChannelBindingTableRow({
           ]
         : [];
     return [defaultEntry, ...visibleAgents, ...missingCurrent];
-  }, [projectDefaultAgent, tI18nComplete, visibleAgents, binding.agentName]);
-  const selectedAgentValue = binding.agentName ?? agentDefaultLabel(projectDefaultAgent);
+  }, [defaultAgentLabel, tI18nComplete, visibleAgents, binding.agentName]);
 
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
@@ -489,123 +681,160 @@ function ChannelBindingTableRow({
   // must not be forced under the synthetic `kortix` provider, or the selector
   // shows "Project default" beside a channel that has an explicit pin.
   const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
-  const selectedModel = binding.opencodeModel
+  const boundModel: ChannelModelKey = binding.opencodeModel
     ? storedModelRefToKey(binding.opencodeModel, llmGatewayFlag.enabled === true)
     : null;
 
+  const [agentDraft, setAgentDraft] = useState<string | null | undefined>(undefined);
+  const [modelDraft, setModelDraft] = useState<ChannelModelKey | undefined>(undefined);
+  const [policyDraft, setPolicyDraft] = useState<ChannelBinding['conversationPolicy'] | undefined>(
+    undefined,
+  );
+  const agentName = agentDraft === undefined ? binding.agentName : agentDraft;
+  const model = modelDraft === undefined ? boundModel : modelDraft;
+  const policy = policyDraft ?? binding.conversationPolicy;
+
+  const patch = channelSettingsPatch(
+    { agentName: binding.agentName, model: boundModel, conversationPolicy: binding.conversationPolicy },
+    { agentName, model, conversationPolicy: policy },
+  );
+  const dirty = Object.keys(patch).length > 0;
+
+  // The pickers refuse to open when disabled but do not dim; dim them like the
+  // disabled Select, which dims itself.
+  const pickerFrame = cn(FIELD_FRAME, !canWrite && 'opacity-50');
+
   const update = useUpdateChannelBinding();
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dirty) return;
+    update.mutate(
+      { projectId, bindingId: binding.bindingId, ...patch },
+      {
+        onSuccess: () => {
+          successToast(tI18nComplete.raw('text255e5c59ef00'));
+          onDone();
+        },
+        onError: (error) => errorToastFallback(error, tI18nComplete),
+      },
+    );
+  };
 
   return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell>
-        <div className="flex min-w-0 items-center gap-2">
-          {binding.platform === 'teams' || binding.platform === 'slack' ? (
-            <ChannelBrandMark platform={binding.platform === 'teams' ? 'Teams' : 'Slack'} />
-          ) : null}
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium" title={binding.channelId}>
-              {binding.channelName ?? bindingFallbackName(binding, tI18nComplete)}
-            </p>
-            <p className="text-muted-foreground text-xs">
-              {binding.platform === 'teams'
-                ? bindingScopeLabel(binding.channelType, tI18nComplete)
-                : binding.workspaceId}
-            </p>
-          </div>
-        </div>
-      </TableCell>
-      <TableCell>
-        {/* rounded-full, not the former large radius: the selector
-            inside renders a fully-round h-8 pill trigger, so a 16px-radius
-            frame around it read as two mismatched curves. */}
-        <div className="bg-card inline-flex rounded-full border px-2 py-1">
-          <AgentSelector
-            agents={agentSelectorAgents}
-            selectedAgent={selectedAgentValue}
-            onSelect={(v) =>
-              update.mutate(
-                {
-                  projectId,
-                  bindingId: binding.bindingId,
-                  agentName: !v || v === agentDefaultLabel(projectDefaultAgent) ? null : v,
-                },
-                {
-                  onSuccess: () => successToast(tI18nComplete.raw('text5a37d20f1235')),
-                  onError: (e) => errorToastFallback(e, tI18nComplete),
-                },
-              )
-            }
-            disabled={!canManage || update.isPending}
-          />
-        </div>
-      </TableCell>
-      <TableCell>
-        {canManage ? (
-          <div className="flex flex-col gap-1">
-            <div className="bg-card inline-flex w-fit rounded-full border px-2 py-1">
-              <ModelSelector
-                models={models}
-                providers={providers}
-                selectedModel={selectedModel}
-                unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
-                onSelect={(m) =>
-                  update.mutate(
-                    {
-                      projectId,
-                      bindingId: binding.bindingId,
-                      opencodeModel: m ? modelKeyToWire(m) : null,
-                    },
-                    {
-                      onSuccess: () => successToast(tI18nComplete.raw('text6c779d9f41fa')),
-                      onError: (e) => errorToastFallback(e, tI18nComplete),
-                    },
-                  )
-                }
-              />
+    <ModalContent className="lg:max-w-lg">
+      <ModalHeader>
+        <ModalTitle>{tI18nComplete.raw('textafc219f2a1e7')}</ModalTitle>
+        <ModalDescription>{tI18nComplete.raw('text95112f275fba')}</ModalDescription>
+      </ModalHeader>
+      <form onSubmit={save}>
+        {/* Capped so the footer stays on screen at the 720 × 480 desktop minimum. */}
+        <ModalBody className="max-h-[50vh] space-y-5 overflow-y-auto pt-4">
+          <div className="bg-popover flex min-w-0 items-center gap-3 rounded-md border px-3 py-2.5">
+            <BindingBrandMark platform={binding.platform} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium" title={binding.channelId}>
+                {name}
+              </p>
+              <p className="text-muted-foreground truncate text-xs">{scope}</p>
             </div>
-            {!binding.opencodeModel ? (
-              <p className="text-muted-foreground/70 text-xs">{describeEffectiveModel(binding)}</p>
-            ) : null}
           </div>
-        ) : (
-          <Badge variant="outline" size="sm" className="font-mono">
-            {describeEffectiveModel(binding)}
-          </Badge>
-        )}
-      </TableCell>
-      <TableCell>
-        <Select
-          value={binding.conversationPolicy}
-          onValueChange={(v) =>
-            update.mutate(
-              {
-                projectId,
-                bindingId: binding.bindingId,
-                conversationPolicy: v as ChannelBinding['conversationPolicy'],
-              },
-              {
-                onSuccess: () => successToast(tI18nComplete.raw('textc430cba8b89f')),
-                onError: (e) => errorToastFallback(e, tI18nComplete),
-              },
-            )
-          }
-          disabled={!canManage || update.isPending}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {conversationPolicies.map((p) => (
-              <SelectItem key={p.value} value={p.value}>
-                {p.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-    </TableRow>
+
+          <FieldGroup className="gap-5">
+            <Field data-disabled={!canWrite}>
+              <FieldTitle>{tI18nComplete.raw('text11b39c93777e')}</FieldTitle>
+              {/* A full-width rounded-md panel, not the chat composer pill
+                  these selectors ship with. */}
+              <div className={pickerFrame}>
+                <AgentSelector
+                  agents={agents}
+                  selectedAgent={agentName ?? defaultAgentLabel}
+                  onSelect={(v) => setAgentDraft(!v || v === defaultAgentLabel ? null : v)}
+                  disabled={!canWrite}
+                />
+              </div>
+              <FieldDescription className="text-xs">
+                {tI18nComplete.raw('text12dc6dbd8fc8')}
+              </FieldDescription>
+            </Field>
+
+            <Field data-disabled={!canWrite}>
+              <FieldTitle>{tI18nComplete.raw('text5e2c614c23f0')}</FieldTitle>
+              <div className={pickerFrame}>
+                <ModelSelector
+                  models={models}
+                  providers={providers}
+                  selectedModel={model}
+                  unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
+                  onSelect={setModelDraft}
+                  disabled={!canWrite}
+                />
+              </div>
+              <FieldDescription className="text-xs">
+                {/* What the unset or refused pin runs instead, when it is known. */}
+                {modelDraft === undefined &&
+                binding.effectiveModel.source !== 'explicit' &&
+                (binding.opencodeModel || binding.effectiveModel.model)
+                  ? `${describeEffectiveModel(binding)}. `
+                  : null}
+                {tI18nComplete.raw('text9116af1ce384')}
+              </FieldDescription>
+            </Field>
+
+            <Field data-disabled={!canWrite}>
+              <FieldTitle>{tI18nComplete.raw('textb1ca871c6696')}</FieldTitle>
+              <div className={FIELD_FRAME}>
+                <Select
+                  value={policy}
+                  onValueChange={(v) => setPolicyDraft(v as ChannelBinding['conversationPolicy'])}
+                  disabled={!canWrite}
+                >
+                  <SelectTrigger variant="transparent">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {conversationPolicies.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <FieldDescription className="text-xs">
+                {policyDescription(policy, tI18nComplete)}
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+        </ModalBody>
+        <ModalFooter className="pt-2 pb-5 sm:justify-between">
+          <Button type="button" variant="outline-ghost" onClick={onDone}>
+            {canWrite ? tI18nComplete.raw('text19766ed6ccb2') : tI18nComplete.raw('text7d9eb7acb13e')}
+          </Button>
+          {canWrite ? (
+            <Button type="submit" disabled={!dirty || update.isPending}>
+              {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              {tI18nComplete.raw('text1509f561f241')}
+            </Button>
+          ) : null}
+        </ModalFooter>
+      </form>
+    </ModalContent>
   );
 }
+
+/** A conversation's display name: the Slack or Teams name, else its kind. */
+function bindingName(binding: ChannelBinding, tI18nComplete: UiTranslator): string {
+  if (binding.platform === 'slack') return slackBindingName(binding, tI18nComplete);
+  return binding.channelName ?? bindingFallbackName(binding, tI18nComplete);
+}
+
+/** The line under the name: the conversation's kind. */
+function bindingScope(binding: ChannelBinding, tI18nComplete: UiTranslator): string {
+  if (binding.platform === 'teams') return bindingScopeLabel(binding.channelType, tI18nComplete);
+  if (binding.platform === 'slack') return slackScopeLabel(binding, tI18nComplete);
+  return binding.workspaceId;
+}
+
 
 /**
  * A binding with no captured name.
@@ -623,6 +852,41 @@ function bindingFallbackName(
   if (binding.platform !== 'teams') return binding.channelId;
   if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
   return tI18nComplete.raw('text31d248c44579');
+}
+
+type SlackBindingLabel = Pick<ChannelBinding, 'channelId' | 'channelName' | 'channelType' | 'channelUnavailable'>;
+
+/**
+ * A Slack row reads `#general`, a person's name for a DM, or the members of a
+ * group DM: the name the API stores after asking Slack. Until then, or when
+ * Slack no longer has the conversation, the kind says what it is and the id
+ * stays on the row's `title`.
+ */
+function slackBindingName(binding: SlackBindingLabel, tI18nComplete: UiTranslator): string {
+  const name = slackConversationName(binding);
+  if (name) return name;
+  if (binding.channelUnavailable) return tI18nComplete.raw('textf5738ddc651d');
+  if (binding.channelType === 'im') return tI18nComplete.raw('textcd3e16057d09');
+  if (binding.channelType === 'mpim') return tI18nComplete.raw('textcbe7c5d45160');
+  return binding.channelId;
+}
+
+/** Slack rows: the conversation's kind, not the workspace id every row shared. */
+function slackScopeLabel(binding: SlackBindingLabel, tI18nComplete: UiTranslator): string {
+  // A deleted channel has no kind left to show; its id is what identifies it.
+  if (binding.channelUnavailable) return binding.channelId;
+  switch (binding.channelType) {
+    case 'private_channel':
+      return tI18nComplete.raw('text87f9f3ba9b60');
+    case 'im':
+      return tI18nComplete.raw('textcd3e16057d09');
+    case 'mpim':
+      return tI18nComplete.raw('textcbe7c5d45160');
+    case 'channel':
+      return tI18nComplete.raw('textce4683e7013a');
+    default:
+      return tI18nComplete.raw('textda7d161a2777');
+  }
 }
 
 /** Teams rows: the conversation scope reads better than a tenant GUID underneath the name. */

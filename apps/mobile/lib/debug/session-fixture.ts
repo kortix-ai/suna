@@ -1,6 +1,6 @@
 /**
  * Seeds the COR-91 parity fixture (`@kortix/shared/session-fixture`) into the
- * sync store, so the debug screen renders it through the same store read,
+ * SDK's session store, so the debug screen renders it through the same store read,
  * `groupMessagesIntoTurns`, and `SessionTurn` rows as `SessionPage`.
  *
  * Nothing here touches the network: the store is a plain zustand store, and
@@ -9,14 +9,14 @@
 
 import { groupMessagesIntoTurns } from '@kortix/sdk';
 import { SESSION_FIXTURE, type SessionFixture } from '@kortix/shared/session-fixture';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { useRuntimePendingStore, useSessionStateStore } from '@kortix/sdk/react';
 import type {
   MessageWithParts,
   PermissionRequest,
   QuestionRequest,
   SessionStatus,
   Turn,
-} from '@/lib/opencode/types';
+} from '@/lib/session/types';
 import type { QueuedPromptState } from '@/lib/session/user-message';
 
 export type FixtureStatusMode = 'busy' | 'retry';
@@ -41,25 +41,24 @@ export function seedSessionFixture(
   fixture: SessionFixture = SESSION_FIXTURE,
 ): () => void {
   const ids = fixtureSessionIds(fixture);
-  const store = useSyncStore.getState();
-  store.evictSessions(ids);
-  // Mobile's wire types are a local copy of the SDK's; the fixture satisfies
-  // the SDK types (lib/debug/session-fixture.types.test.ts).
+  const store = useSessionStateStore.getState();
+  const pending = useRuntimePendingStore.getState();
+  const evict = () => {
+    for (const id of ids) useSessionStateStore.getState().clearSession(id);
+    // The fixture's requests are the only ones a debug screen can hold.
+    useRuntimePendingStore.getState().clear();
+  };
+  evict();
+  // The fixture satisfies the SDK types (lib/debug/session-fixture.types.test.ts).
   store.hydrate(fixture.sessionId, fixture.messages as unknown as MessageWithParts[]);
   for (const [childId, messages] of Object.entries(fixture.childSessions)) {
     store.hydrate(childId, messages as unknown as MessageWithParts[]);
   }
   store.setStatus(fixture.sessionId, fixtureStatus(mode, fixture));
   for (const [childId, status] of Object.entries(fixture.childStatuses)) store.setStatus(childId, { ...status });
-  for (const question of fixture.questions) {
-    store.addQuestion(fixture.sessionId, question as unknown as QuestionRequest);
-  }
-  for (const permission of fixture.permissions) {
-    // Mobile's local PermissionRequest still names the v1 `input` field.
-    const request: PermissionRequest = { ...permission, input: permission.metadata };
-    store.addPermission(fixture.sessionId, request);
-  }
-  return () => useSyncStore.getState().evictSessions(ids);
+  for (const question of fixture.questions) pending.addQuestion(question as unknown as QuestionRequest);
+  for (const permission of fixture.permissions) pending.addPermission(permission as unknown as PermissionRequest);
+  return evict;
 }
 
 /** Groups store messages into turns, as `SessionPage` does. */

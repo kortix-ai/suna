@@ -5,7 +5,7 @@
  *
  * Two signals start it:
  * - a 401 from the Kortix API (`configureKortix` `onError`) or the sandbox
- *   stream (`event-stream.ts`). A 401 alone proves nothing: the token may just
+ *   stream (`lib/session/sse-transport.ts`). A 401 alone proves nothing: the token may just
  *   be stale, or the sandbox foreign. The monitor asks Supabase to refresh the
  *   session and decides on that answer (`classifyRefreshResult`).
  * - a `SIGNED_OUT` auth event that no sign-out in the app asked for. auth-js

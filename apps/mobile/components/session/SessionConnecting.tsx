@@ -48,7 +48,7 @@ import { UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
-import type { MessageWithParts, Turn } from '@/lib/opencode/types';
+import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
@@ -102,7 +102,7 @@ export function SessionConnecting({
   messages?: MessageWithParts[];
   /** What the computer is doing, for the status card above the composer (`sessionConnectionLabel`). */
   statusLabel?: string | null;
-  /** The OpenCode session the saved copy belongs to; tool rows read it. */
+  /** The runtime session the saved copy belongs to; tool rows read it. */
   sessionId?: string;
   /** The saved copy proves the conversation empty: nothing to wait for. */
   empty?: boolean;

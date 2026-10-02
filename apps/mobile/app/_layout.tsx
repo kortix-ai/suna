@@ -66,6 +66,9 @@ import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { configureKortix } from '@kortix/sdk';
+import EventSource from 'react-native-sse';
+import { createSseTransport } from '@/lib/session/sse-transport';
+import * as ExpoCrypto from 'expo-crypto';
 import { API_URL, getAuthToken } from '@/api/config';
 import {
   clearWebRegistrationHandoff,
@@ -87,6 +90,15 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
   installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
 }
 
+// `@kortix/sdk` mints ids with the Web Crypto global, which Hermes does not
+// provide. `expo-crypto` supplies the two functions it calls.
+if (typeof globalThis.crypto === 'undefined') {
+  (globalThis as { crypto?: unknown }).crypto = {
+    getRandomValues: ExpoCrypto.getRandomValues,
+    randomUUID: ExpoCrypto.randomUUID,
+  };
+}
+
 // Wire the SDK's single app-specific seam once at startup, before any screen
 // mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
 // Supabase token source (api/config.ts) unchanged — this just injects them
@@ -95,6 +107,9 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
 configureKortix({
   backendUrl: API_URL,
   getToken: getAuthToken,
+  // The live session stream arrives over `react-native-sse` (an XHR wire); the
+  // SDK keeps reconnect, resume and the reducer (lib/session/sse-transport.ts).
+  eventStreamTransport: createSseTransport({ EventSource, onUnauthorized: reportUnauthorized }),
   onError: (error, context) => {
     log.error('❌ [kortix-sdk] request failed:', error, context);
     // A 401 may mean the login ended: the monitor checks once (COR-144).

@@ -22,10 +22,7 @@ export function bindSessionDefaults(projectId: string, sessionId: string) {
       _persistedPromptDefaults = P.getProjectSession(projectId, sessionId, {
         showErrors: false,
       }).then((projectSession) => {
-        const modelReference =
-          typeof projectSession.metadata?.opencode_model === 'string'
-            ? projectSession.metadata.opencode_model.trim()
-            : '';
+        const modelReference = P.sessionModelPin(projectSession) ?? '';
         const separator = modelReference.indexOf('/');
         const model =
           separator > 0 && separator < modelReference.length - 1

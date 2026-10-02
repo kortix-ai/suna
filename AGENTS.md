@@ -344,7 +344,7 @@ response.
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
-session runtime, OpenCode REST compatibility, SSE streaming, model state,
+session runtime, the runtime REST client, SSE streaming, model state,
 and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
@@ -376,8 +376,23 @@ these as standing rules whenever you touch the data/runtime layer:
   provider.
 - **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  The sandbox provider is a server-side concern. Every session uses the
-  OpenCode REST runtime. Host code must not implement a second transport.
+  The sandbox provider and the harness are server-side concerns. Host code
+  must not implement a second transport.
+- **Build on the Kortix contract, not on OpenCode.** A session runs one of two
+  harnesses inside kortixd: OpenCode (the default today) or pi (the
+  `pi_harness` project flag or `runtime: pi` in `kortix.yaml`, and only with
+  the LLM gateway on). pi replaces OpenCode; OpenCode support is temporary.
+  Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
+  (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
+  same events. New code reads those, never an OpenCode route, type, file or
+  process. A feature one harness lacks is a capability, not a harness check:
+  `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
+  `packages/api-contract/src/runtime-relay.ts`), and a client gates the
+  control with `runtimeSupports`. OpenCode lists all ten; pi lists
+  `session.subagents`. pi does not serve rewind, compaction, slash commands,
+  MCP servers, the todo list, shell turns, part edits or `session.attach`.
+  The harness rules and the pi gap list are in
+  `apps/kortix-sandbox-agent-server/src/harness/README.md`.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/ui/index.ts`, `apps/web/src/lib/iam-client.ts`, and
   `apps/web/src/hooks/admin/use-*.ts` are thin re-exports
@@ -440,7 +455,8 @@ mocked internals when a real surface exists.
   Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
-  OpenCode REST uses the compatibility proxy.
+  The session runtime answers on the same proxy, under `/kortix/runtime/*`,
+  on both harnesses.
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared
   quick tunnel so cloud sandboxes can call back to the local API (`KORTIX_URL`).
 

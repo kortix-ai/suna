@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts } from '../opencode/types';
+import type { MessageWithParts } from './types';
 import type { AttachedFile } from './attachments';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from './first-prompt-seed';
 import { mintWireMessageId } from './wire-message-id';
@@ -18,7 +18,7 @@ function seed(i: Partial<Parameters<typeof firstPromptSeed>[0]> = {}) {
   return firstPromptSeed({
     text: 'hello',
     files: [],
-    opencodeSessionId: ROOT,
+    runtimeSessionId: ROOT,
     knownMessageIds: [],
     nowMs: NOW,
     ...i,
@@ -26,7 +26,7 @@ function seed(i: Partial<Parameters<typeof firstPromptSeed>[0]> = {}) {
 }
 
 function msg(id: string, role: 'user' | 'assistant'): MessageWithParts {
-  return { info: { id, role, sessionID: ROOT, time: { created: NOW } }, parts: [] };
+  return { info: { id, role, sessionID: ROOT, time: { created: NOW } }, parts: [] } as unknown as MessageWithParts;
 }
 
 describe('firstPromptSeed', () => {

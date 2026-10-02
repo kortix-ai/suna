@@ -414,10 +414,10 @@ test('the catalogue shows that toolkit once an enabled custom auth config exists
   expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
 });
 
-test('the catalogue hides nothing when the auth config list is unavailable', async () => {
+test('the catalogue hides custom-auth toolkits when auth config lookup fails', async () => {
   const catalogClient = catalogWithAuthConfigs(new Error('503 upstream'));
   const search = await searchComposioCatalog({ q: 'tw', catalogClient });
-  expect(search).toMatchObject({ total: 1, toolkits: [{ slug: 'twitter' }] });
+  expect(search).toMatchObject({ total: 0, toolkits: [] });
 });
 
 test('customAuthConfigIds keeps the newest enabled custom config per toolkit across pages', async () => {
@@ -554,4 +554,11 @@ test('Microsoft Teams is never listed: not in sections, not in search, always hi
   expect(await composioHiddenToolkits(catalogClient)).toEqual(new Set(['microsoft_teams']));
   const broken: ComposioCatalogClient = { toolkits: { async list() { throw new Error('down'); } } };
   expect(await composioHiddenToolkits(broken)).toEqual(new Set(['microsoft_teams']));
+});
+
+test('catalogue hides custom-auth toolkits when the auth config API is absent', async () => {
+  const catalogClient = catalogWithAuthConfigs([]);
+  delete catalogClient.authConfigs;
+  expect(await searchComposioCatalog({ q: 'tw', catalogClient })).toMatchObject({ total: 0, toolkits: [] });
+  expect(await searchComposioCatalog({ q: 'gmail', catalogClient })).toMatchObject({ total: 1 });
 });

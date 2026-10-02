@@ -10,8 +10,10 @@ import { selectSessionRows, useReadableSessionId } from './session-transcript-su
 export interface SessionMessagesSource {
   projectId: string;
   sessionId: string;
-  /** Canonical OpenCode root id, or null while resolving. */
-  opencodeSessionId: string | null;
+  /** The runtime's root session id, or null while resolving. */
+  runtimeSessionId?: string | null;
+  /** @deprecated Renamed to `runtimeSessionId`, which wins when both are set. Removed in the next major. */
+  opencodeSessionId?: string | null;
 }
 
 /** Options for {@link useSessionMessages}. */
@@ -49,7 +51,7 @@ export function useSessionMessages(
   options: SessionMessagesOptions = {},
 ): MessageWithParts[] {
   const throttleMs = options.throttleMs && options.throttleMs > 0 ? options.throttleMs : 0;
-  const ocSessionId = session.opencodeSessionId ?? '';
+  const ocSessionId = session.runtimeSessionId ?? session.opencodeSessionId ?? '';
   const readableSessionId = useReadableSessionId(
     ocSessionId,
     `${session.projectId}/${session.sessionId}`,

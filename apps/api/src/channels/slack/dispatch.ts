@@ -8,10 +8,12 @@ import {
 } from '../install-store';
 import {
   deleteMessage,
-  getChannelName,
+  describeSlackConversation,
   postBlocks,
   postMessage,
 } from '../slack-api';
+import { backfillSlackBindingLabel } from './binding-label';
+import { slackMessageLabels } from './labels';
 import { PICKER_TTL_MS } from './app';
 import { handleSlashCommand } from './commands';
 import {
@@ -51,67 +53,7 @@ import type {
 
 export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
-// Every path that creates/rebinds a chat_channel_bindings row calls this so the
-// web Channels settings page can show the real Slack channel name instead of
-// falling back to the raw channel id (e.g. `C0AENS5MHK9`). Previously only the
-// multi-project "which project?" picker path persisted `channel_name` — the
-// common single-project auto-bind case left it NULL forever. Cheap by design:
-// a DB read first, and the Slack API call only fires when a name isn't already
-// stored, so steady-state dispatch (called on every event) costs one SELECT.
-// Best-effort — a Slack API hiccup here must never break message handling.
-// Returns the resolved (already-stored or freshly-fetched) name, or null, so
-// a caller that needs it for immediate display (the settings-page GET) doesn't
-// have to re-query after this writes it.
-//
-// `preloadedToken`: a caller iterating MANY bindings for the same project
-// (the channels/bindings list GET) resolves the bot token once and passes it
-// here, instead of every binding re-decrypting the same project secret. Absent
-// (the single-event dispatch/interactivity callers), the token loads as before.
-export async function backfillChannelName(
-  teamId: string,
-  channelId: string,
-  projectId: string,
-  preloadedToken?: string | null,
-): Promise<string | null> {
-  if (!teamId || !channelId || !projectId) return null;
-  try {
-    const [row] = await db
-      .select({ channelName: chatChannelBindings.channelName })
-      .from(chatChannelBindings)
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
-          eq(chatChannelBindings.channelId, channelId),
-        ),
-      )
-      .limit(1);
-    if (!row) return null;
-    if (row.channelName) return row.channelName;
-    const token = preloadedToken !== undefined ? preloadedToken : await loadSlackTokenForProject(projectId);
-    if (!token) return null;
-    // Returns null for DMs (no `name` field on the conversation) — fine, the
-    // UI's `channelName ?? channelId` fallback already handles that case.
-    const channelName = await getChannelName(token, channelId);
-    if (!channelName) return null;
-    await db
-      .update(chatChannelBindings)
-      .set({ channelName })
-      .where(
-        and(
-          eq(chatChannelBindings.platform, 'slack'),
-          eq(chatChannelBindings.workspaceId, teamId),
-          eq(chatChannelBindings.channelId, channelId),
-        ),
-      );
-    return channelName;
-  } catch (err) {
-    console.warn('[slack-webhook] channel-name backfill failed (non-fatal)', err);
-    return null;
-  }
-}
-
-// NOTE: deliberately does NOT call backfillChannelName — this runs on EVERY
+// NOTE: deliberately does NOT call backfillSlackBindingLabel — this runs on EVERY
 // Slack event, and the name is already captured on first-bind (the auto-bind
 // branch in resolveOauthProject below, or the picker flow in interactivity.ts)
 // plus lazily on the settings-page GET for any pre-existing NULL row. Adding a
@@ -131,10 +73,10 @@ export async function ensureProjectChannelBinding(
   // hourglass, no reply, no session, no row anywhere to explain it.
   //
   // Any project whose Slack app merely observes a channel (both manifests
-  // subscribe `message.channels`) was enough to take it. Prod 2026-08-28,
-  // workspace T07FUFNT3RV: `kortix-incident-reporter` (installed 2026-08-17)
-  // held `C0AASKRLRBR`, where `Kortix Company` had run 71 sessions through
-  // 2026-08-14 and then went silent for 14 days.
+  // subscribe `message.channels`) was enough to take it. Prod 2026-08-28: a
+  // project whose app was installed 2026-08-17 held a channel where another
+  // project had run 71 sessions through 2026-08-14, and that project then went
+  // silent there for 14 days.
   //
   // Re-assignment is a DELIBERATE act and has its own paths, untouched by this:
   // the channel picker (`interactivity.ts` pick_project) and `/kortix use` /
@@ -197,7 +139,7 @@ export async function resolveOauthProject(
         .onConflictDoNothing({
           target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
         });
-      await backfillChannelName(teamId, channelId, onlyProjectId);
+      await backfillSlackBindingLabel(teamId, channelId, onlyProjectId);
     }
     return { kind: 'project', projectId: onlyProjectId };
   }
@@ -276,8 +218,15 @@ async function postProjectPicker(opts: {
     .where(inArray(projects.projectId, projectIds));
 
   const pickerId = randomUUID();
-  const channelName = isDm ? null : await getChannelName(token, channelId);
-  const channelLabel = isDm ? 'this DM' : channelName ? `#${channelName}` : `<#${channelId}>`;
+  const conversation = isDm ? null : await describeSlackConversation(token, channelId);
+  const channelName = conversation?.type === 'channel' || conversation?.type === 'private_channel' ? conversation.name : null;
+  const channelLabel = isDm
+    ? 'this DM'
+    : conversation?.type === 'mpim'
+      ? 'this group DM'
+      : channelName
+        ? `#${channelName}`
+        : `<#${channelId}>`;
 
   const blocks = [
     {
@@ -318,7 +267,11 @@ async function postProjectPicker(opts: {
   if (pickerTs) {
     await db
       .update(chatChannelBindings)
-      .set({ pickerTs, channelName: channelName ?? null })
+      .set({
+        pickerTs,
+        channelName: conversation?.name ?? null,
+        ...(conversation?.type ? { channelType: conversation.type } : {}),
+      })
       .where(
         and(
           eq(chatChannelBindings.platform, 'slack'),
@@ -465,9 +418,9 @@ export async function classifyEvent(
   // PROD 2026-08-20. A user typed `@Kortix hey man` in a channel that also has
   // the "Incident reporter" bot in it, and Incident reporter answered:
   //
-  //   mentioned bot   U0B7QL26690  (Kortix)
-  //   bot that replied U0B5W5XN49Y  (Incident reporter)
-  //   session created inside kortix-incident-reporter
+  //   mentioned bot    <bot_user_id>        (Kortix)
+  //   bot that replied <other_bot_user_id>  (Incident reporter)
+  //   session created  inside the Incident reporter's project
   //
   // Two Kortix-platform apps in one workspace, each with its own BYO webhook at
   // /slack/events/{projectId}. Whichever project the callback lands on answers,
@@ -915,7 +868,7 @@ async function deliverToExistingThread(
   }
   const outcome = await deliverSlackFollowUpToSession({
     sessionId: existing.sessionId,
-    text: renderFollowUpPrompt(envelope, event),
+    text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
     userId: actorUserId,
     model: await slackFollowUpModel({
       project: { projectId, accountId: project.accountId, metadata: project.metadata },

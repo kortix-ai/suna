@@ -31,7 +31,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import { FilePreview } from './FilePreviewRenderers';
 import { useFilePreviewData } from './use-file-preview-data';
-import { useOpenCodeWriteFile, downloadOpenCodeFileToCache } from '@/lib/files/hooks';
+import { useWriteSandboxFile, downloadSandboxFileToCache } from '@/lib/files/hooks';
 import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { useToast } from '@/components/kortix/toast-provider';
 import type { SandboxFile } from '@/api/types';
@@ -83,7 +83,7 @@ export function FileViewer({
   // In-place text editing
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const writeMutation = useOpenCodeWriteFile();
+  const writeMutation = useWriteSandboxFile();
   const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
   const toast = useToast();
 
@@ -135,7 +135,7 @@ export function FileViewer({
       } else if (sandboxUrl) {
         // Nothing loaded (over the preview limit, not previewable, or still
         // loading): stream the file to disk natively.
-        source = await downloadOpenCodeFileToCache(sandboxUrl, file.path, file.name);
+        source = await downloadSandboxFileToCache(sandboxUrl, file.path, file.name);
       }
       if (!source) return;
       const result = await saveFileToDevice(source, file.name);

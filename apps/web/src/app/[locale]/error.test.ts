@@ -8,7 +8,7 @@ import { expect, test } from 'bun:test';
 // because the throw reaches this boundary from outside the session subtree.
 test('global boundary renders NOTHING for a transient runtime-not-ready state', async () => {
   const source = await Bun.file(import.meta.dir + '/error.tsx').text();
-  expect(source).toContain('isRuntimeNotReadyError');
+  expect(source).toContain('isRuntimeStartingError(error)');
   // Recognized → soft-reset via Next's reset(), and render nothing.
   expect(source).toContain('reset()');
   expect(source).toContain('return null;');

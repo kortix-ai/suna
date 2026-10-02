@@ -217,14 +217,14 @@ retry.
 
 `s.send()` and `s.abort()` call `ensureReady()` for you.
 
-### Seed a server-authorized OpenCode pin
+### Seed a server-authorized runtime session pin
 
-A server-rendered React host can supply the OpenCode pin already persisted for
+A server-rendered React host can supply the runtime session pin already persisted for
 the same Kortix session:
 
 ```tsx
 const session = useSession(projectId, sessionId, {
-  initialOpenCodeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
 });
 ```
 
@@ -232,11 +232,14 @@ The seed only hydrates cached transcript content while `/start` runs. It does
 not override the runtime identity. The pin returned by `/start` is
 authoritative and replaces a stale seed.
 
-Do not accept this value from an untrusted tenant selector. Do not create an
-OpenCode session in the host. Kortix creates and persists the root session.
-OpenCode query caches and transcript controllers are scoped to the sandbox
-runtime, so equal OpenCode ids from different sandboxes do not share cache
-entries.
+`opencode_session_id` is the deprecated name of `runtime_session_id`. Both
+carry the same value; read the old name only as the fallback above.
+
+Do not accept this value from an untrusted tenant selector. Do not create a
+runtime session in the host. Kortix creates and persists the root session.
+Runtime query caches and transcript controllers are scoped to the sandbox
+runtime, so equal runtime session ids from different sandboxes do not share
+cache entries.
 
 Pending message retries keep their originating sandbox URL when you switch
 sessions. A `404` or `410` message response stops automatic retries without
@@ -366,7 +369,8 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 with `runtimeSupports(capabilities, capability)` and hide the control when it
 returns `false`. An OpenCode session serves all ten; a pi session serves
 `session.subagents` only and answers the others with `501 feature_not_supported`
-(`404` for the config document).
+(`404` for the config document). [Harnesses](/docs/work/harnesses) has the
+full OpenCode and pi matrix.
 
 | Capability | Feature |
 | --- | --- |
@@ -448,10 +452,33 @@ await session.send('Refactor the auth module');
 
 Streaming needs `fetch` with a real `ReadableStream` body and
 `TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers
-all support it. React Native and Expo do not: their `fetch` has no
-`response.body`. On React Native, use `createHttpSessionSyncController` for
-bounded history and status synchronization. Use a platform-specific event
-transport for live events.
+all support it.
+
+A host whose `fetch` cannot stream supplies its own transport. The SDK calls it
+once per connection and keeps reconnect, `Last-Event-ID` resume, backoff and
+heartbeat itself:
+
+```ts
+import { configureKortix, notifyHostSignal, type RuntimeEventTransport } from '@kortix/sdk';
+
+const transport: RuntimeEventTransport = async function* ({ url, headers, signal }) {
+  // Yield { data, id?, retry? } for each server-sent message of ONE connection.
+  // Return when the server ends it. Throw (with `status` for a non-2xx answer)
+  // when it fails.
+};
+
+configureKortix({ backendUrl, getToken, eventStreamTransport: transport });
+
+// A host without `visibilitychange` / `online` events reports them itself.
+notifyHostSignal('visible'); // the app is back in the foreground
+notifyHostSignal('online');  // the network is back
+notifyHostSignal('retry');   // a person asked to reconnect now
+```
+
+React Native has no streaming `fetch` by default. The Kortix mobile app uses
+this seam with `react-native-sse`. `createHttpSessionSyncController` remains
+available for a host that only needs bounded history and status
+synchronization.
 
 The controller loads the newest 10 messages first. `loadOlder()` follows the
 server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
@@ -814,6 +841,9 @@ Call `await session.ensureReady()` first, or call `send()`, which readies the se
 | `parseBillingError(error)`       | `(error) => Error`                  | Wraps a `402` response into a `BillingError`. Returns other errors unchanged                                  |
 | `isBillingError(error)`          | `(error) => boolean`                | Returns `error instanceof BillingError`                                                                       |
 | `formatBillingErrorForUI(error)` | `(error) => BillingErrorUI \| null` | Returns `null` for non-billing errors. Otherwise returns `{ alertTitle, alertSubtitle }` for an upgrade modal |
+| `isRuntimeNotReadyResponse(error)` | `(error) => boolean` | True for the sandbox daemon's `503` while the session runtime cannot take a request yet. The request was not forwarded, so a retry is safe. Same answer on OpenCode and pi |
+| `isSandboxNotReadyError(error)` | `(error) => boolean` | True for the answer above and for a sandbox that is stopped, starting or parked. Render it as "waking" and keep polling |
+| `isRuntimeStartingError(error)` | `(error) => boolean` | True for both answers above and for a runtime URL that is not pinned yet. An error boundary retries on it instead of showing a crash |
 
 ```ts
 import { formatBillingErrorForUI } from '@kortix/sdk';

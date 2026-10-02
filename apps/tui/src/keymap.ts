@@ -224,7 +224,7 @@ export const KEYMAP: readonly Binding[] = [
     id: 'attach',
     scope: 'global',
     chords: [chord('o', { alt: true })],
-    description: 'Hand this session to the stock opencode TUI. Returning repaints the app.',
+    description: 'Hand this OpenCode session to the stock opencode TUI. Returning repaints the app.',
   },
   {
     // `Alt+H` is FIRST because `Ctrl+H` is the ASCII backspace byte (0x08).

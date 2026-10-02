@@ -6,6 +6,48 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `ChannelBinding` gains optional `channelUnavailable`: Slack answered that the
+  conversation is deleted or out of the bot's reach. Slack bindings now carry
+  `channelName` (a channel without `#`, the other person's name for a DM, the
+  members for a group DM) and `channelType` (`channel` | `private_channel` |
+  `im` | `mpim`). Absent on older servers.
+- `configureKortix({ eventStreamTransport })`: how the live event stream's bytes
+  arrive, for a host whose `fetch` cannot stream a response body. The SDK calls
+  it once per connection with `{ url, headers, signal }` (auth headers
+  included); it yields `{ data?, id?, retry? }` messages, returns when the
+  server ends the stream and throws when the connection fails. Reconnect,
+  `Last-Event-ID` resume, backoff, heartbeat and coalescing stay in the SDK.
+  Types: `RuntimeEventTransport`, `RuntimeEventMessage`.
+- `notifyHostSignal('visible' | 'online' | 'retry')`: a host without
+  `visibilitychange`/`online` events (React Native) reports the same facts.
+  The SDK re-reads the transcript tail, revives a parked stream, and opens a
+  fresh connection (`visible`/`online` only after 60 s without a frame;
+  `retry` always). Type: `HostSignal`.
+- `subscribeRuntimeStream(listener)` (`@kortix/sdk/react`): observe the live
+  stream for host side effects. Signals: `{ type: 'event', event }` after the
+  SDK applied the event, and `connecting`, `open`, `lost`, `parked`, `closed`.
+  Type: `RuntimeStreamSignal`.
+- `openEventStream({ onConnectionChange })`: `connecting`, `open` (first frame
+  of an attempt), `lost`. Type: `EventStreamConnectionState`.
+- `sessionModelPin(session)`: the `provider/model` a session is pinned to, or
+  null. `setProjectSessionModel` sends the pin as `model` and keeps the pre-W4
+  `opencode_model` key for an older API.
+- `isRuntimeNotReadyResponse(error)`: true for the daemon's 503 while the
+  session runtime cannot take a request, on both harnesses. It matches the
+  `code: "runtime_not_ready"` a current daemon sends and the two `error` texts
+  of an older one (`sandbox runtime not ready`, `opencode not ready`).
+  `RUNTIME_NOT_READY_MARKERS` lists the same three spellings as lower-case
+  substrings, for a host that needs a string list (a telemetry ignore list).
+- `isRuntimeStartingError(error)`: the answer above, plus a sandbox that is
+  not ready and a runtime URL that is not pinned yet. An error boundary
+  retries on it instead of showing a crash.
+- `resetRuntimeQueries(queryClient)` (`@kortix/sdk/react`): drops every cached
+  runtime query. Call it after the session's runtime is replaced (a restart, a
+  config reload).
+- `runtimeKeys.sessionTodo(sessionId)`: the todo-list cache key.
+- `isStepPart(part)`: true for `step-start` and `step-finish` parts.
+- `useSession` option `initialRuntimeSessionId`, and `runtimeSessionId` on the
+  `useSessionMessages` source.
 - `modelRefToKey(ref, gatewayEnabled)`: one parser for a stored model ref
   (session pin, channel binding, trigger, agent `model`). Gateway on, `kortix/x`
   and `x` both name the gateway model `x`; gateway off, the ref splits on its
@@ -126,6 +168,10 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `id` stays the host's local correlation key and no longer goes on the wire.
 
 ### Deprecated
+- `useSession` option `initialOpenCodeSessionId` (use
+  `initialRuntimeSessionId`) and `opencodeSessionId` on the
+  `useSessionMessages` source (use `runtimeSessionId`). Both keep working; the
+  neutral name wins when both are set.
 - The message-id clock arithmetic (`wireIdClock`, `wireIdClockAt`,
   `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`,
   `newestWireIdClock`, `mintWireMessageIdAbove`, `MintedWireMessageId`,
@@ -215,6 +261,16 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Behavior is unchanged. Removed in the next major.
 
 ### Fixed
+- `useSession({ chatEngine: false })` no longer reads a transcript for no
+  session. Its inner `useSessionSync('')` went busy with the session, and the
+  busy to idle step started `GET /session//message`, which answered 400 and
+  retried every 15 s.
+- `isSandboxNotReadyError` now classifies `sandbox runtime not ready`, the
+  text a pi runtime (and OpenCode's boot steps) answers with. Before, only
+  `opencode not ready` read as "waking", so a pi session that was still
+  booting showed an error.
+- `useRuntimeSessionTodo` asks only a runtime that lists `session.todo`. A pi
+  runtime is not asked.
 - `narrateStep('edit', …)` counts files, not tool calls. A write then an
   edit of one file reads "Updated hello.py", not "Updated 2 files"; a group
   without file paths still counts its calls.

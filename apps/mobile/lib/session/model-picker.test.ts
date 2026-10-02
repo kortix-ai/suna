@@ -1,3 +1,4 @@
+import { pickerProviderList } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 // The source of truth for labels and group order. Mobile cannot depend on the
@@ -138,6 +139,23 @@ describe('composerModelList — the SDK list, fed the sources web reads', () => 
     const keys = composerModelList({ ...native, runtimeProviders }).map((m) => modelOptionKey(m));
     expect(keys).toContain('anthropic/claude-sonnet-5');
     expect(keys.some((k) => k.startsWith('kortix/'))).toBe(false);
+  });
+
+  test('gateway off: the SDK list already merged with the catalog gives the same models (useRuntimeProviders in a project scope)', () => {
+    const runtimeProviders = {
+      all: [
+        { id: 'anthropic', name: 'Anthropic', models: { 'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' } } },
+        { id: 'kortix', name: 'Kortix', models: { 'kimi-k3': { id: 'kimi-k3', name: 'Kimi' } } },
+      ],
+      connected: ['anthropic', 'kortix'],
+      default: {},
+    } as never;
+    // `useComposerModels` feeds `useRuntimeProviders().data` as `runtimeProviders`.
+    // Inside `KortixProjectProvider` that is this merged list, not the raw one.
+    const merged = pickerProviderList({ ...native, runtimeProviders });
+    const once = composerModelList({ ...native, runtimeProviders }).map((m) => modelOptionKey(m));
+    const twice = composerModelList({ ...native, runtimeProviders: merged }).map((m) => modelOptionKey(m));
+    expect(twice).toEqual(once);
   });
 });
 

@@ -40,8 +40,8 @@ import { AttachSheet, type AttachSheetRef } from './AttachSheet';
 import { SessionFilesSheet } from './SessionFilesSheet';
 import { useToolFilePreviewStore } from './tool/shared/navigation';
 
-import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
-import type { Session } from '@/lib/platform/types';
+import type { Agent, FlatModel, Command } from '@/lib/session/runtime-data';
+import type { Session } from '@/lib/session/types';
 import { MentionSuggestions, SuggestionCard, SuggestionRow } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { useSkillMentions } from './useSkillMentions';
@@ -53,7 +53,7 @@ import { sessionFileMentionLabel, type SessionFile } from '@/lib/session/session
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ModelPickerSheet } from './ModelPickerSheet';
 import { composerChip, type PickerOption } from '@/lib/session/composer-config';
-import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import { useLocalConfigStore } from '@/lib/session/local-config';
 import { modelOptionKey, modelPickerOptions, pickerModelName } from '@/lib/session/model-picker';
 
 // ─── Types ───────────────────────────────────────────────────────────────────

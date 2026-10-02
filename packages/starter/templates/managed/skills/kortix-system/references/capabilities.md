@@ -165,7 +165,9 @@ agent's context clean, which protects quality at scale.
 a subscription you already pay for), and route each task to the model that
 fits — optimizing for quality, cost, or speed. Reasoning effort and
 per-agent model choices are configurable. For exact model IDs and config,
-see the `references/opencode/models.md` reference.
+run `kortix models ls`. An OpenCode session also has the
+`references/opencode/models.md` reference; a pi session uses Kortix-managed
+models through the LLM gateway.
 
 ## What makes Kortix different
 

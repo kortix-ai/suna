@@ -9,8 +9,8 @@
  * store: the parent's SSE stream carries every session's `message.updated` /
  * `message.part.updated` events, the reducer files them under the child's
  * `sessionID`, and the row reads them back. It never fetches.
- * Mobile's reducer (`lib/opencode/event-stream.ts`) does the same into
- * `lib/opencode/sync-store.ts`, so `useChildSessionMessages` is the same
+ * The SDK's reducer does the same into its session store on mobile, so
+ * `useChildSessionMessages` is the same
  * selector over the same data. A child transcript is resident while the parent
  * streamed it; after eviction (`DETACHED_SESSION_LIMIT`) the row has no steps
  * and falls back to opening the child session, exactly as web does.
@@ -26,21 +26,18 @@ import { View } from 'react-native';
 import { getChildSessionError, getRetryInfo, getRetryMessage, type ToolPart } from '@kortix/sdk';
 import { SessionRetryDisplay, useRetrySecondsLeft } from '@/components/session/session-retry-display';
 import { TurnErrorDisplay } from '@/components/session/SessionErrorBanner';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import type { MessageWithParts } from '@/lib/opencode/types';
+import { useSessionRows, useSessionStatus } from '@/lib/session/session-store';
+import type { MessageWithParts } from '@/lib/session/types';
 import { childSessionToolParts } from '@/lib/session/tools/agents-task';
 import { webSpace } from '@/lib/session/user-message';
 import { ToolNavigationContext } from '../shared/navigation';
 import { ToolSurfaceContext, useToolIndent } from '../shared/surface';
 import { ToolPartRenderer } from '../tool-part-renderer';
 
-/** The child session's messages from the sync store (web `useRuntimeMessages`). */
+/** The child session's messages from the session store (web `useRuntimeMessages`). */
 export function useChildSessionMessages(childSessionId: string | undefined): MessageWithParts[] | undefined {
-  return useSyncStore((s) => {
-    if (!childSessionId) return undefined;
-    const messages = s.messages[childSessionId];
-    return messages && messages.length > 0 ? messages : undefined;
-  });
+  const messages = useSessionRows(childSessionId);
+  return messages && messages.length > 0 ? messages : undefined;
 }
 
 /** The child session's messages plus its visible tool parts, memoised on the message list. */
@@ -76,7 +73,7 @@ export function SubAgentStatusBanner({
   childSessionId?: string;
   childMessages?: MessageWithParts[];
 }) {
-  const childStatus = useSyncStore((s) => (childSessionId ? s.sessionStatus[childSessionId] : undefined));
+  const childStatus = useSessionStatus(childSessionId);
   const retryInfo = useMemo(() => getRetryInfo(childStatus), [childStatus]);
   const retryMessage = useMemo(() => getRetryMessage(childStatus), [childStatus]);
   const childError = useMemo(
