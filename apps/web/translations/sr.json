@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Скупи цитате",
     "stopUnconfirmed": "Zaustavljanje nije potvrđeno. Agent je možda i dalje aktivan. Pokušajte ponovo da ga zaustavite.",
     "queued": "На чекању",
-    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}"
+    "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
+    "queuedCount": "{count} u redu",
+    "collapseQueue": "Skupi red",
+    "expandQueue": "Proširi red"
   },
   "billing": {
     "plan": {

@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Comprimi citazioni",
     "stopUnconfirmed": "Impossibile confermare l’arresto. L’agente potrebbe essere ancora in esecuzione. Riprova.",
     "queued": "In coda",
-    "queuedFiles": "{count, plural, one {# file} other {# file}}"
+    "queuedFiles": "{count, plural, one {# file} other {# file}}",
+    "queuedCount": "{count} in coda",
+    "collapseQueue": "Comprimi coda",
+    "expandQueue": "Espandi coda"
   },
   "billing": {
     "plan": {

@@ -1939,7 +1939,10 @@
     "collapseQuotes": "Réduire les citations",
     "stopUnconfirmed": "L’arrêt n’a pas pu être confirmé. L’agent fonctionne peut-être encore. Réessayez de l’arrêter.",
     "queued": "En attente",
-    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}"
+    "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}",
+    "queuedCount": "{count} en file",
+    "collapseQueue": "Réduire la file",
+    "expandQueue": "Développer la file"
   },
   "billing": {
     "plan": {

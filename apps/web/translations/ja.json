@@ -1939,7 +1939,10 @@
     "collapseQuotes": "引用を折りたたむ",
     "stopUnconfirmed": "停止を確認できませんでした。エージェントがまだ実行中の可能性があります。もう一度停止してください。",
     "queued": "待機中",
-    "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}"
+    "queuedFiles": "{count, plural, one {#個のファイル} other {#個のファイル}}",
+    "queuedCount": "{count} 件キュー中",
+    "collapseQueue": "キューを折りたたむ",
+    "expandQueue": "キューを展開"
   },
   "billing": {
     "plan": {
