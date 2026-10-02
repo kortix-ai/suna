@@ -17,6 +17,7 @@ import { userMayLaunchAgent } from '../scoped-agents';
 import { resolveAgentGrant } from '../../projects/agents';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { ensureTeamsConversationBinding, teamsChannelCtx } from './binding';
+import { labelTeamsChannelBinding } from './channel-label';
 import { postTeamsIdentityPrompt, teamsUserId } from './identity';
 import { chatUser, resolveChatActor } from '../core/identity';
 import {
@@ -378,6 +379,8 @@ async function deliverFollowUp(input: {
     conversationId,
     ...describeTeamsConversation(activity),
   }).catch((err) => console.warn('[teams-webhook] binding backfill failed', err));
+  // A channel message says the team's id, not its name: Teams names it.
+  void labelTeamsChannelBinding({ projectId, tenantId, conversationId, activity });
 
   const hasImage = teamsMessageHasImage(activity);
   const currentModel = sessionModelOf(input.sessionMetadata);
@@ -596,6 +599,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   }
 
   await ensureTeamsConversationBinding({ projectId, tenantId, conversationId, ...describeTeamsConversation(activity) });
+  void labelTeamsChannelBinding({ projectId, tenantId, conversationId, activity });
   const selection = await currentChannelSelection(teamsChannelCtx(tenantId, conversationId));
 
   // Per-resource scoping, as the web and Slack apply it: a person scoped out
