@@ -1914,6 +1914,7 @@
     "messageInput": "Унос поруке",
     "attachFiles": "Приложи датотеке",
     "selectAgent": "Изабери агента",
+    "agentLockedHint": "У већ покренутој сесији није могуће променити агента.",
     "noModel": "Нема модела",
     "thinkingEffort": "Ниво размишљања",
     "sessionOverrides": "Измене сесије",
@@ -1941,6 +1942,8 @@
     "queued": "На чекању",
     "queuedFiles": "{count, plural, one {# датотека} few {# датотеке} other {# датотека}}",
     "queuedCount": "{count} u redu",
+    "editingQueued": "Уређивање",
+    "submitEdit": "Pošalji",
     "collapseQueue": "Skupi red",
     "expandQueue": "Proširi red"
   },

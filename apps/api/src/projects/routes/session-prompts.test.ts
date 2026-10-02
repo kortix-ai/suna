@@ -255,6 +255,8 @@ mock.module('../../billing/services/billing-gate', () => ({
 
 /** What the inbox read answers a new send. Null: the real read, over the mocked rows. */
 let sendState: { held: boolean; pending: boolean } | null = null;
+let edits: Array<{ sessionId: string; promptId: string; text: string }> = [];
+let editOutcome: 'edited' | 'delivering' | 'missing' = 'edited';
 
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
@@ -275,6 +277,14 @@ mock.module('../session-lifecycle', () => ({
     });
     commandTable.push(created);
     return { row: created, deduped: false };
+  },
+  editInboxPrompt: async (sessionId: string, promptId: string, text: string) => {
+    edits.push({ sessionId, promptId, text });
+    if (editOutcome !== 'edited') return { outcome: editOutcome };
+    return {
+      outcome: 'edited',
+      row: row({ payload: { text, clientMessageId: 'q_1', wireMessageId: WIRE_ID } }),
+    };
   },
   drainSessionLifecycleQueue: async (input: Record<string, unknown>) => {
     drains.push(input);
@@ -390,6 +400,8 @@ beforeEach(() => {
   sessionMetadata = {};
   enqueued = [];
   drains = [];
+  edits = [];
+  editOutcome = 'edited';
   enqueueResult = null;
   billingOk = true;
   dbReadDelayMs = 0;
@@ -837,6 +849,48 @@ describe('DELETE .../prompts/:promptId', () => {
   test('404s a prompt id this session does not own', async () => {
     commandTable = [];
     expect((await remove()).status).toBe(404);
+  });
+});
+
+describe('PATCH .../prompts/:promptId', () => {
+  function edit(body: unknown, promptId = PROMPT_ID) {
+    return app().request(`${base()}/${promptId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('replaces the queued text in place and sends nothing', async () => {
+    const response = await edit({ text: 'say hello' });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.prompt_id).toBe(PROMPT_ID);
+    expect(body.text).toBe('say hello');
+    expect(edits).toEqual([{ sessionId: SESSION_ID, promptId: PROMPT_ID, text: 'say hello' }]);
+    // An edit is not a send: no new row, no drain kick.
+    expect(enqueued).toHaveLength(0);
+    expect(drains).toHaveLength(0);
+  });
+
+  test('refuses a prompt already on the wire', async () => {
+    editOutcome = 'delivering';
+    expect((await edit({ text: 'too late' })).status).toBe(409);
+  });
+
+  test('404s a prompt id this session does not own', async () => {
+    editOutcome = 'missing';
+    expect((await edit({ text: 'x' })).status).toBe(404);
+  });
+
+  test('refuses empty or missing text without touching the row', async () => {
+    expect((await edit({ text: '   ' })).status).toBe(400);
+    expect((await edit({})).status).toBe(400);
+    expect(edits).toHaveLength(0);
+  });
+
+  test('refuses a prompt id that is not a row id', async () => {
+    expect((await edit({ text: 'x' }, 'not-a-uuid')).status).toBe(400);
   });
 });
 

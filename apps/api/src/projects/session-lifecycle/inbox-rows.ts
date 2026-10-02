@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
 import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
 import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
@@ -125,8 +126,20 @@ export async function deleteInboxPrompt(
     );
   if (stopPaused[0]) return { outcome: 'deleted', row: stopPaused[0] };
 
-  // Separate the two "no row was removed" cases: a row that is on the wire
-  // cannot be cancelled without lying about it, which is a 409, not a 404.
+  return inboxRowNotTaken(sessionId, promptId);
+}
+
+/**
+ * Why a write that names a waiting row matched nothing: the row is on the
+ * wire (`delivering`, a 409 — changing it would be a lie about what the
+ * session is answering) or it is not this session's to change (`missing`).
+ */
+async function inboxRowNotTaken(
+  sessionId: string,
+  promptId: string,
+): Promise<{ outcome: 'delivering' } | { outcome: 'missing' }> {
+  // Separate the two "no row was taken" cases: a row that is on the wire
+  // cannot be changed without lying about it, which is a 409, not a 404.
   //
   // TWO shapes are on the wire, for the same reason: a `running` row is inside
   // `continueSession`, and a FORWARDED row has already reached OpenCode, which
@@ -150,6 +163,54 @@ export async function deleteInboxPrompt(
   return isForwardedInboxRow(existing.result) || status === 'delivered'
     ? { outcome: 'delivering' }
     : { outcome: 'missing' };
+}
+
+export type InboxPromptEdit =
+  | { outcome: 'edited'; row: SessionLifecycleCommandRow }
+  | { outcome: 'delivering' }
+  | { outcome: 'missing' };
+
+/**
+ * Replace the text of a row that is still waiting — the queue list's edit.
+ *
+ * In place, and nothing else moves: the row keeps its id, its wire id, its
+ * send time (its place in the queue), its file parts and any hold. That is
+ * the whole point. A remove + re-send is a SEND — it releases a Stop hold
+ * and is admitted at once on an idle session — and the user asked to change
+ * a queued message, not to send it.
+ *
+ * The text parts collapse into one part carrying the new text, ahead of the
+ * files; `text` is the flattened copy every reader of the row shows.
+ */
+export async function editInboxPrompt(
+  sessionId: string,
+  promptId: string,
+  text: string,
+): Promise<InboxPromptEdit> {
+  const [row] = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`jsonb_set(
+        jsonb_set(${qualifiedColumn(sessionLifecycleCommands.payload)}, '{text}', to_jsonb(${text}::text)),
+        '{parts}',
+        jsonb_build_array(jsonb_build_object('type', 'text', 'text', ${text}::text)) || COALESCE(
+          (SELECT jsonb_agg(part ORDER BY position)
+             FROM jsonb_array_elements(COALESCE(${qualifiedColumn(sessionLifecycleCommands.payload)}->'parts', '[]'::jsonb))
+                  WITH ORDINALITY AS parts(part, position)
+            WHERE COALESCE(part->>'type', 'text') <> 'text'),
+          '[]'::jsonb))`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, promptId),
+        inboxScope(sessionId),
+        inArray(sessionLifecycleCommands.status, ['queued', 'failed', 'dead_lettered']),
+      ),
+    )
+    .returning();
+  if (row) return { outcome: 'edited', row };
+  return inboxRowNotTaken(sessionId, promptId);
 }
 
 /**
