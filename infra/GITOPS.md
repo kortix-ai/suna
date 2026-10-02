@@ -32,6 +32,18 @@ Vercel and `*-fe-ecs.kortix.com` paths.
 | `deploy-prod.yml` | Retags tested staging images, applies production migrations, rolls production ECS services, publishes the release, and verifies the live version. |
 | `rollback-prod.yml` | Rolls selected production ECS services to existing immutable release images. It can also promote the matching Vercel frontend deployment. |
 
+## CI evidence
+
+The `Tests` workflow covers the core lane, packages lane, and four browser lanes.
+Check all six lanes at the reviewed PR head and again at the merged `main` SHA;
+concurrent changes on `main` can introduce failures after a green PR run.
+
+Translation catalogs must keep one effective value per key. Remove overwritten
+duplicates without changing parsed catalog content. Verify catalog content and
+merge-driver behavior rather than pinning committed JSON bytes.
+New audit labels must provide translations in every locale before merge; keep
+the strict key/placeholder parity checks.
+
 ## Preview lifecycle
 
 Adding the `preview` label to a pull request starts the preview workflow.
@@ -75,6 +87,34 @@ home region; existing sandboxes retain their placement, including on restart.
 Warm-session adoption requires provider-reported placement matching the current
 project flag. Server-owned placement intent only deduplicates in-flight warming;
 it is not proof that a sandbox is ready or in the requested region.
+
+Platinum first-image residency is prepared separately from guest creation.
+`deploy-dev.yml` runs `scripts/prepare-platform-default-us.ts` inside the exact
+new Linux/amd64 API image, before the API ECS rollout. Docker installs a temporary
+`0600` env-file containing compact `KORTIX_ENV_JSON`, the existing task overrides,
+and compiled runtime artifact paths before Bun evaluates the CLI's static imports.
+The carrier preserves multiline secret values and is removed on every exit.
+
+The gate builds or resolves the content-addressed default template, then calls
+`POST /v1/templates/:id/prepare` for `KORTIX_PLATINUM_US_REGION`. Only HTTP `200`
+with ready state/status and the exact template ID and region permits rollout.
+Queued, copying, and cooling-down `202` responses are polled within a 12-minute
+preparation deadline; errors, identity mismatches, or timeout fail the deployment.
+Platinum's tenant preparation endpoint must be released before this Dev gate.
+The API also prepares US residency asynchronously on startup; shared health and
+EU requests do not wait for it. Preparation allocates no sandbox and changes no
+existing placement, project flag, or idle policy. Kortix staging/prod workflows
+are unchanged.
+
+The replacement becomes the shared default only after exact US readiness.
+Serving sessions retain the recorded predecessor during preparation; failure
+leaves that default and both provider templates intact. Publication, including
+build-history visibility and predecessor reaping, cannot bypass the same gate.
+
+A complete session-scoped empty transcript can render the composer before
+`/start` completes, even while the canonical root is unresolved. Known root
+mismatches, queued input, and unanswered/open/ended turn evidence still veto that
+empty proof; an absent transcript never proves an empty session.
 
 ## Rollback
 

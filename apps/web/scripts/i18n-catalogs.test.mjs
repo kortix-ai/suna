@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 import { locales } from '../src/i18n/catalog.mjs';
 import {
@@ -31,29 +31,6 @@ function deepFreeze(value) {
   }
   return value;
 }
-
-function firstDifference(actual, expected) {
-  const a = actual.split('\n');
-  const e = expected.split('\n');
-  const index = a.findIndex((line, i) => line !== e[i]);
-  if (index === -1 && a.length === e.length) return null;
-  const at = index === -1 ? Math.min(a.length, e.length) : index;
-  return `line ${at + 1}: ${JSON.stringify(a[at])} should be ${JSON.stringify(e[at])}`;
-}
-
-describe('the committed catalogs', () => {
-  // A catalog is exactly what `JSON.stringify(value, null, 2)` writes, so a
-  // tool that parses and rewrites one — the merge driver included — changes
-  // only what it means to change. The 2026-09-22 merge also broke this: the
-  // program that reordered the keys wrote integer keys as "5", "4", "3", which
-  // no JSON.stringify can produce.
-  for (const file of catalogFiles) {
-    test(`${basename(file)} is canonical`, () => {
-      const text = readFileSync(file, 'utf8');
-      expect(firstDifference(text, serializeCatalog(JSON.parse(text)))).toBeNull();
-    });
-  }
-});
 
 describe('findKeyOrderChanges', () => {
   test('adding and removing keys is not a reorder', () => {

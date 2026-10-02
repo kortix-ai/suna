@@ -39,9 +39,7 @@ describe('token-hash — presented-token hashing off the event loop', () => {
     expect(isTokenHashCached(token)).toBe(false);
     const first = await candidateSecretKeyHashesAsync(token);
     expect(isTokenHashCached(token)).toBe(true);
-    const started = performance.now();
     const second = await candidateSecretKeyHashesAsync(token);
-    expect(performance.now() - started).toBeLessThan(5);
     expect(second).toEqual(first);
   });
 

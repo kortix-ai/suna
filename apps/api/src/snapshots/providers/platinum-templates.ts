@@ -1,4 +1,5 @@
-import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
+import { platinumJson, platinumJsonResponse, isPlatinumConfigured } from '../../shared/platinum';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { normalizeExistingProviderState } from './state';
 import type { BuildLogTap } from './index';
 import { shortLivedObservation } from '../observation-cache';
@@ -257,6 +258,79 @@ export function requireExternalTemplateId(id: unknown, context: string): string 
     );
   }
   return id;
+}
+
+/**
+ * Copy the exact content-addressed template to a public region before release.
+ * Queued, copying, and cooldown responses are not proof of residency.
+ */
+export async function preparePlatinumTemplateRegion(
+  snapshotName: string,
+  region: string,
+  opts: {
+    client?: PlatinumClient;
+    request?: typeof platinumJsonResponse;
+    timeoutMs?: number;
+  } = {},
+): Promise<{ templateId: string; region: string }> {
+  const timeoutMs = opts.timeoutMs ?? ACTIVATE_DEADLINE_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const client = opts.client ?? productionPlatinumClient;
+  const request = opts.request ?? platinumJsonResponse;
+  let lastState = 'resolving template';
+  try {
+    const template = await findTemplateByName(snapshotName, {
+      isConfigured: () => client.isConfigured(),
+      json: <T>(path: string, init: RequestInit = {}) =>
+        client.json<T>(path, {
+          ...init,
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
+        }),
+    });
+    const templateId = requireExternalTemplateId(template?.id, `lookup for ${snapshotName}`);
+    while (!controller.signal.aborted) {
+      const response = await request<{
+        template_id?: unknown;
+        region?: unknown;
+        state?: unknown;
+        status?: unknown;
+        retry_after_ms?: unknown;
+      }>(`/v1/templates/${encodeURIComponent(templateId)}/prepare`, {
+        method: 'POST',
+        body: JSON.stringify({ region }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
+      });
+      controller.signal.throwIfAborted();
+      const body = response.body;
+      if (body.template_id !== templateId || body.region !== region) {
+        throw new Error(`Platinum prepare identity/region mismatch for ${snapshotName} in ${region}`);
+      }
+      if (response.status === 200 && body.state === 'ready' && body.status === 'ready') {
+        return { templateId, region };
+      }
+      const queued = body.state === 'absent' && body.status === 'queued';
+      const copying = body.state === 'replicating' && body.status === 'copying';
+      const coolingDown = body.state === 'failed' && body.status === 'cooling_down';
+      if (response.status !== 202 || !(queued || copying || coolingDown)
+        || typeof body.retry_after_ms !== 'number'
+        || !Number.isFinite(body.retry_after_ms) || body.retry_after_ms < 0) {
+        throw new Error(`Platinum prepare returned an invalid residency response for ${snapshotName} in ${region}`);
+      }
+      lastState = `${body.state}/${body.status}`;
+      await sleep(Math.max(250, Math.min(body.retry_after_ms, 30_000)), undefined, {
+        signal: controller.signal,
+      });
+    }
+    throw new Error('prepare deadline elapsed');
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`Platinum template ${snapshotName} did not become resident in ${region} within ${timeoutMs}ms (last state: ${lastState})`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

@@ -34,6 +34,8 @@ import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSna
 import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
+import { platinumUsRegion } from '../shared/platinum-region';
+import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
@@ -191,24 +193,8 @@ export async function ensureSandboxImage(
 
   // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
   // count, and we rebuild on this provider.)
-  let state = await provider.getSnapshotState(identity.snapshotName);
-  if (state === 'active') {
-    await recordTemplateBuilt(template.templateId, {
-      snapshotName: identity.snapshotName,
-      contentHash: identity.contentHash,
-      builtFromCommit: identity.builtFromCommit,
-      provider: buildProvider,
-      swapKey: identity.swapKey,
-    });
-    return {
-      snapshotName: identity.snapshotName,
-      slug: template.slug,
-      contentHash: identity.contentHash,
-      built: false,
-      isDefault: !!template.isShared,
-      spec: templateImageSpec(template),
-    };
-  }
+  const state = await provider.getSnapshotState(identity.snapshotName);
+  const prepareRegion = template.isShared && buildProvider === 'platinum' ? platinumUsRegion() : null;
 
   // ─── Never block a session boot on an image build ─────────────────────────
   // The identity this boot wants is not ready: it drifted (a runtime/CLI source
@@ -223,7 +209,10 @@ export async function ensureSandboxImage(
   // converge at boot (see last-ready-image.ts for why that is safe and where it
   // stops being safe). Pre-builds and explicit manual/CR builds skip this and
   // build inline — producing the new image IS their job.
-  if (canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' })) {
+  if (
+    canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' }) &&
+    (state !== 'active' || prepareRegion)
+  ) {
     const servable = await findServableLastReadyImage(provider, {
       project,
       template,
@@ -258,75 +247,80 @@ export async function ensureSandboxImage(
     }
   }
 
-  if (state === 'building') {
-    state = await waitForProviderBuild(provider, identity.snapshotName);
-    if (state === 'active') {
-      await recordTemplateBuilt(template.templateId, {
-        snapshotName: identity.snapshotName,
-        contentHash: identity.contentHash,
-        builtFromCommit: identity.builtFromCommit,
-        provider: buildProvider,
-        swapKey: identity.swapKey,
-      });
-      return {
+  try {
+    const image = await resolveExactImage(project, template, identity, {
+      state,
+      accountId: opts.accountId,
+      source: opts.source ?? 'session-start',
+      buildProvider,
+    });
+    await publishTemplateImage(template, identity, image, buildProvider, prepareRegion);
+    return image.image;
+  } catch (err) {
+    // A failed replacement must not invalidate the last ready shared default.
+    if (!template.isShared) {
+      await recordTemplateFailed(template.templateId, err instanceof Error ? err.message : String(err));
+    }
+    throw err;
+  }
+}
+
+interface ExactImageResult {
+  image: EnsureSandboxImageResult;
+  buildId: string | null;
+}
+
+/** Resolve only the requested identity; neither publish it nor select a fallback. */
+async function resolveExactImage(
+  project: GitBackedProject,
+  template: ResolvedTemplate,
+  identity: TemplateIdentity,
+  opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource; buildProvider: string },
+): Promise<ExactImageResult> {
+  const provider = getSandboxProvider(opts.buildProvider);
+  let state = opts.state;
+  if (state === 'building') state = await waitForProviderBuild(provider, identity.snapshotName);
+  if (state === 'active') {
+    return {
+      image: {
         snapshotName: identity.snapshotName,
         slug: template.slug,
         contentHash: identity.contentHash,
         built: false,
         isDefault: !!template.isShared,
         spec: templateImageSpec(template),
-      };
-    }
-    if (state === 'building') {
-      throw new SnapshotBuildError(
-        `Sandbox image ${identity.snapshotName} is still building on ${buildProvider}`,
-      );
-    }
+      },
+      buildId: null,
+    };
   }
-  if (state === 'unknown') {
+  if (state === 'building' || state === 'unknown') {
     throw new SnapshotBuildError(
-      `Cannot verify sandbox image ${identity.snapshotName} on ${buildProvider}; provider state is unknown`,
+      `Cannot resolve sandbox image ${identity.snapshotName} on ${opts.buildProvider}; provider state is ${state}`,
     );
   }
 
-  // ─── Inline build (deduped across ALL sources) ───────────────────────────
-  // A burst of triggers for the same snapshot identity — e.g. a project-create
-  // pre-build, the first session boot, and a background rebuild all landing
-  // within the same build window — must produce exactly ONE provider build and
-  // ONE build-log row. `daytona.snapshot.create` calls racing under the same
-  // name conflict, and duplicate rows are what left two "Building" entries
-  // orphaned in the UI. We dedupe in-process by (provider, snapshot name); the
-  // cross-process case is deduped above by provider truth + settlement polling.
-  //
-  // The provider MUST be part of the key: the same identity can be requested for
-  // two providers at once (e.g. a background reconcile builds on the template's
-  // recorded provider while a session — or a failover — needs it on a DIFFERENT
-  // provider). Keying on the name alone would dedupe the session onto the wrong
-  // provider's build and, when that one fails, fail the session with it.
-  const buildKey = `${buildProvider}:${identity.snapshotName}`;
+  // Physical builds share one provider-qualified promise across every caller.
+  // Publication is separate: a US prepare failure leaves the old row untouched.
+  const buildKey = `${opts.buildProvider}:${identity.snapshotName}`;
   const existing = inflightBuilds.get(buildKey);
   if (existing) return existing;
 
-  const buildPromise = runInlineBuild(project, template, identity, {
-    state,
-    accountId: opts.accountId,
-    source: opts.source ?? 'session-start',
-    buildProvider,
-  }).finally(() => inflightBuilds.delete(buildKey));
+  const buildPromise = runInlineBuild(project, template, identity, { ...opts, state })
+    .finally(() => inflightBuilds.delete(buildKey));
   inflightBuilds.set(buildKey, buildPromise);
   return buildPromise;
 }
 /**
- * Do the actual provider build for a resolved (template, identity) pair and
- * record the result on the template row + build log. Always called behind the
- * `inflightBuilds` dedup in `ensureSandboxImage` — never directly.
+ * Build the exact provider image and log its physical build. Shared default
+ * publication and predecessor deletion happen only after regional preparation.
+ * Called behind the provider-qualified `inflightBuilds` dedup.
  */
 async function runInlineBuild(
   project: GitBackedProject,
   template: ResolvedTemplate,
   identity: TemplateIdentity,
   opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource; buildProvider?: string },
-): Promise<EnsureSandboxImageResult> {
+): Promise<ExactImageResult> {
   const provider = getSandboxProvider(opts.buildProvider ?? template.provider);
 
   // Reap a failed/dead snapshot under the same name so the rebuild starts fresh.
@@ -377,53 +371,64 @@ async function runInlineBuild(
       // restore → /global/event + /pty hang while /kortix/health still
       // answered). A cold boot avoids that entirely.
     });
-    if (buildId) await closeBuildLogReady(buildId);
-    await recordTemplateBuilt(template.templateId, {
-      snapshotName: identity.snapshotName,
-      contentHash: identity.contentHash,
-      builtFromCommit: identity.builtFromCommit,
-      provider: opts.buildProvider,
-      swapKey: identity.swapKey,
-    });
-    // One-template invariant: a successful rebuild supersedes the previous
-    // snapshot. Delete it so old runtime fingerprints don't accumulate — this
-    // was leaking a full ~8 GB rootfs template per agent-source change (7 stale
-    // copies = 56 GB observed before this fix).
-    //
-    // EXCEPT when the predecessor itself was built (or is building) recently:
-    // that means another live code version — an overlapping rolling deploy, or
-    // dev's ECS/EKS split — computed a DIFFERENT identity and is actively
-    // serving it. Deleting it makes that version's sessions miss, rebuild, and
-    // (symmetrically) delete OURS — an infinite mutual-destruction loop of full
-    // image builds (observed live 2026-07-22: the shared default rebuilt 4× in
-    // 6 minutes). A genuinely superseded identity stops being rebuilt, ages out
-    // of the window, and is pruned by the next drift build or the quota GC.
-    if (prevSnapshot && prevSnapshot !== identity.snapshotName) {
-      const recent = await recentlyBuiltSnapshotNames([prevSnapshot], PREDECESSOR_PRUNE_PROTECT_MS);
-      if (recent.has(prevSnapshot)) {
-        console.log(
-          `[snapshots] keeping predecessor ${prevSnapshot}: it was built recently, so another ` +
-          `live replica/code version likely still serves it; it is pruned once it stops being rebuilt`,
-        );
-      } else {
-        await provider
-          .deleteSnapshot(prevSnapshot)
-          .catch((e) => console.warn(`[snapshots] prune predecessor ${prevSnapshot} failed: ${e?.message ?? e}`));
-      }
-    }
     return {
-      snapshotName: identity.snapshotName,
-      slug: template.slug,
-      contentHash: identity.contentHash,
-      built: true,
-      isDefault: !!template.isShared,
-      spec: templateImageSpec(template),
+      image: {
+        snapshotName: identity.snapshotName,
+        slug: template.slug,
+        contentHash: identity.contentHash,
+        built: true,
+        isDefault: !!template.isShared,
+        spec: templateImageSpec(template),
+      },
+      buildId,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (buildId) await closeBuildLogFailed(buildId, message);
-    await recordTemplateFailed(template.templateId, message);
     throw new SnapshotBuildError(message, err);
+  }
+}
+
+/** Publish a proven image, then apply the existing predecessor pruning policy. */
+async function publishTemplateImage(
+  template: ResolvedTemplate,
+  identity: TemplateIdentity,
+  result: ExactImageResult,
+  buildProvider: string,
+  prepareRegion: string | null,
+): Promise<{ templateId: string; region: string } | null> {
+  const { image, buildId } = result;
+  try {
+    const residency = prepareRegion
+      ? await preparePlatinumTemplateRegion(image.snapshotName, prepareRegion)
+      : null;
+    await recordTemplateBuilt(template.templateId, {
+      snapshotName: image.snapshotName,
+      contentHash: identity.contentHash,
+      builtFromCommit: identity.builtFromCommit,
+      provider: buildProvider,
+      swapKey: identity.swapKey,
+    });
+    // Build history is also a last-ready source. Do not expose a build there
+    // while its regional preparation is still queued, copying, or failed.
+    if (buildId) await closeBuildLogReady(buildId);
+    const prevSnapshot = template.providerSnapshotName;
+    if (image.built && prevSnapshot && prevSnapshot !== image.snapshotName) {
+      const recent = await recentlyBuiltSnapshotNames([prevSnapshot], PREDECESSOR_PRUNE_PROTECT_MS);
+      if (recent.has(prevSnapshot)) {
+        console.log(`[snapshots] keeping recently built predecessor ${prevSnapshot}`);
+      } else {
+        await getSandboxProvider(buildProvider).deleteSnapshot(prevSnapshot)
+          .catch((err) => console.warn(
+            `[snapshots] prune predecessor ${prevSnapshot} failed:`,
+            err instanceof Error ? err.message : err,
+          ));
+      }
+    }
+    return residency;
+  } catch (err) {
+    if (buildId) await closeBuildLogFailed(buildId, err instanceof Error ? err.message : String(err));
+    throw err;
   }
 }
 
@@ -431,7 +436,7 @@ async function runInlineBuild(
  * In-flight inline builds, keyed by target snapshot name. Shared across every
  * build source so concurrent triggers collapse onto one build + one log row.
  */
-const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+const inflightBuilds = new Map<string, Promise<ExactImageResult>>();
 /**
  * In-flight background rebuilds, keyed by provider + target snapshot name. A
  * burst of sessions booting off the same drifted identity must kick exactly
@@ -494,11 +499,36 @@ const PLATFORM_PROJECT_SHELL: GitBackedProject = {
 async function ensurePlatformDefaultImage(
   opts: { source?: SnapshotBuildSource; provider: string },
 ): Promise<EnsureSandboxImageResult> {
+  if (opts.provider === 'platinum' && platinumUsRegion()) {
+    return preparePlatformDefaultImageInUs();
+  }
   return ensureSandboxImage(PLATFORM_PROJECT_SHELL, {
     slug: DEFAULT_SANDBOX_SLUG,
     source: opts.source ?? 'startup',
     provider: opts.provider,
   });
+}
+
+/** Blocking release gate. Never substitutes a previous image or the home region. */
+export async function preparePlatformDefaultImageInUs(): Promise<
+  EnsureSandboxImageResult & { templateId: string; region: string }
+> {
+  const region = platinumUsRegion();
+  if (!region) throw new Error('KORTIX_PLATINUM_US_REGION must name the target US region');
+  if (!config.isPlatinumEnabled()) throw new Error('Platinum must be enabled for the US image release gate');
+  const project = PLATFORM_PROJECT_SHELL;
+  const template = await resolveTemplateBySlug(project, DEFAULT_SANDBOX_SLUG);
+  const provider = getSandboxProvider('platinum');
+  if (!provider.isConfigured()) throw new SnapshotBuildError('Sandbox provider platinum is not configured');
+  const identity = await computeTemplateIdentity(project, template);
+  const image = await resolveExactImage(project, template, identity, {
+    state: await provider.getSnapshotState(identity.snapshotName),
+    source: 'startup',
+    buildProvider: 'platinum',
+  });
+  const residency = await publishTemplateImage(template, identity, image, 'platinum', region);
+  if (!residency) throw new Error('US image publication requires exact regional readiness');
+  return { ...image.image, ...residency };
 }
 let startupPreBuildKicked = false;
 
@@ -522,11 +552,12 @@ function startupPreBuild(): void {
     isEnabled: (provider) => config.isProviderEnabled(provider as SandboxProviderName),
   })) {
     void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
-      .then((r) =>
+      .then((r) => {
+        const region = providerId === 'platinum' ? platinumUsRegion() : null;
         console.log(
-          `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
-        ),
-      )
+          `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}${region ? `; resident in ${region}` : ''}`,
+        );
+      })
       .catch((err) =>
         console.warn(
           `[snapshots] startup pre-build of platform default failed (${providerId}):`,

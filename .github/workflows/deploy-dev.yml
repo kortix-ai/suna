@@ -613,6 +613,53 @@ jobs:
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Prepare the exact new default image in Platinum US before rollout
+        timeout-minutes: 30
+        env:
+          API_IMAGE: ${{ needs.build-api.outputs.image }}
+        run: |
+          set -euo pipefail
+          umask 077
+          carrier="$(mktemp)"
+          container="prepare-us-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -f "$carrier"' EXIT
+          export PREPARE_ENV_FILE="$carrier"
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          secret = subprocess.run([
+              "aws", "secretsmanager", "get-secret-value",
+              "--region", os.environ["AWS_REGION"],
+              "--secret-id", "kortix-dev-env",
+              "--query", "SecretString", "--output", "text",
+          ], check=True, capture_output=True, text=True).stdout.strip()
+          values = json.loads(secret)
+          overrides = json.loads(os.environ["KORTIX_ECS_ENV_OVERRIDES"])
+          for source in (values, overrides):
+              if not isinstance(source, dict) or not all(isinstance(v, str) for v in source.values()):
+                  raise SystemExit("Runtime environment must be a JSON object of strings")
+              for value in source.values():
+                  if value:
+                      escaped = value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                      print(f"::add-mask::{escaped}", flush=True)
+          lines = ["KORTIX_ENV_JSON=" + json.dumps(values, separators=(",", ":"), ensure_ascii=True)]
+          for key, value in overrides.items():
+              if "\n" in value or "\r" in value:
+                  raise SystemExit("Explicit task overrides must be single-line strings")
+              lines.append(f"{key}={value}")
+          lines.extend([
+              "KORTIX_SNAPSHOT_AGENT_BIN_PATH=/app/apps/kortix-sandbox-agent-server/dist/kortix-agent",
+              "KORTIX_SNAPSHOT_CLI_BIN_PATH=/app/apps/cli/dist/kortix",
+              "KORTIX_SNAPSHOT_CLI_ATTESTATION_PATH=/app/apps/cli/dist/kortix-connectors-runtime.attestation.json",
+          ])
+          pathlib.Path(os.environ["PREPARE_ENV_FILE"]).write_text("\n".join(lines) + "\n")
+          PY
+          docker run --rm --pull always --platform linux/amd64 \
+            --name "$container" --env-file "$carrier" \
+            "$API_IMAGE" bun scripts/prepare-platform-default-us.ts
       # --version stamps KORTIX_VERSION into the task-def so /v1/health reports
       # the computed dev version even if the image's baked string ever diverges
       # (retags, rebuilds) — same parity rule as staging/prod.
