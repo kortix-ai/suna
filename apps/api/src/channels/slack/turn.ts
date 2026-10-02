@@ -6,7 +6,8 @@ import { runWorkerTick } from '../../shared/audit-scope';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { config } from '../../config';
 import { sessionWebUrl } from './util';
-import { markdownToMrkdwn, mrkdwnToRichTextElements } from './mrkdwn';
+import { markdownToMrkdwn, mrkdwnToRichTextElements, slackMentionsAsText, unlabelledMentionIds } from './mrkdwn';
+import { slackUserNames } from './labels';
 import { loadSlackTokenForProject } from '../install-store';
 import {
   addReaction,
@@ -617,15 +618,21 @@ export async function relayTurnStepDetailed(
   }
   if (handle.finalized) return { ok: false, reason: 'turn_finalized' };
 
+  // A step names people as text. A mention in a step would notify that person
+  // on every repaint of the plan, and the rich_text repaint printed it raw.
+  const ids = unlabelledMentionIds(title, opts.detail, opts.outputForPrev);
+  const names = ids.length > 0 ? await slackUserNames(handle.token, handle.teamId, ids) : new Map<string, string>();
+  const asText = (text: string) => slackMentionsAsText(text, names);
+
   // First `slack step` → create the plan-checklist message.
   if (!handle.ts) {
     const firstStep: StreamTaskChunk = {
       type: 'task_update',
       id: 'step-0',
-      title: title.slice(0, 200),
+      title: asText(title).slice(0, 200),
       status: 'in_progress',
     };
-    if (opts.detail) firstStep.details = markdownToMrkdwn(opts.detail).slice(0, 500);
+    if (opts.detail) firstStep.details = asText(markdownToMrkdwn(opts.detail)).slice(0, 500);
     const opened = await openPlanMessage(handle, firstStep);
     if (!opened) return { ok: false, reason: 'stream_open_failed' };
     handle.expiry = Date.now() + STREAM_TTL_MS;
@@ -638,7 +645,7 @@ export async function relayTurnStepDetailed(
   const last = handle.steps[handle.steps.length - 1];
   if (last && last.status === 'in_progress') {
     last.status = 'complete';
-    if (opts.outputForPrev) last.output = markdownToMrkdwn(opts.outputForPrev).slice(0, 500);
+    if (opts.outputForPrev) last.output = asText(markdownToMrkdwn(opts.outputForPrev)).slice(0, 500);
     if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
       last.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
         type: 'url',
@@ -650,10 +657,10 @@ export async function relayTurnStepDetailed(
   const next: StreamTaskChunk = {
     type: 'task_update',
     id: `step-${handle.steps.length}`,
-    title: title.slice(0, 200),
+    title: asText(title).slice(0, 200),
     status: 'in_progress',
   };
-  if (opts.detail) next.details = markdownToMrkdwn(opts.detail).slice(0, 500);
+  if (opts.detail) next.details = asText(markdownToMrkdwn(opts.detail)).slice(0, 500);
   handle.steps.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
   await repaintLivePlan(handle);
