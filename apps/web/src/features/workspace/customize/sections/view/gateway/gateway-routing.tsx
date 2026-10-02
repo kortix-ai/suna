@@ -47,7 +47,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *
  * | Capability | Where it is now |
  * | --- | --- |
- * | Inherit / custom / no fallback | "When the default fails" row (primary) |
+ * | Inherit / custom / no fallback | "When a model fails" row (primary) |
  * | Ordered default chain, reorder + remove, max 8 | Chain row — one line per step (primary) |
  * | Fallback condition (transient / any error) | "Retry on" line, inside the chain it belongs to |
  * | Per-model override rules, max 20 | "Per-model overrides" — one row per rule, promoted second (primary) |
