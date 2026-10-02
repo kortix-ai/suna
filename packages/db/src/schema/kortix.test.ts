@@ -53,6 +53,7 @@ import {
   connectors,
   providerEvents,
   sessionLifecycleCommands,
+  projectSessionPublicShares,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -354,6 +355,28 @@ describe('project session connector bindings', () => {
     expect(column).toBeDefined();
     expect(column?.notNull).toBe(true);
     expect(column?.default).toBe(false);
+  });
+});
+
+describe('project_session_public_shares table', () => {
+  test('covers every foreign key with an index that leads with its columns', () => {
+    // The Supabase advisor (unindexed_foreign_keys, KRTX-1105) flags a foreign
+    // key whose columns no index leads with: the parent side's ON DELETE
+    // CASCADE — and any future account-scoped read — then seq-scans this
+    // table. Every FK on this table is single-column, so leading-column
+    // coverage is the exact Postgres rule.
+    const cfg = getTableConfig(projectSessionPublicShares);
+    const coverings = cfg.indexes.map((i) =>
+      i.config.columns.map((c) => ('name' in c ? c.name : undefined)),
+    );
+    const fks = cfg.foreignKeys.map((f) => f.reference().columns.map((c) => c.name));
+    expect(fks.length).toBeGreaterThan(0);
+    for (const cols of fks) {
+      const covered = coverings.some(
+        (c) => c.length >= cols.length && cols.every((x, i) => c[i] === x),
+      );
+      expect(covered).toBe(true);
+    }
   });
 });
 

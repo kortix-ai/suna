@@ -1447,6 +1447,10 @@ export const projectSessionPublicShares = kortixSchema.table(
     uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
     index('idx_project_session_public_shares_session').on(table.sessionId),
     index('idx_project_session_public_shares_project').on(table.projectId),
+    // Covers project_session_public_shares_account_id_fkey (Supabase advisor
+    // unindexed_foreign_keys, KRTX-1105): the accounts ON DELETE CASCADE and
+    // any account-scoped read need an index leading with account_id.
+    index('idx_project_session_public_shares_account').on(table.accountId),
   ],
 );
 
