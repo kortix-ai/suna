@@ -1003,9 +1003,10 @@ flow(
         const deleted = await cli.run(["apps", "delete", slug, "--yes", "--json", "--project", project.id]);
         if (deleted.exitCode !== 0) throw new Error(`kortix apps delete: ${deleted.exitCode} ${deleted.stderr}`);
         const body = JSON.parse(deleted.stdout);
-        // The local profile's provider is unreachable, so nothing can be
-        // released here. Whether the build had recorded its provider yet (and so
-        // owns a pending image) depends on the shared local worker's queue.
+        // The deployment is still in progress, so its image can only be
+        // pending — never released: the build may register it after the delete.
+        // Whether the worker had recorded the build provider yet (and so owns an
+        // image at all) depends on the worker's queue, so pending is 0 or 1.
         if (body.ok !== true || body.app_id !== appId || body.slug !== slug
           || body.images?.released !== 0 || ![0, 1].includes(body.images?.pending)) {
           throw new Error(`unexpected delete output: ${deleted.stdout}`);

@@ -82,6 +82,8 @@ function appLimitResponse(c: any, error: unknown): Response | null {
 const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
 const ArtifactObject = z.object({}).passthrough().openapi('KortixAppArtifact');
+/** Deployment states the worker still drives. Deleting one would race its build. */
+const IN_PROGRESS_DEPLOYMENT_STATUSES = ['queued', 'validating', 'building', 'provisioning', 'checking'];
 /** Provider images a delete freed now, and the ones maintenance retries. */
 const ImageReleaseObject = z.object({ released: z.number().int(), pending: z.number().int() })
   .openapi('KortixAppImageRelease');
@@ -679,7 +681,11 @@ projectsApp.openapi(
     await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
       .where(eq(apps.appId, appId));
     const deployments = await db
-      .select({ deploymentId: appDeployments.deploymentId, hostingProvider: appDeployments.hostingProvider })
+      .select({
+        deploymentId: appDeployments.deploymentId,
+        hostingProvider: appDeployments.hostingProvider,
+        status: appDeployments.status,
+      })
       .from(appDeployments)
       .where(eq(appDeployments.appId, appId));
     const runtimes = await db
@@ -693,7 +699,15 @@ projectsApp.openapi(
     await teardownAppRuntimes(runtimes);
     // Each deployment build left one provider image. Platinum counts them
     // against a per-org template cap, so the App is not gone until they are.
-    const images = await releaseDeploymentImages(deployments);
+    // A build still running may register its image after this request, so it
+    // is reported pending, never released; maintenance reclaims it once the
+    // worker stops (the worker refuses to start a runtime for a deleted App).
+    const building = deployments.filter((deployment) =>
+      deployment.hostingProvider && IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+    const finished = deployments.filter((deployment) =>
+      !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+    const released = await releaseDeploymentImages(finished);
+    const images = { released: released.released, pending: released.pending + building.length };
     return c.json({ ok: true, images });
   },
 );
@@ -850,9 +864,6 @@ projectsApp.openapi(
     }
   },
 );
-
-/** Deployment states the worker still drives. Deleting one would race its build. */
-const IN_PROGRESS_DEPLOYMENT_STATUSES = ['queued', 'validating', 'building', 'provisioning', 'checking'];
 
 projectsApp.openapi(
   createRoute({

@@ -1192,8 +1192,9 @@ the live deployment → **409** `deployment_live`. The real CLI process
 `--yes`, names the existing deployments for an unknown target (`Deployment v9
 not found (deployments: v1)`), and relays the in-progress 409. `kortix apps delete <slug> --yes --json` deletes the
 App during its build and returns `{ok, app_id, slug, images:{released, pending}}`
-with `released: 0`: the local profile's provider is unreachable, so any image
-the build already owns stays `pending` for project maintenance. The App and its
+with `released: 0`: a build still in progress may register its image after the
+delete, so its image is reported `pending` for project maintenance, never
+`released`, and the worker refuses to start a runtime for the deleted App. The App and its
 deployment list then answer **404**. A
 deleted deployment leaves the list, detail, and logs reads and is never a
 rollback target. The local profile cannot finish a build, so a deployed
