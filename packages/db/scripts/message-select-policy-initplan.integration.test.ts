@@ -213,25 +213,41 @@ COMMIT;
 const JWT_A = 'aaaaaaaa-1000-0000-0000-00000000000a';
 const JWT_B = 'bbbbbbbb-2000-0000-0000-00000000000b';
 const JWT_C = 'cccccccc-3000-0000-0000-00000000000c';
-const PERSONAS: Array<{ name: string; role: string; jwt: string | null }> = [
-  { name: 'owner', role: 'authenticated', jwt: JWT_A },
-  { name: 'admin', role: 'authenticated', jwt: JWT_B },
-  { name: 'outsider', role: 'authenticated', jwt: JWT_C },
-  { name: 'anonymous', role: 'anon', jwt: null },
+const PERSONAS: Array<{ name: string; role: string; jwt: string | null; sees: number }> = [
+  { name: 'owner', role: 'authenticated', jwt: JWT_A, sees: 8 }, // own account + the public project
+  { name: 'admin', role: 'authenticated', jwt: JWT_B, sees: 12 }, // the user_roles admin branch
+  { name: 'outsider', role: 'authenticated', jwt: JWT_C, sees: 4 }, // the public project only
+  { name: 'anonymous', role: 'anon', jwt: null, sees: 4 }, // the public project only
 ];
 
-/** Visible message ids for one persona, under the CURRENT policy. */
-function visibleIds(database: string, persona: { role: string; jwt: string | null }): string {
+/** Visible message ids and row count for one persona, under the CURRENT
+ *  policy. The batch runs in one explicit transaction: the set_config claims
+ *  are transaction-local, and psql fed from stdin runs each statement as its
+ *  own implicit transaction — without BEGIN/COMMIT the claims never reach the
+ *  visibility SELECT and every persona degrades to the anonymous view. */
+function visibleView(
+  database: string,
+  persona: { role: string; jwt: string | null },
+): { count: number; ids: string } {
   const claims = persona.jwt
     ? `SELECT set_config('request.jwt.claims', '{"sub":"${persona.jwt}","role":"authenticated"}', true);`
     : '';
-  return sql(
+  const raw = sql(
     database,
-    `SET ROLE ${persona.role};
+    `BEGIN;
+     SET ROLE ${persona.role};
      ${claims}
-     SELECT coalesce(array_agg(message_id ORDER BY message_id)::text, 'none') FROM public.messages;
-     RESET ROLE;`,
+     SELECT count(*)::text || '|' || coalesce(array_agg(message_id ORDER BY message_id)::text, 'none') FROM public.messages;
+     RESET ROLE;
+     COMMIT;`,
   );
+  const line =
+    raw
+      .split('\n')
+      .filter((l) => /^\d+\|/.test(l))
+      .pop() ?? '';
+  const [count, ids] = line.split('|');
+  return { count: Number(count), ids: ids ?? 'none' };
 }
 
 /** The stored policy qual, whitespace-insensitive for expression comparison. */
@@ -239,7 +255,9 @@ function policyQual(database: string): string {
   return sql(
     database,
     `SELECT qual FROM pg_policies WHERE schemaname='public' AND tablename='messages' AND policyname='message_select_policy';`,
-  ).toLowerCase().replace(/\s+/g, '');
+  )
+    .toLowerCase()
+    .replace(/\s+/g, '');
 }
 
 /** Every Filter in the Seq/Index Scan subtree of public.messages, plus whether
@@ -247,20 +265,24 @@ function policyQual(database: string): string {
 function messagesPlan(database: string, jwt: string): { filters: string[]; hasInitPlan: boolean } {
   const raw = sql(
     database,
-    `SET ROLE authenticated;
+    `BEGIN;
+     SET ROLE authenticated;
      SELECT set_config('request.jwt.claims', '{"sub":"${jwt}","role":"authenticated"}', true);
      EXPLAIN (FORMAT JSON) SELECT count(*) FROM public.messages;
-     RESET ROLE;`,
+     RESET ROLE;
+     COMMIT;`,
   );
-  const plan = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1))[0]!.Plan;
+  const parsed = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1)) as Array<{
+    Plan: Record<string, unknown>;
+  }>;
+  const plan = parsed[0]?.Plan;
+  if (!plan) throw new Error('EXPLAIN (FORMAT JSON) returned no plan');
   const filters: string[] = [];
   let hasInitPlan = false;
   const walk = (node: Record<string, unknown>): void => {
     if (typeof node.Filter === 'string') filters.push(node.Filter);
     if (node['Parent Relationship'] === 'InitPlan') hasInitPlan = true;
-    for (const key of ['Plans', 'Sub Plan', 'InitPlan']) {
-      for (const child of (node[key] as Record<string, unknown>[] | undefined) ?? []) walk(child);
-    }
+    for (const child of collect(node)) walk(child);
   };
   const scan = [plan, ...collect(plan)].find((node) => node['Relation Name'] === 'messages');
   if (!scan) throw new Error('no public.messages scan in plan');
@@ -271,7 +293,8 @@ function messagesPlan(database: string, jwt: string): { filters: string[]; hasIn
 function collect(node: Record<string, unknown>): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   for (const key of ['Plans', 'Sub Plan', 'InitPlan']) {
-    for (const child of (node[key] as Record<string, unknown>[] | undefined) ?? []) out.push(child, ...collect(child));
+    for (const child of (node[key] as Record<string, unknown>[] | undefined) ?? [])
+      out.push(child, ...collect(child));
   }
   return out;
 }
@@ -283,12 +306,13 @@ interface Server {
   stop(): void;
 }
 
-function localPostgresBins(): { initdb: string; postgres: string; pgCtl: string; psql: string } | null {
-  const dirs = [
-    process.env.KORTIX_TEST_PG_BIN,
-    '/usr/lib/postgresql/16/bin',
-    '/usr/lib/postgresql/15/bin',
-  ].filter((dir): dir is string => Boolean(dir));
+function localPostgresBins(): {
+  initdb: string;
+  postgres: string;
+  pgCtl: string;
+  psql: string;
+} | null {
+  const dirs = ['/usr/lib/postgresql/16/bin', '/usr/lib/postgresql/15/bin'];
   for (const dir of dirs) {
     if (existsSync(join(dir, 'initdb')) && existsSync(join(dir, 'postgres'))) {
       return {
@@ -319,14 +343,32 @@ function freePort(): Promise<number> {
 async function startServer(): Promise<Server> {
   if (dockerAvailable) {
     const started = Bun.spawnSync([
-      'docker', 'run', '--rm', '-d', '--name', container,
-      '-e', 'POSTGRES_PASSWORD=test', 'postgres:16-alpine',
+      'docker',
+      'run',
+      '--rm',
+      '-d',
+      '--name',
+      container,
+      '-e',
+      'POSTGRES_PASSWORD=test',
+      'postgres:16-alpine',
     ]);
     if (started.exitCode !== 0) throw new Error(started.stderr.toString());
     let ready = false;
     for (let attempt = 0; attempt < 50; attempt += 1) {
       const probe = Bun.spawnSync(
-        ['docker', 'exec', container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-c', 'SELECT 1'],
+        [
+          'docker',
+          'exec',
+          container,
+          'psql',
+          '-h',
+          '127.0.0.1',
+          '-U',
+          'postgres',
+          '-c',
+          'SELECT 1',
+        ],
         { stdout: 'ignore', stderr: 'ignore' },
       );
       if (probe.exitCode === 0) {
@@ -339,8 +381,23 @@ async function startServer(): Promise<Server> {
     return {
       sql(database, statement) {
         const result = Bun.spawnSync(
-          ['docker', 'exec', '-i', container, 'psql', '-h', '127.0.0.1', '-U', 'postgres', '-d', database,
-           '-v', 'ON_ERROR_STOP=1', '-t', '-A'],
+          [
+            'docker',
+            'exec',
+            '-i',
+            container,
+            'psql',
+            '-h',
+            '127.0.0.1',
+            '-U',
+            'postgres',
+            '-d',
+            database,
+            '-v',
+            'ON_ERROR_STOP=1',
+            '-t',
+            '-A',
+          ],
           { stdin: Buffer.from(statement), stdout: 'pipe', stderr: 'pipe' },
         );
         const output = `${result.stdout.toString()}${result.stderr.toString()}`;
@@ -358,30 +415,59 @@ async function startServer(): Promise<Server> {
   const sockDir = join(clusterDir, 'sock');
   mkdirSync(sockDir);
   const dataDir = join(clusterDir, 'data');
-  Bun.spawnSync([bins.initdb, '-D', dataDir, '-U', 'postgres', '--auth=trust'], { stdout: 'ignore', stderr: 'pipe' });
+  Bun.spawnSync([bins.initdb, '-D', dataDir, '-U', 'postgres', '--auth=trust'], {
+    stdout: 'ignore',
+    stderr: 'pipe',
+  });
   const port = await freePort();
   appendFileSync(
     join(dataDir, 'postgresql.conf'),
-    `listen_addresses = '127.0.0.1'\nunix_socket_directories = '${sockDir}'\n` +
-      `fsync = off\nsynchronous_commit = off\nfull_page_writes = off\n`,
+    `listen_addresses = '127.0.0.1'\nunix_socket_directories = '${sockDir}'\nfsync = off\nsynchronous_commit = off\nfull_page_writes = off\n`,
   );
   const started = Bun.spawnSync(
-    [bins.pgCtl, '-D', dataDir, '-o', `-p ${port} -k ${sockDir}`, '-l', join(clusterDir, 'log'), '-w', 'start'],
+    [
+      bins.pgCtl,
+      '-D',
+      dataDir,
+      '-o',
+      `-p ${port} -k ${sockDir}`,
+      '-l',
+      join(clusterDir, 'log'),
+      '-w',
+      'start',
+    ],
     { stdout: 'ignore', stderr: 'pipe' },
   );
   if (started.exitCode !== 0) throw new Error(started.stderr.toString());
-  const psqlArgs = [bins.psql, '-h', sockDir, '-p', String(port), '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-t', '-A'];
+  const psqlArgs = [
+    bins.psql,
+    '-h',
+    sockDir,
+    '-p',
+    String(port),
+    '-U',
+    'postgres',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-t',
+    '-A',
+  ];
   return {
     sql(database, statement) {
       const result = Bun.spawnSync([...psqlArgs, '-d', database], {
-        stdin: Buffer.from(statement), stdout: 'pipe', stderr: 'pipe',
+        stdin: Buffer.from(statement),
+        stdout: 'pipe',
+        stderr: 'pipe',
       });
       const output = `${result.stdout.toString()}${result.stderr.toString()}`;
       if (result.exitCode !== 0) throw new Error(output);
       return output.trim();
     },
     stop() {
-      Bun.spawnSync([bins.pgCtl, '-D', dataDir, '-m', 'immediate', 'stop'], { stdout: 'ignore', stderr: 'ignore' });
+      Bun.spawnSync([bins.pgCtl, '-D', dataDir, '-m', 'immediate', 'stop'], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+      });
       if (clusterDir) rmSync(clusterDir, { recursive: true, force: true });
     },
   };
@@ -407,8 +493,14 @@ const suite = describe.skipIf(dockerAvailable === false && localPostgresBins() =
 
 suite('message_select_policy initplan rewrite — real PostgreSQL', () => {
   beforeAll(async () => {
-    if (migrationNames.length !== 1) throw new Error(`expected exactly one *_message_select_policy_initplan.sql migration, found ${migrationNames.length}`);
-    migration = await Bun.file(resolve(migrationDirectory, migrationNames[0]!)).text();
+    if (migrationNames.length !== 1)
+      throw new Error(
+        `expected exactly one *_message_select_policy_initplan.sql migration, found ${migrationNames.length}`,
+      );
+    const migrationFile = migrationNames[0];
+    if (!migrationFile)
+      throw new Error('expected exactly one *_message_select_policy_initplan.sql migration');
+    migration = await Bun.file(resolve(migrationDirectory, migrationFile)).text();
 
     server = await startServer();
 
@@ -416,14 +508,14 @@ suite('message_select_policy initplan rewrite — real PostgreSQL', () => {
     sql('legacy_db', FIXTURE);
 
     // The red state: the fixture reproduces the advisor's finding.
-    for (const persona of PERSONAS) beforeIds.set(persona.name, visibleIds('legacy_db', persona));
+    for (const persona of PERSONAS) beforeIds.set(persona.name, visibleView('legacy_db', persona));
     beforeQual = policyQual('legacy_db');
     beforePlan = messagesPlan('legacy_db', JWT_A);
 
     applyMigration('legacy_db');
 
     afterQual = policyQual('legacy_db');
-    for (const persona of PERSONAS) afterIds.set(persona.name, visibleIds('legacy_db', persona));
+    for (const persona of PERSONAS) afterIds.set(persona.name, visibleView('legacy_db', persona));
     afterPlan = messagesPlan('legacy_db', JWT_A);
   }, 120_000);
 
@@ -433,10 +525,15 @@ suite('message_select_policy initplan rewrite — real PostgreSQL', () => {
 
   test('fixture reproduces the finding: auth.uid() evaluated per row, bare in the stored qual', () => {
     expect(beforeQual).toContain('=auth.uid()');
-    expect(beforePlan.filters.some((filter) => filter.includes('current_setting') || filter.includes('auth.uid('))).toBe(true);
-    // Sanity: the personas actually exercise distinct access paths.
-    expect(beforeIds.get('owner')).not.toBe(beforeIds.get('admin'));
-    expect(beforeIds.get('outsider')).not.toBe(beforeIds.get('admin'));
+    expect(
+      beforePlan.filters.some(
+        (filter) => filter.includes('current_setting') || filter.includes('auth.uid('),
+      ),
+    ).toBe(true);
+    // Sanity: the personas exercise distinct access paths, not one shared view.
+    expect(beforeIds.get('owner')?.count).toBe(8);
+    expect(beforeIds.get('admin')?.count).toBe(12);
+    expect(beforeIds.get('outsider')?.count).toBe(4);
   });
 
   test('after the rewrite the stored qual wraps both auth.uid() calls and no bare call remains', () => {
@@ -445,16 +542,22 @@ suite('message_select_policy initplan rewrite — real PostgreSQL', () => {
   });
 
   test('the plan evaluates auth.uid() once: an InitPlan feeds the per-row filter', () => {
-    expect(afterPlan.filters.some((filter) => filter.includes('current_setting') || filter.includes('auth.uid('))).toBe(false);
+    expect(
+      afterPlan.filters.some(
+        (filter) => filter.includes('current_setting') || filter.includes('auth.uid('),
+      ),
+    ).toBe(false);
     expect(afterPlan.hasInitPlan).toBe(true);
   });
 
-  test('visible rows are identical before and after for every access path', () => {
+  test('every access path keeps exactly its rows across the rewrite', () => {
     for (const persona of PERSONAS) {
-      expect(afterIds.get(persona.name)).toBe(beforeIds.get(persona.name));
+      const before = beforeIds.get(persona.name);
+      const after = afterIds.get(persona.name);
+      expect(before?.count).toBe(persona.sees); // the fixture exercises each path
+      expect(after?.count).toBe(persona.sees); // and keeps it after the rewrite
+      expect(after?.ids).toBe(before?.ids);
     }
-    // The rewrite must not have collapsed the access paths either.
-    expect(afterIds.get('owner')).not.toBe(afterIds.get('admin'));
   });
 
   test('the other three policies are untouched and the policy shape is preserved', () => {
