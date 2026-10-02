@@ -19,8 +19,9 @@ import { DetailPanel, DetailRow, OutcomeTitle } from '@/features/auth/auth-conse
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useTranslations } from '@/i18n/use-translations';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
-import { ShieldWarningIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon, ShieldWarningIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { ConnectorHandshake } from './connector-handshake';
@@ -75,6 +76,7 @@ const RISK_LABEL_KEY: Record<string, string> = {
 
 export function ApprovalDecision({ token }: { token: string }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const router = useRouter();
   const [details, setDetails] = useState<ApprovalLinkDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyDecision, setBusyDecision] = useState<ApprovalDecisionValue | null>(null);
@@ -123,6 +125,9 @@ export function ApprovalDecision({ token }: { token: string }) {
     }
   }
 
+  const sessionHref =
+    details?.session_id ? `/projects/${details.project_id}/sessions/${details.session_id}` : null;
+
   return (
     <ApprovalDecisionView
       loading={loading}
@@ -131,6 +136,7 @@ export function ApprovalDecision({ token }: { token: string }) {
       busyDecision={busyDecision}
       error={error}
       onDecision={decide}
+      onOpenSession={sessionHref ? () => router.push(sessionHref) : undefined}
     />
   );
 }
@@ -147,6 +153,7 @@ export function ApprovalDecisionView({
   busyDecision,
   error,
   onDecision,
+  onOpenSession,
 }: {
   loading: boolean;
   details: ApprovalLinkDetails | null;
@@ -155,9 +162,9 @@ export function ApprovalDecisionView({
   busyDecision: ApprovalDecisionValue | null;
   error: string | null;
   onDecision: (decision: ApprovalDecisionValue, note?: string) => void;
+  onOpenSession?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tHardcodedUi = useTranslations('hardcodedUi');
   if (loading) {
     // The shape of the screen that is coming, so the panel and the two
     // decisions do not jump in under a spinner.
@@ -203,6 +210,49 @@ export function ApprovalDecisionView({
     );
   }
 
+  return (
+    <AuthFrame footerVariant="none">
+      <ApprovalDecisionPanel
+        details={details}
+        outcome={outcome}
+        busyDecision={busyDecision}
+        error={error}
+        onDecision={onDecision}
+        onOpenSession={onOpenSession}
+      />
+    </AuthFrame>
+  );
+}
+
+/**
+ * The approval itself — connector, call, parameters, decision — without the
+ * page frame around it. The standalone page wraps it in `AuthFrame`; the
+ * Review Center opens the same panel in `ApprovalDecisionModal`, so a call
+ * reads and decides the same way on both surfaces.
+ *
+ * No `onDecision` = read-only: the viewer may see the call but not decide it.
+ */
+export function ApprovalDecisionPanel({
+  details,
+  outcome,
+  busyDecision,
+  error,
+  onDecision,
+  onOpenSession,
+  previewAuthorized = true,
+}: {
+  details: ApprovalLinkDetails;
+  outcome: ApprovalDecisionValue | null;
+  busyDecision: ApprovalDecisionValue | null;
+  error: string | null;
+  onDecision?: (decision: ApprovalDecisionValue, note?: string) => void;
+  /** Opens the session that asked for the call. */
+  onOpenSession?: () => void;
+  /** False when this viewer may not see the call's arguments at all. */
+  previewAuthorized?: boolean;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const resolved = !details.pending || outcome !== null;
   const reviewable = approvalReviewable(details.args_preview, details.review_complete);
   const label = resolvedLabel(
@@ -236,7 +286,7 @@ export function ApprovalDecisionView({
   }
 
   return (
-    <AuthFrame footerVariant="none">
+    <>
       <Rise>
         <StepHeader
           mark={
@@ -294,6 +344,21 @@ export function ApprovalDecisionView({
               label={tI18nComplete.raw('text2d9e28289fac')}
               value={requestedAtFormat.format(new Date(details.requested_at))}
             />
+            {onOpenSession ? (
+              <DetailRow
+                label={tI18nComplete.raw('text6959b4159575')}
+                value={
+                  <button
+                    type="button"
+                    onClick={onOpenSession}
+                    className="text-foreground hover:text-muted-foreground inline-flex items-center gap-1 underline-offset-2 transition-colors hover:underline"
+                  >
+                    {tI18nComplete.raw('textb205bb47f81a')}
+                    <ArrowUpRightIcon className="size-3.5" />
+                  </button>
+                }
+              />
+            ) : null}
           </DetailPanel>
 
           <ApprovalAgentContext context={details.approval_context} className="rounded-md border" />
@@ -308,11 +373,13 @@ export function ApprovalDecisionView({
 
           {error ? <ErrorStrip message={error} /> : null}
 
-          {details.pending && !resolved ? (
+          {details.pending && !resolved && onDecision ? (
             <>
               {reviewable ? null : (
                 <InfoBanner tone="warning" icon={ShieldWarningIcon}>
-                  {tI18nComplete.raw('text7c4a3e7e2251')}
+                  {previewAuthorized
+                    ? tI18nComplete.raw('text7c4a3e7e2251')
+                    : tI18nComplete.raw('textf7873b149941')}
                 </InfoBanner>
               )}
               <ApprovalDecisionActions
@@ -327,6 +394,6 @@ export function ApprovalDecisionView({
           ) : null}
         </div>
       </Rise>
-    </AuthFrame>
+    </>
   );
 }

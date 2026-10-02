@@ -65,6 +65,7 @@ import {
   isQuickDecidableApproval,
   resolveBulkOutcome,
 } from './review-actions';
+import { ApprovalDecisionModal, reviewApprovalDetails } from './approval-modal';
 import { type ReviewActions, ReviewDetail } from './review-detail';
 import {
   KIND_META,
@@ -842,9 +843,41 @@ export function ReviewCenter({
     );
   }
 
-  // The review page replaces the inbox in place — same scroll container, no
-  // modal. Escape and "Back to inbox" return to the list.
-  if (selected) {
+  // A Connector call opens the standalone approve page's panel in a modal over
+  // the inbox, so it reads and decides the same way on both surfaces.
+  const approval = selected ? reviewApprovalDetails(selected) : null;
+  const approvalCall =
+    approval && selected?.kind === 'approval' ? selected.detail.actions?.[0] : undefined;
+  const approvalModal = (
+    <ApprovalDecisionModal
+      details={approval}
+      previewAuthorized={approvalCall?.previewAuthorized !== false}
+      busyDecision={selected && pendingId === selected.id ? pendingDecision : null}
+      onDecision={
+        connected && selected
+          ? (decision, note) =>
+              actions.resolve(
+                selected.id,
+                decision === 'approve' ? 'approved' : 'rejected',
+                decision === 'approve'
+                  ? tI18nComplete.raw('text0674d4a026cb')
+                  : tI18nComplete.raw('text4341be8eb7f0'),
+                note,
+              )
+          : undefined
+      }
+      onOpenSession={
+        selected?.sessionId && onOpenSession
+          ? () => onOpenSession(selected.sessionId!)
+          : undefined
+      }
+      onClose={() => setSelectedId(null)}
+    />
+  );
+
+  // Every other review page replaces the inbox in place — same scroll
+  // container, no modal. Escape and "Back to inbox" return to the list.
+  if (selected && !approval) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1056,6 +1089,7 @@ export function ReviewCenter({
         </div>
       </div>
 
+      {approvalModal}
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
