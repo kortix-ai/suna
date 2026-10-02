@@ -4939,6 +4939,12 @@ export const reviewItems = kortixSchema.table(
     index('idx_review_items_project_status').on(table.projectId, table.status),
     index('idx_review_items_project_kind').on(table.projectId, table.kind),
     index('idx_review_items_created').on(table.createdAt),
+    // FK-covering indexes (Supabase advisor `unindexed_foreign_keys`): they serve
+    // the parent-side actions `ON DELETE CASCADE` (accounts) and
+    // `ON DELETE SET NULL` (project_sessions). Built CONCURRENTLY by
+    // 20261002213119276_review_items_fk_indexes.concurrent.ts.
+    index('idx_review_items_account').on(table.accountId),
+    index('idx_review_items_origin_session').on(table.originSessionId),
   ],
 );
 
