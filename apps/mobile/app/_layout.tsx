@@ -1,3 +1,5 @@
+// Web Crypto before anything can call the SDK (Hermes has no `crypto` global).
+import '@/lib/polyfills/web-crypto';
 import '@/global.css';
 
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';

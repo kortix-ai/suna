@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { describeMarkdownImage } from './markdown-image';
+import { describeMarkdownImage, groupImageBlocks, imageOnlyBlock } from './markdown-image';
 
 describe('describeMarkdownImage', () => {
   test('labels a remote image with its alt text and links to it', () => {
@@ -57,5 +57,45 @@ describe('describeMarkdownImage', () => {
     expect(describeMarkdownImage('https://a.example/x.png', '  A\n  multi   line\talt ').label).toBe(
       'A multi line alt',
     );
+  });
+});
+
+describe('imageOnlyBlock', () => {
+  test('reads the images of a block that holds only images', () => {
+    expect(imageOnlyBlock('![Chart](/workspace/a.png)')).toEqual([{ src: '/workspace/a.png', alt: 'Chart' }]);
+    expect(imageOnlyBlock('![a](x.png)\n![b](https://cdn.example.com/y.png "Title")  ![](z.png)')).toEqual([
+      { src: 'x.png', alt: 'a' },
+      { src: 'https://cdn.example.com/y.png', alt: 'b' },
+      { src: 'z.png', alt: '' },
+    ]);
+  });
+
+  test('is null for any block with other content', () => {
+    expect(imageOnlyBlock('Here is the chart: ![a](x.png)')).toBeNull();
+    expect(imageOnlyBlock('[link](x.png)')).toBeNull();
+    expect(imageOnlyBlock('')).toBeNull();
+  });
+});
+
+describe('groupImageBlocks', () => {
+  test('merges a run of image-only blocks with two or more images into one gallery', () => {
+    expect(groupImageBlocks(['Intro', '![a](a.png)', '![b](b.png)', 'Outro'])).toEqual([
+      { kind: 'markdown', index: 0, text: 'Intro' },
+      { kind: 'gallery', index: 1, last: 2, images: [{ src: 'a.png', alt: 'a' }, { src: 'b.png', alt: 'b' }] },
+      { kind: 'markdown', index: 3, text: 'Outro' },
+    ]);
+  });
+
+  test('a block with several images is a gallery on its own', () => {
+    expect(groupImageBlocks(['![a](a.png) ![b](b.png)'])).toEqual([
+      { kind: 'gallery', index: 0, last: 0, images: [{ src: 'a.png', alt: 'a' }, { src: 'b.png', alt: 'b' }] },
+    ]);
+  });
+
+  test('a single image stays markdown, rendered inline', () => {
+    expect(groupImageBlocks(['Text', '![a](a.png)'])).toEqual([
+      { kind: 'markdown', index: 0, text: 'Text' },
+      { kind: 'markdown', index: 1, text: '![a](a.png)' },
+    ]);
   });
 });

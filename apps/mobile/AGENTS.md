@@ -179,6 +179,11 @@ pan-down-to-dismiss, snap points, and keyboard-aware sizing, so they stay on
 gorhom. Its content parts (`BottomSheetView`, `BottomSheetScrollView`,
 `BottomSheetTextInput`, `BottomSheetFooter`) are still imported from gorhom.
 
+Opening a sheet closes the keyboard: `KortixBottomSheetModal`'s `present()`
+calls `Keyboard.dismiss()` first. Do not call `Keyboard.dismiss()` before
+`open()` / `present()` at a call site. A field that auto-focuses inside the
+sheet raises the keyboard again after the sheet mounts.
+
 **Every sheet renders through `KortixBottomSheetModal`** (`components/kortix/sheet.tsx`;
 Jay, 2026-09-22). It is a drop-in for gorhom's `BottomSheetModal`: the same props
 and the same ref, so `useRef<BottomSheetModal>` (the gorhom type) still types the

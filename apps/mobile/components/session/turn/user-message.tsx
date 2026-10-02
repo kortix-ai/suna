@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
+import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
@@ -258,6 +258,8 @@ export function UserMessage({
   const openMenu = useCallback(() => {
     if (!promptText) return;
     haptics.medium();
+    // The menu draws under the keyboard otherwise: close it first.
+    Keyboard.dismiss();
     menuRef.current?.open();
   }, [promptText]);
   const menuProps = {
