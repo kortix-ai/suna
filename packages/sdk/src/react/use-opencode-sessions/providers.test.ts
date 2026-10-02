@@ -81,7 +81,13 @@ describe('useRuntimeProviders native query retry policy', () => {
   test('does not retry a 401 from a dead token', () => {
     detailData = { project: { experimental: { llm_gateway: false } } };
     const config = providers.useRuntimeProviders() as Config;
-    expect(config.retry!(0, new ApiError('Invalid or expired token', { status: 401 }))).toBe(false);
+    // The shape the native queryFn actually throws: the runtime client resolves
+    // `{ error, response }` and the react-layer unwrap throws an Error carrying
+    // the status (see shared.ts unwrap + the engine test in use-tunnel-retry).
+    const dead401 = Object.assign(new Error('{"detail":"Invalid or expired token"}'), {
+      status: 401,
+    });
+    expect(config.retry!(0, dead401)).toBe(false);
   });
 
   test('still retries the status-less boot race (no connected models yet) up to the cap', () => {

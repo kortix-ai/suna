@@ -103,6 +103,13 @@ test('useTunnelConnection rethrows the API error with its status intact', async 
   expect((error as { status?: number }).status).toBe(401);
 });
 
+test('useDeviceAuthInfo rethrows the API error with its status intact', async () => {
+  getOverride = { success: false, error: new ApiError('Invalid or expired token', { status: 401 }) };
+  const config = tunnel.useDeviceAuthInfo('ABCD-1234') as unknown as Config;
+  const error = await config.queryFn!().then(() => null, (e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(401);
+});
+
 test('useApproveDeviceAuth sends project_id and share on the wire', async () => {
   const config = tunnel.useApproveDeviceAuth() as unknown as Config;
   await config.mutationFn!({

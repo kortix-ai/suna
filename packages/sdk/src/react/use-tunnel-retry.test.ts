@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../core/http/api/errors';
 
@@ -15,6 +15,8 @@ import { ApiError } from '../core/http/api/errors';
 
 let pickerFetches = 0;
 let tunnelFetches = 0;
+let listFetches = 0;
+let runtimeListResult: unknown = null;
 let detailData: unknown = { project: { experimental: { llm_gateway: true } } };
 
 mock.module('react', () => ({
@@ -58,6 +60,18 @@ mock.module('../core/rest/projects-client', () => ({
 }));
 
 const actualApiClient: Record<string, unknown> = await import('../core/http/api-client');
+mock.module('../core/runtime/client', () => ({
+  getClient: () => ({
+    provider: {
+      list: async () => {
+        listFetches++;
+        if (runtimeListResult) return runtimeListResult;
+        return { data: [{ id: 'p1', models: [{ id: 'm1' }] }] };
+      },
+    },
+  }),
+}));
+
 mock.module('../core/http/api-client', () => ({
   ...actualApiClient,
   backendApi: {
@@ -89,6 +103,14 @@ const tunnel = (await import('./use-tunnel')) as unknown as {
   useTunnelConnections: () => { queryFn: () => Promise<unknown> };
 };
 
+beforeEach(() => {
+  pickerFetches = 0;
+  tunnelFetches = 0;
+  listFetches = 0;
+  detailData = { project: { experimental: { llm_gateway: true } } };
+  runtimeListResult = null;
+});
+
 describe('dead-token 401 runs one fetch, not a retry storm', () => {
   test('model-picker gateway query: retry:10 stays out of a 401', async () => {
     const config = providers.useRuntimeProviders();
@@ -113,5 +135,43 @@ describe('dead-token 401 runs one fetch, not a retry storm', () => {
       .fetchQuery({ queryKey: ['engine-test', 'tunnel-connections'], queryFn: config.queryFn })
       .catch(() => {});
     expect(tunnelFetches).toBe(1);
+  });
+
+  test('native provider query: a dead-token 401 on the runtime proxy runs one fetch', async () => {
+    // The runtime REST client NEVER throws for an HTTP error — it resolves
+    // `{ error, response }` — so before the unwrap fix the native queryFn threw
+    // a status-less Error and this 401 stormed 11 fetches through `retry: 10`.
+    detailData = { project: { experimental: { llm_gateway: false } } };
+    runtimeListResult = { error: { detail: 'Invalid or expired token' }, request: {}, response: { status: 401 } };
+    const config = providers.useRuntimeProviders();
+    const client = new QueryClient();
+    await client
+      .fetchQuery({
+        queryKey: ['engine-test', 'native-providers-401'],
+        queryFn: config.queryFn,
+        retry: config.retry,
+        retryDelay: 5,
+      })
+      .catch(() => {});
+    expect(listFetches).toBe(1);
+  });
+
+  test('native provider query: the boot race (empty provider list) still retries', async () => {
+    detailData = { project: { experimental: { llm_gateway: false } } };
+    runtimeListResult = { data: {} };
+    const config = providers.useRuntimeProviders();
+    const client = new QueryClient();
+    await client
+      .fetchQuery({
+        queryKey: ['engine-test', 'native-providers-boot'],
+        queryFn: config.queryFn,
+        retry: config.retry,
+        retryDelay: 5,
+      })
+      .catch(() => {});
+    // The boot-race guard is the over-fix tripwire: the status-less error must
+    // still run its full retry budget (1 initial + 10 retries). If a future
+    // edit made the 4xx guard swallow status-less errors too, this drops to 1.
+    expect(listFetches).toBe(11);
   });
 });
