@@ -200,7 +200,7 @@ async function runSession(round: number): Promise<Session> {
       const h = await api(`${daemon}/kortix/health`).catch(() => null);
       if (h?.body?.runtimeReady === true) {
         s.readyMs = Math.round(performance.now() - t0);
-        s.harness = h.body.harness ?? 'opencode';
+        s.harness = h.body.harness?.id ?? h.body.harness ?? 'opencode';
       } else await sleep(250);
     }
     events = openEvents(s.sessionId, frames);
