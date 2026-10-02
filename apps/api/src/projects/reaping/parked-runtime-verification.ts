@@ -35,7 +35,7 @@
  */
 
 import { sessionSandboxes } from '@kortix/db';
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import { endComputeSession } from '../../billing/services/compute-metering';
 import { type SandboxProviderName, config } from '../../config';
@@ -161,12 +161,11 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
       and(
         eq(sessionSandboxes.status, 'stopped'),
         isNotNull(sessionSandboxes.externalId),
-        // Least-recently-verified first. Written by `toISOString()` everywhere,
-        // so lexicographic text order IS chronological — no cast, so a
-        // hand-edited value can never make the sweep throw.
-        sql`TRUE`,
       ),
     )
+    // Least-recently-verified first. Written by `toISOString()` everywhere,
+    // so lexicographic text order IS chronological — no cast, so a
+    // hand-edited value can never make the sweep throw.
     .orderBy(sql`${sessionSandboxes.metadata}->>'parkedVerifiedAt' asc nulls first`)
     .limit(PARKED_VERIFY_BATCH);
 
@@ -316,6 +315,25 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
         error instanceof Error ? error.message : error,
       );
     }
+  }
+
+  // Every row of the batch goes to the back of the queue, whatever its
+  // outcome. A row only some outcomes stamped (skip, lost, recovery in flight,
+  // a provider not allowed here, an error) kept the head of every batch and
+  // starved the rest of the fleet. The merge sets this one key, so it races
+  // nothing the loop or a wake wrote.
+  if (rows.length > 0) {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+          parkedVerifiedAt: now.toISOString(),
+        })}::jsonb`,
+      })
+      .where(and(inArray(sessionSandboxes.sandboxId, rows.map((row) => row.sandboxId)), eq(sessionSandboxes.status, 'stopped')))
+      .catch((error) =>
+        console.warn('[parked-verify] batch stamp failed:', error instanceof Error ? error.message : error),
+      );
   }
 
   return { examined, lost, healed, errors };
