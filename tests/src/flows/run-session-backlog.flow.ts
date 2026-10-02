@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -1359,5 +1359,52 @@ flow(
     // pi has no model path without the gateway: the session boots OpenCode,
     // and bootSession proves it from the daemon's health.
     await bootSession(ctx, 'opencode', { project });
+  },
+);
+
+harnessFlow(
+  'RUN-12',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 780_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const path = `memory/ke2e-run12-${Date.now()}.md`;
+    const content = `ke2e-run12-${crypto.randomUUID()}`;
+    const done = `RUN12_DONE_${Date.now()}`;
+    // OpenCode has these tools from the starter's `harnesses/opencode/tools/`;
+    // pi has them built into the daemon, under the same names and arguments.
+    await ctx.step('the agent writes project memory with `memory` and presents it with `show`', async () => {
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Call the memory tool with command "create", path "${path}" and file_text "${content}". ` +
+          `Then call the show tool with action "show", type "file" and path "${path}". ` +
+          `Use no other tool. Then reply with exactly: ${done}`,
+      );
+      const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+      const tools = messages.flatMap((m) => m.tools ?? []);
+      for (const tool of ['memory', 'show']) {
+        if (!tools.some((t) => t.tool === tool && t.status === 'completed')) {
+          throw new Error(`no completed ${tool} call on ${harness}: ${JSON.stringify(tools)}`);
+        }
+      }
+    });
+    await ctx.step('the memory file exists in the workspace with the requested content', async () => {
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
+    });
   },
 );

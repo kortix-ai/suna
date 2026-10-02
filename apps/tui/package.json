@@ -20,6 +20,7 @@
   "dependencies": {
     "@kortix/cli": "workspace:*",
     "@kortix/sdk": "workspace:*",
+    "@kortix/shared": "workspace:*",
     "@opentui/core": "0.5.11",
     "@opentui/core-darwin-arm64": "0.5.11",
     "@opentui/core-darwin-x64": "0.5.11",

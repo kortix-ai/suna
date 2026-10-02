@@ -1,6 +1,8 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { SessionAuditAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SessionApprovalNotice } from './session-approval-prompt';
 import { approvalNoticeRows } from './session-approval-review';
@@ -13,12 +15,12 @@ const pendingAction: SessionAuditAction = {
   status: 'pending_approval',
   risk: 'write',
   acted_by: 'user-1',
-  acted_by_email: 'marko@kortix.ai',
+  acted_by_email: 'sam@example.test',
   resolved_by: null,
   resolved_by_email: null,
   result_summary: {
     args_preview: {
-      to: ['marko@kortix.ai'],
+      to: ['sam@example.test'],
       subject: 'Weekly report',
       body: 'The approver must see the complete email content.',
       access_token: '[redacted]',
@@ -49,7 +51,7 @@ describe('SessionApprovalNotice', () => {
     expect(html).toContain('The agent needs your approval');
     expect(html).toContain('waiting for one decision');
     expect(html).toContain('gmail.send_email');
-    expect(html).toContain('to: marko@kortix.ai · subject: Weekly report');
+    expect(html).toContain('to: sam@example.test · subject: Weekly report');
     expect(html).toContain('Review');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
@@ -70,7 +72,7 @@ describe('SessionApprovalNotice', () => {
 
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('Parameters');
-    expect(html).toContain('marko@kortix.ai');
+    expect(html).toContain('sam@example.test');
     expect(html).toContain('The approver must see the complete email content.');
     expect(html).toContain('Hidden credential');
     expect(html).toContain('Approve this call');
@@ -155,5 +157,52 @@ describe('SessionApprovalNotice', () => {
     );
 
     expect(html).toBe('');
+  });
+});
+
+// A Slack connector call needing approval showed `channel: C0…` in the session
+// (2026-10-02). The session passes the project's bound channel names: the
+// summary reads the name, and the parameters keep the exact id beside it.
+describe('SessionApprovalNotice with Slack channel names', () => {
+  const slackAction: SessionAuditAction = {
+    ...pendingAction,
+    execution_id: 'exec-slack',
+    action: 'slack.send_message',
+    connector: 'slack',
+    result_summary: { args_preview: { channel: 'C0TEST1', text: 'Deploy done' }, args_preview_complete: true },
+  };
+
+  test('collapsed and expanded, a bound channel reads by name', () => {
+    const names = new Map([['C0TEST1', '#general']]);
+    const collapsed = render(
+      <SessionApprovalNotice
+        rows={approvalNoticeRows([slackAction], {})}
+        expanded={null}
+        busy={{}}
+        onToggle={() => undefined}
+        onDecide={() => undefined}
+        channelNames={names}
+      />,
+    );
+    expect(collapsed).toContain('channel: #general · text: Deploy done');
+
+    const expanded = render(
+      <SessionApprovalNotice
+        rows={approvalNoticeRows([slackAction], {})}
+        expanded="exec-slack"
+        busy={{}}
+        onToggle={() => undefined}
+        onDecide={() => undefined}
+        channelNames={names}
+      />,
+    );
+    expect(expanded).toContain('C0TEST1');
+    expect(expanded).toContain('#general');
+  });
+
+  test("the session prompt reads names from the project's bindings, only while an approval shows", () => {
+    const source = readFileSync(join(import.meta.dir, 'session-approval-prompt.tsx'), 'utf8');
+    expect(source).toContain('useChannelBindings(rows.length > 0 ? projectId : null)');
+    expect(source).toContain('slackChannelNames(');
   });
 });

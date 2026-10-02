@@ -418,6 +418,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/apps/:appId/deployments': { action: 'app.deployment.list', title: 'Listed Kortix App deployments' },
   'POST /v1/projects/:projectId/apps/:appId/deployments': { action: 'app.deployment.create', title: 'Deployed Kortix App' },
   'GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId': { action: 'app.deployment.read', title: 'Viewed Kortix App deployment' },
+  'DELETE /v1/projects/:projectId/apps/:appId/deployments/:deploymentId': { action: 'app.deployment.delete', title: 'Deleted Kortix App deployment' },
   'GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs': { action: 'app.deployment.log.list', title: 'Viewed Kortix App deployment logs' },
   'POST /v1/projects/:projectId/apps/:appId/rollback': { action: 'app.rollback', title: 'Rolled back Kortix App' },
   'POST /v1/projects/:projectId/apps/:appId/start': { action: 'app.start', title: 'Started Kortix App' },

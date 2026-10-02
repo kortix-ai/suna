@@ -32,7 +32,7 @@ import { CodeEditor } from '@/components/file-editors/lazy-code-editor';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
-import { getFileIcon } from '@/features/project-files';
+import { getFileIcon } from '@/features/project-files/components/file-icon';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '@kortix/shared/constants';
 import {

@@ -221,7 +221,7 @@ export function InstantSessionShell({
       sessionWorking={!!submitted}
       stopDisabled={!!submitted}
       // What was typed while the box boots — see `shellQueueRows`.
-      inputSlot={
+      aboveSlot={
         submitted ? (
           <QueuedPromptList
             rows={shellQueue.rows}

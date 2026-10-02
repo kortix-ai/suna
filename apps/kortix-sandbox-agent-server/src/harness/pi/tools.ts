@@ -7,6 +7,8 @@
  * glob/grep are Kortix additions on top of ripgrep (pi ships none), named
  * exactly as OpenCode's so `toolViewModel()` in the web client needs no
  * remapping. `question` is the interactive ask the product renders.
+ * `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are the
+ * Kortix tools every session has (`createKortixTools`).
  */
 import {
   DEFAULT_MAX_BYTES,
@@ -31,6 +33,9 @@ import { BACKGROUND_CONTEXT, withAbortSignal } from '@earendil-works/pi-agent-co
 import { Type } from 'typebox'
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
 import type { QuestionBroker } from './interactions'
+import { createMemoryTool } from './kortix-memory-tool'
+import { createShowTool } from './kortix-show-tool'
+import { createImageSearchTool, createScrapeWebpageTool, createWebSearchTool } from './kortix-web-tools'
 
 const globSchema = Type.Object({
   pattern: Type.String({ minLength: 1, description: 'Glob pattern to match, such as **/*.ts or src/**/test-*.tsx' }),
@@ -185,8 +190,16 @@ export function bindTool(tool: Harness, env: ExecutionEnv): AgentTool<any, any> 
   }
 }
 
+/** Every tool a root agent and a subagent can be given: pi's workspace tools on this sandbox, then the Kortix tools. */
 export function createWorkspaceTools(env: ExecutionEnv): AgentTool<any, any>[] {
-  return [createBashTool(), createReadTool(), createWriteTool(), createEditTool(), createGlobTool(), createGrepTool()].map(
-    (tool) => bindTool(tool as Harness, env),
-  )
+  return [
+    ...[createBashTool(), createReadTool(), createWriteTool(), createEditTool(), createGlobTool(), createGrepTool()].map((tool) =>
+      bindTool(tool as Harness, env),
+    ),
+    createWebSearchTool(),
+    createImageSearchTool(),
+    createScrapeWebpageTool(),
+    createMemoryTool(env.cwd),
+    createShowTool(env.cwd),
+  ]
 }

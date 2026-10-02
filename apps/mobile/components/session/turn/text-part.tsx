@@ -46,7 +46,7 @@ export const TextPartBlock = React.memo(function TextPartBlock({
             {segment.type === 'setup' ? (
               <SetupLinkCard kind={segment.kind} token={segment.token} href={segment.href} label={segment.label} />
             ) : (
-              <SelectableMarkdownText isDark={isDark} isStreaming={isStreaming}>
+              <SelectableMarkdownText isDark={isDark} isStreaming={isStreaming} remoteImages="load">
                 {segment.text}
               </SelectableMarkdownText>
             )}

@@ -455,7 +455,7 @@ title. Sorted newest first.
 
 | Command | Effect |
 | --- | --- |
-| `kortix init` | Scaffold one general-purpose v2 OpenCode REST project with the canonical skill source and default agent. |
+| `kortix init` | Scaffold one general-purpose v2 project with the canonical skill source and default agent. |
 
 ```sh
 kortix init my-project --yes --no-git
@@ -622,7 +622,7 @@ warns.
   works against your instance — just point it at your own URL.
 - **Not a `git` replacement.** `kortix cr` is the change-request
   surface; it composes with `git` rather than wrapping it.
-- **Not the runtime.** OpenCode executes the agent inside the sandbox. The CLI
+- **Not the runtime.** The harness (OpenCode or pi) executes the agent inside the sandbox. The CLI
   is the control plane for sessions, secrets, triggers, system instructions,
   and change requests.
 

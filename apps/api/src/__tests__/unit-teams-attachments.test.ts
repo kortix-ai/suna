@@ -16,11 +16,11 @@ describe('extractTeamsAttachments', () => {
         {
           contentType: 'application/vnd.microsoft.teams.file.download.info',
           name: 'report.pdf',
-          content: { downloadUrl: 'https://kortixssotest-my.sharepoint.com/personal/x/report.pdf', fileType: 'pdf' },
+          content: { downloadUrl: 'https://example-my.sharepoint.com/personal/x/report.pdf', fileType: 'pdf' },
         },
       ],
     });
-    expect(refs).toEqual([{ name: 'report.pdf', downloadUrl: 'https://kortixssotest-my.sharepoint.com/personal/x/report.pdf', fileType: 'pdf' }]);
+    expect(refs).toEqual([{ name: 'report.pdf', downloadUrl: 'https://example-my.sharepoint.com/personal/x/report.pdf', fileType: 'pdf' }]);
     expect(teamsMessageHasImage({ type: 'message', attachments: [] })).toBe(false);
   });
 
@@ -31,7 +31,7 @@ describe('extractTeamsAttachments', () => {
         { contentType: 'text/html' },
         {
           contentType: 'image/png',
-          contentUrl: 'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+          contentUrl: 'https://smba.trafficmanager.net/emea/00000000/v3/attachments/0-abc/views/original',
           name: 'image.png',
         },
       ],
@@ -39,7 +39,7 @@ describe('extractTeamsAttachments', () => {
     expect(extractTeamsAttachments(activity)).toEqual([
       {
         name: 'image.png',
-        downloadUrl: 'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+        downloadUrl: 'https://smba.trafficmanager.net/emea/00000000/v3/attachments/0-abc/views/original',
         fileType: 'png',
         isImage: true,
       },
@@ -77,7 +77,7 @@ describe('extractTeamsAttachments', () => {
         {
           contentType: 'image/*',
           contentUrl:
-            'https://smba.trafficmanager.net/emea/36009a52-46d2-44bc-ba56-57a87e485e0a/v3/attachments/0-weu-d21-b7b5/views/original',
+            'https://smba.trafficmanager.net/emea/00000000-0000-4000-8000-00000000a11c/v3/attachments/0-weu-d21-b7b5/views/original',
         },
       ],
     });
@@ -85,7 +85,7 @@ describe('extractTeamsAttachments', () => {
       {
         name: 'image',
         downloadUrl:
-          'https://smba.trafficmanager.net/emea/36009a52-46d2-44bc-ba56-57a87e485e0a/v3/attachments/0-weu-d21-b7b5/views/original',
+          'https://smba.trafficmanager.net/emea/00000000-0000-4000-8000-00000000a11c/v3/attachments/0-weu-d21-b7b5/views/original',
         isImage: true,
       },
     ]);

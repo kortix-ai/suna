@@ -7,7 +7,6 @@
 // below fail against `Slot.Root`. The explicit import pins every `React.*` type
 // here to the same copy the JSX checker and `radix-ui` use.
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
 import * as React from 'react';
 
 import { Separator } from '@/components/ui/separator';
@@ -46,24 +45,6 @@ function ButtonGroup({
   );
 }
 
-function ButtonGroupText({
-  className,
-  asChild = false,
-  ...props
-}: React.ComponentProps<'div'> & {
-  asChild?: boolean;
-}) {
-  const cls = cn(
-    "flex items-center gap-2 rounded-md border bg-muted px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
-    className,
-  );
-
-  // Branch instead of a shared `Comp` union variable so each arm is checked
-  // against the props it actually receives.
-  if (asChild) return <Slot.Root className={cls} {...props} />;
-  return <div className={cls} {...props} />;
-}
-
 function ButtonGroupSeparator({
   className,
   orientation = 'vertical',
@@ -82,4 +63,4 @@ function ButtonGroupSeparator({
   );
 }
 
-export { ButtonGroup, ButtonGroupSeparator, ButtonGroupText, buttonGroupVariants };
+export { ButtonGroup, ButtonGroupSeparator };

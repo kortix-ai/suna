@@ -4134,7 +4134,11 @@ export const appArtifacts = kortixSchema.table(
   ],
 );
 
-/** Immutable deployment version. Active routing remains an Apps-row pointer. */
+/**
+ * Immutable deployment version. Active routing remains an Apps-row pointer.
+ * `deleted` is terminal: the owner removed this deployment, its runtimes, and
+ * its provider image. Reads hide it; it is never a rollback target.
+ */
 export const appDeployments = kortixSchema.table(
   'app_deployments',
   {
@@ -4177,7 +4181,7 @@ export const appDeployments = kortixSchema.table(
   (table) => [
     check(
       'app_deployments_status_check',
-      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled')`,
+      sql`${table.status} IN ('queued', 'validating', 'building', 'provisioning', 'checking', 'ready', 'failed', 'cancelled', 'deleted')`,
     ),
     check(
       'app_deployments_source_kind_check',

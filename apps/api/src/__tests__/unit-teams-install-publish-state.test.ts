@@ -47,7 +47,7 @@ const { TEAMS_MANIFEST_VERSION } = await import('../channels/teams-manifest');
 
 beforeEach(() => {
   encrypted.length = 0;
-  secretsByName = { MS_TEAMS_TENANT_ID: '36009a52-46d2-44bc-ba56-57a87e485e0a' };
+  secretsByName = { MS_TEAMS_TENANT_ID: '00000000-0000-4000-8000-00000000a11c' };
 });
 
 afterAll(() => {
