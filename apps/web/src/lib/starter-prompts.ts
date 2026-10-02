@@ -99,6 +99,7 @@ import {
   GraduationCapIcon,
   HandshakeIcon,
   HighlighterIcon,
+  type Icon,
   IdentificationCardIcon,
   KanbanIcon,
   LifebuoyIcon,
@@ -142,7 +143,6 @@ import {
   WalletIcon,
   WarningIcon,
   WrenchIcon,
-  type Icon,
 } from '@phosphor-icons/react';
 
 export interface StarterPrompt {

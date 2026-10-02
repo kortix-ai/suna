@@ -16,11 +16,11 @@
  * would hit `PATCH /projects/:id/triggers/:slug`.
  */
 
-import { configureKortix, type ProjectTrigger } from '@kortix/sdk';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { createElement, type ReactNode } from 'react';
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import { type ProjectTrigger, configureKortix } from '@kortix/sdk';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type ReactNode, createElement } from 'react';
+import { type ReactTestInstance, type ReactTestRenderer, act, create } from 'react-test-renderer';
 
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';

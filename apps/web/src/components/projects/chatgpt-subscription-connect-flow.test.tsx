@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, jest, mock, test } from 'bun:t
 import { configureKortix } from '@kortix/sdk';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
-import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 
 import { qk } from '@kortix/sdk/react';
 
@@ -42,7 +42,11 @@ const startBody = {
   expires_at: Number.MAX_SAFE_INTEGER,
   interval_ms: 5_000,
 };
-const credential = { provider_id: 'codex', expires_in_ms: null, updated_at: '2026-10-02T00:00:00Z' };
+const credential = {
+  provider_id: 'codex',
+  expires_in_ms: null,
+  updated_at: '2026-10-02T00:00:00Z',
+};
 
 const calls: { url: string; method: string; body: unknown }[] = [];
 let script: { status: number; body: unknown }[] = [];

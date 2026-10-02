@@ -1,23 +1,23 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
+import type { ConnectionShare } from './connectors';
 import type {
   ProjectSecretsAgentScope,
   SecretDeliveryBlockedReason,
   SecretEgressPolicy,
   SecretSharePrincipal,
 } from './secrets';
-import type { ConnectionShare } from './connectors';
 import {
+  brokerProjectSecretRequest,
   deletePersonalProjectSecret,
   deleteProjectProviderOAuth,
   deleteProjectSecret,
   listProjectProviderOAuth,
   listProjectSecrets,
   pollProjectProviderOAuth,
+  runProjectProviderOAuthFlow,
   setPersonalProjectSecret,
   setProjectSecretStrategy,
-  brokerProjectSecretRequest,
-  runProjectProviderOAuthFlow,
   startProjectProviderOAuth,
   upsertProjectGitCredential,
   upsertProjectSecret,
@@ -107,13 +107,32 @@ test('upsertProjectSecret can share a value with an agent (its service account)'
   const shared_with: SecretSharePrincipal[] = [{ principal_type: 'agent', principal_id: 'SA1' }];
   await upsertProjectSecret('P1', { name: 'NIGHTLY_REPORT_KEY', shared_with });
   expect(last().body).toEqual({ name: 'NIGHTLY_REPORT_KEY', shared_with });
-  const agentShare: ConnectionShare = { grant_id: 'G2', principal_type: 'agent', principal_id: 'SA1', label: 'reporter', expires_at: null };
+  const agentShare: ConnectionShare = {
+    grant_id: 'G2',
+    principal_type: 'agent',
+    principal_id: 'SA1',
+    label: 'reporter',
+    expires_at: null,
+  };
   expect(agentShare.principal_type).toBe('agent');
 });
 
-test('listProjectSecrets returns each value\'s audience and whether the caller can use it', async () => {
-  const share = { grant_id: 'G1', principal_type: 'member' as const, principal_id: 'U1', label: 'a@example.test', expires_at: null };
-  nextResponse = { status: 200, body: { items: [{ identifier: 'DEEL_API_TOKEN', shared_with: [share], usable: false }], required: [], optional: [] } };
+test("listProjectSecrets returns each value's audience and whether the caller can use it", async () => {
+  const share = {
+    grant_id: 'G1',
+    principal_type: 'member' as const,
+    principal_id: 'U1',
+    label: 'a@example.test',
+    expires_at: null,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      items: [{ identifier: 'DEEL_API_TOKEN', shared_with: [share], usable: false }],
+      required: [],
+      optional: [],
+    },
+  };
   const res = await listProjectSecrets('P1');
   const item = res.items[0]!;
   const sharedWith: ConnectionShare[] | undefined = item.shared_with;
@@ -209,7 +228,9 @@ test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () =
 });
 
 test('listProjectProviderOAuth returns the connected provider logins', async () => {
-  const items = [{ provider_id: 'opencode-go', expires_in_ms: 1000, updated_at: '2026-10-01T00:00:00.000Z' }];
+  const items = [
+    { provider_id: 'opencode-go', expires_in_ms: 1000, updated_at: '2026-10-01T00:00:00.000Z' },
+  ];
   nextResponse = { status: 200, body: { items } };
   const result = await listProjectProviderOAuth('P1');
   expect(last().url).toContain('/projects/P1/oauth');
@@ -248,7 +269,13 @@ test('startProjectProviderOAuth sends sharing: undefined when no input is given'
 test('startProjectProviderOAuth sends a named account resource request', async () => {
   nextResponse = {
     status: 200,
-    body: { flow_id: 'flow', verification_url: 'https://example.test', user_code: 'ABCD', expires_at: 1, interval_ms: 3000 },
+    body: {
+      flow_id: 'flow',
+      verification_url: 'https://example.test',
+      user_code: 'ABCD',
+      expires_at: 1,
+      interval_ms: 3000,
+    },
   };
   await startProjectProviderOAuth('P1', 'openai', { resourceLabel: 'My ChatGPT' });
   expect(last().body).toMatchObject({ resource_label: 'My ChatGPT' });
@@ -257,12 +284,23 @@ test('startProjectProviderOAuth sends a named account resource request', async (
 test('startProjectProviderOAuth reconnects an existing account resource by id alone', async () => {
   nextResponse = {
     status: 200,
-    body: { flow_id: 'flow', verification_url: 'https://example.test', user_code: 'ABCD', expires_at: 1, interval_ms: 3000 },
+    body: {
+      flow_id: 'flow',
+      verification_url: 'https://example.test',
+      user_code: 'ABCD',
+      expires_at: 1,
+      interval_ms: 3000,
+    },
   };
-  await startProjectProviderOAuth('P1', 'openai', { resourceId: '77777777-7777-4777-8777-777777777777' });
+  await startProjectProviderOAuth('P1', 'openai', {
+    resourceId: '77777777-7777-4777-8777-777777777777',
+  });
   expect(last().url).toContain('/projects/P1/oauth/openai/start');
   // Reconnect keeps the label and access: nothing but the id is sent.
-  expect(last().body).toEqual({ sharing: undefined, resource_id: '77777777-7777-4777-8777-777777777777' });
+  expect(last().body).toEqual({
+    sharing: undefined,
+    resource_id: '77777777-7777-4777-8777-777777777777',
+  });
 });
 
 test('pollProjectProviderOAuth posts the flow_id and returns the poll result', async () => {
@@ -525,7 +563,13 @@ test('runProjectProviderOAuthFlow resolves the challenge before the first poll',
   const script = scriptedFetch();
   script.push({ status: 200, body: startBody });
   script.push({ status: 200, body: { status: 'pending' } });
-  script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+  script.push({
+    status: 200,
+    body: {
+      status: 'success',
+      credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' },
+    },
+  });
   const clock = fakeClock();
   const challenges: unknown[] = [];
   const result = await runProjectProviderOAuthFlow({
@@ -556,9 +600,19 @@ test('runProjectProviderOAuthFlow retries a transient poll failure and then succ
   script.push({ status: 200, body: startBody });
   script.push({ status: 500, body: { message: 'upstream blip' } });
   script.push({ status: 200, body: { status: 'pending' } });
-  script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+  script.push({
+    status: 200,
+    body: {
+      status: 'success',
+      credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' },
+    },
+  });
   const clock = fakeClock();
-  const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+  const result = await runProjectProviderOAuthFlow({
+    projectId: 'P1',
+    provider: 'openai',
+    ...clock,
+  });
   expect(result.status).toBe('success');
   expect(patch('POST', pollRoute)).toBe(3);
   expect(clock.sleeps).toEqual([5_000, 5_000, 5_000]);
@@ -571,7 +625,11 @@ test('runProjectProviderOAuthFlow maps failed and expired polls and stops pollin
     script.push({ status: 200, body: startBody });
     script.push({ status: 200, body: { status: 'failed', error: 'The user denied the request' } });
     const clock = fakeClock();
-    const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    const result = await runProjectProviderOAuthFlow({
+      projectId: 'P1',
+      provider: 'openai',
+      ...clock,
+    });
     expect(result).toEqual({ status: 'failed', error: 'The user denied the request' });
     expect(patch('POST', pollRoute)).toBe(1);
   }
@@ -581,7 +639,11 @@ test('runProjectProviderOAuthFlow maps failed and expired polls and stops pollin
     script.push({ status: 200, body: startBody });
     script.push({ status: 200, body: { status: 'expired' } });
     const clock = fakeClock();
-    const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    const result = await runProjectProviderOAuthFlow({
+      projectId: 'P1',
+      provider: 'openai',
+      ...clock,
+    });
     expect(result).toEqual({ status: 'expired' });
     expect(patch('POST', pollRoute)).toBe(1);
   }
@@ -592,7 +654,13 @@ test('runProjectProviderOAuthFlow floors the cadence at 2s and falls back to 3s'
   {
     const script = scriptedFetch();
     script.push({ status: 200, body: { ...startBody, interval_ms: 100 } });
-    script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+    script.push({
+      status: 200,
+      body: {
+        status: 'success',
+        credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' },
+      },
+    });
     const clock = fakeClock();
     await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
     expect(clock.sleeps).toEqual([2_000]);
@@ -601,7 +669,13 @@ test('runProjectProviderOAuthFlow floors the cadence at 2s and falls back to 3s'
   {
     const script = scriptedFetch();
     script.push({ status: 200, body: { ...startBody, interval_ms: 0 } });
-    script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+    script.push({
+      status: 200,
+      body: {
+        status: 'success',
+        credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' },
+      },
+    });
     const clock = fakeClock();
     await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
     expect(clock.sleeps).toEqual([3_000]);
@@ -613,7 +687,11 @@ test('runProjectProviderOAuthFlow times out at the 10-minute fallback deadline w
   script.push({ status: 200, body: { ...startBody, expires_at: 0, interval_ms: 0 } });
   for (let i = 0; i < 200; i++) script.push({ status: 200, body: { status: 'pending' } });
   const clock = fakeClock();
-  const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+  const result = await runProjectProviderOAuthFlow({
+    projectId: 'P1',
+    provider: 'openai',
+    ...clock,
+  });
   expect(result).toEqual({ status: 'expired' });
   // 1s in, then 3s per tick from the fallback: the 200th tick's poll lands at
   // 598s, inside the 600s deadline; the next loop check is at 601s — out.
@@ -629,7 +707,11 @@ test('runProjectProviderOAuthFlow honours the expiry the server sends', async ()
   script.push({ status: 200, body: { status: 'pending' } });
   script.push({ status: 200, body: { status: 'pending' } });
   const clock = fakeClock();
-  const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+  const result = await runProjectProviderOAuthFlow({
+    projectId: 'P1',
+    provider: 'openai',
+    ...clock,
+  });
   expect(result).toEqual({ status: 'expired' });
   expect(patch('POST', pollRoute)).toBe(2);
 });
@@ -677,7 +759,10 @@ test('runProjectProviderOAuthFlow can be cancelled after start, during the wait,
     script.push({ status: 200, body: startBody });
     script.push({
       status: 200,
-      body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } },
+      body: {
+        status: 'success',
+        credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' },
+      },
       side: () => {
         cancelledAfterPoll = true;
       },

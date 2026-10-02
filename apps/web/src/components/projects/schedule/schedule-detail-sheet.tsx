@@ -50,10 +50,10 @@ import { SharingPicker, type SharingSelection } from '@/features/workspace/share
 import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import {
+  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   type ProjectTrigger,
   type UpdateProjectTriggerInput,
   listProjectSessions,
-  PROJECT_SESSION_NAME_LOOKUP_LIMIT,
   updateProjectTrigger,
 } from '@kortix/sdk';
 import {
@@ -140,7 +140,8 @@ function useTriggerUpdate<TInput = void>(
   },
 ) {
   return useMutation({
-    mutationFn: (input: TInput) => updateProjectTrigger(projectId, trigger.slug, update.payload(input)),
+    mutationFn: (input: TInput) =>
+      updateProjectTrigger(projectId, trigger.slug, update.payload(input)),
     onSuccess: () => {
       successToast(update.success);
       update.afterSave?.();

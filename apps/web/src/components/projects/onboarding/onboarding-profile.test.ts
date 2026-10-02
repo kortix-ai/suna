@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  buildSteps,
-  deriveCompanyDomain,
-  WORK_OPTIONS,
-} from './onboarding-profile';
+import { WORK_OPTIONS, buildSteps, deriveCompanyDomain } from './onboarding-profile';
 
 describe('buildSteps', () => {
   test('asks three things when connectors are available', () => {

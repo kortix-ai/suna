@@ -1,11 +1,11 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckCircleIcon as CheckCircle2,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-challenge';
