@@ -704,8 +704,11 @@ projectsApp.openapi(
     // worker stops (the worker refuses to start a runtime for a deleted App).
     const building = deployments.filter((deployment) =>
       deployment.hostingProvider && IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+    // A deployment its owner already deleted released (or queued) its image
+    // then; counting it again would report one image as freed twice. Any of
+    // those still pending is retried by maintenance.
     const finished = deployments.filter((deployment) =>
-      !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
+      deployment.status !== 'deleted' && !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
     const released = await releaseDeploymentImages(finished);
     const images = { released: released.released, pending: released.pending + building.length };
     return c.json({ ok: true, images });
