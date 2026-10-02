@@ -1890,6 +1890,7 @@ export const chatPendingAuthMessages = kortixSchema.table(
       table.expiresAt,
     ),
     index('idx_chat_pending_auth_messages_expiry').on(table.expiresAt),
+    index('idx_chat_pending_auth_messages_project').on(table.projectId),
   ],
 );
 
