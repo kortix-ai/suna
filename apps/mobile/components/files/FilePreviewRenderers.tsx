@@ -311,7 +311,7 @@ function MarkdownPreview({ content }: { content: string }) {
       contentContainerStyle={{ paddingBottom: bottomInset }}
       style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
-      <SelectableMarkdownText isDark={isDark}>
+      <SelectableMarkdownText isDark={isDark} remoteImages="load">
         {autoLinkUrls(content)}
       </SelectableMarkdownText>
     </ScrollView>
