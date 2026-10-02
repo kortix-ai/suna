@@ -133,6 +133,17 @@ describe('slackUserNames', () => {
     expect(userLookups.sort()).toEqual(['U0TEST1', 'U0TEST2']);
   });
 
+  test('asks at most ten people by default; a caller may raise the cap', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `U0CAP${String(i).padStart(2, '0')}`);
+    for (const id of ids) people[id] = `Person ${id}`;
+
+    expect((await slackUserNames('xoxb-test', 'T0TEST', ids)).size).toBe(10);
+    resetSlackUserNamesForTest();
+    userLookups = [];
+    expect((await slackUserNames('xoxb-test', 'T0TEST', ids, 25)).size).toBe(12);
+    expect(userLookups).toHaveLength(12);
+  });
+
   test('no ids asks Slack nothing', async () => {
     expect((await slackUserNames('xoxb-test', 'T0TEST', [])).size).toBe(0);
     expect(userLookups).toEqual([]);

@@ -138,6 +138,9 @@ is connected to, connect it first: run `/kortix switch` in it and pick this
 project.
 
 - Channel history leaves out the messages of another project's thread.
+- `get_history` and `get_thread` add `user_name` to each message whose author
+  Slack can name, beside the `user` id. Up to 25 people are named per read;
+  a name Slack does not return within 2 seconds is left out.
 - `list_channels` lists every public channel, and the private channels and DMs
   the agent may read.
 - `channel_info` answers for any public channel. A private channel or DM
