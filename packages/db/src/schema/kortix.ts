@@ -6406,6 +6406,10 @@ export const sessionToolApprovals = kortixSchema.table(
       table.actionPath,
     ),
     index('session_tool_approvals_session_idx').on(table.sessionId),
+    // Cover the two FK columns: ON DELETE CASCADE from projects and
+    // executor_connectors must find the referencing rows without a seq scan.
+    index('idx_session_tool_approvals_project_id').on(table.projectId),
+    index('idx_session_tool_approvals_connector_id').on(table.connectorId),
   ],
 );
 
