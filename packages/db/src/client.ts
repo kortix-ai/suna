@@ -59,6 +59,25 @@ const MAX_LIFETIME_S = intFromEnv('DB_MAX_LIFETIME_S', 60 * 30); // 30 min
 // enormous for any single OLTP statement; background jobs that legitimately need
 // longer should `SET LOCAL statement_timeout` inside their own transaction.
 const STATEMENT_TIMEOUT_MS = intFromEnv('DB_STATEMENT_TIMEOUT_MS', 25_000);
+/**
+ * Opt-in: send Drizzle statements as server-side prepared statements.
+ *
+ * Drizzle calls `client.unsafe(query, params)`, and postgres.js `unsafe()`
+ * defaults to `prepare: false`, so the pool's `prepare` option below never
+ * reaches a Drizzle statement. Unprepared, every parameterized statement costs
+ * two round trips (Parse/Describe, then Bind/Execute). Prepared, a statement a
+ * connection has seen costs one.
+ *
+ * Off by default, and a per-environment decision:
+ *  - it needs a direct or session-mode connection. A transaction pooler
+ *    (Supavisor port 6543) multiplexes connections and breaks it;
+ *  - after ~5 executions PostgreSQL may switch a statement to a generic plan,
+ *    which cannot use a partial index whose predicate arrives as a parameter.
+ *    Measure on dev before turning it on anywhere else;
+ *  - the per-connection statement cache has no size limit. `DB_MAX_LIFETIME_S`
+ *    (30 min) bounds it.
+ */
+const PREPARE_STATEMENTS = process.env.DB_PREPARE_STATEMENTS === 'true';
 
 /**
  * Observability hooks for {@link createDb}.
@@ -134,6 +153,35 @@ export function instrumentSql<S extends object>(sql: S, onQuery: () => () => voi
 }
 
 /**
+ * Make every Drizzle statement on `sql` a prepared one: `unsafe(query, params)`
+ * gets `{ prepare: true }` unless the caller passed options of its own. Applies
+ * inside `begin` and `savepoint` too. Everything else passes through.
+ */
+export function preparedSql<S extends object>(sql: S): S {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'unsafe') {
+        return (query: unknown, params: unknown = [], options: unknown = { prepare: true }) =>
+          (value as (...a: unknown[]) => unknown).call(target, query, params, options);
+      }
+      if (property === 'begin' || property === 'savepoint') {
+        return (...args: unknown[]) => {
+          const last = args.length - 1;
+          const callback = args[last];
+          if (typeof callback === 'function') {
+            args[last] = (inner: object) => callback(preparedSql(inner));
+          }
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return value;
+    },
+  });
+}
+
+/**
  * Create a Drizzle database client.
  *
  * @param databaseUrl - PostgreSQL connection string
@@ -166,7 +214,8 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
     ...options,
   });
 
-  const observed = hooks?.onQuery ? instrumentSql(client as AnySql, hooks.onQuery) : client;
+  const statements = PREPARE_STATEMENTS ? preparedSql(client as AnySql) : client;
+  const observed = hooks?.onQuery ? instrumentSql(statements as AnySql, hooks.onQuery) : statements;
   return drizzle(observed as typeof client, { schema });
 }
 
