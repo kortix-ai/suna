@@ -28,11 +28,9 @@ import {
 } from '../sandbox-turn-lifecycle';
 import { drainSessionLifecycleQueue } from '../session-lifecycle';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
-import { transitionSession } from '../session-lifecycle/status-transitions';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import {
-  ABORT_END_ERROR_NAMES,
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
@@ -482,51 +480,8 @@ export async function settleTurnEnd(
   ctx: TurnEndContext,
 ): Promise<Response> {
   const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
-  await parkSessionAfterTurnError(ctx.sessionId, settled);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
   return publishTurnEnd(c, ctx, body, settled, promotedPromptId);
-}
-
-/**
- * Park the session when its turn ended with a terminal runtime error and no
- * other turn is live.
- *
- * Nothing else moves `project_sessions.status` off `running` for a turn that
- * died: the turn ledger records `end_reason: failed`, but the session row —
- * the status the sidebar dot and `sessions ls` print — stayed `running` until
- * the idle box was reaped (~15 min later, KRTX-1046). A customer watching a
- * marketplace install read a fake Running. Park it here, with the cause on the
- * row, so the failure is visible the moment the runtime reports it.
- *
- * Three guards keep the write inert where another owner decides:
- *   - `outcome !== 'closed'` — a retryable error settled nothing (opencode is
- *     retrying), a duplicate relay must stay inert, and a turn the API never
- *     opened (`no_active_turn`) is the reaper's to reconcile.
- *   - `activeTurnCount > 0` — a newer turn is delivering or live; the session
- *     genuinely is running. A queued prompt promoted right after this
- *     (`promoteAfterTurnEnd`) wakes the parked session again, so parking first
- *     cannot strand it (`wake` applies from `stopped`).
- *   - an abort (`MessageAbortedError`, a user Stop / queue interrupt) is the
- *     effect of a stop, not a failure — the stop flow parks the session
- *     itself, and the turn ledger already hides these from the failure list.
- */
-async function parkSessionAfterTurnError(
-  sessionId: string,
-  settled: Awaited<ReturnType<typeof settleTurnLedger>>,
-): Promise<void> {
-  if (settled.status !== 'error') return;
-  if (settled.turnCompletion.outcome !== 'closed') return;
-  if (settled.turnCompletion.activeTurnCount > 0) return;
-  if (ABORT_END_ERROR_NAMES.includes(settled.errorInfo?.name ?? '')) return;
-  const cause = [settled.errorInfo?.name, settled.errorInfo?.message].filter(Boolean).join(': ');
-  await transitionSession('parkTurnError', sessionId, {
-    error: (cause ? `agent turn failed: ${cause}` : 'agent turn failed').slice(0, 1000),
-  }).catch((err) =>
-    console.warn('[turn-stream] failed to park the session after a turn error', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
-    }),
-  );
 }
 
 // `runtime_session` carries the canonical runtime ROOT id the sandbox just

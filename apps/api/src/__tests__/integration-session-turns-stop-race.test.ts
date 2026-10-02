@@ -13,14 +13,30 @@
  * These tests drive the SHIPPED functions and commit a REAL stop in that exact
  * gap, so the interleaving is executed rather than argued about.
  */
-import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import pg from 'pg';
 import * as realDbModule from '../shared/db';
+import {
+  type SeededProject,
+  localTestDatabaseUrl,
+  removeSeeded,
+  seedProject,
+} from './helpers/integration-fixtures';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `turn-stop-race-${SANDBOX_ID}`;
-const ACCOUNT_ID = crypto.randomUUID();
-const PROJECT_ID = crypto.randomUUID();
+let ACCOUNT_ID: string;
+let PROJECT_ID: string;
+let project: SeededProject;
+beforeAll(async () => {
+  project = await seedProject('turn-stop-race');
+  ACCOUNT_ID = project.account_id;
+  PROJECT_ID = project.project_id;
+  await realDbModule.db.execute(sql`INSERT INTO kortix.project_sessions
+    (session_id, account_id, project_id, branch_name, agent_name, status)
+    VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${SESSION_ID}, 'default', 'running')`);
+});
 const t = (name: string) => `${name}-${SANDBOX_ID}`;
 
 /**
@@ -53,7 +69,21 @@ const db = new Proxy(realDbModule.db, {
   },
 });
 
-mock.module('../shared/db', () => ({ ...realDbModule, db }));
+const realWithDbTransaction = realDbModule.withDbTransaction;
+let afterAuthorityCommit: (() => Promise<void>) | null = null;
+mock.module('../shared/db', () => ({
+  ...realDbModule,
+  db,
+  withDbTransaction: async (action: () => Promise<unknown>) => {
+    const result = await realWithDbTransaction(action);
+    if (afterAuthorityCommit) {
+      const stop = afterAuthorityCommit;
+      afterAuthorityCommit = null;
+      await stop();
+    }
+    return result;
+  },
+}));
 
 const {
   acceptSandboxTurn,
@@ -99,6 +129,10 @@ async function openRows(): Promise<number> {
 
 beforeEach(async () => {
   gate = null;
+  afterAuthorityCommit = null;
+  await realDbModule.db.execute(
+    sql`UPDATE kortix.project_sessions SET status = 'running', error = NULL WHERE session_id = ${SESSION_ID}`,
+  );
   await realDbModule.db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, status, metadata)
@@ -120,13 +154,32 @@ afterAll(async () => {
   await realDbModule.db
     .execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`)
     .catch(() => undefined);
+  await realDbModule.db.execute(
+    sql`DELETE FROM kortix.project_sessions WHERE session_id = ${SESSION_ID}`,
+  );
+  await removeSeeded([project]);
 });
 
 describe("a stop committed between a turn writer's two round trips", () => {
   test('beginSandboxTurn writes no ledger row once the stop has erased its authority', async () => {
-    // 1 round trip through: the authority UPDATE. The stop then commits, and
-    // the delayed ledger INSERT arrives at a sandbox that is already parked.
-    runBeforeRoundTrip(1, stopTheBox);
+    // Stop only after the authority transaction COMMITTED, before bookkeeping.
+    afterAuthorityCommit = async () => {
+      // An independent connection can read the grant only if it committed.
+      const observer = new pg.Client({ connectionString: localTestDatabaseUrl() });
+      await observer.connect();
+      try {
+        const {
+          rows: [row],
+        } = await observer.query(
+          "SELECT metadata->'activeTurns'->$1 AS turn FROM kortix.session_sandboxes WHERE sandbox_id = $2::uuid",
+          [t('race-begin'), SANDBOX_ID],
+        );
+        expect(row.turn.token).toBe(t('race-begin'));
+      } finally {
+        await observer.end();
+      }
+      await stopTheBox();
+    };
 
     expect(
       await beginSandboxTurn(

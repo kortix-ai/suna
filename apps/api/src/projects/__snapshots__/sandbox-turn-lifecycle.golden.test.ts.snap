@@ -3,6 +3,11 @@
 exports[`golden SQL: turn authority statements beginSandboxTurn grants and inserts the delivering ledger row 1`] = `
 [
   
+"SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE  s.external_id =  ext-box  )
+      FOR UPDATE OF session"
+,
+  
 "
       UPDATE kortix.session_sandboxes s
          SET metadata = jsonb_set(
@@ -58,6 +63,11 @@ exports[`golden SQL: turn authority statements beginSandboxTurn grants and inser
 
 exports[`golden SQL: turn authority statements beginSandboxTurn with no matching box writes one statement 1`] = `
 [
+  
+"SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE  s.external_id =  ext-box  )
+      FOR UPDATE OF session"
+,
   
 "
       UPDATE kortix.session_sandboxes s
@@ -430,6 +440,10 @@ exports[`golden SQL: turn authority statements renewActiveSandboxTurn renews the
 exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched turn and ends its ledger row 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -539,6 +553,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -583,6 +603,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn closes the matched tu
 exports[`golden SQL: terminal evidence completeSandboxTurn records a named failure 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -692,6 +716,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -736,6 +766,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn records a named failu
 exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-closed row with the cause 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -845,6 +879,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -899,6 +939,10 @@ exports[`golden SQL: terminal evidence completeSandboxTurn refines an already-cl
 exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned row on a late completion 1`] = `
 [
   
+"SELECT session_id FROM kortix.project_sessions
+      WHERE session_id =  sess-1  FOR UPDATE"
+,
+  
 "
     WITH target AS ( SELECT s.sandbox_id,
               CASE
@@ -1008,6 +1052,12 @@ exports[`golden SQL: terminal evidence completeSandboxTurn revives an abandoned 
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
     RETURNING next_state.ended_turns,
+              (SELECT count(*)::int FROM  jsonb_each(CASE
+          WHEN jsonb_typeof( next_state.metadata ->'activeTurns') = 'object'
+            THEN  next_state.metadata ->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry 
+                WHERE entry.value->>'state' IN ('delivering', 'active')) AS remaining_turn_count,
               (SELECT count(*)::int
                  FROM all_active_turns candidate
                 WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
@@ -1177,6 +1227,11 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
         SELECT 1 FROM kortix.session_turns t
          WHERE t.sandbox_id =  sb-1 ::uuid
            AND t.state <> 'ended') AS open"
+,
+  
+"SELECT session.session_id FROM kortix.project_sessions session
+      WHERE session.session_id IN (SELECT s.session_id FROM kortix.session_sandboxes s WHERE  s.sandbox_id =  sb-1 ::uuid )
+      FOR UPDATE OF session"
 ,
   
 "

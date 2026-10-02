@@ -5,8 +5,9 @@
  * String-rendering unit tests cannot prove JSONB selection or concurrent turn
  * isolation. These tests execute the shipped SQL against session_sandboxes.
  */
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import pg from 'pg';
 import { claimExpiredSandboxStop, releaseSandboxStopClaim } from '../projects/reaping/box-queries';
 import {
   clearPendingStopObservation,
@@ -30,11 +31,26 @@ import {
   settleOpenSandboxTurnsQuery,
 } from '../projects/session-turn-ledger';
 import { db } from '../shared/db';
+import {
+  type SeededProject,
+  localTestDatabaseUrl,
+  removeSeeded,
+  seedProject,
+} from './helpers/integration-fixtures';
 
 const SANDBOX_ID = crypto.randomUUID();
 const SESSION_ID = `turn-lifecycle-${SANDBOX_ID}`;
-const ACCOUNT_ID = crypto.randomUUID();
-const PROJECT_ID = crypto.randomUUID();
+let ACCOUNT_ID: string;
+let PROJECT_ID: string;
+let project: SeededProject;
+beforeAll(async () => {
+  project = await seedProject('turn-lifecycle');
+  ACCOUNT_ID = project.account_id;
+  PROJECT_ID = project.project_id;
+  await db.execute(sql`INSERT INTO kortix.project_sessions
+    (session_id, account_id, project_id, branch_name, agent_name, status)
+    VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${SESSION_ID}, 'default', 'running')`);
+});
 
 /**
  * A fixture turn token, scoped to THIS run.
@@ -87,6 +103,9 @@ async function setLifecycleState(
 }
 
 beforeEach(async () => {
+  await db.execute(
+    sql`UPDATE kortix.project_sessions SET status = 'running', error = NULL WHERE session_id = ${SESSION_ID}`,
+  );
   await db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, status, metadata)
@@ -111,6 +130,8 @@ afterAll(async () => {
   await db
     .execute(sql`DELETE FROM kortix.session_turns WHERE session_id = ${SESSION_ID}`)
     .catch(() => undefined);
+  await db.execute(sql`DELETE FROM kortix.project_sessions WHERE session_id = ${SESSION_ID}`);
+  await removeSeeded([project]);
 });
 
 describe('the turn record names its runtime session under both keys during W4', () => {
@@ -1607,5 +1628,178 @@ describe('the pending stop marker', () => {
     const { metadata } = await readRow();
     expect(metadata).not.toHaveProperty('pendingStopObservedAtMs');
     expect(metadata.activeTurns).toEqual(ACTIVE_TURNS);
+  });
+});
+
+async function sessionState() {
+  return rows(
+    await db.execute(
+      sql`SELECT status, error FROM kortix.project_sessions WHERE session_id = ${SESSION_ID}`,
+    ),
+  )[0];
+}
+describe('terminal error session authority', () => {
+  const identity = { runtimeSessionId: 'root', messageId: 'failed-message' };
+  test('final terminal error parks with cause; duplicate cannot park new work', async () => {
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('failure'), ...identity });
+    const result = await completeSandboxTurn(SESSION_ID, 'error', identity, {
+      name: 'APIError',
+      message: '402 credits',
+      isRetryable: false,
+    });
+    expect(result.activeTurnCount).toBe(1);
+    expect(await sessionState()).toEqual({
+      status: 'stopped',
+      error: 'agent turn failed: APIError: 402 credits',
+    });
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('new'), runtimeSessionId: 'root', messageId: 'new-message' },
+    );
+    expect(await sessionState()).toEqual({ status: 'running', error: null });
+    expect((await completeSandboxTurn(SESSION_ID, 'error', identity)).outcome).toBe(
+      'already_closed',
+    );
+    expect((await sessionState()).status).toBe('running');
+  });
+  test('parking failure rolls authority back so exact replay succeeds', async () => {
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('rollback'), ...identity });
+    await db.execute(
+      sql`CREATE FUNCTION kortix.reject_turn_park() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.status = 'stopped' THEN RAISE EXCEPTION 'synthetic park failure'; END IF; RETURN NEW; END $$`,
+    );
+    await db.execute(
+      sql`CREATE TRIGGER reject_turn_park BEFORE UPDATE ON kortix.project_sessions FOR EACH ROW EXECUTE FUNCTION kortix.reject_turn_park()`,
+    );
+    try {
+      await expect(completeSandboxTurn(SESSION_ID, 'error', identity)).rejects.toThrow();
+      expect((await readRow()).metadata.activeTurns).toHaveProperty(t('rollback'));
+      expect((await readTurn(t('rollback')))?.state).toBe('delivering');
+    } finally {
+      await db.execute(sql`DROP TRIGGER reject_turn_park ON kortix.project_sessions`);
+      await db.execute(sql`DROP FUNCTION kortix.reject_turn_park()`);
+    }
+    expect((await completeSandboxTurn(SESSION_ID, 'error', identity)).outcome).toBe('closed');
+    expect((await sessionState()).status).toBe('stopped');
+  });
+  test('new authority wakes stopped and completed sessions', async () => {
+    for (const status of ['stopped', 'completed']) {
+      await db.execute(
+        sql`UPDATE kortix.project_sessions SET status = ${status}::kortix.project_session_status, error = 'old failure' WHERE session_id = ${SESSION_ID}`,
+      );
+      await beginSandboxTurn(
+        { sandboxId: SANDBOX_ID },
+        { token: t(status), runtimeSessionId: 'root', messageId: status },
+      );
+      expect(await sessionState()).toEqual({ status: 'running', error: null });
+    }
+  });
+  test('another live turn, retryable error and abort do not park', async () => {
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('failed'), ...identity });
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token: t('other'), runtimeSessionId: 'root', messageId: 'other' },
+    );
+    await completeSandboxTurn(SESSION_ID, 'error', identity);
+    expect((await sessionState()).status).toBe('running');
+    await completeSandboxTurn(
+      SESSION_ID,
+      'error',
+      { runtimeSessionId: 'root', messageId: 'other' },
+      { name: 'APIError', isRetryable: true },
+    );
+    expect((await sessionState()).status).toBe('running');
+    await completeSandboxTurn(
+      SESSION_ID,
+      'error',
+      { runtimeSessionId: 'root', messageId: 'other' },
+      { name: 'MessageAbortedError' },
+    );
+    expect((await sessionState()).status).toBe('running');
+  });
+});
+
+// Independent connection holds the session lock while BOTH shipped writers
+// queue on it. Observe the actual PostgreSQL lock queue, not a timed sleep.
+for (const first of ['begin', 'complete'] as const) {
+  test(`overlapping authority writers: ${first} takes the session lock first`, async () => {
+    const blocker = new pg.Client({ connectionString: localTestDatabaseUrl() });
+    await blocker.connect();
+    let begin: Promise<unknown> | undefined;
+    let complete: Promise<unknown> | undefined;
+    const identity = { runtimeSessionId: 'root', messageId: 'old-error' };
+    await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('old-overlap'), ...identity });
+    try {
+      await blocker.query('BEGIN');
+      await blocker.query(
+        'SELECT session_id FROM kortix.project_sessions WHERE session_id = $1 FOR UPDATE',
+        [SESSION_ID],
+      );
+      const {
+        rows: [{ pid }],
+      } = await blocker.query('SELECT pg_backend_pid() AS pid');
+      const waitForQueue = async (count: number) => {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const {
+            rows: [{ waiting }],
+          } = await blocker.query(
+            'SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0 AND datname = current_database() AND pid <> $1',
+            [pid],
+          );
+          if (waiting >= count) return;
+          await Bun.sleep(10);
+        }
+        throw new Error(`Expected ${count} overlapping lock waiters`);
+      };
+      const startBegin = () =>
+        beginSandboxTurn(
+          { sandboxId: SANDBOX_ID },
+          { token: t('new-overlap'), runtimeSessionId: 'root', messageId: 'new-overlap' },
+        );
+      const startComplete = () =>
+        completeSandboxTurn(SESSION_ID, 'error', identity, {
+          name: 'APIError',
+          message: 'terminal',
+        });
+      if (first === 'begin') begin = startBegin();
+      else complete = startComplete();
+      await waitForQueue(1);
+      if (first === 'begin') complete = startComplete();
+      else begin = startBegin();
+      await waitForQueue(2);
+      await blocker.query('COMMIT');
+      await Promise.all([begin, complete]);
+      expect(await sessionState()).toEqual({ status: 'running', error: null });
+      expect((await readRow()).metadata.activeTurns).toHaveProperty(t('new-overlap'));
+      expect((await readRow()).metadata.activeTurns).not.toHaveProperty(t('old-overlap'));
+      // Once the surviving authority itself terminates, no work remains.
+      await completeSandboxTurn(SESSION_ID, 'error', {
+        runtimeSessionId: 'root',
+        messageId: 'new-overlap',
+      });
+      expect((await sessionState()).status).toBe('stopped');
+    } finally {
+      await blocker.query('ROLLBACK');
+      await Promise.allSettled([begin, complete].filter(Boolean));
+      await blocker.end();
+    }
+  });
+}
+
+test('a bare terminal error parks with the default cause', async () => {
+  const identity = { runtimeSessionId: 'root', messageId: 'bare-error' };
+  await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('bare-error'), ...identity });
+  await completeSandboxTurn(SESSION_ID, 'error', identity);
+  expect(await sessionState()).toEqual({ status: 'stopped', error: 'agent turn failed' });
+});
+
+test('terminal error cause is truncated to 1000 characters', async () => {
+  const identity = { runtimeSessionId: 'root', messageId: 'long-error' };
+  const message = 'x'.repeat(1500);
+  await beginSandboxTurn({ sandboxId: SANDBOX_ID }, { token: t('long-error'), ...identity });
+  await completeSandboxTurn(SESSION_ID, 'error', identity, { name: 'APIError', message });
+  expect(await sessionState()).toEqual({
+    status: 'stopped',
+    error: `agent turn failed: APIError: ${message}`.slice(0, 1000),
   });
 });
