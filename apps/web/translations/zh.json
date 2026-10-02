@@ -9408,6 +9408,8 @@
       "checkConnection": "请检查网络连接，然后重试。"
     },
     "i18nComplete": {
+      "authEmailRateLimit": "无法发送邮件。请在大约一小时后重试。",
+      "authRequestRateLimit": "请求过多。请在几分钟后重试。",
       "text25ab55af92b1": "已开始上传附件",
       "text40078a553439": "已上传附件分块",
       "text4c7f8000aabd": "附件上传完成",

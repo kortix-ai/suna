@@ -9408,6 +9408,8 @@
       "checkConnection": "Prüfen Sie Ihre Verbindung und versuchen Sie es erneut."
     },
     "i18nComplete": {
+      "authEmailRateLimit": "Die E-Mail konnte nicht gesendet werden. Versuche es in etwa einer Stunde erneut.",
+      "authRequestRateLimit": "Zu viele Anfragen. Versuche es in einigen Minuten erneut.",
       "text25ab55af92b1": "Anhang-Upload gestartet",
       "text40078a553439": "Anhang-Block hochgeladen",
       "text4c7f8000aabd": "Anhang-Upload abgeschlossen",

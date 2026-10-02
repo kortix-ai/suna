@@ -9408,6 +9408,8 @@
       "checkConnection": "Comprueba tu conexión y vuelve a intentarlo."
     },
     "i18nComplete": {
+      "authEmailRateLimit": "No se pudo enviar el correo. Vuelve a intentarlo en aproximadamente una hora.",
+      "authRequestRateLimit": "Demasiadas solicitudes. Vuelve a intentarlo en unos minutos.",
       "text25ab55af92b1": "Carga del archivo adjunto iniciada",
       "text40078a553439": "Bloque del archivo adjunto cargado",
       "text4c7f8000aabd": "Carga del archivo adjunto completada",

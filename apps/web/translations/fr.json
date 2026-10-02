@@ -9408,6 +9408,8 @@
       "checkConnection": "Vérifiez votre connexion, puis réessayez."
     },
     "i18nComplete": {
+      "authEmailRateLimit": "Impossible d’envoyer l’e-mail. Réessaie dans environ une heure.",
+      "authRequestRateLimit": "Trop de demandes. Réessaie dans quelques minutes.",
       "text25ab55af92b1": "Téléversement de la pièce jointe démarré",
       "text40078a553439": "Bloc de la pièce jointe téléversé",
       "text4c7f8000aabd": "Téléversement de la pièce jointe terminé",
