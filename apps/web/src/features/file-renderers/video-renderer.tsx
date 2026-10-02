@@ -484,18 +484,3 @@ export function VideoRenderer({
     </div>
   );
 }
-
-// Compact video player for inline tool views
-export function InlineVideoPlayer({ url, className }: { url: string; className?: string }) {
-  return (
-    <VideoRenderer
-      url={url}
-      className={cn(
-        'aspect-video w-80 rounded-2xl border border-neutral-200 dark:border-neutral-700/50',
-        className,
-      )}
-      compact
-      loop
-    />
-  );
-}

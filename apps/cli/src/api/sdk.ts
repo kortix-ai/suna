@@ -3,7 +3,9 @@ import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
 import { ApiError } from './client.ts';
-import { secureRemoteBase } from './config.ts';
+import { sdkBackendUrl } from '@kortix/shared/host-config';
+
+export { sdkBackendUrl } from '@kortix/shared/host-config';
 
 /**
  * The CLI's ONE seam onto `@kortix/sdk`. Every Kortix backend call the CLI
@@ -11,24 +13,6 @@ import { secureRemoteBase } from './config.ts';
  * exempts exactly this file from the raw-fetch rule and asserts the exemption
  * list has length 1, so a second escape hatch cannot be added quietly.
  */
-
-/**
- * Normalize a stored CLI host base into the absolute `<origin>/v1` the SDK
- * requires. Two shapes reach us:
- *
- *   - host login stores a bare origin (`https://api.kortix.com`)
- *   - a session sandbox injects `KORTIX_API_URL` *with* the mount (`https://<tunnel>/v1`)
- *
- * `createKortix` throws `INVALID_BACKEND_URL` on a relative base outside a
- * browser (there is no `window.location` to resolve against), and the SDK
- * appends endpoint paths verbatim — so the version mount must be present
- * exactly once.
- */
-export function sdkBackendUrl(apiBase: string): string {
-  let base = secureRemoteBase(apiBase).replace(/\/+$/, '');
-  if (base.endsWith('/v1')) base = base.slice(0, -3);
-  return `${base.replace(/\/+$/, '')}/v1`;
-}
 
 export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   const token = auth.token;
