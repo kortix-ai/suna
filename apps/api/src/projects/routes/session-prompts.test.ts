@@ -253,8 +253,12 @@ mock.module('../../billing/services/billing-gate', () => ({
   },
 }));
 
+/** What the inbox read answers a new send. Null: the real read, over the mocked rows. */
+let sendState: { held: boolean; pending: boolean } | null = null;
+
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
+  inboxSendState: async (sessionId: string) => sendState ?? realLifecycle.inboxSendState(sessionId),
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     if (enqueueDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, enqueueDelayMs));
     enqueueSettledAtMs = Date.now();
@@ -517,7 +521,33 @@ describe('POST .../prompts', () => {
 
   test('kicks a targeted drain for the row it just enqueued', async () => {
     await post(validBody);
-    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+    // No `client_sent_at_ms`: the route cannot tell the send is alone.
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1`, burst: true }]);
+  });
+
+  describe('the burst wait is kept only where sends can race', () => {
+    const drainFor = async (sentMsAgo: number, state: { held: boolean; pending: boolean }) => {
+      sendState = state;
+      try {
+        await post({ ...validBody, client_sent_at_ms: Date.now() - sentMsAgo });
+      } finally {
+        sendState = null;
+      }
+      return drains.at(-1);
+    };
+    const idle = { held: false, pending: false };
+
+    test('a send that arrives right after Enter, alone in its session, is claimed at once', async () => {
+      expect(await drainFor(50, idle)).toEqual({ idempotencyKey: `prompt:${SESSION_ID}:q_1`, burst: false });
+    });
+
+    test('a send whose POST waited on the client keeps the wait', async () => {
+      expect((await drainFor(5_000, idle))?.burst).toBe(true);
+    });
+
+    test('a send into a session with another prompt queued or in delivery keeps the wait', async () => {
+      expect((await drainFor(50, { held: false, pending: true }))?.burst).toBe(true);
+    });
   });
 
   test('re-authorizes the agent on EVERY send, not just at session create', async () => {

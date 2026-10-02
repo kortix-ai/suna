@@ -7,6 +7,7 @@ export {
   deleteInboxPrompt,
   enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   releaseInboxHold,
   retryInboxPrompt,

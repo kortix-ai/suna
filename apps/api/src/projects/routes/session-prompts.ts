@@ -21,6 +21,7 @@ import {
   enqueueContinueSessionCommand,
   enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   retryInboxPrompt,
 } from '../session-lifecycle';
@@ -60,6 +61,9 @@ import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
 // live turn holds later prompts until its terminal event releases the next row.
 
 const PROMPT_LIST_LIMIT = 200;
+/** A POST that arrives within this long of its Enter did not wait on the
+ *  client. Longer, and an older send of the same burst may still be in flight. */
+const LONE_SEND_MAX_AGE_MS = 1_000;
 
 const SessionPromptSchema = z.object({
   placement: z.enum(['transcript', 'composer']).optional(),
@@ -150,6 +154,7 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
+    const receivedAtMs = Date.now();
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -187,7 +192,17 @@ projectsApp.openapi(
     const callerSessionId = callerKortixSessionId(c);
     const authorSessionId =
       isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
-    const visible = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // The reads below use the session id alone and none consumes another's
+    // result. They start together and are awaited in the original order, so
+    // every refusal comes from the same place. They ran one after another: one
+    // database round trip each, before the prompt was even durable.
+    const visibleRead = loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
+    // A failed read is "no hold" (as before) and "may be a burst" (the safe side).
+    const sendState = inboxSendState(sessionId).catch(() => ({ held: false, pending: true }));
+    const thisInstance = currentInstanceId();
+    const boxRead = thisInstance ? loadSandboxMetadataForSessions([sessionId]) : null;
+    boxRead?.catch(() => undefined);
+    const visible = await visibleRead;
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -200,9 +215,8 @@ projectsApp.openapi(
     // accepted here would stay `queued` for ever when that instance is down.
     // Refuse it while the sender can still read why. The lookup runs only when
     // `KORTIX_INSTANCE_ID` is set.
-    const thisInstance = currentInstanceId();
-    if (thisInstance) {
-      const box = (await loadSandboxMetadataForSessions([sessionId])).get(sessionId);
+    if (thisInstance && boxRead) {
+      const box = (await boxRead).get(sessionId);
       if (box !== undefined && !sandboxBelongsToThisInstance(box)) {
         const owner = sandboxInstanceId(box);
         const message =
@@ -342,8 +356,11 @@ projectsApp.openapi(
       overrides,
       authorSessionId,
     };
-    const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
-      enqueueContinueSessionCommand({ ...send, ...hold }),
+    const enqueued = await enqueueReleasingHold(
+      sessionId,
+      (hold) => enqueueContinueSessionCommand({ ...send, ...hold }),
+      undefined,
+      sendState.then((state) => state.held),
     );
 
     const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
@@ -368,7 +385,18 @@ projectsApp.openapi(
     // Fire the targeted drain WITHOUT waiting on it: the response is "your
     // prompt is durable", not "your prompt has been delivered". The drain
     // claims by idempotency key so this row does not wait behind older work.
-    void drainSessionLifecycleQueue({ idempotencyKey }).catch(() => undefined);
+    //
+    // A LONE send is claimed at once. The drain's burst wait (250 ms, see
+    // `drainSessionLifecycleQueue`) exists for sends whose POSTs race, and ran
+    // on every prompt. It is kept where a race is possible: another prompt of
+    // this session is queued or in delivery, or this POST waited after Enter
+    // (uploads, an offline queue, a slow link), so an older send may still be
+    // on its way. A caller that sends no `client_sent_at_ms` keeps the wait.
+    const burst =
+      (await sendState).pending ||
+      typeof body.client_sent_at_ms !== 'number' ||
+      receivedAtMs - body.client_sent_at_ms > LONE_SEND_MAX_AGE_MS;
+    void drainSessionLifecycleQueue({ idempotencyKey, burst }).catch(() => undefined);
     return c.json(response, 202);
   },
 );

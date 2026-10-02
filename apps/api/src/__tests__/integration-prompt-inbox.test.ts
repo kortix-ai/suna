@@ -26,8 +26,10 @@ import {
   deleteInboxPrompt,
   enqueueReleasingHold,
   holdInboxPrompts,
+  inboxSendState,
   listInboxPrompts,
   releaseInboxHold,
+  sessionHasHoldMark,
   retryInboxPrompt,
 } from '../projects/session-lifecycle/inbox-rows';
 import { remintForRepair } from '../projects/session-lifecycle/inbox-placement';
@@ -704,6 +706,43 @@ describe('the inbox is scoped to prompts the USER made', () => {
     expect(await deleteInboxPrompt(SESSION_ID, mine.commandId)).toEqual({
       outcome: 'delivering',
     });
+  });
+});
+
+describe('what a new send learns about its session inbox in one read', () => {
+  test('an empty inbox holds nothing and has nothing pending', async () => {
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+
+  test('a queued prompt and a prompt in delivery are pending; a finished one is not', async () => {
+    const row = await enqueue('q_state_pending');
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: true });
+    await hold(row);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: true });
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands SET status = 'succeeded'
+       WHERE command_id = ${row.commandId}::uuid`);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
+  });
+
+  test('a Stop hold is reported, in agreement with the hold-mark read', async () => {
+    await enqueue('q_state_held');
+    await holdInboxPrompts(SESSION_ID, true);
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: true, pending: true });
+    expect(await sessionHasHoldMark(SESSION_ID)).toBe(true);
+  });
+
+  test('a row an automation queued is not part of the inbox', async () => {
+    await enqueueContinueSessionCommand({
+      source: 'trigger:cron',
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: SESSION_ID,
+      actorUserId: null,
+      text: 'scheduled',
+      idempotencyKey: `trigger:${SESSION_ID}:${crypto.randomUUID()}`,
+    });
+    expect(await inboxSendState(SESSION_ID)).toEqual({ held: false, pending: false });
   });
 });
 
