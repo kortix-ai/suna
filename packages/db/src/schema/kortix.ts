@@ -5315,6 +5315,11 @@ export const roleAssignments = kortixSchema.table(
     index('idx_role_assignments_scope').on(table.scopeType, table.scopeId),
     index('idx_role_assignments_role').on(table.roleId),
     index('idx_role_assignments_account').on(table.accountId),
+    // Covers the scope_id FK (role_assignments_scope_id_projects_project_id_fk,
+    // ON DELETE CASCADE): project deletes scan this to retract the project's
+    // assignments. Account-scope rows hold NULL here, so the index is partial.
+    // Built by 20261002211856050 (CONCURRENTLY).
+    index('idx_role_assignments_scope_fk').on(table.scopeId).where(sql`scope_id is not null`),
     // One row per assignment identity. NULL scope/object parts compare equal
     // through the COALESCEs, so `ON CONFLICT` upserts can target it.
     uniqueIndex('uq_role_assignments_identity').on(
