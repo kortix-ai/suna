@@ -76,7 +76,12 @@ export interface OpenEventStreamOptions {
   client?: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
-   *  stream or crash the host. */
+   *  stream or crash the host.
+   *
+   *  Consecutive `message.part.delta` events of one part field that land in
+   *  the same 16ms flush arrive as ONE event: `properties.delta` is their
+   *  text joined, `id` is the last one's, and `coalesced` lists the wire
+   *  events it replaced. Appending `delta` gives the same text either way. */
   onEvent: (event: RuntimeEvent) => void;
   /** Called once a reconnect is ESTABLISHED, with the gap in ms from the last
    *  frame received to the new connection. Fires when the dropped stream had
@@ -202,6 +207,39 @@ function getCoalesceKey(event: RuntimeEvent): string | undefined {
   }
   if (event.type === 'lsp.updated') return 'lsp.updated';
   return undefined;
+}
+
+type PartDeltaEvent = Extract<RuntimeEvent, { type: 'message.part.delta' }> & {
+  /** The wire events this one replaced, in order. Set only on a merged event. */
+  coalesced?: RuntimeEvent[];
+};
+
+/**
+ * Text-delta coalescing: `next` appended to `tail` as ONE event, when both are
+ * deltas of the same part field. Else undefined.
+ *
+ * Only the queue's TAIL is ever merged into, so a run never crosses another
+ * event and dispatch order stays the wire order. The merged event carries the
+ * joined `delta`, the last wire event's `id`, and every wire event it replaced
+ * in `coalesced`: a consumer that dedupes by event id (the sync store) still
+ * sees each one.
+ */
+function mergePartDelta(tail: RuntimeEvent | undefined, next: RuntimeEvent): RuntimeEvent | undefined {
+  if (tail?.type !== 'message.part.delta' || next.type !== 'message.part.delta') return undefined;
+  const a = tail.properties;
+  const b = next.properties;
+  if (
+    a.partID !== b.partID ||
+    a.field !== b.field ||
+    a.messageID !== b.messageID ||
+    a.sessionID !== b.sessionID
+  ) {
+    return undefined;
+  }
+  // The list is this module's own (made on a run's first merge), so it grows in place.
+  const wire = (tail as PartDeltaEvent).coalesced ?? [tail];
+  wire.push(next);
+  return { ...next, properties: { ...b, delta: a.delta + b.delta }, coalesced: wire } as PartDeltaEvent;
 }
 
 /**
@@ -521,15 +559,21 @@ function createLiveStream(
           // The connection's own greeting is not work that a drop could lose.
           if (e.type !== 'server.connected') streamHadWork = true;
 
-          const ck = getCoalesceKey(e);
-          if (ck) {
-            const existing = coalesced.get(ck);
-            if (existing !== undefined) {
-              queue[existing] = undefined;
+          // The tail is never a replaced slot: a replacement pushes right after.
+          const merged = mergePartDelta(queue[queue.length - 1]?.event, e);
+          if (merged) {
+            queue[queue.length - 1] = { type: merged.type, event: merged };
+          } else {
+            const ck = getCoalesceKey(e);
+            if (ck) {
+              const existing = coalesced.get(ck);
+              if (existing !== undefined) {
+                queue[existing] = undefined;
+              }
+              coalesced.set(ck, queue.length);
             }
-            coalesced.set(ck, queue.length);
+            queue.push({ type: (e as any).type, event: e });
           }
-          queue.push({ type: (e as any).type, event: e });
           schedule();
 
           if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;

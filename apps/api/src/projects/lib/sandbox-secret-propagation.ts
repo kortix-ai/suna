@@ -6,6 +6,7 @@ import { config } from '../../config';
 import type { ProviderName } from '../../platform/providers';
 import { createCoalescedRunner } from './env-sync-coalescer';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { loadSessionSecretContext } from './session-secret-context';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import {
   resolveSandboxEnvSnapshot,
@@ -164,10 +165,12 @@ async function runProjectSecretPropagation(
       }
       let snapshot: SandboxEnvSnapshot | null = null;
       try {
-        snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId);
+        // One read of the session's secret context for both.
+        const secretContext = loadSessionSecretContext(projectId, row.sessionId);
+        snapshot = await resolveSandboxEnvSnapshot(projectId, row.sessionId, undefined, secretContext);
         if (!snapshot) throw new Error('session env snapshot is unavailable');
         const providerName = row.provider as ProviderName;
-        const networkBoundary = await resolveSessionNetworkBoundary(projectId, row.sessionId);
+        const networkBoundary = await resolveSessionNetworkBoundary(projectId, row.sessionId, undefined, secretContext);
         // No wait budget and no fail-soft here. This is the secret-CRUD fan-out:
         // it is the path that DELIVERS a rotated credential to the edge, and its
         // caller reports the per-sandbox outcome to the author who just saved the
