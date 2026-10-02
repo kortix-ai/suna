@@ -29,7 +29,8 @@ mock.module('@/stores/billing-account-context', () => ({
 
 const { BillingTab } = await import('./billing-tab');
 
-for (const [balance, dollars, credits] of [[2, '$2.00', '200'], [0, '$0.00', '0'], [-1, '-$1.00', '100']]) {
+const cases: [number, string, string][] = [[2, '$2.00', '200'], [0, '$0.00', '0'], [-1, '-$1.00', '100']];
+for (const [balance, dollars, credits] of cases) {
   test(`Plan shows the free account's ${balance} dollar balance before checkout`, () => {
     total = balance;
     billingEnabled = true;
