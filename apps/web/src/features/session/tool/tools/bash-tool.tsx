@@ -38,7 +38,7 @@ import { shellExitCode, stripAnsi } from '@/ui';
 import { TerminalIcon } from '@phosphor-icons/react';
 import { useContext, useMemo } from 'react';
 import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
-import { parseChannelSendCommand } from './channel-send';
+import { channelSendText, parseChannelSendCommand } from './channel-send';
 import { ChannelSendCard, channelSendTitle } from './channel-send-card';
 
 /** The row title never runs past this; a trigger is one line, not a sentence. */
@@ -201,7 +201,7 @@ function CommandBlock({
       <div data-scrollable className={cn('max-h-64 overflow-auto', frame && 'bg-muted/40')}>
         <pre
           className={cn(
-            'text-foreground/90 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
+            'text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap [&_code]:border-none [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_pre]:whitespace-pre-wrap [&_span]:border-none [&_span]:outline-none',
             paneInset,
             'pr-11',
           )}
@@ -215,7 +215,7 @@ function CommandBlock({
           it scrolled away with a long command while the output's stayed
           pinned. */}
       <div className="absolute top-2 right-2">
-        <CopyButton code={command} className="text-muted-foreground/60 hover:text-foreground" />
+        <CopyButton code={command} className="text-muted-foreground hover:text-foreground" />
       </div>
 
       {(hasOutput || settled) && (
@@ -238,12 +238,12 @@ function CommandBlock({
               <div className="absolute top-2 right-2">
                 <CopyButton
                   code={output}
-                  className="text-muted-foreground/60 hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground"
                 />
               </div>
             </div>
           ) : (
-            <p className={cn('text-muted-foreground/50', paneInset, 'text-xs leading-relaxed')}>
+            <p className={cn('text-muted-foreground', paneInset, 'text-xs leading-relaxed')}>
               {tI18nComplete.raw('textf7e31759b202')}
             </p>
           )}
@@ -350,11 +350,11 @@ function BashTrigger({
         </span>
         {!open && (
           <>
-            <span className="text-muted-foreground/60 min-w-0 truncate font-mono">
+            <span className="text-muted-foreground min-w-0 truncate font-mono">
               {commandPreview}
             </span>
             {extraLines > 0 && (
-              <span className="text-muted-foreground/40 shrink-0 tabular-nums">+{extraLines}</span>
+              <span className="text-muted-foreground shrink-0 tabular-nums">+{extraLines}</span>
             )}
           </>
         )}
@@ -428,6 +428,9 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   // No manual memo: the parser is a one-line scan, and a hand-written memo
   // here makes the React Compiler skip the whole component (see `command`).
   const send = failed ? null : parseChannelSendCommand(command);
+  // Read before the memo below: a call on `send` after it makes the React
+  // Compiler assume `command` can still change, and skip the component.
+  const sendText = send ? channelSendText(send) : null;
   const title = send ? channelSendTitle(send.platform, tI18nComplete) : bashRowTitle(input.description, failed);
 
   const { commandPreview, extraLines } = useMemo(() => {
@@ -456,7 +459,7 @@ export function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             title={title}
             failed={failed}
             command={command}
-            commandPreview={send ? (send.text ?? send.file ?? '') : commandPreview}
+            commandPreview={send ? (sendText ?? send.file ?? '') : commandPreview}
             extraLines={send ? 0 : extraLines}
             live={running && status !== 'completed' && status !== 'error'}
           />

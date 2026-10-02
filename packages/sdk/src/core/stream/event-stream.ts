@@ -17,8 +17,9 @@
  * (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
+import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
 import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
+import { getClientForUrl } from '../runtime/client';
 import { logger } from '../http/logger';
 
 /**
@@ -34,7 +35,7 @@ export type RuntimeEvent =
       properties: { serverID: string; path: string };
     };
 
-/** The minimal slice of `OpencodeClient` this machine actually calls. */
+/** The minimal slice of `RuntimeClient` this machine actually calls. */
 export interface EventStreamClient {
   global: {
     event: (opts: {
@@ -65,9 +66,14 @@ const realTimers: EventStreamTimers = {
 };
 
 export interface OpenEventStreamOptions {
-  /** The opencode client to stream events from (same client the rest of the
-   *  SDK obtains via `getClient()`). */
-  client: EventStreamClient;
+  /** The session runtime to stream from: `${backendUrl}/p/{externalId}/{port}`
+   *  (a session handle's `runtimeUrl`). Streams to one URL share one connection. */
+  url?: string;
+  /**
+   * A runtime client to stream from, instead of `url`.
+   * @deprecated Pass `url`. Removed in the next major.
+   */
+  client?: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
    *  stream or crash the host. */
@@ -119,9 +125,19 @@ export interface OpenEventStreamOptions {
    * handle stays safe/idempotent.
    */
   onParked?: (reason: EventStreamParkedInfo) => void;
+  /**
+   * The connection's state, for a host indicator: `connecting` when an attempt
+   * starts, `open` on the attempt's first frame, `lost` when it drops and a
+   * retry is scheduled. A park reports through `onParked`, a `close()` reports
+   * nothing. A subscriber that joins a live stream is told its current state.
+   */
+  onConnectionChange?: (state: EventStreamConnectionState) => void;
   /** Test-only clock/timer override. Defaults to real `Date.now`/`setTimeout`. */
   timers?: EventStreamTimers;
 }
+
+/** See {@link OpenEventStreamOptions.onConnectionChange}. */
+export type EventStreamConnectionState = 'connecting' | 'open' | 'lost';
 
 /** Payload for {@link OpenEventStreamOptions.onParked}. */
 export interface EventStreamParkedInfo {
@@ -212,11 +228,14 @@ interface StreamSubscriber {
   onEvent: (event: RuntimeEvent) => void;
   onGapRehydrate?: (gapMs: number) => void;
   onParked?: (reason: EventStreamParkedInfo) => void;
+  onConnectionChange?: (state: EventStreamConnectionState) => void;
 }
 
 /** The shared underlying connection for one client — see `liveStreamsByClient`. */
 interface LiveStream {
   subscribers: Set<StreamSubscriber>;
+  /** The connection's last reported state; null once parked or torn down. */
+  connectionState: () => EventStreamConnectionState | null;
   /** Aborts the connection and releases its timers. Called once, when the
    *  LAST subscriber leaves. */
   teardown: () => void;
@@ -282,6 +301,13 @@ function createLiveStream(
       }
     }
   }
+
+  let connectionState: EventStreamConnectionState | null = null;
+  const setConnectionState = (state: EventStreamConnectionState | null) => {
+    if (connectionState === state) return;
+    connectionState = state;
+    if (state) dispatchToSubscribers((sub) => sub.onConnectionChange, state);
+  };
 
   // Track last stream activity (connect or event) to gate reconnect hydration.
   // Using only "last event" causes hydrate storms when the server rotates
@@ -358,6 +384,7 @@ function createLiveStream(
       // heartbeat-forced reconnect tears the old connection down instead of
       // leaving it parked/leaking while a new one opens.
       const attemptAbort = new AbortController();
+      setConnectionState('connecting');
       const outerLink = onceAborted(abortController.signal);
       outerLink.promise.then(() => attemptAbort.abort());
       try {
@@ -484,6 +511,7 @@ function createLiveStream(
           if (outcome.result.done) break;
 
           streamHadEvents = true;
+          setConnectionState('open');
           resetHeartbeat();
           const raw = outcome.result.value as any;
           const e = (
@@ -599,12 +627,14 @@ function createLiveStream(
         // terminal) stream machine, and must never stop another
         // subscriber's from firing — `dispatchToSubscribers` catches per
         // subscriber.
+        connectionState = null;
         dispatchToSubscribers((sub) => sub.onParked, {
           consecutiveFailures: consecutiveHardFailures,
           lastError: attemptError,
         });
         break;
       }
+      setConnectionState('lost');
 
       // Record the drop. Events missed while no connection exists (e.g. a
       // streaming assistant response, a permission ask) never arrive, so the
@@ -645,7 +675,9 @@ function createLiveStream(
 
   return {
     subscribers,
+    connectionState: () => connectionState,
     teardown: () => {
+      connectionState = null;
       abortController.abort();
       if (flushTimer) t.clearTimeout(flushTimer);
     },
@@ -682,8 +714,10 @@ function createLiveStream(
  * connection (unless it was the last one standing).
  */
 export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
-  const { client, onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
-  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked };
+  const { onEvent, onGapRehydrate, onParked, onConnectionChange, signal: externalSignal } = opts;
+  const client: EventStreamClient | undefined = opts.client ?? (opts.url ? getClientForUrl(opts.url) : undefined);
+  if (!client) throw new Error('openEventStream needs the session runtime `url`');
+  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked, onConnectionChange };
 
   let liveStream = liveStreamsByClient.get(client);
   if (!liveStream) {
@@ -692,6 +726,8 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
     liveStreamsByClient.set(client, liveStream);
   } else {
     liveStream.subscribers.add(subscriber);
+    const state = liveStream.connectionState();
+    if (state) onConnectionChange?.(state);
   }
   const stream = liveStream;
 

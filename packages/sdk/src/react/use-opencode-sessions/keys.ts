@@ -1,5 +1,7 @@
 'use client';
 
+import type { QueryClient } from '@tanstack/react-query';
+
 import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
 import { getActiveRuntimeUrl } from '../../core/session/server-store/active';
 import { useCurrentRuntime } from '../use-current-runtime';
@@ -21,7 +23,7 @@ import type {
   WorktreeCreateInput,
   WorktreeRemoveInput,
   WorktreeResetInput,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Re-export SDK types for consumers
@@ -121,6 +123,8 @@ export const runtimeKeys = {
   sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
   session: (id: string) => ['opencode', 'session', id] as const,
   messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
+  /** The runtime's todo list for a session; the event stream writes it on `todo.updated`. */
+  sessionTodo: (sessionId: string) => ['opencode', 'session-todo', sessionId] as const,
   runtimeSession: (id: string, serverId?: string) =>
     ['opencode', 'session', id, serverId ?? activeServerKey()] as const,
   runtimeMessages: (sessionId: string, serverId?: string) =>
@@ -147,6 +151,15 @@ export const runtimeKeys = {
   /** Prefix over every mode + sandbox — what the event stream invalidates. */
   vcsDiffAll: () => ['opencode', 'vcs-diff'] as const,
 };
+
+/**
+ * Drop every cached runtime query (sessions, messages, agents, commands, diffs,
+ * ...). Call it when the session's runtime is replaced, e.g. after a restart:
+ * the next read then comes from the new runtime, not from the old one's cache.
+ */
+export function resetRuntimeQueries(queryClient: Pick<QueryClient, 'removeQueries'>): void {
+  queryClient.removeQueries({ queryKey: runtimeKeys.all });
+}
 
 export function useRuntimeReady() {
   const connectedHealthy = useSandboxConnectionStore(

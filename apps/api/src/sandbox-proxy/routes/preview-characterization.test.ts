@@ -596,6 +596,32 @@ describe('forwardToSandbox authentication failures', () => {
     expect(retry.status).toBe(200);
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
   });
+
+  // pi (and OpenCode's boot steps) refuse with another text, and a W6 daemon
+  // adds `code: runtime_not_ready`. Both must release the claim too.
+  for (const [name, body] of [
+    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}'],
+    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}'],
+  ] as const) {
+    test(`a not-ready 503 with ${name} passes through and releases the dedupe claim`, async () => {
+      const args = {
+        method: 'POST',
+        path: '/session/sess-1/message',
+        port: 8000,
+        body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
+        headers: jsonHeaders({ 'idempotency-key': `nr-${name}` }),
+      } as const;
+      queueFetch(new Response(body, { status: 503 }));
+      const first = await forward(args);
+      expect(first.status).toBe(503);
+      expect(await first.text()).toBe(body);
+
+      queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
+      const retry = await forward(args);
+      expect(retry.status).toBe(200);
+      expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+    });
+  }
 });
 
 // ── redirects, CORS, cookies — originMode vs the path form ───────────────────

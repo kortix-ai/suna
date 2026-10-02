@@ -7,6 +7,7 @@ import { openSession } from '../routes/shared';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
+import { healSupersededSessionToken } from '../lib/heal-session-token';
 import { syncSandboxEnvForPrompt } from '../lib/sandbox-env-sync';
 import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
@@ -167,6 +168,8 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
         .where(eq(projectSessions.sessionId, sessionId))
         .limit(1);
       if (!fresh) return null;
+      // A message can wake a stopped box without /start; heal its token first.
+      await healSupersededSessionToken(sessionId);
       return openSession({
         loaded,
         visible: { row: fresh },

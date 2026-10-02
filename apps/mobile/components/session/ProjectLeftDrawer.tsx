@@ -24,7 +24,7 @@
  *   open, and a child never renders without its parent
  *   (`buildDrawerItems`, lib/session/session-tree.ts). Shared and Automated
  *   rows name their starter under the title.
- *   A row whose root OpenCode session has sub-sessions (`directSubsessions`)
+ *   A row whose root runtime session has sub-sessions (`directSubsessions`)
  *   shows their count after its title and ALWAYS lists them under its row,
  *   joined by a connector (`SubsessionTree`) — every such row, not only the
  *   session on screen. A sub-session row shows that sub-session: in place
@@ -50,7 +50,7 @@
  * Layout rules: apps/mobile/design.md → Project sidebar.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -88,6 +88,7 @@ import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
 import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
+import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
 import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
 import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -151,11 +152,11 @@ export interface ProjectLeftDrawerProps {
    */
   activeProjectSessionId?: string | null;
   /**
-   * The OpenCode id the open thread shows (tab store `activeSessionId`): the
+   * The runtime session id the open thread shows (tab store `activeSessionId`): the
    * root of `activeProjectSessionId`, or one of its sub-sessions. Null while
    * no thread is on screen. Picks which sub-session row is highlighted.
    */
-  activeOpenCodeSessionId?: string | null;
+  activeRuntimeSessionId?: string | null;
   /** The open session's parent (`sessionParentId`): that parent opens by default (KRTX-639). */
   activeParentSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
@@ -170,7 +171,7 @@ export interface ProjectLeftDrawerProps {
   onNewSession: () => void;
   onOpenProjectSession: (session: ProjectSession) => void;
   /**
-   * A sub-session row: show that OpenCode session — in place when its parent
+   * A sub-session row: show that runtime session — in place when its parent
    * is the open thread, else after opening the parent (ProjectScreen,
    * `drawerThreadMove`).
    */
@@ -212,7 +213,7 @@ const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 export function ProjectLeftDrawer({
   projectId,
   activeProjectSessionId = null,
-  activeOpenCodeSessionId = null,
+  activeRuntimeSessionId = null,
   activeParentSessionId = null,
   reviewNeedsYouCount = 0,
   needsYouBySession = EMPTY_NEEDS_YOU,
@@ -254,7 +255,10 @@ export function ProjectLeftDrawer({
   const sectionOpen = (id: DrawerSectionId) => choices[sectionKey(projectId, id)] ?? id === 'sessions';
   const sharedOpen = sectionOpen('shared');
   const automatedOpen = sectionOpen('automated');
-  const mine = useProjectSessionsPaged(projectId, { poll: isFocused, parent: 'root', startedBy: 'me' });
+  // Polls only while the drawer is open: its content stays mounted while
+  // closed, every poll result re-rendered it (~2 renders per 3 s), and the
+  // open refetch below already shows a fresh list.
+  const mine = useProjectSessionsPaged(projectId, { poll: isFocused && open, parent: 'root', startedBy: 'me' });
   // Shared loads always (its header hides when it is empty); Automated only
   // once opened: a project can hold hundreds of automated runs.
   const shared = useProjectSessionsPaged(projectId, {
@@ -280,13 +284,18 @@ export function ProjectLeftDrawer({
   const mineRoots = useMemo(() => rootRowsOnly(mine.sessions), [mine.sessions]);
   const sharedRoots = useMemo(() => rootRowsOnly(shared.sessions), [shared.sessions]);
   const automatedRoots = useMemo(() => rootRowsOnly(automated.sessions), [automated.sessions]);
+  // Depends on the `refetch` functions (stable), not the query objects (new on
+  // every render): the callback must not change on each fetch's re-render.
+  const refetchMine = mine.refetch;
+  const refetchShared = shared.refetch;
+  const refetchAutomated = automated.refetch;
   const refetchAll = useCallback(async () => {
     await Promise.all([
-      mine.refetch(),
-      shared.refetch(),
-      automatedOpen ? automated.refetch() : Promise.resolve(),
+      refetchMine(),
+      refetchShared(),
+      automatedOpen ? refetchAutomated() : Promise.resolve(),
     ]);
-  }, [mine, shared, automated, automatedOpen]);
+  }, [refetchMine, refetchShared, refetchAutomated, automatedOpen]);
   // Sessions that wait on the user, newest wait first: their own group above
   // the list, from every loaded top-level row. A session not loaded yet (an
   // older page, a child) is left to the Review row's count.
@@ -371,11 +380,7 @@ export function ProjectLeftDrawer({
   // session created or renamed elsewhere shows without a pull. After the
   // slide (open is 420ms): a response landing mid-slide re-rendered the list
   // while it moved (Jay, 2026-09-27: "not smooth").
-  useEffect(() => {
-    if (!open) return;
-    const timer = setTimeout(() => void refetchAll(), DRAWER_REFETCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [open, refetchAll]);
+  useRefetchOnOpen(open, refetchAll, DRAWER_REFETCH_DELAY_MS);
   const handleRetrySessions = useCallback(() => {
     haptics.tap();
     void refetchAll();
@@ -489,7 +494,7 @@ export function ProjectLeftDrawer({
         key={child.session_id}
         session={child}
         shown={child.session_id === activeProjectSessionId}
-        activeOpenCodeId={activeOpenCodeSessionId}
+        activeRuntimeId={activeRuntimeSessionId}
         nested
         trunkBelow={trunkBelow}
         onPress={handleOpenProjectSession}
@@ -497,7 +502,7 @@ export function ProjectLeftDrawer({
         onPressSubsession={handleOpenSubsession}
       />
     ),
-    [activeProjectSessionId, activeOpenCodeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
+    [activeProjectSessionId, activeRuntimeSessionId, handleOpenProjectSession, handleOpenSubsession, onSessionActions]
   );
 
   const renderItem = useCallback(
@@ -555,7 +560,7 @@ export function ProjectLeftDrawer({
           <DrawerSessionNode
             session={item.session}
             shown={item.session.session_id === activeProjectSessionId}
-            activeOpenCodeId={activeOpenCodeSessionId}
+            activeRuntimeId={activeRuntimeSessionId}
             starter={item.section === 'sessions' ? undefined : sessionStarter(item.session, viewerId)}
             expanded={isExpanded(item.session)}
             onToggleChildren={toggleParent}
@@ -577,7 +582,7 @@ export function ProjectLeftDrawer({
       isExpanded,
       toggleParent,
       activeProjectSessionId,
-      activeOpenCodeSessionId,
+      activeRuntimeSessionId,
       handleOpenProjectSession,
       handleOpenSubsession,
       onSessionActions,
@@ -629,7 +634,7 @@ export function ProjectLeftDrawer({
                 key={session.session_id}
                 session={session}
                 shown={session.session_id === activeProjectSessionId}
-                activeOpenCodeId={activeOpenCodeSessionId}
+                activeRuntimeId={activeRuntimeSessionId}
                 needsYou={needsYouBySession.get(session.session_id)}
                 onPress={handleOpenProjectSession}
                 onLongPress={onSessionActions}
@@ -650,7 +655,7 @@ export function ProjectLeftDrawer({
       mutedColor,
       handleRetrySessions,
       activeProjectSessionId,
-      activeOpenCodeSessionId,
+      activeRuntimeSessionId,
       handleOpenProjectSession,
       onSessionActions,
       handleOpenSubsession,

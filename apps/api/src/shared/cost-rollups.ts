@@ -1,3 +1,4 @@
+import { numberValue, isoValue } from './cost-values';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 
@@ -42,17 +43,6 @@ interface ComputeProjectAggregateRow {
   computeCost: number | string;
   sessionCount: number | string;
   lastAt: Date | string | null;
-}
-
-function numberValue(value: number | string | null | undefined): number {
-  const result = Number(value ?? 0);
-  return Number.isFinite(result) ? result : 0;
-}
-
-function isoValue(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function laterIso(left: string | null, right: string | null): string | null {

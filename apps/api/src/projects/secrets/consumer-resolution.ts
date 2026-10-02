@@ -1,9 +1,10 @@
 import { projectSecrets, projects } from '@kortix/db';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { SecretConsumer, SecretStrategy } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';
+import { createFirstInWindow } from '../../shared/audit-dedupe';
 import { db } from '../../shared/db';
-import { filterSecretRowsByAudience, secretAudiencePerson } from '../lib/secret-audience';
+import { filterSecretRowsByAudience, secretAudienceSubject } from '../lib/secret-audience';
 import { decryptProjectSecret } from './envelope';
 import { secretAudienceRank } from './grant-policy';
 
@@ -16,6 +17,14 @@ export interface ProjectSecretConsumerRead {
   principalUserId?: string | null;
   name: string;
   consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+  /**
+   * A system-internal existence probe (an install lookup the API runs for every
+   * project on a timer), not a request by an agent or a person. A miss writes
+   * no audit row, and a successful read writes `secret.consumer.used` at most
+   * once per (consumer, secret) per hour per replica. A denied or invalid
+   * read is always audited. Leave unset for any read someone asked for.
+   */
+  probe?: boolean;
 }
 
 export interface ProjectSecretConsumerValue {
@@ -177,7 +186,10 @@ async function recordSecretConsumerAudit(
  * consumer read, grouped by identifier and placed in deterministic fallback
  * order. Null when the project has no account.
  */
-async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
+async function loadProjectSecretConsumerRows(
+  input: Omit<ProjectSecretConsumerRead, 'name'>,
+  names: string[],
+) {
   const accountId =
     input.accountId ??
     (
@@ -188,10 +200,11 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
         .limit(1)
     )[0]?.accountId;
   if (!accountId) return null;
-  const normalizedName = input.name.trim().toUpperCase();
+  const normalizedNames = names.map((name) => name.trim().toUpperCase());
   const rows = await db
     .select({
       secretId: projectSecrets.secretId,
+      name: projectSecrets.name,
       identifier: projectSecrets.identifier,
       ownerUserId: projectSecrets.ownerUserId,
       valueEnc: projectSecrets.valueEnc,
@@ -205,7 +218,7 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
     .where(
       and(
         eq(projectSecrets.projectId, input.projectId),
-        eq(projectSecrets.name, normalizedName),
+        inArray(projectSecrets.name, normalizedNames),
         input.principalUserId
           ? or(
               isNull(projectSecrets.ownerUserId),
@@ -222,8 +235,8 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
   const reachable = await filterSecretRowsByAudience({
     projectId: input.projectId,
     accountId,
-    personId: () =>
-      secretAudiencePerson({
+    subject: () =>
+      secretAudienceSubject({
         projectId: input.projectId,
         accountId,
         sessionId: input.sessionId,
@@ -232,38 +245,50 @@ async function loadProjectSecretConsumerRows(input: ProjectSecretConsumerRead) {
     rows,
   });
   type Row = (typeof reachable)[number];
-  const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
-  for (const row of reachable) {
-    const slot = byIdentifier.get(row.identifier) ?? {};
-    if (row.ownerUserId === null) slot.shared = row;
-    else if (row.ownerUserId === input.principalUserId) slot.personal = row;
-    byIdentifier.set(row.identifier, slot);
-  }
+  const byName = new Map<string, Row[]>();
+  for (const row of reachable) byName.set(row.name, [...(byName.get(row.name) ?? []), row]);
 
-  const selectedRows = [...byIdentifier.entries()]
-    .map(([identifier, slot]) => ({
-      identifier,
-      row: slot.personal?.active ? slot.personal : (slot.shared ?? slot.personal),
-      policyRow: slot.shared ?? slot.personal,
-    }))
-    .filter(
-      (entry): entry is { identifier: string; row: Row; policyRow: Row } =>
-        Boolean(entry.row && entry.policyRow),
-    )
-    .sort((a, b) => {
-      const rank = secretAudienceRank(a.policyRow.audience) - secretAudienceRank(b.policyRow.audience);
-      if (rank !== 0) return rank;
-      if (a.identifier === normalizedName) return -1;
-      if (b.identifier === normalizedName) return 1;
-      const updatedDifference = b.row.updatedAt.getTime() - a.row.updatedAt.getTime();
-      return updatedDifference || a.identifier.localeCompare(b.identifier);
-    });
-  return { accountId, normalizedName, selectedRows };
+  const selectedByName = new Map<string, Array<{ identifier: string; row: Row; policyRow: Row }>>();
+  for (const normalizedName of normalizedNames) {
+    const byIdentifier = new Map<string, { shared?: Row; personal?: Row }>();
+    for (const row of byName.get(normalizedName) ?? []) {
+      const slot = byIdentifier.get(row.identifier) ?? {};
+      if (row.ownerUserId === null) slot.shared = row;
+      else if (row.ownerUserId === input.principalUserId) slot.personal = row;
+      byIdentifier.set(row.identifier, slot);
+    }
+
+    const selectedRows = [...byIdentifier.entries()]
+      .map(([identifier, slot]) => ({
+        identifier,
+        row: slot.personal?.active ? slot.personal : (slot.shared ?? slot.personal),
+        policyRow: slot.shared ?? slot.personal,
+      }))
+      .filter(
+        (entry): entry is { identifier: string; row: Row; policyRow: Row } =>
+          Boolean(entry.row && entry.policyRow),
+      )
+      .sort((a, b) => {
+        const rank = secretAudienceRank(a.policyRow.audience) - secretAudienceRank(b.policyRow.audience);
+        if (rank !== 0) return rank;
+        if (a.identifier === normalizedName) return -1;
+        if (b.identifier === normalizedName) return 1;
+        const updatedDifference = b.row.updatedAt.getTime() - a.row.updatedAt.getTime();
+        return updatedDifference || a.identifier.localeCompare(b.identifier);
+      });
+    selectedByName.set(normalizedName, selectedRows);
+  }
+  return { accountId, selectedByName };
 }
 
 type ConsumerCandidateRow = NonNullable<
   Awaited<ReturnType<typeof loadProjectSecretConsumerRows>>
->['selectedRows'][number]['row'];
+>['selectedByName'] extends Map<string, Array<{ row: infer R }>>
+  ? R
+  : never;
+
+/** Probe reads repeat the same (consumer, secret) every sweep; see `probe`. */
+const firstProbeUseInWindow = createFirstInWindow();
 
 /**
  * Policy-check, decrypt and audit one candidate row. Returns the resolved
@@ -311,16 +336,18 @@ async function resolveOneConsumerSecretRow(
     });
     return null;
   }
-  await recordSecretConsumerAudit(input, accountId, {
-    action: 'secret.consumer.used',
-    resourceId: row.secretId,
-    metadata: {
-      identifier: row.identifier,
-      name: normalizedName,
-      consumer: input.consumer,
-      value_source: row.ownerUserId ? 'personal' : 'shared',
-    },
-  });
+  if (!input.probe || firstProbeUseInWindow(`${input.consumer}|${row.secretId}`)) {
+    await recordSecretConsumerAudit(input, accountId, {
+      action: 'secret.consumer.used',
+      resourceId: row.secretId,
+      metadata: {
+        identifier: row.identifier,
+        name: normalizedName,
+        consumer: input.consumer,
+        value_source: row.ownerUserId ? 'personal' : 'shared',
+      },
+    });
+  }
   return {
     accountId,
     secretId: row.secretId,
@@ -331,20 +358,24 @@ async function resolveOneConsumerSecretRow(
   };
 }
 
-/** Resolve up to maxValues in deterministic fallback order. */
-async function resolveProjectSecretValuesForConsumer(
+/** Resolve up to maxValues for one name in deterministic fallback order. */
+async function resolveSelectedRows(
   input: ProjectSecretConsumerRead,
+  accountId: string,
+  normalizedName: string,
+  selectedRows: Array<{ row: ConsumerCandidateRow; policyRow: ConsumerCandidateRow }>,
   maxValues: number,
 ): Promise<ProjectSecretConsumerValue[]> {
-  const loaded = await loadProjectSecretConsumerRows(input);
-  if (!loaded) return [];
-  const { accountId, normalizedName, selectedRows } = loaded;
   if (selectedRows.length === 0) {
-    await recordSecretConsumerAudit(input, accountId, {
-      outcome: 'denied',
-      action: 'secret.consumer.missing',
-      metadata: { name: normalizedName, consumer: input.consumer },
-    });
+    // An existence probe is not an access event: only a read someone asked for
+    // audits a miss.
+    if (!input.probe) {
+      await recordSecretConsumerAudit(input, accountId, {
+        outcome: 'denied',
+        action: 'secret.consumer.missing',
+        metadata: { name: normalizedName, consumer: input.consumer },
+      });
+    }
     return [];
   }
 
@@ -362,6 +393,48 @@ async function resolveProjectSecretValuesForConsumer(
     if (resolved.length >= maxValues) break;
   }
   return resolved;
+}
+
+async function resolveProjectSecretValuesForConsumer(
+  input: ProjectSecretConsumerRead,
+  maxValues: number,
+): Promise<ProjectSecretConsumerValue[]> {
+  const loaded = await loadProjectSecretConsumerRows(input, [input.name]);
+  if (!loaded) return [];
+  const normalizedName = input.name.trim().toUpperCase();
+  return resolveSelectedRows(
+    input,
+    loaded.accountId,
+    normalizedName,
+    loaded.selectedByName.get(normalizedName) ?? [],
+    maxValues,
+  );
+}
+
+/**
+ * Read several named secrets for one consumer in ONE query. The system-internal
+ * probe form of `getProjectSecretValueForConsumer`: absent names are silently
+ * omitted from the result and write no audit row; see `probe`.
+ */
+export async function getProjectSecretValuesForConsumer(
+  input: Omit<ProjectSecretConsumerRead, 'name' | 'probe'> & { names: string[] },
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const loaded = await loadProjectSecretConsumerRows(input, input.names);
+  if (!loaded) return out;
+  const probeInput = { ...input, name: '', probe: true };
+  for (const name of input.names) {
+    const normalizedName = name.trim().toUpperCase();
+    const [first] = await resolveSelectedRows(
+      { ...probeInput, name },
+      loaded.accountId,
+      normalizedName,
+      loaded.selectedByName.get(normalizedName) ?? [],
+      1,
+    );
+    if (first) out[name] = first.value;
+  }
+  return out;
 }
 
 /** Resolve every authorized value for one key through its server consumer. */

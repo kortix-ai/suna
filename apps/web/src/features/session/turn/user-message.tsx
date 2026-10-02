@@ -1,8 +1,14 @@
 'use client';
 
+import { MessageSenderAbove } from '../participants/session-participants';
+import { MessageAuthorLabel } from './message-author-label';
 import { ReminderTurnCard } from './reminder-turn-card';
-import { toast } from 'sonner';
-import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
+import { errorToast } from '@/components/ui/toast';
+import {
+  fetchSessionAttachment,
+  isSessionAttachmentRef,
+  type SessionMessageAuthor,
+} from '@kortix/sdk';
 
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
  *  user-message card. Full-width card, no reference chips. */
@@ -482,6 +488,7 @@ export interface AttachmentUploadStatus {
 }
 
 function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [downloading, setDownloading] = useState(false);
   const download = async () => {
     if (downloading) return;
@@ -498,7 +505,7 @@ function StoredAttachmentFile({ file }: { file: NormalizedAttachment }) {
       link.remove();
       if (stored) setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not download attachment');
+      errorToast(error instanceof Error ? error.message : tI18nComplete('text7f755292bf51'));
     } finally {
       setDownloading(false);
     }
@@ -754,8 +761,11 @@ export function UserMessageBubble({
   textId,
   textRef,
   quoted,
+  tail = false,
   children,
 }: {
+  /** The sender's avatar sits above: the top-right corner, under it, is 4px. */
+  tail?: boolean;
   /** The text overflows its clamp, so there is something to expand. */
   canExpand: boolean;
   expanded: boolean;
@@ -778,6 +788,8 @@ export function UserMessageBubble({
       className={cn(
         BUBBLE_SURFACE,
         'relative overflow-hidden',
+        // 4px: `--radius` (10) minus 6, the corner under the sender's avatar.
+        tail && 'rounded-tr-[calc(var(--radius)-6px)]',
         fullWidth ? 'w-full' : 'w-fit',
         canExpand && 'cursor-pointer',
       )}
@@ -1073,6 +1085,8 @@ export function UserMessageEditor({
 
 export function UserMessage({
   message,
+  author,
+  showAuthor,
   agentNames,
   commandInfo,
   commands,
@@ -1090,6 +1104,10 @@ export function UserMessage({
   pendingText,
 }: {
   message: MessageWithParts;
+  /** Who wrote this message, from the server's prompt record. */
+  author?: SessionMessageAuthor;
+  /** Draw the author's name above the bubble (group chat). */
+  showAuthor?: boolean;
   agentNames?: string[];
   commandInfo?: {
     name: string;
@@ -1591,6 +1609,9 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
+      {/* A member author is the avatar above the bubble; another session's
+          agent has no face, so it keeps the named label. */}
+      {showAuthor && author?.kind === 'session' && <MessageAuthorLabel author={author} />}
       {/* A kept failed send with no files still states its failure, with Retry. */}
       {(allAttachments.length > 0 || uploadStatus?.state === 'failed') && (
         <MessageAttachments attachments={allAttachments} status={uploadStatus} />
@@ -1608,25 +1629,28 @@ export function UserMessage({
           the bubble used to render anyway — a padded surface with nothing in
           it, hanging under the attachments. The attachments ARE the message. */}
       {(bodyText || quotedPieces || effectiveCommandInfo) && (
-        <UserMessageBubble
-          canExpand={canExpand}
-          expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
-          textId={`${message.info.id}-text`}
-          textRef={textRef}
-          quoted={Boolean(quotedPieces)}
-        >
-          {quotedPieces ? (
-            <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
-          ) : (
-            (bodyText || effectiveCommandInfo) && (
-              <>
-                {commandLead}
-                {renderSegments(segments)}
-              </>
-            )
-          )}
-        </UserMessageBubble>
+        <MessageSenderAbove sender={showAuthor && author?.kind === 'member' ? author : null}>
+          <UserMessageBubble
+            tail={showAuthor && author?.kind === 'member'}
+            canExpand={canExpand}
+            expanded={expanded}
+            onToggle={() => setExpanded(!expanded)}
+            textId={`${message.info.id}-text`}
+            textRef={textRef}
+            quoted={Boolean(quotedPieces)}
+          >
+            {quotedPieces ? (
+              <QuotedMessageBody pieces={quotedPieces} renderText={renderQuotedRun} />
+            ) : (
+              (bodyText || effectiveCommandInfo) && (
+                <>
+                  {commandLead}
+                  {renderSegments(segments)}
+                </>
+              )
+            )}
+          </UserMessageBubble>
+        </MessageSenderAbove>
       )}
       {/* Sent-at, "edited", and the hover actions are ONE row, sitting directly
           under the bubble they describe — notification cards below are separate

@@ -1,4 +1,4 @@
-import type { Agent } from '@opencode-ai/sdk/v2/client';
+import type { Agent } from '../runtime/runtime-types';
 
 import type { ProjectConfigSummary } from '../rest/projects-client';
 import { isSelectableAgent } from '../rest/projects-client/project-agents';

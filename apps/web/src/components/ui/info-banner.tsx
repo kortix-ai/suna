@@ -16,20 +16,21 @@ export type InfoBannerIcon =
   React.ComponentType<{ className?: string }> | React.ReactElement<{ className?: string }>;
 
 /**
- * Tone is carried by a faint fill and a tinted border, never by the text.
- * The 25% fill with a solid-tone title it replaced (Marko, 2026-09-03: "never
- * readable on the core component") put orange type on a beige ground at
- * ~2:1. Text is foreground on every tone; the tone reads from the edge and
- * the icon.
+ * Tone is carried by a /15 fill and the icon, never by the text. The 25% fill
+ * with a solid-tone title it replaced (Marko, 2026-09-03: "never readable on
+ * the core component") put orange type on a beige ground at ~2:1. Text is
+ * foreground on every tone. A filled banner has no border color: one boundary,
+ * a fill or a hairline, never both (color.md). Hues follow D5: info = blue,
+ * success = green, warning = orange, destructive = red.
  */
 const infoBannerVariants = cva('flex flex-wrap items-center gap-2 border px-2.5 py-2 text-sm', {
   variants: {
     tone: {
       neutral: 'border-border',
-      info: 'bg-kortix-yellow/10 border-kortix-yellow/40',
-      success: 'bg-kortix-green/10 border-kortix-green/40',
-      warning: 'bg-kortix-orange/10 border-kortix-orange/40',
-      destructive: 'bg-kortix-red/10 border-kortix-red/40',
+      info: 'bg-kortix-blue/15 border-transparent',
+      success: 'bg-kortix-green/15 border-transparent',
+      warning: 'bg-kortix-orange/15 border-transparent',
+      destructive: 'bg-kortix-red/15 border-transparent',
     },
   },
   defaultVariants: {
@@ -37,7 +38,7 @@ const infoBannerVariants = cva('flex flex-wrap items-center gap-2 border px-2.5 
   },
 });
 
-/** The title is always foreground — the tone is the border and the icon. */
+/** The title is always foreground — the tone is the fill and the icon. */
 const infoBannerTitleVariants = cva('text-foreground w-full max-w-full font-medium', {
   variants: {
     tone: {
@@ -60,7 +61,7 @@ const infoBannerMediaVariants = cva(
     variants: {
       tone: {
         neutral: 'text-muted-foreground border-border',
-        info: 'text-kortix-yellow',
+        info: 'text-kortix-blue',
         success: 'text-kortix-green',
         warning: 'text-kortix-orange',
         destructive: 'text-kortix-red',
@@ -119,7 +120,7 @@ export function InfoBanner({
         <AlertTitle className={infoBannerTitleVariants({ tone: safeTone })}>{title}</AlertTitle>
       )}
       {children != null && (
-        <AlertDescription className="text-foreground/75">{children}</AlertDescription>
+        <AlertDescription className="text-muted-foreground">{children}</AlertDescription>
       )}
       {action != null && <AlertActions>{action}</AlertActions>}
     </Alert>

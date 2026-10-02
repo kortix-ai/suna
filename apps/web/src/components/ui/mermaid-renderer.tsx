@@ -10,6 +10,7 @@ import {
   MERMAID_CONFIG,
   readCachedMermaidSvg,
   removeMermaidRenderArtifacts,
+  zoomAtPoint,
 } from '@/components/ui/mermaid-render';
 import { Modal, ModalBody, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
@@ -164,7 +165,6 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           const currentDistance = getTouchDistance(e.touches);
           if (currentDistance) {
             const zoomFactor = currentDistance / lastTouchDistance;
-            const newZoom = Math.max(0.1, Math.min(5, zoom * zoomFactor));
 
             // Zoom towards touch center
             if (canvasRef.current) {
@@ -173,13 +173,9 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
               const centerX = touchCenter.x - rect.left;
               const centerY = touchCenter.y - rect.top;
 
-              const newPanOffset = {
-                x: centerX - (centerX - panOffset.x) * (newZoom / zoom),
-                y: centerY - (centerY - panOffset.y) * (newZoom / zoom),
-              };
-
-              setZoom(newZoom);
-              setPanOffset(newPanOffset);
+              const next = zoomAtPoint(zoom, panOffset, { x: centerX, y: centerY }, zoomFactor);
+              setZoom(next.zoom);
+              setPanOffset(next.panOffset);
             }
 
             setLastTouchDistance(currentDistance);
@@ -202,7 +198,6 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
 
         e.preventDefault();
         const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-        const newZoom = Math.max(0.1, Math.min(5, zoom * zoomFactor));
 
         // Zoom towards mouse position
         if (canvasRef.current) {
@@ -210,13 +205,9 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(
           const mouseX = e.clientX - rect.left;
           const mouseY = e.clientY - rect.top;
 
-          const newPanOffset = {
-            x: mouseX - (mouseX - panOffset.x) * (newZoom / zoom),
-            y: mouseY - (mouseY - panOffset.y) * (newZoom / zoom),
-          };
-
-          setZoom(newZoom);
-          setPanOffset(newPanOffset);
+          const next = zoomAtPoint(zoom, panOffset, { x: mouseX, y: mouseY }, zoomFactor);
+          setZoom(next.zoom);
+          setPanOffset(next.panOffset);
         }
       },
       [zoom, panOffset],

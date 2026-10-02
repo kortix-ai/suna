@@ -246,7 +246,7 @@ triggers:
     {
       type: 'cta',
       title: 'Build for the jump, not the model.',
-      body: 'Kortix is the Autonomous Company Operating System — open-source, self-hostable, any model. Start one project free.',
+      body: 'Kortix is the open-source AI Management System — self-hostable, any model. Start one project free.',
     },
   ],
 };
@@ -385,8 +385,8 @@ git project -> session -> isolated computer + session branch
         {
           dimension: 'License',
           them: 'MIT',
-          kortix: 'Elastic License 2.0',
-          lean: 'them',
+          kortix: 'Open source',
+          lean: 'both',
         },
       ],
     },
@@ -511,7 +511,7 @@ npm exec qm -- outputs --json`,
     { type: 'h2', text: 'Licensing is not a footnote' },
     {
       type: 'p',
-      text: 'QM is MIT-licensed. You can modify it, redistribute it, and build a hosted service from it under the MIT terms. Kortix uses the **Elastic License 2.0**. You can inspect, modify, and self-host the source, but the license restricts providing the software to third parties as a competing hosted or managed service. Some enterprise functionality also requires a license entitlement.',
+      text: 'QM is MIT-licensed. You can modify it, redistribute it, and build a hosted service from it under the MIT terms. Kortix is open source. You can inspect, modify, and self-host the code. Some enterprise functionality requires a plan entitlement.',
     },
     {
       type: 'p',
@@ -557,7 +557,7 @@ npm exec qm -- outputs --json`,
 
 const introducingKortix: BlogPostEntry = {
   slug: 'introducing-kortix',
-  title: 'Introducing Kortix: the AI command center for your company',
+  title: 'Introducing Kortix: the open-source AI Management System',
   description:
     'A workforce of AI agents that do real work across your tools — defined as files in a git repo, run in isolated sandboxes, governed by review, and built enterprise-first. Here is the whole thing, A to Z.',
   date: '2026-06-06',
@@ -572,7 +572,7 @@ const introducingKortix: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix is the **command center for the AI agents that do your work** — one place to build a workforce of agents, connect them to your tools, run them on your terms, and keep every result accountable to a human.',
+      text: 'Kortix is the **open-source AI Management System for the agents that do your work** — one place to build a workforce of agents, connect them to your tools, run them on your terms, and keep every result accountable to a human.',
     },
     {
       type: 'p',
@@ -700,9 +700,9 @@ connectors:
 
 const kortixVsClaudeCowork: BlogPostEntry = {
   slug: 'kortix-vs-claude-cowork',
-  title: 'Kortix vs Claude Cowork: a desktop assistant, or a company-wide agent platform?',
+  title: 'Kortix vs Claude Cowork: a desktop assistant, or an AI Management System for the company?',
   description:
-    "Claude Cowork is the best agent on the desktop. But it runs one assistant per person, on Anthropic's models, with your data on their cloud. Here's where you outgrow it — and what an open, company-wide agent platform looks like.",
+    "Claude Cowork runs Anthropic models only, in Anthropic's cloud or your Bedrock, Google Cloud, or Microsoft Foundry account, with no self-host. Here is where a company outgrows it.",
   date: '2026-06-29',
   author: 'marko',
   cover: '/banner.png',
@@ -732,10 +732,10 @@ const kortixVsClaudeCowork: BlogPostEntry = {
     {
       type: 'ul',
       items: [
-        '**One assistant per person** — not a fleet of agents running long jobs in parallel for the org.',
+        '**Configuration lives in their product** — not in a repo you own.',
         '**Nothing is shared.** Each person’s agents, skills, and context live on their own desktop — what one person teaches, the company never gets.',
         '**Locked to Anthropic’s models** — no bring-your-own-key, so you pay frontier prices and can’t pick a cheaper model.',
-        '**Closed and vendor-hosted** — you can’t self-host it, and your data flows to Anthropic’s cloud.',
+        '**Closed, no self-host** — it runs in Anthropic’s cloud or in your Bedrock, Google Cloud, or Microsoft Foundry account.',
       ],
     },
     {
@@ -1172,7 +1172,7 @@ agents:
     },
     {
       type: 'p',
-      text: 'That is why Kortix frames the product as an Autonomous Company Operating System, not another assistant with more connectors. A company does not need one more place to paste keys. It needs a Git-backed AI command center where the tools, credentials, policies, and agent work are part of the same owned system.',
+      text: 'That is why Kortix frames the product as an AI Management System, not another assistant with more connectors. A company does not need one more place to paste keys. It needs one git repo where the tools, credentials, policies, and agent work are part of the same owned system.',
     },
     {
       type: 'cta',
@@ -1184,9 +1184,9 @@ agents:
 
 const aiTransformationCompanyOs: BlogPostEntry = {
   slug: 'ai-transformation-company-os',
-  title: 'AI transformation needs a company OS',
+  title: 'Consultancies need one repo for their clients’ agents',
   description:
-    'Why consultancies and AI-transformation teams need one Git-backed workspace for agents, memory, connectors, policy, and auditable work.',
+    'Why consultancies need one git repo for their clients’ agents, memory, connectors, policy, and auditable work.',
   date: '2026-06-29',
   author: 'team',
   cover: '/banner.png',
@@ -1199,7 +1199,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'Kortix is the **Autonomous Company Operating System**: an AI command center where a workforce of agents does real work, and everything that defines the system is files in one Git repo you own. For consultancies and AI-transformation teams, that matters because the deliverable is no longer a single chatbot. The deliverable is a governed workspace the client can keep running after the pilot. If you want the full product spine first, read [Introducing Kortix](/blog/introducing-kortix).',
+      text: 'Kortix is the open-source **AI Management System**: a workforce of agents does real work, and everything that defines the system is files in one git repo you own. For consultancies, that matters because the deliverable is no longer a single chatbot. The deliverable is a governed project the client can keep running after the pilot. If you want the full product spine first, read [Introducing Kortix](/blog/introducing-kortix).',
     },
     {
       type: 'p',
@@ -1336,7 +1336,7 @@ const aiTransformationCompanyOs: BlogPostEntry = {
     {
       type: 'cta',
       title: 'Build the client workspace as files, then run it with agents.',
-      body: 'Start with one department, connect the tools it already uses, and turn the workflow into a Git-backed AI command center the client can own.',
+      body: 'Start with one department, connect the tools it already uses, and turn the workflow into a git-backed project the client can own.',
     },
   ],
 };
@@ -1393,7 +1393,7 @@ const kortixVsGlean: BlogPostEntry = {
     { type: 'h2', text: 'A runtime that does the work, not just retrieves it' },
     {
       type: 'p',
-      text: 'Kortix is an open agent runtime — the command center where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
+      text: 'Kortix is an open-source AI Management System — where a workforce of agents runs your company, not a search bar over it. Hand a task to a project and agents run in isolated sandboxes, take real actions through scoped connectors, and land durable change back to one shared `main` through a reviewed change request. The context they need is files in a repo you own, not an index someone else rents back to you.',
     },
     {
       type: 'p',
@@ -1735,7 +1735,7 @@ for (const dispute of open.data?.disputes ?? []) {
  * ==========================================================================
  * ACCURACY GATE. Every claim here is checked against the accuracy-reviewed
  * landing copy it summarises (`how-it-work/how-it-works-content.ts`,
- * `open-source/content.ts`, `landing/content.ts`) and against the `comms` skill. Do not soften, inflate
+ * `open-source/content.ts`, `landing/content.ts`) and against the `kortix-brand` skill. Do not soften, inflate
  * or "restore" any of it.
  * ==========================================================================
  *  - SECRETS. Never write that a granted secret is invisible to the model. A
@@ -2376,7 +2376,7 @@ const testOfSovereignty: BlogPostEntry = {
     },
     {
       type: 'p',
-      text: 'With open source, you can verify everything. You can audit the code. You can inspect the data flows. You can run the system on an air-gapped network. You can fork it and extend it in directions the original authors never imagined.',
+      text: 'With open source, you can verify everything. You can audit the code. You can inspect the data flows. You can run the system on your own infrastructure. You can fork it and extend it in directions the original authors never imagined.',
     },
     {
       type: 'callout',

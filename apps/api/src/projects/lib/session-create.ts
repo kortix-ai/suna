@@ -34,6 +34,8 @@ import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { resolveSessionSandboxRegion } from '../../platform/services/sandbox-region';
+import { WARM_SESSION_LOCATION_KEY, WARM_SESSION_METADATA_KEY } from './warm-sessions';
 
 
 import { db } from '../../shared/db';
@@ -370,7 +372,10 @@ export async function createProjectSession(input: {
   if (secretsAllowlist && secretsAllowlist.length > 0) {
     // The creator's own audience: a value shared only with them is a valid
     // allowlist entry. Delivery re-applies the session's audience at boot.
-    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, userId);
+    const resolvedProjectSecrets = await listResolvedProjectSecrets(projectId, userId, {
+      personId: userId,
+      agentId: null,
+    });
     // Every allowlisted identifier must name an existing runtime secret in the
     // project (KORTIX_*/connector rows are already excluded by the resolver), so
     // a typo fails fast at create rather than silently injecting nothing.
@@ -905,6 +910,7 @@ export async function createProjectSession(input: {
         accountId,
         sessionId,
         actorUserId: userId,
+        authorSessionId: input.callerSessionId ?? null,
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -989,6 +995,10 @@ export async function createProjectSession(input: {
     ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
     ...(input.metadata ?? {}),
+    // Server-owned creation intent, never caller metadata or actual placement.
+    ...((input.metadata?.[WARM_SESSION_METADATA_KEY] ?? requestMetadata[WARM_SESSION_METADATA_KEY]) === true
+      ? { [WARM_SESSION_LOCATION_KEY]: resolveSessionSandboxRegion(project.metadata) ?? 'home' }
+      : {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
     // tight grace so finished workers don't idle at full compute.

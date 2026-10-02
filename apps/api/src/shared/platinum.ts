@@ -4,6 +4,10 @@
  * Thin fetch wrapper — Platinum is a plain REST API (Bearer pt_live_… key),
  * so unlike Daytona there's no SDK. Every call goes through platinumJson()
  * which adds auth + base URL and surfaces non-2xx as errors with the body.
+ *
+ * A call about ONE sandbox (`/v1/sandboxes/<id>…`) goes to the control plane
+ * that owns that sandbox, once this process has learned it. See
+ * "Per-sandbox origin" below.
  */
 
 import { config } from '../config';
@@ -19,6 +23,139 @@ function platinumBase(): string {
   return url.replace(/\/+$/, '');
 }
 
+// ─── Per-sandbox origin ─────────────────────────────────────────────────────
+//
+// Platinum runs one control plane per region, and a sandbox row lives only in
+// its own region's database. `PLATINUM_API_URL` (api.platinum.dev) lands on
+// the home (EU) control plane. For a box in another region that control plane
+// first asks every peer whether it owns the id (an authenticated GET), then
+// forwards the real request, so each call crosses the Atlantic twice. Measured
+// on prod 2026-10-02 for one US session box: in the same 70 s the EU control
+// plane received 35 Kortix calls and the US one 70, a discovery GET plus the
+// forwarded call for each. A GET of that box from a New York client took
+// 329 ms median through api.platinum.dev and 26 ms against
+// https://us-east.api.platinum.dev directly; from Amsterdam, 243 ms vs 108 ms.
+//
+// Platinum names the owner itself, so learning it costs no extra call: a
+// forwarded response carries `x-pt-served-by: <owner origin>`, and a sandbox
+// body carries `api_url` (https://us-east.api.platinum.dev for a US box,
+// https://api.platinum.dev for an EU one). Calls for that id then go straight
+// to the owner. Until an id is learned, and for everything that is not about
+// one sandbox (create, list, templates), the global origin is used, and
+// Platinum's own forwarding keeps that path correct.
+//
+// The Bearer key goes only to an origin that is the configured host or a
+// subdomain of it, over https on the default port. A response cannot point the
+// key anywhere else.
+
+const SERVED_BY_HEADER = 'x-pt-served-by';
+const SANDBOX_ID_PATH = /^\/v1\/sandboxes\/([^/?#]+)(?=[/?#]|$)/;
+const SANDBOX_COLLECTION_PATH = /^\/v1\/sandboxes(?=[?#]|$)/;
+/** One entry per sandbox this process has called; the oldest goes first. */
+export const PLATINUM_ORIGIN_CACHE_MAX = 10_000;
+const sandboxOrigins = new Map<string, string>();
+
+function sandboxIdOf(path: string): string | null {
+  return SANDBOX_ID_PATH.exec(path)?.[1] ?? null;
+}
+
+/**
+ * The normalized origin of `candidate` if the Bearer key may be sent there,
+ * else null. Accepts the configured origin itself, or an https origin on the
+ * default port whose host is the configured host or a subdomain of it, with no
+ * credentials, path, query or fragment.
+ */
+export function acceptedPlatinumOrigin(candidate: unknown): string | null {
+  if (typeof candidate !== 'string' || !candidate.trim()) return null;
+  let base: URL;
+  let url: URL;
+  try {
+    base = new URL(platinumBase());
+    url = new URL(candidate.trim());
+  } catch {
+    return null;
+  }
+  if (url.username || url.password || url.search || url.hash) return null;
+  if (url.pathname !== '/') return null;
+  if (url.origin === base.origin) return base.origin;
+  if (url.protocol !== 'https:' || url.port !== '') return null;
+  const host = url.hostname;
+  const baseHost = base.hostname;
+  if (host !== baseHost && !host.endsWith(`.${baseHost}`)) return null;
+  return url.origin;
+}
+
+function rememberSandboxOrigin(sandboxId: string, candidate: unknown): void {
+  const origin = acceptedPlatinumOrigin(candidate);
+  if (!origin) return;
+  sandboxOrigins.delete(sandboxId);
+  // The configured origin already reaches this box: nothing to remember.
+  if (origin === new URL(platinumBase()).origin) return;
+  if (sandboxOrigins.size >= PLATINUM_ORIGIN_CACHE_MAX) {
+    const oldest = sandboxOrigins.keys().next().value;
+    if (oldest !== undefined) sandboxOrigins.delete(oldest);
+  }
+  sandboxOrigins.set(sandboxId, origin);
+}
+
+/** The origin a call about `sandboxId` goes to now. */
+export function platinumOriginForSandbox(sandboxId: string): string {
+  return sandboxOrigins.get(sandboxId) ?? new URL(platinumBase()).origin;
+}
+
+/** Test-only. */
+export function __resetPlatinumSandboxOriginsForTests(): void {
+  sandboxOrigins.clear();
+}
+
+function learnFromResponse(path: string, method: string, res: Response, body: unknown): void {
+  const record =
+    body && typeof body === 'object' ? (body as { id?: unknown; api_url?: unknown }) : null;
+  let sandboxId = sandboxIdOf(path);
+  // A create (POST /v1/sandboxes) answers with the new box: its id is in the body.
+  if (
+    !sandboxId &&
+    method === 'POST' &&
+    SANDBOX_COLLECTION_PATH.test(path) &&
+    typeof record?.id === 'string'
+  ) {
+    sandboxId = record.id;
+  }
+  if (!sandboxId) return;
+  rememberSandboxOrigin(sandboxId, res.headers.get(SERVED_BY_HEADER));
+  if (record?.id === sandboxId && record.api_url !== undefined) {
+    rememberSandboxOrigin(sandboxId, record.api_url);
+  }
+}
+
+// Bun's codes for a connection that was never established, so the request
+// cannot have reached Platinum (probed on Bun 1.3.14: refused and unresolvable
+// both read `ConnectionRefused`; a bad certificate carries the TLS code).
+const NOT_CONNECTED_CODES = new Set([
+  'ConnectionRefused',
+  'FailedToOpenSocket',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+]);
+
+/**
+ * Whether a failed call to a learned regional origin may be sent once more to
+ * the global origin. A timeout or abort may not: its budget is spent. A read
+ * may retry after any network failure. A write retries only when the
+ * connection never opened. A reset after the request was sent may already have
+ * run it (an exec, a stop).
+ */
+function retryOnGlobalOrigin(err: unknown, method: string, signal: AbortSignal): boolean {
+  if (signal.aborted || !(err instanceof Error)) return false;
+  if (err.name === 'TimeoutError' || err.name === 'AbortError') return false;
+  if (method === 'GET' || method === 'HEAD') return true;
+  const code = String((err as { code?: unknown }).code ?? '');
+  return NOT_CONNECTED_CODES.has(code) || code.startsWith('ERR_TLS_') || code.includes('CERT');
+}
+
 // Bare `fetch()` has NO default timeout — a stalled connection to Platinum
 // hangs the caller forever, same failure class as the Daytona SDK's 24h axios
 // default (see platform/providers/daytona.ts for the full incident writeup).
@@ -26,7 +163,11 @@ function platinumBase(): string {
 // here sit on the exact same reaper hot path, so this is bounded by default.
 // A caller that needs a longer/no bound (e.g. a deliberately long-poll) can
 // still pass its own `init.signal` — this only fills in a default.
-const DEFAULT_CALL_TIMEOUT_MS = configuredTimeoutMs('KORTIX_PLATINUM_CALL_TIMEOUT_MS', 20_000, 1_000);
+const DEFAULT_CALL_TIMEOUT_MS = configuredTimeoutMs(
+  'KORTIX_PLATINUM_CALL_TIMEOUT_MS',
+  20_000,
+  1_000,
+);
 
 async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
@@ -38,8 +179,9 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
   // exactly the incident class this bound exists to make observable.
   const usingDefault = init.signal === undefined;
   const signal = init.signal ?? AbortSignal.timeout(DEFAULT_CALL_TIMEOUT_MS);
-  try {
-    return await fetch(`${platinumBase()}${path}`, {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const send = (base: string) =>
+    fetch(`${base}${path}`, {
       ...init,
       signal,
       headers: {
@@ -55,9 +197,27 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
         ...(init.headers ?? {}),
       },
     });
+  const sandboxId = sandboxIdOf(path);
+  const regional = sandboxId ? sandboxOrigins.get(sandboxId) : undefined;
+  try {
+    if (!regional) return await send(platinumBase());
+    try {
+      return await send(regional);
+    } catch (err) {
+      if (!retryOnGlobalOrigin(err, method, signal)) throw err;
+      // Forget the owner; the global origin forwards to it and the answer
+      // names it again.
+      if (sandboxId && sandboxOrigins.get(sandboxId) === regional) sandboxOrigins.delete(sandboxId);
+      console.warn(
+        `[platinum] ${method} ${path} via ${regional} failed (${err instanceof Error ? ((err as { code?: unknown }).code ?? err.message) : err}); retrying once via the global origin`,
+      );
+      return await send(platinumBase());
+    }
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {
-      const budget = usingDefault ? `${DEFAULT_CALL_TIMEOUT_MS}ms (default)` : 'caller-provided budget';
+      const budget = usingDefault
+        ? `${DEFAULT_CALL_TIMEOUT_MS}ms (default)`
+        : 'caller-provided budget';
       throw new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${budget}`);
     }
     throw err;
@@ -118,7 +278,9 @@ export async function platinumJsonResponse<T>(
 ): Promise<PlatinumJsonResponse<T>> {
   const res = await platinumFetch(path, init);
   const text = await res.text();
+  const method = (init.method ?? 'GET').toUpperCase();
   if (!res.ok) {
+    learnFromResponse(path, method, res, null);
     // Expected auto-stopped state → typed error (controlled 503, no Sentry).
     if (isSandboxNotRunningBody(res.status, text)) {
       throw new PlatinumSandboxNotRunningError(
@@ -132,12 +294,13 @@ export async function platinumJsonResponse<T>(
       const ra = res.headers.get('retry-after');
       if (ra && /^\d+$/.test(ra.trim())) suffix = ` retry-after=${ra.trim()}`;
     }
-    throw new Error(`platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}${suffix}`);
+    throw new Error(
+      `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}${suffix}`,
+    );
   }
-  return {
-    status: res.status,
-    body: (text ? JSON.parse(text) : {}) as T,
-  };
+  const body = (text ? JSON.parse(text) : {}) as T;
+  learnFromResponse(path, method, res, body);
+  return { status: res.status, body };
 }
 
 /** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */

@@ -8,8 +8,8 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
-import type { Session } from '@/lib/platform/types';
+import type { Agent } from '@/lib/session/runtime-data';
+import type { Session } from '@/lib/session/types';
 import { useMentionFileSearch } from './use-mention-file-search';
 import { detectMentionTrigger, mentionItems, pruneMentions } from '@/lib/session/mentions';
 import { appendFileMention } from '@/lib/session/session-files';

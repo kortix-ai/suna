@@ -25,6 +25,7 @@ import { flow } from "../core/flow";
 import { slackSigned, withDb } from "../fixtures/chat";
 import { waitFor } from "../core/poll";
 import { CliSandbox } from "../fixtures/cli";
+import { createDatabaseSession } from "../fixtures/database-project";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
@@ -826,36 +827,31 @@ flow(
   },
 );
 
-// CHN-T3 — Teams connect (manage ACL). Teams is a per-project feature flag
-// (#5908): disabled projects get the standard 403 feature_disabled before any
-// validation, and once the `teams` flag is on, a bad tenant id is rejected
-// with 400.
+// CHN-T3 — Teams connect (manage ACL). Every project can connect Teams: the
+// `teams` feature flag graduated on 2026-10-01, so a project with no flag set
+// reaches input validation (a bad tenant id is 400), and the old flag key is
+// refused as unknown.
 flow(
   "CHN-T3",
   {
     domain: "channels",
-    routes: ["POST /v1/projects/:projectId/channels/teams/connect"],
+    routes: ["POST /v1/projects/:projectId/channels/teams/connect", "PATCH /v1/projects/:projectId/experimental"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER, teams flag off (default) → 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: p.id } });
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-      r.body().has("$.feature", "teams");
-    });
     const own = await ctx.fixtures.project();
-    await ctx.step("OWNER enables the teams experiment, invalid tenant_id → 400", async () => {
-      const enabled = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: own.id } });
-      enabled.status(200);
+    await ctx.step("OWNER, a new project with no flag set, invalid tenant_id → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
       r.status(400);
+    });
+    await ctx.step("the graduated `teams` flag key is refused as unknown → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: false }, { params: { projectId: own.id } });
+      r.status(400);
+      r.body().has("$.error", "Unknown feature flag 'teams'");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -899,20 +895,7 @@ flow(
     await team.grantProjectRole(p.id, editor.userId!, "manager");
     const body = { conversation_id: "19:not-bound@thread.tacv2", text: "should never arrive" };
 
-    await ctx.step("teams flag off (default) → 403 feature_disabled", async () => {
-      const r = await ctx.client
-        .as(editor)
-        .get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
-      r.status(403);
-      r.body().has("$.code", "feature_disabled");
-    });
-    await ctx.step("OWNER enables the teams experiment", async () => {
-      const enabled = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: p.id } });
-      enabled.status(200);
-    });
-    await ctx.step("a project with no Teams conversations lists none", async () => {
+    await ctx.step("a project with no Teams conversations lists none, with no flag set", async () => {
       const r = await ctx.client
         .as(editor)
         .get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
@@ -987,11 +970,13 @@ flow(
 );
 
 // CHN-T4 — Teams inbound webhook (public, JWT-gated). Unconfigured → 503; configured + no/invalid token → 401.
+// The bring-your-own path answers only for a project with its own bot app:
+// anything else is a plain 404, never a 5xx Bot Framework would retry.
 flow(
   "CHN-T4",
   {
     domain: "channels",
-    routes: ["POST /v1/webhooks/teams/messages"],
+    routes: ["POST /v1/webhooks/teams/messages", "POST /v1/webhooks/teams/:projectId/messages"],
   },
   async (ctx) => {
     await ctx.step("ANON unsigned activity → 503 (unconfigured) or 401 (no/invalid token)", async () => {
@@ -999,6 +984,19 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/webhooks/teams/messages", { type: "message", text: "hi" });
       r.status([401, 503]);
+    });
+    const p = await ctx.fixtures.project();
+    await ctx.step("ANON activity to a project that brings no bot of its own → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/:projectId/messages", { type: "message", text: "hi" }, { params: { projectId: p.id } });
+      r.status(404);
+    });
+    await ctx.step("ANON activity to a path that names no project → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/webhooks/teams/:projectId/messages", { type: "message", text: "hi" }, { params: { projectId: "not-a-project" } });
+      r.status(404);
     });
   },
 );
@@ -1618,7 +1616,6 @@ flow(
     domain: "channels",
     requires: ["database"],
     routes: [
-      "PATCH /v1/projects/:projectId/experimental",
       "POST /v1/projects/:projectId/channels/teams/connect",
       "GET /v1/projects/:projectId/channels/teams/installation",
       "GET /v1/projects/:projectId/channels/teams/file",
@@ -1627,13 +1624,6 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const tenant = randomUUID();
-
-    await ctx.step("OWNER enables the teams experiment", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: true }, { params: { projectId: p.id } });
-      r.status(200);
-    });
 
     await ctx.step("manual connect with a tenant id and no bot credentials → 400 TEAMS_TENANT_UNVERIFIED", async () => {
       const r = await ctx.client
@@ -1735,6 +1725,113 @@ flow(
         const r = await ctx.client.as(ctx.P.OWNER).post(path, '{"token":1}', { raw: true });
         r.status([400, 404, 503]);
       });
+    }
+  },
+);
+
+// CHN-T7 — A Teams channel binding is one thread, and every thread of a
+// channel reads `Team › Channel`. The list adds the thread's session title,
+// which tells them apart. Teams is not reachable locally, so the names are
+// seeded; a thread with no name stays unnamed when the project has no stored
+// Teams service URL to ask.
+flow(
+  "CHN-T7",
+  {
+    domain: "channels",
+    requires: ["database"],
+    routes: ["GET /v1/projects/:projectId/channels/bindings"],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const tenant = `ke2e-tenant-${randomUUID()}`;
+    const general = `19:ke2e-general-${randomUUID().slice(0, 8)}@thread.tacv2`;
+    const ids = {
+      review: `${general};messageid=1700000000001`,
+      standup: `${general};messageid=1700000000002`,
+      unnamed: `19:ke2e-design-${randomUUID().slice(0, 8)}@thread.tacv2;messageid=1700000000003`,
+      personal: `a:1ke2e-${randomUUID().slice(0, 8)}`,
+    };
+    type Row = { channelId: string; channelName: string | null; channelType: string | null; threadTitle: string | null };
+    try {
+      await ctx.step("a Teams project has two threads of one channel with sessions, an unnamed thread, and a personal chat", async () => {
+        const accountId = await withDb(
+          ctx,
+          async (db) =>
+            (await db.query("SELECT account_id FROM kortix.projects WHERE project_id = $1", [p.id])).rows[0].account_id as string,
+        );
+        const session = (name: string) =>
+          createDatabaseSession(ctx.env, { projectId: p.id, accountId, userId: ctx.P.OWNER.userId!, metadata: { name } });
+        const reviewSession = await session("<at>Kortix</at> Deploy review");
+        const standupSession = await session("Standup notes");
+        const personalSession = await session("Casual check-in");
+        await withDb(ctx, async (db) => {
+          await db.query("INSERT INTO kortix.chat_installs (platform, workspace_id, project_id) VALUES ('teams', $1, $2)", [
+            tenant,
+            p.id,
+          ]);
+          await db.query(
+            `INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id, channel_name, channel_type)
+             VALUES ('teams', $1, $2, $5, 'KE2E Team › General', 'channel'),
+                    ('teams', $1, $3, $5, 'KE2E Team › General', 'channel'),
+                    ('teams', $1, $4, $5, NULL, NULL),
+                    ('teams', $1, $6, $5, 'Alex Kim', 'personal')`,
+            [tenant, ids.review, ids.standup, ids.unnamed, p.id, ids.personal],
+          );
+          await db.query(
+            `INSERT INTO kortix.chat_threads (project_id, platform, workspace_id, thread_id, session_id)
+             VALUES ($1, 'teams', $2, $3, $4), ($1, 'teams', $2, $5, $6), ($1, 'teams', $2, $7, $8)`,
+            [p.id, tenant, ids.review, reviewSession, ids.standup, standupSession, ids.personal, personalSession],
+          );
+        });
+      });
+
+      await ctx.step("OWNER lists bindings: each channel thread carries its session title, without the bot's mention", async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        r.status(200);
+        const rows = new Map((r.json<{ bindings: Row[] }>().bindings).map((b) => [b.channelId, b]));
+        const expectRow = (id: string, want: Partial<Row>) => {
+          const row = rows.get(id);
+          for (const [key, value] of Object.entries(want)) {
+            if (row?.[key as keyof Row] !== value) {
+              throw new Error(`CHN-T7: ${id} ${key} = ${JSON.stringify(row?.[key as keyof Row])}, want ${JSON.stringify(value)}`);
+            }
+          }
+        };
+        expectRow(ids.review, { channelName: "KE2E Team › General", threadTitle: "Deploy review" });
+        expectRow(ids.standup, { channelName: "KE2E Team › General", threadTitle: "Standup notes" });
+      });
+
+      await ctx.step("a personal chat gets no thread title; an unnamed thread stays unnamed with no Teams service URL to ask", async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        r.status(200);
+        const rows = new Map((r.json<{ bindings: Row[] }>().bindings).map((b) => [b.channelId, b]));
+        const personal = rows.get(ids.personal);
+        const unnamed = rows.get(ids.unnamed);
+        if (personal?.channelName !== "Alex Kim" || personal.threadTitle !== null) {
+          throw new Error(`CHN-T7: the personal chat reads ${JSON.stringify(personal)}`);
+        }
+        if (!unnamed || unnamed.channelName !== null || unnamed.threadTitle !== null) {
+          throw new Error(`CHN-T7: the unnamed thread reads ${JSON.stringify(unnamed)}`);
+        }
+      });
+
+      await ctx.step("NONMEMBER cannot list them → 403/404", async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        r.status([403, 404]);
+      });
+    } finally {
+      await withDb(ctx, async (db) => {
+        for (const table of ["chat_threads", "chat_channel_bindings", "chat_installs"]) {
+          await db.query(`DELETE FROM kortix.${table} WHERE platform = 'teams' AND workspace_id = $1`, [tenant]);
+        }
+      }).catch(() => {});
     }
   },
 );

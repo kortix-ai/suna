@@ -1,17 +1,18 @@
 /**
  * SessionPage — the full session chat view.
  *
- * Uses the sync store (hydrated by useSessionSync, kept live by SSE)
- * as the single source of truth for messages.
+ * The transcript, the runtime's status and the pending questions come from
+ * `@kortix/sdk`'s session store (`useSessionSync` reads it, the live stream
+ * keeps it current); this page only reads them and adds its optimistic sends.
  *
- * Sends messages via fire-and-forget promptAsync with agent/model/variant.
- * A send with files goes through the server prompt inbox
- * (`createSessionPrompt`) with the upload handles (COR-185).
+ * A send goes through the server prompt inbox (`createSessionPrompt`) with
+ * agent/model/variant and the upload handles of any files (COR-185): the inbox
+ * records the sender, which the shared-session avatars read. A sub-agent's
+ * thread sends to that sub-agent's own runtime session.
  */
 
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import {
-  AppState,
   View,
   FlatList,
   ScrollView,
@@ -23,7 +24,12 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  KeyboardGestureArea,
+  useReanimatedKeyboardAnimation,
+} from 'react-native-keyboard-controller';
 import Reanimated, {
   Easing as ReanimatedEasing,
   useAnimatedStyle,
@@ -48,9 +54,13 @@ import {
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
+import { SessionParticipantStack } from '@/components/session/SessionParticipantStack';
+import { SessionParticipantsSheet } from '@/components/session/SessionParticipantsSheet';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
+import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
+import { messageAvatarPerson, type AvatarPerson } from '@/lib/session/participants';
+import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
 import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
@@ -63,8 +73,39 @@ import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 
-import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
-import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
+import {
+  addOptimisticMessage,
+  markOptimisticAccepted,
+  removeOptimisticMessage,
+  removeSessionMessage,
+  sessionMessageIds,
+  sessionRows,
+  sessionStatus as readSessionStatus,
+  setLocalSessionStatus,
+  usePendingPermissions,
+  usePendingQuestions,
+  useSessionStatus,
+} from '@/lib/session/session-store';
+import { useSessionRuntime } from '@/components/session/SessionRuntime';
+import {
+  abortRuntimeSession,
+  answerPermission,
+  answerQuestion,
+  executeRuntimeCommand,
+  extractSendErrorMessage,
+  promptRuntimeMessage,
+  rejectQuestion,
+  usePermissionSelfHeal,
+  useQuestionSelfHeal,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionMessages,
+  useSessionSync,
+  useSessionWorkingStore,
+} from '@kortix/sdk/react';
 import {
   compactionTurnInfo,
   createSessionPrompt,
@@ -77,7 +118,7 @@ import {
 } from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
 import { promptParts } from '@/lib/session/prompt-parts';
-import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
+import type { Turn, QuestionRequest, MessageWithParts, Session } from '@/lib/session/types';
 import {
   reuseStableTurns,
   shouldFollowNewTurn,
@@ -102,7 +143,7 @@ import {
   turnTopGap,
 } from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
+import { failedSendRows, sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
 import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
@@ -119,30 +160,16 @@ import {
   transcriptBusyRowVisible,
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
-import { revertSession } from '@/lib/opencode/session-rewind';
-import { FeatureNotSupportedError, featureNotSupportedError, useRuntimeSupports } from '@/lib/opencode/runtime-capabilities';
+import { unsupportedFeatureMessage, useRuntimeSupports } from '@/lib/session/runtime-capabilities';
 import { useToast } from '@/components/kortix/toast-provider';
-import {
-  hasRunningQuestionTool as findRunningQuestionTool,
-  nextQuestionPollDelay,
-  shouldPollQuestions as shouldPollQuestionsFor,
-} from '@/lib/session/question-poll';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
-import { questionsToHydrate } from '@/lib/opencode/stream-policy';
-import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { queueHeaderLabel } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
-import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import {
-  useOpenCodeConfig,
-  useOpenCodeCommands,
-  type Command,
-} from '@/lib/opencode/hooks/use-opencode-data';
-import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
-import { getAuthToken } from '@/api/config';
+import type { Command } from '@/lib/session/runtime-data';
+import { useResolvedConfig } from '@/lib/session/local-config';
 import { log } from '@/lib/logger';
 
 import {
@@ -161,13 +188,11 @@ import { SessionBusyIndicator } from './session-busy-indicator';
 import { CompactionMarker } from './turn/compaction-divider';
 import { QuestionPrompt } from './QuestionPrompt';
 import { PermissionPromptCard } from './PermissionPromptCard';
-import { useSessions } from '@/lib/platform/hooks';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
 import { SandboxPreviewSheet } from '@/components/session/SandboxPreviewSheet';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
-import type { Session } from '@/lib/platform/types';
 import { ProjectHero } from '@/components/session/ProjectHero';
 
 interface SessionPageProps {
@@ -190,7 +215,7 @@ interface SessionPageProps {
   /**
    * The title to show in the header (COR-140): `sessionDisplayTitle` of the
    * project session, when the caller has resolved one. Falls back to the
-   * OpenCode session's own `title` — the only signal available for a
+   * runtime session's own `title` — the only signal available for a
    * sub-agent thread, which has no project-session row of its own.
    */
   sessionTitle?: string;
@@ -219,9 +244,7 @@ interface SessionPageProps {
 function frozenEmpty<T>(): T[] {
   return Object.freeze([]) as unknown as T[];
 }
-const EMPTY_MESSAGES = frozenEmpty<MessageWithParts>();
 const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
-const EMPTY_PERMISSIONS = frozenEmpty<PermissionRequest>();
 const EMPTY_TURNS = frozenEmpty<Turn>();
 const EMPTY_SESSIONS = frozenEmpty<Session>();
 const EMPTY_COMMANDS = frozenEmpty<Command>();
@@ -244,8 +267,22 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
 
+/** The transcript re-renders at most once per this interval while a reply streams. */
+const TRANSCRIPT_RENDER_INTERVAL_MS = 64;
+
+/** How long a pull-to-refresh shows its spinner: the re-read is one bounded tail page. */
+const PULL_REFRESH_SPINNER_MS = 800;
+
 /** Keeps the first visible turn in place while older turns prepend (COR-144). */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+/**
+ * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
+ * shows what lies under it; the list ends at the composer, so without this
+ * only the flat page is under the keyboard and it reads as a solid panel.
+ * The later rows now draw under the composer (opaque, `bottomBackground`) and
+ * under the keyboard, as in Messages. Layout and scroll geometry do not change.
+ */
+const LIST_DRAWS_UNDER_KEYBOARD = Platform.OS === 'ios' ? ({ overflow: 'visible' } as const) : undefined;
 
 function readSavedScrollOffset(sessionId: string): number {
   const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
@@ -271,6 +308,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
   }));
+  // Height of the composer (or the question card), without the inset above.
+  // It is the offset of the list's drag-to-dismiss: the keyboard starts to
+  // follow the finger at the top of the composer, as in Messages, not at the
+  // top of the keyboard.
+  const [bottomAreaHeight, setBottomAreaHeight] = useState(0);
+  // Per session: two threads can be mounted in the stack at once, and the
+  // offset is registered under this id.
+  const composerInputNativeID = `composer-input-${sessionId}`;
+  const handleBottomAreaLayout = useCallback((e: LayoutChangeEvent) => {
+    setBottomAreaHeight(Math.round(e.nativeEvent.layout.height));
+  }, []);
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
@@ -285,13 +333,35 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
 
 
-  // Session metadata
-  const { data: session } = useSession(sandboxUrl, sessionId);
-  const { data: allSessions = EMPTY_SESSIONS } = useSessions(sandboxUrl);
+  // The bound session's runtime (`SessionRuntimeProvider`): the SDK confirmed
+  // it ready, points every runtime call at it and keeps its live stream open.
+  // Null for a frame after the sandbox switches in, and on the debug screens.
+  const runtime = useSessionRuntime();
+  const runtimeReady = !!runtime?.switched;
+  // This thread shows a sub-agent of the session, in its own runtime session.
+  // Unknown root (still resolving) reads as the root thread.
+  const rootSessionId = runtime?.runtimeSessionId ?? null;
+  const isSubThread = rootSessionId !== null && rootSessionId !== sessionId;
+  // A sub-agent whose runtime refused a message (it takes prompts on the
+  // session's root only): the thread stays readable, its composer is off.
+  const [subThreadReadOnly, setSubThreadReadOnly] = useState(false);
+  useEffect(() => setSubThreadReadOnly(false), [sessionId]);
 
-  // Hydrate messages from REST on mount; SSE keeps store updated after.
-  // The newest page only: `loadOlder` pulls the next older page (COR-144).
-  const { hasOlder, isLoadingOlder, loadOlder } = useSessionSync(sandboxUrl, sessionId);
+  // Session metadata
+  const { data: session } = useRuntimeSession(runtimeReady ? sessionId : '');
+  const { data: allSessions = EMPTY_SESSIONS } = useRuntimeSessions(runtimeReady);
+
+  // The transcript, from the SDK: the saved copy first, one tail read once the
+  // runtime is bound, then the live stream. The newest page only: `loadOlder`
+  // pulls the next older page (COR-144).
+  const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  const { hasOlder, isLoadingOlder, loadOlder, retryTranscript } = useSessionSync(sessionId, {
+    kortixSessionScope,
+    networkEnabled: runtimeReady,
+    savedChild: isSubThread,
+    // The rows are read below, paced: a streamed delta does not re-render this hook.
+    subscribeMessages: false,
+  });
   const loadOlderRef = useRef(loadOlder);
   loadOlderRef.current = loadOlder;
 
@@ -300,167 +370,60 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const liveUpdates = useLiveUpdates();
 
   // Pull to refresh (Jay, 2026-09-23): re-reads this session's transcript
-  // through its sync controller (`reconcile('manual')`) — the chat refreshes,
-  // the page does not remount. Only a pull shows the spinner.
+  // (the SDK's tail reconcile) — the chat refreshes, the page does not
+  // remount. Only a pull shows the spinner.
   const [pulling, setPulling] = useState(false);
+  const pullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handlePullRefresh = useCallback(() => {
     haptics.tap();
     setPulling(true);
-    void reconcileLiveSession(sessionId, 'manual').finally(() => setPulling(false));
-  }, [sessionId]);
+    retryTranscript();
+    if (pullTimerRef.current) clearTimeout(pullTimerRef.current);
+    pullTimerRef.current = setTimeout(() => setPulling(false), PULL_REFRESH_SPINNER_MS);
+  }, [retryTranscript]);
+  useEffect(
+    () => () => {
+      if (pullTimerRef.current) clearTimeout(pullTimerRef.current);
+    },
+    [],
+  );
 
-  // Read messages from sync store
-  const messages = useSyncStore((s) => s.messages[sessionId]);
-  const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? EMPTY_QUESTIONS;
-  const pendingPermissions = useSyncStore((s) => s.permissions[sessionId]) ?? EMPTY_PERMISSIONS;
-  const safeMessages = messages ?? EMPTY_MESSAGES;
+  // The rows, at most once per 64 ms: applying every 16 ms stream batch
+  // saturated the JS thread and blocked tab switches and drawer opens while
+  // the assistant was streaming.
+  const storeMessages = useSessionMessages(
+    { projectId: projectId ?? '', sessionId: projectSessionId ?? '', runtimeSessionId: sessionId },
+    { throttleMs: TRANSCRIPT_RENDER_INTERVAL_MS },
+  );
+  // A failed send is not in the transcript (the server never had it): it
+  // stays in the thread from its own store, with "Not sent · Try again".
+  const failedSends = useFailedSends(sessionId);
+  const safeMessages = useMemo(() => {
+    const failed = failedSendRows(sessionId, failedSends);
+    return failed.length > 0 ? [...storeMessages, ...failed] : storeMessages;
+  }, [sessionId, storeMessages, failedSends]);
+  const sessionStatus = useSessionStatus(sessionId);
+  const pendingQuestions = usePendingQuestions(sessionId);
+  const pendingPermissions = usePendingPermissions(sessionId);
 
-  const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
-  const isCompacting = useCompactionStore((s) => Boolean(s.compactingBySession[sessionId]));
+  // Is the thread working? The session's own thread reads the SDK's projection
+  // over the server's turn (`useSession().isBusy`, the rule web uses): a status
+  // frame lost while the app was in the background cannot leave it working. A
+  // sub-agent thread has no turn of its own, so its stream status decides, as
+  // it does before the runtime is bound.
+  const streamBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const isBusy = runtime && !isSubThread ? runtime.isBusy : streamBusy;
+  // The SDK tracks compaction for the session's root (a compaction this device
+  // started, or one the runtime reports).
+  const isCompacting = !isSubThread && !!runtime?.isCompacting;
 
-  // ── Self-heal: restore pending questions after reload ──────────────────
-  // Matches the frontend's pattern: detect running question tool parts in
-  // messages, and if the store has no pending questions, poll GET /question.
-  // Track recently-replied question IDs to avoid re-adding them before the
-  // server processes the reply.
-  const suppressedQuestionIds = useRef(new Set<string>());
-
-  // Scans only the newest assistant message: a running question tool always
-  // belongs to the newest turn.
-  const hasRunningQuestionTool = useMemo(() => findRunningQuestionTool(safeMessages), [safeMessages]);
-
-  // Poll GET /question only while a question tool part runs and the store has
-  // no pending question (the `question.asked` event was missed). The stream
-  // layer hydrates /question after reconnects, so a busy session alone is not
-  // a trigger.
-  const shouldPollQuestions = shouldPollQuestionsFor({
-    hasRunningQuestionTool,
-    pendingCount: pendingQuestions.length,
-    hasSandboxUrl: !!sandboxUrl,
-  });
-
-  // A status change (idle → busy, busy → idle) restarts the poll with a fresh
-  // failure count, so a 401/403 stop or a long backoff is re-evaluated.
-  const sessionStatusType = sessionStatus?.type;
-
-  useEffect(() => {
-    if (!shouldPollQuestions || !sandboxUrl) return;
-    let cancelled = false;
-    let inFlight = false;
-    let consecutiveFailures = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const clearTimer = () => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-    };
-
-    // `null` stops the poll until the status changes or the app returns to
-    // the foreground.
-    const schedule = (delayMs: number | null) => {
-      clearTimer();
-      if (cancelled || delayMs === null) return;
-      timer = setTimeout(() => {
-        timer = null;
-        void hydrateQuestions();
-      }, delayMs);
-    };
-
-    const hydrateQuestions = async () => {
-      if (inFlight || cancelled) return;
-      inFlight = true;
-      let status: number | null = null;
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/question`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        status = res.status;
-        if (cancelled) return;
-        if (!res.ok) {
-          consecutiveFailures += 1;
-          return;
-        }
-        const questions = await res.json();
-        consecutiveFailures = 0;
-        if (!Array.isArray(questions) || cancelled) return;
-        const store = useSyncStore.getState();
-        const existingIds = new Set((store.questions[sessionId] || []).map((q) => q.id));
-        for (const q of questions) {
-          if (q.sessionID === sessionId && !existingIds.has(q.id) && !suppressedQuestionIds.current.has(q.id)) {
-            store.addQuestion(sessionId, q);
-            log.log('🔄 [SessionPage] Self-healed pending question:', q.id);
-          }
-        }
-      } catch {
-        consecutiveFailures += 1;
-      } finally {
-        inFlight = false;
-        schedule(nextQuestionPollDelay(status, consecutiveFailures));
-      }
-    };
-
-    // Back in the foreground: poll now instead of waiting out a backoff.
-    const appStateSubscription = AppState.addEventListener('change', (next) => {
-      if (next !== 'active' || cancelled) return;
-      consecutiveFailures = 0;
-      clearTimer();
-      void hydrateQuestions();
-    });
-
-    void hydrateQuestions();
-
-    return () => {
-      cancelled = true;
-      clearTimer();
-      appStateSubscription.remove();
-    };
-  }, [shouldPollQuestions, sandboxUrl, sessionId, sessionStatusType]);
-
-  // ── Self-heal: restore pending permissions on session open ─────────────
-  // GET /permission mirrors GET /question above: a `permission.asked` event
-  // sent before this page (or the SSE stream) was up is lost, and the agent
-  // then waits on a blocked tool call with nothing pinned above the composer.
-  // One read per session open covers that gap; the event stream's own
-  // `hydratePermissionsAfterGap` (`lib/opencode/event-stream.ts`) covers a
-  // later reconnect gap the same way.
-  useEffect(() => {
-    if (!sandboxUrl) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/permission`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (!res.ok || cancelled) return;
-        const body: unknown = await res.json();
-        if (cancelled) return;
-        const store = useSyncStore.getState();
-        for (const permission of questionsToHydrate<PermissionRequest>(
-          body,
-          store.permissions,
-          (sid) => sid === sessionId,
-        )) {
-          store.addPermission(sessionId, permission);
-          log.log('🔄 [SessionPage] Self-healed pending permission:', permission.id);
-        }
-      } catch {
-        // Best effort: the SSE stream and its own reconnect-gap hydrate
-        // still cover this session going forward.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sandboxUrl, sessionId]);
+  // ── Self-heal: restore pending requests after a reload or a missed event ──
+  // A `question.asked` or `permission.asked` frame sent while no stream was up
+  // is lost, and the agent then waits on a blocked tool call with nothing
+  // above the composer. The SDK re-reads the runtime's pending lists while a
+  // question tool (or a gated tool) runs with nothing pending in the store.
+  useQuestionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
+  usePermissionSelfHeal(sessionId, safeMessages, { enabled: runtimeReady });
 
   // ── Message Queue ──────────────────────────────────────────────────────
   const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>([]);
@@ -513,7 +476,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const clientMessageId = Crypto.randomUUID();
     const messageId = mintWireMessageId({
       nowMs,
-      knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
+      knownMessageIds: sessionMessageIds(sessionId),
     });
     const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
     const finalText = sessionMentions?.length
@@ -543,6 +506,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const activeQuestion: QuestionRequest | undefined = pendingQuestions[0];
   const hasQuestion = !!activeQuestion;
 
+  // The bottom area swaps the composer for the question card and back. The
+  // swap keeps the keyboard as it was: the new field takes the focus only when
+  // the keyboard was up at the swap. So a question never raises the keyboard
+  // on its own, and never drops it under a user who is typing. Read during
+  // render, before the old field unmounts. False at the first mount.
+  const bottomFieldId = activeQuestion?.id ?? null;
+  const [bottomSwap, setBottomSwap] = useState({ id: bottomFieldId, keepKeyboard: false });
+  if (bottomSwap.id !== bottomFieldId) {
+    setBottomSwap({ id: bottomFieldId, keepKeyboard: KeyboardController.isVisible() });
+  }
+
   // Save input text when question appears, clear after it's restored
   useEffect(() => {
     if (hasQuestion) {
@@ -569,9 +543,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       /** A retry's ids (`FailedSend`): the same prompt keeps the same ids. */
       retryIds?: Partial<SendIds>,
     ) => {
-      // No early return on a missing `sandboxUrl`: the composer has already
-      // cleared its draft and files, so a dropped send would lose them. The
-      // files path does not need the sandbox; the text path fails visibly.
+      // No early return when the runtime is not bound yet: the composer has
+      // already cleared its draft and files, so a dropped send would lose
+      // them. A root send goes to the prompt inbox, which holds it until the
+      // computer is ready; a sub-agent send fails visibly.
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
@@ -596,41 +571,33 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       // `clientMessageId`, so a prompt that already landed does not run twice.
       const { clientMessageId, messageId } = sendIdsFor(retryIds, () => ({
         clientMessageId: Crypto.randomUUID(),
-        messageId: mintWireMessageId({
-          nowMs: Date.now(),
-          knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
-        }),
+        messageId: mintWireMessageId({ nowMs: Date.now(), knownMessageIds: sessionMessageIds(sessionId) }),
       }));
       // The text part (none for an image-only send), then one part per picked
       // file with its device URI: the bubble shows the local thumbnail until
       // the server echo replaces the message.
-      const optimisticParts = optimisticUserParts(finalText, attachments?.files ?? [], Date.now());
-
-      useSyncStore.getState().addOptimisticMessage(sessionId, {
-        info: {
-          id: messageId,
-          role: 'user',
-          sessionID: sessionId,
-          time: { created: Date.now() },
-        },
-        parts: optimisticParts,
-      });
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      const sentAtMs = Date.now();
+      addOptimisticMessage(sessionId, {
+        info: { id: messageId, role: 'user', sessionID: sessionId, time: { created: sentAtMs } },
+        parts: optimisticUserParts(finalText, attachments?.files ?? [], sentAtMs),
+      } as unknown as MessageWithParts);
+      setLocalSessionStatus(sessionId, { type: 'busy' });
+      // The receipt holds the session's thread on "working" from this instant
+      // until the server's turn answers for the send (`useSession().isBusy`).
+      const receiptSessionId = isSubThread ? null : (projectSessionId ?? null);
+      if (receiptSessionId) {
+        useSessionWorkingStore.getState().noteSendReceipt(receiptSessionId, { messageId, turnId: messageId, atMs: sentAtMs });
+      }
       void playSound('send');
 
-      // Build prompt payload
-      const payload: Record<string, any> = {
-        parts: [{ type: 'text', text: finalText }],
-      };
-      if (options.model) payload.model = options.model;
-      if (options.agent) payload.agent = options.agent;
-      if (options.variant) payload.variant = options.variant;
-
-      // The prompt never reached the runtime: the message stays in the thread,
-      // dimmed, with "Not sent · Try again" (COR-143). It stops being
-      // optimistic, so a refetch keeps it instead of swapping it out.
+      // The prompt never reached the runtime: the message leaves the
+      // transcript and stays in the thread from the failed-send store, dimmed,
+      // with "Not sent · Try again" (COR-143).
       const markFailed = () => {
-        clearOptimistic([messageId]);
+        userSentRef.current = false;
+        setLocalSessionStatus(sessionId, { type: 'idle' });
+        if (receiptSessionId) useSessionWorkingStore.getState().clearSendReceipt(receiptSessionId, messageId);
+        removeOptimisticMessage(sessionId, messageId);
         useFailedSendStore.getState().markFailed(sessionId, messageId, {
           text,
           options,
@@ -639,87 +606,82 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           localFiles: attachments?.files,
           clientMessageId,
           messageId,
+          failedAtMs: sentAtMs,
         });
       };
 
-      // With files: the server prompt inbox, carrying the upload handles. The
-      // optimistic message's id is the prompt's `messageId`, so the echo
-      // replaces the bubble.
-      if (attachments?.fileParts.length) {
+      // A sub-agent's thread: the prompt inbox delivers to the session's root
+      // only, so this prompt goes to the sub-agent's runtime session directly.
+      // A runtime that takes prompts on its root only (pi) refuses it: the
+      // thread then reads as view-only, with the runtime's own words.
+      if (isSubThread) {
         try {
-          if (!projectId || !projectSessionId) throw new Error('No project session to send files to');
-          await createSessionPrompt(projectId, projectSessionId, {
-            clientMessageId,
-            messageId,
-            parts: promptParts(finalText, attachments.fileParts),
-            overrides: {
-              agent: options.agent ?? null,
-              model: options.model ?? null,
-              variant: options.variant ?? null,
+          await promptRuntimeMessage({
+            sessionId,
+            parts: [{ type: 'text', text: finalText }],
+            options: {
+              ...(options.model ? { model: options.model } : {}),
+              ...(options.agent ? { agent: options.agent } : {}),
+              ...(options.variant ? { variant: options.variant } : {}),
             },
-            clientSentAtMs: Date.now(),
+            messageID: messageId,
+            clientMessageId,
           });
-          log.log('[SessionPage] Prompt with files accepted');
-          void requestPushPermissionOnce();
+          log.log('[SessionPage] Sub-agent prompt sent');
         } catch (err: any) {
-          log.error('[SessionPage] Prompt with files failed:', err?.message || err);
-          userSentRef.current = false;
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          log.error('[SessionPage] Sub-agent prompt failed:', err?.message || err);
+          const status = typeof err?.status === 'number' ? err.status : undefined;
+          if (status === 501 || status === 409) {
+            // Not a retry-able failure: the runtime never takes it.
+            userSentRef.current = false;
+            setLocalSessionStatus(sessionId, { type: 'idle' });
+            removeOptimisticMessage(sessionId, messageId);
+            setSubThreadReadOnly(true);
+            toast.error(extractSendErrorMessage(err) || 'This sub-agent takes no messages.');
+            return;
+          }
           markFailed();
         }
         return;
       }
 
-      // The sandbox is still waking: keep the message as a failed send the
-      // user can try again, never drop it silently.
-      if (!sandboxUrl) {
-        log.error('[SessionPage] Prompt not sent: no sandbox URL yet');
-        userSentRef.current = false;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        markFailed();
-        return;
-      }
-
+      // The server prompt inbox, carrying the upload handles of any files. The
+      // optimistic message's id is the prompt's `messageId`, so the echo
+      // replaces the bubble. The server delivers it once the runtime is ready.
       try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        if (!projectId || !projectSessionId) throw new Error('No project session to send to');
+        const result = await createSessionPrompt(projectId, projectSessionId, {
+          clientMessageId,
+          messageId,
+          parts: promptParts(finalText, attachments?.fileParts ?? []),
+          overrides: {
+            agent: options.agent ?? null,
+            model: options.model ?? null,
+            variant: options.variant ?? null,
           },
-          body: JSON.stringify(payload),
+          clientSentAtMs: sentAtMs,
         });
-
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          log.error('[SessionPage] Prompt failed:', res.status, errorText);
-          userSentRef.current = false;
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-          markFailed();
-        } else {
-          log.log('[SessionPage] Prompt sent (async)');
-          // The first send asks for notification permission, once per install.
-          void requestPushPermissionOnce();
-        }
+        if (result.state === 'failed') throw new Error('Prompt delivery was refused');
+        // The inbox holds it: the bubble stays until the delivered echo.
+        markOptimisticAccepted(sessionId, messageId);
+        useSessionWorkingStore.getState().acceptSendReceipt(projectSessionId, messageId, Date.now());
+        log.log('[SessionPage] Prompt accepted');
+        // The first send asks for notification permission, once per install.
+        void requestPushPermissionOnce();
       } catch (err: any) {
-        log.error('[SessionPage] Prompt error:', err?.message || err);
-        userSentRef.current = false;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        log.error('[SessionPage] Prompt failed:', err?.message || err);
         markFailed();
       }
     },
-    [sandboxUrl, sessionId, projectId, projectSessionId],
+    [sessionId, projectId, projectSessionId, isSubThread, toast],
   );
 
   // "Try again" on a failed send: the failed copy leaves the thread and the
   // same text, options and mentions go out again under the same ids.
-  const failedSends = useFailedSends(sessionId);
   const handleRetrySend = useCallback(
     (messageId: string) => {
       const failed = useFailedSendStore.getState().take(sessionId, messageId);
       if (!failed) return;
-      useSyncStore.getState().removeMessage(sessionId, messageId);
       const mentions = failed.mentions as TrackedMention[] | undefined;
       if (failed.fileParts?.length) {
         // Re-posts the same upload handles; nothing uploads again.
@@ -738,34 +700,32 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   const handleStop = useCallback(async () => {
-    if (!sandboxUrl) return;
+    if (!runtimeReady) return;
     // Optimistic idle, same as the success path always showed. On failure
-    // (network error or a non-2xx abort response) the session is still
-    // running on the server — roll the status back and say so, instead of
-    // leaving the UI idle for work that never stopped (COR-146).
-    const previousStatus = useSyncStore.getState().getStatus(sessionId);
-    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-    try {
-      const token = await getAuthToken();
-      const res = await fetch(`${sandboxUrl}/session/${sessionId}/abort`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        log.error('[SessionPage] Abort failed:', res.status, errorText);
-        if (previousStatus) useSyncStore.getState().setStatus(sessionId, previousStatus);
-        toast.error("Couldn't stop. Kortix is still working.");
-      }
-    } catch (err: any) {
-      log.error('[SessionPage] Abort error:', err?.message || err);
-      if (previousStatus) useSyncStore.getState().setStatus(sessionId, previousStatus);
+    // (network error or a refused abort) the session is still running on the
+    // server — roll the status back and say so, instead of leaving the UI
+    // idle for work that never stopped (COR-146).
+    const previousStatus = readSessionStatus(sessionId);
+    setLocalSessionStatus(sessionId, { type: 'idle' });
+    const failed = (reason: unknown) => {
+      log.error('[SessionPage] Abort failed:', reason instanceof Error ? reason.message : reason);
+      if (previousStatus) setLocalSessionStatus(sessionId, previousStatus);
       toast.error("Couldn't stop. Kortix is still working.");
+    };
+    try {
+      if (isSubThread || !runtime) {
+        // A sub-agent's own run: abort that runtime session.
+        await abortRuntimeSession(sessionId);
+        return;
+      }
+      // The session's turn: the SDK holds the prompt inbox first, so a queued
+      // prompt does not start the next turn, then aborts the run.
+      const settlement = await runtime.cancel();
+      if (settlement.status === 'failed') failed(settlement.error);
+    } catch (err) {
+      failed(err);
     }
-  }, [sandboxUrl, sessionId, toast]);
+  }, [runtime, runtimeReady, isSubThread, sessionId, toast]);
 
   const handleQueueSendNow = useCallback(async (promptId: string) => {
     if (!projectId || !projectSessionId) return;
@@ -791,7 +751,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // No roster yet (the project config or the sandbox still loading).
   const agentsLoading = !rawAgents;
   // Web defaults the picker to the agent of the latest assistant turn.
-  const latestAgent = useMemo(() => latestAssistantAgent(messages ?? EMPTY_MESSAGES), [messages]);
+  const latestAgent = useMemo(() => latestAssistantAgent(storeMessages), [storeMessages]);
   // Models: the project's list (`useComposerModels`), the same one project home
   // and web show; the sandbox's `/provider` joins it off-gateway.
   const {
@@ -801,7 +761,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     modelDefaults,
     isLoading: modelsLoading,
     refetchModelCount,
-  } = useComposerModels(projectId ?? null, sandboxUrl);
+  } = useComposerModels(projectId ?? null);
   // A gateway project that offers no model: Send opens the connect sheet
   // instead of posting (KRTX-251). Gateway off never blocks.
   const modelUnavailable = isModelUnavailable({
@@ -827,18 +787,22 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     () => ({ projectId: projectId ?? null, requestConnect: requestConnectorConnect }),
     [projectId, requestConnectorConnect],
   );
-  const { data: config } = useOpenCodeConfig(sandboxUrl);
+  // Only a runtime with a config document (OpenCode) is asked for it; pi
+  // has none, and the project's model defaults cover the composer.
+  // (the SDK asks only a runtime that lists `session.config`).
+  const { data: config } = useRuntimeConfig();
   // A runtime without slash commands (pi) gets no list: no "/" or "#"
   // suggestions and no AutoContinue, so nothing dispatches to /command (E1).
   const canRunCommands = useRuntimeSupports(sandboxUrl, 'session.commands');
   const canRewind = useRuntimeSupports(sandboxUrl, 'session.rewind');
-  const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(canRunCommands ? sandboxUrl : undefined);
+  const { data: runtimeCommands = EMPTY_COMMANDS } = useRuntimeCommands();
+  const commands = canRunCommands ? runtimeCommands : EMPTY_COMMANDS;
 
   const resolved = useResolvedConfig({
     agents: rawAgents,
     boundAgent: boundAgentName,
     latestAgent,
-    defaultAgent: projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
     models,
     providers,
     modelDefaults,
@@ -855,7 +819,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // request): sent as the composer sends it — at once when idle, with the
   // composer's agent/model/variant; into the queue while the agent works or a
   // question waits.
-  // Keyed by the OpenCode id (the actions sheet, on the open thread) or by the
+  // Keyed by the runtime session id (the actions sheet, on the open thread) or by the
   // project session id (Review's Resolve conflicts, sent before this thread
   // has connected, when only that id is known).
   const promptRequest = useSessionPromptRequestStore((s) =>
@@ -935,25 +899,24 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleEditSend = useCallback(
     async (messageId: string, text: string) => {
-      if (!sandboxUrl || editPendingRef.current) return;
+      if (!runtime || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
       setEditPending(true);
       try {
-        const token = await getAuthToken();
-        await revertSession({ sandboxUrl, sessionId, messageId, token });
+        await runtime.rewind(messageId);
       } catch (err: any) {
         // The editor stays open with the draft, so Send can be tried again.
         log.error('[SessionPage] Rewind failed:', err?.message || err);
-        toast.error(err instanceof FeatureNotSupportedError ? err.message : "Couldn't edit the message. Try again.");
+        // A runtime without rewind answers in its own words.
+        toast.error(unsupportedFeatureMessage(err) ?? "Couldn't edit the message. Try again.");
         editPendingRef.current = false;
         setEditPending(false);
         return;
       }
       // Hide the abandoned messages now; the resend below commits the revert
       // server-side.
-      const store = useSyncStore.getState();
-      for (const id of rewindHiddenMessageIds(store.messages[sessionId] ?? EMPTY_MESSAGES, messageId)) {
-        store.removeMessage(sessionId, id);
+      for (const id of rewindHiddenMessageIds(sessionRows(sessionId), messageId)) {
+        removeSessionMessage(sessionId, id);
       }
       editPendingRef.current = false;
       setEditPending(false);
@@ -965,7 +928,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (variant) options.variant = variant;
       await handleSend(text, options);
     },
-    [sandboxUrl, sessionId, handleSend, toast],
+    [runtime, runtimeReady, sessionId, handleSend, toast],
   );
 
   // Group messages into turns. Turns whose messages did not change keep their
@@ -978,6 +941,29 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
+  // Who can open this session, and who wrote each prompt. A new prompt with
+  // no recorded author yet makes the authors hook ask once more.
+  const participants = useSessionParticipants(projectId, projectSessionId).data;
+  // Every user message and queued prompt on screen wants an author.
+  const wantedAuthorIds = useMemo(
+    () => [
+      ...turns.map((turn) => turn.userMessage.info.id),
+      ...queuedMessages.flatMap((prompt) => [prompt.message_id, ...(prompt.wire_message_id ? [prompt.wire_message_id] : [])]),
+    ],
+    [turns, queuedMessages],
+  );
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds).data;
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // A queued prompt is keyed by its own message id, or by the wire id it was
+  // re-minted under; either finds its author.
+  const queuedSender = useCallback(
+    (prompt: SessionPrompt) =>
+      messageAvatarPerson(messageAuthors, participants, viewerId, prompt.message_id) ??
+      (prompt.wire_message_id
+        ? messageAvatarPerson(messageAuthors, participants, viewerId, prompt.wire_message_id)
+        : null),
+    [messageAuthors, participants, viewerId],
+  );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
   const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
@@ -985,8 +971,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
   const interruptedIds = useMemo(() => interruptedTurnIds(turns, isBusy), [turns, isBusy]);
   // Web refuses a rewind while the runtime is busy or prompts are still queued.
-  // A runtime without rewind (pi) never offers Edit.
-  const rewindDisabled = !canRewind || isBusy || queuedMessages.length > 0 || editPending || !sandboxUrl;
+  // A runtime without rewind (pi) never offers Edit, and a sub-agent's thread
+  // does not either: a rewind belongs to the session's own conversation.
+  const rewindDisabled =
+    !canRewind || isSubThread || isBusy || queuedMessages.length > 0 || editPending || !runtimeReady;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
 
@@ -1571,38 +1559,34 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!sandboxUrl) return;
-      // Suppress this ID so the self-heal polling doesn't re-add it
-      suppressedQuestionIds.current.add(requestId);
-      // Optimistically remove from store
-      useSyncStore.getState().removeQuestion(sessionId, requestId);
+      if (!runtimeReady) return;
+      // Optimistically remove it. The SDK's pending store remembers answered
+      // ids, so no later read of the runtime's list can bring it back.
+      useRuntimePendingStore.getState().removeQuestion(requestId);
       try {
-        await replyToQuestion(sandboxUrl, requestId, answers);
+        await answerQuestion(requestId, answers);
       } catch (err: any) {
         log.error('Failed to reply to question:', err?.message || err);
       }
-      // Clear suppression after a delay (server should have processed by then)
-      setTimeout(() => suppressedQuestionIds.current.delete(requestId), 10000);
     },
-    [sandboxUrl, sessionId],
+    [runtimeReady],
   );
 
   // Permission reply — the Deny / Allow always / Allow once prompt under a
   // tool row. Same as apps/web `handlePermissionReply`: no optimistic remove;
-  // the prompt leaves the store only once the runtime accepted the reply, so
-  // a failed reply stays visible.
+  // the prompt leaves the store only once the runtime accepted the reply
+  // (`answerPermission`), so a failed reply stays visible.
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: PermissionReply) => {
-      if (!sandboxUrl) return;
+      if (!runtimeReady) return;
       try {
-        await replyToPermission(sandboxUrl, requestId, reply);
-        useSyncStore.getState().removePermission(sessionId, requestId);
+        await answerPermission(requestId, reply);
       } catch (err: any) {
         log.error('[SessionPage] Permission reply failed:', err?.message || err);
         toast.error("Couldn't send the permission reply. Try again.");
       }
     },
-    [sandboxUrl, sessionId, toast],
+    [runtimeReady, toast],
   );
 
   // Inline-code file paths in the transcript open the file viewer.
@@ -1610,62 +1594,46 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!sandboxUrl) return;
-      suppressedQuestionIds.current.add(requestId);
-      // Optimistically remove from store
-      useSyncStore.getState().removeQuestion(sessionId, requestId);
+      if (!runtimeReady) return;
+      useRuntimePendingStore.getState().removeQuestion(requestId);
       try {
-        await rejectQuestion(sandboxUrl, requestId);
+        await rejectQuestion(requestId);
       } catch (err: any) {
         log.error('Failed to reject question:', err?.message || err);
       }
-      setTimeout(() => suppressedQuestionIds.current.delete(requestId), 10000);
       // Also abort the session (matches frontend behavior)
       handleStop();
     },
-    [sandboxUrl, sessionId, handleStop],
+    [runtimeReady, handleStop],
   );
 
   // Command handler — executes a slash command via the server
   const handleCommand = useCallback(
     async (cmd: Command, args?: string) => {
-      if (!sandboxUrl) return;
+      if (!runtimeReady) return;
       // A command creates its turn through the stream, not optimistically, so
       // it has no send scroll: show the result by sticking to the end.
       stickToEnd();
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      setLocalSessionStatus(sessionId, { type: 'busy' });
       try {
-        const token = await getAuthToken();
-        const payload: Record<string, any> = {
-          command: cmd.name,
-          arguments: args || '',
-        };
         const current = resolvedRef.current;
-        if (current.agent?.name) payload.agent = current.agent.name;
-        if (current.modelKey) payload.model = `${current.modelKey.providerID}/${current.modelKey.modelID}`;
-        if (current.variant) payload.variant = current.variant;
-
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/command`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payload),
+        await executeRuntimeCommand({
+          sessionId,
+          command: cmd.name,
+          args: args || '',
+          ...(current.agent?.name ? { agent: current.agent.name } : {}),
+          ...(current.modelKey ? { model: `${current.modelKey.providerID}/${current.modelKey.modelID}` } : {}),
+          ...(current.variant ? { variant: current.variant } : {}),
         });
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          log.error('[SessionPage] Command failed:', res.status, errorText);
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-          const unsupported = featureNotSupportedError(res.status, errorText);
-          if (unsupported) toast.error(unsupported.message);
-        }
       } catch (err: any) {
-        log.error('[SessionPage] Command error:', err?.message || err);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        log.error('[SessionPage] Command failed:', err?.message || err);
+        setLocalSessionStatus(sessionId, { type: 'idle' });
+        // A runtime without slash commands answers in its own words.
+        const unsupported = unsupportedFeatureMessage(err);
+        if (unsupported) toast.error(unsupported);
       }
     },
-    [sandboxUrl, sessionId, stickToEnd, toast],
+    [runtimeReady, sessionId, stickToEnd, toast],
   );
 
   // Only the working turn (web `resolveWorkingTurn`) receives status and busy;
@@ -1717,12 +1685,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
+            sender={messageAvatarPerson(messageAuthors, participants, viewerId, id)}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, participants, messageAuthors, viewerId],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -1777,6 +1746,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onRemove={handleRemoveQueued}
           onSendNow={handleQueueSendNow}
           isDark={isDark}
+          senderOf={queuedSender}
         />,
       );
     }
@@ -1791,6 +1761,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleRemoveQueued,
     handleQueueSendNow,
     isDark,
+    queuedSender,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -1847,6 +1818,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // project session rows. The parent and every sub-agent open through the
   // project-session open path (`onOpenProjectSession`), like a drawer row.
   const subAgentListSheetRef = useRef<SheetRef>(null);
+  // The header's avatar stack opens who can open this session.
+  const participantsSheetRef = useRef<SheetRef>(null);
+  const openParticipantsSheet = useCallback(() => participantsSheetRef.current?.open(), []);
   // No open path, nothing to open: the chip hides rather than dead-ends.
   const headerRelation = onOpenProjectSession ? (subAgentRelationValue ?? null) : null;
   const handleSubAgentRelationPress = useCallback(() => {
@@ -1895,6 +1869,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             relation chip (or nothing) holds the edge there. */}
         {onOpenRightDrawer ? (
           <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+            <SessionParticipantStack participants={participants} onPress={openParticipantsSheet} />
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
         ) : (
@@ -1902,14 +1877,25 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         )}
       </FloatingMenuButton>
       <SubAgentListSheet ref={subAgentListSheetRef} subAgents={subAgents ?? EMPTY_PROJECT_SESSIONS} onSelect={handleSubAgentSelect} />
+      <SessionParticipantsSheet ref={participantsSheetRef} participants={participants} />
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
       <View style={{ flex: 1 }} className="bg-background">
+        {/* iOS: the list's drag-to-dismiss starts at the top of the composer.
+            Only the list sits inside: below Android 11 this renders its
+            children alone, so the absolute siblings keep the View above. */}
+        <KeyboardGestureArea
+          style={{ flex: 1 }}
+          offset={bottomAreaHeight}
+          textInputNativeID={composerInputNativeID}
+          // Android keeps `keyboardDismissMode="on-drag"` below.
+          enableSwipeToDismiss={false}>
         <ConnectorHandoffContext.Provider value={connectorHandoffApi}>
         <MarkdownActionsProvider value={markdownActions}>
         <FlatList
           ref={flatListRef}
+          style={LIST_DRAWS_UNDER_KEYBOARD}
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
@@ -1979,6 +1965,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         />
         </MarkdownActionsProvider>
         </ConnectorHandoffContext.Provider>
+        </KeyboardGestureArea>
 
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
 
@@ -1997,6 +1984,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         />
       )}
 
+      {/* Opaque: the list draws under this block on iOS (LIST_DRAWS_UNDER_KEYBOARD). */}
+      <View style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
@@ -2011,15 +2000,19 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
       {/* Bottom area — question prompt OR chat input, above the safe area. */}
       <Reanimated.View style={bottomAreaStyle}>
+        <View onLayout={handleBottomAreaLayout}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
             request={activeQuestion}
             onReply={handleQuestionReply}
             onReject={handleQuestionReject}
+            autoFocus={bottomSwap.keepKeyboard}
           />
         ) : (
           <SessionChatInput
+            autoFocus={bottomSwap.keepKeyboard}
+            inputNativeID={composerInputNativeID}
             onSend={handleSend}
             onStop={handleStop}
             isBusy={isBusy}
@@ -2045,14 +2038,20 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             currentSessionId={sessionId}
             sandboxUrl={sandboxUrl}
             projectId={projectId}
-            canAttach={Boolean(projectId && projectSessionId)}
+            // Files go through the prompt inbox, which delivers to the
+            // session's root: a sub-agent's thread sends text only.
+            canAttach={Boolean(projectId && projectSessionId) && !isSubThread}
+            disabled={subThreadReadOnly}
+            placeholder={subThreadReadOnly ? 'This sub-agent takes no messages' : undefined}
             onEnqueue={handleEnqueue}
             commands={commands}
             onCommand={handleCommand}
             inputSlot={inputSlot}
           />
         )}
+        </View>
       </Reanimated.View>
+      </View>
 
       <ConnectProviderSheet
         ref={connectSheetRef}
@@ -2196,8 +2195,11 @@ function QueuePanel({
   onRemove,
   onSendNow,
   isDark,
+  senderOf,
 }: {
   messages: SessionPrompt[];
+  /** The prompt's sender avatar in a shared session, else null. */
+  senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2262,6 +2264,11 @@ function QueuePanel({
                   borderTopColor: borderColor,
                 }}
               >
+                {(() => {
+                  // Queued prompts show their sender too, like the transcript.
+                  const sender = senderOf?.(qm);
+                  return sender ? <ParticipantAvatar person={sender} /> : null;
+                })()}
                 <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
                   {qm.text}
                 </Text>

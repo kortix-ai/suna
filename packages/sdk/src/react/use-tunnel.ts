@@ -276,6 +276,15 @@ export interface DeviceAuthInfo {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   expiresAt: string;
   createdAt: string;
+  /** The caller's existing registration of this machine (same hardware id).
+   *  Approving reconnects it: new credential, name, and grants, same accounts.
+   *  `null` for a machine new to the caller; absent on older servers. */
+  registered?: {
+    tunnelId: string;
+    name: string;
+    capabilities: string[];
+    isLive: boolean;
+  } | null;
 }
 
 export function useDeviceAuthInfo(code: string) {

@@ -885,4 +885,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'per session': 'textf92898c93eec',
   'per message': 'text83d0be53d592',
   answers: 'text677fe21b65f4',
+  'We are building the open-source AI Management System. Every company should own all of it.':
+    'text5f58426c214e',
 };

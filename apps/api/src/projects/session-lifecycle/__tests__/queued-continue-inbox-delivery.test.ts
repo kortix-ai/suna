@@ -412,6 +412,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+  invalidateSandbox: () => {},
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {
@@ -648,6 +649,15 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       capturedBodies = [];
       seenKeys.clear();
     }
+  });
+  // A conversation with people opens with the asking agent's message: it joins
+  // the transcript and starts no turn — the people answer it.
+  test('a prompt stamped noReply goes out noReply and records it', async () => {
+    const row = baseRow();
+    (row.payload as Record<string, unknown>).noReply = true;
+    expect(await executeQueuedContinue(row)).toBe('succeeded');
+    expect(capturedBodies[0]!.noReply).toBe(true);
+    expect(forwardedCalls[0]!.noReply).toBe(true);
   });
   // A box whose env cannot be converged would run the prompt against a stale
   // gateway URL, stale secrets and a stale model catalog. It waits instead.

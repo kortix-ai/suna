@@ -36,6 +36,7 @@
  */
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
+import type { CompiledAgent, CompiledAgentSet } from '@kortix/api-contract/runtime-relay';
 import {
   agentFileCandidates,
   defaultAgentFile,
@@ -63,43 +64,20 @@ import {
   type GitBackedProject,
 } from '../git';
 
-/** OpenCode's per-agent `AgentConfig` — the compiled shape for one `agent.<name>` entry. */
-export interface OpencodeAgentConfig {
-  description?: string;
-  mode?: 'primary' | 'subagent' | 'all';
-  model?: string;
-  variant?: string;
-  temperature?: number;
-  top_p?: number;
-  /** The agent's `.md` body (frontmatter stripped) — its system prompt. */
-  prompt?: string;
-  disable?: boolean;
-  tools?: Record<string, boolean>;
-  hidden?: boolean;
-  options?: Record<string, unknown>;
-  color?: string;
-  steps?: number;
-  permission?: PermissionConfigV2;
-}
+/**
+ * One compiled agent (`CompiledAgent` in `@kortix/api-contract/runtime-relay`,
+ * the shape both harnesses read), with the manifest's permission type.
+ */
+export type CompiledAgentEntry = CompiledAgent & { permission?: PermissionConfigV2 };
 
-/** The compiled OpenCode config fragment `compileAgentConfig` produces. */
-export interface OpencodeConfig {
-  /** Top-level default model passthrough — the manifest's `default_agent`'s
-   *  compiled model (from ITS `.md` frontmatter), so a brand-new session (no
-   *  agent picked yet) starts on the same model its default agent would
-   *  resolve to. Omitted when the default agent declares no model (the
-   *  platform/account default applies, same as today). */
-  model?: string;
-  /** No compiled field maps to a top-level `small_model` today — passthrough
-   *  is a no-op until one exists. Reserved so a future field has somewhere to
-   *  land without another signature change. */
-  small_model?: string;
-  /** The manifest's `default_agent`: the agent a session with no agent chosen
-   *  runs, on every runtime (OpenCode reads this key; so does pi). Omitted when
-   *  that agent is disabled or a subagent, which cannot run as the primary. */
-  default_agent?: string;
-  agent: Record<string, OpencodeAgentConfig>;
-}
+/**
+ * The compiled agent set `compileAgentConfig` produces (`CompiledAgentSet`).
+ * `model` is the default agent's compiled model, so a session that picked no
+ * agent starts on the model its default agent resolves to; omitted when that
+ * agent declares none. `default_agent` is omitted when that agent is disabled
+ * or a subagent, which cannot run as the primary.
+ */
+export type CompiledAgents = CompiledAgentSet & { agent: Record<string, CompiledAgentEntry> };
 
 /** Raised when a v2 manifest can't be compiled — a genuine authoring error
  *  (malformed `.md` frontmatter, unsupported runtime), not a transient I/O
@@ -204,7 +182,7 @@ export const KNOWN_BEHAVIOR_KEYS = BEHAVIOR_FRONTMATTER_KEYS.filter(
  *  frontmatter shape (a generic per-key schema can't express "temperature is
  *  a number, permission is a tree, model is a string" from a flat string
  *  array), PLUS `prompt` (the `.md` BODY, not a frontmatter key — see
- *  `OpencodeAgentConfig.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
+ *  `CompiledAgentEntry.prompt` above). Kept beside `KNOWN_BEHAVIOR_KEYS`
  *  rather than re-declared in the route so the two are visibly one thing;
  *  `compile-agent-config.test.ts`'s coordination test fails loudly the moment
  *  a field is added to one without the other. */
@@ -254,7 +232,7 @@ export function compileAgentConfig(
   manifest: Record<string, unknown>,
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
-): OpencodeConfig | null {
+): CompiledAgents | null {
   if (![2, 3].includes(manifestSchemaVersion(manifest))) return null;
 
   if (runtime !== 'opencode') {
@@ -267,7 +245,7 @@ export function compileAgentConfig(
   const rawAgents =
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
 
-  const agent: Record<string, OpencodeAgentConfig> = {};
+  const agent: Record<string, CompiledAgentEntry> = {};
   for (const [name, block] of Object.entries(rawAgents)) {
     const md = manifestSchemaVersion(manifest) === 3 ? null : suppliedAgentMarkdown(manifest, name, agentMdFiles);
     agent[name] = md
@@ -293,7 +271,7 @@ export function compileSelectedAgentConfig(
   agentName: string,
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
-): OpencodeConfig {
+): CompiledAgents {
   if (![2, 3].includes(manifestSchemaVersion(manifest))) {
     throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2 or 3.');
   }
@@ -316,7 +294,7 @@ export function compileSelectedAgentConfig(
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
 
-  let compiledAgent: OpencodeAgentConfig;
+  let compiledAgent: CompiledAgentEntry;
   if (manifestSchemaVersion(manifest) === 3) {
     compiledAgent = compileYamlAgentBlock(agentName, block, agentMdFiles);
   } else {
@@ -342,7 +320,7 @@ function compileYamlAgentBlock(
   name: string,
   block: AgentBlockV2,
   files: Record<string, string>,
-): OpencodeAgentConfig {
+): CompiledAgentEntry {
   const raw = block as Record<string, unknown>;
   const issues: ManifestIssue[] = [];
   validateAgentMdFrontmatter(raw, `agents.${name}`, issues);
@@ -359,7 +337,7 @@ function compileYamlAgentBlock(
   if (issues.some((issue) => issue.severity === 'error')) {
     throw new CompileAgentConfigError(issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '), name);
   }
-  const compiled: OpencodeAgentConfig = {};
+  const compiled: CompiledAgentEntry = {};
   for (const key of BEHAVIOR_FRONTMATTER_KEYS) {
     if (raw[key] !== undefined) (compiled as Record<string, unknown>)[key] = raw[key];
   }
@@ -367,6 +345,7 @@ function compileYamlAgentBlock(
   if (typeof prompt === 'string') compiled.prompt = prompt;
   if (block.enabled === false) compiled.disable = true;
   if (block.skills !== undefined) compiled.permission = applySkillsGovernance(compiled.permission, block.skills);
+  if (compiled.permission !== undefined) compiled.permission = denyToolsBehindDeniedPermission(compiled.permission);
   return compiled;
 }
 
@@ -375,8 +354,8 @@ function compileAgentBlock(
   block: AgentBlockV2,
   mdPath: string,
   mdContent: string | undefined,
-): OpencodeAgentConfig {
-  const out: OpencodeAgentConfig = {};
+): CompiledAgentEntry {
+  const out: CompiledAgentEntry = {};
 
   if (mdContent !== undefined) {
     const { frontmatter, body } = parseAgentMarkdown(mdContent);
@@ -410,7 +389,37 @@ function compileAgentBlock(
   if (block.skills !== undefined) {
     out.permission = applySkillsGovernance(out.permission, block.skills);
   }
+  if (out.permission !== undefined) out.permission = denyToolsBehindDeniedPermission(out.permission);
 
+  return out;
+}
+
+/** Every action of a rule is `deny`: the tool is off, not just filtered by pattern. */
+function isBlanketDeny(rule: unknown): boolean {
+  if (rule === 'deny') return true;
+  if (!rule || typeof rule !== 'object') return false;
+  const actions = Object.values(rule as Record<string, unknown>);
+  return actions.length > 0 && actions.every((action) => action === 'deny');
+}
+
+/**
+ * The starter's custom tools are not covered by the built-in permission keys:
+ * `pty_*` runs a shell and `memory` writes files, yet OpenCode matches them by
+ * their own name, so `bash: deny` / `edit: deny` left both callable (RUN-10).
+ * A blanket deny of `bash` or `edit` carries over to the tools that do the
+ * same thing. An explicit rule on the tool itself wins.
+ */
+const SHELL_TOOLS = ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list'];
+const FILE_WRITE_TOOLS = ['memory'];
+
+function denyToolsBehindDeniedPermission(permission: PermissionConfigV2 | undefined): PermissionConfigV2 | undefined {
+  if (!permission || typeof permission !== 'object') return permission;
+  const out: PermissionConfigObjectV2 = { ...permission };
+  const deny = (tools: string[]) => {
+    for (const tool of tools) if (out[tool] === undefined) out[tool] = 'deny';
+  };
+  if (isBlanketDeny(permission.bash)) deny(SHELL_TOOLS);
+  if (isBlanketDeny(permission.edit)) deny(FILE_WRITE_TOOLS);
   return out;
 }
 

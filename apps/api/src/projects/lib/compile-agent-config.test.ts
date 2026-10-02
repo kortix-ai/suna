@@ -68,7 +68,7 @@ const {
   resolveSelectedAgentConfigForSession,
   selectSessionHarness,
 } = await import('./compile-agent-config');
-type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
+type CompiledAgents = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
 // Governance-only v2 manifest — the 2026-07-05 redirect's shape. Behavior
 // lives in each agent's own `.kortix/opencode/agents/<name>.md`.
@@ -193,7 +193,7 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
   };
 
   test('compiles the full agent map with 1:1 OpenCode AgentConfig field parity from the .md frontmatter', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     expect(compiled).not.toBeNull();
     expect(compiled.agent.support).toEqual({
       description: 'Handles customer support triage',
@@ -217,7 +217,7 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
   });
 
   test('never copies governance fields (connectors/secrets/kortix_permissions/workspace) — no runtime representation', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     for (const agentConfig of Object.values(compiled.agent)) {
       expect(agentConfig).not.toHaveProperty('connectors');
       expect(agentConfig).not.toHaveProperty('secrets');
@@ -227,7 +227,7 @@ describe('compileAgentConfig — behavior comes from the agent .md, not the mani
   });
 
   test("top-level model passthrough is the default_agent's compiled model", () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     expect(compiled.model).toBe('anthropic/claude-sonnet-5');
     expect(compiled.small_model).toBeUndefined();
   });
@@ -242,13 +242,13 @@ agents:
 `);
     const compiled = compileAgentConfig(noModelManifest, 'opencode', {
       '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.model).toBeUndefined();
   });
 
   // W1 B5: pi reads `default_agent` for a session with no agent chosen; OpenCode reads the same key.
   test('names the manifest default_agent, so every runtime runs it when no agent is chosen', () => {
-    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest, 'opencode', agentMdFiles) as CompiledAgents;
     expect(compiled.default_agent).toBe('support');
   });
 
@@ -268,8 +268,8 @@ agents:
     enabled: false
 `);
     const md = { '.kortix/opencode/agents/pr-bot.md': supportMd('mode: subagent', 'Reviews PRs') };
-    expect((compileAgentConfig(subagent, 'opencode', md) as OpencodeConfig).default_agent).toBeUndefined();
-    expect((compileAgentConfig(disabled, 'opencode', {}) as OpencodeConfig).default_agent).toBeUndefined();
+    expect((compileAgentConfig(subagent, 'opencode', md) as CompiledAgents).default_agent).toBeUndefined();
+    expect((compileAgentConfig(disabled, 'opencode', {}) as CompiledAgents).default_agent).toBeUndefined();
   });
 });
 
@@ -292,7 +292,7 @@ agents:
     ).not.toThrow();
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/kortix.md': content,
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.kortix).toEqual({
       mode: 'primary',
       model: 'anthropic/claude-sonnet-5',
@@ -311,7 +311,7 @@ agents:
   fresh:
     connectors: none
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.fresh).toEqual({});
   });
 
@@ -324,7 +324,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': 'Just the body, no frontmatter.',
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a).toEqual({ prompt: 'Just the body, no frontmatter.' });
   });
 });
@@ -340,7 +340,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': supportMd('disable: false', 'Body.'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.disable).toBe(true);
   });
 
@@ -353,7 +353,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': supportMd('disable: true', 'Body.'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.disable).toBe(true);
   });
 });
@@ -409,7 +409,7 @@ agents:
   a:
     skills: all
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ skill: 'allow' });
   });
 
@@ -421,7 +421,7 @@ agents:
   a:
     skills: none
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ skill: 'deny' });
   });
 
@@ -433,7 +433,7 @@ agents:
   a:
     skills: []
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ skill: 'deny' });
   });
 
@@ -445,7 +445,7 @@ agents:
   a:
     skills: [pdf-export, web-research]
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({
       skill: { 'pdf-export': 'allow', 'web-research': 'allow', '*': 'deny' },
     });
@@ -464,7 +464,7 @@ agents:
         ['permission:', '  skill: deny', '  edit: ask'].join('\n'),
         'Body.',
       ),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({ edit: 'ask', skill: 'allow' });
   });
 
@@ -478,7 +478,7 @@ agents:
 `);
     const compiled = compileAgentConfig(manifest, 'opencode', {
       '.kortix/opencode/agents/a.md': supportMd('permission: allow', 'Body.'),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     const permission = compiled.agent.a.permission as Record<string, unknown>;
     expect(permission.skill).toBe('deny');
     expect(permission.edit).toBe('allow');
@@ -497,7 +497,7 @@ agents:
         ['permission:', '  skill:', '    "trusted-*": allow', '    "*": deny'].join('\n'),
         'Body.',
       ),
-    }) as OpencodeConfig;
+    }) as CompiledAgents;
     expect(compiled.agent.a.permission).toEqual({
       skill: { 'trusted-*': 'allow', '*': 'deny' },
     });
@@ -511,7 +511,7 @@ agents:
   a:
     skills: [github-tools]
 `);
-    const compiled = compileAgentConfig(manifest) as OpencodeConfig;
+    const compiled = compileAgentConfig(manifest) as CompiledAgents;
     expect(compiled.agent.a).not.toHaveProperty('skills');
   });
 });
@@ -650,7 +650,7 @@ describe('resolveCompiledAgentConfigForSession', () => {
     let seen: Record<string, unknown> | null = null;
     const result = await resolveCompiledAgentConfigForSession(PROJECT, null, { onManifest: (raw) => { seen = raw; } });
     expect(result).not.toBeNull();
-    expect((JSON.parse(result!) as OpencodeConfig).agent.support.prompt).toBe('Support body.');
+    expect((JSON.parse(result!) as CompiledAgents).agent.support.prompt).toBe('Support body.');
     expect(manifestRuntime(seen)).toBe('pi');
     // The restricted-session compiler reads the same manifest and reports it too.
     seen = null;
@@ -667,7 +667,7 @@ describe('resolveCompiledAgentConfigForSession', () => {
     readRepoFileCalls = [];
     const result = await resolveCompiledAgentConfigForSession(PROJECT);
     expect(result).not.toBeNull();
-    const parsed = JSON.parse(result!) as OpencodeConfig;
+    const parsed = JSON.parse(result!) as CompiledAgents;
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.agent['pr-bot'].prompt).toBe('PR bot body.');
     expect(
@@ -682,7 +682,7 @@ describe('resolveCompiledAgentConfigForSession', () => {
     mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' }; // pr-bot.md missing
     const result = await resolveCompiledAgentConfigForSession(PROJECT);
     expect(result).not.toBeNull();
-    const parsed = JSON.parse(result!) as OpencodeConfig;
+    const parsed = JSON.parse(result!) as CompiledAgents;
     expect(parsed.agent.support.prompt).toBe('Support body.');
     expect(parsed.agent['pr-bot']).toEqual({});
   });
@@ -810,7 +810,7 @@ describe('resolveSelectedAgentConfigForSession', () => {
     readRepoFileCalls = [];
 
     const result = await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main');
-    const parsed = JSON.parse(result) as OpencodeConfig;
+    const parsed = JSON.parse(result) as CompiledAgents;
 
     expect(Object.keys(parsed.agent)).toEqual(['support']);
     expect(parsed.agent.support.prompt).toBe('Support body.');
@@ -827,7 +827,7 @@ describe('resolveSelectedAgentConfigForSession', () => {
     };
     readRepoFileCalls = [];
 
-    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as OpencodeConfig;
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as CompiledAgents;
 
     expect(parsed.agent.support.prompt).toBe('Root body.');
     expect(readRepoFileCalls).toEqual(['agents/support.md']);
@@ -844,7 +844,7 @@ describe('resolveSelectedAgentConfigForSession', () => {
     };
     readRepoFileCalls = [];
 
-    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as OpencodeConfig;
+    const parsed = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')) as CompiledAgents;
 
     expect(parsed.agent.support.prompt).toBe('Team body.');
     expect(readRepoFileCalls).toEqual(['team/support.md']);
@@ -924,5 +924,34 @@ describe('v2 agent tool toggles', () => {
     const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
     expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
     expect(config?.agent.other.tools).toBeUndefined();
+  });
+});
+
+describe('compileAgentConfig — a denied bash/edit also denies the tools that do the same job', () => {
+  const manifest = parseYaml(
+    ['kortix_version: 2', 'default_agent: kortix', 'agents:', '  kortix:', '    skills: all', '  no-edit:', '    skills: all', ''].join('\n'),
+  );
+  const compileNoEdit = (frontmatter: string) =>
+    compileAgentConfig(manifest, 'opencode', {
+      'agents/no-edit.md': supportMd(frontmatter, 'body'),
+    })!.agent['no-edit']!.permission as Record<string, unknown>;
+
+  test('bash: deny and edit: deny deny pty_* and memory', () => {
+    const permission = compileNoEdit('permission:\n  edit: deny\n  bash: deny\n  task: deny');
+    expect(permission).toMatchObject({ edit: 'deny', bash: 'deny', task: 'deny', memory: 'deny' });
+    for (const tool of ['pty_spawn', 'pty_write', 'pty_read', 'pty_kill', 'pty_list']) {
+      expect(permission[tool]).toBe('deny');
+    }
+  });
+
+  test('a pattern-scoped bash rule that allows something leaves pty_* alone', () => {
+    const permission = compileNoEdit('permission:\n  bash:\n    "*": deny\n    "ls *": allow');
+    expect(permission.pty_spawn).toBeUndefined();
+  });
+
+  test('an explicit rule on the tool wins', () => {
+    const permission = compileNoEdit('permission:\n  bash: deny\n  pty_list: allow');
+    expect(permission.pty_list).toBe('allow');
+    expect(permission.pty_spawn).toBe('deny');
   });
 });

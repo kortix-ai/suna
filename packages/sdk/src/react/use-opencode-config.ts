@@ -2,8 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../core/runtime/client';
-import type { Config } from '@opencode-ai/sdk/v2/client';
+import type { Config } from '../core/runtime/runtime-types';
 import { useRuntimeReady } from './use-opencode-sessions/keys';
+import { useRuntimeSupports } from './use-runtime-supports';
 
 export type { Config };
 
@@ -25,8 +26,15 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
   return result.data as T;
 }
 
+/**
+ * The runtime's own config document (`/global/config`). Only a runtime that
+ * serves `session.config` (OpenCode) has one; on any other the query stays
+ * off and `data` is undefined. Agents and models come from the project
+ * (`/detail`, `/model-picker`), not from here.
+ */
 export function useRuntimeConfig() {
   const runtimeReady = useRuntimeReady();
+  const supported = useRuntimeSupports('session.config');
   return useQuery<Config>({
     queryKey: configKeys.all,
     queryFn: async () => {
@@ -34,7 +42,7 @@ export function useRuntimeConfig() {
       const result = await client.global.config.get();
       return unwrap(result);
     },
-    enabled: runtimeReady,
+    enabled: runtimeReady && supported,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });

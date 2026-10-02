@@ -148,19 +148,18 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({ experimental: { marketplace: false } }, 'marketplace')).toBe(false);
   });
 
-  test('teams is explicit opt-in and needs no operator env var', () => {
-    expect(resolveFeatureFlag({}, 'teams')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { teams: true } }, 'teams')).toBe(true);
-    expect(resolveFeatureFlag({ experimental: { teams: false } }, 'teams')).toBe(false);
-    // The channel is always listable — server bot credentials only decide
-    // whether the MANAGED install path is offered, never whether a project may
-    // hold an opinion (bring-your-own works without them).
-    expect(findCatalogFlag('teams').available).toBe(true);
+  test('teams graduated: every project can connect Teams and a stored override is inert', () => {
+    // Projects that turned Teams on or off while it was a flag keep the value
+    // in metadata. It must not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('teams')).toBe(false);
+    const metadata = { experimental: { teams: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('teams');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('teams');
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover defaults on but allows a project to opt out', () => {
-    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(true);
+  test('connectors_api_discover requires explicit opt-in', () => {
+    expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
       resolveFeatureFlag(
         { experimental: { connectors_api_discover: true } },
@@ -234,7 +233,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     for (const metadata of [null, undefined, {}, { experimental: null }, { experimental: 'x' }, []]) {
       expect(typeof resolveFeatureFlag(metadata, 'meta_agent')).toBe('boolean');
       expect(typeof resolveFeatureFlag(metadata, 'marketplace')).toBe('boolean');
-      expect(typeof resolveFeatureFlag(metadata, 'teams')).toBe('boolean');
+      expect(typeof resolveFeatureFlag(metadata, 'agentmail_email')).toBe('boolean');
     }
   });
 });
@@ -273,12 +272,12 @@ describe('buildFeatureFlagCatalog', () => {
     expect(metaAgent.overridden).toBe(true);
     expect(typeof metaAgent.available).toBe('boolean');
 
-    const teams = catalog.find((f) => f.key === 'teams');
-    if (!teams) throw new Error('Missing Microsoft Teams flag');
-    expect(teams.name).toBe('Microsoft Teams');
-    expect(teams.stability).toBe('experimental');
-    expect(teams.enabled).toBe(false);
-    expect(teams.overridden).toBe(false);
+    const email = catalog.find((f) => f.key === 'agentmail_email');
+    if (!email) throw new Error('Missing AgentMail Email flag');
+    expect(email.name).toBe('AgentMail Email');
+    expect(email.stability).toBe('experimental');
+    expect(email.enabled).toBe(false);
+    expect(email.overridden).toBe(false);
   });
 
   test('an unavailable flag is never enabled', () => {

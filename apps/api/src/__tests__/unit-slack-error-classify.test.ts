@@ -273,6 +273,33 @@ describe('classifyTurnError', () => {
   });
 });
 
+describe('classifyTurnError — the daemon code decides (W5 E11)', () => {
+  test.each([
+    ['credits', 'Out of credits'],
+    ['rate_limit', 'Usage limit reached'],
+    ['auth', 'Provider rejected the request'],
+    ['context_length', 'Conversation too long'],
+    ['output_length', 'Response too long'],
+    ['aborted', 'Run stopped'],
+  ] as const)('code %s with no name, status or matching text', (code, title) => {
+    expect(classifyTurnError({ name: 'UnknownError', message: 'upstream said no', code }).title).toBe(title);
+  });
+
+  test('a specific code beats text that names another bucket', () => {
+    expect(classifyTurnError({ message: 'rate limit exceeded', code: 'auth' }).title).toBe('Provider rejected the request');
+  });
+
+  test('code unknown falls back to the name, status and text checks', () => {
+    expect(classifyTurnError({ message: 'Insufficient credits. Balance: $-0.06', code: 'unknown' }).title).toBe('Out of credits');
+    expect(classifyTurnError({ name: 'TimeoutError', message: 'The session made no progress.', code: 'unknown' }).title).toBe('Run failed');
+  });
+
+  test('a ChatGPT login refusal still wins over an auth code', () => {
+    const r = classifyTurnError({ statusCode: 401, message: 'Could not parse your authentication token.', code: 'auth' });
+    expect(r.title).toBe('ChatGPT login needs reconnection');
+  });
+});
+
 describe('parseBalance', () => {
   test('parses a negative balance', () => {
     expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('$-0.06');

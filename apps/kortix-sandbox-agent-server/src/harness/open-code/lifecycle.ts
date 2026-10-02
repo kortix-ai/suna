@@ -632,8 +632,80 @@ export async function buildOpencodeConfigContent(
     out.permission = { ...permission, question: 'deny' }
   }
 
+  // (6) A rule names a capability (`RUNTIME_PERMISSION_CAPABILITIES`), not an
+  // OpenCode tool: the tools a capability covers get its rule (E9).
+  // (7) OpenCode's built-in skills describe a standalone OpenCode install, not
+  // a Kortix project: every permission block denies them.
+  out.permission = denyBuiltinSkills(capabilityToolRules(out.permission))
+  if (out.agent && typeof out.agent === 'object' && !Array.isArray(out.agent)) {
+    for (const agent of Object.values(out.agent as Record<string, unknown>)) {
+      if (agent && typeof agent === 'object' && 'permission' in agent) {
+        const entry = agent as Record<string, unknown>
+        entry.permission = denyBuiltinSkills(capabilityToolRules(entry.permission))
+      }
+    }
+  }
+
   Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
+}
+
+/**
+ * The OpenCode tools a capability covers beside its own: the pty plugin's
+ * tools run shell commands, the template's search and scrape tools reach the
+ * web. None of them asks for permission itself, and OpenCode matches a rule
+ * against the tool's own name, so an agent's `bash: deny` never reached
+ * `pty_spawn`.
+ */
+const CAPABILITY_TOOLS: Record<string, readonly string[]> = {
+  bash: ['pty_spawn', 'pty_write', 'pty_read', 'pty_list', 'pty_kill'],
+  websearch: ['web_search', 'image_search'],
+  webfetch: ['scrape_webpage'],
+}
+
+/**
+ * Give each covered tool its capability's rule. A tool that cannot ask is
+ * allowed only when the capability is exactly `allow`; an `ask` or a pattern
+ * map denies it, which hides it (fail closed). A rule the config sets for the
+ * tool itself wins. A bare action already covers every tool.
+ */
+export function capabilityToolRules(permission: unknown): unknown {
+  if (!permission || typeof permission !== 'object' || Array.isArray(permission)) return permission
+  const rules = { ...(permission as Record<string, unknown>) }
+  for (const [capability, tools] of Object.entries(CAPABILITY_TOOLS)) {
+    if (!(capability in rules)) continue
+    const action = rules[capability] === 'allow' ? 'allow' : 'deny'
+    for (const tool of tools) if (!(tool in rules)) rules[tool] = action
+  }
+  return rules
+}
+
+/**
+ * Skills compiled into the OpenCode binary that a Kortix session must not load.
+ * `customize-opencode` teaches `.opencode/`, `~/.config/opencode/` and "quit and
+ * restart opencode"; a Kortix project keeps its config under `harnesses/opencode/`
+ * and the `kortix-system` skill is its reference.
+ */
+const DENIED_BUILTIN_SKILLS = ['customize-opencode']
+
+/**
+ * Deny the built-in skills in one permission block. OpenCode flattens the
+ * global block and then the agent's into one rule list and the LAST match
+ * wins, so an agent's own `permission: allow` outranks a global deny: every
+ * block gets the rule, as its last `skill` entry. A bare action becomes its
+ * `*` form, which OpenCode reads the same way. A block that already denies
+ * every skill is left alone.
+ */
+export function denyBuiltinSkills(permission: unknown): unknown {
+  if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
+  const { skill, ...rest }: Record<string, unknown> = typeof permission === 'string' ? { '*': permission } : ((permission ?? {}) as Record<string, unknown>)
+  if (skill === 'deny' || (skill === undefined && rest['*'] === 'deny')) return permission
+  const rules: Record<string, unknown> = typeof skill === 'string' ? { '*': skill } : { ...(skill as Record<string, unknown> | undefined) }
+  for (const name of DENIED_BUILTIN_SKILLS) {
+    delete rules[name]
+    rules[name] = 'deny'
+  }
+  return { ...rest, skill: rules }
 }
 
 type KortixProviderOpts = {

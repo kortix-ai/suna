@@ -1,10 +1,13 @@
 'use client';
 
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from '@/features/session/turn/channel-brand';
-import type { ChannelPlatform } from '@/features/session/turn/channel-message';
+import { slackConversationName, type ChannelPlatform } from '@/features/session/turn/channel-message';
+import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
 import { useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import { PaperclipIcon } from '@phosphor-icons/react';
-import type { ChannelSend } from './channel-send';
+import { useParams } from 'next/navigation';
+import { channelSendText, type ChannelSend } from './channel-send';
 
 const REPLIED_IN_KEY: Record<ChannelPlatform, string> = {
   Teams: 'text72b5b0c53de9',
@@ -19,13 +22,25 @@ export function channelSendTitle(platform: ChannelPlatform, tI18nComplete: Retur
 
 /**
  * The reply as the person in the channel saw it: a left-anchored card with the
- * platform badge, the text verbatim, and the attachment name when a file went
- * with it. Its incoming twin is the channel card in `turn/user-message.tsx`;
+ * platform badge, the text as the channel shows it, and the attachment name
+ * when a file went with it. Its incoming twin is the channel card in `turn/user-message.tsx`;
  * they share `ChannelBrandMark` so a message and its answer wear one badge.
+ *
+ * A Slack `--channel` is an id (`C0…`, `D0…`). The project's bindings name it
+ * (`#general`, the person of a DM); the id shows only when none does — off a
+ * project route, or for a reader who may not list the project's channels.
  */
 export function ChannelSendCard({ send }: { send: ChannelSend }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const color = CHANNEL_BRAND_COLOR[send.platform];
+  const slack = send.platform === 'Slack';
+  const projectId = useParams<{ id?: string }>()?.id ?? null;
+  const { data } = useChannelBindings(slack && send.channel ? projectId : null);
+  const binding = slack
+    ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === send.channel)
+    : undefined;
+  const channelName = binding ? slackConversationName(binding) : null;
+  const text = channelSendText(send);
   return (
     <div className="border-border/60 bg-muted/40 flex max-w-[80%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
       <div className="flex items-center gap-2">
@@ -36,13 +51,13 @@ export function ChannelSendCard({ send }: { send: ChannelSend }) {
         {send.channel ? (
           <>
             <span className="text-muted-foreground text-xs">·</span>
-            <span className="text-muted-foreground font-mono text-xs">{send.channel}</span>
+            <span className={cn('text-muted-foreground text-xs', !channelName && 'font-mono')}>
+              {channelName ?? send.channel}
+            </span>
           </>
         ) : null}
       </div>
-      {send.text ? (
-        <div className="text-foreground text-sm whitespace-pre-wrap wrap-break-word">{send.text}</div>
-      ) : null}
+      {text ? <div className="text-foreground text-sm whitespace-pre-wrap wrap-break-word">{text}</div> : null}
       {send.file ? (
         <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <PaperclipIcon className="size-3.5 shrink-0" />

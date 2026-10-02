@@ -75,6 +75,7 @@ const SessionPromptSchema = z.object({
   attempts: z.number(),
   last_error: z.string().nullable(),
   attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
+  no_reply: z.boolean(),
   created_at: z.string(),
   available_at: z.string(),
 });
@@ -181,7 +182,12 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_SESSION_START,
     );
 
-    const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
+    // The session whose agent sends this, when it is not the target itself.
+    // From the credential, never the body: it becomes the message's author.
+    const callerSessionId = callerKortixSessionId(c);
+    const authorSessionId =
+      isProjectSessionPrincipal(c) && callerSessionId && callerSessionId !== sessionId ? callerSessionId : null;
+    const visible = await loadVisibleSession(loaded, sessionId, callerSessionId, callerSessionId);
     if (!visible) return c.json({ error: 'Not found' }, 404);
     // `deleteSession()` stamps metadata.deletedAt and leaves the row 'stopped'.
     // Accepting a prompt for it would revive a session the user removed.
@@ -334,6 +340,7 @@ projectsApp.openapi(
         : {}),
       parts,
       overrides,
+      authorSessionId,
     };
     const enqueued = await enqueueReleasingHold(sessionId, (hold) =>
       enqueueContinueSessionCommand({ ...send, ...hold }),

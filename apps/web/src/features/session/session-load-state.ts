@@ -45,9 +45,9 @@ export function runtimeErrorPresentation(input: {
 
 export function canMountSessionChat(input: {
   switched: boolean;
-  opencodeSessionId: string | null;
+  runtimeSessionId: string | null;
 }) {
-  return input.switched || Boolean(input.opencodeSessionId);
+  return input.switched || Boolean(input.runtimeSessionId);
 }
 
 /**
@@ -62,9 +62,10 @@ export function canMountSessionChat(input: {
  * whole, where the list trims it.
  */
 export function findInitialSessionPin(
-  session: { opencode_session_id: string | null } | undefined | null,
+  // `runtime_session_id` since W4; an older API answers only `opencode_session_id`.
+  session: { runtime_session_id?: string | null; opencode_session_id?: string | null } | undefined | null,
 ) {
-  return session?.opencode_session_id ?? null;
+  return session?.runtime_session_id ?? session?.opencode_session_id ?? null;
 }
 
 /**

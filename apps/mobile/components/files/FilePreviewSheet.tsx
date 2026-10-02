@@ -33,7 +33,7 @@ import { showFileTypeIcon } from '@/components/session/tool/shared/tool-icons';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { downloadOpenCodeFileToCache } from '@/lib/files/hooks';
+import { downloadSandboxFileToCache } from '@/lib/files/hooks';
 import { saveFileToDevice } from '@/lib/files/save-to-device';
 import { previewFailure } from '@/lib/files/preview-failure';
 import { haptics } from '@/lib/haptics';
@@ -174,7 +174,7 @@ export function FilePreviewBody({
       // streamed to the cache natively (any size or type), then saved in a
       // folder on the device (`lib/files/save-to-device`), never opened in
       // another app.
-      const uri = await downloadOpenCodeFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
+      const uri = await downloadSandboxFileToCache(sandboxUrl, sandboxFile.path, sandboxFile.name);
       const result = await saveFileToDevice(uri, sandboxFile.name);
       if (result.status === 'saved') {
         haptics.success();

@@ -13,7 +13,7 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { Keyboard, ScrollView, TextInput, View } from 'react-native';
+import { ScrollView, TextInput, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ import {
   questionStepAnswer,
   questionStepLabel,
 } from '@/lib/session/question-prompt';
-import type { QuestionAnswer, QuestionRequest } from '@/lib/opencode/types';
+import type { QuestionAnswer, QuestionRequest } from '@/lib/session/types';
 
 /** About five option rows, then the list scrolls. */
 const MAX_OPTIONS_HEIGHT = 260;
@@ -38,9 +38,11 @@ interface QuestionPromptProps {
   request: QuestionRequest;
   onReply: (requestId: string, answers: QuestionAnswer[]) => void;
   onReject: (requestId: string) => void;
+  /** Focus the answer field at mount: the card replaces a composer that had the keyboard up. */
+  autoFocus?: boolean;
 }
 
-export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptProps) {
+export function QuestionPrompt({ request, onReply, onReject, autoFocus }: QuestionPromptProps) {
   const { colorScheme } = useColorScheme();
   const colors = THEME[colorScheme === 'dark' ? 'dark' : 'light'];
 
@@ -66,7 +68,6 @@ export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptPro
       const next = answers.map((a, i) => (i === step ? answer : a));
       setAnswers(next);
       if (isLast) {
-        Keyboard.dismiss();
         setReplying(true);
         onReply(request.id, next);
         return;
@@ -95,7 +96,6 @@ export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptPro
   }, [canSend, advance, stepAnswer]);
 
   const skip = useCallback(() => {
-    Keyboard.dismiss();
     setReplying(true);
     onReject(request.id);
   }, [onReject, request.id]);
@@ -158,9 +158,12 @@ export function QuestionPrompt({ request, onReply, onReject }: QuestionPromptPro
             onSubmitEditing={send}
             placeholder={options.length > 0 ? 'Or type your own answer' : 'Type your answer'}
             placeholderTextColor={colors.mutedForeground}
-            autoFocus={options.length === 0}
+            // Never raises the keyboard on its own: a question arrives while the
+            // user reads. The return key sends and keeps the focus, so the
+            // keyboard stays for the next step or for the composer.
+            autoFocus={autoFocus}
             returnKeyType="send"
-            submitBehavior="blurAndSubmit"
+            submitBehavior="submit"
             accessibilityLabel="Your answer"
             className="text-foreground"
             style={{

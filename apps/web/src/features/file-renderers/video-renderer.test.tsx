@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { VideoRenderer } from './video-renderer';
+import { VideoRenderer, requestVideoFullscreen } from './video-renderer';
 
 // VideoRenderer calls `useTranslations('hardcodedUi')` unconditionally for
 // its error copy (see show-tool.test.tsx for the same requirement), so it
@@ -40,5 +40,21 @@ describe('VideoRenderer — inert outside a PreviewFitProvider (Global Constrain
 
     expect(bare).toContain('src="https://example.com/clip.mp4"');
     expect(wrapped).toBe(bare);
+  });
+});
+
+describe('video fullscreen on browsers without the standard API', () => {
+  test('does not throw when the element has no requestFullscreen method', async () => {
+    await expect(requestVideoFullscreen({})).resolves.toBeUndefined();
+  });
+
+  test('requests fullscreen when supported', async () => {
+    let calls = 0;
+    await requestVideoFullscreen({
+      requestFullscreen: async () => {
+        calls++;
+      },
+    });
+    expect(calls).toBe(1);
   });
 });

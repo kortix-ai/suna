@@ -35,6 +35,7 @@ import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { sendSessionCreateError } from '../lib/sessions';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
+import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -327,6 +328,7 @@ projectsApp.openapi(
       ownerIsMachine: !row.createdBy || owner?.type === 'service_account',
       ownerEmail: owner?.email ?? null,
       ownerName: owner?.name ?? null,
+      ownerAvatarUrl: owner?.avatarUrl ?? null,
       ownerType: owner?.type ?? (row.createdBy ? 'unknown' : null),
       canAccess: item.canAccess,
       runtimeStatus: item.runtimeStatus,
@@ -415,6 +417,7 @@ projectsApp.openapi(
     ownerIsMachine: visible.ownerIsMachine,
     ownerEmail: owner?.email ?? null,
     ownerName: owner?.name ?? null,
+    ownerAvatarUrl: owner?.avatarUrl ?? null,
     ownerType: owner?.type ?? (visible.row.createdBy ? 'unknown' : null),
   }));
 },
@@ -493,6 +496,27 @@ projectsApp.openapi(
       },
       409,
     );
+  }
+
+  // A value shared only with this session's person sits in the sandbox as
+  // plaintext; sharing the session would hand it to every new viewer, and an
+  // env var cannot be taken back out of a running box (secret-audience.ts).
+  if (intent.mode !== 'private') {
+    const held = await sessionPersonOnlyPlaintextSecrets({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+    });
+    if (held.length > 0) {
+      return c.json(
+        {
+          error: `This session holds ${held.join(', ')}, shared only with you. Sharing it would let others read ${held.length === 1 ? 'it' : 'them'}. Start a new session to share, or share ${held.length === 1 ? 'that secret' : 'those secrets'} with everyone first.`,
+          code: 'PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION',
+          secrets: held,
+        },
+        409,
+      );
+    }
   }
 
   // Sharing takes the owner's personal keys away from the session (spec

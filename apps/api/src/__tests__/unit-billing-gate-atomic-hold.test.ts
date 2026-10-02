@@ -35,6 +35,14 @@ mock.module('../config', () => ({
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => creditAccount,
+  updateCreditAccount: async (_accountId: string, data: Record<string, unknown>) => {
+    if (creditAccount) Object.assign(creditAccount, data);
+  },
+}));
+
+// billing-gate debits through wallet-debits, which fires the auto-topup check.
+mock.module('../billing/services/auto-topup', () => ({
+  checkAndTriggerAutoTopup: async () => {},
 }));
 
 mock.module('../billing/services/free-tier', () => ({

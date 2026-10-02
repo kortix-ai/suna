@@ -68,6 +68,8 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
+import { slackChannelNames } from '@/features/session/turn/channel-message';
+import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
@@ -98,6 +100,10 @@ export function SessionApprovalPrompt() {
   }, []);
 
   const rows = approvalNoticeRows(data?.actions ?? [], decided);
+  // A Slack connector call names a conversation by id; the project's bindings
+  // name it. Read only while an approval is on screen.
+  const { data: bindings } = useChannelBindings(rows.length > 0 ? projectId : null);
+  const channelNames = slackChannelNames(bindings?.bindings ?? []);
 
   const decide = (executionId: string, decision: ApprovalDecisionValue, note?: string) => {
     const row = rows.find((candidate) => candidate.action.execution_id === executionId);
@@ -150,6 +156,7 @@ export function SessionApprovalPrompt() {
         setExpanded((current) => nextExpandedApproval(current, executionId))
       }
       onDecide={decide}
+      channelNames={channelNames}
     />
   );
 }
@@ -161,6 +168,8 @@ interface SessionApprovalNoticeProps {
   busy: Record<string, ApprovalDecisionValue>;
   onToggle: (executionId: string) => void;
   onDecide: (executionId: string, decision: ApprovalDecisionValue, note?: string) => void;
+  /** Bound Slack conversation ids → names, for the summary and the parameters. */
+  channelNames?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -173,6 +182,7 @@ export function SessionApprovalNotice({
   busy,
   onToggle,
   onDecide,
+  channelNames,
 }: SessionApprovalNoticeProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (rows.length === 0) return null;
@@ -189,13 +199,13 @@ export function SessionApprovalNotice({
         // `QuestionPrompt` carries it (see composer.tsx). Vertical spacing
         // belongs to that strip's `gap-2`, not to a margin here.
         'bg-popover w-full overflow-hidden rounded-md border',
-        pendingCount > 0 ? 'border-kortix-orange/25' : 'border-border',
+        pendingCount > 0 ? 'border-kortix-orange/15' : 'border-border',
       )}
     >
       <div
         className={cn(
           'flex items-center gap-2 border-b px-3 py-2',
-          pendingCount > 0 ? 'border-kortix-orange/20' : 'border-border',
+          pendingCount > 0 ? 'border-kortix-orange/15' : 'border-border',
         )}
       >
         {pendingCount > 0 ? (
@@ -211,7 +221,7 @@ export function SessionApprovalNotice({
       <ul className="divide-border divide-y">
         {rows.map(({ action, decision }) => {
           const executionId = action.execution_id;
-          const summary = approvalArgsSummary(action);
+          const summary = approvalArgsSummary(action, channelNames);
           const request = approvalRequestFromAction(action, decision === null);
           const open = expanded === executionId;
           const reviewComplete = request.reviewComplete !== false;
@@ -250,7 +260,7 @@ export function SessionApprovalNotice({
                         ) : null}
                       </div>
                       {summary ? (
-                        <p className="text-foreground/80 mt-0.5 truncate font-mono text-xs">
+                        <p className="text-foreground mt-0.5 truncate font-mono text-xs">
                           {summary}
                         </p>
                       ) : null}
@@ -271,7 +281,7 @@ export function SessionApprovalNotice({
                         {tI18nComplete.raw('textaff0766a5290')}
                         <CaretDownIcon
                           className={cn(
-                            'size-3 transition-transform duration-150',
+                            'size-3 transition-transform duration-normal',
                             open && 'rotate-180',
                           )}
                         />
@@ -311,6 +321,7 @@ export function SessionApprovalNotice({
                       dense
                       argsPreview={request.argsPreview}
                       reviewComplete={reviewComplete}
+                      channelNames={channelNames}
                     />
                     {decision === null && !reviewable ? <ApprovalUnreviewableNotice dense /> : null}
                     {decision === null ? (

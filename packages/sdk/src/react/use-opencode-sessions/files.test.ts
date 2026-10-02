@@ -137,3 +137,25 @@ describe('findRuntimeFiles — directory-expansion fallback', () => {
     expect(results).not.toContain('src/utils/other.ts'); // doesn't match the query "app"
   });
 });
+
+describe('findRuntimeFiles — raw-path compatibility', () => {
+  test('preserves all ranking tiers, raw depth, case and lexical ties', async () => {
+    clientImpl.find.files = queryAwareFiles([
+      'other.ts', 'x/app/z.ts', 'app/z.ts', 'x/myapp.ts', 'x/app.ts',
+      'deep/app', 'app', 'APP', './app', 'a//app', 'x\\app',
+    ]);
+    expect(await findRuntimeFiles('  ApP  ')).toEqual([
+      'app', 'APP', './app', 'deep/app', 'a//app', 'x/app.ts',
+      'x\\app', 'x/myapp.ts', 'app/z.ts', 'x/app/z.ts', 'other.ts',
+    ]);
+  });
+
+  test('fallback matches raw substrings, not fuzzy or normalized paths', async () => {
+    clientImpl.find.files = queryAwareFiles(['matched/']);
+    clientImpl.file.list = async ({ path }) => ({ data: path === 'matched'
+      ? ['src//app.ts', 'src/app.ts', 'src\\app.ts', 'src/a-p-p.ts'] : [] });
+    expect(await findRuntimeFiles('src//app')).toEqual(['src//app.ts']);
+    expect(await findRuntimeFiles('src\\app')).toEqual(['src\\app.ts']);
+    expect(await findRuntimeFiles('app')).toEqual(['src/app.ts', 'src//app.ts', 'src\\app.ts']);
+  });
+});

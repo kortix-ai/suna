@@ -6,7 +6,8 @@ import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
 import { markSessionFresh } from '../../core/http/fresh-sessions';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useCurrentRuntime } from '../use-current-runtime';
-import type { Session } from '@opencode-ai/sdk/v2/client';
+import { useRuntimeSupports } from '../use-runtime-supports';
+import type { Session } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryRuntimeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
@@ -209,18 +210,24 @@ export function useRuntimeSessionDiff(sessionId: string) {
   });
 }
 
+/**
+ * The runtime's todo list for a session. A runtime capability
+ * (`session.todo`): a runtime without one (pi) is never asked, and `data`
+ * stays undefined.
+ */
 export function useRuntimeSessionTodo(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
+  const supported = useRuntimeSupports('session.todo');
   return useQuery({
-    queryKey: ['opencode', 'session-todo', sessionId],
+    queryKey: runtimeKeys.sessionTodo(sessionId),
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.todo({ sessionID: sessionId });
       const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
-    enabled: runtimeReady && canQuerySession,
+    enabled: runtimeReady && canQuerySession && supported,
     staleTime: Infinity,
   });
 }

@@ -279,16 +279,25 @@ this session right away, then continue.
 
 Every secret value has an audience, the same **Who can use it** choice as a
 connector account: everyone in the project (the default), only one person, or
-chosen people and groups. A value shared with specific people reaches only
-them — directly, or in their own **private** session. A shared session, a
-trigger, a schedule, and another member's session never get it.
+chosen people, groups and agents. A value shared with a person reaches them
+directly or in their own **private** session; a shared session, a trigger, a
+schedule, and another member's session never get it. A value shared with an
+**agent** reaches every session of that agent, triggers included — the right
+choice for a credential an unattended run needs.
 
 You cannot set or change the audience (`403`); a person does. When a person
 gives you a credential that acts as THEM or holds sensitive data (payroll, HR,
 bank, a personal login), store it, then tell them the one-line fix:
 *"It is usable by everyone in the project right now. To keep it to you, run
 `kortix secrets share <NAME> --user me` or pick **Only you** in Customize →
-Secrets."* Say it once; do not ask twice.
+Secrets."* Say it once; do not ask twice. When you mint a link for a personal
+value, tell them the link page can keep it to them (**Only the person who
+asked**). For a value only a trigger or schedule of one agent needs, suggest
+`kortix secrets share <NAME> --agent <agent>`.
+
+A session that holds a value shared only with its person cannot be shared
+(`409 PERSONAL_SECRET_REQUIRES_PRIVATE_SESSION`): say so, and suggest a new
+session to share.
 
 ### `credential_not_shared` — the value exists but not for this session
 

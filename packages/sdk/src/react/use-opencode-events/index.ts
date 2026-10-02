@@ -1,39 +1,36 @@
 'use client';
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
-import { clearConfigOverrides } from '../use-opencode-config';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   noteSessionSyncEvent,
-  reconcileSessionTail,
+  reconcileSessionTail as reconcileSessionTailFromRegistry,
 } from '../../browser/session-sync/session-sync-registry';
-import { logger } from '../../core/http/logger';
-import { dropClientForUrl, getClient } from '../../core/runtime/client';
 import { useDiagnosticsStore } from '../../browser/stores/diagnostics-store';
 import { useOpenCodeCompactionStore } from '../../browser/stores/opencode-compaction-store';
 import { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';
-import { useSyncStore } from '../../browser/stores/sync-store';
 import {
   noteRuntimeEvidence,
   useSandboxConnectionStore,
 } from '../../browser/stores/sandbox-connection-store';
 import { useServerStore } from '../../browser/stores/server-store';
-import { useCurrentRuntime } from '../use-current-runtime';
-import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { runtimeKeys } from '../use-opencode-sessions';
+import { useSyncStore } from '../../browser/stores/sync-store';
+import { logger } from '../../core/http/logger';
+import { onHostSignal } from '../../core/session/host-signals';
+import { dropClientForUrl, getClient } from '../../core/runtime/client';
+import { openEventStream } from '../../core/stream/event-stream';
 import { useKortixRouteProjectId } from '../route-project';
+import { useCurrentRuntime } from '../use-current-runtime';
+import { clearConfigOverrides } from '../use-opencode-config';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
-import {
-  releaseMessageRehydrate,
-  reserveMessageRehydrate,
-  resolveClientEvictionUrl,
-  shouldSkipStatusFill,
-} from './helpers';
-import { sessionsNeedingRehydrate } from './rehydrate-targets';
+import { resolveClientEvictionUrl } from './helpers';
+import { hydrateCore } from './hydrate-core';
+import { emitRuntimeStreamSignal, shouldReconnectOnHostSignal } from './runtime-stream-signals';
 import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
-import { openEventStream } from '../../core/stream/event-stream';
+
+export { subscribeRuntimeStream, type RuntimeStreamSignal } from './runtime-stream-signals';
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -82,6 +79,17 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
     [],
   );
   useEffect(() => revival.stop, [revival]);
+  // A host without DOM events (React Native) reports foreground, online and a
+  // manual retry. A fresh generation reconnects and re-reads the transcripts.
+  useEffect(
+    () =>
+      onHostSignal((signal) => {
+        const lastEvidenceAt = useSandboxConnectionStore.getState().lastRuntimeEvidenceAt;
+        if (!shouldReconnectOnHostSignal(signal, lastEvidenceAt, Date.now())) return;
+        setStreamGeneration((generation) => generation + 1);
+      }),
+    [],
+  );
 
   const {
     normalizeDiagnosticPaths,
@@ -179,147 +187,27 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
       normalizeDiagnosticPaths,
       markSessionAbortedLocally,
       fetchLspDiagnosticsDebounced,
-      reconcileSessionTail,
+      reconcileSessionTail: reconcileSessionTailFromRegistry,
       projectId,
     });
 
-    // ---- CONSOLIDATED hydration function ----
-    // Single function for hydrating permissions, questions, and session statuses.
-    // Called both on initial connect and on SSE reconnect (gap > 5s).
-    // Previously this logic was duplicated in two places.
-    const hydrateCore = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) => {
-      client.permission
-        .list()
-        .then((res) => {
-          if (Array.isArray(res.data)) res.data.forEach(addPermission);
-        })
-        .catch((err) => {
-          logger.error('Failed to hydrate pending permissions', {
-            error: String(err),
-          });
-        });
-
-      client.question
-        .list()
-        .then((res) => {
-          if (Array.isArray(res.data)) res.data.forEach(addQuestion);
-        })
-        .catch((err) => {
-          logger.error('Failed to hydrate pending questions', {
-            error: String(err),
-          });
-        });
-
-      client.session
-        .status()
-        .then((res) => {
-          // This snapshot is the runtime's COMPLETE set of non-idle sessions,
-          // so it carries two facts: what each listed session is doing, and
-          // that every UNLISTED one is not busy. The second is the only repair
-          // the raw status slot has for a terminal frame this tab never saw,
-          // and the surfaces that still read that slot directly — the session
-          // panel, and the sub-agent banner for CHILD sessions, which have no
-          // Kortix session row for `GET .../turn` to answer about — depend on
-          // it. `useSessionWorking` answers for Kortix sessions; this answers
-          // for the rest.
-          const statuses = res.data ?? {};
-          for (const [sessionID, status] of Object.entries(statuses)) {
-            // ONLY where this read is newer than what the live stream has
-            // already said. The read is a snapshot of the moment it was ISSUED,
-            // it carries no timestamp of its own, and it used to be written in
-            // unconditionally — so a `busy` that was true when the request left
-            // overwrote an `idle` frame that arrived while it was in flight, and
-            // because the object identity changed the store restamped the stale
-            // reading as the freshest observation there is. That put the Stop
-            // button and the turn shimmer back on a finished turn, and
-            // `hydrateCore` runs on every heartbeat-gap rehydrate, so it could
-            // land on any turn boundary.
-            // FILL A GAP, NEVER OVERWRITE. This snapshot describes the moment
-            // the request was ISSUED and carries no timestamp of its own, so an
-            // unconditional write let a `busy` that was true on the way out
-            // clobber an `idle` frame that arrived while it was in flight — and
-            // because the object identity changed, the store restamped that
-            // stale reading as the freshest observation there is. Stop and the
-            // turn shimmer came back on a finished turn, and `hydrateCore` runs
-            // on every heartbeat-gap rehydrate, so it could land on any turn
-            // boundary. While the live stream is delivering (~140ms per frame
-            // for a busy session, and this runs on connect) the stream owns this
-            // value; the correction for a session that went idle unseen is
-            // `reconcileMissingBusySessions` below, which reads ABSENCE from the
-            // complete list rather than a per-session reading.
-            //
-            // Only a FRESH wire frame owns the slot (`shouldSkipStatusFill`).
-            // A `'local'` value is the tab's own fabrication (the missing-busy
-            // sweep, a synthetic abort) and never blocks — letting it block
-            // made a fabrication self-sustaining. A STALE wire frame no longer
-            // blocks either: this fill runs on reconnect, a reconnect happens
-            // because a stream died, and a dead stream's last frame — a wire
-            // idle vetoing the open `/turn` row while a long tool call moves
-            // no transcript — is exactly what this read exists to correct
-            // (prod, 2026-08-26).
-            const slotState = useSyncStore.getState();
-            if (
-              shouldSkipStatusFill({
-                hasSlot: !!slotState.sessionStatus[sessionID],
-                origin: slotState.sessionStatusOrigin[sessionID],
-                stampedAtMs: slotState.sessionStatusAt[sessionID],
-                nowMs: Date.now(),
-              })
-            )
-              continue;
-            // Locally-synthesized event (this is a REST poll, not an SSE
-            // frame) — omits the `id` field every real `Event` union member
-            // carries, hence the assertion. `synthetic: true` marks its write
-            // `'local'`: a snapshot is a reading ABOUT the runtime taken at
-            // issue time, not the runtime speaking on the wire.
-            applySyncEvent({
-              type: 'session.status',
-              synthetic: true,
-              properties: { sessionID, status },
-            } as unknown as OpenCodeSdkEvent);
-          }
-          // The ENUMERATION half is not a per-session reading and does not go
-          // stale the same way: a session absent from a complete list was not
-          // running when the list was taken, and the repair it drives
-          // (`markSessionIdleLocally`) is guarded on its own.
-          reconcileMissingBusySessions.current(statuses);
-        })
-        .catch((err) => {
-          logger.error('Failed to hydrate session statuses', {
-            error: String(err),
-          });
-        });
-
-      // Fetch current LSP diagnostics so errors/warnings show immediately
-      // on page load (or reconnect) without waiting for agent tool output.
-      fetchLspDiagnosticsDebounced.current();
-
-      if (options?.refetchSessions) {
-        queryClient.refetchQueries({
-          queryKey: runtimeKeys.sessions(),
-          type: 'active',
-        });
-      }
-
-      if (options?.rehydrateMessages) {
-        const syncState = useSyncStore.getState();
-        // EVERY held transcript, not only the ones the status slot calls busy
-        // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
-        // so a gap wide enough to lose message frames is wide enough to lose
-        // the frame that would have marked the session busy.
-        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
-          if (!reserveMessageRehydrate(sid)) continue;
-          reconcileSessionTail(sid, 'sse-gap')
-            .catch(() => {})
-            .finally(() => releaseMessageRehydrate(sid));
-        }
-      }
-    };
+    const hydrate = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) =>
+      hydrateCore({
+        client,
+        queryClient,
+        addPermission,
+        addQuestion,
+        applySyncEvent,
+        reconcileMissingBusySessions,
+        fetchLspDiagnosticsDebounced,
+        reconcileSessionTail: reconcileSessionTailFromRegistry,
+        options,
+      });
 
     // A revived handle has no record of the previous handle's outage. Re-read
     // the held transcripts so a response completed during the park appears
     // without requiring a page refresh.
-    hydrateCore({ rehydrateMessages: streamGeneration > 0 });
+    hydrate({ rehydrateMessages: streamGeneration > 0 });
 
     // Set up SSE via the framework-free event-stream machine. The
     // connect/reconnect/backoff loop, heartbeat watchdog, and event
@@ -337,6 +225,7 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
           consecutiveFailures: info.consecutiveFailures,
         });
         revival.park();
+        emitRuntimeStreamSignal({ type: 'parked' });
       },
       onEvent: (event) => {
         // Every delivered frame is live proof the runtime is reachable — it
@@ -345,13 +234,16 @@ export function useRuntimeEventStream(options: { enabled?: boolean } = {}) {
         noteRuntimeEvidence();
         noteSessionSyncEvent(event);
         handleEvent(event);
+        emitRuntimeStreamSignal({ type: 'event', event });
       },
-      onGapRehydrate: () => hydrateCore({ rehydrateMessages: true }),
+      onConnectionChange: (state) => emitRuntimeStreamSignal({ type: state }),
+      onGapRehydrate: () => hydrate({ rehydrateMessages: true }),
     });
 
     return () => {
       revival.stop();
       handle.close();
+      emitRuntimeStreamSignal({ type: 'closed' });
     };
     // NOTE: urlVersion is intentionally excluded from deps. We only reconnect
     // when the resolved activeServerUrl actually changes, which avoids

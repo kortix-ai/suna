@@ -1,11 +1,14 @@
 /** HTTP controllers for the existing runtime API; the selected harness owns operations. */
 import { Hono, type Context } from 'hono'
+import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
 import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
 import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
+import type { HarnessReadiness } from '@/harness/contract/proxy'
+import type { HarnessTurnService, RuntimePromptInput } from '@/harness/contract/turns'
 
 /** Existing transcript page-size contract. */
 export const DEFAULT_MESSAGE_PAGE = 20
@@ -44,6 +47,39 @@ function authorize(cfg: Config, c: Context): AuthOutcome {
   return { ok: true }
 }
 
+const optionalString = (value: unknown): value is string | undefined => value === undefined || typeof value === 'string'
+
+/**
+ * Validate a `POST /sessions/:id/prompt` body:
+ * `{ message_id?, parts, agent?, model?: "provider/model", variant?, directory?, no_reply? }`.
+ */
+export function parseRuntimePromptBody(raw: unknown): RuntimePromptInput | string {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'body must be a JSON object'
+  const body = raw as Record<string, unknown>
+  if (!Array.isArray(body.parts) || body.parts.length === 0) return 'parts must be a non-empty array'
+  if (body.parts.some((part) => !part || typeof part !== 'object' || Array.isArray(part))) return 'parts must be objects'
+  for (const key of ['message_id', 'agent', 'model', 'variant', 'directory'] as const) {
+    if (!optionalString(body[key])) return `${key} must be a string`
+  }
+  if (body.no_reply !== undefined && typeof body.no_reply !== 'boolean') return 'no_reply must be a boolean'
+  let model: RuntimePromptInput['model']
+  if (typeof body.model === 'string') {
+    const slash = body.model.indexOf('/')
+    if (slash <= 0 || slash === body.model.length - 1) return 'model must be "provider/model"'
+    model = { providerID: body.model.slice(0, slash), modelID: body.model.slice(slash + 1) }
+  }
+  const text = (key: string) => (typeof body[key] === 'string' && (body[key] as string).trim() ? (body[key] as string).trim() : undefined)
+  return {
+    parts: body.parts as Array<Record<string, unknown>>,
+    ...(text('message_id') ? { messageId: text('message_id') } : {}),
+    ...(text('agent') ? { agent: text('agent') } : {}),
+    ...(model ? { model } : {}),
+    ...(text('variant') ? { variant: text('variant') } : {}),
+    ...(text('directory') ? { directory: text('directory') } : {}),
+    ...(body.no_reply === true ? { noReply: true } : {}),
+  }
+}
+
 function intParam(value: string | undefined, fallback: number, max: number): number {
   const n = Number(value)
   if (!Number.isFinite(n) || n <= 0) return fallback
@@ -53,10 +89,71 @@ function intParam(value: string | undefined, fallback: number, max: number): num
 export function createRuntimeRouter(
   cfg: Config,
   queries: HarnessQueryService,
-  options: { now?: () => number } = {},
+  options: {
+    now?: () => number
+    turns?: HarnessTurnService
+    /** The runtime gate the compatibility proxy runs before every request. */
+    readiness?: () => Promise<HarnessReadiness>
+  } = {},
 ): Hono {
   const app = new Hono()
   const now = options.now ?? (() => Date.now())
+  const turns = options.turns
+
+  if (turns) {
+    // The same gate and upstream failure as the compatibility proxy these
+    // verbs replace: 503 with the boot phase while the runtime cannot take a
+    // request, 502 when it cannot be reached (the API retries both).
+    const answer = async (c: Context, verb: () => Promise<{ status: number; body: unknown }>) => {
+      // Marks the answer as the verb's own: a 404 without it is a daemon that
+      // lacks the route, and apps/api resends on the legacy route.
+      c.header('X-Kortix-Turn-Verb', '1')
+      const readiness = await options.readiness?.()
+      if (readiness && !readiness.ready) {
+        c.header('X-Kortix-Boot-Phase', readiness.phase)
+        return c.json({ code: RUNTIME_NOT_READY_CODE, ...readiness.details, phase: readiness.phase }, 503)
+      }
+      try {
+        const result = await verb()
+        return c.json(result.body as Record<string, unknown>, result.status as 200)
+      } catch (err) {
+        return c.json({ error: 'upstream unreachable', details: (err as Error).message }, 502)
+      }
+    }
+
+    app.post('/sessions/:sessionId/prompt', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      const raw = await c.req.json().catch(() => undefined)
+      const input = parseRuntimePromptBody(raw)
+      if (typeof input === 'string') return c.json({ error: input }, 400)
+      return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
+    })
+
+    app.post('/sessions/:sessionId/abort', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.abort(c.req.param('sessionId')))
+    })
+
+    app.get('/messages/:sessionId/:messageId', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.readMessage(c.req.param('sessionId'), c.req.param('messageId')))
+    })
+
+    app.delete('/messages/:sessionId/:messageId', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
+    })
+
+    app.get('/agents', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.agents(c.req.query('directory')?.trim() || null))
+    })
+  }
 
   app.get('/state', async (c) => {
     const auth = authorize(cfg, c)

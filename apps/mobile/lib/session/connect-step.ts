@@ -99,14 +99,16 @@ export function startPollDelayMs(attempt: number): number {
 
 /**
  * Whether `ensureAndOpen` must await `GET <sandbox>/kortix/health` before it
- * opens the thread (COR-185). `/start` answering `stage: 'ready'` with an
- * OpenCode pin already proves the runtime is up, so the thread opens at once
+ * opens the thread (COR-185). `/start` answering `stage: 'ready'` with the
+ * runtime's root session already proves the runtime is up, so the thread opens at once
  * and the probe runs in the background (it still keeps the proxy route warm).
  * Any other answer waits for the probe: it reports `boot_error`.
  */
 export function shouldAwaitHealthProbe(start: {
   stage: string;
+  runtime_session_id?: string | null;
+  /** The pre-W4 name of `runtime_session_id`; an older API answers only this. */
   opencode_session_id?: string | null;
 }): boolean {
-  return !(start.stage === 'ready' && Boolean(start.opencode_session_id));
+  return !(start.stage === 'ready' && Boolean(start.runtime_session_id ?? start.opencode_session_id));
 }

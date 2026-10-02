@@ -21,12 +21,12 @@
 
 import { useMemo } from 'react';
 import { View } from 'react-native';
-import type { ParsedQuestion } from '@kortix/sdk';
+import { toToolView, type ParsedQuestion } from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { TextShimmer } from '@/components/kortix/text-shimmer';
 import { Text } from '@/components/ui/text';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { usePendingQuestions } from '@/lib/session/session-store';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   parseQuestionsInput,
@@ -40,7 +40,6 @@ import {
   ToolEmptyState,
   ToolMarkdown,
   partInput,
-  partMetadata,
   partOutput,
   useToolRowVariant,
 } from '../shared/infrastructure';
@@ -97,19 +96,15 @@ export function QuestionTool({ part, sessionId, defaultOpen, forceOpen, locked, 
   const primary = colorScheme === 'dark' ? THEME.dark.primary : THEME.light.primary;
   const { chain } = useToolRowVariant();
   const input = partInput(part);
-  const metadata = partMetadata(part);
   const output = partOutput(part);
-  const pendingForCall = useSyncStore((s) =>
-    hasActiveQuestion === undefined && sessionId
-      ? (s.questions[sessionId] ?? []).some((q) => q.tool?.callID === part.callID)
-      : false,
-  );
+  const pendingQuestions = usePendingQuestions(hasActiveQuestion === undefined ? sessionId : undefined);
+  const pendingForCall = pendingQuestions.some((q) => q.tool?.callID === part.callID);
   const active = hasActiveQuestion ?? pendingForCall;
 
   const questions = useMemo(() => parseQuestionsInput(input.questions), [input.questions]);
   const answers = useMemo(
-    () => resolveQuestionAnswers(metadata.answers, output, questions.length),
-    [metadata.answers, output, questions.length],
+    () => resolveQuestionAnswers(toToolView(part).answers, output, questions.length),
+    [part, output, questions.length],
   );
   const trigger = questionTrigger({ total: questions.length, answers, hasActiveQuestion: active });
   const type = chain ? TURN_TYPE.rowSm : TURN_TYPE.xs;

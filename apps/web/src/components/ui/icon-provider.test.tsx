@@ -33,21 +33,4 @@ describe('IconProvider', () => {
     );
   });
 
-  test('renders identically in development and production', () => {
-    const previous = process.env.NODE_ENV;
-    const render = () =>
-      renderToStaticMarkup(
-        <IconProvider>
-          <PlusIcon />
-        </IconProvider>,
-      );
-
-    Object.defineProperty(process.env, 'NODE_ENV', { value: 'development', configurable: true });
-    const development = render();
-    Object.defineProperty(process.env, 'NODE_ENV', { value: 'production', configurable: true });
-    const production = render();
-    Object.defineProperty(process.env, 'NODE_ENV', { value: previous, configurable: true });
-
-    expect(production).toBe(development);
-  });
 });

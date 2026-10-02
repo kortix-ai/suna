@@ -26,8 +26,13 @@ import { QuestionPrompt } from '@/components/session/QuestionPrompt';
 import { SessionBusyIndicator } from '@/components/session/session-busy-indicator';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
-import { useSyncStore } from '@/lib/opencode/sync-store';
-import type { MessageWithParts, PermissionRequest, QuestionRequest, Turn } from '@/lib/opencode/types';
+import {
+  usePendingPermissions,
+  usePendingQuestions,
+  useSessionRows,
+  useSessionStatus,
+} from '@/lib/session/session-store';
+import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
 import {
   isSuppressedFailedCompaction,
@@ -52,8 +57,6 @@ const WORKING_TURN_ID = SESSION_FIXTURE.working.userMessageId;
 const PENDING_TURN_IDS = fixturePendingTurnIds();
 const AGENT_NAMES = SESSION_FIXTURE.agentNames;
 const EMPTY_MESSAGES = Object.freeze([]) as unknown as MessageWithParts[];
-const EMPTY_QUESTIONS = Object.freeze([]) as unknown as QuestionRequest[];
-const EMPTY_PERMISSIONS = Object.freeze([]) as unknown as PermissionRequest[];
 /** `SessionPage` `INITIAL_TURNS_TO_RENDER`. */
 const INITIAL_TURNS_TO_RENDER = 4;
 const NOOP = () => {};
@@ -78,10 +81,10 @@ export function SessionFixtureScreen() {
   );
   const toggleTheme = useCallback(() => nativewindColorScheme.set(isDark ? 'light' : 'dark'), [isDark]);
 
-  const messages = useSyncStore((s) => s.messages[SESSION_ID]) ?? EMPTY_MESSAGES;
-  const sessionStatus = useSyncStore((s) => s.sessionStatus[SESSION_ID]);
-  const pendingQuestions = useSyncStore((s) => s.questions[SESSION_ID]) ?? EMPTY_QUESTIONS;
-  const pendingPermissions = useSyncStore((s) => s.permissions[SESSION_ID]) ?? EMPTY_PERMISSIONS;
+  const messages = useSessionRows(SESSION_ID) ?? EMPTY_MESSAGES;
+  const sessionStatus = useSessionStatus(SESSION_ID);
+  const pendingQuestions = usePendingQuestions(SESSION_ID);
+  const pendingPermissions = usePendingPermissions(SESSION_ID);
   const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   const turns = useMemo(() => fixtureTurns(messages), [messages]);

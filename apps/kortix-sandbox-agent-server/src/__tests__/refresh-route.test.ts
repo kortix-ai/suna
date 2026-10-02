@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 
 import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import type { Opencode, VerifiedReloadResult } from '@/harness/open-code/lifecycle'
@@ -28,7 +28,7 @@ import {
   testOpenCodeConfig,
 } from './helpers/open-code-harness'
 import { resolveHarness } from '@/harness/harness'
-import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
+import { __resetReconcileCooldownForTests, registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 
 // Production registers this lookup in main.ts before anything runs.
@@ -446,6 +446,10 @@ describe('runtime-assets convergence after a refresh', () => {
   // underneath a resume that was still booting (the API's start budget then
   // expired). A refresh converges only a runtime that is already serving.
   const saved = { url: process.env.KORTIX_API_URL, token: process.env.KORTIX_TOKEN }
+
+  // The cooldown is module state: a pass another test file converged in the last
+  // 60 s makes the refresh skip its own pass, so the `ok` row read nothing.
+  beforeEach(() => __resetReconcileCooldownForTests())
 
   afterEach(() => {
     if (saved.url === undefined) delete process.env.KORTIX_API_URL

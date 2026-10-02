@@ -111,6 +111,8 @@ export interface ProjectSession {
   search_match?: 'self' | 'child';
   owner_email?: string | null;
   owner_name?: string | null;
+  /** The owner's profile photo URL, or null. */
+  owner_avatar_url?: string | null;
   owner_type?: 'user' | 'service_account' | 'unknown' | null;
   visibility?: 'private' | 'project' | 'restricted';
   /** How the session was started — a policy class derived from the caller's
@@ -421,6 +423,38 @@ export async function setProjectSessionSharing(
     await backendApi.put<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}/sharing`,
       intent,
+    ),
+  );
+}
+
+/** One person who can open a session. */
+export interface SessionParticipant {
+  user_id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  /** True for the person making the request. */
+  is_viewer: boolean;
+}
+
+export interface SessionParticipants {
+  /** Who can open the session now, owner first. At most 20; see `total`. */
+  participants: SessionParticipant[];
+  /** How many people can open the session now. */
+  total: number;
+  /** Two or more distinct people can open the session. */
+  multi_user: boolean;
+}
+
+/**
+ * Who can open a session. Who wrote each message is
+ * `getSessionMessageAuthors`.
+ */
+export async function getSessionParticipants(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<SessionParticipants>(
+      `/projects/${projectId}/sessions/${sessionId}/participants`,
+      { showErrors: false },
     ),
   );
 }
@@ -1160,6 +1194,9 @@ export interface SessionPrompt {
    *  cannot tell a stuck upload from a prompt that never had attachments.
    *  Absent from servers older than this field. */
   attachments?: Array<{ filename: string; mime: string }>;
+  /** Posted without a turn: no agent answers it, so show no "thinking"
+   *  state. Absent from servers older than this field. */
+  no_reply?: boolean;
   created_at: string;
   available_at: string;
 }
@@ -1856,12 +1893,51 @@ export interface SessionModelChangeResult {
 export async function setProjectSessionModel(
   projectId: string,
   sessionId: string,
-  opencodeModel: string,
+  model: string,
 ): Promise<SessionModelChangeResult> {
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
       `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
-      { opencode_model: opencodeModel },
+      // `model` since W4; `opencode_model` is the same pin for an older API.
+      { model, opencode_model: model },
+    ),
+  );
+}
+
+/**
+ * The `provider/model` a session is pinned to, or null when it follows the
+ * project default. The pin is stored under the pre-W4 metadata key
+ * `opencode_model`; read it through this function, not from `metadata`.
+ */
+export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }): string | null {
+  const stored = session.metadata?.opencode_model;
+  return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
+}
+
+/** Who wrote one message: a project member, or another session's agent. */
+export type SessionMessageAuthor =
+  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url?: string | null }
+  /** `name` is the session title; `agent` is the agent that session runs. */
+  | { kind: 'session'; session_id: string; name: string; agent?: string };
+
+export interface SessionMessageAuthors {
+  /** Keyed by runtime message id. Messages with no known sender are absent. */
+  authors: Record<string, SessionMessageAuthor>;
+  /** A spawned session's first message came from its parent's agent. Null
+   *  when the session was not spawned with a first prompt. */
+  initial_author: SessionMessageAuthor | null;
+}
+
+/** Who wrote each message of a session, from the server's authenticated
+ *  prompt record. The runtime transcript itself carries no author. */
+export async function getSessionMessageAuthors(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionMessageAuthors> {
+  return unwrap(
+    await backendApi.get<SessionMessageAuthors>(
+      `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      { showErrors: false },
     ),
   );
 }

@@ -390,8 +390,27 @@ export interface ChannelBinding {
   platform: string;
   workspaceId: string;
   channelId: string;
+  /**
+   * What a person recognizes: a channel's name without `#`, the other
+   * person's name for a Slack DM, the members for a Slack group DM.
+   */
   channelName: string | null;
+  /**
+   * Teams: `personal` | `groupChat` | `channel`. Slack: `channel` |
+   * `private_channel` | `im` | `mpim`. Null until known.
+   */
   channelType: string | null;
+  /**
+   * Slack answered that the conversation is deleted or out of the bot's
+   * reach. Absent on servers older than this field.
+   */
+  channelUnavailable?: boolean;
+  /**
+   * A Teams channel thread: the title of its session. Every thread of a
+   * channel is its own binding named `Team › Channel`; this tells them
+   * apart. Null otherwise. Absent on servers older than this field.
+   */
+  threadTitle?: string | null;
   agentName: string | null;
   opencodeModel: string | null;
   conversationPolicy: ChannelConversationPolicy;

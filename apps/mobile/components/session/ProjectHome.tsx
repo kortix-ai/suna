@@ -13,7 +13,7 @@
  * the send waits for the uploads and hands their parts to ProjectScreen,
  * which creates the session with them. The agents and models are web's,
  * built by `@kortix/sdk` (`useComposerModels`); a model pick is sent as
- * `opencode_model`. A gateway project that offers no model never starts a
+ * `model`. A gateway project that offers no model never starts a
  * session: Send opens the connect-provider sheet and keeps the draft
  * (KRTX-251, `planComposerSend`).
  *
@@ -59,9 +59,9 @@ import { uploadErrorMessage } from '@/lib/session/composer-uploads';
 import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
-import { isModelUnavailable, opencodeModelRef, selectComposerModel } from '@/lib/session/composer-model';
+import { isModelUnavailable, sessionModelRef, selectComposerModel } from '@/lib/session/composer-model';
 import { planComposerSend } from '@/lib/session/send-plan';
-import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import { useLocalConfigStore } from '@/lib/session/local-config';
 import { composerChip, homeAgentPick, threadAgents, type PickerOption } from '@/lib/session/composer-config';
 import {
   firstPromptPicks,
@@ -70,7 +70,7 @@ import {
   offeredModelCount,
   pickerModelName,
 } from '@/lib/session/model-picker';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent } from '@/lib/session/runtime-data';
 
 /** One identity while the project detail loads, so the sheet's agent memo does not churn. */
 const EMPTY_AGENTS: Agent[] = [];
@@ -87,7 +87,7 @@ export interface ProjectHomeSubmit {
   files: AttachedFile[];
   /** The uploaded files' prompt parts, in `files` order (`takeForSend`). */
   fileParts: SessionPromptPart[];
-  /** The `opencode_model` of a pick (`opencodeModelRef`), or null to use the project default. */
+  /** The session `model` of a pick (`sessionModelRef`), or null to use the project default. */
   model: string | null;
   /**
    * The thinking level to run the first message on, with the model it belongs
@@ -158,7 +158,7 @@ export function ProjectHome({
     () => (projectConfig ? threadAgents(projectConfig) : undefined),
     [projectConfig],
   );
-  const defaultAgent = projectConfig?.open_code_default_agent ?? null;
+  const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
   const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
   const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
   const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
@@ -256,7 +256,6 @@ export function ProjectHome({
         modelName: activeModel ? pickerModelName(activeModel) : null,
       });
   const openConnectSheet = React.useCallback(() => {
-    Keyboard.dismiss();
     connectSheetRef.current?.open();
   }, []);
 
@@ -309,7 +308,7 @@ export function ProjectHome({
       text,
       files: sent.files,
       fileParts: sent.fileParts,
-      model: explicit ? opencodeModelRef(explicit) : null,
+      model: explicit ? sessionModelRef(explicit) : null,
       picks: firstPromptPicks(activeKey ?? null, variant, levels),
       agent: agentName,
     });
@@ -382,16 +381,10 @@ export function ProjectHome({
               sending={isSending}
               attachments={files}
               attachmentUploads={attachments.uploads}
-              onAttach={() => {
-                Keyboard.dismiss();
-                attachSheetRef.current?.open();
-              }}
+              onAttach={() => attachSheetRef.current?.open()}
               onRemoveAttachment={attachments.remove}
               chip={chip}
-              onChipPress={() => {
-                Keyboard.dismiss();
-                modelSheetRef.current?.open();
-              }}
+              onChipPress={() => modelSheetRef.current?.open()}
             />
           </Reanimated.View>
         </View>

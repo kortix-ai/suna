@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { sendIdsFor, useFailedSendStore, withFailed, withoutFailed } from './failed-sends';
+import { sendIdsFor, useFailedSendStore, withFailed, withoutFailed, failedSendRows } from './failed-sends';
 
 const send = { text: 'hello', options: { agent: 'kortix' } };
 
@@ -66,5 +66,30 @@ describe('sendIdsFor', () => {
 
   test('a retry with only one id kept mints the other', () => {
     expect(sendIdsFor({ messageId: 'msg_1' }, mint)).toEqual({ clientMessageId: 'fresh-client', messageId: 'msg_1' });
+  });
+});
+
+describe('failedSendRows', () => {
+  test('each failed send is a user row under its message id, oldest first, with its text and picked files', () => {
+    const rows = failedSendRows('ses_1', {
+      msg_b: { text: 'second', options: {}, failedAtMs: 200 },
+      msg_a: {
+        text: 'first',
+        options: {},
+        failedAtMs: 100,
+        localFiles: [{ uri: 'file:///a.png', name: 'a.png', mimeType: 'image/png', isImage: true } as never],
+      },
+    });
+    expect(rows.map((row) => row.info.id)).toEqual(['msg_a', 'msg_b']);
+    expect(rows[0].info).toMatchObject({ role: 'user', sessionID: 'ses_1' });
+    expect(rows[0].parts).toMatchObject([
+      { type: 'text', text: 'first', sessionID: 'ses_1', messageID: 'msg_a' },
+      { type: 'file', filename: 'a.png', localUri: 'file:///a.png', messageID: 'msg_a' },
+    ]);
+    expect(rows[1].parts).toMatchObject([{ type: 'text', text: 'second' }]);
+  });
+
+  test('no failed send, no row', () => {
+    expect(failedSendRows('ses_1', {})).toEqual([]);
   });
 });

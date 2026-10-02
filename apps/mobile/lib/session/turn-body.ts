@@ -22,6 +22,7 @@ import {
   isTextPart,
   isToolPart,
   shouldShowToolPart,
+  toToolView,
   unwrapError,
   type CompactionTurnInfo,
   type Part,
@@ -135,9 +136,8 @@ export function answeredQuestionParts(turn: TurnBodyTurn, pendingCallIds: Readon
       const state = part.state as unknown as {
         input?: QuestionInput;
         output?: string;
-        metadata?: { answers?: string[][] };
       };
-      const serverAnswers = state.metadata?.answers;
+      const serverAnswers = toToolView(part).answers;
       if (serverAnswers && serverAnswers.length > 0) {
         result.push(part);
       } else if (state.output && hasSubsequentContent) {

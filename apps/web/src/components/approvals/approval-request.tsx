@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { CheckCircleIcon, ShieldWarningIcon, XCircleIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** Matches `Date#toLocaleString()` with no options — date + time, default locale. */
 const requestedAtFormat = new Intl.DateTimeFormat(undefined, {
@@ -79,6 +79,9 @@ interface ApprovalRequestProps {
   busyDecision?: ApprovalDecisionValue | null;
   outcome?: ApprovalDecisionValue | null;
   error?: string | null;
+  /** The host renders Approve / Deny itself (the Review Center puts them in
+   *  the page header). The card then shows only the call. */
+  hideDecision?: boolean;
   className?: string;
 }
 
@@ -105,6 +108,53 @@ function orderedArgEntries(preview: Record<string, unknown>): Array<[string, unk
     return index === -1 ? PRIORITY_ARGS.length : index;
   };
   return Object.entries(preview).sort((left, right) => rank(left[0]) - rank(right[0]));
+}
+
+/**
+ * A parameter value held to a fixed height. A long value (a file list, a
+ * document body) would otherwise push the rest of the call off the page. It
+ * fades at the cut and expands in place, so nothing is hidden from review.
+ */
+function ClampedValue({ children, className }: { children: React.ReactNode; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    // Expanded, the box has no cut to measure; keep the last answer.
+    if (!el || expanded) return;
+    const measure = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [expanded]);
+  const clamped = overflows && !expanded;
+  return (
+    <div className="min-w-0">
+      <div
+        ref={ref}
+        className={cn(
+          !expanded && 'max-h-48 overflow-hidden',
+          clamped && '[mask-image:linear-gradient(to_bottom,black_65%,transparent)]',
+          className,
+        )}
+      >
+        {children}
+      </div>
+      {overflows ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          className="text-muted-foreground hover:text-foreground mt-1 text-xs underline-offset-2 hover:underline"
+        >
+          {expanded ? tI18nComplete.raw('text94ea9b1d33a0') : tI18nComplete.raw('textf5c9bd131486')}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function renderArgValue(value: unknown): string {
@@ -137,15 +187,20 @@ export function resolvedTone(label: string): 'success' | 'destructive' | 'muted'
  * The redacted parameters the connector would receive — the whole reason an
  * approval is decidable rather than a guess. Shared by the standalone page, the
  * Audit panel, and the in-session notice so all three show the same values.
+ *
+ * `channelNames`: a value that is a bound Slack conversation id shows its name
+ * beside it. The id stays, because it is the exact parameter.
  */
 export function ApprovalParameters({
   argsPreview,
   reviewComplete = true,
   dense = false,
+  channelNames,
   className,
 }: DenseProp & {
   argsPreview: Record<string, unknown> | null;
   reviewComplete?: boolean;
+  channelNames?: ReadonlyMap<string, string>;
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -193,19 +248,26 @@ export function ApprovalParameters({
               <dt className="text-muted-foreground font-mono text-xs tracking-normal break-all">
                 {key}
               </dt>
-              <dd
-                className={cn(
-                  'text-foreground min-w-0 wrap-break-word whitespace-pre-wrap',
-                  dense ? 'text-xs' : 'text-sm',
-                )}
-              >
-                {value === '[redacted]' ? (
-                  <span className="text-muted-foreground italic">
-                    {tI18nComplete.raw('text1c57f31d6315')}
-                  </span>
-                ) : (
-                  renderArgValue(value)
-                )}
+              <dd className="min-w-0">
+                <ClampedValue
+                  className={cn(
+                    'text-foreground wrap-break-word whitespace-pre-wrap',
+                    dense ? 'text-xs' : 'text-sm',
+                  )}
+                >
+                  {value === '[redacted]' ? (
+                    <span className="text-muted-foreground italic">
+                      {tI18nComplete.raw('text1c57f31d6315')}
+                    </span>
+                  ) : (
+                    <>
+                      {renderArgValue(value)}
+                      {typeof value === 'string' && channelNames?.has(value) ? (
+                        <span className="text-muted-foreground"> · {channelNames.get(value)}</span>
+                      ) : null}
+                    </>
+                  )}
+                </ClampedValue>
               </dd>
             </div>
           ))}
@@ -364,6 +426,7 @@ export function ApprovalRequest({
   busyDecision = null,
   outcome = null,
   error = null,
+  hideDecision = false,
   className,
 }: ApprovalRequestProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -439,7 +502,7 @@ export function ApprovalRequest({
         <ApprovalUnreviewableNotice previewAuthorized={request.previewAuthorized !== false} />
       ) : null}
 
-      {actionable ? (
+      {actionable && !hideDecision ? (
         <ApprovalDecisionActions
           onDecision={actionable}
           busyDecision={busyDecision}

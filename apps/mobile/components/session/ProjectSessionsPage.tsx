@@ -53,6 +53,7 @@ import { FlatList, RefreshControl, View, type ListRenderItem } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useIsFocused } from 'expo-router/react-navigation';
+import { directSubsessions } from '@kortix/sdk';
 import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
 import { FunnelIcon as Funnel, NavigationArrowIcon, XIcon } from '@/lib/icons';
 
@@ -96,7 +97,6 @@ import type { ProjectSession } from '@/lib/projects/projects-client';
 import type { SessionStarter } from '@/lib/session/session-tree';
 import {
   SESSION_STATUS_FILTERS,
-  directSubsessions,
   showSubsessionCountBadge,
   filterSessionsByStatus,
   groupSessionsByActivity,
@@ -153,7 +153,7 @@ interface SessionRowProps {
   expanded?: boolean;
   onToggleChildren?: (session: ProjectSession) => void;
   /** A row tap opens the session on its root; a sub-session row passes that sub-session's id. */
-  onOpen: (session: ProjectSession, focusOpenCodeId?: string) => void;
+  onOpen: (session: ProjectSession, focusRuntimeId?: string) => void;
   onActions: (session: ProjectSession) => void;
 }
 
@@ -269,7 +269,7 @@ const SessionRow = React.memo(function SessionRow({
         <SubsessionTree
           subsessions={subsessions}
           parentTitle={title}
-          activeOpenCodeId={null}
+          activeRuntimeId={null}
           trunkX={TRUNK_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           textX={TEXT_X_TOP_LEVEL + (nested ? NESTED_LEAD : 0)}
           showTime

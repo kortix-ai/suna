@@ -14,7 +14,7 @@
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { composerSelectableAgents } from '../core/agents/composer-agents';
 import { resolveComposerModel } from '../core/models/composer-model';
-import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
 import { useKortixRouteProjectId } from './route-project';

@@ -55,7 +55,7 @@ import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
 import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { CopyIcon as Copy, ImageIcon } from '@/lib/icons';
+import { CopyIcon as Copy } from '@/lib/icons';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -80,7 +80,8 @@ import { mathPlugin } from '@/lib/markdown/math-plugin';
 import { markdownPalette, type MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { isMarkdownSeparatorBlock, splitMarkdown } from '@/lib/markdown/split-blocks';
 import { isSafeExternalLink } from '@/lib/markdown/safe-link';
-import { describeMarkdownImage } from '@/lib/markdown/markdown-image';
+import { groupImageBlocks } from '@/lib/markdown/markdown-image';
+import { MarkdownImage, MarkdownImageGallery, MarkdownImagesContext, type MarkdownRemoteImages } from '@/components/markdown/markdown-image';
 import {
   classifyBlock,
   collapsedGap,
@@ -138,6 +139,12 @@ export interface SelectableMarkdownTextProps {
    * a finished message whose last fence was never closed still highlights.
    */
   isStreaming?: boolean;
+  /**
+   * `'load'` where the project's agent wrote the text (a reply, a project
+   * file): remote http(s) images load, as on web. Default `'placeholder'`.
+   * Sandbox images load either way.
+   */
+  remoteImages?: MarkdownRemoteImages;
 }
 
 /**
@@ -160,37 +167,6 @@ function handleLibraryLinkPress(url: string): boolean {
   return false;
 }
 
-/**
- * Stand-in for a markdown image. Remote images are not loaded: a URL can leak
- * data to its host on render, and a huge image can exhaust memory on decode.
- * An http(s) source opens in the browser on tap; data: and other sources only
- * show the label. Web's image frame (`rounded-lg`, 10% outline) is applied to
- * the placeholder, the only image surface the app draws.
- */
-function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
-  const { label, href } = describeMarkdownImage(src, alt);
-  return (
-    <Button
-      variant="secondary"
-      size="sm"
-      className="my-1 max-w-full self-start"
-      style={{
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
-        borderColor: markdownPalette(isDark).imageOutline,
-      }}
-      disabled={!href}
-      onPress={href ? () => openExternalLink(href) : undefined}
-      role={href ? 'link' : 'img'}
-      accessibilityLabel={`Image: ${label}`}
-    >
-      <Icon as={ImageIcon} size={16} />
-      <Text numberOfLines={1} className="shrink">
-        {label}
-      </Text>
-    </Button>
-  );
-}
 
 /**
  * The fence at the end of the current block has no closing marker yet. Code
@@ -316,12 +292,13 @@ const createMarkdownRules = (isDark: boolean) => {
         {children}
       </MarkdownText>
     ),
-    // Images: never fetched; a placeholder instead.
+    // Images: the image itself where it may load (`MarkdownImagesContext`),
+    // else the placeholder card.
     image: (node: AstNode) => (
-      <MarkdownImagePlaceholder
+      <MarkdownImage
         key={node.key}
-        src={node.attributes?.src}
-        alt={node.attributes?.alt}
+        src={typeof node.attributes?.src === 'string' ? node.attributes.src : ''}
+        alt={typeof node.attributes?.alt === 'string' ? node.attributes.alt : ''}
         isDark={isDark}
       />
     ),
@@ -947,19 +924,37 @@ function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: b
     [blocks],
   );
 
+  // A run of image-only blocks with two or more images is one swipeable
+  // gallery; every other block renders as markdown.
+  const items = useMemo(() => groupImageBlocks(blocks), [blocks]);
+
   return (
     <View>
-      {blocks.map((block, index) => (
-        // Position is the identity: streaming only appends, so block N stays block N.
-        <MarkdownBlock
-          key={index}
-          text={block}
-          isDark={isDark}
-          openFence={fenceGrowing && index === blocks.length - 1}
-          marginTop={collapsedGap(index === 0 ? null : kinds[index - 1].last, kinds[index].first)}
-          animate={index >= (firstCount.current ?? 0)}
-        />
-      ))}
+      {items.map((item, itemIndex) => {
+        // Position is the identity: streaming only appends, so block N stays
+        // block N, and a gallery keeps the index of its first block.
+        const index = item.index;
+        const previous = itemIndex === 0 ? null : items[itemIndex - 1];
+        const previousLast = previous ? (previous.kind === 'gallery' ? previous.last : previous.index) : null;
+        const marginTop = collapsedGap(previousLast === null ? null : kinds[previousLast].last, kinds[index].first);
+        if (item.kind === 'gallery') {
+          return (
+            <View key={index} style={marginTop ? { marginTop } : undefined}>
+              <MarkdownImageGallery images={item.images} isDark={isDark} />
+            </View>
+          );
+        }
+        return (
+          <MarkdownBlock
+            key={index}
+            text={item.text}
+            isDark={isDark}
+            openFence={fenceGrowing && index === blocks.length - 1}
+            marginTop={marginTop}
+            animate={index >= (firstCount.current ?? 0)}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -1022,16 +1017,21 @@ function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; is
  * the `UITextView` native view, a double tap opens a selection sheet instead.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
-  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming }: SelectableMarkdownTextProps) {
+  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder' }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
 
     // Trailing whitespace would add empty space below the last block.
     const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
 
-    if (Platform.OS === 'ios' && !IOS_TEXT_VIEW) {
-      return <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />;
-    }
-    return <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />;
+    return (
+      <MarkdownImagesContext.Provider value={remoteImages}>
+        {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
+          <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />
+        ) : (
+          <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+        )}
+      </MarkdownImagesContext.Provider>
+    );
   },
 );

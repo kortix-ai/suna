@@ -646,7 +646,7 @@ export async function reconcileEmailConnections(
   projectId: string,
   accountId: string,
 ): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId).catch(() => []);
+  const installs = await listAgentMailInstalls(projectId);
   const canonicalSlug = channelDefaultSlug('email');
   const [connector] = await db
     .select({ connectorId: connectors.connectorId })

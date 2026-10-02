@@ -42,7 +42,7 @@ import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { CubeIcon, InfinityIcon, PlusIcon, RobotIcon } from '@/lib/icons';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
-import type { Agent } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Agent } from '@/lib/session/runtime-data';
 import {
   agentDisplayName,
   nearestStop,
@@ -94,7 +94,7 @@ interface ModelPickerSheetProps {
   thinking?: ModelThinking;
   /** "Connect provider" in the empty state: the project offers no model. */
   onConnect?: () => void;
-  /** The Agent tab: the project config's agents (`projectConfigAgentsToOpenCodeAgents`). */
+  /** The Agent tab: the project config's agents (`projectConfigAgentsToRuntimeAgents`). */
   agent?: AgentChoice;
   /** The thread's AutoContinue row, under Thinking. */
   autoContinue?: ModelAutoContinue;

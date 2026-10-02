@@ -137,7 +137,7 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
 }
 
 /**
- * Send the sign-in/sign-up email code — ONE action for both cases. GoTrue's
+ * Send the sign-in/sign-up email link — ONE action for both cases. GoTrue's
  * OTP with `shouldCreateUser: true` already treats new and existing addresses
  * identically, so the only gate is access control: a brand-new address while
  * signups are closed is turned away before any email goes out (previously the
@@ -177,9 +177,8 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   //  - an ATTRIBUTED bounce cannot be matched against a signer here, because no
   //    identity exists yet — the address has not been proven. Fail closed: a
   //    path bounced from a named session does not get minted into an email.
-  //    Nothing is lost in the common case; the same-browser code-entry path
-  //    (`verifyOtp`) still carries the full return URL from the form, and it
-  //    CAN compare identities.
+  //    The password path can compare identities after authentication; the
+  //    link must drop an attributed bounce before it leaves the browser.
   const returnUrl = shouldDemoteReturnUrl({
     bouncedOwnerId: await readBouncedOwnerId(),
     signedInUserId: null,
@@ -210,7 +209,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not send the code' };
+    return { message: error.message || 'Could not send the link' };
   }
 
   return {
@@ -418,7 +417,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return { message: tI18nComplete.raw('textb6eb82cd3300') };
   }
 
-  // Access control gate — same rule the email-code path enforces: a brand-new
+  // Access control gate — same rule the email-link path enforces: a brand-new
   // address while signups are closed never reaches GoTrue, and an SSO-enforced
   // domain never gets a password identity created. Existing accounts resolve
   // to 'signin' and pass straight through to the sign-in attempt.

@@ -26,7 +26,6 @@
  * through the transcript.
  */
 import { flow, harnessFlow } from '../core/flow';
-import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import {
   abortTurn,
@@ -38,6 +37,7 @@ import {
   readTranscript,
   sandboxIdOf,
   sendPrompt,
+  stopSessionAndWait,
   waitForAssistantText,
   waitForSessionReady,
   waitForTurn,
@@ -243,28 +243,13 @@ harnessFlow(
     });
 
     await ctx.step(
-      "stop the session's sandbox via the session stop route (aborts the turn first) → 200 stopped",
+      "stop the session's sandbox via the session stop route (aborts the turn first) → 200 stopped (or stopping, then stopped)",
       async () => {
         // `stop` 409s ("Session is not running") until the session_sandboxes
         // row is `active`; `/start` reporting `ready` proves the RUNTIME
         // answers, not that the row has settled. Retry across that window; a
         // 409 that never clears still fails, with the status the API reported.
-        const stopped = await waitFor(
-          async () =>
-            ctx.client.as(ctx.P.OWNER).post(
-              '/v1/projects/:projectId/sessions/:sessionId/stop',
-              {},
-              { params: { projectId, sessionId } },
-            ),
-          {
-            until: (r) => r.statusCode !== 409,
-            timeoutMs: 60_000,
-            intervalMs: 3_000,
-            description: `session ${sessionId} to become stoppable (stop returns 409 until the sandbox row is active)`,
-            retryOnError: isKe2eRetryableError,
-          },
-        );
-        stopped.status(200).body().has('$.status', 'stopped');
+        await stopSessionAndWait(ctx, projectId, sessionId, { waitUntilStoppable: true });
       },
     );
 
@@ -552,13 +537,8 @@ harnessFlow(
       );
     });
 
-    await ctx.step("stop session A's sandbox → 200 stopped", async () => {
-      const r = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
-        {},
-        { params: { projectId: project.id, sessionId: sessionA.id } },
-      );
-      r.status(200).body().has('$.status', 'stopped');
+    await ctx.step("stop session A's sandbox → 200 stopped (or stopping, then stopped)", async () => {
+      await stopSessionAndWait(ctx, project.id, sessionA.id);
     });
 
     await ctx.step(

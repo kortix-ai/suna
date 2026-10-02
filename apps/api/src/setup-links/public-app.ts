@@ -8,10 +8,10 @@
  * can only write the names sealed into the token, into the one project the token
  * is for. Same trust model as a magic link / a Pipedream connect URL.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { requestClientKey } from '../shared/client-ip';
 import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { type Context, Hono, type Next } from 'hono';
 import { connectorAccountLandedSince, credentialExists } from '../connectors/credentials';
 import {
@@ -25,7 +25,9 @@ import {
   type SessionWithheldSecrets,
 } from '../projects/lib/session-secret-reach';
 import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
-import { db } from '../shared/db';
+import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
+import { resolveUserIdentities } from '../projects/lib/user-identity';
+import { db, withDbTransaction } from '../shared/db';
 import { TokenBucketRateLimiter, enforceRateLimit } from '../shared/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
@@ -76,6 +78,46 @@ function createSetupLinkRateLimitMiddleware() {
   };
 }
 
+/**
+ * The person whose session minted this link, when they belong to the project's
+ * account — the one principal an anonymous link holder may keep the values to.
+ * Their display name only: the link page is public, so never their email.
+ */
+async function linkRequester(
+  projectId: string,
+  uid: string | null | undefined,
+): Promise<{ id: string; label: string | null } | null> {
+  if (!uid) return null;
+  // Optional: a failed lookup offers no "only the person who asked" choice
+  // rather than breaking the link page.
+  try {
+    return await lookupLinkRequester(projectId, uid);
+  } catch {
+    return null;
+  }
+}
+
+async function lookupLinkRequester(projectId: string, uid: string): Promise<{ id: string; label: string | null } | null> {
+  const result = await db.execute<{ found: number }>(sql`
+    select 1 as found from kortix.account_memberships m
+      join kortix.projects p on p.account_id = m.account_id
+     where p.project_id = ${projectId}::uuid and m.user_id::text = ${uid}
+     limit 1`);
+  const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
+  if ((rows as Array<{ found: number }>).length === 0) return null;
+  const identity = (await resolveUserIdentities([uid])).get(uid);
+  return { id: uid, label: identity?.displayName ?? null };
+}
+
+async function projectAccount(projectId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ accountId: projects.accountId })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return row?.accountId ?? null;
+}
+
 async function projectName(projectId: string): Promise<string> {
   const [row] = await db
     .select({ name: projects.name })
@@ -96,9 +138,17 @@ setupLinksPublicApp.get('/secret/:token', async (c) => {
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'secret') return c.json({ error: 'Wrong link type' }, 400);
 
+  const [project] = await db.select({ name: projects.name, status: projects.status })
+    .from(projects).where(eq(projects.projectId, resolved.projectId)).limit(1);
+  if (!project || project.status === 'archived') {
+    return c.json({ error: 'This link is unavailable' }, 404);
+  }
+
+  const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
     kind: 'secret',
-    project_name: await projectName(resolved.projectId),
+    project_name: project.name,
+    requester: requester ? { label: requester.label } : null,
     fields: resolved.payload.fields.map((f) => ({
       name: f.name,
       label: f.label ?? null,
@@ -123,28 +173,62 @@ setupLinksPublicApp.post('/secret/:token', async (c) => {
 
   const values = (body?.values ?? {}) as Record<string, unknown>;
   const allowed = new Set(resolved.payload.fields.map((f) => f.name));
+  const payload = resolved.payload;
+  const result = await withDbTransaction(async () => {
+    // The archive UPDATE takes the same row lock: either all values commit
+    // before deletion, or this submission sees archived and writes nothing.
+    const [project] = await db.select({ status: projects.status }).from(projects)
+      .where(eq(projects.projectId, resolved.projectId)).limit(1).for('update');
+    if (!project || project.status === 'archived') {
+      return c.json({ error: 'This link is unavailable' }, 404);
+    }
+    // "Only the person who asked" — the one audience a link holder may choose.
+    // It can only narrow: the default is everyone in the project.
+    const requester = body?.only_requester === true ? await linkRequester(resolved.projectId, payload.uid) : null;
+    if (body?.only_requester === true && !requester) {
+      return c.json({ error: 'This link cannot keep the values to one person' }, 400);
+    }
+    const accountId = requester ? await projectAccount(resolved.projectId) : null;
 
-  const saved: string[] = [];
-  for (const [rawName, rawValue] of Object.entries(values)) {
-    const name = rawName.toUpperCase();
-    // Value-only: silently ignore anything the token didn't ask for, and never
-    // let a leaked token write to a key it doesn't name.
-    if (!allowed.has(name) || !isValidSecretName(name)) continue;
-    const value = typeof rawValue === 'string' ? rawValue : '';
-    if (!value) continue;
-    await writeSharedProjectSecret({
-      projectId: resolved.projectId,
-      name,
-      value,
-      scope: resolved.payload.scope,
-      createdBy: resolved.payload.uid,
-    });
-    saved.push(name);
-  }
+    const saved: string[] = [];
+    for (const [rawName, rawValue] of Object.entries(values)) {
+      const name = rawName.toUpperCase();
+      // Value-only: silently ignore anything the token didn't ask for, and never
+      // let a leaked token write to a key it doesn't name.
+      if (!allowed.has(name) || !isValidSecretName(name)) continue;
+      const value = typeof rawValue === 'string' ? rawValue : '';
+      if (!value) continue;
+      const audience =
+        requester && accountId
+          ? { accountId, projectId: resolved.projectId, principals: [{ principal_type: 'user' as const, principal_id: requester.id }], grantedBy: requester.id }
+          : null;
+      // Audience first, under the id a NEW row will get (secret-audience.ts).
+      const pendingId = audience ? randomUUID() : undefined;
+      if (audience && pendingId) await setSecretAudience({ ...audience, secretId: pendingId, pending: true });
+      const secretId = await writeSharedProjectSecret({
+        projectId: resolved.projectId,
+        name,
+        value,
+        scope: payload.scope,
+        createdBy: payload.uid,
+        ...(pendingId ? { secretId: pendingId } : {}),
+      });
+      if (audience && pendingId && secretId !== pendingId) {
+        // The key already existed: drop the pending grants, narrow the row itself.
+        await clearSecretAudience({ accountId: audience.accountId, projectId: audience.projectId, secretId: pendingId });
+        await setSecretAudience({ ...audience, secretId });
+      }
+      saved.push(name);
+    }
 
-  if (saved.length === 0) {
-    return c.json({ error: 'No values provided for the requested keys' }, 400);
-  }
+    if (saved.length === 0) {
+      return c.json({ error: 'No values provided for the requested keys' }, 400);
+    }
+
+    return saved;
+  });
+  if (result instanceof Response) return result;
+  const saved = result;
 
   // Live-propagate so an active session sees the new value without a restart.
   void propagateProjectSecretsToActiveSandboxes(resolved.projectId);
