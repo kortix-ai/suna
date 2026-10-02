@@ -1,17 +1,12 @@
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
-import { projects, projectSessions } from '@kortix/db';
-import { db } from '../../shared/db';
 import type { ProviderName } from '../../platform/providers';
 import {
   intersectSecretGrants,
   listProjectSecretsSnapshotForUser,
   projectSecretsRevision,
 } from '../secrets';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { resolveSessionSecretGrant } from './secret-grant';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { resolveSessionPersonalOwner } from './personal-resources';
+import { loadSessionSecretContext, type SessionSecretContext } from './session-secret-context';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /**
@@ -213,39 +208,20 @@ async function resolveOwnerRawEnv(
   projectId: string,
   sessionId: string | null,
   requestedAgent?: string | null,
+  /** The session's secret context, when the caller already started the read. */
+  context?: Promise<SessionSecretContext>,
 ): Promise<{
   env: Record<string, string>;
   capabilitiesJson: string;
   scope: SandboxEnvSnapshot['scope'];
 } | null> {
   if (!sessionId) return null;
-  // The project read below is keyed on `projectId`, not on anything this row
-  // returns, so both go out together: one round trip instead of two.
-  // Promise.resolve, not the query builder itself: a Drizzle builder is a
-  // thenable, so it starts here but has no `.catch` of its own.
-  const projectRead = Promise.resolve(
-    db
-      .select({
-        repoUrl: projects.repoUrl,
-        defaultBranch: projects.defaultBranch,
-        manifestPath: projects.manifestPath,
-      })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1),
-  );
-  projectRead.catch(() => undefined);
-  const [row] = await db
-    .select({
-      createdBy: projectSessions.createdBy,
-      agentName: projectSessions.agentName,
-      secretsAllowlist: projectSessions.secretsAllowlist,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
+  const { session: row, grantEnv: resolveGrantEnv, personalUserId: personalOwner } = await (context ??
+    loadSessionSecretContext(projectId, sessionId, requestedAgent));
   if (!row?.createdBy) return null;
 
+  // The owner read needs nothing from the grant: it starts beside it.
+  const ownerRead = personalOwner();
   // Resolve the RUNNING agent's `secrets` grant (by identifier) — the SAME gate
   // applied at sandbox boot (buildSessionSandboxEnvVars), through the SAME
   // resolver (lib/secret-grant.ts), so boot and hot push can never disagree.
@@ -258,17 +234,7 @@ async function resolveOwnerRawEnv(
   // the env with the RUNNING agent's grant before the prompt is forwarded. A
   // switch is never refused — see secret-grant.ts for why refusing protected
   // nothing that was still protectable.
-  const [project] = await projectRead;
-
-  const grantEnv = await resolveSessionSecretGrant({
-    projectId,
-    repoUrl: project?.repoUrl ?? '',
-    defaultBranch: project?.defaultBranch,
-    manifestPath: project?.manifestPath,
-    sessionAgent: row.agentName ?? DEFAULT_AGENT_SENTINEL,
-    requestedAgent,
-    forceRefresh: 'tip-proof',
-  });
+  const grantEnv = await resolveGrantEnv();
 
   // THE CLOBBER FIX: apply the SAME per-session secrets narrowing as boot
   // (buildSessionSandboxEnvVars). Without this, the first prompt's env sync (and
@@ -278,11 +244,7 @@ async function resolveOwnerRawEnv(
   // Spec 2026-09-22 §2.3: the personal-override owner is the session's
   // on-behalf-of human in a private session under the agent-principal model
   // (null after a foreign prompt clears it); the creator otherwise (legacy).
-  const personalUserId = await resolveSessionPersonalOwner({
-    projectId,
-    sessionId,
-    legacyUserId: row.createdBy,
-  });
+  const personalUserId = await ownerRead;
   const snapshot = await listProjectSecretsSnapshotForUser(
     projectId,
     personalUserId,
@@ -307,8 +269,9 @@ export async function resolveSandboxEnvSnapshot(
   projectId: string,
   sessionId: string | null,
   requestedAgent?: string | null,
+  context?: Promise<SessionSecretContext>,
 ): Promise<SandboxEnvSnapshot | null> {
-  const resolved = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent);
+  const resolved = await resolveOwnerRawEnv(projectId, sessionId, requestedAgent, context);
   if (!resolved) return null;
   const { env, names } = sanitizeSandboxEnv(resolved.env);
   return {

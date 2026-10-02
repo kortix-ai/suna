@@ -417,7 +417,10 @@ export async function remintGrantForAgentSwitch(
     runningAgent = input.sessionAgent;
   }
 
-  const stored = await loadStoredSessionGrant(input.sessionId);
+  // The stored grant and the manifest read need nothing from each other: they
+  // start together. Awaited in the original order.
+  const storedRead = loadStoredSessionGrant(input.sessionId);
+  storedRead.catch(() => undefined);
   // Synchronous for the same-agent case too — every ordinary turn. This ran in
   // the background for one release (the manifest read is a git fetch of the
   // project mirror, ~0.8s on the path of every prompt) and the security review
@@ -436,7 +439,10 @@ export async function remintGrantForAgentSwitch(
   // tie-break read stays strict: it exists to contradict the first one.
   const resolve = (forceRefresh: MirrorRefresh) =>
     resolveCurrentGrant({ ...input, runningAgent, forceRefresh });
-  const running = await resolve('tip-proof');
+  const runningRead = resolve('tip-proof');
+  runningRead.catch(() => undefined);
+  const stored = await storedRead;
+  const running = await runningRead;
   return applyResolvedGrant(input, stored, running, () => resolve(true));
 }
 
