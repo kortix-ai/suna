@@ -38,14 +38,10 @@ import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
-  DiscordLogoIcon,
-  GithubLogoIcon,
   StackIcon as Layers,
-  LinkedinLogoIcon,
   ListIcon as Menu,
   TextTIcon as Type,
   XIcon as X,
-  XLogoIcon,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
@@ -53,25 +49,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
 
-const SCROLL_THRESHOLD_DOWN = 50;
-const SCROLL_THRESHOLD_UP = 20;
-
 const CTA_LINK = '/auth';
-
-/**
- * Scroll compaction — height only.
- *
- * At the top of the page the bar breathes. Once the reader scrolls it tucks in:
- * the outer padding drops from 14.72px to 5.52px and the row from 52px to 40px,
- * taking the bar from 66.7px to 51.0px (-23.5%).
- *
- * Nothing moves horizontally. The measure, the logo/nav gap, and every button
- * size are identical in both states, so the only thing that animates is the
- * vertical rhythm — the bar tightens around its contents instead of rearranging
- * them.
- */
-const BAR_TOP_PAD = { rest: 'pt-4', compact: 'pt-1.5' } as const;
-const BAR_ROW_HEIGHT = { rest: 'h-[52px]', compact: 'h-[40px]' } as const;
 
 /**
  * The marketing sections all sit on `mx-auto max-w-7xl px-6`. The bar's surface
@@ -102,13 +80,6 @@ function drawerSubLinks(item: NavLink): NavSubLink[] {
  */
 const DRAWER_ROW = 'flex items-center py-2 text-lg font-medium transition-colors';
 
-const DRAWER_SOCIALS = [
-  { label: 'X', href: 'https://x.com/kortix', icon: XLogoIcon },
-  { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', icon: LinkedinLogoIcon },
-  { label: 'Discord', href: 'https://discord.com/invite/RvFhXUdZ9H', icon: DiscordLogoIcon },
-  { label: 'GitHub', href: 'https://github.com/kortix-ai/suna', icon: GithubLogoIcon },
-] as const;
-
 interface NavbarProps {
   isAbsolute?: boolean;
 }
@@ -116,9 +87,7 @@ interface NavbarProps {
 export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [openDrawerMenu, setOpenDrawerMenu] = useState<number | null>(null);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -190,22 +159,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         return null;
     }
   };
-
-  // Asymmetric thresholds: the bar compacts at 50px and only expands again below
-  // 20px, so a reader hovering around the trigger point never sees it flicker.
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      setHasScrolled((wasScrolled) =>
-        wasScrolled
-          ? currentScrollY >= SCROLL_THRESHOLD_UP
-          : currentScrollY > SCROLL_THRESHOLD_DOWN,
-      );
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   useEffect(() => {
     if (!isDrawerOpen) return;

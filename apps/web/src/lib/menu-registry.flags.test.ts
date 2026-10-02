@@ -9,16 +9,16 @@ import { menuRegistry } from './menu-registry';
 
 /**
  * `requiresFlag` is only a gate if EVERY consumer honours it. Before this, the
- * command palette filtered on it and `sidebar-right.tsx` did not — so the first
+ * command palette filtered on it and the legacy right rail did not — so the first
  * flagged item to gain `showIn: ['rightSidebar']` would have leaked a disabled
- * feature into the nav. These tests pin all three halves: the declaration, the
- * two consumers, and the flag map that resolves an arbitrary key.
+ * feature into the nav. The rail is deleted (KRTX-1012); these tests pin the
+ * declaration, the one surviving consumer, and the flag map that resolves an
+ * arbitrary key.
  */
 const root = resolve(import.meta.dir, '..');
 const registrySource = readFileSync(join(root, 'lib/menu-registry.ts'), 'utf8');
 const flagMapSource = readFileSync(join(root, 'lib/use-project-feature-flags.ts'), 'utf8');
 const paletteSource = readFileSync(join(root, 'features/workspace/command-palette.tsx'), 'utf8');
-const sidebarSource = readFileSync(join(root, 'components/sidebar/sidebar-right.tsx'), 'utf8');
 
 describe('menu registry feature-flag gating', () => {
   test('the field is named requiresFlag and typed FeatureFlagKey', () => {
@@ -87,16 +87,6 @@ describe('menu registry feature-flag gating', () => {
     expect(paletteSource).toContain(
       'if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;',
     );
-  });
-
-  test('the right sidebar filters on requiresFlag too, fail-closed', () => {
-    expect(sidebarSource).toContain('useProjectFeatureFlags(routeProjectId)');
-    expect(sidebarSource).toContain(
-      '(item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag]',
-    );
-    expect(sidebarSource).toContain('filterClusters(getNavItemsClustered(');
-    expect(sidebarSource).toContain('const quickActionClusters = localizeClusters(');
-    expect(sidebarSource).toContain('const navClusters = localizeClusters(');
   });
 });
 

@@ -13,6 +13,7 @@ import { afterEach, expect, mock, test } from 'bun:test';
 import React, { act, createElement, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
+import type { ConfettiRef } from './confetti';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
@@ -51,14 +52,19 @@ mock.module('canvas-confetti', () => {
 // The component under test, imported after the mock so it binds the stub.
 const confettiModule = await import('./confetti');
 const Confetti = confettiModule.Confetti;
-type ConfettiRef = (typeof confettiModule)['ConfettiRef'];
 
 let roots: Root[] = [];
 let containers: Element[] = [];
 
+/** happy-dom's element crosses into react-dom through one explicit cast. */
+function libContainer(node: { appendChild(child: unknown): void }) {
+  return node as unknown as HTMLElement;
+}
+
 async function mount(node: React.ReactElement) {
-  const container = win.document.createElement('div');
-  win.document.body.appendChild(container);
+  const raw = win.document.createElement('div');
+  const container = libContainer(raw);
+  win.document.body.appendChild(raw);
   const root = createRoot(container);
   roots.push(root);
   containers.push(container);
@@ -86,7 +92,7 @@ test('a plain mount fires once with the reduced-motion default and the overlay c
   // Reduced motion is the component's own default, not a caller's job.
   expect(shots[0].disableForReducedMotion).toBe(true);
   // The canvas defaults to a full-viewport, click-through overlay.
-  const canvas = container.querySelector('canvas');
+  const canvas = (container as HTMLElement).querySelector('canvas');
   expect(canvas).not.toBeNull();
   expect(canvas!.getAttribute('aria-hidden')).toBe('true');
   const cls = canvas!.getAttribute('class') ?? '';

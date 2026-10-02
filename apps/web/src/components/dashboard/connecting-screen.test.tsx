@@ -48,10 +48,10 @@ afterEach(() => {
   });
 });
 
-async function render(props: Parameters<typeof ConnectingScreen>[0]) {
+async function render(props: NonNullable<Parameters<typeof ConnectingScreen>[0]> = {}) {
   let renderer: ReturnType<typeof create> | undefined;
   await act(async () => {
-    renderer = create(createElement(ConnectingScreen, props));
+    renderer = create(<ConnectingScreen {...props} />);
   });
   if (!renderer) throw new Error('ConnectingScreen did not render');
   return renderer;

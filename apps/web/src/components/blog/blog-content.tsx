@@ -1,6 +1,5 @@
 import { BlogCta } from '@/components/blog/blog-cta';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
 import { CheckIcon as Check, MinusIcon as Minus } from '@/lib/icons/ssr';
 import { cn } from '@/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
@@ -317,20 +316,6 @@ export function BlogContent({ blocks }: { blocks: Block[] }) {
         seen.set(base, n + 1);
         return <BlockView key={n ? `${base}#${n}` : base} block={block} />;
       })}
-    </div>
-  );
-}
-
-/* Tags helper reused by the post header. */
-export function PostTags({ tags }: { tags: string[] }) {
-  if (!tags.length) return null;
-  return (
-    <div className="mb-4 flex flex-wrap gap-1.5">
-      {tags.map((tag) => (
-        <Badge key={tag} size="sm" variant="secondary">
-          {tag}
-        </Badge>
-      ))}
     </div>
   );
 }

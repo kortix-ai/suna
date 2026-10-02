@@ -45,20 +45,15 @@ export interface ConnectorSetupOptions extends ConnectorLinkInfoOptions {
   onOpened?: () => void;
 }
 
-// One cache per tab, shared by every card and modal on the link. Created on the
-// first hook call with that call's adapters; later callers pass the same ones.
+// One cache per tab, shared by every card and modal on the link. Created once
+// with the first caller's adapters; a host passes the same ones everywhere.
 let sharedCache: ReturnType<typeof createConnectorLinkInfoCache> | null = null;
-let sharedCacheKey: string | null = null;
 
 function sharedConnectorLinkInfoCache(options: ConnectorLinkInfoOptions) {
-  const key = options.storage ? 'storage' : 'memory';
-  if (!sharedCache || sharedCacheKey !== key) {
-    sharedCache = createConnectorLinkInfoCache(
-      (token) => getConnectorSetupLink(token, { backendUrl: options.backendUrl }),
-      { storage: options.storage ?? null },
-    );
-    sharedCacheKey = key;
-  }
+  sharedCache ??= createConnectorLinkInfoCache(
+    (token) => getConnectorSetupLink(token, { backendUrl: options.backendUrl }),
+    { storage: options.storage ?? null },
+  );
   return sharedCache;
 }
 
@@ -75,7 +70,6 @@ export function useConnectorLinkInfo(
   options: ConnectorLinkInfoOptions,
 ): ConnectorSetupLinkInfo | null | undefined {
   const cache = sharedConnectorLinkInfoCache(options);
-  const backendUrl = options.backendUrl;
 
   // Seeded synchronously from memory or storage, so a link seen before paints
   // its logo on the first frame; the GET below still refreshes it.
@@ -103,7 +97,7 @@ export function useConnectorLinkInfo(
     return () => {
       cancelled = true;
     };
-  }, [token, cache, backendUrl]);
+  }, [token, cache]);
 
   if (info && info.token === token) return info.value;
   // A token that changed since mount: read it now rather than show a skeleton.

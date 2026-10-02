@@ -14,6 +14,19 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 
 const win = new Window();
 const globals = globalThis as Record<string, unknown>;
+
+/**
+ * happy-dom implements the lib.dom surfaces; its own classes just carry extra
+ * members, so every crossing of that library boundary is one explicit cast,
+ * kept in these two adapters.
+ */
+const lib = {
+  element: (node: { innerHTML: string; outerHTML: string }) => node as unknown as HTMLElement,
+  click: (el: Element) =>
+    el.dispatchEvent(
+      new win.MouseEvent('click', { bubbles: true, cancelable: true }) as unknown as Event,
+    ),
+};
 globals.window = win;
 globals.document = win.document;
 globals.navigator = win.navigator;
@@ -54,8 +67,9 @@ let root: Root | undefined;
 let container: HTMLElement | undefined;
 
 async function mountNavbar() {
-  container = win.document.createElement('div');
-  win.document.body.appendChild(container);
+  const raw = win.document.createElement('div');
+  container = lib.element(raw);
+  win.document.body.appendChild(raw);
   root = createRoot(container);
   await act(async () => {
     root!.render(React.createElement(Navbar));
@@ -103,14 +117,14 @@ test('the mobile drawer locks body scroll while open and unlocks on close', asyn
   const open = container!.querySelector('[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]');
   expect(open).not.toBeNull();
   await act(async () => {
-    open!.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    lib.click(open!);
   });
   expect(win.document.body.style.overflow).toBe('hidden');
   const drawer = container!.querySelector('.bg-background.fixed.inset-0');
   expect(drawer).not.toBeNull();
   const close = container!.querySelector('[aria-label="componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu"]');
   await act(async () => {
-    close!.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    lib.click(close!);
   });
   expect(win.document.body.style.overflow).toBe('');
 });
@@ -120,7 +134,7 @@ test('a drawer row click closes the drawer and unlocks body scroll', async () =>
   await mountNavbar();
   const open = container!.querySelector('[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]');
   await act(async () => {
-    open!.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    lib.click(open!);
   });
   expect(win.document.body.style.overflow).toBe('hidden');
   const drawer = container!.querySelector('.bg-background.fixed.inset-0');
@@ -128,7 +142,7 @@ test('a drawer row click closes the drawer and unlocks body scroll', async () =>
   const row = drawer!.querySelector<HTMLAnchorElement>('a[href="/pricing"]');
   expect(row).not.toBeNull();
   await act(async () => {
-    row!.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }));
+    lib.click(row!);
   });
   // The drawer closed either way.
   expect(win.document.body.style.overflow).toBe('');
