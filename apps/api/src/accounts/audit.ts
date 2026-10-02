@@ -39,6 +39,8 @@ import {
   serializeAuditEvent,
 } from '../shared/audit-query';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
+import { readExportPage } from '../shared/audit-archive/export-page';
+import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
 import { type AuditFilterInput, buildFilters } from './audit-filters';
@@ -382,40 +384,36 @@ auditRouter.openapi(
 
     await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
 
-    const conditions = buildFilters(accountId, {
-      actor,
-      actorType,
-      projectId,
-      sessionId,
-      source,
-      credentialKind,
-      phase,
-      outcome,
-      requestId,
-      correlationId,
-      actionPrefix,
-      resourceType,
-      sinceRaw,
-      untilRaw,
-      q,
-    });
-
-    if (parsedCursor) {
-      conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'ascending'));
-    }
-
-    const fetched = await db
-      .select()
-      .from(auditEventsAll)
-      .where(and(...conditions))
-      // Export is chronological (oldest → newest) — that's the order humans
-      // expect when grepping through a CSV; pagination uses reverse order.
-      .orderBy(asc(auditEventsAll.occurredAt), asc(auditEventsAll.eventId))
-      .limit(exportLimit + 1);
-    const hasMore = fetched.length > exportLimit;
-    const rows = hasMore ? fetched.slice(0, exportLimit) : fetched;
-    const last = rows.at(-1);
-    const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    // Ascending, across the archive (weeks older than 90 days, S3) and PostgreSQL. A bucket that is
+    // not configured means PostgreSQL only.
+    const page = await readExportPage(
+      { db, store: auditArchiveStore().configured ? auditArchiveStore() : null },
+      {
+        accountId,
+        cursor: parsedCursor,
+        limit: exportLimit,
+        filters: {
+          actor,
+          actorType,
+          projectId,
+          sessionId,
+          source,
+          credentialKind,
+          phase,
+          outcome,
+          requestId,
+          correlationId,
+          actionPrefix,
+          resourceType,
+          sinceRaw,
+          untilRaw,
+          q,
+        },
+      },
+    );
+    const rows = page.rows;
+    const hasMore = page.nextCursor !== null;
+    const nextCursor = page.nextCursor;
 
     const filenameDate = new Date().toISOString().slice(0, 10);
     const filename = `audit-${filenameDate}.${format}`;
