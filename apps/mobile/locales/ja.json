@@ -1182,5 +1182,11 @@
     "includes": "含まれるもの",
     "askOwner": "アカウントのオーナーに席を依頼してください",
     "notNow": "後で"
+  },
+  "sessions": {
+    "showMoreSubsessions_one": "さらに{{count}}件を表示",
+    "showMoreSubsessions_other": "さらに{{count}}件を表示",
+    "showMoreSubsessionsLabel_one": "{{title}} のサブセッションをさらに{{count}}件表示",
+    "showMoreSubsessionsLabel_other": "{{title}} のサブセッションをさらに{{count}}件表示"
   }
 }

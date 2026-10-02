@@ -575,6 +575,20 @@ export function useProjectSessions(projectId: string | null, { poll = true }: Po
 }
 
 /**
+ * `query` plus `sessions`. A spread (`{ ...query, sessions }`) reads every
+ * field of TanStack's tracked result, which turns off its tracked-field
+ * renders: the consumer then re-rendered on every fetch start and end
+ * (`isFetching`), also when it never reads it (`useReviewItems` documents
+ * the same bug). The proxy passes each read through, so only the fields a
+ * consumer reads subscribe it.
+ */
+function withSessions<T extends object>(query: T, sessions: ProjectSession[]): T & { sessions: ProjectSession[] } {
+  return new Proxy(query, {
+    get: (target, key) => (key === 'sessions' ? sessions : Reflect.get(target, key)),
+  }) as T & { sessions: ProjectSession[] };
+}
+
+/**
  * A project's sessions a page at a time, newest activity first — the list the
  * project drawer and the Sessions page scroll. `useProjectSessions` above is
  * one page (the first 50): it serves lookups, not browsing.
@@ -609,7 +623,7 @@ export function useProjectSessionsPaged(
     },
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return { ...query, sessions };
+  return withSessions(query, sessions);
 }
 
 /** Rows a parent shows per "Show more". */
@@ -639,7 +653,7 @@ export function useSessionChildren(
     staleTime: 10_000,
   });
   const sessions = useMemo(() => flattenSessionPages(query.data), [query.data]);
-  return { ...query, sessions };
+  return withSessions(query, sessions);
 }
 
 export function useCreateProjectSession(projectId: string | null) {

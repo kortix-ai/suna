@@ -82,6 +82,17 @@ const fetchCalls: { url: string; method: string; body: any }[] = [];
 const scrollToCalls: { offset: number; animated: boolean }[] = [];
 const buttons: any[] = []; // every mounted design-system Button's props
 const viewProps: any[] = []; // every mounted react-native View's props
+let composerRenders = 0; // how many times SessionChatInput rendered
+let gestureAreaProps: any = null; // KeyboardGestureArea's latest props
+/** keyboard-controller's `KeyboardEvents` listeners, by event name. */
+const keyboardListeners = new Map<string, Set<() => void>>();
+const keyboardEvent = (name: string) => keyboardListeners.get(name)?.forEach((cb) => cb());
+/** The fresh-session hero's logo; found by type to tell whether it is mounted. */
+const HeroLogo = () => null;
+/** Every `Animated.timing(...).start(done)`, with its target and end callback. */
+const timingStarts: { toValue: number; done?: (result: { finished: boolean }) => void }[] = [];
+/** While true, `start` records its callback and does not end the animation. */
+let holdTimings = false;
 
 let resolvedConfig: any; // the mocked useResolvedConfig answer
 /** The bound session's runtime the page reads (`useSessionRuntime`). */
@@ -183,6 +194,12 @@ const Capture = (register: (props: any) => void) =>
     return null;
   });
 
+const NO_ROWS: never[] = [];
+const toastApi = {
+  error: (message: string) => toastCalls.push({ kind: 'error', message }),
+  info: (message: string) => toastCalls.push({ kind: 'info', message }),
+};
+
 const anyStub: any = new Proxy(
   function stub() {
     return null;
@@ -210,7 +227,15 @@ const rnNative: Record<string, any> = {
   RefreshControl: RNRefreshControl,
   Animated: {
     Value: RNAnimatedValue,
-    timing: () => ({ start: spy('animatedTiming') }),
+    // The animation ends at once: `start`'s callback runs with `finished`.
+    // With `holdTimings`, a test ends it by calling the recorded callback.
+    timing: (_value: unknown, config: { toValue: number }) => ({
+      start: (done?: (result: { finished: boolean }) => void) => {
+        calls.push({ name: 'animatedTiming', args: [] });
+        timingStarts.push({ toValue: config.toValue, done });
+        if (!holdTimings) done?.({ finished: true });
+      },
+    }),
     View: (props: any) => props.children ?? null,
   },
   Easing: { out: (x: any) => x, cubic: () => 0, bezier: () => 0 },
@@ -259,8 +284,19 @@ const moduleMocks: Record<string, Record<string, any>> = {
   'react-native': rnModule,
   'react-native-keyboard-controller': {
     KeyboardAvoidingView: (props: any) => props.children ?? null,
-    KeyboardGestureArea: (props: any) => props.children ?? null,
+    KeyboardGestureArea: (props: any) => {
+      gestureAreaProps = props;
+      return props.children ?? null;
+    },
     KeyboardController: { isVisible: () => false },
+    KeyboardEvents: {
+      addListener: (name: string, cb: () => void) => {
+        const set = keyboardListeners.get(name) ?? new Set();
+        set.add(cb);
+        keyboardListeners.set(name, set);
+        return { remove: () => set.delete(cb) };
+      },
+    },
     useReanimatedKeyboardAnimation: () => ({ progress: { value: 0 } }),
   },
   'react-native-reanimated': {
@@ -329,11 +365,12 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/turn/activity-sheet': { ActivitySheetHost: Empty },
   '@/components/session/QuestionPrompt': { QuestionPrompt: (props: any) => props.children ?? null },
   '@/components/session/PermissionPromptCard': { PermissionPromptCard: Empty },
-  '@/components/session/ProjectHero': { ProjectHero: Empty },
+  '@/components/session/ProjectHero': { ProjectHero: HeroLogo },
 
   './SessionChatInput': {
     SessionChatInput: (props: any) => {
       composerProps = props;
+      composerRenders += 1;
       return props.inputSlot ?? null;
     },
   },
@@ -365,11 +402,9 @@ const moduleMocks: Record<string, Record<string, any>> = {
       }),
     },
   },
+  // One object, as the real provider's context value is.
   '@/components/kortix/toast-provider': {
-    useToast: () => ({
-      error: (message: string) => toastCalls.push({ kind: 'error', message }),
-      info: (message: string) => toastCalls.push({ kind: 'info', message }),
-    }),
+    useToast: () => toastApi,
   },
   '@/components/markdown/inline-code': {
     MarkdownActionsProvider: (props: any) => {
@@ -428,9 +463,10 @@ const mergedOverrides: Record<string, Record<string, any>> = {
         return state.buildSessionMessages(id, state.messages[id], state.parts);
       }),
     useRuntimeSession: () => ({ data: { title: 'Saved title' } }),
-    useRuntimeSessions: () => ({ data: [] }),
+    // React Query hands the same `data` until it changes.
+    useRuntimeSessions: () => ({ data: NO_ROWS }),
     useRuntimeConfig: () => ({ data: null }),
-    useRuntimeCommands: () => ({ data: [] }),
+    useRuntimeCommands: () => ({ data: NO_ROWS }),
     useQuestionSelfHeal: () => {},
     usePermissionSelfHeal: () => {},
     answerQuestion: spy('answerQuestion'),
@@ -677,6 +713,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   calls.length = 0;
+  timingStarts.length = 0;
+  holdTimings = false;
   turnProps = [];
   sessionParticipants = undefined;
   messageAuthors = undefined;
@@ -691,6 +729,9 @@ beforeEach(() => {
   listProps = null;
   spacerFired = null;
   composerProps = null;
+  composerRenders = 0;
+  gestureAreaProps = null;
+  keyboardListeners.clear();
   wakingComposerProps = null;
   markdownActionsValue = null;
   priorIds = [];
@@ -737,7 +778,8 @@ beforeEach(() => {
     }
     fetchCalls.push({ url, method, body });
     if (url.includes('/projects/proj-1/sessions/ps-1/prompts')) {
-      if (method === 'GET') return okResponse({ prompts: inboxRows });
+      // A new body per read, as the network gives.
+      if (method === 'GET') return okResponse({ prompts: structuredClone(inboxRows) });
       if (method === 'POST' && url.endsWith('/prompts')) {
         if (inboxFails) return respond(fail);
         return okResponse({ prompt_id: 'p-new', state: 'queued', message_id: body?.message_id, deduped: false });
@@ -1225,6 +1267,226 @@ describe('SessionPage shared-session sender', () => {
     messageAuthors = { authors: { [userMessageId()]: { kind: 'session', session_id: 'ses_lead', name: 'Lead' } }, initial_author: null };
     await renderPage();
     expect(turnProps.at(-1).sender).toBeNull();
+  });
+});
+
+// ── Render work: what must not re-render, and what must not stay mounted ─────
+
+describe('SessionPage render work', () => {
+  const aborted = { name: 'MessageAbortedError', data: { message: 'aborted' } };
+  /** A stream delta: new text on one message, nothing else. */
+  const streamDelta = async (messageId: string, text: string) => {
+    await act(async () => {
+      useSessionStateStore.setState(
+        (state) => ({ parts: { ...state.parts, [messageId]: [{ id: `part-${messageId}`, type: 'text', text }] } }) as any,
+      );
+      await sleep(15);
+    });
+  };
+  const heroMounted = () => tree!.root.findAllByType(HeroLogo).length > 0;
+  const spacerHeight = () =>
+    viewProps.findLast((props) => props.onLayout && typeof props.style?.height === 'number')?.style.height;
+
+  test('the fresh-session hero shows on an empty session and unmounts once its fade-out ends', async () => {
+    await renderPage();
+    expect(heroMounted()).toBe(true);
+    await act(async () => {
+      appendMessages(makeTurn('one'));
+      await sleep(15);
+    });
+    expect(heroMounted()).toBe(false);
+  });
+
+  /** The hero's opacity fades: the only timings the page starts with an end callback. */
+  const heroFades = () => timingStarts.filter((start) => start.done);
+  const clearMessages = () =>
+    useSessionStateStore.setState((state) => ({ messages: { ...state.messages, [SID]: [] } }) as any);
+
+  test('the fresh-session hero mounts again, fading in, when the session is empty again', async () => {
+    await renderPage();
+    await act(async () => {
+      appendMessages(makeTurn('one'));
+      await sleep(15);
+    });
+    expect(heroMounted()).toBe(false);
+    expect(heroFades().at(-1)?.toValue).toBe(0);
+    await act(async () => {
+      clearMessages();
+      await sleep(15);
+    });
+    expect(heroMounted()).toBe(true);
+    expect(heroFades().at(-1)?.toValue).toBe(1);
+  });
+
+  test('an interrupted fade-out keeps the fresh-session hero mounted', async () => {
+    holdTimings = true;
+    await renderPage();
+    await act(async () => {
+      appendMessages(makeTurn('one'));
+      await sleep(15);
+    });
+    const fadeOut = heroFades().at(-1)!;
+    expect(fadeOut.toValue).toBe(0);
+    await act(async () => fadeOut.done!({ finished: false }));
+    expect(heroMounted()).toBe(true);
+    // The same callback with a finished fade unmounts it: the check above is not vacuous.
+    await act(async () => fadeOut.done!({ finished: true }));
+    expect(heroMounted()).toBe(false);
+  });
+
+  test('a session with messages never mounts the fresh-session hero', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    expect(heroMounted()).toBe(false);
+  });
+
+  test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {
+    const user = userMsg('one');
+    const reply = assistantMsg('partial', user.info.id);
+    (reply.info as any).error = aborted;
+    const stranded = userMsg('two');
+    seedRows([user, reply, stranded]);
+    await renderPage();
+    const queueStateOf = (id: string) => turnProps.findLast((props) => props.turn.userMessage.info.id === id)?.queueState;
+    expect(queueStateOf(stranded.info.id)).toBe('interrupted');
+    const renderItem = listProps.renderItem;
+    const onStop = composerProps.onStop;
+
+    await streamDelta(reply.info.id, 'partial, more');
+    expect(listProps.renderItem).toBe(renderItem);
+    expect(queueStateOf(stranded.info.id)).toBe('interrupted');
+
+    // `useSession` hands a new object on every render; the fields are the same.
+    runtimeValue = { ...runtimeValue };
+    await streamDelta(reply.info.id, 'partial, more, again');
+    expect(listProps.renderItem).toBe(renderItem);
+    expect(composerProps.onStop).toBe(onStop);
+
+    // Stop still reaches the runtime the page has now.
+    let cancelled = 0;
+    runtimeValue = { ...runtimeValue, cancel: async () => ((cancelled += 1), { status: 'aborted' }) };
+    await act(async () => {
+      setStatus({ type: 'busy' });
+      await sleep(15);
+    });
+    await act(async () => {
+      composerProps.onStop();
+      await sleep(15);
+    });
+    expect(cancelled).toBe(1);
+  });
+
+  test('a shared session hands each turn the same sender object until the authors change', async () => {
+    seedTurns(['one']);
+    const id = sessionRows(SID).find((row) => row.info.role === 'user')!.info.id;
+    sessionParticipants = { participants: [], total: 2, multi_user: true };
+    messageAuthors = {
+      authors: { [id]: { kind: 'member', user_id: 'member', name: 'Marko', email: 'member@example.test', avatar_url: null } },
+      initial_author: null,
+    };
+    await renderPage();
+    const first = turnProps.at(-1).sender;
+    expect(first).toEqual({ name: 'Marko', email: 'member@example.test', avatar_url: null });
+    const reply = sessionRows(SID).find((row) => row.info.role === 'assistant')!.info.id;
+    const before = turnProps.length;
+    await streamDelta(reply, 'a longer reply');
+    expect(turnProps.length).toBeGreaterThan(before);
+    expect(turnProps.at(-1).sender).toBe(first);
+  });
+
+  test('an inbox read with the same rows does not re-render the composer, and the rows still show', async () => {
+    inboxRows = [
+      { prompt_id: 'p-1', client_message_id: 'c-1', message_id: 'm-1', state: 'queued', reason: 'turn_active', text: 'later', attempts: 0, last_error: null, created_at: '', available_at: '' },
+    ];
+    seedTurns(['one']);
+    await renderPage();
+    await act(async () => {
+      await sleep(15);
+    });
+    const toggle = buttons.find((props) => String(props.accessibilityLabel ?? '').includes('queued messages'));
+    expect(toggle).toBeTruthy();
+    await act(async () => {
+      toggle.onPress();
+      await sleep(15);
+    });
+    const renders = composerRenders;
+    // Send now re-reads the inbox: the same row comes back.
+    const sendNow = buttons.findLast((props) => props.accessibilityLabel === 'Send now');
+    await act(async () => {
+      sendNow.onPress();
+      await sleep(15);
+    });
+    expect(fetchCalls.filter((c) => c.method === 'GET' && c.url.endsWith('/prompts')).length).toBeGreaterThan(1);
+    expect(composerRenders).toBe(renders);
+    expect(composerProps.inputSlot).toBeTruthy();
+  });
+
+  test('the composer height reaches the gesture area without a page render', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    const bottomArea = viewProps.findLast(
+      (props) => props.onLayout && props.children?.props?.inputNativeID === `composer-input-${SID}`,
+    );
+    expect(bottomArea).toBeTruthy();
+    const renders = composerRenders;
+    await act(async () => {
+      bottomArea.onLayout({ nativeEvent: { layout: { height: 120.4 } } });
+    });
+    expect(gestureAreaProps.offset).toBe(120);
+    expect(composerRenders).toBe(renders);
+  });
+
+  test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    // One 200pt turn in a 600pt list: room = 600 − 200 − 24 = 376.
+    await layoutTranscript(576, [200]);
+    expect(spacerHeight()).toBe(376);
+    const renders = composerRenders;
+
+    await act(async () => {
+      keyboardEvent('keyboardWillShow');
+    });
+    for (const height of [500, 400, 300]) {
+      listProps.onLayout({ nativeEvent: { layout: { height } } });
+      await act(async () => {
+        await sleep(5);
+      });
+    }
+    // No page render per keyboard frame; the blank room is clipped meanwhile.
+    expect(composerRenders).toBe(renders);
+    expect(spacerHeight()).toBe(376);
+    await act(async () => {
+      keyboardEvent('keyboardDidShow');
+      await sleep(15);
+    });
+    expect(spacerHeight()).toBe(76);
+
+    // Closing: the room grows with the list, frame by frame, as before.
+    await act(async () => {
+      keyboardEvent('keyboardWillHide');
+    });
+    listProps.onLayout({ nativeEvent: { layout: { height: 400 } } });
+    await act(async () => {
+      await sleep(5);
+    });
+    expect(spacerHeight()).toBe(176);
+  });
+
+  test('a long thread stays pinned to its end while the keyboard opens', async () => {
+    seedTurns(['one']);
+    await renderPage();
+    await layoutTranscript(724, [700]);
+    expect(scrollToCalls.at(-1)).toEqual({ offset: 148, animated: false });
+    await act(async () => {
+      keyboardEvent('keyboardWillShow');
+    });
+    listProps.onLayout({ nativeEvent: { layout: { height: 300 } } });
+    await act(async () => {
+      await sleep(5);
+    });
+    // content 724 − viewport 300.
+    expect(scrollToCalls.at(-1)).toEqual({ offset: 424, animated: false });
   });
 });
 

@@ -152,7 +152,8 @@ export interface AutoContinueSheetProps {
   isDark: boolean;
 }
 
-export function AutoContinueSheet({
+/** Memoized: the composer around it re-renders on every keystroke and passes stable props. */
+export const AutoContinueSheet = React.memo(function AutoContinueSheet({
   visible,
   onClose,
   selected,
@@ -432,5 +433,5 @@ export function AutoContinueSheet({
       )}
     </KortixBottomSheetModal>
   );
-}
+});
 
