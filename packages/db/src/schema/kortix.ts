@@ -2681,6 +2681,11 @@ export const providerTransitions = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    // Covers provider_transitions_account_id_accounts_account_id_fk: deleting an
+    // account cascades into this table via `WHERE account_id = $1`, which
+    // seq-scans without an index leading on account_id (Supabase advisor
+    // lint unindexed_foreign_keys).
+    index('idx_provider_transitions_account').on(table.accountId),
     index('idx_provider_transitions_project_recent').on(table.projectId, table.requestedAt.desc()),
     index('idx_provider_transitions_status').on(table.status),
     index('idx_provider_transitions_resume').on(table.status, table.nextRetryAt, table.heartbeatAt),

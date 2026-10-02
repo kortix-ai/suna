@@ -778,6 +778,13 @@
       "when": 1790956626526,
       "tag": "20261002155706_session_lifecycle_commands_forwarded_index",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1790976665937,
+      "tag": "20261002213105_provider_transitions_account_index",
+      "breakpoints": true
     }
   ]
 }

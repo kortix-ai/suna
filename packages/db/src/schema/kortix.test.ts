@@ -52,6 +52,7 @@ import {
   connectorConnections,
   connectors,
   providerEvents,
+  providerTransitions,
   sessionLifecycleCommands,
 } from './kortix';
 
@@ -363,6 +364,24 @@ describe('sandbox compute provider attribution', () => {
     expect(indexNames(sandboxComputeSessions)).toContain(
       'idx_sandbox_compute_sessions_provider_time',
     );
+  });
+});
+
+describe('provider transitions foreign keys', () => {
+  test('covers the accounts foreign key with an index leading on account_id', () => {
+    // provider_transitions.account_id references accounts.account_id ON DELETE
+    // cascade (provider_transitions_account_id_accounts_account_id_fk). Without
+    // an index leading on account_id, the cascade's
+    // `DELETE FROM provider_transitions WHERE account_id = $1` seq-scans the
+    // table on every account deletion, and the Supabase advisor reports the
+    // lint unindexed_foreign_keys for this constraint.
+    const index = getTableConfig(providerTransitions).indexes.find(
+      (candidate) => candidate.config.name === 'idx_provider_transitions_account',
+    );
+    expect(index).toBeDefined();
+    expect(index?.config.columns.map((column) => ('name' in column ? column.name : null))).toEqual([
+      'account_id',
+    ]);
   });
 });
 
