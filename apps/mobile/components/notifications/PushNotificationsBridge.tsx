@@ -33,8 +33,12 @@ import {
   syncPushRegistration,
 } from '@/lib/notifications/registration';
 import { projectHref } from '@/lib/projects/switcher';
+import { addResumeListener } from '@/lib/utils/app-resume';
 import { useNotificationStore } from '@/stores/notification-store';
 import { usePushStore } from '@/stores/push-store';
+
+/** After the stream and auth refresh, and after the warm session (400 ms). */
+const PUSH_RESUME_DELAY_MS = 600;
 
 /** Tapped notification ids already handled (the listener and the cold-start read can both see one). */
 const handledResponses = new Set<string>();
@@ -118,15 +122,15 @@ export function PushNotificationsBridge() {
 
   // Sign-in: register when permission is already granted. Back in the
   // foreground without a token: the user may have allowed it in Settings.
+  // That check waits until the resume work that cannot wait has run.
   useEffect(() => {
     if (!isAuthenticated || !remotePushSupported()) return;
     void syncPushRegistration();
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && isAuthenticatedRef.current && !usePushStore.getState().token) {
+    return addResumeListener(() => {
+      if (isAuthenticatedRef.current && !usePushStore.getState().token) {
         void syncPushRegistration();
       }
-    });
-    return () => sub.remove();
+    }, PUSH_RESUME_DELAY_MS);
   }, [isAuthenticated]);
 
   // Preference toggles → server, debounced.
