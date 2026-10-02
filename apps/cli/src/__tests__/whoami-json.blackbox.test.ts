@@ -67,7 +67,10 @@ function startApi(): void {
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
-  apiPort = server.port;
+  // `Server.port` is `number | undefined` in @types/bun (unix sockets); a TCP
+  // server on an ephemeral port always has one. `?? 0` degrades to a loud
+  // connection-refused failure, never a silently wrong assertion.
+  apiPort = server.port ?? 0;
 }
 
 /** A throwaway HOME + multi-host config pointing `test` at the local API. */
