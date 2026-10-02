@@ -1082,7 +1082,8 @@ export function SessionChat({
   const { data: modelUsage, refetch: refetchModelUsage } = useSessionModelUsage(projectId, projectSessionId);
   useEffect(() => {
     if (!newestAssistantMessageId) return;
-    void refetchModelUsage();
+    // `cancelRefetch: false`: a read already in flight (the mount's own) is the read.
+    void refetchModelUsage({ cancelRefetch: false });
     if (effectiveBusy) return;
     const timer = setTimeout(() => void refetchModelUsage(), MODEL_USAGE_SETTLE_MS);
     return () => clearTimeout(timer);
