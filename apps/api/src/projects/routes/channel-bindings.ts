@@ -21,7 +21,10 @@ import {
   setChannelModel,
 } from "../../channels/slack/selection";
 import { backfillSlackBindingLabel } from "../../channels/slack/binding-label";
-import { loadSlackTokenForProject } from "../../channels/install-store";
+import { loadSlackTokenForProject, loadTeamsServiceUrlForProject } from "../../channels/install-store";
+import { teamsThreadTitles } from "../../channels/teams/binding";
+import { backfillTeamsBindingLabel, needsTeamsNameBackfill } from "../../channels/teams/channel-label";
+import { isTeamsChannelThreadId } from "../../channels/teams/util";
 import { requestMemo } from "../../lib/request-context";
 import {
   isModelServableForAccount,
@@ -194,6 +197,7 @@ async function serializeBinding(
   projectDefaultAgent: string | null,
   modelCtx: ModelResolutionCtx,
   channelUnavailable = false,
+  threadTitle: string | null = null,
 ) {
   const effectiveAgent = chooseEffectiveAgent({
     explicit: row.agentName,
@@ -214,6 +218,9 @@ async function serializeBinding(
     channelType: row.channelType,
     // Slack answered that the conversation is deleted or out of the bot's reach.
     channelUnavailable,
+    // A Teams channel thread: its session's title. Every thread of a channel
+    // is its own binding named `Team › Channel`; this tells them apart.
+    threadTitle,
     agentName: row.agentName,
     opencodeModel: row.opencodeModel,
     conversationPolicy: row.conversationPolicy,
@@ -270,9 +277,31 @@ projectsApp.openapi(
         );
       }
     }
-    const [modelDefaults, mayUseManagedModels] = await Promise.all([
+    // A Teams channel thread whose name does not say its team is named on read
+    // when its id does: the General channel's id is the team's id. The name is
+    // stored, and one Teams read per team serves every thread in it.
+    const teamsUnnamed = bindings.filter(needsTeamsNameBackfill);
+    const teamsServiceUrl = teamsUnnamed.length > 0 ? await loadTeamsServiceUrlForProject(projectId).catch(() => null) : null;
+    if (teamsServiceUrl) {
+      for (let i = 0; i < teamsUnnamed.length; i += 5) {
+        await Promise.all(
+          teamsUnnamed.slice(i, i + 5).map(async (b) => {
+            const name = await backfillTeamsBindingLabel(b, projectId, teamsServiceUrl);
+            if (name) {
+              b.channelName = name;
+              b.channelType = "channel";
+            }
+          }),
+        );
+      }
+    }
+    const [modelDefaults, mayUseManagedModels, threadTitles] = await Promise.all([
       getAccountModelDefaults(accountId, projectId),
       accountMayUseManagedModels(accountId),
+      teamsThreadTitles(
+        projectId,
+        bindings.filter((b) => b.platform === "teams" && isTeamsChannelThreadId(b.channelId)).map((b) => b.channelId),
+      ),
     ]);
     const modelCtx: ModelResolutionCtx = {
       userId: loaded.userId,
@@ -286,7 +315,15 @@ projectsApp.openapi(
     return c.json({
       projectDefaultAgent,
       bindings: await Promise.all(
-        bindings.map((b) => serializeBinding(b, projectDefaultAgent, modelCtx, unavailable.has(b.bindingId))),
+        bindings.map((b) =>
+          serializeBinding(
+            b,
+            projectDefaultAgent,
+            modelCtx,
+            unavailable.has(b.bindingId),
+            threadTitles.get(b.channelId) ?? null,
+          ),
+        ),
       ),
     });
   },
