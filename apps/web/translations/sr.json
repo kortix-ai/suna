@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "Događaji stariji od 90 dana nisu prikazani ovde. Izvoz ih vraća iz arhive, do 365 dana unazad.",
       "connectorSourceLabel": "Извор конектора",
       "connectorSourceManaged": "Управљани",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "Приватни канал",
+      "textcd3e16057d09": "Директна порука",
+      "textcbe7c5d45160": "Групна директна порука",
+      "textf5738ddc651d": "Недоступан канал"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

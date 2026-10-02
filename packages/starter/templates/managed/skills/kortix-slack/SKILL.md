@@ -447,7 +447,7 @@ slack search --query "deploy api@"
 
 ```sh
 slack users
-slack user        --user "U0123ABCD"
+slack user        --id "U0123ABCD"
 slack channels
 slack channel-info --channel "C0123ABCD"
 slack me

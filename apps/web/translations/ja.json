@@ -19096,7 +19096,11 @@
       "textd8b78d762ad0": "90日より古いイベントはここには表示されません。エクスポートでは、最大365日前までのイベントをアーカイブから取得できます。",
       "connectorSourceLabel": "コネクターのソース",
       "connectorSourceManaged": "マネージド",
-      "connectorSourceDirect": "API / MCP"
+      "connectorSourceDirect": "API / MCP",
+      "text87f9f3ba9b60": "プライベートチャンネル",
+      "textcd3e16057d09": "ダイレクトメッセージ",
+      "textcbe7c5d45160": "グループDM",
+      "textf5738ddc651d": "利用できないチャンネル"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

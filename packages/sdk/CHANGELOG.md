@@ -6,6 +6,11 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `ChannelBinding` gains optional `channelUnavailable`: Slack answered that the
+  conversation is deleted or out of the bot's reach. Slack bindings now carry
+  `channelName` (a channel without `#`, the other person's name for a DM, the
+  members for a group DM) and `channelType` (`channel` | `private_channel` |
+  `im` | `mpim`). Absent on older servers.
 - `configureKortix({ eventStreamTransport })`: how the live event stream's bytes
   arrive, for a host whose `fetch` cannot stream a response body. The SDK calls
   it once per connection with `{ url, headers, signal }` (auth headers

@@ -115,6 +115,7 @@ import { SlackConnectCard } from '@/features/workspace/customize/sections/compon
 import { EmailConnectForm } from '@/features/workspace/customize/sections/connectors-view';
 import { TeamsChannelPanel } from '@/features/workspace/customize/sections/teams-channel-panel';
 import { ChannelBrandMark } from '@/features/session/turn/channel-brand';
+import { slackConversationName } from '@/features/session/turn/channel-message';
 import {
   type ChannelBinding,
   useChannelBindings,
@@ -504,12 +505,16 @@ function ChannelBindingTableRow({
           ) : null}
           <div className="min-w-0">
             <p className="truncate text-sm font-medium" title={binding.channelId}>
-              {binding.channelName ?? bindingFallbackName(binding, tI18nComplete)}
+              {binding.platform === 'slack'
+                ? slackBindingName(binding, tI18nComplete)
+                : (binding.channelName ?? bindingFallbackName(binding, tI18nComplete))}
             </p>
             <p className="text-muted-foreground text-xs">
               {binding.platform === 'teams'
                 ? bindingScopeLabel(binding.channelType, tI18nComplete)
-                : binding.workspaceId}
+                : binding.platform === 'slack'
+                  ? slackScopeLabel(binding, tI18nComplete)
+                  : binding.workspaceId}
             </p>
           </div>
         </div>
@@ -564,7 +569,7 @@ function ChannelBindingTableRow({
               />
             </div>
             {!binding.opencodeModel ? (
-              <p className="text-muted-foreground/70 text-xs">{describeEffectiveModel(binding)}</p>
+              <p className="text-muted-foreground text-xs">{describeEffectiveModel(binding)}</p>
             ) : null}
           </div>
         ) : (
@@ -623,6 +628,41 @@ function bindingFallbackName(
   if (binding.platform !== 'teams') return binding.channelId;
   if (binding.channelType === 'channel') return tI18nComplete.raw('text5cb103d6008c');
   return tI18nComplete.raw('text31d248c44579');
+}
+
+type SlackBindingLabel = Pick<ChannelBinding, 'channelId' | 'channelName' | 'channelType' | 'channelUnavailable'>;
+
+/**
+ * A Slack row reads `#general`, a person's name for a DM, or the members of a
+ * group DM: the name the API stores after asking Slack. Until then, or when
+ * Slack no longer has the conversation, the kind says what it is and the id
+ * stays on the row's `title`.
+ */
+function slackBindingName(binding: SlackBindingLabel, tI18nComplete: UiTranslator): string {
+  const name = slackConversationName(binding);
+  if (name) return name;
+  if (binding.channelUnavailable) return tI18nComplete.raw('textf5738ddc651d');
+  if (binding.channelType === 'im') return tI18nComplete.raw('textcd3e16057d09');
+  if (binding.channelType === 'mpim') return tI18nComplete.raw('textcbe7c5d45160');
+  return binding.channelId;
+}
+
+/** Slack rows: the conversation's kind, not the workspace id every row shared. */
+function slackScopeLabel(binding: SlackBindingLabel, tI18nComplete: UiTranslator): string {
+  // A deleted channel has no kind left to show; its id is what identifies it.
+  if (binding.channelUnavailable) return binding.channelId;
+  switch (binding.channelType) {
+    case 'private_channel':
+      return tI18nComplete.raw('text87f9f3ba9b60');
+    case 'im':
+      return tI18nComplete.raw('textcd3e16057d09');
+    case 'mpim':
+      return tI18nComplete.raw('textcbe7c5d45160');
+    case 'channel':
+      return tI18nComplete.raw('textce4683e7013a');
+    default:
+      return tI18nComplete.raw('textda7d161a2777');
+  }
 }
 
 /** Teams rows: the conversation scope reads better than a tenant GUID underneath the name. */
