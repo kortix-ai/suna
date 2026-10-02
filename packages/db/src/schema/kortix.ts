@@ -5553,6 +5553,10 @@ export const serviceAccounts = kortixSchema.table(
   },
   (table) => [
     index('idx_service_accounts_account').on(table.accountId),
+    // Covers service_accounts_project_id_projects_project_id_fk (project_id,
+    // ON DELETE CASCADE): project deletes must not seq-scan for the SAs they
+    // cascade to. Built by 20261002213308262_service_accounts_project_index.concurrent.ts.
+    index('idx_service_accounts_project').on(table.projectId),
     uniqueIndex('idx_service_accounts_secret_hash').on(table.secretHash),
     // Display-name uniqueness applies to MANUAL service accounts only — auto
     // agent SAs are uniqued by their (account, project, agent) tuple instead, so
