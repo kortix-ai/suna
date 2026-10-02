@@ -54,6 +54,7 @@ import {
   connectors,
   providerEvents,
   sessionLifecycleCommands,
+  sunaAccountMigrations,
 } from './kortix';
 
 function columnNames(table: any): string[] {
@@ -794,5 +795,28 @@ describe('canonical RBAC tables (PR2)', () => {
     // filters account_id = :id, so those rows are invisible to old code.
     const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
     expect(col?.notNull).toBe(false);
+  });
+});
+
+describe('suna_account_migrations indexes', () => {
+  test('does not re-add the unused status+heartbeat_at composite index', () => {
+    // Dropped by the drop_unused_suna_account_migrations_heartbeat_index
+    // migration: prod pg_stat_user_indexes showed idx_scan = 0 for it
+    // (2026-10-02, never scanned since stats began). The resume worker's
+    // status filter (inArray('planned', 'running') + heartbeat staleness) is
+    // served by idx_suna_account_migrations_status (287k prod scans); a
+    // composite leading with status adds nothing but one index write per row.
+    expect(indexNames(sunaAccountMigrations)).not.toContain(
+      'idx_suna_account_migrations_heartbeat',
+    );
+  });
+
+  test('keeps the indexes the account reads and the resume worker scan', () => {
+    // latestSunaMigration / findActiveSunaMigration filter account_id;
+    // the worker tick filters status. Both are live paths (8.8k and 287k
+    // prod scans). The Supabase unused_index finding names only the
+    // heartbeat composite — do not drop these as collateral.
+    expect(indexNames(sunaAccountMigrations)).toContain('idx_suna_account_migrations_account');
+    expect(indexNames(sunaAccountMigrations)).toContain('idx_suna_account_migrations_status');
   });
 });

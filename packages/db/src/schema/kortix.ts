@@ -2824,7 +2824,6 @@ export const sunaAccountMigrations = kortixSchema.table(
   (table) => [
     index('idx_suna_account_migrations_status').on(table.status),
     index('idx_suna_account_migrations_account').on(table.accountId),
-    index('idx_suna_account_migrations_heartbeat').on(table.status, table.heartbeatAt),
   ],
 );
 
