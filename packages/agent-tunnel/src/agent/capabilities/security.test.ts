@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { protectedAgentPaths, type TunnelConfig } from '../config';
@@ -167,6 +167,47 @@ describe('local capability permission enforcement', () => {
         },
       }),
     ).rejects.toThrow('desktop feature "mouse" is not allowed');
+  });
+
+  test('desktop discovery dispatches to driver metadata commands and preserves unsupported output', async () => {
+    const binary = join(root, 'fake-discovery-driver');
+    const log = join(root, 'discovery-args.jsonl');
+    await writeFile(binary, [
+      '#!/usr/bin/env node',
+      `const fs = require('node:fs');`,
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
+      'const [command, tool] = process.argv.slice(2);',
+      `if (command === 'list-tools') process.stdout.write('double_click\\n');`,
+      `else if (command === 'describe' && tool === 'double_click') process.stdout.write('Double click coordinates\\n');`,
+      `else if (command === 'describe') { process.stderr.write('Unsupported tool: ' + tool); process.exitCode = 2; }`,
+      `else { process.stderr.write('Unexpected command'); process.exitCode = 3; }`,
+    ].join('\n'));
+    await chmod(binary, 0o700);
+    const previousBinary = process.env.CUA_DRIVER_BIN;
+    process.env.CUA_DRIVER_BIN = binary;
+    try {
+      const capability = createDesktopCapability();
+      const list = capability.methods.get('desktop.cua.list_tools');
+      const describeTool = capability.methods.get('desktop.cua.describe');
+      if (!list || !describeTool) throw new Error('Discovery handlers missing');
+      const __permission = {
+        permissionId: 'permission-discovery', capability: 'desktop',
+        scope: { features: ['computer_use'] },
+      };
+      await expect(list({})).rejects.toThrow('desktop permission required');
+      await expect(list({ __permission: { ...__permission, scope: { features: ['screenshot'] } } }))
+        .rejects.toThrow('not allowed');
+      expect(await list({ __permission })).toEqual({ tools: 'double_click' });
+      expect(await describeTool({ tool: 'double_click', __permission }))
+        .toEqual({ description: 'Double click coordinates' });
+      await expect(describeTool({ tool: 'unsupported_tool', __permission }))
+        .rejects.toThrow('Unsupported tool: unsupported_tool');
+      expect((await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)))
+        .toEqual([['list-tools'], ['describe', 'double_click'], ['describe', 'unsupported_tool']]);
+    } finally {
+      if (previousBinary === undefined) delete process.env.CUA_DRIVER_BIN;
+      else process.env.CUA_DRIVER_BIN = previousBinary;
+    }
   });
 
   test('remote desktop calls cannot trigger mutable installer or update tools', async () => {
