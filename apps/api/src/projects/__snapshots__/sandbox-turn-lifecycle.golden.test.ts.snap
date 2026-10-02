@@ -41,19 +41,19 @@ exports[`golden SQL: turn authority statements beginSandboxTurn grants and inser
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
       RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  turn-token , granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                  ses_root ,  msg_turn_1 , 'delivering',
-                   2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted"
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT  turn-token , granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                    ses_root ,  msg_turn_1 , 'delivering',
+                     2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted"
 ,
 ]
 `;
@@ -99,19 +99,19 @@ exports[`golden SQL: turn authority statements beginSandboxTurn with no matching
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from   2023-11-14T22:13:20.000Z ::timestamptz ) * 1000) -  120000 )
       RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  turn-token , granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                  ses_root ,  msg_turn_1 , 'delivering',
-                   2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted"
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT  turn-token , granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                    ses_root ,  msg_turn_1 , 'delivering',
+                     2023-11-14T22:13:20.000Z ::timestamptz , now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted"
 ,
 ]
 `;
@@ -1293,19 +1293,19 @@ exports[`golden SQL: runtime adoption adoptRuntimeSandboxTurn adopts an unseen b
           OR (s.metadata->'lifecycleStopClaim'->>'claimedAtMs')::bigint
             <= floor(extract(epoch from  now() ) * 1000) -  120000 )
       RETURNING s.sandbox_id, s.session_id, s.project_id, s.account_id, true AS granted ), ledger AS (
-          INSERT INTO kortix.session_turns
-            (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, created_at, updated_at)
-          SELECT  adopt-token , granted.session_id, granted.sandbox_id,
-                 granted.project_id, granted.account_id,
-                  ses_root ,  msg_adopt , 'delivering',
-                  now() , now(), now()
-            FROM granted
-           WHERE granted.session_id IS NOT NULL
-             AND granted.project_id IS NOT NULL
-             AND granted.account_id IS NOT NULL
-          ON CONFLICT (turn_token) DO NOTHING)
-        SELECT * FROM granted"
+            INSERT INTO kortix.session_turns
+              (turn_token, session_id, sandbox_id, project_id, account_id,
+               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+            SELECT  adopt-token , granted.session_id, granted.sandbox_id,
+                   granted.project_id, granted.account_id,
+                    ses_root ,  msg_adopt , 'delivering',
+                    now() , now(), now()
+              FROM granted
+             WHERE granted.session_id IS NOT NULL
+               AND granted.project_id IS NOT NULL
+               AND granted.account_id IS NOT NULL
+            ON CONFLICT (turn_token) DO NOTHING)
+          SELECT * FROM granted"
 ,
   
 "WITH accepted AS ( 
