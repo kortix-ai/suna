@@ -19105,7 +19105,11 @@
       "textcd2c4b26eedd": "Kortix has no record of the app version in your Teams catalog. Version {value0} has every command and permission your agent uses in Teams. A Teams admin publishes the update. Then a team owner updates the app in each team where Teams offers it: the team → ⋯ → Manage team → Apps → Update.",
       "texte15f213fa506": "Publish app update",
       "textcafd830fcf85": "Listed project agent identities",
-      "text7f755292bf51": "Could not download attachment"
+      "text7f755292bf51": "Could not download attachment",
+      "textd8b78d762ad0": "Events older than 90 days are not listed here. Export returns them from the archive, up to 365 days back.",
+      "connectorSourceLabel": "Connector source",
+      "connectorSourceManaged": "Managed",
+      "connectorSourceDirect": "API / MCP"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

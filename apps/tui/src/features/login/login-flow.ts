@@ -29,8 +29,8 @@ import {
   upsertHost,
   useHost,
   validateHostName,
-} from '@kortix/cli/src/api/config.ts';
-import { sdkBackendUrl } from '@kortix/cli/src/api/sdk.ts';
+} from '@kortix/shared/host-config';
+import { sdkBackendUrl } from '@kortix/shared/host-config';
 import type { ValidateTokenResult } from '@kortix/sdk';
 import { createScopedKortix } from '@kortix/sdk/server';
 
