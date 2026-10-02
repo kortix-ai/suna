@@ -48,8 +48,7 @@ async function runMigrationInBatch(
     if (!file) throw new Error(`migration file ${MIGRATION_SUFFIX} not found in ${MIGRATIONS_DIR}`);
     copyFileSync(join(MIGRATIONS_DIR, file), join(dir, file));
     await runner({
-      // The type is node-pg-migrate's ClientBase; a recording object satisfies it.
-      dbClient: recording.client as Parameters<typeof runner>[0]['dbClient'],
+      dbClient: recording.client,
       direction: 'up',
       dir,
       migrationsTable: 'pgmigrations',
