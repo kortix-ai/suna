@@ -305,6 +305,90 @@ export async function deleteProjectProviderOAuth(projectId: string, provider: st
   );
 }
 
+/**
+ * Cadence the poller may not go under: a faster loop would hammer the poll
+ * endpoint for every connected user. The server's suggestion is honored only
+ * above this floor.
+ */
+const POLL_INTERVAL_FLOOR_MS = 2_000;
+/** Cadence when `start` suggests none. */
+const POLL_INTERVAL_FALLBACK_MS = 3_000;
+/** Deadline when `start` sends no expiry: give up after ten minutes. */
+const POLL_DEADLINE_FALLBACK_MS = 10 * 60_000;
+
+export interface ProjectProviderOAuthFlowOptions {
+  projectId: string;
+  provider: string;
+  /** The `start` request body: sharing intent, or an account resource to
+   *  reconnect. Same shape as `startProjectProviderOAuth`'s input. */
+  input?: Parameters<typeof startProjectProviderOAuth>[2];
+  /** Called once `start` resolves, before the first poll: show the code and
+   *  the verification link while the loop waits. */
+  onChallenge?: (challenge: { verification_url: string; user_code: string | null }) => void;
+  /** Checked between every step. Returning true abandons the flow: the
+   *  result is `cancelled` and the caller keeps whatever it already showed. */
+  isCancelled?: () => boolean;
+  /** Awaited between polls. Injectable for tests; a plain setTimeout by
+   *  default. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Deadline clock. Injectable for tests; `Date.now` by default. */
+  now?: () => number;
+}
+
+export type ProjectProviderOAuthFlowResult =
+  | { status: 'success'; credential: ProviderOAuthCredential }
+  | { status: 'failed'; error: string }
+  | { status: 'expired' }
+  | { status: 'cancelled' };
+
+/**
+ * Drive one device-OAuth authorization to a terminal state: start, show the
+ * challenge, then poll at the server's cadence until the credential lands,
+ * the server refuses or expires, or the deadline passes.
+ *
+ * A failed poll request is transient — a dropped connection or a blipping
+ * replica — so it is retried on the next tick rather than treated as an
+ * answer. A failed AUTHORIZATION (the poll's own `failed` status) is
+ * terminal. Start failures propagate: a permission or sharing problem is the
+ * caller's to present, not an authorization outcome.
+ */
+export async function runProjectProviderOAuthFlow(
+  options: ProjectProviderOAuthFlowOptions,
+): Promise<ProjectProviderOAuthFlowResult> {
+  const {
+    projectId,
+    provider,
+    input,
+    onChallenge,
+    isCancelled,
+    sleep = (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    now = () => Date.now(),
+  } = options;
+  const cancelled = () => isCancelled?.() ?? false;
+
+  const start = await startProjectProviderOAuth(projectId, provider, input);
+  if (cancelled()) return { status: 'cancelled' };
+  onChallenge?.({ verification_url: start.verification_url, user_code: start.user_code });
+
+  const interval = Math.max(POLL_INTERVAL_FLOOR_MS, start.interval_ms || POLL_INTERVAL_FALLBACK_MS);
+  const deadline = start.expires_at || now() + POLL_DEADLINE_FALLBACK_MS;
+  while (!cancelled() && now() < deadline) {
+    await sleep(interval);
+    if (cancelled()) return { status: 'cancelled' };
+    let poll;
+    try {
+      poll = await pollProjectProviderOAuth(projectId, provider, start.flow_id);
+    } catch {
+      continue;
+    }
+    if (cancelled()) return { status: 'cancelled' };
+    if (poll.status === 'success') return { status: 'success', credential: poll.credential };
+    if (poll.status === 'failed') return { status: 'failed', error: poll.error };
+    if (poll.status === 'expired') return { status: 'expired' };
+  }
+  return cancelled() ? { status: 'cancelled' } : { status: 'expired' };
+}
+
 export async function upsertProjectGitCredential(projectId: string, input: { token: string }) {
   return unwrap(
     await backendApi.put<{

@@ -52,10 +52,6 @@
  *
  * Labels are verb-first and sentence case, capped at 32 characters so the row
  * never truncates — `starter-prompts.test.ts` enforces both the cap and rule 2.
- *
- * Worth knowing: the onboarding wizard does NOT read this list. It carries its
- * own `STARTER_PROMPTS` in `components/projects/onboarding/onboarding-profile.ts`,
- * keyed by use case. Same name, different module, no relationship.
  */
 
 import {

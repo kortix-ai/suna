@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildSteps,
   deriveCompanyDomain,
-  starterPromptsFor,
   WORK_OPTIONS,
 } from './onboarding-profile';
 
@@ -65,29 +64,6 @@ describe('deriveCompanyDomain', () => {
   // it through because it only denylists known consumer providers.
   test('returns empty for a domain with no dot', () => {
     expect(deriveCompanyDomain('sam@localhost')).toBe('');
-  });
-});
-
-describe('starterPromptsFor', () => {
-  test('returns three prompts for every option', () => {
-    for (const option of WORK_OPTIONS) {
-      const prompts = starterPromptsFor(option);
-      expect(prompts).toHaveLength(3);
-      for (const p of prompts) {
-        expect(p.title.length).toBeGreaterThan(0);
-        expect(p.prompt.length).toBeGreaterThan(0);
-        expect(p.template.length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  test('falls back to three prompts when the survey was skipped', () => {
-    expect(starterPromptsFor(null)).toHaveLength(3);
-  });
-
-  test('gives each use case a distinct lead prompt', () => {
-    const leads = WORK_OPTIONS.map((o) => starterPromptsFor(o)[0]?.template);
-    expect(new Set(leads).size).toBe(WORK_OPTIONS.length);
   });
 });
 

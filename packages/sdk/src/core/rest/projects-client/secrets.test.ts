@@ -17,6 +17,7 @@ import {
   setPersonalProjectSecret,
   setProjectSecretStrategy,
   brokerProjectSecretRequest,
+  runProjectProviderOAuthFlow,
   startProjectProviderOAuth,
   upsertProjectGitCredential,
   upsertProjectSecret,
@@ -459,4 +460,240 @@ test('listProjectSecrets surfaces the calling agent own secrets grant', async ()
   const scope: ProjectSecretsAgentScope | null | undefined = (await listProjectSecrets('P1'))
     .agent_scope;
   expect(scope).toEqual({ agent: 'analyst', secrets: ['OTHER_KEY'] });
+});
+
+// ── runProjectProviderOAuthFlow: the device-flow orchestration ──────────────
+//
+// The web hook used to own the start/poll loop (2 s floor, 3 s fallback
+// cadence, 10 min fallback deadline, transient poll retry, cancellation
+// checkpoints). These tests pin that orchestration on a fake clock so the
+// behavior survives the move verbatim.
+
+const startBody = {
+  flow_id: 'flow-1',
+  verification_url: 'https://example.test/device',
+  user_code: 'ABCD-1234',
+  expires_at: Number.MAX_SAFE_INTEGER,
+  interval_ms: 5_000,
+};
+
+type ScriptStep = { status: number; body: unknown; side?: () => void };
+
+/** A fetch that answers from `script` in order and records every call. */
+function scriptedFetch() {
+  const script: ScriptStep[] = [];
+  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
+    calls.push({
+      url: String(url),
+      method: opts.method ?? 'GET',
+      body: opts.body ? JSON.parse(opts.body) : undefined,
+    });
+    const step = script.shift();
+    if (!step) throw new Error(`unexpected fetch: ${String(url)}`);
+    step.side?.();
+    return new Response(JSON.stringify(step.body), {
+      status: step.status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+  return script;
+}
+
+function fakeClock() {
+  const sleeps: number[] = [];
+  let nowMs = 1_000;
+  return {
+    sleeps,
+    now: () => nowMs,
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+      nowMs += ms;
+    },
+  };
+}
+
+const startRoute = 'http://test.local/projects/P1/oauth/openai/start';
+const pollRoute = 'http://test.local/projects/P1/oauth/openai/poll';
+const patch = (method: string, url: string) =>
+  calls.filter((call) => call.method === method && call.url === url).length;
+
+test('runProjectProviderOAuthFlow resolves the challenge before the first poll', async () => {
+  const script = scriptedFetch();
+  script.push({ status: 200, body: startBody });
+  script.push({ status: 200, body: { status: 'pending' } });
+  script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+  const clock = fakeClock();
+  const challenges: unknown[] = [];
+  const result = await runProjectProviderOAuthFlow({
+    projectId: 'P1',
+    provider: 'openai',
+    onChallenge: (challenge) => challenges.push(challenge),
+    ...clock,
+  });
+  expect(result).toEqual({
+    status: 'success',
+    credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' },
+  });
+  expect(challenges).toEqual([
+    { verification_url: 'https://example.test/device', user_code: 'ABCD-1234' },
+  ]);
+  // start → poll: the challenge callback ran before any poll request.
+  expect(calls[0]?.url).toBe(startRoute);
+  expect(calls[1]?.url).toBe(pollRoute);
+  expect(patch('POST', pollRoute)).toBe(2);
+  expect(clock.sleeps).toEqual([5_000, 5_000]);
+});
+
+test('runProjectProviderOAuthFlow retries a transient poll failure and then succeeds', async () => {
+  const script = scriptedFetch();
+  script.push({ status: 200, body: startBody });
+  script.push({ status: 500, body: { message: 'upstream blip' } });
+  script.push({ status: 200, body: { status: 'pending' } });
+  script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+  const clock = fakeClock();
+  const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+  expect(result.status).toBe('success');
+  expect(patch('POST', pollRoute)).toBe(3);
+  expect(clock.sleeps).toEqual([5_000, 5_000, 5_000]);
+});
+
+test('runProjectProviderOAuthFlow maps failed and expired polls and stops polling', async () => {
+  {
+    calls.length = 0;
+    const script = scriptedFetch();
+    script.push({ status: 200, body: startBody });
+    script.push({ status: 200, body: { status: 'failed', error: 'The user denied the request' } });
+    const clock = fakeClock();
+    const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    expect(result).toEqual({ status: 'failed', error: 'The user denied the request' });
+    expect(patch('POST', pollRoute)).toBe(1);
+  }
+  {
+    calls.length = 0;
+    const script = scriptedFetch();
+    script.push({ status: 200, body: startBody });
+    script.push({ status: 200, body: { status: 'expired' } });
+    const clock = fakeClock();
+    const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    expect(result).toEqual({ status: 'expired' });
+    expect(patch('POST', pollRoute)).toBe(1);
+  }
+});
+
+test('runProjectProviderOAuthFlow floors the cadence at 2s and falls back to 3s', async () => {
+  // A server suggestion below the floor is raised to the floor.
+  {
+    const script = scriptedFetch();
+    script.push({ status: 200, body: { ...startBody, interval_ms: 100 } });
+    script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+    const clock = fakeClock();
+    await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    expect(clock.sleeps).toEqual([2_000]);
+  }
+  // No suggestion falls back to 3s.
+  {
+    const script = scriptedFetch();
+    script.push({ status: 200, body: { ...startBody, interval_ms: 0 } });
+    script.push({ status: 200, body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } } });
+    const clock = fakeClock();
+    await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+    expect(clock.sleeps).toEqual([3_000]);
+  }
+});
+
+test('runProjectProviderOAuthFlow times out at the 10-minute fallback deadline when start sends no expiry', async () => {
+  const script = scriptedFetch();
+  script.push({ status: 200, body: { ...startBody, expires_at: 0, interval_ms: 0 } });
+  for (let i = 0; i < 200; i++) script.push({ status: 200, body: { status: 'pending' } });
+  const clock = fakeClock();
+  const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+  expect(result).toEqual({ status: 'expired' });
+  // 1s in, then 3s per tick from the fallback: the 200th tick's poll lands at
+  // 598s, inside the 600s deadline; the next loop check is at 601s — out.
+  expect(patch('POST', pollRoute)).toBe(200);
+  expect(clock.sleeps).toHaveLength(200);
+});
+
+test('runProjectProviderOAuthFlow honours the expiry the server sends', async () => {
+  const script = scriptedFetch();
+  // expires_at = now + 5s: one 3s wait, one poll at +3s (pending), one poll
+  // at +6s would be past the deadline, so the flow stops at two polls.
+  script.push({ status: 200, body: { ...startBody, interval_ms: 3_000, expires_at: 6_000 } });
+  script.push({ status: 200, body: { status: 'pending' } });
+  script.push({ status: 200, body: { status: 'pending' } });
+  const clock = fakeClock();
+  const result = await runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock });
+  expect(result).toEqual({ status: 'expired' });
+  expect(patch('POST', pollRoute)).toBe(2);
+});
+
+test('runProjectProviderOAuthFlow can be cancelled after start, during the wait, and after a poll', async () => {
+  // Cancelled right after start: no poll at all.
+  {
+    calls.length = 0;
+    const script = scriptedFetch();
+    script.push({ status: 200, body: startBody });
+    const clock = fakeClock();
+    const result = await runProjectProviderOAuthFlow({
+      projectId: 'P1',
+      provider: 'openai',
+      isCancelled: () => true,
+      ...clock,
+    });
+    expect(result).toEqual({ status: 'cancelled' });
+    expect(patch('POST', pollRoute)).toBe(0);
+  }
+  // Cancelled during the wait: the flow wakes and stops before polling.
+  {
+    calls.length = 0;
+    const script = scriptedFetch();
+    script.push({ status: 200, body: startBody });
+    const clock = fakeClock();
+    let cancelled = false;
+    const result = await runProjectProviderOAuthFlow({
+      projectId: 'P1',
+      provider: 'openai',
+      isCancelled: () => cancelled,
+      sleep: async (ms) => {
+        cancelled = true;
+        clock.sleeps.push(ms);
+      },
+      now: clock.now,
+    });
+    expect(result).toEqual({ status: 'cancelled' });
+    expect(patch('POST', pollRoute)).toBe(0);
+  }
+  // Cancelled after a successful poll: the credential is discarded.
+  {
+    calls.length = 0;
+    const script = scriptedFetch();
+    script.push({ status: 200, body: startBody });
+    script.push({
+      status: 200,
+      body: { status: 'success', credential: { provider_id: 'codex', expires_in_ms: null, updated_at: 't' } },
+      side: () => {
+        cancelledAfterPoll = true;
+      },
+    });
+    const clock = fakeClock();
+    let cancelledAfterPoll = false;
+    const result = await runProjectProviderOAuthFlow({
+      projectId: 'P1',
+      provider: 'openai',
+      isCancelled: () => cancelledAfterPoll,
+      ...clock,
+    });
+    expect(result).toEqual({ status: 'cancelled' });
+    expect(patch('POST', pollRoute)).toBe(1);
+  }
+});
+
+test('runProjectProviderOAuthFlow lets start failures propagate', async () => {
+  const script = scriptedFetch();
+  script.push({ status: 403, body: { message: 'forbidden' } });
+  const clock = fakeClock();
+  await expect(
+    runProjectProviderOAuthFlow({ projectId: 'P1', provider: 'openai', ...clock }),
+  ).rejects.toBeTruthy();
+  expect(patch('POST', pollRoute)).toBe(0);
 });
