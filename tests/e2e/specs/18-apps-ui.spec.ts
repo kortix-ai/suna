@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -50,6 +50,8 @@ test.describe('18 — Kortix Apps UI', () => {
     const session = await signIn(email, authOptions);
     const env = loadEnv();
     let projectId: string | null = null;
+    let groupId: string | null = null;
+    let accountId: string | null = null;
     const pageErrors: string[] = [];
     const appsServerErrors: string[] = [];
     const appsCreateRequests: string[] = [];
@@ -78,6 +80,10 @@ test.describe('18 — Kortix Apps UI', () => {
       );
       expect(account).toBeTruthy();
       if (!account) throw new Error('test user has no personal account');
+      accountId = account.account_id;
+      await setDatabaseEnterpriseDemo(env, accountId, true);
+      const group = await api<{ group_id: string }>(session.access_token, 'POST', `/accounts/${accountId}/iam/groups`, { name: `Apps subjects ${runId}` }, 201);
+      groupId = group.group_id;
 
       const project = await createDatabaseProject(env, {
         accountId: account.account_id,
@@ -336,7 +342,7 @@ test.describe('18 — Kortix Apps UI', () => {
         // Existing project owner is a real subject; preload its selection to
         // characterize payload preservation without depending on picker search.
         await api(session.access_token, 'PATCH', `/projects/${project.id}/apps/${seeded.app_id}/access`, {
-          mode: 'restricted', member_ids: [user.id], group_ids: [], viewer_token_scope: 'identity',
+          mode: 'restricted', member_ids: [user.id], group_ids: [group.group_id], viewer_token_scope: 'identity',
         });
         await appModal.getByRole('button', { name: 'Close', exact: true }).click();
         await page.reload({ waitUntil: 'domcontentloaded' });
@@ -352,10 +358,12 @@ test.describe('18 — Kortix Apps UI', () => {
         await accessModal.getByRole('button', { name: 'Save', exact: true }).click();
         expect((await payload).postDataJSON()).toEqual({
           mode: scenario.mode,
-          ...(scenario.mode === 'restricted' ? { member_ids: [user.id], group_ids: [] } : {}),
+          ...(scenario.mode === 'restricted' ? { member_ids: [user.id], group_ids: [group.group_id] } : {}),
           ...(scenario.password ? { password: scenario.password } : { viewer_token_scope: scenario.scope }),
         });
         await expect(accessModal).toBeHidden();
+        await expect(appModal).toBeVisible();
+        await expect(appModal.getByText('No deployments yet.')).toBeHidden();
       }
       await appModal.getByRole('button', { name: 'More actions' }).click();
       await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
@@ -415,9 +423,29 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.route(`${appApi}/${seeded.app_id}/deployments`, (route) => route.fulfill({ json: {
         deployments: [2, 1].map((version) => ({ deployment_id: version === 2 ? 'deployment-current' : 'deployment-old', app_id: seeded.app_id, version, status: 'ready', created_at: '2026-01-01T00:00:00Z' })),
       } }));
-      await page.route(`${appApi}/${seeded.app_id}/access-session`, (route) => route.fulfill({ json: { url: seeded.url, expires_at: '2099-01-01T00:00:00Z' } }));
+      const previewUrl = new URL('/synthetic-app-preview', page.url()).href;
+      await page.route(previewUrl, () => {});
+      await page.route(`${appApi}/${seeded.app_id}/access-session`, (route) => route.fulfill({ json: { url: previewUrl, expires_at: '2099-01-01T00:00:00Z' } }));
       await page.reload({ waitUntil: 'domcontentloaded' });
+      const thumbnail = seededCard.getByTestId('app-live-preview');
+      await expect(thumbnail).toBeVisible();
+      const scaleMatchesTile = () => thumbnail.evaluate((frame) => {
+        const tile = frame.parentElement;
+        if (!tile) throw new Error('preview has no tile');
+        return Math.abs(new DOMMatrix(getComputedStyle(frame).transform).a - tile.getBoundingClientRect().width / 1280) < 0.001;
+      });
+      await expect.poll(scaleMatchesTile).toBe(true);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await expect.poll(scaleMatchesTile).toBe(true);
       await seededCard.click();
+      const modalFrame = appModal.getByTestId('app-live-preview');
+      await modalFrame.dispatchEvent('error');
+      await expect(appModal.getByText('Preview unavailable. Open the App to retry.')).toBeVisible();
+      await appModal.getByRole('button', { name: 'Close', exact: true }).click();
+      await seededCard.click();
+      await expect(appModal.getByText('Loading preview', { exact: true })).toBeVisible();
+      await modalFrame.dispatchEvent('load');
+      await expect(appModal.getByText('Loading preview', { exact: true })).toBeHidden();
       await appModal.getByRole('button', { name: 'More actions' }).click();
       await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
       for (const action of ['stop', 'start', 'rollback'] as const) {
@@ -441,6 +469,8 @@ test.describe('18 — Kortix Apps UI', () => {
           await expect(page.getByText(failed ? `${action} characterization failure`
             : action === 'rollback' ? 'Rolled back to version 1' : `Seed App ${action === 'stop' ? 'suspended' : 'is ready'}`, { exact: true })).toBeVisible();
           await page.unroute(path);
+          await expect(appModal).toBeVisible();
+          await expect(appModal.getByText('v2', { exact: true })).toBeVisible();
           if (failed) await expect(control).toBeEnabled();
         }
       }
@@ -474,6 +504,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.unroute(appApi);
       await page.unroute(`${appApi}/${seeded.app_id}/deployments`);
       await page.unroute(`${appApi}/${seeded.app_id}/access-session`);
+      await page.unroute(previewUrl);
       await page.reload({ waitUntil: 'domcontentloaded' });
 
       // Delete failure keeps the confirmation and parent open; success closes
@@ -510,6 +541,7 @@ test.describe('18 — Kortix Apps UI', () => {
       expect(appsCreateRequests).toEqual([]);
     } finally {
       if (projectId) await deleteDatabaseProject(env, projectId).catch(() => {});
+      if (groupId && accountId) await api(session.access_token, 'DELETE', `/accounts/${accountId}/iam/groups/${groupId}`).catch(() => {});
       await deleteAuthUser(user.id, authOptions).catch(() => {});
     }
   });
