@@ -21,6 +21,7 @@ import {
   resolveDeliverableAgent,
   runtimeAgentRoster,
 } from './agent-availability';
+import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import {
@@ -586,6 +587,8 @@ export async function postPrompt(
     /** Told the size of each body that goes on the wire (attachments
      *  materialized), so the caller can decide whether to prove landing. */
     onBodyBytes?: (bytes: number) => void;
+    /** The target's sandbox row, when the delivery already read it. */
+    sandboxRecord?: SandboxRecord;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
@@ -707,6 +710,9 @@ export async function postPrompt(
       }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
+      undefined,
+      undefined,
+      { record: prompt?.sandboxRecord },
     );
   };
   try {

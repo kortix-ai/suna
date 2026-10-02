@@ -4,7 +4,7 @@ import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { openSession } from '../routes/shared';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
 import { healSupersededSessionToken } from '../lib/heal-session-token';
@@ -63,6 +63,10 @@ export interface DeliveryTarget {
   stage: string;
   externalId: string | null;
   opencodeSessionId: string | null;
+  /** The sandbox row this target was read from, as the proxy wants it. The
+   *  first hand-off passes it to `forwardToSandbox`, which otherwise loads the
+   *  same row again. A re-opened target carries none: the proxy reads fresh. */
+  record?: SandboxRecord;
 }
 
 // Pure, fully-injectable retry loop (mirrors awaitTerminalStage) so the wake/heal
@@ -73,7 +77,7 @@ export interface DeliveryTarget {
 export async function deliverWithRetry(input: {
   opened: DeliveryTarget;
   reopen: () => Promise<DeliveryTarget | null>;
-  send: (externalId: string, opencodeSessionId: string) => Promise<SendOutcome>;
+  send: (externalId: string, opencodeSessionId: string, record?: SandboxRecord) => Promise<SendOutcome>;
   sessionId?: string;
   now?: () => number;
   sleepFn?: (ms: number) => Promise<void>;
@@ -93,7 +97,7 @@ export async function deliverWithRetry(input: {
   let lastOutcome: SendOutcome = false;
   for (;;) {
     if (current.externalId && current.opencodeSessionId) {
-      lastOutcome = await input.send(current.externalId, current.opencodeSessionId);
+      lastOutcome = await input.send(current.externalId, current.opencodeSessionId, current.record);
       if (lastOutcome === true) return 'delivered';
     }
     if (now() >= deadline) {
@@ -132,7 +136,7 @@ interface WakeDeliveryContext {
   sessionId: string;
   userId: string;
   awakeEarly: Promise<DeliveryTarget | null>;
-  sendPrompt: (externalId: string, opencodeSessionId: string) => Promise<SendOutcome>;
+  sendPrompt: (externalId: string, opencodeSessionId: string, record?: SandboxRecord) => Promise<SendOutcome>;
   beforeSend?: () => Promise<void>;
   tl?: ProvisionTimeline;
 }
@@ -352,22 +356,46 @@ export async function awakeDeliveryTarget(sessionId: string): Promise<DeliveryTa
       .select({
         status: projectSessions.status,
         opencodeSessionId: projectSessions.runtimeSessionId,
+        agentName: projectSessions.agentName,
       })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1),
     db
-      .select({ status: sessionSandboxes.status, externalId: sessionSandboxes.externalId })
+      .select({
+        status: sessionSandboxes.status,
+        externalId: sessionSandboxes.externalId,
+        sandboxId: sessionSandboxes.sandboxId,
+        projectId: sessionSandboxes.projectId,
+        accountId: sessionSandboxes.accountId,
+        provider: sessionSandboxes.provider,
+        baseUrl: sessionSandboxes.baseUrl,
+        config: sessionSandboxes.config,
+      })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
       .limit(1),
   ]);
   if (!session || session.status !== 'running' || !session.opencodeSessionId) return null;
   if (!box || box.status !== 'active' || !box.externalId) return null;
+  const serviceKey = (box.config as { serviceKey?: unknown } | null)?.serviceKey;
   return {
     stage: 'ready',
     externalId: box.externalId,
     opencodeSessionId: session.opencodeSessionId,
+    // The same fields `loadSandbox` returns, from the two rows already in hand.
+    record: {
+      sandboxId: box.sandboxId,
+      externalId: box.externalId,
+      sessionId,
+      agentName: session.agentName ?? null,
+      projectId: box.projectId,
+      accountId: box.accountId,
+      provider: box.provider,
+      status: box.status,
+      baseUrl: box.baseUrl || '',
+      serviceKey: typeof serviceKey === 'string' ? serviceKey : null,
+    },
   };
 }
 

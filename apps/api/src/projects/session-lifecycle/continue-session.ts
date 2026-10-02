@@ -10,6 +10,7 @@ import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
 import {
   bindSessionTurnIdentity,
@@ -183,7 +184,11 @@ export async function continueSession(
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
-  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<SendOutcome> => {
+  const sendPrompt = async (
+    externalId: string,
+    opencodeSessionId: string,
+    sandboxRecord?: SandboxRecord,
+  ): Promise<SendOutcome> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
     await beforeSend?.();
     await turnIdentity;
@@ -203,6 +208,7 @@ export async function continueSession(
         noReply: command.noReply,
         accountId: session.accountId,
         projectId: session.projectId,
+        sandboxRecord,
         onBodyBytes: (bytes) => {
           bodyBytes = Math.max(bodyBytes, bytes);
         },
