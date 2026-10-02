@@ -19117,7 +19117,8 @@
       "text9116af1ce384": "A conversation is shared, so it can use Kortix models and keys shared with the whole project, not personal keys.",
       "texte83e9ba50357": "Any linked project member can join a session here.",
       "text4540af5229a8": "Only the person who started a session can continue it.",
-      "textda4bd8bdfe42": "Other people need the session owner's approval to join."
+      "textda4bd8bdfe42": "Other people need the session owner's approval to join.",
+      "text5dae52a3f448": "{count, plural, one {# channel} other {# channels}}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
