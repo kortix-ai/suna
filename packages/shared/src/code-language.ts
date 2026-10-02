@@ -118,4 +118,3 @@ export function languageLabel(language: string): string {
   if (LABEL_KEEPS_INPUT.has(lower)) return lower;
   return LANGUAGE_ALIASES[lower] || lower;
 }
-
