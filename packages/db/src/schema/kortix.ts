@@ -1523,6 +1523,9 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+    // Covers project_trigger_runtime_session_id_fk (ON DELETE SET NULL): a
+    // project_sessions delete scans this table by session_id without it.
+    index('idx_project_trigger_runtime_session_id').on(table.sessionId),
   ],
 );
 

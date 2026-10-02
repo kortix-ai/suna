@@ -24,6 +24,7 @@ import {
   accountMemberships,
   projects,
   projectMembers,
+  projectTriggerRuntime,
   projectSessions,
   projectSessionConnectorBindings,
   projectGroupGrants,
@@ -545,6 +546,27 @@ describe('projects table', () => {
     const accountRepo = cfg.indexes.find((i) => i.config.name === 'idx_projects_account_repo');
     expect(accountRepo).toBeDefined();
     expect(accountRepo?.config.unique).toBe(false);
+  });
+});
+
+describe('project_trigger_runtime table', () => {
+  test('covers every foreign key with an index', () => {
+    // Supabase advisor `unindexed_foreign_keys`: an FK without a covering index
+    // makes every FK-maintenance write seq-scan the table — deleting a
+    // project_sessions row reaches this table through ON DELETE SET NULL (the
+    // pinned-trigger FK added by 20260714150000000). project_id is covered by
+    // the PK's leading column; session_id by idx_project_trigger_runtime_session_id.
+    const cfg = getTableConfig(projectTriggerRuntime);
+    const covers = [
+      ...cfg.primaryKeys.map((pk) => pk.columns.map((c) => c.name)),
+      ...cfg.indexes.map((i) =>
+        i.config.columns.map((c) => ('name' in c ? c.name : null)),
+      ),
+    ];
+    const uncovered = cfg.foreignKeys
+      .map((fk) => fk.reference().columns.map((c) => c.name))
+      .filter((cols) => !covers.some((c) => c.slice(0, cols.length).join(',') === cols.join(',')));
+    expect(uncovered).toEqual([]);
   });
 });
 
