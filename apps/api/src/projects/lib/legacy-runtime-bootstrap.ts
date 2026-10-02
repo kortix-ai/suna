@@ -189,6 +189,38 @@ function shaField(running: Record<string, unknown>, key: string): string | null 
 }
 
 /**
+ * How long after boot a digest mismatch in `runtime.running` is not, by itself,
+ * evidence that the box runs stale bytes.
+ *
+ * Until a daemon's first convergence pass writes the state file, `running` is
+ * the record the IMAGE BUILD baked (`bakeRuntimeAssetsState` deliberately omits
+ * `build`, so `running.build` is null), and the in-process pass has not run
+ * either (`runtime.build` is null). The Platinum agent-swap fast path replaces
+ * the agent binary after that bake and keeps the predecessor's record, and its
+ * CLI is the predecessor's until the boot pass replaces it in place. Measured
+ * on Dev 2026-10-02 (both regions, template kortix-default-6bacca9b52cc): the
+ * record said agent efd19aa3… / cli 9ba28976… while the box ran agent
+ * d2019d30… — exactly the manifest's — and the boot pass finished ~20 s after
+ * start. Session open read the record, called the box stale, and relaunched a
+ * correct daemon: +17 s on every session from a swapped template.
+ *
+ * Bounded so a daemon whose first pass never completes cannot hide a genuinely
+ * stale agent forever: past the grace, the record counts as evidence again.
+ */
+export const FIRST_CONVERGENCE_GRACE_S = 300;
+
+function awaitingFirstConvergence(
+  health: Record<string, unknown>,
+  runtime: Record<string, unknown>,
+  running: Record<string, unknown>,
+): boolean {
+  if (runtime.build !== null && runtime.build !== undefined) return false;
+  if (running.build !== null && running.build !== undefined) return false;
+  const uptime = typeof health.uptime_s === 'number' ? health.uptime_s : null;
+  return uptime !== null && uptime >= 0 && uptime < FIRST_CONVERGENCE_GRACE_S;
+}
+
+/**
  * A daemon that answers /kortix/health without a `runtime` block was built
  * before convergence existed. Health is unauthenticated and always 200 on a
  * daemon, so a null body means the box could not be reached, not "old".
@@ -260,8 +292,18 @@ export function classifyDaemonHealth(
       if (have !== wanted) mismatches.push(key);
     });
     if (mismatches.length > 0) {
-      staleReasons.push('running_assets_stale');
-      detail.push(`runtime.running does not match the manifest: ${mismatches.join(', ')}`);
+      if (awaitingFirstConvergence(h, r, running)) {
+        // Not evidence yet — see FIRST_CONVERGENCE_GRACE_S. The daemon's own
+        // boot pass re-hashes these files and converges the CLI and skills in
+        // place; if the agent really is behind, that pass stages it and the next
+        // read reports `agentSwapPending`, which still repairs.
+        detail.push(
+          `runtime.running differs from the manifest (${mismatches.join(', ')}) but is still the image bake record; awaiting the first convergence pass`,
+        );
+      } else {
+        staleReasons.push('running_assets_stale');
+        detail.push(`runtime.running does not match the manifest: ${mismatches.join(', ')}`);
+      }
     }
   }
 

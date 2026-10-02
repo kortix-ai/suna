@@ -25,7 +25,6 @@ import { db } from '../shared/db';
 import type { DaemonConfigReport } from '../projects/lib/session-config-release';
 import { noteRunningRelease } from './running-release';
 import { isUuid } from '../shared/validate';
-import { qualifiedColumn } from '../shared/sql-qualified-column';
 
 /** Distinct failing sessions that quarantine a release in a project. Spec open decision 2. */
 export const PROJECT_QUARANTINE_SESSIONS = 2;

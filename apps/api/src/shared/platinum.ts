@@ -98,6 +98,40 @@ function rememberSandboxOrigin(sandboxId: string, candidate: unknown): void {
   sandboxOrigins.set(sandboxId, origin);
 }
 
+// Region → origin, learned from boxes this process has already seen in that
+// region (their `api_url` / `x-pt-served-by`). A CREATE names its region in the
+// body but has no box id yet, so without this it always went to the global
+// origin: for a US box that is Kortix → EU control plane → US control plane,
+// one transatlantic forward per create (Dev, 2026-10-02: the US create also
+// paid the EU hop while every later call for the box went direct).
+const regionOrigins = new Map<string, string>();
+
+function rememberRegionOrigin(region: unknown, candidate: unknown): void {
+  if (typeof region !== 'string' || !/^[a-z]{2,8}-[a-z]{2,12}$/.test(region)) return;
+  const origin = acceptedPlatinumOrigin(candidate);
+  if (!origin) return;
+  if (origin === new URL(platinumBase()).origin) {
+    regionOrigins.delete(region);
+    return;
+  }
+  regionOrigins.set(region, origin);
+}
+
+/** The origin a create naming `region` goes to now: learned, else global. */
+export function platinumOriginForRegion(region: string): string {
+  return regionOrigins.get(region) ?? new URL(platinumBase()).origin;
+}
+
+function createRegionOf(path: string, method: string, body: unknown): string | null {
+  if (method !== 'POST' || !SANDBOX_COLLECTION_PATH.test(path) || typeof body !== 'string') return null;
+  try {
+    const region = (JSON.parse(body) as { region?: unknown }).region;
+    return typeof region === 'string' && region ? region : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The origin a call about `sandboxId` goes to now. */
 export function platinumOriginForSandbox(sandboxId: string): string {
   return sandboxOrigins.get(sandboxId) ?? new URL(platinumBase()).origin;
@@ -106,6 +140,7 @@ export function platinumOriginForSandbox(sandboxId: string): string {
 /** Test-only. */
 export function __resetPlatinumSandboxOriginsForTests(): void {
   sandboxOrigins.clear();
+  regionOrigins.clear();
 }
 
 function learnFromResponse(path: string, method: string, res: Response, body: unknown): void {
@@ -122,9 +157,15 @@ function learnFromResponse(path: string, method: string, res: Response, body: un
     sandboxId = record.id;
   }
   if (!sandboxId) return;
-  rememberSandboxOrigin(sandboxId, res.headers.get(SERVED_BY_HEADER));
+  const servedBy = res.headers.get(SERVED_BY_HEADER);
+  rememberSandboxOrigin(sandboxId, servedBy);
   if (record?.id === sandboxId && record.api_url !== undefined) {
     rememberSandboxOrigin(sandboxId, record.api_url);
+  }
+  // Only an answer that names THIS box and its region can teach a region.
+  if (record?.id === sandboxId) {
+    const region = (record as { region?: unknown }).region;
+    rememberRegionOrigin(region, record.api_url ?? servedBy);
   }
 }
 
@@ -198,7 +239,12 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       },
     });
   const sandboxId = sandboxIdOf(path);
-  const regional = sandboxId ? sandboxOrigins.get(sandboxId) : undefined;
+  const createRegion = sandboxId ? null : createRegionOf(path, method, init.body);
+  const regional = sandboxId
+    ? sandboxOrigins.get(sandboxId)
+    : createRegion
+      ? regionOrigins.get(createRegion)
+      : undefined;
   try {
     if (!regional) return await send(platinumBase());
     try {
@@ -208,6 +254,7 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       // Forget the owner; the global origin forwards to it and the answer
       // names it again.
       if (sandboxId && sandboxOrigins.get(sandboxId) === regional) sandboxOrigins.delete(sandboxId);
+      if (createRegion && regionOrigins.get(createRegion) === regional) regionOrigins.delete(createRegion);
       console.warn(
         `[platinum] ${method} ${path} via ${regional} failed (${err instanceof Error ? ((err as { code?: unknown }).code ?? err.message) : err}); retrying once via the global origin`,
       );
