@@ -12206,45 +12206,26 @@ test('anonymous Supabase refresh race is noise only on the landing page', () => 
   }), true);
 });
 
-// The Firefox-only interrupted-stream class (KRTX-984). `TypeError: Error in
-// input stream` is thrown by Gecko itself —
-// `InputToReadableStreamAlgorithms::ErrorPropagation`,
-// dom/streams/UnderlyingSourceCallbackHelpers.cpp — when the input stream
-// backing a fetch body fails mid-read (connection torn down mid-transfer). The
-// prod shape is a frameless global rejection of that exact message while a
-// sandbox-proxied connection was being re-established (Better Stack pattern
-// 58784c82…). Every first-party body reader handles its own rejections, so the
-// frameless capture is the browser-internal pipe rejection: expected transport
-// state, not a product bug. Everything that deviates — any resolvable frame,
-// a different message, a different mechanism, a handled capture, or the
-// runtime gate — keeps reporting.
-test('the frameless Gecko input-stream rejection is expected transport noise; every deviation reports', () => {
+test('unknown input-stream failures remain reportable, including frameless global rejections', () => {
   const event = {
     exception: { values: [{
       value: 'Error in input stream',
       mechanism: { type: 'auto.browser.global_handlers.onunhandledrejection', handled: false },
     }] },
   };
-  // The exact production signature classifies as expected (non-paging).
-  assert.equal(shouldIgnoreSentryBrowserNoise(event), true);
-  // A resolvable frame means an attributable capture — keep reporting.
+  assert.equal(shouldIgnoreSentryBrowserNoise(event), false);
   for (const filename of ['apps/web/src/features/file-renderers/pdf/pdf-viewer.tsx', 'app:///_next/static/chunks/app.js']) {
     assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
       ...event.exception.values[0], stacktrace: { frames: [{ filename }] },
     }] } }), false);
   }
-  // A different mechanism, or a handled capture, is not the frameless global
-  // rejection shape — keep reporting.
   for (const mechanism of [{ type: 'generic', handled: true }, { type: 'auto.browser.global_handlers.onunhandledrejection', handled: true }, undefined]) {
     assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{
       value: 'Error in input stream', mechanism,
     }] } }), false);
   }
-  // Near-miss messages keep reporting: Gecko's message is exact.
   for (const value of ['Error in input stream: invalid data', 'error in input stream', 'Error in output stream']) {
     assert.equal(shouldIgnoreSentryBrowserNoise({ exception: { values: [{ ...event.exception.values[0], value }] } }), false);
   }
-  // The runtime gate keeps its own capture: window.onerror carries a filename
-  // the sentry gate never has, so classification stays sentry-only.
   assert.equal(shouldIgnoreBrowserRuntimeNoise({ message: 'Error in input stream' }), false);
 });
