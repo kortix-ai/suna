@@ -4202,6 +4202,11 @@ export const appDeployments = kortixSchema.table(
     uniqueIndex('app_deployments_app_version_unique').on(table.appId, table.version),
     index('app_deployments_queue_idx').on(table.status, table.nextAttemptAt, table.createdAt),
     index('app_deployments_app_idx').on(table.appId, table.createdAt),
+    // Index every FK (the `unindexed_foreign_keys` advisor lint): Postgres walks
+    // app_deployments on each parent-side DELETE/UPDATE — the RESTRICT check per
+    // deleted app_artifacts row, the SET NULL per deleted project_sessions row.
+    index('app_deployments_artifact_idx').on(table.artifactId),
+    index('app_deployments_source_session_idx').on(table.sourceSessionId),
   ],
 );
 

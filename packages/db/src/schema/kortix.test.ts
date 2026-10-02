@@ -383,6 +383,31 @@ describe('Kortix Apps schema', () => {
     expect(indexNames(apps)).toContain('apps_project_slug_live_unique');
   });
 
+  test('covers every app_deployments foreign key with a full index', () => {
+    // Supabase advisor lint `unindexed_foreign_keys` on kortix.app_deployments
+    // (KRTX-1093). Postgres walks the referencing table on every parent-side
+    // DELETE/UPDATE — the RESTRICT check per deleted artifact and the SET NULL
+    // per deleted session — so an uncovered FK column seq-scans app_deployments
+    // for every parent row removed. Regression guard: each FK column must lead
+    // some index, and that index must be full: a partial one keeps this guard
+    // green while the planner skips it for rows outside its predicate.
+    const cfg = getTableConfig(appDeployments);
+    const leadingColumn = (index: (typeof cfg.indexes)[number]): string | undefined => {
+      const column = index.config.columns[0];
+      // An expression index (an SQL literal instead of a column) never serves an
+      // FK lookup; drizzle types both shapes behind one union.
+      return typeof column === 'object' && 'name' in column ? column.name : undefined;
+    };
+    const covered = (name: string) =>
+      cfg.indexes.some(
+        (index) => leadingColumn(index) === name && index.config.where === undefined,
+      );
+    const uncovered = cfg.foreignKeys
+      .flatMap((fk) => fk.reference().columns.map((column) => column.name))
+      .filter((column) => !covered(column));
+    expect(uncovered).toEqual([]);
+  });
+
   test('stores immutable artifacts and deployment versions', () => {
     expect(getTableConfig(appArtifacts).name).toBe('app_artifacts');
     expect(getTableConfig(appDeployments).name).toBe('app_deployments');
