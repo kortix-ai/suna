@@ -16,7 +16,6 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!databaseUrl)('connection_credentials FK index — migrated PostgreSQL', () => {
   test('connection_credentials_connector_connection_fk has a covering index', async () => {
-    expect(databaseUrl).toBeDefined();
     const client = new pg.Client({ connectionString: databaseUrl });
     await client.connect();
     try {
