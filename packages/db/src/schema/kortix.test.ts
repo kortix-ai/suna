@@ -29,6 +29,7 @@ import {
   projectGroupGrants,
   projectGitConnections,
   projectLlmRoutingPolicies,
+  reviewItems,
   sandboxes,
   sandboxMembers,
   kortixApiKeys,
@@ -762,5 +763,19 @@ describe('canonical RBAC tables (PR2)', () => {
     // filters account_id = :id, so those rows are invisible to old code.
     const col = getTableConfig(iamRoles).columns.find((c) => c.name === 'account_id');
     expect(col?.notNull).toBe(false);
+  });
+});
+
+describe('review_items FK-covering indexes', () => {
+  test('covers both foreign keys the Supabase advisor flags', () => {
+    // `unindexed_foreign_keys` on review_items (KRTX-1112): without a covering
+    // index the parent-side actions scan the whole table — deleting an account
+    // runs `DELETE ... WHERE account_id = $1` (ON DELETE CASCADE), deleting a
+    // project session runs `UPDATE ... SET origin_session_id = NULL WHERE
+    // origin_session_id = $1` (ON DELETE SET NULL). Both are built CONCURRENTLY
+    // by 20261002213119276_review_items_fk_indexes.concurrent.ts.
+    expect(indexNames(reviewItems)).toEqual(
+      expect.arrayContaining(['idx_review_items_account', 'idx_review_items_origin_session']),
+    );
   });
 });
