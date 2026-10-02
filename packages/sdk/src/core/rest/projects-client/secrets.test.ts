@@ -482,20 +482,24 @@ type ScriptStep = { status: number; body: unknown; side?: () => void };
 /** A fetch that answers from `script` in order and records every call. */
 function scriptedFetch() {
   const script: ScriptStep[] = [];
-  globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: string } = {}) => {
-    calls.push({
-      url: String(url),
-      method: opts.method ?? 'GET',
-      body: opts.body ? JSON.parse(opts.body) : undefined,
-    });
-    const step = script.shift();
-    if (!step) throw new Error(`unexpected fetch: ${String(url)}`);
-    step.side?.();
-    return new Response(JSON.stringify(step.body), {
-      status: step.status,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
+  configureKortix({
+    backendUrl: 'http://test.local',
+    getToken: async () => 'tok',
+    fetch: async (url, opts = {}) => {
+      calls.push({
+        url: String(url),
+        method: opts.method ?? 'GET',
+        body: typeof opts.body === 'string' ? JSON.parse(opts.body) : undefined,
+      });
+      const step = script.shift();
+      if (!step) throw new Error(`unexpected fetch: ${String(url)}`);
+      step.side?.();
+      return new Response(JSON.stringify(step.body), {
+        status: step.status,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
   return script;
 }
 

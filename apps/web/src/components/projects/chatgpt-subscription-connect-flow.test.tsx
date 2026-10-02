@@ -33,7 +33,7 @@ mock.module('@kortix/sdk/react', () => ({
 
 const { useChatGptConnectFlow } = await import('./chatgpt-subscription-connect');
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 const startBody = {
   flow_id: 'flow-1',
@@ -56,7 +56,7 @@ beforeEach(() => {
   configureKortix({
     backendUrl: 'http://api.test/v1',
     getToken: async () => 'token',
-    fetch: (async (url: unknown, init: RequestInit = {}) => {
+    fetch: async (url, init = {}) => {
       calls.push({
         url: String(url),
         method: init.method ?? 'GET',
@@ -68,7 +68,7 @@ beforeEach(() => {
         status: step.status,
         headers: { 'content-type': 'application/json' },
       });
-    }) as unknown as typeof fetch,
+    },
   });
 });
 
@@ -76,31 +76,25 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-type FlowApi = {
-  phase: string;
-  error: string | null;
-  challenge: { url: string; code: string | null } | null;
-  isWaiting: boolean;
-  isDone: boolean;
-  connect: () => void;
-  cancel: () => void;
-};
-
-async function mountFlow(props: Record<string, unknown> = {}) {
+async function mountFlow(
+  props: Omit<Parameters<typeof useChatGptConnectFlow>[0], 'projectId'> = {},
+) {
   const queryClient = new QueryClient();
-  const invalidate = mock((_opts?: unknown) => {});
-  queryClient.invalidateQueries = invalidate as unknown as typeof queryClient.invalidateQueries;
-  let flow!: FlowApi;
-  let renderer!: ReactTestRenderer;
+  const invalidate = mock(async (..._args: Parameters<typeof queryClient.invalidateQueries>) => {});
+  queryClient.invalidateQueries = invalidate;
+  const state: {
+    flow?: ReturnType<typeof useChatGptConnectFlow>;
+    renderer?: ReactTestRenderer;
+  } = {};
   function Probe() {
-    flow = useChatGptConnectFlow({
-      ...(props as Parameters<typeof useChatGptConnectFlow>[0]),
+    state.flow = useChatGptConnectFlow({
+      ...props,
       projectId: 'proj-1',
     });
     return null;
   }
   await act(async () => {
-    renderer = create(
+    state.renderer = create(
       createElement(QueryClientProvider, { client: queryClient }, createElement(Probe)),
     );
   });
@@ -115,10 +109,14 @@ async function mountFlow(props: Record<string, unknown> = {}) {
       await Promise.resolve();
     });
   };
+  if (!state.renderer) throw new Error('Probe did not mount');
   return {
-    flow: () => flow,
+    flow: () => {
+      if (!state.flow) throw new Error('Probe did not render the flow');
+      return state.flow;
+    },
     invalidate,
-    renderer,
+    renderer: state.renderer,
     drain,
     advance,
   };

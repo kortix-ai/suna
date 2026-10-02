@@ -843,6 +843,9 @@ function scanFile(file) {
       const coveredSettingsRail =
         file === path.join(srcDir, 'features/workspace/settings/rail.ts') &&
         ['STATIC_GROUPS', 'RETIRED_RAIL_ITEMS'].includes(catalogRoot);
+      const coveredOnboardingProfileFixture =
+        file === path.join(srcDir, 'components/projects/onboarding/onboarding-profile.ts') &&
+        catalogRoot === 'USE_CASE_OPTIONS';
       const coveredCompanyOsMessageKey =
         file === path.join(srcDir, 'features/marketing/company-os-sections.tsx') &&
         ['codePoints', 'runsPoints'].includes(catalogRoot);
@@ -1112,6 +1115,7 @@ function scanFile(file) {
         !coveredStarterPromptText &&
         !coveredSessionsCopy &&
         !coveredSettingsRail &&
+        !coveredOnboardingProfileFixture &&
         !coveredCompanyOsMessageKey &&
         !coveredRoleCapabilityCopy &&
         !coveredSnapshotsFallbackCopy &&
