@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { refreshMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
+import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
 import {
   __clearConfigReleaseCachesForTests,
   buildConfigArchive,
@@ -456,6 +457,25 @@ describe('buildConfigRelease', () => {
     expect(release.files).toBeNull();
     expect(release.reason).toBe('the commit has no OpenCode config dir');
     expect(release.compiled_governance).not.toBeNull();
+  });
+
+  // Prod 2026-10-02: the meta coordinator's box has no project checkout and its
+  // image has no `bun`. It was assigned the `project` release, could not install
+  // the tool dependencies, and its failures quarantined that release for every
+  // session of the project.
+  test('the meta variant is the platform governance alone, whatever the config dir holds', async () => {
+    const first = await buildConfigRelease(project, seed(), 'meta', { store });
+    expect(first.compiled_governance).toBe(buildPlatformMetaOpenCodeConfig());
+    expect(first.release_id).toBe(configReleaseId(null, first.compiled_governance_etag));
+    expect(first.config_dir).toBeNull();
+    expect(first.config_tree_id).toBeNull();
+    expect(first.archive).toBeNull();
+    expect(first.files).toBeNull();
+    expect(first.reason).toBeNull();
+    expect(toDescriptor(first, { repositoryAccess: true }).archive).toBeNull();
+
+    const moved = commit({ '.kortix/opencode/tools/hello.ts': 'export default { changed: true }\n' }, 'tool change');
+    expect((await buildConfigRelease(project, moved, 'meta', { store })).release_id).toBe(first.release_id);
   });
 
   test('a config dir over the archive limit produces no release', async () => {

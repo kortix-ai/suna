@@ -19108,7 +19108,9 @@
       "text9116af1ce384": "对话是共享的，因此可以使用 Kortix 模型和与整个项目共享的密钥，不能使用个人密钥。",
       "texte83e9ba50357": "任何已关联账号的项目成员都可以在此加入会话。",
       "text4540af5229a8": "只有发起会话的人才能继续该会话。",
-      "textda4bd8bdfe42": "其他人需要会话所有者批准才能加入。"
+      "textda4bd8bdfe42": "其他人需要会话所有者批准才能加入。",
+      "text5dae52a3f448": "{count, plural, one {# 个频道} other {# 个频道}}",
+      "text5097881a690f": "会话：{title}"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

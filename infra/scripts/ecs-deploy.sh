@@ -24,7 +24,12 @@
 #              lets deploy-prod assert that the public endpoint serves the
 #              released version.
 #   --dry-run  render + print the task-def override, then exit WITHOUT
-#              registering or rolling anything.
+#              registering or rolling anything. With ECS_DEPLOY_RENDERED_ENV_FILE
+#              set, it also writes the target container's rendered environment
+#              (a JSON array of {name, value}) to that path, mode 0600. Deploy
+#              Dev's release gate runs the new image with exactly that
+#              environment, so it computes the same sandbox image identity the
+#              rolled tasks will.
 #   --wait-for stable (default) returns when the rollout is COMPLETED and the
 #              service runs exactly the desired count, i.e. after every old
 #              task has drained and stopped. serving returns as soon as every
@@ -658,6 +663,11 @@ NEW_TD_JSON="$(printf '%s' "$CURRENT_TD_JSON" \
           else . end)')"
 
 if [ "$DRY_RUN" = "1" ]; then
+  if [ -n "${ECS_DEPLOY_RENDERED_ENV_FILE:-}" ]; then
+    (umask 077 && printf '%s' "$NEW_TD_JSON" | jq -c --arg c "$CONTAINER" \
+      '[.containerDefinitions[] | select(.name == $c) | .environment][0] // []' \
+      >"$ECS_DEPLOY_RENDERED_ENV_FILE")
+  fi
   echo "── dry-run: rendered task-def override for container '$CONTAINER' ──"
   echo "$NEW_TD_JSON" | jq '{family, cpu, memory}'
   echo "$NEW_TD_JSON" | jq --arg c "$CONTAINER" \

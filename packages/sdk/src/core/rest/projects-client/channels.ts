@@ -405,6 +405,12 @@ export interface ChannelBinding {
    * reach. Absent on servers older than this field.
    */
   channelUnavailable?: boolean;
+  /**
+   * A Teams channel thread: the title of its session. Every thread of a
+   * channel is its own binding named `Team › Channel`; this tells them
+   * apart. Null otherwise. Absent on servers older than this field.
+   */
+  threadTitle?: string | null;
   agentName: string | null;
   opencodeModel: string | null;
   conversationPolicy: ChannelConversationPolicy;

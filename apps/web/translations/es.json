@@ -19108,7 +19108,9 @@
       "text9116af1ce384": "Una conversación es compartida, así que puede usar modelos de Kortix y claves compartidas con todo el proyecto, no claves personales.",
       "texte83e9ba50357": "Cualquier miembro del proyecto con cuenta vinculada puede unirse a una sesión aquí.",
       "text4540af5229a8": "Solo la persona que inició una sesión puede continuarla.",
-      "textda4bd8bdfe42": "Las demás personas necesitan la aprobación del propietario de la sesión para unirse."
+      "textda4bd8bdfe42": "Las demás personas necesitan la aprobación del propietario de la sesión para unirse.",
+      "text5dae52a3f448": "{count, plural, one {# canal} other {# canales}}",
+      "text5097881a690f": "Hilo: {title}"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
