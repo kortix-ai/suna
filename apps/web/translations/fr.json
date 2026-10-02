@@ -1914,6 +1914,7 @@
     "messageInput": "Champ de message",
     "attachFiles": "Joindre des fichiers",
     "selectAgent": "Sélectionner un agent",
+    "agentLockedHint": "Impossible de changer d'agent dans une session déjà démarrée.",
     "noModel": "Aucun modèle",
     "thinkingEffort": "Effort de raisonnement",
     "sessionOverrides": "Remplacements de session",
@@ -1941,6 +1942,8 @@
     "queued": "En attente",
     "queuedFiles": "{count, plural, one {# fichier} other {# fichiers}}",
     "queuedCount": "{count} en file",
+    "editingQueued": "En cours de modification",
+    "submitEdit": "Valider",
     "collapseQueue": "Réduire la file",
     "expandQueue": "Développer la file"
   },

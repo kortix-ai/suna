@@ -12,11 +12,11 @@ import {
   CommandPopoverTrigger,
 } from '@/components/ui/command';
 import Hint from '@/components/ui/hint';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@kortix/sdk/react';
 import { capitalizeWords, isMetaAgentName } from '@kortix/shared';
 import { CaretDownIcon, CheckIcon, FolderSimpleIcon as MetaFolder } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 import { composerSelectableAgents } from './composer-agent-access';
 
@@ -38,6 +38,7 @@ export function AgentSelector({
   disabled = false,
   triggerLabelClassName,
   unavailableHint,
+  disabledHint,
 }: {
   agents: Agent[];
   selectedAgent: string | null;
@@ -52,6 +53,14 @@ export function AgentSelector({
    * says nothing, because there is nothing true to say yet.
    */
   unavailableHint?: string | null;
+  /**
+   * Why the picker is locked while agents exist — shown as the tooltip on the
+   * inert trigger. The session composer sets it: a started session binds ONE
+   * agent, and the agent that will run must stay visible, so the trigger stays
+   * but stops looking like a dropdown. Unset means "disabled for another
+   * reason" (a read-only form): the trigger renders inert with no tooltip.
+   */
+  disabledHint?: string | null;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('threads');
@@ -132,7 +141,6 @@ export function AgentSelector({
         // pointing at neither.
         className={cn('items-start gap-2 py-2', isSelected && 'bg-primary/[0.06]')}
         onSelect={() => {
-          if (disabled) return;
           onSelect(agent.name);
           setOpen(false);
         }}
@@ -198,8 +206,41 @@ export function AgentSelector({
     );
   }
 
+  /**
+   * A locked picker: the session binds one agent, so there is no menu to open.
+   *
+   * The trigger stays — the agent that will run must remain visible — but it
+   * stops pretending to be interactive: no caret (the one cue that read as
+   * "opens a menu"), the muted text every inert control on this rail wears,
+   * the disabled attribute, and a tooltip that says why. The tooltip hangs
+   * off a `<span>` rather than the button, same as the empty roster above: a
+   * disabled button takes no pointer events, so a `Hint` wrapped straight
+   * around it would never open — in exactly the state where its words matter.
+   */
+  if (disabled) {
+    const trigger = (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled
+        aria-label={disabledHint ?? undefined}
+        className="text-muted-foreground rounded-lg"
+      >
+        {metaSelected && <MetaFolder className="size-3.5 shrink-0" weight="fill" />}
+        <span className={cn('max-w-[100px] truncate', triggerLabelClassName)}>{displayName}</span>
+      </Button>
+    );
+    if (!disabledHint) return trigger;
+    return (
+      <Hint side="top" label={disabledHint}>
+        <span className="inline-flex">{trigger}</span>
+      </Hint>
+    );
+  }
+
   return (
-    <CommandPopover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
+    <CommandPopover open={open} onOpenChange={setOpen}>
       <CommandPopoverTrigger>
         <Button
           type="button"

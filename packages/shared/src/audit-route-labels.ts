@@ -607,6 +607,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/prompts': { action: 'session.prompt.list', title: 'Viewed queued session prompts' },
   'POST /v1/projects/:projectId/sessions/:sessionId/prompts': { action: 'session.prompt.send', title: 'Queued a session prompt' },
   'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId': { action: 'session.prompt.delete', title: 'Removed a queued session prompt' },
+  'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId': { action: 'session.prompt.edit', title: 'Edited a queued session prompt' },
   'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry': { action: 'session.prompt.retry', title: 'Retried a queued session prompt' },
   'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold': { action: 'session.prompt.hold.set', title: 'Set session prompt queue hold' },
   'GET /v1/projects/:projectId/sessions/:sessionId/provider-secret-pools': { action: 'session.provider_secret_pool.list', title: 'Listed session provider secret pools' },

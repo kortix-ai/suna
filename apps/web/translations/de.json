@@ -1914,6 +1914,7 @@
     "messageInput": "Nachrichteneingabe",
     "attachFiles": "Dateien anhängen",
     "selectAgent": "Agent auswählen",
+    "agentLockedHint": "In einer bereits gestarteten Session lässt sich der Agent nicht wechseln.",
     "noModel": "Kein Modell",
     "thinkingEffort": "Denkaufwand",
     "sessionOverrides": "Sitzungsüberschreibungen",
@@ -1941,6 +1942,8 @@
     "queued": "In Warteschlange",
     "queuedFiles": "{count, plural, one {# Datei} other {# Dateien}}",
     "queuedCount": "{count} in Warteschlange",
+    "editingQueued": "Wird bearbeitet",
+    "submitEdit": "Absenden",
     "collapseQueue": "Warteschlange einklappen",
     "expandQueue": "Warteschlange ausklappen"
   },

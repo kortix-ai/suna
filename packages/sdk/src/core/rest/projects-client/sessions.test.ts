@@ -44,6 +44,7 @@ import {
   restartProjectSession,
   holdSessionPrompts,
   retrySessionPrompt,
+  editSessionPrompt,
   revokeSessionPublicShare,
   sessionModelPin,
   setProjectSessionModel,
@@ -1392,6 +1393,31 @@ test('retrySessionPrompt POSTs .../retry and returns the requeued row', async ()
   // it, so a retry of a delivery that actually landed is still absorbed.
   expect(result.message_id).toBe('msg_a');
   expect(result.state).toBe('queued');
+});
+
+test('editSessionPrompt PATCHes the row text in place and returns the row', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      prompt_id: 'cmd-1',
+      client_message_id: 'q_1',
+      message_id: 'msg_a',
+      state: 'queued',
+      reason: null,
+      text: 'say hello',
+      attempts: 0,
+      last_error: null,
+      created_at: '2026-08-18T00:00:00.000Z',
+      available_at: '2026-08-18T00:00:00.000Z',
+    },
+  };
+  const result = await editSessionPrompt('P1', 'S1', 'cmd-1', 'say hello');
+  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().method).toBe('PATCH');
+  // Text only: the row keeps its files, its place and its wire id.
+  expect(last().body).toEqual({ text: 'say hello' });
+  expect(result.text).toBe('say hello');
+  expect(result.message_id).toBe('msg_a');
 });
 
 test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the queue', async () => {

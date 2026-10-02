@@ -48,6 +48,9 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
       list: () => P.listSessionPrompts(ctx.projectId, ctx.sessionId),
       remove: (promptId: string) => P.deleteSessionPrompt(ctx.projectId, ctx.sessionId, promptId),
       retry: (promptId: string) => P.retrySessionPrompt(ctx.projectId, ctx.sessionId, promptId),
+      /** Replace a waiting prompt's text in place; sends nothing. */
+      edit: (promptId: string, text: string) =>
+        P.editSessionPrompt(ctx.projectId, ctx.sessionId, promptId, text),
       /** Hold (or release) the whole queue — what the Stop button writes. */
       hold: (held: boolean) => P.holdSessionPrompts(ctx.projectId, ctx.sessionId, held),
     },

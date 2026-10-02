@@ -1914,6 +1914,7 @@
     "messageInput": "Campo messaggio",
     "attachFiles": "Allega file",
     "selectAgent": "Seleziona agente",
+    "agentLockedHint": "Non è possibile cambiare agente in una sessione già avviata.",
     "noModel": "Nessun modello",
     "thinkingEffort": "Livello di ragionamento",
     "sessionOverrides": "Override della sessione",
@@ -1941,6 +1942,8 @@
     "queued": "In coda",
     "queuedFiles": "{count, plural, one {# file} other {# file}}",
     "queuedCount": "{count} in coda",
+    "editingQueued": "In modifica",
+    "submitEdit": "Invia",
     "collapseQueue": "Comprimi coda",
     "expandQueue": "Espandi coda"
   },

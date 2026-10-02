@@ -151,6 +151,7 @@ export function ComposerUnderbar({
           disabled={agentSelectorLocked}
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
+          disabledHint={agentSelectorLocked ? t('agentLockedHint') : undefined}
         />
       </div>
 
