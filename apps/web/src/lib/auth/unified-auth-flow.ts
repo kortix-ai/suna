@@ -31,6 +31,9 @@ export const SSO_REQUIRED_MESSAGE =
 const WRONG_PASSWORD_MESSAGE =
   'Incorrect password. Try again, or reset it via “Forgot your password?”.';
 
+const EMAIL_RATE_LIMIT_MESSAGE = 'Could not send the email. Try again in about an hour.';
+const REQUEST_RATE_LIMIT_MESSAGE = 'Too many requests. Try again in a few minutes.';
+
 /** Parse `KORTIX_PUBLIC_AUTH_METHODS` ("magic,password") with a safe default. */
 export function parseAuthMethods(raw: string | null | undefined): AuthMethod[] {
   const parsed = (raw || 'magic,password')
@@ -53,6 +56,35 @@ export function resolveEmailFlowMode(check: unknown): EmailFlowMode {
   if (mode === 'signin' || mode === 'signup' || mode === 'closed' || mode === 'sso') return mode;
   if (allowed === false) return 'closed';
   return 'unknown';
+}
+
+/**
+ * Human copy for a rate-limited auth request. GoTrue surfaces its own error
+ * strings ("Email rate limit exceeded") and the auth screen used to show one
+ * raw as the toast heading; this maps the rate-limit codes to guidance
+ * instead. Null when the error is not a rate limit — the caller keeps its
+ * existing handling for everything else.
+ *
+ * ponytail: the wait copy assumes GoTrue's default hourly email-send quota;
+ * reword if a deployment tunes RATE_LIMIT_EMAIL_SENT.
+ */
+export function authRateLimitCopy(
+  error: { code?: string | null; message?: string | null } | null | undefined,
+): string | null {
+  if (!error) return null;
+  const code = (error.code || '').toLowerCase();
+  const message = (error.message || '').toLowerCase();
+  if (code === 'over_email_send_rate_limit' || message.includes('email rate limit')) {
+    return EMAIL_RATE_LIMIT_MESSAGE;
+  }
+  if (
+    code === 'over_request_rate_limit' ||
+    code === 'over_sms_send_rate_limit' ||
+    message.includes('rate limit')
+  ) {
+    return REQUEST_RATE_LIMIT_MESSAGE;
+  }
+  return null;
 }
 
 export interface CredentialsCopy {

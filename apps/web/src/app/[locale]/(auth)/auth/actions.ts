@@ -13,6 +13,7 @@ import {
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
   SSO_REQUIRED_MESSAGE,
+  authRateLimitCopy,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
 import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
@@ -29,6 +30,18 @@ import { cookies, headers } from 'next/headers';
  */
 async function readBouncedOwnerId(): Promise<string> {
   return parseAuthBounceOwner((await cookies()).get(AUTH_BOUNCE_COOKIE)?.value);
+}
+
+/**
+ * A GoTrue failure as the action result. Rate limits become human copy — a
+ * raw Supabase string is infrastructure text a visitor cannot act on — and the
+ * raw code stays in the server log only. Anything else keeps GoTrue's
+ * message, the pre-existing behavior.
+ */
+function authFailure(error: { code?: string | null; message?: string | null }, fallback: string) {
+  const human = authRateLimitCopy(error);
+  if (human) console.warn(`[auth] rate limited: ${error.code ?? ''} ${error.message ?? ''}`.trim());
+  return { message: human || error.message || fallback };
 }
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -209,7 +222,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not send the link' };
+    return authFailure(error, 'Could not send the link');
   }
 
   return {
@@ -264,7 +277,7 @@ export async function forgotPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not send password reset email' };
+    return authFailure(error, 'Could not send password reset email');
   }
 
   return {
@@ -293,7 +306,7 @@ export async function resetPassword(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Could not update password' };
+    return authFailure(error, 'Could not update password');
   }
 
   return {
@@ -343,7 +356,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
       (error.message?.toLowerCase().includes('invalid login credentials')
         ? 'invalid_credentials'
         : null);
-    return { message: error.message || 'Invalid email or password', code };
+    return { ...authFailure(error, 'Invalid email or password'), code };
   }
 
   // Determine if new user (for analytics)
@@ -451,7 +464,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       signUpError.status === 422);
 
   if (signUpError && !alreadyExists) {
-    return { message: signUpError.message || 'Could not create account' };
+    return authFailure(signUpError, 'Could not create account');
   }
 
   const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -554,7 +567,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   });
 
   if (error) {
-    return { message: error.message || 'Invalid or expired code' };
+    return authFailure(error, 'Invalid or expired code');
   }
 
   // Determine if new user (for analytics)
