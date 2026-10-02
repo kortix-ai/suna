@@ -6507,6 +6507,10 @@ export const sessionPresenceLeases = kortixSchema.table('session_presence_leases
   primaryKey({ columns: [table.userId, table.sessionId, table.tabId] }),
   // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
   foreignKey({ columns: [table.sessionId], foreignColumns: [projectSessions.sessionId], name: 'session_presence_session_fk' }).onDelete('cascade'),
+  // Covers the FK: the PK leads with user_id, so the ON DELETE cascade fired
+  // by a project_sessions delete scans this table by session_id without an
+  // index (Supabase advisor: unindexed_foreign_keys).
+  index('idx_session_presence_leases_session_id').on(table.sessionId),
 ]);
 
 /**

@@ -778,6 +778,13 @@
       "when": 1790956626526,
       "tag": "20261002155706_session_lifecycle_commands_forwarded_index",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1790976989937,
+      "tag": "20261002213629_session_presence_leases_session_fk_index",
+      "breakpoints": true
     }
   ]
 }
