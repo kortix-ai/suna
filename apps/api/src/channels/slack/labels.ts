@@ -113,9 +113,17 @@ export function slackMessageLabels(input: {
   return withinBudget(resolve(input), fallback, 'message labels');
 }
 
-/** Display names of Slack user ids, within the budget; an id Slack cannot name is absent. Never throws. */
-export function slackUserNames(token: string, teamId: string, ids: readonly string[]): Promise<Map<string, string>> {
-  const unique = [...new Set(ids)].slice(0, MAX_MENTIONS);
+/**
+ * Display names of Slack user ids, within the budget; an id Slack cannot name
+ * is absent. At most `max` distinct ids are asked. Never throws.
+ */
+export function slackUserNames(
+  token: string,
+  teamId: string,
+  ids: readonly string[],
+  max = MAX_MENTIONS,
+): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)].slice(0, max);
   if (unique.length === 0) return Promise.resolve(new Map());
   const work = Promise.all(unique.map((id) => slackUserName(token, teamId, id))).then(
     (names) => new Map(unique.flatMap((id, i) => (names[i] ? [[id, names[i]] as [string, string]] : []))),
