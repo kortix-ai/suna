@@ -72,7 +72,6 @@ export {
   isConnectionClosedNoise,
   isFailedToSendMessageNoise,
   isFramelessNetworkErrorNoise,
-  isGeckoInputStreamRejectionNoise,
   isSignalTimeoutNoise,
 } from './browser-noise/rules/network';
 export {

@@ -508,10 +508,10 @@ export function isSignalTimeoutNoise(input: {
 // WHY the rejection reaches the global handler at all: every first-party
 // consumer of a fetch body in the browser bundle already handles its own read
 // rejections — the SSE event-stream machine races reads against its abort
-// watch and retries (`packages/sdk/src/core/stream/event-stream.ts`), the
-// session-sync tail poll catches through `loadTail` and re-schedules
-// (`packages/sdk/src/core/session-sync/session-sync-controller.ts`), the
-// health probe catches its body read (`getSessionHealth`'s `.text().catch()`), the platform client
+// watch and retries (`core/stream/event-stream.ts`), the session-sync tail
+// poll catches through `loadTail` and re-schedules
+// (`core/session-sync/session-sync-controller.ts`), the health probe catches
+// its body read (`getSessionHealth`'s `.text().catch()`), the platform client
 // converts every body failure into an `ApiError` result (`makeRequest`), the
 // file/attachment readers await inside their callers' try/catch or React
 // Query (`readBlob`, `fetchSessionAttachment`), and the vendor OpenCode SSE
