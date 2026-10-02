@@ -44,7 +44,7 @@ import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, 
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { existingProjectMirrorPath, runGitCapture } from '../git/mirror';
+import { type MirrorRefresh, existingProjectMirrorPath, runGitCapture } from '../git/mirror';
 import {
   agentGrantDiffers,
   isAgentLaunchableForProject,
@@ -283,7 +283,7 @@ async function resolveCurrentGrant(input: {
   sessionId: string;
   sessionAgent: string;
   runningAgent: string;
-  forceRefresh: boolean;
+  forceRefresh: MirrorRefresh;
 }): Promise<AgentGrant | null> {
   try {
     const project = await loadGitProjectRow(input.projectId);
@@ -428,44 +428,16 @@ export async function remintGrantForAgentSwitch(
   // broader grant for the first calls of the next turn. Only the connector
   // gateway reconciles at call time (`reconcileStoredSessionAgentGrant`).
   // The prompt must not be forwarded before the row is rewritten.
-  const resolve = () =>
-    resolveCurrentGrant({
-      ...input,
-      runningAgent,
-      forceRefresh: true,
-    });
-  const running = await resolve();
-  return applyResolvedGrant(input, stored, running, resolve);
-}
-
-/**
- * Bound the forced mirror fetch the gateway path performs.
- *
- * `reconcileStoredSessionAgentGrant` runs on EVERY connector call, and a forced
- * refresh is a `git fetch --prune` of the whole project mirror (2,000+ refs on
- * a busy project, ~0.6 s). A turn that fans out five tool calls paid for five
- * fetches. Within this window the mirror is served as-is; a manifest commit
- * from another replica is picked up by the first call after it. The prompt
- * path (`remintGrantForAgentSwitch`) still forces unconditionally — once per
- * turn.
- */
-function grantRefreshCooldownMs(): number {
-  const value = Number(process.env.KORTIX_GRANT_REFRESH_COOLDOWN_MS || 3_000);
-  return Number.isFinite(value) && value >= 0 ? value : 3_000;
-}
-
-const lastForcedGrantRefreshAt = new Map<string, number>();
-
-function shouldForceGrantRefresh(projectId: string, now = Date.now()): boolean {
-  const last = lastForcedGrantRefreshAt.get(projectId) ?? 0;
-  if (now - last < grantRefreshCooldownMs()) return false;
-  lastForcedGrantRefreshAt.set(projectId, now);
-  return true;
-}
-
-/** Test seam: forget every cooldown so the next reconcile forces a refresh. */
-export function resetGrantRefreshCooldownForTest(): void {
-  lastForcedGrantRefreshAt.clear();
+  //
+  // `'tip-proof'`, not `true`: the read ran `git ls-remote` (~600 ms) on every
+  // prompt to learn that the manifest had not moved. A manifest change made
+  // through Kortix drops the proof in every API process, so the case above
+  // still reads the new manifest before the turn (see `MirrorRefresh`). The
+  // tie-break read stays strict: it exists to contradict the first one.
+  const resolve = (forceRefresh: MirrorRefresh) =>
+    resolveCurrentGrant({ ...input, runningAgent, forceRefresh });
+  const running = await resolve('tip-proof');
+  return applyResolvedGrant(input, stored, running, () => resolve(true));
 }
 
 /**
@@ -531,7 +503,10 @@ export async function reconcileStoredSessionAgentGrant(input: {
       ...input,
       sessionAgent: runningAgent,
       runningAgent,
-      forceRefresh: shouldForceGrantRefresh(input.projectId),
+      // Runs on EVERY connector call: the tip proof bounds the remote reads
+      // to one per refresh interval, and a manifest commit handled by another
+      // replica drops it (see `MirrorRefresh`).
+      forceRefresh: 'tip-proof',
     });
   } catch (err) {
     if (!stored) throw err;

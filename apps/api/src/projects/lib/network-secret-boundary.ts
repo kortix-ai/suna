@@ -58,6 +58,7 @@ async function loadSessionSecretRows(
     manifestPath: project.manifestPath,
     sessionAgent,
     requestedAgent,
+    forceRefresh: 'tip-proof',
   }).catch((error: unknown) => {
     if (onGrantError === 'assume_all') return 'all' as const;
     throw error;

@@ -267,6 +267,7 @@ async function resolveOwnerRawEnv(
     manifestPath: project?.manifestPath,
     sessionAgent: row.agentName ?? DEFAULT_AGENT_SENTINEL,
     requestedAgent,
+    forceRefresh: 'tip-proof',
   });
 
   // THE CLOBBER FIX: apply the SAME per-session secrets narrowing as boot
