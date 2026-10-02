@@ -746,8 +746,9 @@ function ChannelSettingsModalContent({
         <ModalDescription>{tI18nComplete.raw('text95112f275fba')}</ModalDescription>
       </ModalHeader>
       <form onSubmit={save}>
-        {/* Capped so the footer stays on screen at the 720 × 480 desktop minimum. */}
-        <ModalBody className="max-h-[50vh] space-y-5 overflow-y-auto pt-4">
+        {/* The header and footer take 153px: the whole form fits from 720px tall,
+            and the footer stays on screen at the 720 × 480 desktop minimum. */}
+        <ModalBody className="max-h-[calc(100dvh-15rem)] space-y-5 overflow-y-auto pt-4">
           <div className="bg-popover flex min-w-0 items-center gap-3 rounded-md border px-3 py-2.5">
             <BindingBrandMark platform={binding.platform} />
             <div className="min-w-0">
