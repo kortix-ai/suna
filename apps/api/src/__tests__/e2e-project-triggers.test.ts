@@ -413,10 +413,13 @@ const triggerDbMock: any = {
               // both `await ...limit(n)` and `...limit(n).offset(m)` resolve.
               limit: (limit: number) => {
                 const limited = rows.slice(0, limit);
-                return {
+                const chain = {
                   offset: async (offset: number) => limited.slice(offset),
+                  // The lifecycle claim locks its picks: `.limit(n).for('update', …)`.
+                  for: () => chain,
                   then: (resolve: (rows: any[]) => unknown) => resolve(limited),
                 };
+                return chain;
               },
               then: (resolve: (rows: any[]) => unknown) => resolve(rows),
             };
@@ -608,7 +611,14 @@ const triggerDbMock: any = {
         where: () => ({
           returning: async () => {
             if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              // The claim sets `attempts` and `result` with SQL expressions that
+              // Postgres evaluates against the row; apply the plain values.
+              const plain = Object.fromEntries(Object.entries(setValues).filter(([, v]) => !is(v, SQL)));
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({
+                ...row,
+                ...plain,
+                ...(is(setValues.attempts, SQL) ? { attempts: row.attempts + 1 } : {}),
+              }));
               return lifecycleCommandRows;
             }
             return [];
