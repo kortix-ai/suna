@@ -1117,7 +1117,7 @@ export async function bootstrapLegacyRuntime(
       // The old message printed `klass/opencode` only, so a box that timed out
       // on `runtimeBuild === null` reported `last: current/ok` — a reading that
       // says "converged" next to the word "not converged" and sent the next
-      // reader looking in the wrong place (dev session 8e3d6a63, 2026-09-28).
+      // reader looking in the wrong place (a dev session, 2026-09-28).
       error: `relaunched but not converged within budget (last: klass=${
         last?.klass ?? 'unreachable'
       } opencode=${last?.opencode ?? '-'} opencodeComponent=${

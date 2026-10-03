@@ -328,10 +328,20 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
 
   const tokenId = c.get('iamTokenId') as string | undefined;
   if (authType === 'pat' && tokenId) {
+    // The PAT branch of auth already read this token's row to validate it
+    // (`patPrincipal` stores its binding fields). Same row, same request and
+    // fresher than the memo, so a second `account_tokens` read is pure
+    // latency: one more database round trip on every PAT request.
+    const seeded = c.get('iamTokenBinding') as (TokenBinding & { tokenId: string }) | undefined;
     return {
       userId,
       accountId,
-      credential: await tokenCredential(tokenId, accountId, (c.get('sessionId') as string | undefined) ?? null),
+      credential: await tokenCredential(
+        tokenId,
+        accountId,
+        (c.get('sessionId') as string | undefined) ?? null,
+        seeded?.tokenId === tokenId ? seeded : undefined,
+      ),
       ctx,
     };
   }
@@ -349,8 +359,10 @@ async function tokenCredential(
   tokenId: string,
   accountId: string,
   sessionId: string | null,
+  /** The token's row as this request already read it, when it did. */
+  known?: TokenBinding,
 ): Promise<Credential> {
-  const binding = await loadTokenBinding(tokenId);
+  const binding = known ?? (await loadTokenBinding(tokenId));
   const serviceAccountId = binding?.serviceAccountId ?? null;
   if (serviceAccountId) {
     const [activated, agentPrincipal] = await Promise.all([

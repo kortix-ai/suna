@@ -1,4 +1,5 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
+import { ApiError } from '../core/http/api/errors';
 import type { TunnelConnection } from './use-tunnel';
 
 // A paired computer is an account of the project's `computer` connector. The
@@ -11,6 +12,7 @@ import type { TunnelConnection } from './use-tunnel';
 
 let requests: Array<{ method: string; path: string; body?: unknown }> = [];
 let invalidated: unknown[][] = [];
+let getOverride: { success: boolean; error?: Error; data?: unknown } | null = null;
 
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
@@ -24,6 +26,7 @@ mock.module('@tanstack/react-query', () => ({
 
 const record = (method: string) => async (path: string, body?: unknown) => {
   requests.push({ method, path, body });
+  if (method === 'GET' && getOverride) return getOverride;
   return { data: { success: true, tunnelId: 'tunnel-1', connectionId: 'connection-1' }, error: null, success: true };
 };
 const actualApiClient = await import('../core/http/api-client');
@@ -43,6 +46,7 @@ const tunnel = await import('./use-tunnel');
 beforeEach(() => {
   requests = [];
   invalidated = [];
+  getOverride = null;
 });
 
 type Config = {
@@ -79,6 +83,31 @@ test.each(RETIRED_HOOKS)('%s fails with ENDPOINT_RETIRED and sends no request', 
     expect(config.retry).toBe(false);
     expect(config.refetchInterval).toBeUndefined();
   }
+});
+
+test('useTunnelConnections rethrows the API error with its status intact', async () => {
+  // The web QueryClient's default retry guard reads `error.status` and stops
+  // on 4xx. A re-thrown status-less `new Error(message)` defeats it: with a
+  // dead token the 5 s poller then ran two full default-retry cycles
+  // (1/2/4 s) of 401s on `GET /tunnel/connections` — 8 warn lines.
+  getOverride = { success: false, error: new ApiError('Invalid or expired token', { status: 401 }) };
+  const config = tunnel.useTunnelConnections() as unknown as Config;
+  const error = await config.queryFn!().then(() => null, (e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(401);
+});
+
+test('useTunnelConnection rethrows the API error with its status intact', async () => {
+  getOverride = { success: false, error: new ApiError('Invalid or expired token', { status: 401 }) };
+  const config = tunnel.useTunnelConnection('tunnel-1') as unknown as Config;
+  const error = await config.queryFn!().then(() => null, (e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(401);
+});
+
+test('useDeviceAuthInfo rethrows the API error with its status intact', async () => {
+  getOverride = { success: false, error: new ApiError('Invalid or expired token', { status: 401 }) };
+  const config = tunnel.useDeviceAuthInfo('ABCD-1234') as unknown as Config;
+  const error = await config.queryFn!().then(() => null, (e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(401);
 });
 
 test('useApproveDeviceAuth sends project_id and share on the wire', async () => {

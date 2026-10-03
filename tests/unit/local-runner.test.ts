@@ -14,8 +14,11 @@ describe('local test runner', () => {
       'flow-runner-unit',
       'route-coverage',
       'worktree-unit',
+      'package-quality',
     ]);
-    expect(plan.stages).toHaveLength(1);
+    // Package quality is its own stage: the attestation's `packages` lane.
+    expect(plan.stages).toHaveLength(2);
+    expect(plan.stages[1]?.map((lane) => lane.name)).toEqual(['package-quality']);
     expect(plan.lanes.find((lane) => lane.name === 'db-suites')?.command).toEqual([
       'bun',
       'tests/bin/db-suites.ts',

@@ -61,10 +61,10 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 `main` takes PRs with no required CI: the developer's own box is the pre-merge
 check (the **testing** skill, "your machine is the pre-merge gate"). A person
 may add the `test` label for one explicit six-lane run (the **contributing**
-skill). A push to `main` runs the six `Tests` lanes as a **non-blocking trunk
-signal**, and an automated "repair main" pass opens fix-forward PRs
-(`fix(...): repair main after <sha> (...)`) when that push run is red. **Neither
-the push run nor the repair pass blocks a promotion** — do not wait for either
+skill). A daily `schedule` runs the six `Tests` lanes on `main` as a **non-blocking trunk
+signal** (a push does not), and an automated "repair main" pass opens fix-forward PRs
+(`fix(...): repair main after <sha> (...)`) when that scheduled run is red. **Neither
+the scheduled run nor the repair pass blocks a promotion** — do not wait for either
 before Step 2.
 
 ### Step 2 — promote current main
