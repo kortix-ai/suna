@@ -1,5 +1,5 @@
 {
-  "id": "152036bb-15ba-4307-bac3-3ec9f270032e",
+  "id": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "prevId": "f437005a-e96a-4699-9de8-5d61be349e22",
   "version": "7",
   "dialect": "postgresql",
@@ -2951,6 +2951,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "app_deployment_events_runtime_idx": {
+          "name": "app_deployment_events_runtime_idx",
+          "columns": [
+            {
+              "expression": "runtime_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5468,7 +5483,7 @@
           "name": "project_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "platform": {
           "name": "platform",
