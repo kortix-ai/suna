@@ -528,3 +528,29 @@ describe('the stored column preference is untrusted input', () => {
     expect(APP_GRID_COLUMNS_STORAGE_KEY).toBe('kortix.apps.grid-columns');
   });
 });
+
+describe('AppPreview — access and deployment characterization', () => {
+  test('an undeployed App stays empty even with a signed URL', () => {
+    const html = renderAppMarkup(<AppPreview app={{ ...APP, active_deployment_id: null }} url={URL} accessError={false} interactive />);
+    expect(html).toContain('app-preview-empty');
+    expect(html).not.toContain('<iframe');
+  });
+
+  test('an active deployment distinguishes pending access from denied access', () => {
+    const pending = renderAppMarkup(<AppPreview app={APP} url={null} accessError={false} interactive />);
+    const denied = renderAppMarkup(<AppPreview app={APP} url={null} accessError interactive />);
+    expect(pending).toContain('app-preview-loading');
+    expect(denied).toContain('app-preview-access-denied');
+    expect(pending).not.toContain('<iframe');
+    expect(denied).not.toContain('<iframe');
+  });
+
+  test('a suspended deployment still renders its wake URL with the sandbox boundary', () => {
+    const html = renderAppMarkup(<AppPreview app={{ ...APP, desired_state: 'stopped' }} url={URL} accessError={false} interactive={false} />);
+    expect(html).toContain('app-live-preview');
+    expect(html).toContain('sandbox=');
+    expect(html).toContain('tabindex="-1"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('__kortix_access=tok');
+  });
+});
