@@ -8,6 +8,7 @@ import {
   CODE_THEME_FOREGROUND,
   HIGHLIGHT_LANGS,
   LANGUAGE_ALIASES,
+  codeThemeFor,
   languageLabel,
   normalizeLanguage,
   SHIKI_THEME_DARK,
@@ -139,8 +140,17 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       await oniguruma.loadLanguage((await LANGUAGE_LOADERS[lang]()).default);
       // Warm the grammar's regexes first. Shiki stops a line after 500 ms and
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
-      // crossed that limit and failed the parity check below.
-      highlightToTokens(sample, lang, 'light');
+      // crossed that limit and failed the parity check below. Warm through the
+      // raw highlighter: a warm call that itself crosses the 500 ms budget
+      // under load would cache the partially-coloured lines, and the parity
+      // check below would then compare against that poisoned cache (measured
+      // on a loaded box: php/cpp flip between runs). Evict whatever the warm
+      // left behind.
+      __testing.getHighlighter()!.codeToTokensBase(sample, {
+        lang,
+        theme: codeThemeFor('light'),
+      });
+      __testing.tokenCache.clear();
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
