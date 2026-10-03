@@ -141,13 +141,20 @@ The App's **Access** dialog lists the agents with access, read from
 default branch shapes agents. The same permissions decide for an agent and for
 a person:
 
-1. `project.gitops.merge` implies `project.agent.write` and
-   `project.trigger.*`. A principal that may merge a change request may merge
-   one that changes `agents.*` or `triggers`.
-2. Without `project.gitops.merge`, the merge answers `403` with
-   `code: "agent_scope_insufficient"` (agent) or `"project_role_insufficient"`
-   (person).
-3. The ceiling is admin-only IAM state. The manifest never exceeds it.
+1. Merging a change request needs `project.gitops.merge`.
+2. A merge that changes `kortix.yaml` also needs the permission the direct
+   route for that change needs: `agents.*` → `project.agent.write`;
+   `triggers` → `project.trigger.create`, `.update`, or `.delete`;
+   `default_agent` → `project.customize.write`. A person's role holds these
+   through `project.gitops.merge`. An agent's `kortix_permissions` must list
+   them, or be `all`. So an agent that may only merge cannot widen itself.
+3. A push straight to the default branch skips the change request. An agent
+   session needs `project.gitops.ref.any` and every permission in item 2.
+4. A refusal answers `403` with `code: "agent_scope_insufficient"` (agent) or
+   `"project_role_insufficient"` (person) and the missing `action`. When the
+   manifest cannot be read, the merge answers `503` with
+   `code: "CR_GOVERNANCE_UNVERIFIED"` and `Retry-After`. Retry it.
+5. The ceiling is admin-only IAM state. The manifest never exceeds it.
 
 ## Read a denial
 

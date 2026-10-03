@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  MANIFEST_WRITE_ACTIONS,
   refusesSelfMerge,
+  requiredManifestActions,
   resolveChangeRequestBase,
   resolveChangeRequestOrigin,
 } from './change-request-policy';
@@ -119,3 +121,43 @@ describe('resolveChangeRequestOrigin', () => {
   });
 });
 
+
+describe('requiredManifestActions — a merge needs what the direct route asserts', () => {
+  const base = 'kortix_version: 2\ndefault_agent: a\nagents:\n  a:\n    kortix_permissions: ["project.read"]\n';
+  const withTrigger = `${base}triggers:\n  - slug: hourly\n    type: cron\n    cron: "0 * * * *"\n    prompt: tidy\n    agent: a\n`;
+
+  test('no governed section changed → nothing extra', () => {
+    expect(requiredManifestActions(base, `${base}project:\n  name: renamed\n`, 'yaml')).toEqual([]);
+    expect(requiredManifestActions(base, base, 'yaml')).toEqual([]);
+    expect(requiredManifestActions(null, null, 'yaml')).toEqual([]);
+  });
+
+  test('widening an agent needs project.agent.write', () => {
+    expect(requiredManifestActions(base, base.replace('["project.read"]', 'all'), 'yaml')).toEqual(['project.agent.write']);
+    expect(requiredManifestActions(base, `${base}  b: {}\n`, 'yaml')).toEqual(['project.agent.write']);
+  });
+
+  test('triggers: added → create, edited → update, removed → delete', () => {
+    expect(requiredManifestActions(base, withTrigger, 'yaml')).toEqual(['project.trigger.create']);
+    expect(requiredManifestActions(withTrigger, withTrigger.replace('prompt: tidy', 'prompt: sweep'), 'yaml')).toEqual([
+      'project.trigger.update',
+    ]);
+    expect(requiredManifestActions(withTrigger, base, 'yaml')).toEqual(['project.trigger.delete']);
+  });
+
+  test('switching default_agent needs project.customize.write', () => {
+    const two = `${base}  b: {}\n`;
+    expect(requiredManifestActions(two, two.replace('default_agent: a', 'default_agent: b'), 'yaml')).toEqual([
+      'project.customize.write',
+    ]);
+  });
+
+  test('key order and formatting do not count', () => {
+    const reordered = 'agents:\n  a:\n    kortix_permissions: ["project.read"]\ndefault_agent: a\nkortix_version: 2\n';
+    expect(requiredManifestActions(base, reordered, 'yaml')).toEqual([]);
+  });
+
+  test('a side that does not parse needs every manifest-write permission (fail closed)', () => {
+    expect(requiredManifestActions(base, 'agents: [unclosed', 'yaml')).toEqual([...MANIFEST_WRITE_ACTIONS]);
+  });
+});

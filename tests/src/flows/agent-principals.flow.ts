@@ -1056,7 +1056,7 @@ flow(
   },
 );
 
-// ── AGP-10 — merging agents/triggers is project.gitops.merge, agent or human ───
+// ── AGP-10 — merging agents/triggers needs what the direct route needs ───────
 flow(
   'AGP-10',
   {
@@ -1084,19 +1084,22 @@ flow(
     const { project, world } = await governedWorld(ctx);
     const work = await mkdtemp(join(tmpdir(), 'ke2e-agp10-'));
     let server: import('node:http').Server | null = null;
-    const base = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.merge'] };
+    const base = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.merge', 'project.agent.write', 'project.trigger.create'] };
     const pushOnly = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push'] };
+    const mergeOnly = { kortix_permissions: ['project.read', 'project.write', 'project.gitops.read', 'project.gitops.push', 'project.gitops.merge', 'project.gitops.ref.any'] };
     try {
       await ctx.step('commit `builder`, which may push its branch and merge its own change requests', async () => {
         await world.localRepoPath();
         await world.writeManifest(manifest({
           builder: { kortix_permissions: [...base.kortix_permissions] },
           drafter: { kortix_permissions: [...pushOnly.kortix_permissions] },
+          merger: { kortix_permissions: [...mergeOnly.kortix_permissions] },
         }));
       });
       await enableFlag(ctx, world);
       const run = await world.mintAgentSession({ agent: 'builder', launcher: ctx.P.OWNER });
       const drafter = await world.mintAgentSession({ agent: 'drafter', launcher: ctx.P.OWNER });
+      const merger = await world.mintAgentSession({ agent: 'merger', launcher: ctx.P.OWNER });
       server = await serveFixtureRepoLocally(ctx, world.db, project.id, 'AGP-10');
       const remote = `${ctx.env.apiUrl.replace(/\/v1$/, '')}/v1/git/${project.id}`;
       const auth = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${run.secret}` };
@@ -1131,7 +1134,7 @@ flow(
       await ctx.step('a CR widening agents.builder.kortix_permissions: the agent merges it (200); main carries the change', async () => {
         const manifestPath = join(work, 'kortix.yaml');
         const current = await readFile(manifestPath, 'utf8');
-        await writeFile(manifestPath, current.replace('"project.gitops.merge"]', '"project.gitops.merge","project.secret.read"]'));
+        await writeFile(manifestPath, current.replace('"project.trigger.create"]', '"project.trigger.create","project.secret.read"]'));
         if ((await readFile(manifestPath, 'utf8')) === current) throw new Error('manifest edit did not apply');
         await commitAndPush('agents: widen builder');
         const crId = await openCr('Widen builder');
@@ -1164,6 +1167,32 @@ flow(
         assertDenial(await mergeAs(drafter.client, crId), 'agent_scope_insufficient', 'project.gitops.merge');
         if ((await mainSha()) !== before) throw new Error('a refused merge moved main');
         (await world.owner.post(`${crPath}/:crId/close`, {}, { params: { projectId: project.id, crId } })).status(200);
+      });
+      await ctx.step('merge without project.agent.write: `merger` cannot merge a CR making itself `all` → 403 agent_scope_insufficient (project.agent.write); main unchanged', async () => {
+        const manifestPath = join(work, 'kortix.yaml');
+        const current = await readFile(manifestPath, 'utf8');
+        const widened = current.replace(/merger:\n {4}kortix_permissions: \[[^\]]*\]/, 'merger:\n    kortix_permissions: "all"');
+        if (widened === current) throw new Error('manifest edit did not apply');
+        await writeFile(manifestPath, widened);
+        await commitAndPush('agents: make merger all');
+        const crId = await openCr('Make merger all');
+        const before = await mainSha();
+        assertDenial(await mergeAs(merger.client, crId), 'agent_scope_insufficient', 'project.agent.write');
+        if ((await mainSha()) !== before) throw new Error('a refused merge moved main');
+        (await world.owner.post(`${crPath}/:crId/close`, {}, { params: { projectId: project.id, crId } })).status(200);
+      });
+      await ctx.step('ref.any without the manifest-write permissions: `merger` pushing straight to main is refused; main unchanged', async () => {
+        const mergerAuth = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${merger.secret}` };
+        const before = await mainSha();
+        let pushed = false;
+        try {
+          await git(['push', 'origin', 'HEAD:refs/heads/main'], { cwd: work, env: mergerAuth });
+          pushed = true;
+        } catch (err) {
+          if (!/skips change-request review/.test(String((err as Error).message))) throw err;
+        }
+        if (pushed) throw new Error('merger pushed straight to main without the manifest-write permissions');
+        if ((await mainSha()) !== before) throw new Error('a refused push moved main');
       });
     } finally {
       if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));

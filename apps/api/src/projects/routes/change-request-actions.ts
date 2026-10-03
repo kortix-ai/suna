@@ -3,8 +3,12 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
+import { agentMayPerform, assertAgentScope, getAgentGrant, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { logger } from '../../lib/logger';
 import { refusesSelfMerge } from '../change-request-policy';
+// Its own module, not the `../git` barrel: several route suites replace the
+// barrel wholesale with `mock.module`.
+import { manifestChangeRequiredActions } from '../change-request-governance';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
@@ -103,11 +107,36 @@ projectsApp.openapi(
     const customMessage = normalizeString(body.message);
     const projectForGit = await withProjectGitAuth(loaded.row);
 
-    // No agent-only governance guard: project.gitops.merge implies
-    // project.agent.write and project.trigger.* in the RBAC catalog, so a
-    // principal that may merge may change agents and triggers, agent or human.
-    // The guard that refused agents here left the direct writers (agent config
-    // PUT, trigger routes, a push to the default branch) open anyway.
+    // A merge that changes `agents`, `triggers` or `default_agent` needs the
+    // permission the direct route for that change asserts. A person's role
+    // holds them through project.gitops.merge's `implies`; an agent's
+    // kortix_permissions list is flat, so an agent with merge alone cannot
+    // merge a change that widens itself. Same rule for every principal.
+    if (isProjectSessionPrincipal(c)) {
+      let required: string[];
+      try {
+        required = await manifestChangeRequiredActions(projectForGit, cr);
+      } catch (err) {
+        logger.warn('[cr-merge] could not read the manifest to classify the merge; refusing it', {
+          cr: cr.number,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        c.header('Retry-After', '5');
+        return c.json(
+          {
+            error:
+              `Could not read the project manifest to check what change request #${cr.number} ` +
+              'changes. The merge was not applied. Retry it.',
+            code: 'CR_GOVERNANCE_UNVERIFIED',
+            action: PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
+          },
+          503,
+        );
+      }
+      for (const action of required) {
+        await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
+      }
+    }
 
     // Manifest gate: a CR cannot merge if the would-be-merged manifest doesn't
     // validate against the canonical schema. We read the manifest from the HEAD
