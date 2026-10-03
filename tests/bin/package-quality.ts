@@ -172,13 +172,13 @@ await runAll([
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);
-    // The whitelabel suite serves its Next BFF and its mock upstream from the
-    // test process itself; beside concurrent suites its SSE transport stalls
-    // (the first event never arrives within any budget), so it joins the
-    // sequential chain like the CLI and the agent server above.
-    await runWorkspaceTests(['@kortix/whitelabel-demo'], 1);
   })(),
 ]);
+// The whitelabel suite serves its Next BFF and its mock upstream from the test
+// process itself; any concurrent suite stalls its SSE transport (the first
+// event never arrives within any budget, while a control round-trip in the
+// same second succeeds). It runs alone.
+await runWorkspaceTests(['@kortix/whitelabel-demo'], 1);
 // The root `.npmrc` sets `ignore-scripts=true`, so `pnpm install` never runs
 // apps/mobile's `postinstall: patch-package`. Its tests assert the patched
 // libraries (`lib/markdown/markdown-keys.test.ts`), so apply the patches here.
