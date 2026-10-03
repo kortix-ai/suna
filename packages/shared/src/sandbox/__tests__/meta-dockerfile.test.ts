@@ -31,8 +31,10 @@ describe('buildMetaSandboxDockerfile', () => {
     expect(dockerfile).toContain('/usr/local/bin/kortix-agent');
     expect(dockerfile).toContain('/usr/local/bin/kortix');
     expect(dockerfile).toContain('/workspace/AGENTS.md');
-    expect(dockerfile).toContain('# Kortix Meta Agent');
-    expect(dockerfile).toContain('You coordinate work. You do not perform project work in this sandbox.');
+    // The guide was rewritten on main (#9017): the heading is '# Meta' and the
+    // no-work rule is the orchestrator's first sentence.
+    expect(dockerfile).toContain('# Meta');
+    expect(dockerfile).toContain('NEVER do project work in this sandbox.');
     expect(dockerfile).toContain(
       'Move files between sessions with `kortix sessions cp <session-id>:<path> <session-id>:<path>`.',
     );
