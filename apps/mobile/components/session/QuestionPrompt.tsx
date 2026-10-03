@@ -12,7 +12,7 @@
  * `lib/session/question-prompt.ts`.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -36,8 +36,8 @@ const MAX_OPTIONS_HEIGHT = 260;
 
 interface QuestionPromptProps {
   request: QuestionRequest;
-  onReply: (requestId: string, answers: QuestionAnswer[]) => void;
-  onReject: (requestId: string) => void;
+  onReply: (requestId: string, answers: QuestionAnswer[]) => void | Promise<void>;
+  onReject: (requestId: string) => void | Promise<void>;
   /** Focus the answer field at mount: the card replaces a composer that had the keyboard up. */
   autoFocus?: boolean;
 }
@@ -51,6 +51,23 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
   const [answers, setAnswers] = useState<QuestionAnswer[]>(() => questions.map(() => []));
   const [drafts, setDrafts] = useState<string[]>(() => questions.map(() => ''));
   const [replying, setReplying] = useState(false);
+  const inFlight = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = useCallback(async (action: () => void | Promise<void>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setReplying(true);
+    setError(null);
+    try {
+      await action();
+      // The SDK removes the request; stay locked until the parent unmounts us.
+    } catch {
+      inFlight.current = false;
+      setReplying(false);
+      setError('Could not submit your answer. Please try again.');
+    }
+  }, []);
 
   const question = questions[step];
   const options = question?.options ?? [];
@@ -65,30 +82,30 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
 
   const advance = useCallback(
     (answer: QuestionAnswer) => {
+      if (inFlight.current) return;
       const next = answers.map((a, i) => (i === step ? answer : a));
-      setAnswers(next);
+      if (!isLast || !isMulti) setAnswers(next);
       if (isLast) {
-        setReplying(true);
-        onReply(request.id, next);
+        void submit(() => onReply(request.id, next));
         return;
       }
       setStep(step + 1);
     },
-    [answers, step, isLast, onReply, request.id],
+    [answers, step, isLast, isMulti, onReply, request.id, submit],
   );
 
   const pick = useCallback(
     (label: string) => {
-      if (!question) return;
+      if (!question || inFlight.current) return;
       const next = pickQuestionOption(question, picked, label);
       if (isMulti) {
         setAnswers(answers.map((a, i) => (i === step ? next : a)));
         return;
       }
-      setDrafts(drafts.map((d, i) => (i === step ? '' : d)));
+      if (!isLast) setDrafts(drafts.map((d, i) => (i === step ? '' : d)));
       advance(next);
     },
-    [question, picked, isMulti, answers, drafts, step, advance],
+    [question, picked, isMulti, answers, drafts, step, advance, isLast],
   );
 
   const send = useCallback(() => {
@@ -96,11 +113,10 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
   }, [canSend, advance, stepAnswer]);
 
   const skip = useCallback(() => {
-    setReplying(true);
-    onReject(request.id);
-  }, [onReject, request.id]);
+    void submit(() => onReject(request.id));
+  }, [onReject, request.id, submit]);
 
-  if (replying || !question) return null;
+  if (!question) return null;
 
   return (
     <View className="px-4 pb-3 pt-1">
@@ -125,7 +141,8 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
                   key={opt.label}
                   onPress={() => pick(opt.label)}
                   accessibilityRole={isMulti ? 'checkbox' : 'button'}
-                  accessibilityState={isMulti ? { checked: isPicked } : undefined}
+                  disabled={replying}
+                  accessibilityState={{ disabled: replying, ...(isMulti ? { checked: isPicked } : {}) }}
                   style={({ pressed }) => ({
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -154,7 +171,10 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
         {showCustom ? (
           <TextInput
             value={draft}
-            onChangeText={(t) => setDrafts(drafts.map((d, i) => (i === step ? t : d)))}
+            editable={!replying}
+            onChangeText={(t) => {
+              if (!inFlight.current) setDrafts(drafts.map((d, i) => (i === step ? t : d)));
+            }}
             onSubmitEditing={send}
             placeholder={options.length > 0 ? 'Or type your own answer' : 'Type your answer'}
             placeholderTextColor={colors.mutedForeground}
@@ -177,12 +197,15 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
           />
         ) : null}
 
+        {error ? <Text variant="muted">{error}</Text> : null}
+
         <View className="flex-row items-center gap-2">
           <Button
             variant="secondary"
             size="sm"
             className="rounded-full"
             hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+            disabled={replying}
             onPress={skip}
           >
             <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Skip</Text>
@@ -193,7 +216,8 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
               size="sm"
               className="rounded-full"
               hitSlop={COMPOSER_CONTROL_HIT_SLOP}
-              onPress={() => setStep(step - 1)}
+              disabled={replying}
+              onPress={() => { if (!inFlight.current) setStep(step - 1); }}
             >
               <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}>Back</Text>
             </Button>
@@ -209,7 +233,7 @@ export function QuestionPrompt({ request, onReply, onReject, autoFocus }: Questi
               className="rounded-full"
               hitSlop={COMPOSER_CONTROL_HIT_SLOP}
               onPress={send}
-              disabled={!canSend}
+              disabled={replying || !canSend}
               accessibilityLabel={isLast ? 'Send answer' : 'Next question'}
             >
               <Icon as={ArrowUpIcon} size={18} />
