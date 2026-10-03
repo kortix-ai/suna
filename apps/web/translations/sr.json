@@ -1976,7 +1976,12 @@
       "topupWalletHint": "Допуните стање да би агенти наставили да раде.",
       "addCredits": "Додај кредите",
       "billingPortal": "Портал за обрачун",
-      "portalDescription": "Управљајте претплатом, начинима плаћања и фактурама."
+      "portalDescription": "Управљајте претплатом, начинима плаћања и фактурама.",
+      "cancelSubscription": "Откажи претплату",
+      "cancelSubscriptionDescription": "Ваш план остаје активан до краја текућег периода наплате, а затим завршава. До тада га можете наставити.",
+      "cancelSubscriptionTitle": "Отказати претплату?",
+      "keepSubscription": "Задржи претплату",
+      "resumeSubscription": "Настави претплату"
     },
     "topup": {
       "minimum": "Минимална допуна је {amount}.",

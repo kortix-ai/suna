@@ -313,3 +313,33 @@ describe('buildMinimalAccountState — trialing account reports the trial plan',
     expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
   });
 });
+
+describe('subscription.cancel_at_period_end reports the webhook-synced cancellation state', () => {
+  // The Stripe webhook stores `paymentStatus: 'cancelling'` while the
+  // subscription still renews (webhooks.ts sets it whenever
+  // `cancel_at_period_end` flips on, and back to 'active' on resume). The
+  // billing UI needs that state to offer Resume instead of a second Cancel.
+  test('an active subscription the webhook marked cancelling reports cancel_at_period_end', async () => {
+    account = creditAccount({
+      stripeSubscriptionId: 'sub_123',
+      stripeSubscriptionStatus: 'active',
+      paymentStatus: 'cancelling',
+    });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.subscription.cancel_at_period_end).toBe(true);
+  });
+
+  test('an actively renewing subscription reports cancel_at_period_end false', async () => {
+    account = creditAccount({
+      stripeSubscriptionId: 'sub_123',
+      stripeSubscriptionStatus: 'active',
+      paymentStatus: 'active',
+    });
+
+    const state = await buildMinimalAccountState('acct-1');
+
+    expect(state.subscription.cancel_at_period_end).toBe(false);
+  });
+});

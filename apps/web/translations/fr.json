@@ -1976,7 +1976,12 @@
       "topupWalletHint": "Rechargez votre solde pour maintenir vos agents en fonctionnement.",
       "addCredits": "Ajouter des crédits",
       "billingPortal": "Portail de facturation",
-      "portalDescription": "Gérez votre abonnement, vos moyens de paiement et vos factures."
+      "portalDescription": "Gérez votre abonnement, vos moyens de paiement et vos factures.",
+      "cancelSubscription": "Annuler l'abonnement",
+      "cancelSubscriptionDescription": "Votre forfait reste actif jusqu'à la fin de la période de facturation en cours, puis il prend fin. Vous pouvez le réactiver jusque-là.",
+      "cancelSubscriptionTitle": "Annuler l'abonnement ?",
+      "keepSubscription": "Conserver l'abonnement",
+      "resumeSubscription": "Réactiver l'abonnement"
     },
     "topup": {
       "minimum": "Le rechargement minimum est de {amount}.",

@@ -1,0 +1,27 @@
+{
+  "source_hash": "87879324e0289bc5392c56188a4388c6c6b3cd490b65713eb103ac7b5a206426",
+  "diff_files": [
+    "apps/api/src/billing/services/account-state.test.ts",
+    "apps/api/src/billing/services/account-state.ts",
+    "apps/web/src/features/accounts/settings/billing-tab.test.tsx",
+    "apps/web/src/features/accounts/settings/billing-tab.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "cba7c3200526a8191b3dcde53cbd604f6fa283b5423eaa41abe6e08b8b55e56a",
+  "head": "2913e423908eddae570c2f970d8a8f52a6c8526f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T22:12:17.365Z"
+}

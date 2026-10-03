@@ -1976,7 +1976,12 @@
       "topupWalletHint": "エージェントを稼働させるには残高をチャージしてください。",
       "addCredits": "クレジットを追加",
       "billingPortal": "請求ポータル",
-      "portalDescription": "サブスクリプション、支払い方法、請求書を管理します。"
+      "portalDescription": "サブスクリプション、支払い方法、請求書を管理します。",
+      "cancelSubscription": "サブスクリプションを解約",
+      "cancelSubscriptionDescription": "プランは現在の請求期間の終了まで有効で、その後に終了します。それまでは再開できます。",
+      "cancelSubscriptionTitle": "サブスクリプションを解約しますか？",
+      "keepSubscription": "解約しない",
+      "resumeSubscription": "サブスクリプションを再開"
     },
     "topup": {
       "minimum": "最低チャージ額は {amount} です。",

@@ -252,7 +252,11 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       provider,
       subscription_id: subscriptionId,
       current_period_end: null,
-      cancel_at_period_end: false,
+      // The Stripe webhook's own flag, not a constant: `paymentStatus` reads
+      // 'cancelling' while `cancel_at_period_end` is set on the subscription
+      // (and 'active' again after a resume), so the billing UI can offer
+      // Resume instead of a second Cancel and show the winding-down status.
+      cancel_at_period_end: sub?.paymentStatus === 'cancelling',
       is_cancelled: isCancelled,
       cancellation_effective_date: null,
       has_scheduled_change: scheduledChange !== null,
