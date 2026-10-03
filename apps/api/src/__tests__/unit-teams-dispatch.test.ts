@@ -8,7 +8,7 @@ import { parseTeamsCommand as realParse } from '../channels/teams/util';
  */
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
-const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
+const TENANT_ID = '5a1e0c09-0000-4000-8000-000000000009';
 const BOT = '28:bot';
 
 let threadHasSession = false;

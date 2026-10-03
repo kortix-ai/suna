@@ -1,5 +1,5 @@
 import { Reveal } from '@/components/home/reveal';
-import { Separator } from '@/components/ui/separator';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { BranchGraph } from '@/features/marketing/agent-computer/branch-graph';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAgentComputerContent } from '@/features/marketing/agent-computer/content';
@@ -23,13 +23,6 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/agent-computer` — the one page that explains the primitive under every

@@ -32,7 +32,12 @@ import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
 import type { SettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 
-import { capabilityTabHref, channelsHref, type CapabilityTab } from './capability-tab-routes';
+import {
+  capabilityTabHref,
+  channelsHref,
+  reviewHref,
+  type CapabilityTab,
+} from './capability-tab-routes';
 
 /**
  * Legacy nav ids for the surfaces that are top-level Customize tabs. A pane
@@ -40,14 +45,15 @@ import { capabilityTabHref, channelsHref, type CapabilityTab } from './capabilit
  * `navigate('review')` or `navigate('members')` (the overlay's old
  * vocabulary) needs to leave the page it is on, not open the overlay.
  */
-export function projectCapabilityNavTarget(tab: string): CapabilityTab['key'] | 'members' | null {
+export function projectCapabilityNavTarget(
+  tab: string,
+): CapabilityTab['key'] | 'members' | 'review' | null {
   if (tab.startsWith('llm-')) return 'models';
   // Channels is no longer a tab of its own — it is a scope of Connectors. The
   // PAGE is the target; `projectCapabilityNavHref` adds the scope.
   if (tab === 'channels') return 'connectors';
   if (tab === 'secrets') return 'secrets';
-  // Review — its own tab since 2026-09-02, when the config page it was a
-  // section of was retired.
+  // Review — its own project page, outside Customize (`reviewHref`).
   if (tab === 'review') return 'review';
   // `'members'` — not a `CapabilityTab['key']`: Members graduated off the
   // project entirely, onto the account hub's Access tab. Still named here
@@ -69,9 +75,10 @@ export function projectCapabilityNavTarget(tab: string): CapabilityTab['key'] | 
 export function projectCapabilityNavHref(
   projectId: string,
   tab: string,
-  target: CapabilityTab['key'] | 'members',
+  target: CapabilityTab['key'] | 'members' | 'review',
 ): string {
   if (tab === 'channels') return channelsHref(projectId);
+  if (target === 'review') return reviewHref(projectId);
   // `'members'` is not a real `CapabilityTab['key']` — `capabilityTabHref`
   // would reject it at the type level. The redirect page at that path is
   // still the right destination.

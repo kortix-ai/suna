@@ -3,7 +3,6 @@
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ArrowsLeftRightIcon, DotsThreeIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
@@ -57,15 +56,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { cn } from '@/lib/utils';
-import {
-  getAdminProviderAnalytics,
-  getAdminProviderDistribution,
-  getAdminProviderFallback,
-  listAdminSandboxes,
-  migrateAdminSandboxProvider,
-  setAdminProviderDistribution,
-  setAdminProviderFallback,
-} from '@kortix/sdk';
+import type { AdminProviderSandbox } from '@kortix/sdk';
+import { useAdminProviderDistribution, useAdminProviderSandboxes, useAdminProviderAnalytics, useAdminProviderFallback, useSetAdminProviderDistribution, useMigrateAdminSandboxProvider, useSetAdminProviderFallback } from '@kortix/sdk/react';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
 import {
@@ -76,60 +68,6 @@ import {
 } from '../_components/admin-panel';
 import { AdminSearch } from '../_components/admin-table';
 import { StatGrid, StatGridSkeleton, StatTile } from '../_components/stat-tile';
-
-// ── types ──────────────────────────────────────────────────────────────────
-interface Dist {
-  allowed: string[];
-  default: string;
-  weights: Record<string, number>;
-}
-interface Sbx {
-  sandboxId: string;
-  sessionId: string;
-  accountId: string;
-  projectId: string;
-  provider: string;
-  externalId: string | null;
-  status: string;
-  lastUsedAt: string | null;
-}
-interface SbxResp {
-  sandboxes: Sbx[];
-  byProvider: { provider: string; count: number }[];
-}
-interface ProviderStat {
-  provider: string;
-  provisions: number;
-  ok: number;
-  error: number;
-  stopped: number;
-  successRate: number | null;
-  p50Ms: number;
-  p95Ms: number;
-  avgMs: number;
-  phases: { label: string; avgMs: number }[];
-}
-interface Analytics {
-  days: number;
-  totals: {
-    provisions: number;
-    ok: number;
-    error: number;
-    stopped: number;
-    migrations: number;
-    successRate: number | null;
-  };
-  providers: ProviderStat[];
-  latencyByDay: Record<string, unknown>[];
-  volumeByDay: Record<string, unknown>[];
-  migrations: { flow: string; count: number }[];
-  recentErrors: {
-    provider: string;
-    errorClass: string | null;
-    error: string | null;
-    createdAt: string;
-  }[];
-}
 
 // ── chart colour ────────────────────────────────────────────────────────────
 /**
@@ -206,25 +144,12 @@ const RANGES = [
 export default function AdminSandboxesPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const ranges = useLocalizedUiCatalog(RANGES);
-  const qc = useQueryClient();
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
 
-  const distQ = useQuery({
-    queryKey: ['admin', 'provider-distribution'],
-    queryFn: async () => getAdminProviderDistribution<Dist>(),
-  });
-  const listQ = useQuery({
-    queryKey: ['admin', 'sandboxes'],
-    queryFn: async () => listAdminSandboxes<SbxResp>(300),
-    refetchInterval: 10_000,
-  });
-  const anQ = useQuery({
-    queryKey: ['admin', 'provider-analytics', days],
-    queryFn: async () => getAdminProviderAnalytics<Analytics>(days),
-    enabled: tab === 'analytics',
-    refetchInterval: tab === 'analytics' ? 30_000 : false,
-  });
+  const distQ = useAdminProviderDistribution();
+  const listQ = useAdminProviderSandboxes();
+  const anQ = useAdminProviderAnalytics(days, tab === 'analytics');
 
   const [weights, setWeights] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -234,45 +159,32 @@ export default function AdminSandboxesPage() {
     setWeights(w);
   }, [distQ.data]);
 
-  const saveWeights = useMutation({
-    mutationFn: async () => {
-      const body: Record<string, number> = {};
-      for (const k in weights) body[k] = Number(weights[k]) || 0;
-      return setAdminProviderDistribution(body);
-    },
+  const saveWeights = useSetAdminProviderDistribution({
     onSuccess: () => {
       successToast(tI18nComplete.raw('textadf5fc6a2d24'));
-      qc.invalidateQueries({ queryKey: ['admin', 'provider-distribution'] });
     },
     onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('text53ad6f999b1f')),
   });
 
-  const [migrating, setMigrating] = useState<Sbx | null>(null);
+  const [migrating, setMigrating] = useState<AdminProviderSandbox | null>(null);
   const [target, setTarget] = useState('');
-  const migrate = useMutation({
-    mutationFn: async () => migrateAdminSandboxProvider(migrating!.sessionId, target),
+  const migrate = useMigrateAdminSandboxProvider({
     onSuccess: () => {
       successToast(tI18nComplete('text44df00d3050e', { value0: target }));
       setMigrating(null);
-      qc.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
     },
     onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('textc98995fad3b9')),
   });
 
   // ── Provider failover (one-shot, on session init) ─────────────────────────
-  const fbQ = useQuery({
-    queryKey: ['admin', 'provider-fallback'],
-    queryFn: async () => getAdminProviderFallback(),
-  });
+  const fbQ = useAdminProviderFallback();
   const [fbEnabled, setFbEnabled] = useState(false);
   useEffect(() => {
     if (fbQ.data) setFbEnabled(!!fbQ.data.enabled);
   }, [fbQ.data]);
-  const saveFb = useMutation({
-    mutationFn: async () => setAdminProviderFallback(fbEnabled),
+  const saveFb = useSetAdminProviderFallback({
     onSuccess: () => {
       successToast(tI18nComplete.raw('textbc86ed0acea7'));
-      qc.invalidateQueries({ queryKey: ['admin', 'provider-fallback'] });
     },
     onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('text53ad6f999b1f')),
   });
@@ -437,7 +349,11 @@ export default function AdminSandboxesPage() {
                   </div>
                   <Button
                     size="sm"
-                    onClick={() => saveWeights.mutate()}
+                    onClick={() => {
+                      const body: Record<string, number> = {};
+                      for (const k in weights) body[k] = Number(weights[k]) || 0;
+                      saveWeights.mutate(body);
+                    }}
                     disabled={saveWeights.isPending || !allowed.length}
                     className="gap-1.5"
                   >
@@ -470,7 +386,7 @@ export default function AdminSandboxesPage() {
               </div>
               <Button
                 size="sm"
-                onClick={() => saveFb.mutate()}
+                onClick={() => saveFb.mutate(fbEnabled)}
                 disabled={saveFb.isPending}
                 className="gap-1.5"
               >
@@ -971,8 +887,8 @@ export default function AdminSandboxesPage() {
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button
-              onClick={() => migrate.mutate()}
-              disabled={!target || migrate.isPending}
+              onClick={() => migrating && migrate.mutate({ sessionId: migrating.sessionId, targetProvider: target })}
+              disabled={!migrating || !target || migrate.isPending}
               className="gap-1.5"
             >
               {migrate.isPending ? <Loading className="size-4 shrink-0" /> : null}

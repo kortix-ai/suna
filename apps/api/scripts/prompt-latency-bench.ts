@@ -322,7 +322,9 @@ async function main(): Promise<void> {
   // `bun --hot` re-evaluates the API on a source change and keeps the previous
   // instance's pool, LISTEN connection and worker loops: statements slow down
   // 3x within an hour of edits. A run across a reload is not a measurement.
-  const startedAt = async () => (await api('/health')).body?.started_at ?? null;
+  // Local only (BENCH_API_LOG): a deployed API has several replicas, and each
+  // answers /health with its own start time.
+  const startedAt = async () => (env.BENCH_API_LOG ? (await api('/health')).body?.started_at ?? null : null);
   const apiStartedAt = await startedAt();
   const sessions: Session[] = [];
   for (let round = 1; round <= SESSIONS; round++) sessions.push(await runSession(round));

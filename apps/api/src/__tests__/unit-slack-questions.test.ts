@@ -50,7 +50,6 @@ mock.module('../channels/slack/dispatch', () => ({
     spawnArgs = a;
   },
   dispatchSlackEvent: async () => {},
-  pendingPickers: new Map(),
 }));
 
 mock.module('../channels/install-store', () => ({

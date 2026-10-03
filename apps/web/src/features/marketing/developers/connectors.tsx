@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils';
 import { LaptopIcon } from '@phosphor-icons/react/ssr';
 import type { CSSProperties } from 'react';
-import { connectors } from './content';
+import { localizedDevelopersCopy } from './content';
+import { useTranslations } from '@/i18n/use-translations';
 import { HalftoneMask, TwoToneHeading } from './shared';
 
 const fav = (domain: string) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
@@ -19,6 +20,7 @@ const chipClass =
   'animate-chip-drift motion-reduce:animate-none absolute flex items-center gap-2 rounded-md px-3 py-2 text-xs sm:text-sm';
 
 export function DevelopersConnectors() {
+  const { connectors } = localizedDevelopersCopy(useTranslations('hardcodedUi.i18nComplete'));
   return (
     <section id="connectors" className="relative w-full">
       <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-6 py-24 md:py-30 lg:grid-cols-2 lg:items-stretch lg:gap-16">

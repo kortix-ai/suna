@@ -51,6 +51,17 @@ export class ProvisionTimeline {
     this.last = now;
   }
 
+  /**
+   * Record a step that finished on a PARALLEL branch (e.g. image resolution,
+   * which runs alongside the row insert and token mint). `deltaMs` is measured
+   * from the start of the timeline, and the sequential cursor `mark()` uses is
+   * left alone, so the main path's deltas stay truthful.
+   */
+  note(label: string): void {
+    const atMs = Math.round(performance.now() - this.startedAt);
+    this.marks.push({ label, atMs, deltaMs: atMs });
+  }
+
   get totalMs(): number {
     return Math.round(performance.now() - this.startedAt);
   }

@@ -11,7 +11,8 @@ import {
 } from '@phosphor-icons/react';
 import { useInView, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { CLI_REFERENCE_URL, cli } from './content';
+import { CLI_REFERENCE_URL, type CliGroup } from './content';
+import { useDevelopersCopy } from './use-developers-copy';
 import { DitherField, TwoToneHeading } from './shared';
 
 const PREFIX = 'kortix ';
@@ -30,11 +31,11 @@ const BLUR_RESUME_MS = 1500;
 const IDLE_RESUME_MS = 8000;
 
 /** Matches on the text after `kortix `: prefix matches first, substring only when none. */
-function filterGroups(value: string) {
+function filterGroups(groups: readonly CliGroup[], value: string) {
   const v = value.trim().toLowerCase();
   const q = 'kortix'.startsWith(v) ? '' : v.replace(/^kortix\s*/, '');
   const run = (test: (name: string) => boolean) =>
-    cli.groups
+    groups
       .map((g) => ({ ...g, cmds: g.cmds.filter(([c]) => test(c.slice('kortix '.length))) }))
       .filter((g) => g.cmds.length > 0);
   const prefix = run((n) => n.startsWith(q));
@@ -42,6 +43,7 @@ function filterGroups(value: string) {
 }
 
 export function DevelopersCli() {
+  const { cli } = useDevelopersCopy();
   const reduce = useReducedMotion();
   const paletteRef = useRef<HTMLDivElement>(null);
   const inView = useInView(paletteRef, { amount: 'some' });
@@ -102,13 +104,14 @@ export function DevelopersCli() {
     return () => clearTimeout(timer);
   }, [inView, reduce, paused]);
 
-  const groups = filterGroups(value);
+  const groups = filterGroups(cli.groups, value);
   const flat = groups.flatMap((g) => g.cmds.map(([c]) => c));
+  // POSIX single quotes: nothing inside is special; a ' is closed, escaped, reopened.
   const asPrompt = value
     .replace(/^\s*kortix\s*/i, '')
     .trim()
-    .replace(/"/g, '\\"');
-  const promptCmd = `kortix chat --prompt "${asPrompt}"`;
+    .replace(/'/g, "'\\''");
+  const promptCmd = `kortix chat --prompt '${asPrompt}'`;
   const activeIndex = Math.min(active, Math.max(flat.length - 1, 0));
 
   const pick = async (cmd: string) => {

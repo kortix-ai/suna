@@ -11,6 +11,7 @@
  */
 
 import { config } from '../config';
+import { logger } from '../lib/logger';
 import { configuredTimeoutMs } from './with-timeout';
 
 export function isPlatinumConfigured(): boolean {
@@ -53,6 +54,10 @@ const SANDBOX_ID_PATH = /^\/v1\/sandboxes\/([^/?#]+)(?=[/?#]|$)/;
 const SANDBOX_COLLECTION_PATH = /^\/v1\/sandboxes(?=[?#]|$)/;
 /** One entry per sandbox this process has called; the oldest goes first. */
 export const PLATINUM_ORIGIN_CACHE_MAX = 10_000;
+// replica-local: learned owner-origin routing. A replica that has not learned
+// an id yet routes via the configured global origin, which Platinum forwards
+// to the owner itself — one extra hop, never a wrong answer. Each replica
+// learns on its own first call.
 const sandboxOrigins = new Map<string, string>();
 
 function sandboxIdOf(path: string): string | null {
@@ -98,6 +103,42 @@ function rememberSandboxOrigin(sandboxId: string, candidate: unknown): void {
   sandboxOrigins.set(sandboxId, origin);
 }
 
+// Region → origin, learned from boxes this process has already seen in that
+// region (their `api_url` / `x-pt-served-by`). A CREATE names its region in the
+// body but has no box id yet, so without this it always went to the global
+// origin: for a US box that is Kortix → EU control plane → US control plane,
+// one transatlantic forward per create (Dev, 2026-10-02: the US create also
+// paid the EU hop while every later call for the box went direct).
+// replica-local: same contract as the sandbox origins — an unlearned replica
+// pays the extra forward through the global origin, it never mis-routes.
+const regionOrigins = new Map<string, string>();
+
+function rememberRegionOrigin(region: unknown, candidate: unknown): void {
+  if (typeof region !== 'string' || !/^[a-z]{2,8}-[a-z]{2,12}$/.test(region)) return;
+  const origin = acceptedPlatinumOrigin(candidate);
+  if (!origin) return;
+  if (origin === new URL(platinumBase()).origin) {
+    regionOrigins.delete(region);
+    return;
+  }
+  regionOrigins.set(region, origin);
+}
+
+/** The origin a create naming `region` goes to now: learned, else global. */
+export function platinumOriginForRegion(region: string): string {
+  return regionOrigins.get(region) ?? new URL(platinumBase()).origin;
+}
+
+function createRegionOf(path: string, method: string, body: unknown): string | null {
+  if (method !== 'POST' || !SANDBOX_COLLECTION_PATH.test(path) || typeof body !== 'string') return null;
+  try {
+    const region = (JSON.parse(body) as { region?: unknown }).region;
+    return typeof region === 'string' && region ? region : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The origin a call about `sandboxId` goes to now. */
 export function platinumOriginForSandbox(sandboxId: string): string {
   return sandboxOrigins.get(sandboxId) ?? new URL(platinumBase()).origin;
@@ -106,6 +147,7 @@ export function platinumOriginForSandbox(sandboxId: string): string {
 /** Test-only. */
 export function __resetPlatinumSandboxOriginsForTests(): void {
   sandboxOrigins.clear();
+  regionOrigins.clear();
 }
 
 function learnFromResponse(path: string, method: string, res: Response, body: unknown): void {
@@ -122,9 +164,15 @@ function learnFromResponse(path: string, method: string, res: Response, body: un
     sandboxId = record.id;
   }
   if (!sandboxId) return;
-  rememberSandboxOrigin(sandboxId, res.headers.get(SERVED_BY_HEADER));
+  const servedBy = res.headers.get(SERVED_BY_HEADER);
+  rememberSandboxOrigin(sandboxId, servedBy);
   if (record?.id === sandboxId && record.api_url !== undefined) {
     rememberSandboxOrigin(sandboxId, record.api_url);
+  }
+  // Only an answer that names THIS box and its region can teach a region.
+  if (record?.id === sandboxId) {
+    const region = (record as { region?: unknown }).region;
+    rememberRegionOrigin(region, record.api_url ?? servedBy);
   }
 }
 
@@ -198,7 +246,12 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       },
     });
   const sandboxId = sandboxIdOf(path);
-  const regional = sandboxId ? sandboxOrigins.get(sandboxId) : undefined;
+  const createRegion = sandboxId ? null : createRegionOf(path, method, init.body);
+  const regional = sandboxId
+    ? sandboxOrigins.get(sandboxId)
+    : createRegion
+      ? regionOrigins.get(createRegion)
+      : undefined;
   try {
     if (!regional) return await send(platinumBase());
     try {
@@ -208,7 +261,8 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       // Forget the owner; the global origin forwards to it and the answer
       // names it again.
       if (sandboxId && sandboxOrigins.get(sandboxId) === regional) sandboxOrigins.delete(sandboxId);
-      console.warn(
+      if (createRegion && regionOrigins.get(createRegion) === regional) regionOrigins.delete(createRegion);
+      logger.warn(
         `[platinum] ${method} ${path} via ${regional} failed (${err instanceof Error ? ((err as { code?: unknown }).code ?? err.message) : err}); retrying once via the global origin`,
       );
       return await send(platinumBase());
@@ -218,9 +272,34 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       const budget = usingDefault
         ? `${DEFAULT_CALL_TIMEOUT_MS}ms (default)`
         : 'caller-provided budget';
-      throw new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${budget}`);
+      const timeout = new Error(`platinum ${init.method ?? 'GET'} ${path} timed out after ${budget}`);
+      timeout.name = 'TimeoutError';
+      throw timeout;
     }
     throw err;
+  }
+}
+
+/**
+ * A non-2xx Platinum answer. The message keeps the historical
+ * `platinum <method> <path> -> <status> <body>` shape for logs; callers
+ * classify by `status` and `code` (the JSON body's `code`), never the text.
+ */
+export class PlatinumHttpError extends Error {
+  readonly code?: string;
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body = '',
+  ) {
+    super(message);
+    this.name = 'PlatinumHttpError';
+    try {
+      const code = (JSON.parse(body) as { code?: unknown }).code;
+      if (typeof code === 'string') this.code = code;
+    } catch {
+      // not JSON: no code
+    }
   }
 }
 
@@ -234,14 +313,13 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
  * retryable 503 to the client. It is NOT a 500-worthy error and must NOT page
  * Sentry, so it gets its own typed error that `app.onError` classifies out of
  * `captureException` (mirroring the request-deadline 503 pattern). Every OTHER
- * Platinum failure (4xx/5xx, timeout, bad body) still throws the generic
- * `platinum <method> <path> -> <status> <body>` Error and is captured normally
- * — only this one expected state is special-cased, so unexpected failures stay
+ * non-2xx still throws a plain `PlatinumHttpError` and is captured normally —
+ * only this one expected state is special-cased, so unexpected failures stay
  * loud.
  */
-export class PlatinumSandboxNotRunningError extends Error {
-  constructor(message = 'sandbox is not running') {
-    super(message);
+export class PlatinumSandboxNotRunningError extends PlatinumHttpError {
+  constructor(message = 'sandbox is not running', body = '{"code":"sandbox_not_running"}') {
+    super(message, 409, body);
     this.name = 'PlatinumSandboxNotRunningError';
   }
 }
@@ -285,6 +363,7 @@ export async function platinumJsonResponse<T>(
     if (isSandboxNotRunningBody(res.status, text)) {
       throw new PlatinumSandboxNotRunningError(
         `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`,
+        text,
       );
     }
     // Surface Retry-After (seconds) on a 429 so poll-error classification can
@@ -294,8 +373,10 @@ export async function platinumJsonResponse<T>(
       const ra = res.headers.get('retry-after');
       if (ra && /^\d+$/.test(ra.trim())) suffix = ` retry-after=${ra.trim()}`;
     }
-    throw new Error(
+    throw new PlatinumHttpError(
       `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}${suffix}`,
+      res.status,
+      text,
     );
   }
   const body = (text ? JSON.parse(text) : {}) as T;
@@ -303,7 +384,7 @@ export async function platinumJsonResponse<T>(
   return { status: res.status, body };
 }
 
-/** GET/POST JSON. Throws `platinum <method> <path> -> <status> <body>` on non-2xx. */
+/** GET/POST JSON. Throws `PlatinumHttpError` on non-2xx. */
 export async function platinumJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await platinumJsonResponse<T>(path, init)).body;
 }

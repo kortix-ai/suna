@@ -1,3 +1,4 @@
+import { BOOT_PHASE_HEADER, RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay';
 import { isWireIdAheadOf } from '../../projects/wire-message-id';
 import { clientAbortTarget } from '../client-abort';
 import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../runtime-request';
@@ -49,6 +50,7 @@ import {
   type SandboxRecord,
   wakeSandbox,
 } from '../backend';
+import { takePrefetchedSandbox } from '../prefetch';
 import {
   recordSseStreamEnd,
   shouldBypassIngressCache,
@@ -209,13 +211,6 @@ async function agentSwitchRefusal(
   const sessionAgent = record.agentName ?? DEFAULT_AGENT_SENTINEL;
   if (!isConcreteAgentSwitch(requestedAgent, sessionAgent)) return null;
   const switchedToAgent = requestedAgent as string;
-  if (sessionAgent !== DEFAULT_AGENT_SENTINEL) {
-    return jsonProxyError(
-      { error: 'A session cannot switch agents.', code: 'AGENT_SWITCH_NOT_ALLOWED' },
-      409,
-      origin,
-    );
-  }
   if (!userId) {
     // A switch is an authorization decision and there is no principal to decide
     // about — a share-token forward, say. Refuse rather than run another agent
@@ -259,9 +254,10 @@ async function agentSwitchRefusal(
   );
 }
 
-// A concrete session rejects another concrete agent. The legacy `default`
-// sentinel is non-binding: clients can echo a resolved default before the
-// session's agent has loaded, so that path still requires agent authorization.
+// A concrete agent different from the session's own is a SWITCH: authorize it
+// exactly like the legacy `default` path below. The legacy `default` sentinel
+// is non-binding: clients can echo a resolved default before the session's
+// agent has loaded, so that path still requires agent authorization.
 function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: string): boolean {
   if (!requestedAgent) return false;
   // Asking for the sentinel is asking for "this session's own agent" — never a
@@ -452,13 +448,22 @@ export function isProxiedBaseReset(
 }
 
 /**
- * The daemon's 503 while the session runtime cannot take a request: the
- * `runtime_not_ready` code (both harnesses, a W6 daemon), or the text of a
- * daemon without the code (`sandbox runtime not ready` on pi and on OpenCode's
- * boot steps, `opencode not ready` from the OpenCode process gate). `\b` keeps
- * this API's own `runtime_not_ready_timeout` park reason out.
+ * The daemon's 503 while the session runtime cannot take a request: it names
+ * its boot phase in `X-Kortix-Boot-Phase` and answers `code: runtime_not_ready`
+ * (both harnesses).
  */
-const DAEMON_RUNTIME_NOT_READY = /\bruntime_not_ready\b|sandbox runtime not ready|opencode not ready/;
+function isDaemonRuntimeNotReady(headers: Headers, bodyText: string): boolean {
+  if (headers.has(BOOT_PHASE_HEADER)) return true;
+  try {
+    if ((JSON.parse(bodyText) as { code?: unknown }).code === RUNTIME_NOT_READY_CODE) return true;
+  } catch {
+    // not JSON
+  }
+  // legacy: a daemon built before the code and the header sends only this
+  // text (pi and OpenCode's boot steps, then OpenCode's process gate). Delete
+  // once no box runs such a daemon.
+  return /sandbox runtime not ready|opencode not ready/.test(bodyText);
+}
 
 export async function forwardToSandbox(
   sandboxId: string,
@@ -485,10 +490,11 @@ export async function forwardToSandbox(
   // forwarding the app's cookies (see appCookieHeader) and leaving same-origin
   // responses free of injected CORS headers.
   //
-  // `record`: the sandbox row, when the caller read it moments ago. Only the
-  // server-side prompt delivery passes one, for the active box it just picked
-  // as its target. The turn-begin write below re-checks the box's status in
-  // the database, so a row that went stale in between cannot deliver a turn.
+  // `record`: the sandbox row, when the caller read it moments ago: the
+  // server-side prompt delivery (the active box it just picked as its target)
+  // and the HTTP route (the row read while this request authenticated). The
+  // turn-begin write below re-checks the box's status in the database, so a
+  // row that went stale in between cannot deliver a turn.
   opts: { originMode?: boolean; record?: SandboxRecord } = {},
 ): Promise<Response> {
   let requestBody = body;
@@ -509,7 +515,11 @@ export async function forwardToSandbox(
     access.kind === 'principal' ? access.boundCredentialSessionId : null;
   if (
     access.kind === 'principal' &&
-    !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+    !(await canAccessPreviewSandbox({
+      previewSandboxId: sandboxId,
+      userId,
+      sandbox: { sandboxId: record.sandboxId, accountId: record.accountId, projectId: record.projectId },
+    }))
   ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
@@ -1043,10 +1053,11 @@ export async function forwardToSandbox(
 
       if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
         const requestedAgent = requestedPromptAgent(requestBody, incomingHeaders);
-        // Agent immutability and authorization run before the dedupe claim.
-        // Drop only the legacy 'default' sentinel so OpenCode resolves its own
-        // `default_agent` (the real default the session booted with). A *concrete*
-        // requested agent remains on the authorized default-sentinel path.
+        // Authorization runs before the dedupe claim. Drop only the legacy
+        // 'default' sentinel so OpenCode resolves its own `default_agent` (the
+        // real default the session booted with). A *concrete* requested agent
+        // stays on the authorized switch path: the caller's grant decides, and
+        // the pre-prompt env sync re-scopes box and token to that agent.
         if (requestedAgent === DEFAULT_AGENT_SENTINEL) {
           requestBody = bodyWithoutPromptAgent(requestBody, incomingHeaders);
         }
@@ -1350,7 +1361,7 @@ export async function forwardToSandbox(
           .clone()
           .text()
           .catch(() => '');
-        if (DAEMON_RUNTIME_NOT_READY.test(bodyText)) {
+        if (isDaemonRuntimeNotReady(upstream.headers, bodyText)) {
           void markSandboxUsed(sandboxId);
           // The daemon rejected the request as not-ready, so the runtime did NOT
           // enqueue the prompt. Release the dedupe claim so the client's retry
@@ -1405,6 +1416,8 @@ export async function forwardToSandbox(
 
       if (upstream.status === 400) {
         const bodyText = await upstream.text();
+        // legacy allowlist: Daytona's edge marks a stopped or archived box only
+        // with this 400 text, no code. Delete when Daytona types the answer.
         const isSandboxDown =
           bodyText.includes('no IP address found') ||
           bodyText.includes('failed to get runner info');
@@ -1945,6 +1958,8 @@ preview.all('/:sandboxId/:port/*', async (c) => {
     origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,
+    // The row the proxy app started reading while auth ran (index.ts).
+    { record: await takePrefetchedSandbox(c, sandboxId) },
   );
 });
 

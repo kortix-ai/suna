@@ -176,7 +176,7 @@ mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }))
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
 
-const { combinedAuth, supabaseAuth } = await import('./auth');
+const { combinedAuth, supabaseAuth, deadCredential401 } = await import('./auth');
 
 function appWithProbe() {
   const app = new Hono();
@@ -510,6 +510,18 @@ describe('typed 401 for a credential the API can never take back', () => {
     const text = await res.text();
     expect(text).toContain('Validation error');
     expect(text).not.toContain('session_token_revoked');
+  });
+
+  test('a dead-credential exception carries the log-throttle mark (KRTX-1039)', () => {
+    // The typed body tells a reading client to stop; a client that ignores it
+    // would otherwise put one warn line per refusal into the API log. The
+    // mark is what routes the exception through the global error handler's
+    // dead-credential log throttle (shared/dead-credential-log.ts).
+    const err = deadCredential401('PAT not found or revoked');
+    const { isDeadCredential } = require('../shared/dead-credential-log') as {
+      isDeadCredential: (e: unknown) => boolean;
+    };
+    expect(isDeadCredential(err)).toBe(true);
   });
 });
 
