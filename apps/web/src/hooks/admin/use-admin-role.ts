@@ -1,6 +1,6 @@
 import { useAuth } from '@/features/providers/auth-provider';
 import { getAdminRole } from '@kortix/sdk';
-import { useQuery, UseQueryOptions, type QueryClient } from '@tanstack/react-query';
+import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 
 interface AdminRoleResponse {
   isAdmin: boolean;
@@ -8,35 +8,6 @@ interface AdminRoleResponse {
 }
 
 export const ADMIN_ROLE_QUERY_KEY = 'admin-role';
-
-const ADMIN_REVOKED_RE = /admin access required|forbidden|403/i;
-
-/**
- * Shared guard for admin polling queries. If a query errors with a
- * 403/forbidden, the caller's admin role has been revoked (or the
- * `useAdminRole` cache is stale): invalidate that cache so the next render
- * drops `isAdmin` to false and stops firing admin calls, then return `false`
- * to halt the refetch interval. Otherwise keep polling at `intervalMs`.
- *
- * Use as `refetchInterval: (q) => stopOnAdminRevoked(qc, q.state.error, ms)`.
- */
-export function stopOnAdminRevoked(
-  qc: QueryClient,
-  err: unknown,
-  intervalMs: number,
-): false | number {
-  const msg = err instanceof Error ? err.message : '';
-  if (ADMIN_REVOKED_RE.test(msg)) {
-    qc.invalidateQueries({ queryKey: [ADMIN_ROLE_QUERY_KEY] });
-    return false;
-  }
-  return intervalMs;
-}
-
-/** Don't retry an admin query that failed because the role was revoked. */
-export function isAdminRevokedError(err: unknown): boolean {
-  return ADMIN_REVOKED_RE.test(err instanceof Error ? err.message : '');
-}
 
 export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRoleResponse>>) => {
   const { user } = useAuth();

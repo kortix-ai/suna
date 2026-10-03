@@ -29,9 +29,12 @@ mock.module('../config', () => mockConfigModule());
 const realCrypto = await import('node:crypto');
 mock.module('node:crypto', () => ({ ...realCrypto, randomUUID: () => 'adopt-token' }));
 mock.module('../shared/db', () => ({
+  withDbTransaction: async (action: () => Promise<unknown>) => action(),
   db: {
     execute: async (query: unknown) => {
-      executed.push(render(query));
+      const statement = render(query);
+      executed.push(statement);
+      if (statement.startsWith('SELECT') && statement.includes('FOR UPDATE')) return [];
       return executeResults.shift() ?? [];
     },
     // `acceptSandboxTurn` / `completeSandboxTurn` confirm inbox consumption

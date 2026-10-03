@@ -43,11 +43,11 @@ export type WaitPollState = 'idle' | 'working' | 'blocked';
  */
 export function classifyWaitPoll(
   statuses: Record<string, { type?: string; [key: string]: unknown } | undefined>,
-  opencodeSessionId: string,
+  runtimeSessionId: string,
   pending: { permissions: number; questions: number },
 ): WaitPollState {
   if (pending.permissions > 0 || pending.questions > 0) return 'blocked';
-  const current = statuses[opencodeSessionId];
+  const current = statuses[runtimeSessionId];
   if (!current || current.type === 'idle') return 'idle';
   return 'working';
 }
@@ -129,10 +129,10 @@ export async function runSessionsWaitFor(argv: string[]): Promise<number> {
         const { statuses, permissions, questions } = await handle.pending();
         state = classifyWaitPoll(
           statuses,
-          ready.opencodeSessionId,
+          ready.runtimeSessionId,
           {
-            permissions: permissions.filter((p) => p.sessionID === ready.opencodeSessionId).length,
-            questions: questions.filter((q) => q.sessionID === ready.opencodeSessionId).length,
+            permissions: permissions.filter((p) => p.sessionID === ready.runtimeSessionId).length,
+            questions: questions.filter((q) => q.sessionID === ready.runtimeSessionId).length,
           },
         );
       } catch {

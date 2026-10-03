@@ -163,11 +163,22 @@ mock.module('../channels/install-store', () => ({
   saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
   saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
 }));
+// Labels have their own tests (unit-slack-message-labels); here they would
+// consume entries from the ordered `dbResults` queue these lifecycle tests use.
+// Slack names the bot `Kortix`; every other mention stays unlabelled.
+mock.module('../channels/slack/labels', () => ({
+  slackMessageLabels: async ({ event }: { event: { text?: string } }) => ({
+    channel: null,
+    user: null,
+    text: (event.text ?? '').replaceAll('<@B1>', '<@B1|Kortix>'),
+  }),
+}));
 mock.module('../channels/slack-api', () => ({
   addReaction: async () => {},
   appendStream: async () => {},
   deleteMessage: async () => {},
-  getChannelName: async () => 'general',
+  describeSlackConversation: async () => ({ name: 'general', type: 'channel', unavailable: false }),
+  getSlackUserDisplayName: async () => null,
   isBotUser: async () => true,
   findBotUserIdByName: async () => null,
   joinChannel: async () => true,
@@ -284,9 +295,10 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(createSessionCalls).toBe(1);
     expect(createSessionInputs[0]?.visibility).toBe('project');
     expect(createSessionInputs[0]?.metadata?.slack?.conversation_policy).toBe('project_open');
-    // The title comes from the person's words, not the rendered Slack envelope
-    // that carries workspace and channel ids into the prompt.
-    expect(createSessionInputs[0]?.body?.title_source).toBe('<@B1> do the thing');
+    // The title comes from the person's words as Slack shows them, not the
+    // rendered envelope that carries workspace and channel ids into the prompt,
+    // and not the `<@B1>` markup: a free-tier title is this text, verbatim.
+    expect(createSessionInputs[0]?.body?.title_source).toBe('@Kortix do the thing');
     expect(createSessionInputs[0]?.body?.initial_prompt).not.toBe('<@B1> do the thing');
   });
 
@@ -730,7 +742,7 @@ describe('dispatchSlackEvent — a mention addressed to another workspace bot', 
     // Only the channel-binding query is reached; the claim is never attempted,
     // because the event is declined before it can be claimed.
     dbResults = [[]];
-    await dispatchSlackEvent('proj-1', forBot('U0B7QL26690', '300.1'));
+    await dispatchSlackEvent('proj-1', forBot('U0TESTKRTX1', '300.1'));
 
     expect(createSessionCalls, 'a session was created inside the project that was NOT mentioned').toBe(0);
     expect(deliverCalls, 'the turn was routed into a session of the wrong project').toBe(0);

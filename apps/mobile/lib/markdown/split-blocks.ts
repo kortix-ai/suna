@@ -20,6 +20,8 @@
  * nests quantifiers.
  */
 
+import { PrefixCache } from './prefix-cache';
+
 const FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSE = /^(`{3,}|~{3,})[ \t]*$/;
 // Display math opens on 2+ dollars with no other dollar on the line, and closes
@@ -200,22 +202,47 @@ export function splitMarkdownBlocks(text: string): string[] {
   return splitMarkdown(text).blocks;
 }
 
-export function splitMarkdown(text: string): MarkdownBlocks {
-  const scanned = scanBlocks(text);
+/**
+ * `cache` holds scan states of earlier texts (`SCAN_STATES`); `null` scans
+ * from the start. Either way the result is the same.
+ */
+export function splitMarkdown(text: string, cache: PrefixCache<ScanState> | null = SCAN_STATES): MarkdownBlocks {
+  const scanned = scanBlocks(text, cache);
   // Intentional: a message with a reference definition is one block, so it
   // also renders its rule lines with the markdown hr style, not as separators.
   if (REFERENCE_DEFINITION.test(text)) return { blocks: [text], endsInOpenFence: scanned.endsInOpenFence };
   return scanned;
 }
 
-function scanBlocks(text: string): MarkdownBlocks {
-  const blocks: string[] = [];
-  let blockStart = -1;
-  let blockEnd = -1;
-  let blockHasList = false;
-  let blockHasQuote = false;
-  let blankSinceContent = false;
-  let fence: OpenFence | null = null;
+export interface ScanState {
+  blocks: string[];
+  blockStart: number;
+  blockEnd: number;
+  blockHasList: boolean;
+  blockHasQuote: boolean;
+  blankSinceContent: boolean;
+  fence: OpenFence | null;
+}
+
+/**
+ * Scan states at the start of a text's last line, keyed by the text before
+ * that line. The scan reads one line at a time, and its state at a line start
+ * depends only on the lines before it. A text that starts with a saved prefix
+ * (a streaming message one tick later) resumes there, so each tick scans only
+ * its last lines.
+ */
+const SCAN_STATES = new PrefixCache<ScanState>();
+
+function scanBlocks(text: string, cache: PrefixCache<ScanState> | null): MarkdownBlocks {
+  const lastLineStart = text.lastIndexOf('\n') + 1;
+  const resume = cache?.find(text);
+  const blocks = resume ? resume.value.blocks.slice() : [];
+  let blockStart = resume?.value.blockStart ?? -1;
+  let blockEnd = resume?.value.blockEnd ?? -1;
+  let blockHasList = resume?.value.blockHasList ?? false;
+  let blockHasQuote = resume?.value.blockHasQuote ?? false;
+  let blankSinceContent = resume?.value.blankSinceContent ?? false;
+  let fence: OpenFence | null = resume?.value.fence ?? null;
 
   const flush = () => {
     if (blockStart >= 0) blocks.push(text.slice(blockStart, blockEnd));
@@ -225,8 +252,22 @@ function scanBlocks(text: string): MarkdownBlocks {
     blankSinceContent = false;
   };
 
-  let lineStart = 0;
+  let lineStart = resume ? resume.prefix.length : 0;
+  // Save a state only when new complete lines arrived: a tick inside the same
+  // line resumes from the saved one and copies no prefix.
+  const saveAt = lastLineStart > lineStart ? lastLineStart : -1;
   while (lineStart <= text.length) {
+    if (cache && lineStart === saveAt) {
+      cache.set(text.slice(0, lineStart), {
+        blocks: blocks.slice(),
+        blockStart,
+        blockEnd,
+        blockHasList,
+        blockHasQuote,
+        blankSinceContent,
+        fence,
+      });
+    }
     const newline = text.indexOf('\n', lineStart);
     const next = newline === -1 ? text.length + 1 : newline + 1;
     let lineEnd = newline === -1 ? text.length : newline;

@@ -147,12 +147,12 @@ function promptActivityMs(session: ProjectSession): number | null {
   return activityMs((session.metadata as Record<string, unknown> | null)?.last_activity_at);
 }
 
-/** Newest conversation update in OpenCode's scoped session snapshot, or null
+/** Newest conversation update in the runtime's scoped session snapshot, or null
  *  when the session carries no usable snapshot. */
 function conversationActivityMs(session: ProjectSession): number | null {
   let latest: number | null = null;
-  for (const openCodeSession of session.opencode_sessions ?? []) {
-    const parsed = activityMs(openCodeSession.updated_at);
+  for (const runtimeSession of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+    const parsed = activityMs(runtimeSession.updated_at);
     if (parsed === null) continue;
     latest = latest === null ? parsed : Math.max(latest, parsed);
   }
@@ -166,7 +166,7 @@ function conversationActivityMs(session: ProjectSession): number | null {
  * runs, and the conversation snapshot keeps advancing while the agent replies.
  *
  *   1. `metadata.last_activity_at` — the API's prompt stamp.
- *   2. `opencode_sessions[].updated_at` — OpenCode's conversation snapshot.
+ *   2. `runtime_sessions[].updated_at` — the runtime's conversation snapshot.
  *      Real activity, but a LAGGING cache: it is written only by a deferred,
  *      best-effort sandbox read (`opencode-session-snapshot.ts`), so a session
  *      whose sandbox was unreachable at that moment has no snapshot at all.

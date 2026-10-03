@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   setWasmSource,
   useXlsxViewer,
@@ -23,7 +24,6 @@ import {
   MagnifyingGlassIcon as Search,
   UploadIcon as Upload,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 
@@ -50,6 +50,7 @@ import {
   SelectValue,
 } from '@/features/file-renderers/shared/select-compat';
 import { Spinner } from '@/features/file-renderers/shared/spinner';
+import { useViewerSearch } from '@/features/file-renderers/shared/use-viewer-search';
 import { ViewerCopyMenu } from '@/features/file-renderers/shared/viewer-copy-menu';
 import { ViewerDownloadButton } from '@/features/file-renderers/shared/viewer-download-button';
 import { ViewerFileName } from '@/features/file-renderers/shared/viewer-file-name';
@@ -74,7 +75,6 @@ if (typeof window !== 'undefined') {
 const XLSX_LOADING_INDICATOR_DELAY_MS = 300;
 const XLSX_DROPDOWN_Z_INDEX_CLASS = 'z-40';
 const XLSX_SEARCH_BATCH_ROW_COUNT = 500;
-const XLSX_SEARCH_DEBOUNCE_MS = 300;
 const XLSX_GRID_HEADER_HEIGHT = 24;
 const XLSX_GRID_ROW_HEADER_WIDTH = 40;
 const XLSX_MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -519,14 +519,6 @@ function WorkbookFileActionsMenu({
   );
 }
 
-export function renderXlsxScroller({ children, viewportProps }: XlsxScrollerRenderProps) {
-  return (
-    <ScrollArea className="h-full min-h-0 w-full min-w-0 flex-1" viewportProps={viewportProps}>
-      {children}
-    </ScrollArea>
-  );
-}
-
 export function WorkbookTableHeaderMenu({
   direction,
   sortAscending,
@@ -584,14 +576,27 @@ function WorkbookSearchPopover({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const controller = useXlsxViewer();
-  const [searchDraft, setSearchDraft] = React.useState('');
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [searchResults, setSearchResults] = React.useState<XlsxSearchResult[]>([]);
-  const [activeResultIndex, setActiveResultIndex] = React.useState(0);
-  const [isSearching, setIsSearching] = React.useState(false);
   const controllerRef = React.useRef(controller);
-  const searchRequestIdRef = React.useRef(0);
-  const appliedResultKeyRef = React.useRef('');
+  React.useEffect(() => {
+    controllerRef.current = controller;
+  }, [controller]);
+  const findResults = React.useCallback(
+    (query: string) => findXlsxSearchResults(controllerRef.current, query),
+    [],
+  );
+  const clearSelection = React.useCallback(() => controller.clearSelection(), [controller]);
+  const {
+    searchDraft,
+    setSearchDraft,
+    searchQuery,
+    searchResults,
+    activeResultIndex,
+    isSearching,
+    appliedResultKeyRef,
+    runSearch,
+    clearSearch,
+    goToRelativeResult,
+  } = useViewerSearch(findResults, workbookIdentity, clearSelection);
   const activeResult = searchResults[activeResultIndex] ?? null;
   const activeResultKey = activeResult
     ? `${activeResult.workbookSheetIndex}:${activeResult.cell.row}:${activeResult.cell.col}`
@@ -606,88 +611,6 @@ function WorkbookSearchPopover({
       : searchResults.length
         ? `${activeResultIndex + 1} / ${searchResults.length}`
         : 'No results';
-
-  React.useEffect(() => {
-    controllerRef.current = controller;
-  }, [controller]);
-
-  const runSearch = React.useCallback((rawQuery: string) => {
-    const nextQuery = rawQuery.trim();
-    const requestId = searchRequestIdRef.current + 1;
-    searchRequestIdRef.current = requestId;
-    appliedResultKeyRef.current = '';
-    setSearchQuery(nextQuery);
-    setActiveResultIndex(0);
-
-    if (!nextQuery) {
-      setSearchResults([]);
-      setIsSearching(false);
-      return;
-    }
-
-    setIsSearching(true);
-    void findXlsxSearchResults(controllerRef.current, nextQuery)
-      .then((nextResults) => {
-        if (searchRequestIdRef.current !== requestId) return;
-        setSearchResults(nextResults);
-      })
-      .catch(() => {
-        if (searchRequestIdRef.current !== requestId) return;
-        setSearchResults([]);
-      })
-      .finally(() => {
-        if (searchRequestIdRef.current !== requestId) return;
-        setIsSearching(false);
-      });
-  }, []);
-
-  React.useEffect(() => {
-    const trimmedDraft = searchDraft.trim();
-
-    if (!trimmedDraft) {
-      runSearch('');
-      return;
-    }
-
-    setIsSearching(true);
-    const timeoutId = window.setTimeout(() => {
-      runSearch(searchDraft);
-    }, XLSX_SEARCH_DEBOUNCE_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [runSearch, searchDraft]);
-
-  const clearSearch = React.useCallback(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft('');
-    setSearchQuery('');
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = '';
-    controller.clearSelection();
-  }, [controller]);
-
-  const goToRelativeResult = React.useCallback(
-    (direction: 1 | -1) => {
-      if (!searchResults.length) return;
-
-      setActiveResultIndex((currentIndex) => {
-        return (currentIndex + direction + searchResults.length) % searchResults.length;
-      });
-    },
-    [searchResults.length],
-  );
-
-  React.useEffect(() => {
-    searchRequestIdRef.current += 1;
-    setSearchDraft('');
-    setSearchQuery('');
-    setSearchResults([]);
-    setActiveResultIndex(0);
-    setIsSearching(false);
-    appliedResultKeyRef.current = '';
-  }, [workbookIdentity]);
 
   React.useEffect(() => {
     if (!activeResult) return;
@@ -711,7 +634,14 @@ function WorkbookSearchPopover({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [activeResult, activeResultKey, controller, controller.activeSheetIndex, viewportRef]);
+  }, [
+    activeResult,
+    activeResultKey,
+    appliedResultKeyRef,
+    controller,
+    controller.activeSheetIndex,
+    viewportRef,
+  ]);
 
   return (
     <Popover>

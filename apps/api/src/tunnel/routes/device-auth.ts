@@ -39,6 +39,8 @@ import { parseConnectorConnectOwner } from '../../projects/lib/connection-access
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { tunnelRelay } from '../core/relay';
+import { isTunnelConnectionLive } from '../core/cluster-forwarder';
+import { retireSupersededRegistrations } from './connections';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 /**
@@ -70,6 +72,14 @@ const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
 
 /** Permissive device-auth request row shape, as persisted + serialized. */
 const DeviceAuthRowSchema = z.record(z.string(), z.any());
+
+/** One machine, one registration: the approver's own pairing of this hardware. */
+function registeredMachine(userId: string, machineId: string) {
+  return and(
+    eq(tunnelConnections.ownerUserId, userId),
+    sql`${tunnelConnections.machineInfo}->>'machineId' = ${machineId}`,
+  );
+}
 
 function devicePollRateLimitKey(c: any, secret: string): string {
   const secretId = createHash('sha256').update(secret).digest('hex').slice(0, 16);
@@ -303,6 +313,7 @@ export function createDeviceAuthRouter() {
         .select({
           deviceCode: tunnelDeviceAuthRequests.deviceCode,
           machineHostname: tunnelDeviceAuthRequests.machineHostname,
+          machineId: tunnelDeviceAuthRequests.machineId,
           projectId: tunnelDeviceAuthRequests.projectId,
           status: tunnelDeviceAuthRequests.status,
           expiresAt: tunnelDeviceAuthRequests.expiresAt,
@@ -315,11 +326,41 @@ export function createDeviceAuthRouter() {
         return c.json({ error: 'Device auth request not found' }, 404);
       }
 
-      if (row.expiresAt < new Date() && row.status === 'pending') {
-        return c.json({ ...row, status: 'expired' });
+      // The approval page says "already connected" and prefills the name and
+      // grants. The hardware id itself never leaves the server.
+      const { machineId, ...request } = row;
+      const userId = c.get('userId') as string | undefined;
+      const [machine] =
+        machineId && userId
+          ? await db
+              .select({
+                tunnelId: tunnelConnections.tunnelId,
+                name: tunnelConnections.name,
+                capabilities: tunnelConnections.capabilities,
+                status: tunnelConnections.status,
+                lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
+                relayOwnerId: tunnelConnections.relayOwnerId,
+                relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
+              })
+              .from(tunnelConnections)
+              .where(registeredMachine(userId, machineId))
+              .orderBy(desc(tunnelConnections.createdAt))
+              .limit(1)
+          : [];
+      const registered = machine
+        ? {
+            tunnelId: machine.tunnelId,
+            name: machine.name,
+            capabilities: machine.capabilities,
+            isLive: isTunnelConnectionLive(machine),
+          }
+        : null;
+
+      if (request.expiresAt < new Date() && request.status === 'pending') {
+        return c.json({ ...request, status: 'expired', registered });
       }
 
-      return c.json(row);
+      return c.json({ ...request, registered });
     },
   );
 
@@ -490,12 +531,7 @@ export function createDeviceAuthRouter() {
           ? await tx
               .select({ tunnelId: tunnelConnections.tunnelId, accountId: tunnelConnections.accountId })
               .from(tunnelConnections)
-              .where(
-                and(
-                  eq(tunnelConnections.ownerUserId, userId),
-                  sql`${tunnelConnections.machineInfo}->>'machineId' = ${row.machineId}`,
-                ),
-              )
+              .where(registeredMachine(userId, row.machineId))
               .orderBy(desc(tunnelConnections.createdAt))
               .limit(1)
               .for('update')
@@ -569,6 +605,7 @@ export function createDeviceAuthRouter() {
       const { reused, ...result } = paired;
       // The agent still running on the old credential yields to the new one.
       if (reused) tunnelRelay.disconnectAgent(result.tunnelId, 4003, 'setup token rotated');
+      if (row.machineId) await retireSupersededRegistrations(result.tunnelId, row.machineId);
 
       return c.json({ success: true, ...result });
     },

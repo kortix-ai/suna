@@ -34,9 +34,7 @@ import {
 import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import {
   markRuntimeReadyVerified,
-  resetForServerSwitch,
-  setRuntimeHealth,
-  setSandboxStatus,
+  seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
 import { getBackendUrl } from '../core/session/server-store/url-helpers';
@@ -61,6 +59,7 @@ import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { holdLiveStart } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
+import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
 import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
@@ -1004,9 +1003,11 @@ export interface UseSessionOptions {
    */
   enabled?: boolean;
   /**
-   * A server-authorized OpenCode session pin associated with this Kortix
+   * A server-authorized runtime session pin associated with this Kortix
    * session. The `/start` response remains authoritative.
    */
+  initialRuntimeSessionId?: string | null;
+  /** @deprecated Renamed to `initialRuntimeSessionId`, which wins when both are set. Removed in the next major. */
   initialOpenCodeSessionId?: string | null;
   /**
    * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
@@ -1079,7 +1080,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     replayStartStash = true,
     enabled = true,
     chatEngine = true,
-    initialOpenCodeSessionId = null,
+    initialRuntimeSessionId = options.initialOpenCodeSessionId ?? null,
     subscribeMessages = true,
     browserPresence = false,
   } = options;
@@ -1189,6 +1190,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   useIsomorphicLayoutEffect(() => {
     if (!startEnabled) return;
     openSessionBundle(projectId, sessionId);
+    seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
 
@@ -1261,9 +1263,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!switched || !sandbox?.external_id) return;
     // Claim this runtime before the route's reconnect poller mounts; otherwise
     // its first reset treats the healthy seed as belonging to a different box.
-    resetForServerSwitch(getSandboxUrlForExternalId(sandbox.external_id));
-    setSandboxStatus('connected');
-    setRuntimeHealth(true);
+    // The ready answer also lists what the runtime serves, so capability gates
+    // are right before the first health probe answers.
+    seedConnectionFromReadyStart(
+      getSandboxUrlForExternalId(sandbox.external_id),
+      startData?.capabilities,
+    );
   }, [switched]);
 
   // 4. Open the live SSE stream. This was a provider component (RuntimeEvent
@@ -1279,7 +1284,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     projectId,
     sessionId,
     pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
-    initialPin: transcriptHistory.rootSessionId ?? initialOpenCodeSessionId,
+    initialPin: transcriptHistory.rootSessionId ?? initialRuntimeSessionId,
     listRuntimeSessions: switched,
   });
   const { rootSessionId } = canonicalSession;

@@ -20,7 +20,7 @@ let sessionAgentRow = 'kortix';
 let writtenGrant: AgentGrant | null | undefined;
 let resolvedAgent: string | undefined;
 let resolvedRequestedAgent: string | null | undefined;
-let forceRefresh: boolean | undefined;
+let forceRefresh: boolean | 'tip-proof' | undefined;
 /** Agent names the project declares; `null` = every name is launchable. */
 let launchableAgents: Set<string> | null = null;
 const launchChecks: string[] = [];
@@ -64,7 +64,7 @@ mock.module('./secret-grant', () => ({
   resolveSessionAgentGrant: async (input: {
     sessionAgent: string;
     requestedAgent?: string | null;
-    forceRefresh?: boolean;
+    forceRefresh?: boolean | 'tip-proof';
   }) => {
     resolvedAgent = input.sessionAgent;
     resolvedRequestedAgent = input.requestedAgent;
@@ -100,7 +100,7 @@ test('reconciles a same-agent connector change for an existing session token', a
   });
 
   expect(resolvedAgent).toBe('kortix');
-  expect(forceRefresh).toBe(true);
+  expect(forceRefresh).toBe('tip-proof');
   expect(writtenGrant).toEqual(currentGrant);
   expect(grant).toEqual(currentGrant);
 });
@@ -114,7 +114,7 @@ test('reconciles manifest grant changes on the next prompt without an agent swit
   });
 
   expect(resolvedAgent).toBe('kortix');
-  expect(forceRefresh).toBe(true);
+  expect(forceRefresh).toBe('tip-proof');
   expect(writtenGrant).toEqual(currentGrant);
   expect(decision).toEqual({ action: 'write', grant: currentGrant });
 });
@@ -129,7 +129,7 @@ test('same-agent reconcile is SYNCHRONOUS on the prompt path — a narrowed mani
     requestedAgent: null,
   });
   expect(resolvedAgent).toBe('kortix');
-  expect(forceRefresh).toBe(true);
+  expect(forceRefresh).toBe('tip-proof');
   expect(writtenGrant).toEqual(currentGrant);
   expect(decision).toEqual({ action: 'write', grant: currentGrant });
 });

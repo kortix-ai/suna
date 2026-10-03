@@ -179,6 +179,19 @@
   /* Error feedback — damped horizontal shake (decaying amplitude, transform-only) */
   --animate-shake: shake 400ms var(--ease-in-out) both;
 
+  /* Marketing chips: ±6px vertical float */
+  --animate-chip-drift: chip-drift 6s ease-in-out infinite;
+
+  @keyframes chip-drift {
+    0%,
+    100% {
+      transform: translateY(-6px);
+    }
+    50% {
+      transform: translateY(6px);
+    }
+  }
+
   @keyframes shake {
     0%,
     100% {
@@ -1599,6 +1612,18 @@ html[data-desktop-platform='macos'] .kx-settings-mobile-titlebar .kx-settings-mo
    margin (e.g. the Files file-preview top bar): drop it past the inset too. */
 .kx-titlebar-safe-mt {
   margin-top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}
+
+/* ─── Smooth shadow ring — five soft layers plus a 1px ring in the border token.
+   Use on a floating card instead of border + shadow-*: className="smooth-shadow-ring" */
+@utility smooth-shadow-ring {
+  box-shadow:
+    0 17.54px 23.39px oklch(0 0 0 / 0.04),
+    0 9.4px 12.5px oklch(0 0 0 / 0.03),
+    0 5.25px 7px oklch(0 0 0 / 0.02),
+    0 2.79px 3.72px -2px oklch(0 0 0 / 0.01),
+    0 1.16px 1.5px oklch(0 0 0 / 0.01),
+    0 0 0 1px color-mix(in oklab, var(--border) 60%, transparent);
 }
 
 /* ─── Liquid glass — frosted tinted surface (tokens: --liquid-glass-*) ─────

@@ -103,7 +103,7 @@ interface Fixture {
    * the override and returns the project to the platform default — which is
    * OFF for both (`apps/api/src/feature-flags/registry.ts`).
    */
-  setFeature(enabled: boolean | null, feature?: 'config_releases' | 'pi_harness'): Promise<void>;
+  setFeature(enabled: boolean | null, feature?: 'config_releases' | 'pi_harness' | 'meta_agent'): Promise<void>;
   /** The project's effective `config_releases` value, read back from the API. */
   featureEnabled(): Promise<boolean>;
   cleanup(): Promise<void>;
@@ -211,26 +211,24 @@ async function gitBlobId(bytes: Buffer): Promise<string> {
 
 /** Extract a tar.gz and return every regular file and symlink with its bytes. */
 async function extract(archive: Buffer): Promise<Map<string, Buffer>> {
-  const { mkdtemp, readFile, readlink, rm, lstat } = await import('node:fs/promises');
+  const { mkdtemp, readFile, readlink, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   const dir = await mkdtemp(join(tmpdir(), 'ke2e-cfg-archive-'));
+  // `find -type` names each entry's kind, so no stat precedes the read.
+  const list = async (type: 'f' | 'l') => (await run('find', ['.', '-type', type], dir))
+    .toString()
+    .split('\n')
+    .filter(Boolean)
+    .map((p) => p.replace(/^\.\//, ''))
+    // A commit archive carries a pax global header; tar does not extract it
+    // as a file, but guard against implementations that do.
+    .filter((p) => p !== 'pax_global_header');
   try {
     await run('tar', ['-xzf', '-', '-C', dir], dir, archive);
-    const listed = (await run('find', ['.', '(', '-type', 'f', '-o', '-type', 'l', ')'], dir))
-      .toString()
-      .split('\n')
-      .filter(Boolean)
-      .map((p) => p.replace(/^\.\//, ''))
-      // A commit archive carries a pax global header; tar does not extract it
-      // as a file, but guard against implementations that do.
-      .filter((p) => p !== 'pax_global_header');
     const files = new Map<string, Buffer>();
-    for (const path of listed) {
-      const full = join(dir, path);
-      const stat = await lstat(full);
-      files.set(path, stat.isSymbolicLink() ? Buffer.from(await readlink(full)) : await readFile(full));
-    }
+    for (const path of await list('f')) files.set(path, await readFile(join(dir, path)));
+    for (const path of await list('l')) files.set(path, Buffer.from(await readlink(join(dir, path))));
     return files;
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -866,6 +864,25 @@ flow(
         const r = await fixture.descriptor(a.secret, a.sessionId);
         bad = r.body as Descriptor;
         if (bad.source_commit !== tip || bad.release_id === good.release_id) throw new Error('the new base did not produce a new release');
+      });
+
+      // Prod 2026-10-02: the coordinator's box holds no checkout and its image
+      // has no `bun`, so it failed every `project` release it was assigned, and
+      // two coordinators quarantined each one for the whole project.
+      await ctx.step('a meta coordinator is assigned the platform governance alone, and its failures quarantine nothing', async () => {
+        const metaA = await fixture.mint({ agentName: 'meta' });
+        const metaB = await fixture.mint({ agentName: 'meta' });
+        const r = await fixture.descriptor(metaA.secret, metaA.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const d = r.body as Descriptor;
+        if (d.archive !== null || d.files !== null || d.config_tree_id !== null) throw new Error(`meta got a config dir: ${JSON.stringify(d)}`);
+        if (!d.release_id || d.release_id === bad.release_id || d.release_id === good.release_id) throw new Error(`meta release ${d.release_id}`);
+        const agents = Object.keys(JSON.parse(d.compiled_governance ?? '{}').agent ?? {});
+        if (agents.join() !== 'meta') throw new Error(`meta governance declares ${agents.join()}`);
+        await failed(bad.release_id!, metaA.sessionId);
+        await failed(bad.release_id!, metaB.sessionId);
+        const still = await fixture.descriptor(b.secret, b.sessionId);
+        if (still.body.release_id !== bad.release_id) throw new Error(`two meta sessions quarantined: got ${still.body.release_id}`);
       });
 
       await ctx.step('a failure from one session does not quarantine the release', async () => {
@@ -2205,6 +2222,93 @@ harnessFlow(
       await ctx.step('nothing was half-written: no assistant row is still open', async () => {
         const open = await openAssistantRows();
         if (open.length > 0) throw new Error(`assistant rows never completed: ${open.join(', ')}`);
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─
+//
+// Prod 2026-10-02. The coordinator's box holds no project checkout and its
+// image has no `bun`. It was assigned the project release, could not install
+// the dependencies of the project's tools, and reported every release failed.
+flow(
+  'CFG-13',
+  {
+    domain: 'config-releases',
+    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe'],
+    timeoutMs: 900_000,
+    routes: [
+      FEATURES,
+      PROJECT_DETAIL,
+      CONFIG_STATE,
+      DESCRIPTOR,
+      MINT,
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      ...GIT_PROXY,
+    ],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    const DEPENDENT_TOOL = (answer: string) =>
+      'import { tool } from "@opencode-ai/plugin";\n'
+      + `export default tool({ description: "needs a dependency", args: {}, async execute() { return "${answer}"; } });\n`;
+    try {
+      // The coordinator answers its boot prompt on a managed model (see CFG-11).
+      await ctx.step('the account is entitled to the managed lineup', async () => {
+        await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
+      });
+
+      await ctx.step('the project opts into `config_releases` and `meta_agent`, and its config holds a tool with a dependency', async () => {
+        await fixture.setFeature(true);
+        await fixture.setFeature(true, 'meta_agent');
+        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
+        await fixture.commit({ '.kortix/opencode/tools/needs_dep.ts': DEPENDENT_TOOL('one') }, 'a tool that imports a dependency');
+      });
+
+      let box!: Awaited<ReturnType<typeof boxSession>>;
+      await ctx.step('a session created with no agent boots the meta coordinator and answers its boot prompt', async () => {
+        box = await boxSession(ctx, fixture);
+        const { rows } = await fixture.db.query(
+          `SELECT agent_name, metadata->>'sandbox_slug' AS sandbox FROM kortix.project_sessions WHERE session_id = $1`,
+          [box.sessionId],
+        );
+        if (rows[0]?.agent_name !== 'meta' || rows[0]?.sandbox !== 'meta') throw new Error(`session is ${JSON.stringify(rows[0])}`);
+      });
+
+      const settled = () =>
+        waitFor(() => fixture.configState(box.sessionId), {
+          until: (r) => {
+            const rel = r.body?.release;
+            return r.status === 200 && Boolean(rel?.running_release_id) && rel.running_release_id === rel.desired_release_id;
+          },
+          timeoutMs: 180_000,
+          intervalMs: 3_000,
+          description: `the coordinator ${box.sessionId} to run its desired release`,
+        });
+      let release!: string;
+      await ctx.step('the coordinator runs the image default config on a proven release, with nothing failed and nothing stale', async () => {
+        const { body } = await settled();
+        const rel = body.release;
+        if (rel.source !== 'image-default' || rel.proven !== true) throw new Error(`release ${JSON.stringify(rel)}`);
+        if (rel.fallback_reason !== null || rel.failed_release_id !== null) throw new Error(`a failure is reported: ${JSON.stringify(rel)}`);
+        if (body.stale !== false) throw new Error(`stale ${body.stale}`);
+        release = rel.running_release_id;
+      });
+
+      await ctx.step('a config push moves a project session to the new tip and leaves the coordinator on its release', async () => {
+        const tip = await fixture.commit({ '.kortix/opencode/tools/needs_dep.ts': DEPENDENT_TOOL('two') }, 'tool change');
+        const { body } = await settled();
+        if (body.release.desired_release_id !== release || body.stale !== false) throw new Error(`the coordinator moved: ${JSON.stringify(body.release)}`);
+        if (body.release.failed_release_id !== null) throw new Error(`a failure is reported: ${JSON.stringify(body.release)}`);
+        const worker = await fixture.mint();
+        const d = (await fixture.descriptor(worker.secret, worker.sessionId)).body as Descriptor;
+        if (d.source_commit !== tip || d.archive === null || d.release_id === release) throw new Error(`project session got ${JSON.stringify({ ...d, files: undefined })}`);
       });
     } finally {
       await fixture.cleanup();

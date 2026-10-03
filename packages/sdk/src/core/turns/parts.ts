@@ -75,6 +75,13 @@ export function isPatchPart<P extends PartLike>(part: P): part is P & { type: 'p
   return part.type === 'patch';
 }
 
+/** A model step boundary (`step-start` / `step-finish`): bookkeeping, never content. */
+export function isStepPart<P extends PartLike>(
+  part: P,
+): part is P & { type: 'step-start' | 'step-finish' } {
+  return part.type === 'step-start' || part.type === 'step-finish';
+}
+
 /** Get the text content from any part that has a `text` field. */
 export function getPartText(part: PartLike): string | undefined {
   if (isTextPart(part)) return (part as TextPartLike).text;

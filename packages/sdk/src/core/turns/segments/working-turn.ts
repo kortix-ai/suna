@@ -251,7 +251,7 @@ export function resolveWorkingTurn(input: {
   // lists it `queued` / `waiting (older_prompt_pending)` / `delivering`, which
   // is the server saying, in as many words, that it has not run yet.
   //
-  // MEASURED, local stack 2026-08-26 (session 65216cc6): two sends 700ms
+  // MEASURED, local stack 2026-08-26 (one local session): two sends 700ms
   // apart, the first not yet streaming. `GET .../prompts` reported the second
   // `queued`, then `waiting: older_prompt_pending`, then `delivering` — while
   // the transcript rendered it at full opacity with no "Queued" label, because

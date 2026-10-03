@@ -76,7 +76,12 @@ export interface OpenEventStreamOptions {
   client?: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
-   *  stream or crash the host. */
+   *  stream or crash the host.
+   *
+   *  Consecutive `message.part.delta` events of one part field that land in
+   *  the same 16ms flush arrive as ONE event: `properties.delta` is their
+   *  text joined, `id` is the last one's, and `coalesced` lists the wire
+   *  events it replaced. Appending `delta` gives the same text either way. */
   onEvent: (event: RuntimeEvent) => void;
   /** Called once a reconnect is ESTABLISHED, with the gap in ms from the last
    *  frame received to the new connection. Fires when the dropped stream had
@@ -125,9 +130,19 @@ export interface OpenEventStreamOptions {
    * handle stays safe/idempotent.
    */
   onParked?: (reason: EventStreamParkedInfo) => void;
+  /**
+   * The connection's state, for a host indicator: `connecting` when an attempt
+   * starts, `open` on the attempt's first frame, `lost` when it drops and a
+   * retry is scheduled. A park reports through `onParked`, a `close()` reports
+   * nothing. A subscriber that joins a live stream is told its current state.
+   */
+  onConnectionChange?: (state: EventStreamConnectionState) => void;
   /** Test-only clock/timer override. Defaults to real `Date.now`/`setTimeout`. */
   timers?: EventStreamTimers;
 }
+
+/** See {@link OpenEventStreamOptions.onConnectionChange}. */
+export type EventStreamConnectionState = 'connecting' | 'open' | 'lost';
 
 /** Payload for {@link OpenEventStreamOptions.onParked}. */
 export interface EventStreamParkedInfo {
@@ -194,6 +209,39 @@ function getCoalesceKey(event: RuntimeEvent): string | undefined {
   return undefined;
 }
 
+type PartDeltaEvent = Extract<RuntimeEvent, { type: 'message.part.delta' }> & {
+  /** The wire events this one replaced, in order. Set only on a merged event. */
+  coalesced?: RuntimeEvent[];
+};
+
+/**
+ * Text-delta coalescing: `next` appended to `tail` as ONE event, when both are
+ * deltas of the same part field. Else undefined.
+ *
+ * Only the queue's TAIL is ever merged into, so a run never crosses another
+ * event and dispatch order stays the wire order. The merged event carries the
+ * joined `delta`, the last wire event's `id`, and every wire event it replaced
+ * in `coalesced`: a consumer that dedupes by event id (the sync store) still
+ * sees each one.
+ */
+function mergePartDelta(tail: RuntimeEvent | undefined, next: RuntimeEvent): RuntimeEvent | undefined {
+  if (tail?.type !== 'message.part.delta' || next.type !== 'message.part.delta') return undefined;
+  const a = tail.properties;
+  const b = next.properties;
+  if (
+    a.partID !== b.partID ||
+    a.field !== b.field ||
+    a.messageID !== b.messageID ||
+    a.sessionID !== b.sessionID
+  ) {
+    return undefined;
+  }
+  // The list is this module's own (made on a run's first merge), so it grows in place.
+  const wire = (tail as PartDeltaEvent).coalesced ?? [tail];
+  wire.push(next);
+  return { ...next, properties: { ...b, delta: a.delta + b.delta }, coalesced: wire } as PartDeltaEvent;
+}
+
 /**
  * A promise that resolves the moment `signal` fires 'abort' (or immediately,
  * if it's already aborted), plus a `cleanup` to remove the listener when it
@@ -218,11 +266,14 @@ interface StreamSubscriber {
   onEvent: (event: RuntimeEvent) => void;
   onGapRehydrate?: (gapMs: number) => void;
   onParked?: (reason: EventStreamParkedInfo) => void;
+  onConnectionChange?: (state: EventStreamConnectionState) => void;
 }
 
 /** The shared underlying connection for one client — see `liveStreamsByClient`. */
 interface LiveStream {
   subscribers: Set<StreamSubscriber>;
+  /** The connection's last reported state; null once parked or torn down. */
+  connectionState: () => EventStreamConnectionState | null;
   /** Aborts the connection and releases its timers. Called once, when the
    *  LAST subscriber leaves. */
   teardown: () => void;
@@ -288,6 +339,13 @@ function createLiveStream(
       }
     }
   }
+
+  let connectionState: EventStreamConnectionState | null = null;
+  const setConnectionState = (state: EventStreamConnectionState | null) => {
+    if (connectionState === state) return;
+    connectionState = state;
+    if (state) dispatchToSubscribers((sub) => sub.onConnectionChange, state);
+  };
 
   // Track last stream activity (connect or event) to gate reconnect hydration.
   // Using only "last event" causes hydrate storms when the server rotates
@@ -364,6 +422,7 @@ function createLiveStream(
       // heartbeat-forced reconnect tears the old connection down instead of
       // leaving it parked/leaking while a new one opens.
       const attemptAbort = new AbortController();
+      setConnectionState('connecting');
       const outerLink = onceAborted(abortController.signal);
       outerLink.promise.then(() => attemptAbort.abort());
       try {
@@ -490,6 +549,7 @@ function createLiveStream(
           if (outcome.result.done) break;
 
           streamHadEvents = true;
+          setConnectionState('open');
           resetHeartbeat();
           const raw = outcome.result.value as any;
           const e = (
@@ -499,15 +559,21 @@ function createLiveStream(
           // The connection's own greeting is not work that a drop could lose.
           if (e.type !== 'server.connected') streamHadWork = true;
 
-          const ck = getCoalesceKey(e);
-          if (ck) {
-            const existing = coalesced.get(ck);
-            if (existing !== undefined) {
-              queue[existing] = undefined;
+          // The tail is never a replaced slot: a replacement pushes right after.
+          const merged = mergePartDelta(queue[queue.length - 1]?.event, e);
+          if (merged) {
+            queue[queue.length - 1] = { type: merged.type, event: merged };
+          } else {
+            const ck = getCoalesceKey(e);
+            if (ck) {
+              const existing = coalesced.get(ck);
+              if (existing !== undefined) {
+                queue[existing] = undefined;
+              }
+              coalesced.set(ck, queue.length);
             }
-            coalesced.set(ck, queue.length);
+            queue.push({ type: (e as any).type, event: e });
           }
-          queue.push({ type: (e as any).type, event: e });
           schedule();
 
           if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
@@ -605,12 +671,14 @@ function createLiveStream(
         // terminal) stream machine, and must never stop another
         // subscriber's from firing — `dispatchToSubscribers` catches per
         // subscriber.
+        connectionState = null;
         dispatchToSubscribers((sub) => sub.onParked, {
           consecutiveFailures: consecutiveHardFailures,
           lastError: attemptError,
         });
         break;
       }
+      setConnectionState('lost');
 
       // Record the drop. Events missed while no connection exists (e.g. a
       // streaming assistant response, a permission ask) never arrive, so the
@@ -651,7 +719,9 @@ function createLiveStream(
 
   return {
     subscribers,
+    connectionState: () => connectionState,
     teardown: () => {
+      connectionState = null;
       abortController.abort();
       if (flushTimer) t.clearTimeout(flushTimer);
     },
@@ -688,10 +758,10 @@ function createLiveStream(
  * connection (unless it was the last one standing).
  */
 export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
-  const { onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
+  const { onEvent, onGapRehydrate, onParked, onConnectionChange, signal: externalSignal } = opts;
   const client: EventStreamClient | undefined = opts.client ?? (opts.url ? getClientForUrl(opts.url) : undefined);
   if (!client) throw new Error('openEventStream needs the session runtime `url`');
-  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked };
+  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked, onConnectionChange };
 
   let liveStream = liveStreamsByClient.get(client);
   if (!liveStream) {
@@ -700,6 +770,8 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
     liveStreamsByClient.set(client, liveStream);
   } else {
     liveStream.subscribers.add(subscriber);
+    const state = liveStream.connectionState();
+    if (state) onConnectionChange?.(state);
   }
   const stream = liveStream;
 

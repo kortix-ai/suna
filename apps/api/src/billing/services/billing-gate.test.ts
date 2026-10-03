@@ -20,14 +20,21 @@ mock.module('../../config', () => ({
   ),
 }));
 
+// What the free-tier check hands back: the row it read, or null after a repair.
+let freeTierRow: Record<string, unknown> | null = null;
+let accountReads = 0;
+
 mock.module('./free-tier', () => ({
-  ensureFreeTierAccountReady: async () => undefined,
+  ensureFreeTierAccountReady: async () => freeTierRow,
 }));
 
 // The whole module is replaced, so every symbol the gate's import graph reads
 // from it has to exist here, or the file fails to link before a test runs.
 mock.module('../repositories/credit-accounts', () => ({
-  getCreditAccount: async () => account,
+  getCreditAccount: async () => {
+    accountReads += 1;
+    return account;
+  },
   getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
   upsertCreditAccount: async () => undefined,
@@ -76,6 +83,20 @@ describe('checkBillingAdmission — the prompt path decision without a hold', ()
     holdCalls.length = 0;
     expect(await checkBillingAdmission('acct-1')).toEqual({ ok: true });
     expect(holdCalls).toEqual([]);
+  });
+
+  test('the gate reuses the row the free-tier check read instead of reading it again', async () => {
+    const { checkBillingAdmission } = await import('./billing-gate');
+    billingEnabled = true;
+    account = null;
+    freeTierRow = creditAccount({ balance: '5.00' });
+    accountReads = 0;
+    try {
+      expect(await checkBillingAdmission('acct-1')).toEqual({ ok: true });
+      expect(accountReads).toBe(0);
+    } finally {
+      freeTierRow = null;
+    }
   });
 
   test('a drained account gets the same blocked result checkBillingActive returns', async () => {

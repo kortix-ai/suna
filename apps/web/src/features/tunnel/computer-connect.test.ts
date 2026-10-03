@@ -1,14 +1,17 @@
 import type { Connection } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
+import type { TunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import type { DesktopComputerStatus } from '@/lib/desktop';
 import {
   computerDisplayName,
   computerState,
+  groupOwnedComputers,
   platformName,
   projectComputerAccounts,
+  yourComputerMenu,
 } from './computer-connect';
-import { activeGrant } from './local-computer-modal';
+import { activeGrant, capabilitiesNeedingSetup } from './local-computer-modal';
 
 const ME = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
@@ -138,4 +141,83 @@ test('platformName names the three desktop platforms and nothing else', () => {
   expect(platformName('linux')).toBe('Linux');
   expect(platformName('freebsd')).toBeNull();
   expect(platformName(undefined)).toBeNull();
+});
+
+describe('yourComputerMenu', () => {
+  const live = { isLive: true };
+  const down = { isLive: false };
+
+  test('a paired desktop opens its own machine, with its own state', () => {
+    expect(
+      yourComputerMenu({ tunnelId: 't-1', state: 'paused', oneClickHere: true, owned: [down] }),
+    ).toEqual({ dialog: 'this', dot: 'paused' });
+  });
+
+  test('a browser with paired machines lists them; the dot is online when any is', () => {
+    expect(yourComputerMenu({ oneClickHere: false, owned: [down, live] })).toEqual({
+      dialog: 'mine',
+      dot: 'online',
+    });
+    expect(yourComputerMenu({ oneClickHere: false, owned: [down] })).toEqual({
+      dialog: 'mine',
+      dot: 'offline',
+    });
+  });
+
+  test('nothing paired, or a desktop that can pair itself, opens the connect dialog', () => {
+    expect(yourComputerMenu({ oneClickHere: false, owned: [] })).toEqual({
+      dialog: 'connect',
+      dot: null,
+    });
+    expect(yourComputerMenu({ oneClickHere: true, owned: [live] })).toEqual({
+      dialog: 'connect',
+      dot: null,
+    });
+  });
+});
+
+test('capabilitiesNeedingSetup: a capability waits on the macOS grants it needs', () => {
+  expect(capabilitiesNeedingSetup(undefined)).toEqual([]);
+  expect(capabilitiesNeedingSetup([])).toEqual([]);
+  expect(capabilitiesNeedingSetup(['files'])).toEqual(['filesystem']);
+  expect(capabilitiesNeedingSetup(['screenRecording'])).toEqual(['desktop']);
+  expect(capabilitiesNeedingSetup(['files', 'accessibility', 'screenRecording'])).toEqual([
+    'filesystem',
+    'desktop',
+  ]);
+});
+
+describe('groupOwnedComputers', () => {
+  const machine = (tunnelId: string, over: Partial<TunnelConnection> = {}): TunnelConnection =>
+    ({
+      tunnelId,
+      name: tunnelId,
+      isLive: false,
+      lastHeartbeatAt: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      machineInfo: {},
+      capabilities: [],
+      ...over,
+    }) as TunnelConnection;
+  const hw = (id: string) => ({ machineId: id.repeat(64) });
+
+  test('one entry per hardware, live first, then most recently seen', () => {
+    const { computers, older } = groupOwnedComputers([
+      machine('old-same-hw', { machineInfo: hw('a'), lastHeartbeatAt: '2026-08-01T00:00:00.000Z' }),
+      machine('other-hw', { machineInfo: hw('b'), lastHeartbeatAt: '2026-09-01T00:00:00.000Z' }),
+      machine('live-same-hw', { machineInfo: hw('a'), isLive: true }),
+    ]);
+    expect(computers.map((m) => m.tunnelId)).toEqual(['live-same-hw', 'other-hw']);
+    expect(older).toEqual([]);
+  });
+
+  test('a registration without a hardware id is an older connection unless it is online now', () => {
+    const { computers, older } = groupOwnedComputers([
+      machine('legacy-offline-1', { lastHeartbeatAt: '2026-08-09T00:00:00.000Z' }),
+      machine('legacy-online', { isLive: true }),
+      machine('legacy-offline-2', { lastHeartbeatAt: '2026-08-13T00:00:00.000Z' }),
+    ]);
+    expect(computers.map((m) => m.tunnelId)).toEqual(['legacy-online']);
+    expect(older.map((m) => m.tunnelId)).toEqual(['legacy-offline-2', 'legacy-offline-1']);
+  });
 });

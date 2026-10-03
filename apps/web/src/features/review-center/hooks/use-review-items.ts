@@ -8,7 +8,6 @@ import {
   bulkActReviewItems,
   listReviewItems,
   resolveApproval,
-  submitReviewItem,
 } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -60,16 +59,6 @@ export function useBulkActReviewItems() {
     { ids: string[]; verdict: ReviewVerdict }
   >({
     mutationFn: ({ ids, verdict }) => bulkActReviewItems(projectId, { ids, verdict }),
-    onSuccess: invalidate,
-  });
-}
-
-export function useSubmitReviewItem() {
-  const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
-  const invalidate = useInvalidate(projectId);
-  return useMutation<ApiReviewItem, Error, Parameters<typeof submitReviewItem>[1]>({
-    mutationFn: (input) => submitReviewItem(projectId, input),
     onSuccess: invalidate,
   });
 }

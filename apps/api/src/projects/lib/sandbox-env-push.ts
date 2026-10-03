@@ -9,6 +9,7 @@ import type { ProviderName } from '../../platform/providers';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { loadSessionSecretContext } from './session-secret-context';
 import { decideEnvSyncAction } from './env-sync-skip-decision';
 import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
 import {
@@ -187,6 +188,17 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   return false; // plain http to a public host — refuse to send secrets in cleartext
 }
 
+/** The daemon answered the env push with a non-2xx. */
+export class EnvSyncHttpError extends Error {
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
+    super(`env sync failed: ${status}${body ? ` ${body.slice(0, 500)}` : ''}`);
+    this.name = 'EnvSyncHttpError';
+  }
+}
+
 export async function postEnvToDaemon(args: {
   previewUrl: string;
   providerHeaders: Record<string, string>;
@@ -254,7 +266,7 @@ export async function postEnvToDaemon(args: {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
+    throw new EnvSyncHttpError(res.status, body);
   }
   // The daemon echoes opencode's post-sync state. After a model-affecting change
   // it restarts opencode and reports `starting` here — the signal we use to wait
@@ -401,10 +413,15 @@ export async function syncSandboxEnvForPrompt(args: {
   // result. They start together and are awaited in the original order, so a
   // failure still surfaces at the same place and with the same meaning — the
   // boundary's fail-closed grant error included.
+  // Both read the session row, the project row, the running agent's grant and
+  // the personal-override owner. One context answers both.
+  const secretContext = loadSessionSecretContext(args.projectId, args.sessionId, args.requestedAgent);
+  secretContext.catch(() => undefined);
   const boundaryRead = resolveSessionNetworkBoundary(
     args.projectId,
     args.sessionId,
     args.requestedAgent,
+    secretContext,
   );
   const gatewayRead = projectLlmGatewayEnabledById(args.projectId);
   boundaryRead.catch(() => undefined);
@@ -413,6 +430,7 @@ export async function syncSandboxEnvForPrompt(args: {
     args.projectId,
     args.sessionId,
     args.requestedAgent,
+    secretContext,
   );
   lap('snapshot');
   if (!snapshot) return;
@@ -555,8 +573,9 @@ export async function syncSandboxEnvForPrompt(args: {
         signature,
       });
     }
-    await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
-    lap('mark');
+    // Bookkeeping, and on this path the stored flag already matches in the
+    // steady state: the turn does not wait for a write that changes nothing.
+    void markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled).catch(() => undefined);
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
         `background_refresh=${decision.scheduleBackgroundRefresh} ${JSON.stringify(timing)}`,
@@ -605,18 +624,9 @@ export async function syncSandboxEnvForPrompt(args: {
   console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify(timing)}`);
 }
 
-type ActiveSandboxRow = {
-  externalId: string;
-  sessionId: string;
-  provider: string;
-  serviceKey: string;
-};
-
-/** Run `push` for every active sandbox of a project (bounded fan-out). A failed sandbox is logged, never thrown. */
-async function fanOutToActiveSandboxes(
+export async function propagateLlmGatewayModeToActiveSandboxes(
   projectId: string,
-  label: string,
-  push: (row: ActiveSandboxRow) => Promise<void>,
+  enabled: boolean,
 ): Promise<void> {
   try {
     const rows = await db
@@ -632,70 +642,41 @@ async function fanOutToActiveSandboxes(
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
     if (targets.length === 0) return;
 
+    // Computed PER ROW (not once, hoisted) — a project's active sandboxes can
+    // span more than one provider (mid-migration, failover), and each needs
+    // the base URL resolved onto ITS OWN provider's origin.
     await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
       const rowConfig = (row.config || {}) as Record<string, unknown>;
       const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
       if (!serviceKey) return;
       try {
-        await push({ externalId: row.externalId, sessionId: row.sessionId, provider: row.provider, serviceKey });
+        const snapshot =
+          (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
+          emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
+        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
+        await postEnvToDaemon({
+          previewUrl: url,
+          providerHeaders: headers,
+          serviceKey,
+          snapshot,
+          refreshModels: true,
+          llmGatewayEnabled: enabled,
+          llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
+        });
+        await markSandboxLlmGatewayMode(row.sessionId, enabled);
       } catch (err) {
         console.warn(
-          `[env-sync] ${label} push failed for sandbox ${row.externalId}:`,
+          `[env-sync] LLM gateway mode push failed for sandbox ${row.externalId}:`,
           err instanceof Error ? err.message : err,
         );
       }
     });
   } catch (err) {
     console.warn(
-      `[env-sync] ${label} fan-out failed for project ${projectId}:`,
+      `[env-sync] LLM gateway mode fan-out failed for project ${projectId}:`,
       err instanceof Error ? err.message : err,
     );
   }
-}
-
-export async function propagateLlmGatewayModeToActiveSandboxes(
-  projectId: string,
-  enabled: boolean,
-): Promise<void> {
-  await fanOutToActiveSandboxes(projectId, 'LLM gateway mode', async (row) => {
-    // The base URL is resolved PER ROW — a project's active sandboxes can span
-    // more than one provider, and each needs its own provider's origin.
-    const snapshot =
-      (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
-      emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-    await postEnvToDaemon({
-      previewUrl: url,
-      providerHeaders: headers,
-      serviceKey: row.serviceKey,
-      snapshot,
-      refreshModels: true,
-      llmGatewayEnabled: enabled,
-      llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
-    });
-    await markSandboxLlmGatewayMode(row.sessionId, enabled);
-  });
-}
-
-/**
- * Push `KORTIX_FEATURES` to every running sandbox of the project so the
- * in-box CLI hides or shows a flagged command without a restart.
- * `refreshModels` stays off: the value only feeds the CLI's shell env, so no
- * opencode reload and no turn is cut.
- */
-export async function propagateFeaturesToActiveSandboxes(projectId: string, features: string): Promise<void> {
-  await fanOutToActiveSandboxes(projectId, 'features', async (row) => {
-    const snapshot =
-      (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ?? emptySandboxEnvSnapshot('features');
-    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-    await postEnvToDaemon({
-      previewUrl: url,
-      providerHeaders: headers,
-      serviceKey: row.serviceKey,
-      snapshot,
-      opencodeEnv: { KORTIX_FEATURES: features },
-    });
-  });
 }
 
 /**

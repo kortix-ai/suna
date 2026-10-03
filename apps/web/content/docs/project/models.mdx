@@ -13,7 +13,9 @@ platform offers it — check or toggle it in Settings → Experimental (operator
 can default a whole deployment off with `LLM_GATEWAY_DEFAULT_ENABLED=false`).
 
 Turning the flag off is a fully supported path. The project then runs
-**native OpenCode model management**:
+**native OpenCode model management**. Every session of that project runs the
+OpenCode [harness](/docs/work/harnesses): pi calls models only through the
+gateway.
 
 - Your provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
   `OPENROUTER_API_KEY`, …) are injected into the sandbox as ordinary env

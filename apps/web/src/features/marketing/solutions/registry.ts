@@ -45,6 +45,3 @@ export const ROLES: readonly RoleContent[] = [
 export function getRole(slug: string): RoleContent | undefined {
   return ROLES.find((role) => role.slug === slug);
 }
-
-/** Every `/solutions/<slug>` path, for `generateStaticParams` and the SEO records. */
-export const ROLE_PATHS = ROLES.map((role) => `/solutions/${role.slug}`);

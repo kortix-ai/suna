@@ -15,8 +15,9 @@
  * to `transparent` (black at zero alpha: a grey band on Android).
  */
 import * as React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { withAlpha } from '@/lib/utils/theme';
@@ -51,15 +52,32 @@ export interface PinnedBarProps {
   children: React.ReactNode;
 }
 
+/**
+ * How far a `PinnedBar` moves up to sit on the visible sheet edge, in points
+ * (0 or less). `SheetFill` (`sheet.tsx`) provides it: while a sheet moves, its
+ * body keeps one laid-out height and the bar follows the edge by this
+ * transform, not by a new layout on each frame. No provider: the bar does not move.
+ */
+export const PinnedBarShiftContext = React.createContext<SharedValue<number> | null>(null);
+
+/** The bar's root, moved by `shift` on the UI thread. Same props as the plain root. */
+function ShiftedRoot({ shift, style, children }: { shift: SharedValue<number>; style: ViewStyle; children: React.ReactNode }) {
+  const shifted = useAnimatedStyle(() => ({ transform: [{ translateY: shift.get() }] }), [shift]);
+  return (
+    <Animated.View pointerEvents="box-none" className="absolute inset-x-0 bottom-0" style={[style, shifted]}>
+      {children}
+    </Animated.View>
+  );
+}
+
 export function PinnedBar({ controlHeight, background, className, fade = true, children }: PinnedBarProps) {
   const insets = useSafeAreaInsets();
+  const shift = React.useContext(PinnedBarShiftContext);
   const barBottom = insets.bottom + PINNED_BAR_BOTTOM_GAP;
+  const rootStyle = { height: barBottom + controlHeight + PINNED_BAR_FADE_ABOVE };
 
-  return (
-    <View
-      pointerEvents="box-none"
-      className="absolute inset-x-0 bottom-0"
-      style={{ height: barBottom + controlHeight + PINNED_BAR_FADE_ABOVE }}>
+  const content = (
+    <>
       {fade ? (
         <LinearGradient
           pointerEvents="none"
@@ -74,6 +92,19 @@ export function PinnedBar({ controlHeight, background, className, fade = true, c
         style={{ bottom: barBottom }}>
         {children}
       </View>
+    </>
+  );
+
+  if (shift) {
+    return (
+      <ShiftedRoot shift={shift} style={rootStyle}>
+        {content}
+      </ShiftedRoot>
+    );
+  }
+  return (
+    <View pointerEvents="box-none" className="absolute inset-x-0 bottom-0" style={rootStyle}>
+      {content}
     </View>
   );
 }

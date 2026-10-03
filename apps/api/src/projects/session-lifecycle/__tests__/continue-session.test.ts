@@ -91,7 +91,7 @@ mock.module('../status-transitions', () => ({
   transitionSession: async (action: string) => { transitions.push(action); return true; },
 }));
 mock.module('../../../platform/service-key', () => ({ serviceKeyForExternalId: async () => 'key' }));
-mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), resolveServiceKey: async () => 'key' }));
+mock.module('../../../sandbox-proxy/backend', () => ({ resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }), invalidateSandbox: () => {}, resolveServiceKey: async () => 'key' }));
 mock.module('../../lib/sandbox-env-sync', () => ({ syncSandboxEnvForPrompt: async () => { syncs++; } }));
 
 mock.module('../../lib/on-behalf-of', () => ({

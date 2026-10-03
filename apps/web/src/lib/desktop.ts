@@ -106,31 +106,6 @@ export function desktopShellPlatform(): DesktopShellPlatform | null {
   return platform === 'macos' ? 'macos' : 'other';
 }
 
-type TauriWindow = {
-  minimize: () => Promise<void>;
-  toggleMaximize: () => Promise<void>;
-  close: () => Promise<void>;
-  isMaximized: () => Promise<boolean>;
-  onResized: (cb: () => void) => Promise<() => void>;
-};
-
-type TauriGlobal = {
-  window: { getCurrentWindow: () => TauriWindow };
-};
-
-function tauri(): TauriGlobal | null {
-  if (typeof window === 'undefined') return null;
-  return (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
-}
-
-/**
- * Custom URL scheme registered by the desktop shell. OAuth providers and
- * email magic links should redirect here (instead of `https://kortix.com/...`)
- * so the OS hands the callback back to the desktop app rather than opening
- * it in the user's browser.
- */
-export const DESKTOP_URL_SCHEME = 'kortix';
-
 /**
  * Returns the right OAuth redirect target for the current runtime:
  * - Desktop: HTTPS `/auth/callback?desktop=true&...` so the user's browser
@@ -423,26 +398,26 @@ export const desktopComputerResume = () => desktopServiceVerb('computer_resume')
 export const desktopComputerDisconnect = () =>
   desktopCommand<DesktopComputerDisconnectResult>('computer_disconnect');
 export const desktopComputerOpenLogs = () => desktopAction<null>('computer_open_logs');
+/**
+ * The macOS grants the Kortix app holds for this computer's approved access.
+ * `files`: Desktop, Documents, and Downloads (`null` = not asked yet).
+ * `missing`: what setup still needs, in the order it asks. `null` off macOS
+ * or off desktop.
+ */
+export interface DesktopComputerGrants {
+  accessibility: boolean;
+  screenRecording: boolean;
+  files?: boolean | null;
+  missing?: ('files' | 'accessibility' | 'screenRecording')[];
+}
+export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>('computer_grants');
+/** Setup's "Allow all": asks macOS for every missing grant, one prompt at a time. */
+export const desktopComputerRequestGrants = () =>
+  desktopAction<DesktopComputerGrants>('computer_grants_request');
 export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAccess>('computer_access_get');
 /** Rejects with the desktop app's message on invalid input. */
 export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
   desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
-
-export const desktopWindow = {
-  minimize: () => tauri()?.window.getCurrentWindow().minimize(),
-  toggleMaximize: () => tauri()?.window.getCurrentWindow().toggleMaximize(),
-  close: () => tauri()?.window.getCurrentWindow().close(),
-  isMaximized: async () => {
-    const t = tauri();
-    if (!t) return false;
-    return t.window.getCurrentWindow().isMaximized();
-  },
-  onResized: async (cb: () => void) => {
-    const t = tauri();
-    if (!t) return () => {};
-    return t.window.getCurrentWindow().onResized(cb);
-  },
-};
 
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and

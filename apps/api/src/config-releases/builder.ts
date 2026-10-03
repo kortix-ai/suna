@@ -21,6 +21,7 @@ import {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from '../projects/lib/compile-agent-config';
+import { buildPlatformMetaOpenCodeConfig } from '../projects/lib/platform-meta-agent';
 import { configArchiveKey, getConfigArchiveStore, type ConfigArchiveStore } from './store';
 
 export const CONFIG_RELEASE_FORMAT = 'config-release-v1';
@@ -45,8 +46,11 @@ export type ConfigMode = 'follow-base';
  * usable agent (config-releases/session-agent.ts). Its etag is non-null, so a
  * session whose agent the manifest dropped still gets a release ID and still
  * boots, instead of `release_id: null` and no config at all.
+ * `meta` is the platform coordinator: the platform's own governance and no
+ * config dir. Its box holds no project checkout and its image has no `bun`,
+ * so a project config dir with tool dependencies can never load there.
  */
-export type ConfigReleaseVariant = 'project' | 'none' | `agent:${string}`;
+export type ConfigReleaseVariant = 'project' | 'none' | 'meta' | `agent:${string}`;
 
 /** One tracked file: `[path relative to the config dir, git mode, blob ID]`. */
 export type ConfigReleaseFile = [path: string, mode: string, blob: string];
@@ -565,6 +569,7 @@ async function compileGovernance(
 ): Promise<string | null> {
   if (variant === 'project') return resolveCompiledAgentConfigForSession(project, commit);
   if (variant === 'none') return EMPTY_GOVERNANCE;
+  if (variant === 'meta') return buildPlatformMetaOpenCodeConfig();
   return resolveSelectedAgentConfigForSession(project, variant.slice('agent:'.length), commit);
 }
 
@@ -613,6 +618,7 @@ async function build(
   // No config dir: a governance-only release. The daemon runs the image
   // default config dir with this governance.
   const governanceOnly = configReleaseId(null, etag);
+  if (variant === 'meta') return { ...withGovernance, release_id: governanceOnly };
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
   try {
     resolved = await resolveReleaseTreeSource(mirror, project, commit, variant);

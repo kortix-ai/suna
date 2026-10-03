@@ -736,6 +736,90 @@
       "when": 1790854200000,
       "tag": "20261001113000_session_runtime_projection_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790891254334,
+      "tag": "20261001214734_drop_unused_audit_events_indexes_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790893772228,
+      "tag": "20261001222932_audit_events_uuid_v7",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790896090063,
+      "tag": "20261001230810_audit_events_partition_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1790896776290,
+      "tag": "20261001231936_audit_archive_chunks",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1790939671516,
+      "tag": "20261002111431_app_deployments_deleted_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1790956626526,
+      "tag": "20261002155706_session_lifecycle_commands_forwarded_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1790976647914,
+      "tag": "20261002213047_account_tokens_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1790980522327,
+      "tag": "20261002223522_app_deployment_events_runtime_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1790986874502,
+      "tag": "20261003002114_account_secret_project_id_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791022559790,
+      "tag": "20261003101559_chat_pending_picker_project_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1791027817427,
+      "tag": "20261003114337_drop_unused_access_requests_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791039264700,
+      "tag": "20261003145424_drop_duplicate_account_memberships_index_snapshot",
+      "breakpoints": true
     }
   ]
 }

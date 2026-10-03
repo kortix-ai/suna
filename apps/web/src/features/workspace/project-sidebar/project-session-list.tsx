@@ -53,15 +53,7 @@ import {
   SessionBriefDescription,
   SessionBriefHoverCard,
 } from '@/features/workspace/project-sidebar/session-brief-hover-card';
-import {
-  askedYouAsker,
-  mergeNeedsYou,
-  orderAskedYou,
-  sessionAwaitsViewer,
-  sessionParticipantCount,
-} from '@/features/workspace/project-sidebar/asked-you';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
-import { useAskedYouArrival } from '@/features/workspace/project-sidebar/use-asked-you-arrival';
 import {
   groupSessions,
   type SessionSection,
@@ -97,14 +89,7 @@ import {
   type ChangeRequest,
   type ProjectSession,
 } from '@kortix/sdk';
-import {
-  qk,
-  useFeatureFlag,
-  useProjectSession,
-  useProjectSessions,
-  useSessionChildren,
-  useSessionsNeedingInput,
-} from '@kortix/sdk/react';
+import { qk, useProjectSession, useProjectSessions, useSessionChildren } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   DotsThreeIcon,
@@ -115,7 +100,6 @@ import {
   ShareIcon as Share,
   SquareIcon as Square,
   TrashIcon,
-  UsersIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -204,12 +188,6 @@ const SESSION_ROW_HEIGHT_CLASS = 'h-8';
 /** Rows per page of an expanded parent, and per page of the Shared and
  *  Automated sections. */
 const SIDEBAR_PAGE_SIZE = 20;
-
-/** How often the "Asked you" section re-reads while the sidebar is mounted. */
-const ASKED_YOU_POLL_MS = 15_000;
-
-/** Id of the "Asked you" section in the persisted collapsed-section list. */
-const ASKED_YOU_SECTION_ID = 'asked-you';
 
 // Staggered (unique) widths so the loading state reads as a list of rows, not a
 // block; the width doubles as a stable key.
@@ -311,26 +289,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     refetchOnWindowFocus: true,
   });
 
-  // Conversations with people (`human_messaging`): the ones the viewer was asked
-  // into, at any depth. Dark, and absent from the tree, while the flag is off.
-  const { enabled: humanMessaging } = useFeatureFlag(projectId, 'human_messaging');
-  const askedQuery = useProjectSessions(projectId, {
-    participant: 'me',
-    limit: SIDEBAR_PAGE_SIZE,
-    enabled: humanMessaging,
-    // Nothing pushes a new ask into an open tab, so the section polls.
-    refetchInterval: humanMessaging ? ASKED_YOU_POLL_MS : false,
-    refetchOnWindowFocus: true,
-  });
-  // A disabled query still serves its persisted cache, so the flag gates the rows.
-  const askedSessions = useMemo(
-    () => (humanMessaging ? askedQuery.sessions : []),
-    [humanMessaging, askedQuery.sessions],
-  );
-  // Connector approvals and open agent questions the viewer may answer, in
-  // sessions that are not open right now.
-  const needsInput = useSessionsNeedingInput(projectId, { enabled: humanMessaging });
-
   // Open state of the tree: parent ids and `section:*` ids, persisted.
   const expandedIds = useSessionExpandedStore(selectExpandedIds(projectId));
   const expandedIdSet = useMemo(() => new Set(expandedIds), [expandedIds]);
@@ -361,32 +319,6 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // Review Center is one coherent system: the per-session row indicators, the
   // footer "Review" pill, and the Customize rail all read the SAME inbox summary.
   const reviewSummary = useReviewSessionSummary(projectId);
-  // ONE `needs-you` signal for every row: review items, plus what waits on this
-  // viewer (an answer to a conversation, an open question, a gated call).
-  const needsYouBySession = useMemo(() => {
-    const merged = mergeNeedsYou(
-      reviewSummary.needsYouBySession,
-      humanMessaging ? needsInput.data : undefined,
-    );
-    const awaiting = askedSessions.filter((s) => sessionAwaitsViewer(s, user?.id ?? null));
-    if (awaiting.length === 0) return merged;
-    const withAwaiting = { ...merged };
-    for (const s of awaiting) withAwaiting[s.session_id] = (withAwaiting[s.session_id] ?? 0) + 1;
-    return withAwaiting;
-  }, [reviewSummary.needsYouBySession, humanMessaging, needsInput.data, askedSessions, user?.id]);
-
-  const askedOrdered = useMemo(
-    () => orderAskedYou(askedSessions, user?.id ?? null),
-    [askedSessions, user?.id],
-  );
-
-  useAskedYouArrival({
-    projectId,
-    sessions: askedSessions,
-    loaded: humanMessaging && askedQuery.isSuccess,
-    viewerId: user?.id ?? null,
-    enabled: humanMessaging,
-  });
 
   // Grouping, ordering, and the two multi-select facets all live in the
   // persisted session-filter store (keyed by project) — see SessionFilterMenu,
@@ -440,12 +372,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     matchesStatusFilters(session, statusFilters) &&
     matchesSourceFilters(session, sourceFilters, tI18nComplete);
   const visibleSessions = sessions.filter(passesFacets);
-  // A conversation opened straight with the viewer (no parent session) is a
-  // root another member started, so it would list here AND under "Asked you".
-  const askedIds = new Set(askedSessions.map((s) => s.session_id));
-  const visibleShared = sharedQuery.sessions.filter(
-    (s) => passesFacets(s) && !askedIds.has(s.session_id),
-  );
+  const visibleShared = sharedQuery.sessions.filter(passesFacets);
   const visibleAutomated = automatedQuery.sessions.filter(passesFacets);
   const otherCount = sharedQuery.sessions.length + automatedQuery.sessions.length;
   const visibleOtherCount = visibleShared.length + visibleAutomated.length;
@@ -453,8 +380,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const viewState = resolveSessionListViewState({
     hasData: data !== undefined,
     isError,
-    totalCount: sessions.length + otherCount + askedSessions.length,
-    visibleCount: visibleSessions.length + visibleOtherCount + askedSessions.length,
+    totalCount: sessions.length + otherCount,
+    visibleCount: visibleSessions.length + visibleOtherCount,
     serverFiltered: labels !== undefined,
   });
 
@@ -462,7 +389,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   // sessions it spawned, loaded when the row opens. `nested` marks a spawned
   // row: the connector already carries the link, and it has no children of its
   // own to show.
-  const renderSessionNode = (session: ProjectSession, nested: boolean, subtitle?: string) => {
+  const renderSessionNode = (session: ProjectSession, nested: boolean, inSharedGroup = false) => {
     const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
     const isActive = pathname?.includes(`/sessions/${session.session_id}`);
     const isSwitchTarget = switchingToSessionId === session.session_id;
@@ -488,13 +415,12 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
             }
           }}
           displayTitle={getSessionDisplayTitle(session)}
-          subtitle={subtitle}
-          peopleCount={humanMessaging ? sessionParticipantCount(session) : 0}
+          inSharedGroup={inSharedGroup}
           childCount={children.length}
           spawnedCount={spawnedCount}
           spawnedOpen={spawnedOpen}
           onToggleSpawned={() => toggleExpanded(projectId, session.session_id)}
-          reviewCount={needsYouBySession[session.session_id] ?? 0}
+          reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
           changeRequests={changeRequestsBySession.get(session.session_id) ?? []}
           canShowHoverCard={canShowSessionHoverCard}
           onDelete={(id, label) => setSessionToDelete({ id, label })}
@@ -622,7 +548,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       {
         mode: groupMode,
         order: orderMode,
-        reviewCountBySession: needsYouBySession,
+        reviewCountBySession: reviewSummary.needsYouBySession,
         hiddenSections,
         ownerLabels: { you: t('filter.ownerValue.you'), unknown: t('filter.ownerValue.unknown') },
       },
@@ -633,11 +559,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // `hiddenSections` — it has no way to know every section got hidden. Catch
     // that case here instead of letting `FadedScrollArea` render nothing with
     // no explanation.
-    if (
-      grouped.sections.length === 0 &&
-      visibleOtherCount === 0 &&
-      askedSessions.length === 0
-    ) {
+    if (grouped.sections.length === 0 && visibleOtherCount === 0) {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
           {t('allSectionsHidden')}
@@ -647,30 +569,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
     return (
       <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
-        {/* "Asked you": above everything, open by default, absent while empty.
-            Waiting conversations sort first and carry the `needs-you` mark. */}
-        <StarterSection
-          title={t('askedYou.title')}
-          query={{ ...askedQuery, sessions: askedSessions }}
-          sessions={askedOrdered}
-          open={!collapsedSectionIds.has(ASKED_YOU_SECTION_ID)}
-          onToggle={() => toggleSectionCollapsed(projectId, ASKED_YOU_SECTION_ID)}
-          renderNode={(session) => {
-            const asker = askedYouAsker(session);
-            return renderSessionNode(
-              session,
-              false,
-              asker ? t('askedYou.from', { name: asker }) : undefined,
-            );
-          }}
-        />
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
             section={section}
             projectId={projectId}
             sessions={sessions}
-            reviewCountBySession={needsYouBySession}
+            reviewCountBySession={reviewSummary.needsYouBySession}
             showHeader={grouped.showHeaders}
             open={!collapsedSectionIds.has(section.id)}
             onOpenChange={() => toggleSectionCollapsed(projectId, section.id)}
@@ -688,11 +593,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         )}
         <StarterSection
           title={t('startedBy.others')}
-          query={{ ...sharedQuery, sessions: sharedQuery.sessions.filter((s) => !askedIds.has(s.session_id)) }}
+          query={sharedQuery}
           sessions={visibleShared}
           open={expandedIdSet.has('section:shared')}
           onToggle={() => toggleExpanded(projectId, 'section:shared')}
-          renderNode={(session) => renderSessionNode(session, false)}
+          renderNode={(session) => renderSessionNode(session, false, true)}
         />
         <StarterSection
           title={t('startedBy.automated')}
@@ -722,7 +627,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       <SessionListHeader
         projectId={projectId}
         sessions={sessions}
-        reviewCountBySession={needsYouBySession}
+        reviewCountBySession={reviewSummary.needsYouBySession}
         onMenuOpenChange={holdPeek}
       />
 
@@ -1015,9 +920,8 @@ function SpawnedToggle({
 }
 
 /**
- * The Asked you, Shared and Automated sections: Shared and Automated are
- * top-level sessions another member or an automation started, closed until
- * opened. All three are absent while the viewer has none.
+ * The Shared and Automated sections: top-level sessions another member or an
+ * automation started. Closed until opened, and absent while the viewer has none.
  */
 function StarterSection({
   title,
@@ -1165,10 +1069,6 @@ interface ProjectSessionRowProps {
   isSwitching: boolean;
   onNavigate: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   displayTitle: string;
-  /** A second, muted line under the title. The row grows to hold it. */
-  subtitle?: string;
-  /** People in a conversation (`metadata.participants`); 0 = an ordinary session. */
-  peopleCount?: number;
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
   onRename: (sessionId: string, currentName: string) => void;
@@ -1186,6 +1086,8 @@ interface ProjectSessionRowProps {
   reviewCount?: number;
   changeRequests: readonly ChangeRequest[];
   canShowHoverCard: boolean;
+  /** The row sits under the Shared group header, which already says it: no share icon. */
+  inSharedGroup?: boolean;
 }
 
 function ProjectSessionRow({
@@ -1195,8 +1097,6 @@ function ProjectSessionRow({
   isSwitching,
   onNavigate,
   displayTitle,
-  subtitle,
-  peopleCount = 0,
   onDelete,
   onShare,
   onRename,
@@ -1212,6 +1112,7 @@ function ProjectSessionRow({
   reviewCount = 0,
   changeRequests,
   canShowHoverCard,
+  inSharedGroup = false,
 }: ProjectSessionRowProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('sidebar');
@@ -1237,9 +1138,8 @@ function ProjectSessionRow({
   // render at all when it is empty (an empty flex item still draws the row's
   // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
   // the hover shift below only makes sense when there is something to shift.
-  // A conversation row already says who asked on its second line, and its
-  // sharing is the point of it: neither needs a marker.
-  const hasIndicators = !subtitle && (showStarter || sessionIsShared(session));
+  const showSharedIcon = !inSharedGroup && sessionIsShared(session);
+  const hasIndicators = showStarter || showSharedIcon;
   // `reviewCount` is not optional here, whatever the signature's default says.
   // Omitting it does not mean "unknown", it asserts "nothing is waiting", which
   // is how the row's dot and this row's own hover card came to disagree: the dot
@@ -1271,24 +1171,8 @@ function ProjectSessionRow({
         </Hint>
       )}
 
-      {peopleCount > 0 && (
-        <Hint
-          side="top"
-          label={peopleCount === 1 ? t('askedYou.withOne') : t('askedYou.withMany', { count: peopleCount })}
-        >
-          <span className="text-muted-foreground/80 flex size-4 shrink-0 items-center justify-center">
-            <UsersIcon className="size-3.5" />
-          </span>
-        </Hint>
-      )}
-
       <span className="min-w-0 flex-1">
         <SessionTitle title={displayTitle} className={cn('min-w-0', isActive && 'font-medium')} />
-        {subtitle && (
-          <span className="text-muted-foreground block truncate text-xs" data-session-subtitle="true">
-            {subtitle}
-          </span>
-        )}
         <span
           className="hidden max-md:block [@media(hover:none)]:block [@media(pointer:coarse)]:block"
           aria-hidden
@@ -1370,7 +1254,7 @@ function ProjectSessionRow({
               </Hint>
             </span>
           )}
-          <SessionSharedIcon session={session} />
+          {!inSharedGroup && <SessionSharedIcon session={session} />}
         </div>
       )}
     </HoverPrefetchLink>
@@ -1386,8 +1270,6 @@ function ProjectSessionRow({
           // Paint with the variable (not bg-card + a different surface token) so
           // the end fade can never disagree with the row fill.
           'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
-          // A second line grows the row; twMerge lets this win over `h-8`.
-          subtitle && 'h-auto min-h-10 py-1',
           'max-md:h-auto max-md:min-h-12 max-md:gap-1',
           '[@media(hover:none)]:h-auto [@media(hover:none)]:min-h-12 [@media(hover:none)]:gap-1',
           '[@media(pointer:coarse)]:h-auto [@media(pointer:coarse)]:min-h-12 [@media(pointer:coarse)]:gap-1',

@@ -158,7 +158,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
-  test('connectors_api_discover is explicit opt-in', () => {
+  test('connectors_api_discover requires explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
       resolveFeatureFlag(

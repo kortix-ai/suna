@@ -1,10 +1,9 @@
 'use client';
 
 
-import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import type { DotAnimationResolver } from '@/lib/dotmatrix-core';
 import { createDotm5x5Component, rowMajorIndex } from '@/lib/dotmatrix-core';
 
-export type DotmSquare7Props = DotMatrixCommonProps;
 
 type FrameCell = '.' | 'o' | 'x' | 'c';
 

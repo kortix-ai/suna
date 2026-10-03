@@ -20,11 +20,11 @@ function action(overrides: Partial<SessionAuditAction> = {}): SessionAuditAction
     status: 'pending_approval',
     risk: 'write',
     acted_by: 'user-1',
-    acted_by_email: 'marko@kortix.ai',
+    acted_by_email: 'sam@example.test',
     resolved_by: null,
     resolved_by_email: null,
     result_summary: {
-      args_preview: { subject: 'Weekly report', to: ['marko@kortix.ai'] },
+      args_preview: { subject: 'Weekly report', to: ['sam@example.test'] },
       args_preview_complete: true,
     },
     at: '2026-08-09T10:00:00.000Z',
@@ -38,7 +38,7 @@ describe('approvalArgsPreview', () => {
   test('returns the redacted preview object', () => {
     expect(approvalArgsPreview(action())).toEqual({
       subject: 'Weekly report',
-      to: ['marko@kortix.ai'],
+      to: ['sam@example.test'],
     });
   });
 
@@ -50,7 +50,7 @@ describe('approvalArgsPreview', () => {
 
 describe('approvalArgsSummary', () => {
   test('puts the target fields first', () => {
-    expect(approvalArgsSummary(action())).toBe('to: marko@kortix.ai · subject: Weekly report');
+    expect(approvalArgsSummary(action())).toBe('to: sam@example.test · subject: Weekly report');
   });
 
   test('stops after two fields', () => {
@@ -88,7 +88,7 @@ describe('approvalRequestFromAction', () => {
       action: 'gmail.send_email',
       risk: 'write',
       requestedAt: '2026-08-09T10:00:00.000Z',
-      argsPreview: { subject: 'Weekly report', to: ['marko@kortix.ai'] },
+      argsPreview: { subject: 'Weekly report', to: ['sam@example.test'] },
       approvalContext: null,
       reviewComplete: true,
       resolution: null,
@@ -216,5 +216,19 @@ describe('nextExpandedApproval', () => {
 
   test('collapses the row that is already open', () => {
     expect(nextExpandedApproval('exec-1', 'exec-1')).toBeNull();
+  });
+});
+
+// A Slack connector call needing approval showed `channel: C0…` in the session
+// (2026-10-02). The session passes the project's bound channel names: the
+// summary reads the name, and the parameters keep the exact id beside it.
+describe('approvalArgsSummary with Slack channel names', () => {
+  test('the summary reads a bound channel by its name', () => {
+    const slackAction = {
+      ...action(),
+      result_summary: { args_preview: { channel: 'C0TEST1', text: 'Deploy done' }, args_preview_complete: true },
+    };
+    expect(approvalArgsSummary(slackAction, new Map([['C0TEST1', '#general']]))).toBe('channel: #general · text: Deploy done');
+    expect(approvalArgsSummary(slackAction)).toBe('channel: C0TEST1 · text: Deploy done');
   });
 });

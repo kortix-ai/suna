@@ -61,3 +61,12 @@ export function cacheMermaidSvg(source: string, svg: string): void {
     if (oldest !== undefined) mermaidSvgCache.delete(oldest);
   }
 }
+
+export function zoomAtPoint(zoom: number, panOffset: { x: number; y: number },
+  point: { x: number; y: number }, zoomFactor: number) {
+  const newZoom = Math.max(0.1, Math.min(5, zoom * zoomFactor));
+  return { zoom: newZoom, panOffset: {
+    x: point.x - (point.x - panOffset.x) * (newZoom / zoom),
+    y: point.y - (point.y - panOffset.y) * (newZoom / zoom),
+  } };
+}

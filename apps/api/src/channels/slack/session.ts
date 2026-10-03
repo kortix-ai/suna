@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/db';
+import { slackFollowUpHeader, slackPlainText } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { filterAccessibleObjects } from '../../iam';
@@ -27,6 +28,7 @@ import {
   startTurn,
 } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
+import { slackMessageLabels, type SlackMessageLabels } from './labels';
 import { promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
@@ -228,6 +230,7 @@ async function launchSlackSession(
   { conversationPolicy, launchAgent, start }: NonNullable<Awaited<ReturnType<typeof planSlackLaunch>>>,
   claimKey: string | null,
 ) {
+  const labels = await slackMessageLabels({ projectId, teamId, event });
   return slackSessionLifecycle.createSession({
     source: 'slack',
     project,
@@ -238,9 +241,10 @@ async function launchSlackSession(
       agent_name: launchAgent,
       ...(start.model ? { opencode_model: start.model } : {}),
       ...(start.pools ? { provider_secret_pools: start.pools } : {}),
-      initial_prompt: renderAgentPrompt(envelope, event, revived),
-      // Keep scaffolded prompt details out of the project-visible title.
-      title_source: event.text ?? null,
+      initial_prompt: renderAgentPrompt(envelope, event, revived, labels),
+      // Keep scaffolded prompt details out of the project-visible title, and
+      // Slack markup with them: `<@U0…>` reads `@Sam`, as Slack shows it.
+      title_source: event.text ? slackPlainText(labels.text) : null,
     },
     enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
@@ -259,6 +263,8 @@ async function launchSlackSession(
         thread_ts: threadId,
         event_type: event.type,
         conversation_policy: conversationPolicy,
+        ...(labels.channel ? { channel_label: labels.channel } : {}),
+        ...(labels.user ? { user_name: labels.user } : {}),
       },
     },
     extraEnvVars: buildSlackTurnEnv(teamId, event),
@@ -338,7 +344,7 @@ async function joinExistingThread(
   if (sessionId) {
     await deliverSlackFollowUpToSession({
       sessionId,
-      text: renderFollowUpPrompt(envelope, event),
+      text: renderFollowUpPrompt(envelope, event, await slackMessageLabels({ projectId, teamId, event })),
       userId: actorUserId,
       model: await slackFollowUpModel({ project, userId: actorUserId, sessionId, event }),
     });
@@ -468,11 +474,18 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent): string {
-  const user = event.user ?? 'unknown';
-  const text = event.text ?? '';
+/** `Sam Rivera (U0…)` when the label is known, else the id alone. */
+function labelled(label: string | null | undefined, id: string): string {
+  return label ? `${label} (${id})` : id;
+}
+
+export function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent, labels?: SlackMessageLabels): string {
+  const user = labelled(labels?.user, event.user ?? 'unknown');
+  const channel = labelled(labels?.channel, event.channel ?? 'unknown');
+  const text = labels?.text ?? event.text ?? '';
   return [
-    `New message from ${user} in Slack channel ${event.channel ?? 'unknown'}, thread ${event.thread_ts ?? event.ts ?? 'unknown'}:`,
+    // The session page reads this line back with `readSlackFollowUpHeader`.
+    slackFollowUpHeader(user, channel, event.thread_ts ?? event.ts ?? 'unknown'),
     'This session may serve several threads. Reply to THIS message in its originating channel and thread:',
     `slack send --channel ${event.channel ?? 'unknown'} --thread ${event.thread_ts ?? event.ts ?? 'unknown'} --text "<answer>"`,
     'The live slack step stream follows this message automatically. Do not use the session\'s original Slack thread for this reply.',
@@ -488,11 +501,12 @@ function renderAgentPrompt(
   envelope: SlackEnvelope,
   event: SlackEvent,
   revived: boolean,
+  labels?: SlackMessageLabels,
 ): string {
-  const channel = event.channel ?? '?';
+  const channel = labelled(labels?.channel, event.channel ?? '?');
   const threadTs = event.thread_ts ?? event.ts ?? '';
-  const user = event.user ?? 'unknown';
-  const text = event.text ?? '';
+  const user = labelled(labels?.user, event.user ?? 'unknown');
+  const text = labels?.text ?? event.text ?? '';
 
   const lines: string[] = [];
   if (revived) {

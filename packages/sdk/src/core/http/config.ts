@@ -1,3 +1,5 @@
+import type { RuntimeEventTransport } from '../runtime/runtime-rest-client';
+
 /**
  * Per-flag overrides for `@kortix/sdk/feature-flags`. A host that isn't Next.js
  * (no `NEXT_PUBLIC_*` build-time env, e.g. React Native, a bare browser bundle,
@@ -6,6 +8,7 @@
  * env var (so web keeps working unchanged), then to the flag's own default. See
  * `feature-flags.ts` for what each flag does.
  */
+
 export interface KortixFeatureFlagOverrides {
   disableMobileAdvertising?: boolean;
   enableDinoGame?: boolean;
@@ -35,10 +38,24 @@ export interface KortixPlatformConfig {
    *  Any fetch-shaped function is accepted (the global `fetch` type also carries
    *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  /**
+   * How the live event stream's bytes arrive, for a host whose `fetch` cannot
+   * stream a response body (React Native without `expo/fetch`). The SDK calls it
+   * once per connection with the request's URL, headers (auth included) and
+   * abort signal, and keeps reconnect, resume, heartbeat and coalescing itself.
+   * Default: the configured `fetch`, read as a stream.
+   */
+  eventStreamTransport?: RuntimeEventTransport;
   /** @deprecated Inert. The SDK no longer sends `X-Kortix-Client`: the audit
    *  trail records the authenticated credential (`credential_kind`), not a
    *  self-reported surface. Accepted so existing hosts keep compiling. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  /** The host's surface and release version as `<surface>/<version>` (e.g.
+   *  `cli/0.13.42`), sent as `X-Kortix-Client-Version`. The API writes it to
+   *  its request log only, to see which client versions still call a route
+   *  before the route is retired. It is self-reported telemetry: it never
+   *  reaches the audit trail and grants nothing. Omitted when unset or blank. */
+  clientVersion?: string;
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;
   /** Default sandbox id for local/single-sandbox hosts (was `getEnv().SANDBOX_ID`). */

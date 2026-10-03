@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { hostname } from 'os';
 import { join } from 'path';
 
-import { TunnelAgent } from './agent';
+import { PAIR_AGAIN_COMMAND, TunnelAgent } from './agent';
 import { accessFilePath, accessRequestPath, desktopAppPath, readAccess, writeAccess } from './access';
 import { printStartupBanner } from './banner';
 import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
@@ -441,7 +441,7 @@ function commandStatus(flags: Flags): void {
 
   if (approved.size === 0) {
     console.log(`  ${glyph.warn} ${c.dim}No capabilities approved — this tunnel cannot act.${c.reset}`);
-    console.log(`  ${c.dim}Pair again with${c.reset} ${c.white}agent-tunnel connect --reauth${c.reset}`);
+    console.log(`  ${c.dim}Pair again with${c.reset} ${c.white}${PAIR_AGAIN_COMMAND}${c.reset}`);
     blankLine();
   }
   console.log(`  ${c.dim}Recent logs:${c.reset} ${c.white}agent-tunnel logs${c.reset}`);
