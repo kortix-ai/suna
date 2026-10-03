@@ -8,6 +8,7 @@ import {
   compilePiRuntime,
   type CompilePiRuntimeInput,
 } from './compiled-pi-runtime';
+import { runnerEnv } from '../__tests__/helpers/compiled-runtime-env';
 
 const roots: string[] = [];
 const INPUT: CompilePiRuntimeInput = {
@@ -41,23 +42,6 @@ async function materialize(input = INPUT) {
  *  Without pinning, any test in the same bun worker that promotes the platform's
  *  agent-env.sh values into process.env (they share one process.env) flips the
  *  runtime's identity check mid-suite. */
-function runnerEnv(artifact: { manifest: Record<string, unknown> }): Record<string, string> {
-  const m = artifact.manifest as Record<string, string>;
-  return {
-    KORTIX_COMPILED_RUNTIME_FORMAT: m.format,
-    KORTIX_COMPILED_RUNTIME_SOURCE_SHA: m.source_sha,
-    KORTIX_PROJECT_ID: m.project_id,
-    KORTIX_DEFAULT_BRANCH: m.ref,
-    KORTIX_BASE_REF: m.ref,
-    KORTIX_BASE_SHA: m.source_sha,
-    ...(m.agent_config
-      ? {
-          KORTIX_COMPILED_AGENT_CONFIG: m.agent_config,
-          KORTIX_COMPILED_AGENT_CONFIG_ETAG: m.agent_config_etag,
-        }
-      : {}),
-  };
-}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
