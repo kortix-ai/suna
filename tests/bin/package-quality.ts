@@ -167,8 +167,15 @@ await runAll([
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. Keep the CLI and
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
+// The API suite runs BEFORE the cli/kortixd block, not beside it: its tests
+// spawn real child processes (the connectors CLI, the compiled daemons), and
+// under the memory pressure of concurrent bun workers JSC's regex JIT falls
+// back to the interpreter — the spawned children crash or mis-tokenize and the
+// faces tests fail with silent exit 1 (reproduced 2026-10-03; the same
+// mechanism fails mobile's highlighter parity test, which now runs serially
+// below for the same reason).
+await runWorkspaceTests(['kortix-api'], 1);
 await runAll([
-  runWorkspaceTests(['kortix-api'], 1),
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);
