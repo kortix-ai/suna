@@ -5,8 +5,8 @@ commit: 45357b024d
 ---
 # A per-call authorization grant re-derived from a git read must carry provenance, or one bad read is a session-wide outage
 
-INC-2026-09-08-CONNECTOR-GATEWAY, prod project `fda4e35e` (Kortix Company),
-Slack DM session `673b4639`. Every connector call re-derived the session
+INC-2026-09-08-CONNECTOR-GATEWAY, a prod project (Kortix Company),
+one Slack DM session. Every connector call re-derived the session
 token's agent grant from `kortix.yaml` through a forced mirror fetch and
 REPLACED the token row whenever the result differed. One turn's reads produced
 `connectors: []` for an agent declared `connectors: all`; the token was

@@ -1,6 +1,6 @@
 {
-  "id": "7bb34c6f-f561-45ce-9a3e-8f1fe6101603",
-  "prevId": "e80f6c0a-4d81-4413-9a1f-9c2313f15fe1",
+  "id": "c4881c58-ee3e-4133-892d-ae18838c601c",
+  "prevId": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1504,48 +1504,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_account_secret_grants_secret_account": {
-          "name": "idx_account_secret_grants_secret_account",
-          "columns": [
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_account_secret_grants_user_account": {
-          "name": "idx_account_secret_grants_user_account",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -1730,6 +1688,21 @@
             },
             {
               "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_secret_resources_project_id": {
+          "name": "idx_account_secret_resources_project_id",
+          "columns": [
+            {
+              "expression": "project_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2419,6 +2392,38 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_account_tokens_service_account": {
+          "name": "idx_account_tokens_service_account",
+          "columns": [
+            {
+              "expression": "service_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"service_account_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_account_tokens_on_behalf_of_user": {
+          "name": "idx_account_tokens_on_behalf_of_user",
+          "columns": [
+            {
+              "expression": "on_behalf_of_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"account_tokens\".\"on_behalf_of_user_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2952,6 +2957,21 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_deployment_events_runtime_idx": {
+          "name": "app_deployment_events_runtime_idx",
+          "columns": [
+            {
+              "expression": "runtime_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

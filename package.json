@@ -32,6 +32,7 @@
     "nuke:start": "bash scripts/nuke-local.sh --start",
     "stripe:listen": "stripe listen --api-key \"$(dotenvx get STRIPE_SECRET_KEY -f apps/api/.env)\" --forward-to http://localhost:8008/v1/billing/webhooks/stripe",
     "test": "bun tests/bin/local.ts",
+    "test:verify": "node tests/verify-attestation.mjs verify",
     "lint:biome": "biome check .",
     "lint:biome:fix": "biome check --write .",
     "format": "biome format --write .",

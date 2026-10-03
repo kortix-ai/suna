@@ -88,11 +88,11 @@ describe('loadTeamsInstall — publish outcome', () => {
   test('a published app reports "published" with the catalog id', async () => {
     secretsByName.MS_TEAMS_PUBLISH_STATE = 'published';
     secretsByName.MS_TEAMS_ORG_INSTALLED = '1';
-    secretsByName.MS_TEAMS_CATALOG_APP_ID = 'd06de996-5d5d-4b68-95f9-eda268580a4e';
+    secretsByName.MS_TEAMS_CATALOG_APP_ID = '5a1e0c10-0000-4000-8000-000000000010';
     const install = await loadTeamsInstall('proj-1');
     expect(install?.publishState).toBe('published');
     expect(install?.orgInstalled).toBe(true);
-    expect(install?.catalogAppId).toBe('d06de996-5d5d-4b68-95f9-eda268580a4e');
+    expect(install?.catalogAppId).toBe('5a1e0c10-0000-4000-8000-000000000010');
   });
 });
 
@@ -108,7 +108,7 @@ describe('loadTeamsInstall — the app version the catalog serves', () => {
     secretsByName = {
       ...secretsByName,
       MS_TEAMS_ORG_INSTALLED: '1',
-      MS_TEAMS_CATALOG_APP_ID: 'd06de996-5d5d-4b68-95f9-eda268580a4e',
+      MS_TEAMS_CATALOG_APP_ID: '5a1e0c10-0000-4000-8000-000000000010',
       MS_TEAMS_PUBLISH_STATE: 'published',
       ...extra,
     };

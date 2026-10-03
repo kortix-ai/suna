@@ -953,6 +953,11 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
 }, (table) => [
   index('account_secret_resources_account_provider').on(table.accountId, table.providerId),
   unique('account_secret_resources_account_identity').on(table.secretId, table.accountId),
+  // Covers the project_id FK (account_secret_resources_project_id_projects_project_id_fk,
+  // built by 20261002225526000_account_secret_project_id_index.concurrent.ts): a
+  // project delete cascades here by project_id, and that lookup otherwise seq-scans
+  // the table (Supabase advisor: unindexed_foreign_keys).
+  index('idx_account_secret_resources_project_id').on(table.projectId),
 ]);
 
 /** A member's permission to use one account secret resource. */
@@ -3000,6 +3005,18 @@ export const accountTokens = kortixSchema.table(
     index('idx_account_tokens_account').on(table.accountId),
     index('idx_account_tokens_user').on(table.userId),
     index('idx_account_tokens_project').on(table.projectId),
+    // FK coverage for the Supabase advisor's unindexed_foreign_keys lint
+    // (KRTX-1091): every ON DELETE CASCADE walk from service_accounts and every
+    // ON DELETE SET NULL walk from auth.users over these two columns seq-scans
+    // account_tokens without an index leading with them. Partial: both columns
+    // are NULL for most rows (laptop CLI PATs, unattended runs), and a FK
+    // enforcement scan never matches a NULL.
+    index('idx_account_tokens_service_account')
+      .on(table.serviceAccountId)
+      .where(sql`${table.serviceAccountId} is not null`),
+    index('idx_account_tokens_on_behalf_of_user')
+      .on(table.onBehalfOfUserId)
+      .where(sql`${table.onBehalfOfUserId} is not null`),
   ],
 );
 
@@ -4273,6 +4290,7 @@ export const appDeploymentEvents = kortixSchema.table(
       sql`${table.level} IN ('debug', 'info', 'warn', 'error')`,
     ),
     index('app_deployment_events_deployment_idx').on(table.deploymentId, table.createdAt),
+    index('app_deployment_events_runtime_idx').on(table.runtimeId),
   ],
 );
 
