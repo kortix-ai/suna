@@ -2013,7 +2013,11 @@ export const voiceCallTurns = kortixSchema.table(
   },
   (table) => [
     index('idx_voice_call_turns_call_cursor').on(table.callId, table.cursor),
-    index('idx_voice_call_turns_session').on(table.sessionId, table.cursor),
+    // NOTE: `idx_voice_call_turns_session` (session_id, cursor) USED to be
+    // declared here. No query ever used it (pg_stat_user_indexes.idx_scan = 0
+    // across an unbroken stats window; the Supabase advisor flagged it as
+    // unused). Dropped by
+    // migrations/20261003061615226_drop_voice_call_turns_session_index.concurrent.ts.
   ],
 );
 

@@ -14,6 +14,11 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: the doc header already states the contract — the limiter is
+// best-effort per process ("per process per hour"); counts live only to pick
+// the next warning line, never for refusal accounting (that is the
+// request-completion logs and auth audits), so one replica's map is correct
+// and a restart losing counts is acceptable by design.
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
