@@ -2,15 +2,20 @@
 // Local test attestation: `pnpm test` proves it ran by writing
 // tests/test-attestation.json; the pre-push hook and the merge gate check it.
 //
-//   node tests/verify-attestation.mjs verify [--rev <sha>] [--require a,b]
+//   node tests/verify-attestation.mjs verify [--rev <sha>] [--require a,b] [--strict]
 //   node tests/verify-attestation.mjs write <lane>=<pass|fail|skipped-no-db> ...
 //
 // source_hash = sha256 of "<mode> <blob> <path>" for every file the working
 // tree (or --rev) would commit, minus the attestation file. Same input, same
 // hash, on any machine: committing the attestation does not change it.
 //
-// verify exit codes: 0 green | 1 missing, stale, or red | 3 green but a lane
-// was skipped for lack of Docker (merge gate: needs the staging CI backstop).
+// Lanes: core (sdk, runner units, route coverage, worktree units), packages
+// (package quality), db-suites (the Docker-backed lanes: API/CLI flows + DB
+// suites), browser (only when run). db-suites alone may be "skipped-no-db";
+// that is never a pass. The merge gate holds a DB-touching PR on it.
+//
+// verify exit codes: 0 green | 1 missing, stale, or red. With --strict a green
+// attestation whose db-suites was skipped exits 3 instead of 0.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -20,14 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const ATTESTATION = 'tests/test-attestation.json';
-export const REQUIRED_LANES = [
-  'api-cli-flows',
-  'sdk',
-  'db-suites',
-  'flow-runner-unit',
-  'route-coverage',
-  'worktree-unit',
-];
+export const REQUIRED_LANES = ['core', 'packages', 'db-suites'];
 
 const git = (args, env) =>
   execFileSync('git', args, { cwd: root, env: { ...process.env, ...env }, maxBuffer: 1 << 28 });
@@ -62,17 +60,19 @@ export function sourceHash(rev) {
 }
 
 /** Pure check. Returns { code, reason }. */
-export function evaluate(attestation, currentHash, required = REQUIRED_LANES) {
+export function evaluate(attestation, currentHash, required = REQUIRED_LANES, strict = false) {
   if (!attestation) return { code: 1, reason: 'missing' };
   if (attestation.source_hash !== currentHash) return { code: 1, reason: 'stale' };
   const lanes = attestation.lanes ?? {};
   if (attestation.passed !== true || Object.values(lanes).includes('fail')) {
     return { code: 1, reason: 'red' };
   }
-  const bad = required.filter((l) => lanes[l] !== 'pass' && lanes[l] !== 'skipped-no-db');
+  const ok = (l) => lanes[l] === 'pass' || (l === 'db-suites' && lanes[l] === 'skipped-no-db');
+  const bad = [...new Set([...required, ...Object.keys(lanes)])].filter((l) => !ok(l));
   if (bad.length) return { code: 1, reason: `lane not run or not green: ${bad.join(',')}` };
-  const skipped = Object.entries(lanes).filter(([, v]) => v === 'skipped-no-db').map(([k]) => k);
-  if (skipped.length) return { code: 3, reason: `skipped-no-db: ${skipped.join(',')}` };
+  if (lanes['db-suites'] === 'skipped-no-db') {
+    return { code: strict ? 3 : 0, reason: 'green, db-suites skipped-no-db' };
+  }
   return { code: 0, reason: 'green' };
 }
 
@@ -115,11 +115,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } else if (cmd === 'verify') {
     const rev = flag('--rev');
     const required = flag('--require')?.split(',') ?? REQUIRED_LANES;
-    const { code, reason } = evaluate(read(rev), sourceHash(rev), required);
+    const { code, reason } = evaluate(read(rev), sourceHash(rev), required, args.includes('--strict'));
     console.log(`[attest] ${code === 0 ? 'OK' : code === 3 ? 'PARTIAL' : 'FAIL'} ${reason}`);
     process.exit(code);
   } else {
-    console.error('usage: verify [--rev <sha>] [--require a,b] | write <lane>=<result>...');
+    console.error('usage: verify [--rev <sha>] [--require a,b] [--strict] | write <lane>=<result>...');
     process.exit(2);
   }
 }

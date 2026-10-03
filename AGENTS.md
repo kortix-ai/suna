@@ -287,12 +287,13 @@ file the commit would contain, minus the attestation itself), `head`, `passed`,
 per-lane results, `at`. Commit it. The `.githooks/pre-push` hook recomputes the
 hash from the pushed commit and rejects the push when the attestation is stale,
 red, or missing. Never bypass it with `--no-verify`: the merge gate runs
-`pnpm test:verify` (exit `0` green, `1` stale/red/missing, `3` green except
-lanes skipped with no Docker) on the PR head and blocks a merge on `1`. Any
+`pnpm test:verify` on the PR head: exit `0` green, `1` stale/red/missing
+(`--strict` exits `3` when `db-suites` is skipped). Any
 source edit, including a merge of `main`, makes the attestation stale: re-run
-`pnpm test`. With no Docker (a factory sandbox) the `api-cli-flows` and
-`db-suites` lanes record `skipped-no-db`. That is never a pass: exit `3` sends
-the PR to the staging CI backstop instead of auto-merge.
+`pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
+Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
+`skipped-no-db`. It is the only lane that may skip, and it is never a pass:
+the merge gate holds a DB-touching PR (`db-wait`) on it.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
