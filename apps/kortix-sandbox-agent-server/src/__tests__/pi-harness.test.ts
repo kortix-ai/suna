@@ -23,6 +23,7 @@ import type { PiBootState } from '@/harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
+import { onSandboxImage } from './helpers/sandbox-image'
 import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
@@ -135,6 +136,10 @@ function startFakeGateway() {
 let gateway: ReturnType<typeof startFakeGateway>
 let catalogDir: string
 beforeAll(() => {
+  // managedSkillsDir() reads process.env (a process global), so the rig env
+  // object cannot override it: point the overlay at an empty dir, like CI,
+  // which has no /opt/kortix/managed-skills at all.
+  process.env.KORTIX_MANAGED_SKILLS_DIR = join(mkdtempSync(join(tmpdir(), 'pi-managed-skills-')), 'empty')
   gateway = startFakeGateway()
   catalogDir = mkdtempSync(join(tmpdir(), 'pi-catalog-'))
   writeFileSync(join(catalogDir, 'catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', limit: { context: 64_000, output: 4_096 } } } }))
@@ -165,6 +170,9 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
     // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
     KORTIX_PI_PACKAGES_DIR: join(workspace, '.pi-packages'),
+    // The managed-skill overlay the image ships at /opt/kortix/managed-skills
+    // would add image skills to every rig; point it at an empty dir here.
+    KORTIX_MANAGED_SKILLS_DIR: join(workspace, 'managed-skills'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
     KORTIX_PROJECT_TARGET: workspace,
@@ -289,7 +297,11 @@ describe('pi harness', () => {
     const text = await readSse(events, (value) => value.includes('event: session.error') && value.includes('event: session.idle'))
     expect(text).toContain('The session made no progress')
   })
-  test('health reports the pi runtime before and after start', async () => {
+  // This state (repo-less rig, ready) is unreachable on a sandbox image by
+  // design: the host's /etc/pt-env says KORTIX_PROJECT_AUTO_CLONE=1, so a
+  // repo-less workspace is genuinely not ready there. CI (no such file) is the
+  // only box that can run it.
+  test.skipIf(onSandboxImage())('health reports the pi runtime before and after start', async () => {
     const r = await boot({ script: [{ text: 'hi' }], start: false })
     const before = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>
     expect(before.harness).toMatchObject({ id: 'pi', version: expect.stringContaining('pi-agent-core@'), state: 'down', ready: false })
@@ -1874,7 +1886,7 @@ describe('config releases on pi', () => {
     return systemOf(index)
   }
 
-  test('the release decides the skills and the prompt; a base move reaches the running session in place', async () => {
+  test.skipIf(onSandboxImage())('the release decides the skills and the prompt; a base move reaches the running session in place', async () => {
     const one = releaseWith('deploy', 'RELEASE-ONE: the prompt on the base branch.')
     serveRelease(api, one)
     const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }])
@@ -1979,7 +1991,7 @@ describe('config releases on pi', () => {
     expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
   })
 
-  test('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {
+  test.skipIf(onSandboxImage())('config releases off: pi reads the working tree, and the box still advertises the capability', async () => {
     api.respond(FEATURE_DISABLED)
     const r = await bootOnReleases([{ text: 'ok' }])
     const health = (await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>

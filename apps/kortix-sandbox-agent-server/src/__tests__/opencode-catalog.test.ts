@@ -252,6 +252,7 @@ describe('the boot config never touches the network', () => {
     KORTIX_TOKEN: 'k-test',
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_LLM_CATALOG_FILE: join(tmpdir(), 'kortix-absent-catalog.json'),
+    KORTIX_BAKED_LLM_CATALOG_PATH: join(tmpdir(), 'kortix-absent-baked-catalog.json'),
   }
 
   function recordFetches(): string[] {

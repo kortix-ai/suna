@@ -611,7 +611,14 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, oldCli)
     const stub = chunkAwareStub(oldCli, newCli)
 
-    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, {
+      // The chunk store hashes every local source it is handed to decide which
+      // chunks are already on disk. This image's baked agent is a real 110 MB
+      // binary, so hashing it 8 bytes at a time takes ~20 s; CI has no such
+      // file and the store simply skips it. Point the seam at a path that does
+      // not exist so this box behaves like CI.
+      agentBakedPath: join(ws.root, 'no-baked-agent'),
+    })
 
     expect(result.cli).toBe('updated')
     expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)

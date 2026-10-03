@@ -1,4 +1,6 @@
 import { createHmac } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { Config } from '@/lib/config/config'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
@@ -44,8 +46,11 @@ export function testOpenCodeConfig(over: Partial<OpenCodeConfig> = {}): OpenCode
     opencodeInternalPort: 4096,
     opencodeStandbyPort: 4097,
     staticPort: 3211,
-    workspace: '/workspace',
-    projectTarget: '/workspace',
+    // A path that is never a git repo, on CI and on a Kortix sandbox image
+    // alike: the image's /workspace is the session's own checkout, and these
+    // suites exercise the "no repo materialized" path through this default.
+    workspace: join(tmpdir(), 'kortix-agent-server-default-workspace'),
+    projectTarget: join(tmpdir(), 'kortix-agent-server-default-workspace'),
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,

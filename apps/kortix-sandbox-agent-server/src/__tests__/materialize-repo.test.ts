@@ -705,6 +705,11 @@ describe('clone depth', () => {
     const remote = threeCommitOrigin()
     const target = join(mkdtempSync(join(tmpdir(), 'kortix-depth-')), 'workspace')
     tempDirs.push(join(target, '..'))
+    // The image's scaffold at the default path would satisfy this clone via the
+    // delta-fetch path instead of the remote acquisition this test pins; CI has
+    // no scaffold there. Point the seam at an absent path so this box runs the
+    // same path CI does.
+    __setScaffoldRepoPathForTests(join(target, 'no-scaffold.git'))
 
     await materializeRepo(baseConfig({
       autoClone: true,
