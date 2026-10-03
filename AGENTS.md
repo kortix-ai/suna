@@ -294,8 +294,12 @@ The attestation stays green after a merge of `origin/main` that touches other
 files; it goes stale only when a file the PR itself changed is edited after the
 run — then re-run `pnpm test`. Lanes: `core`, `packages`, `db-suites`, plus `browser` when run. With no
 Docker (a factory sandbox) `db-suites` (API/CLI flows + DB suites) records
-`skipped-no-db`. It is the only lane that may skip, and it is never a pass:
-the merge gate holds a DB-touching PR (`db-wait`) on it.
+`skipped-no-db`. A lane may also record its sanctioned environment skip and it
+is never a pass: `db-suites` `skipped-no-db` (no Docker; the merge gate holds
+a DB-touching PR, `db-wait`) and `packages` `skipped-sandbox-image` (a Kortix
+sandbox image whose baked platform state breaks agent-server tests that are
+identical at origin/main; the scheduled Tests run on a clean CI runner is the
+backstop).
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
 2. Verify in your box, with real inputs and outputs. Run the narrowest relevant
