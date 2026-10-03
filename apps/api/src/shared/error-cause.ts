@@ -148,7 +148,7 @@ const AUDIT_CONTENTION_SQLSTATES = new Set([
  *
  * `postgres.js` raises `CONNECTION_CLOSED` / `CONNECTION_ENDED` and Node raises
  * `ECONNREFUSED` / `ECONNRESET` as `code` values that are not SQLSTATEs at all,
- * and prod carries all of them (`connect ECONNREFUSED 3.11.30.79:5432`, `write
+ * and prod carries all of them (`connect ECONNREFUSED <db_ip>:5432`, `write
  * CONNECTION_CLOSED db.…supabase.co:5432`). They mean the same thing as 08006
  * and must be retryable for the same reason.
  */

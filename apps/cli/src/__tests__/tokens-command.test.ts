@@ -177,6 +177,10 @@ describe('kortix tokens', () => {
     ]) {
       expect(h.stdout).toContain(fragment);
     }
+    // Disable is one-way; the only way back is delete + re-create.
+    expect(h.stdout).toContain('cannot authorize; delete and');
+    expect(h.stdout).toContain('re-create to return');
+    expect(h.stdout).not.toContain('reversible only by');
     const bare = await runCommand(runner, [], { cwd: tmp });
     expect(bare.code).toBe(2);
   });

@@ -19,6 +19,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { type SQL, sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import type { DeadlineTarget } from './sandbox-deadline';
 import { contractIdleDeadline } from './sandbox-deadline';
 import {
@@ -237,7 +238,7 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
     const { withDbTransaction } = await import('../shared/db');
     return await withDbTransaction(() => execute(combined));
   } catch (error) {
-    console.warn(
+    logger.warn(
       `[turn-ledger] ${context} failed with its authority write; retrying the authority write alone:`,
       error instanceof Error ? error.message : error,
     );
@@ -254,8 +255,8 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
  * `activeTurns` record, and therefore no deadline grant: `GET .../turn`
  * reported idle for minutes of live streaming, the composer read "not
  * running" over a working session, and a long pty-driven work phase ran on
- * the 15-minute idle tail (live incident 2026-08-20, SampleCo session
- * d1b74954). The daemon now relays `turn_begin` when it observes the root go
+ * the 15-minute idle tail (live incident 2026-08-20, a SampleCo
+ * session). The daemon now relays `turn_begin` when it observes the root go
  * busy; this is that relay's write.
  *
  * Idempotent by construction, so the daemon may relay freely:
