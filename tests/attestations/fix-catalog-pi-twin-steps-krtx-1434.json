@@ -1,0 +1,17 @@
+{
+  "source_hash": "4da524ed6f70eef951eac85205db0d60a1adac05f6849a529d3002fc5d31f64f",
+  "diff_files": [
+    "tests/src/core/catalog.ts",
+    "tests/src/core/flow-steps.ts",
+    "tests/unit/flow-steps.test.ts"
+  ],
+  "diff_hash": "124433212ea9eef483c6dfed0b82dac316b1fc2669cc5e120508409fce4f81e1",
+  "head": "2490d595fedd99bbf18642d7c1471b65acff534d",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-03T21:09:42.934Z"
+}
