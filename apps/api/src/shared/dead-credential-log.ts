@@ -14,6 +14,8 @@ const MAX_TRACKED_MESSAGES = 10_000;
 const deadCredentials = new WeakSet<HTTPException>();
 
 type Window = { loggedAt: number; suppressed: number };
+// replica-local: per-process best-effort warn suppression; a restart or eviction
+// resets it and the next warning simply logs again (see the header note above).
 const windows = new Map<string, Window>();
 
 /** Mark an exception as a dead-credential refusal. Called by the one
