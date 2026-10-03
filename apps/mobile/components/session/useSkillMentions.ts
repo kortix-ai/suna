@@ -12,7 +12,7 @@
  * thin React state wrapper around it, same division as `useMentions.ts`.
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { Command } from '@/lib/session/runtime-data';
 import {
   detectSkillTrigger,
@@ -36,11 +36,9 @@ const SUGGESTION_LIMIT = 20;
 
 export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
   const [trigger, setTrigger] = useState<SkillTriggerMatch | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [mentions, setMentions] = useState<TrackedSkillMention[]>([]);
 
   const isOpen = trigger !== null;
-  const query = trigger?.query ?? '';
 
   const skills = useMemo(
     () =>
@@ -57,13 +55,6 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
       .map((s) => ({ kind: 'skill' as const, label: s.name, description: s.description }));
   }, [skills, trigger]);
 
-  // Clamp index when items change — mirrors `useMentions.ts`.
-  useEffect(() => {
-    if (items.length > 0) {
-      setSelectedIndex((i) => Math.min(i, items.length - 1));
-    }
-  }, [items.length]);
-
   // On React Native we don't get cursor position from onChangeText — the
   // caller passes cursorPos (matches `useMentions.ts`'s own contract).
   const handleTextChange = useCallback(
@@ -74,7 +65,6 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
       const isAlreadyTracked = match ? mentions.some((m) => m.label === match.query) : false;
       if (match && !isAlreadyTracked) {
         setTrigger(match);
-        setSelectedIndex(0);
       } else {
         setTrigger(null);
       }
@@ -93,29 +83,18 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
         prev.some((m) => m.label === item.label) ? prev : [...prev, { label: item.label }],
       );
       setTrigger(null);
-      setSelectedIndex(0);
       return newText;
     },
     [trigger],
   );
 
-  const moveUp = useCallback(() => {
-    setSelectedIndex((i) => Math.max(0, i - 1));
-  }, []);
-
-  const moveDown = useCallback(() => {
-    setSelectedIndex((i) => Math.min(items.length - 1, i + 1));
-  }, [items.length]);
-
   const dismiss = useCallback(() => {
     setTrigger(null);
-    setSelectedIndex(0);
   }, []);
 
   const reset = useCallback(() => {
     setMentions([]);
     setTrigger(null);
-    setSelectedIndex(0);
   }, []);
 
   /** Resolve the current draft at submit time — see `resolveSkillSubmission`'s doc comment. */
@@ -127,14 +106,10 @@ export function useSkillMentions({ commands }: UseSkillMentionsOptions) {
 
   return {
     isOpen,
-    query,
     items,
-    selectedIndex,
     mentions,
     handleTextChange,
     selectSkill,
-    moveUp,
-    moveDown,
     dismiss,
     reset,
     resolveSubmission,

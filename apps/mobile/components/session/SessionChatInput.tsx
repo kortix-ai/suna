@@ -13,19 +13,15 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   View,
   TextInput,
-  Pressable,
   StyleSheet,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
-import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import {
   InfinityIcon,
   StackIcon,
-  XIcon,
-  TerminalIcon,
 } from '@/lib/icons';
 import { Icon } from '@/components/ui/icon';
 import type { SessionPromptPart } from '@kortix/sdk';
@@ -42,9 +38,10 @@ import { useToolFilePreviewStore } from './tool/shared/navigation';
 
 import type { Agent, FlatModel, Command } from '@/lib/session/runtime-data';
 import type { Session } from '@/lib/session/types';
-import { MentionSuggestions, SuggestionCard, SuggestionRow } from './MentionSuggestions';
+import { MentionSuggestions } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { useSkillMentions } from './useSkillMentions';
+import { SlashCommandSuggestions, StagedCommandChip, useSlashCommands } from './useSlashCommands';
 import { suggestionMenuTakesSubmit } from '@/lib/session/skill-mentions';
 import { type SheetRef } from '@/components/kortix/sheet';
 import { AutoContinueSheet, useAutoContinue } from './autocontinue';
@@ -58,7 +55,6 @@ import { modelOptionKey, modelPickerOptions, pickerModelName } from '@/lib/sessi
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type { AttachedFile } from '@/lib/session/attachments';
 
 export interface PromptOptions {
   agent?: string;
@@ -67,7 +63,6 @@ export interface PromptOptions {
 }
 
 export type { TrackedMention } from './useMentions';
-export type { AutoContinueMode } from './autocontinue';
 
 /** The uploaded files a send carries (COR-185): the prompt's file parts and the picked files behind them. */
 export interface SendAttachments {
@@ -219,9 +214,7 @@ function SessionChatInputImpl({
 
   // ── Slash commands ───────────────────────────────────────────────────────
 
-  const [slashFilter, setSlashFilter] = useState<string | null>(null);
-  const [slashIndex, setSlashIndex] = useState(0);
-  const [stagedCommand, setStagedCommand] = useState<Command | null>(null);
+  const slash = useSlashCommands({ commands });
 
   // ── Mentions ────────────────────────────────────────────────────────────
 
@@ -260,19 +253,9 @@ function SessionChatInputImpl({
       cursorRef.current = newText.length;
       mention.handleTextChange(newText, newText.length);
       skill.handleTextChange(newText, newText.length);
-
-      // Slash command detection (disabled while a command is staged)
-      if (!stagedCommand) {
-        const match = newText.match(/^\/(\S*)$/);
-        if (match) {
-          setSlashFilter(match[1]);
-          setSlashIndex(0);
-        } else {
-          setSlashFilter(null);
-        }
-      }
+      slash.handleTextChange(newText);
     },
-    [mention, skill, stagedCommand],
+    [mention, skill, slash],
   );
 
   const handleSelectionChange = useCallback(
@@ -282,46 +265,22 @@ function SessionChatInputImpl({
     [],
   );
 
-  const handleMentionSelect = useCallback(
+  // One menu is open at a time (the slash menu suppresses both), so the
+  // insertion decides between the two hooks the same way the menus render.
+  const applySuggestion = useCallback(
     (item: MentionItem) => {
-      const newText = mention.selectMention(item, text);
+      const newText = mention.isOpen ? mention.selectMention(item, text) : skill.selectSkill(item, text);
       setText(newText);
       cursorRef.current = newText.length;
       setTimeout(() => inputRef.current?.focus(), 50);
     },
-    [mention, text],
+    [mention, skill, text],
   );
 
-  const handleSkillSelect = useCallback(
-    (item: MentionItem) => {
-      const newText = skill.selectSkill(item, text);
-      setText(newText);
-      cursorRef.current = newText.length;
-      setTimeout(() => inputRef.current?.focus(), 50);
-    },
-    [skill, text],
-  );
-
-  const filteredCommands = useMemo(() => {
-    if (slashFilter === null) return [];
-    const q = slashFilter.toLowerCase();
-    return commands.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.description && c.description.toLowerCase().includes(q)),
-    );
-  }, [commands, slashFilter]);
-
-  const handleSelectCommand = useCallback(
-    (cmd: Command) => {
-      setStagedCommand(cmd);
-      setText('');
-      setSlashFilter(null);
-      setSlashIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    },
-    [],
-  );
+  const handleSelectCommand = useCallback((cmd: Command) => {
+    setText(slash.stage(cmd));
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [slash.stage]);
 
   const hasDraftText = text.trim().length > 0;
 
@@ -329,10 +288,17 @@ function SessionChatInputImpl({
     onDraftChange?.(hasDraftText);
   }, [hasDraftText, onDraftChange]);
 
+  // Every send ends the same way: the draft goes, the @ and # state with it.
+  const clearDraft = useCallback(() => {
+    setText('');
+    mention.reset();
+    skill.reset();
+  }, [mention, skill]);
+
   const submitNow = useCallback(async () => {
-    // Slash command popover open — select highlighted command
-    if (slashFilter !== null && filteredCommands.length > 0) {
-      handleSelectCommand(filteredCommands[slashIndex]);
+    // Slash command popover open — select the first (highlighted) command
+    if (slash.isOpen && slash.items.length > 0) {
+      handleSelectCommand(slash.items[0]);
       return;
     }
 
@@ -358,7 +324,7 @@ function SessionChatInputImpl({
       canQueue: Boolean(onEnqueue),
       canAttach,
       modelUnavailable,
-      allowEmpty: Boolean(stagedCommand),
+      allowEmpty: Boolean(slash.staged),
     });
     if (plan === 'noop') return;
     // No model: connect one first. Nothing is sent or queued; the draft,
@@ -369,10 +335,9 @@ function SessionChatInputImpl({
     }
 
     // Staged command — execute it with args
-    if (stagedCommand) {
-      onCommand?.(stagedCommand, trimmedRaw || undefined);
-      setText('');
-      setStagedCommand(null);
+    if (slash.staged) {
+      onCommand?.(slash.staged, trimmedRaw || undefined);
+      setText(slash.unstage());
       return;
     }
     // Both refusals keep the text and the files in the composer.
@@ -400,21 +365,16 @@ function SessionChatInputImpl({
       const skillPlan = skill.resolveSubmission(text, fileCount > 0 || mention.mentions.length > 0);
       if (skillPlan.kind === 'command') {
         onCommand?.(skillPlan.command, skillPlan.args);
-        setText('');
+        clearDraft();
         attachments.clearAfterSend();
-        mention.reset();
-        skill.reset();
         return;
       }
       trimmed = skillPlan.text;
     }
 
     if (auto.dispatch(trimmed)) {
-      setText('');
-      setSlashFilter(null);
-      setSlashIndex(0);
-      mention.reset();
-      skill.reset();
+      clearDraft();
+      slash.reset();
       return;
     }
 
@@ -428,18 +388,14 @@ function SessionChatInputImpl({
       // Keep the draft on a refused write; server acceptance is the durability boundary.
       try {
         await onEnqueue(trimmed, options, trackedMentions);
-        setText('');
-        mention.reset();
-        skill.reset();
+        clearDraft();
       } catch { /* The queue handler reports the refusal. */ }
       return;
     }
 
     if (fileCount === 0) {
       // Clear input immediately for snappy UX
-      setText('');
-      mention.reset();
-      skill.reset();
+      clearDraft();
       onSend(trimmed, options, trackedMentions);
       return;
     }
@@ -456,12 +412,10 @@ function SessionChatInputImpl({
       return;
     }
     setPreparing(false);
-    setText('');
-    mention.reset();
-    skill.reset();
+    clearDraft();
     attachments.clearAfterSend();
     onSend(trimmed, options, trackedMentions, { fileParts: sent.fileParts, files: sent.files });
-  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slashFilter, filteredCommands, slashIndex, handleSelectCommand, stagedCommand, onCommand, auto, attachments]);
+  }, [text, disabled, preparing, onSend, agent, modelKey, variant, mention, skill, isBusy, onEnqueue, canAttach, modelUnavailable, onConnectModel, toast, slash, handleSelectCommand, clearDraft, onCommand, auto, attachments]);
 
   // One submission at a time: two taps inside one frame both read the same
   // draft (the cleared text has not rendered yet), so the second would send
@@ -555,31 +509,11 @@ function SessionChatInputImpl({
   }, []);
 
   const cardHeader =
-    inputSlot || stagedCommand ? (
+    inputSlot || slash.staged ? (
       <View className="gap-2">
         {/* Queue / question slot */}
         {inputSlot}
-        {stagedCommand ? (
-          <View className="flex-row items-center gap-2">
-            <View className="shrink flex-row items-center gap-1.5 rounded-full bg-secondary py-1.5 pl-3 pr-2">
-              <Icon as={TerminalIcon} size={14} className="text-muted-foreground" />
-              <Text variant="small" numberOfLines={1} className="shrink leading-5">
-                /{stagedCommand.name}
-              </Text>
-              <Pressable
-                onPress={() => {
-                  setStagedCommand(null);
-                  setText('');
-                }}
-                hitSlop={11}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove command ${stagedCommand.name}`}
-                className="active:opacity-60">
-                <Icon as={XIcon} size={14} className="text-muted-foreground" />
-              </Pressable>
-            </View>
-          </View>
-        ) : null}
+        {slash.staged ? <StagedCommandChip command={slash.staged} onRemove={() => setText(slash.unstage())} /> : null}
       </View>
     ) : null;
 
@@ -587,30 +521,27 @@ function SessionChatInputImpl({
     <>
       <View>
         {/* Slash command suggestions — above the input */}
-        {slashFilter !== null && filteredCommands.length > 0 && (
+        {slash.isOpen && slash.items.length > 0 && (
           <SlashCommandSuggestions
-            commands={filteredCommands}
-            selectedIndex={slashIndex}
+            commands={slash.items}
             onSelect={handleSelectCommand}
           />
         )}
 
         {/* Mention suggestions — above the input (same condition as frontend) */}
-        {slashFilter === null && mention.isOpen && (mention.items.length > 0 || mention.fileSearchLoading) && (
+        {!slash.isOpen && mention.isOpen && (mention.items.length > 0 || mention.fileSearchLoading) && (
           <MentionSuggestions
             items={mention.items}
-            selectedIndex={mention.selectedIndex}
             isLoading={mention.fileSearchLoading}
-            onSelect={handleMentionSelect}
+            onSelect={applySuggestion}
           />
         )}
 
         {/* Skill suggestions — above the input, opened by "#" (COR-160) */}
-        {slashFilter === null && !mention.isOpen && skill.isOpen && skill.items.length > 0 && (
+        {!slash.isOpen && !mention.isOpen && skill.isOpen && skill.items.length > 0 && (
           <MentionSuggestions
             items={skill.items}
-            selectedIndex={skill.selectedIndex}
-            onSelect={handleSkillSelect}
+            onSelect={applySuggestion}
           />
         )}
 
@@ -626,11 +557,11 @@ function SessionChatInputImpl({
             onChangeText={handleTextChange}
             onSelectionChange={handleSelectionChange}
             onSubmit={handleSubmit}
-            placeholder={stagedCommand ? 'Add details, then send' : placeholder}
+            placeholder={slash.staged ? 'Add details, then send' : placeholder}
             maxLength={10000}
             disabled={disabled || preparing}
             sending={preparing}
-            allowEmptySend={!!stagedCommand}
+            allowEmptySend={!!slash.staged}
             busy={isBusy}
             onStop={onStop}
             header={cardHeader}
@@ -711,24 +642,3 @@ function SessionChatInputImpl({
  * stable callbacks and memoized array props.
  */
 export const SessionChatInput = React.memo(SessionChatInputImpl);
-
-// ─── Slash Command Suggestions ───────────────────────────────────────────────
-
-/** `/` commands: the mention list's card and rows, the command's name only. */
-function SlashCommandSuggestions({
-  commands,
-  selectedIndex,
-  onSelect,
-}: {
-  commands: Command[];
-  selectedIndex: number;
-  onSelect: (cmd: Command) => void;
-}) {
-  return (
-    <SuggestionCard>
-      {commands.map((cmd, i) => (
-        <SuggestionRow key={cmd.name} label={cmd.name} selected={i === selectedIndex} onPress={() => onSelect(cmd)} />
-      ))}
-    </SuggestionCard>
-  );
-}

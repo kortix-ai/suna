@@ -7,7 +7,8 @@
  * Native so it tests with plain `bun test`.
  */
 import type { ComposerAttachmentUpload } from '@/components/session/composer-attachment-tiles';
-import type { PromptAttachmentItem } from '@kortix/sdk';
+import type { AttachedFile } from '@/lib/session/attachments';
+import type { PromptAttachmentItem, PromptAttachmentSnapshot } from '@kortix/sdk';
 
 /** How long `takeForSend` waits for every staged upload to finish. */
 export const SEND_UPLOAD_WAIT_MS = 120_000;
@@ -35,6 +36,52 @@ export function composerUploadState(
     default:
       return undefined;
   }
+}
+
+/** What the tiles need to reach a live upload: the controller's subscription and Retry. */
+export interface ComposerUploadSources {
+  subscribe: (listener: () => void) => () => void;
+  retry: (id: string) => void;
+}
+
+/**
+ * The composer's upload entries, keyed by the file's index in `files`
+ * (`ComposerAttachmentTiles`' shape): a failed upload carries `onRetry`, a
+ * running one a `live` progress source, a finished one nothing, and a file
+ * still being read off the device a plain 0%.
+ *
+ * `snapshot` is read lazily — once per file lookup and again on each
+ * `live.getProgress` — so a progress tick reaches only the tile that draws it,
+ * never the composer. Pure; the React glue (`useComposerAttachments`) re-runs
+ * it when the file list or a phase changes.
+ */
+export function buildComposerUploads(
+  files: ReadonlyArray<AttachedFile>,
+  snapshot: () => PromptAttachmentSnapshot,
+  { subscribe, retry }: ComposerUploadSources,
+): Record<number, ComposerAttachmentUpload> {
+  const result: Record<number, ComposerAttachmentUpload> = {};
+  files.forEach((file, index) => {
+    const id = file.uploadId;
+    const item = id ? snapshot().attachments.find((entry) => entry.id === id) : undefined;
+    const state = composerUploadState(item);
+    if (!state) return;
+    if (state.failed) {
+      result[index] = { ...state, onRetry: () => id && retry(id) };
+    } else if (id) {
+      result[index] = {
+        ...state,
+        live: {
+          subscribe,
+          getProgress: () =>
+            composerUploadState(snapshot().attachments.find((entry) => entry.id === id))?.progress,
+        },
+      };
+    } else {
+      result[index] = state;
+    }
+  });
+  return result;
 }
 
 /** A send tapped while a picked file is still being read off the device. */

@@ -36,7 +36,7 @@ import { monoFont } from '@/components/session/tool/shared/styles';
 import { usePressScale } from './use-press-scale';
 
 /** `size-28`. */
-export const TILE_SIZE = webSpace(28);
+const TILE_SIZE = webSpace(28);
 /** `rounded-md`. */
 const TILE_RADIUS = 8;
 

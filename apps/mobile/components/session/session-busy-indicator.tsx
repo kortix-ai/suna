@@ -75,7 +75,7 @@ const rollOut: EntryExitAnimationFunction = () => {
   };
 };
 
-export interface SessionBusyIndicatorProps {
+interface SessionBusyIndicatorProps {
   /** The live status phrase. Empty → "Thinking". */
   statusText?: string;
   /** Time on the current status, e.g. "24s". Never fold it into `statusText`. */

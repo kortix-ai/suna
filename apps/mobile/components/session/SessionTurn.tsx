@@ -20,8 +20,8 @@
  * status, so only it can be working or show a retry.
  *
  * Which parts land in which section is decided by `lib/session/turn-body.ts`
- * and the SDK's `segmentTurn`. The rows live beside this file: turn/* and
- * tool/*.
+ * and the SDK's `segmentTurn`; `useTurnData` runs those selectors. The rows
+ * live beside this file: turn/* and tool/*.
  */
 
 import React, { useMemo } from 'react';
@@ -41,6 +41,8 @@ import {
   segmentTurn,
   shouldShowToolPart,
   type Part as SdkPart,
+  type RetryInfo,
+  type Segment,
   type ToolPart as SdkToolPart,
 } from '@kortix/sdk';
 import type {
@@ -94,76 +96,37 @@ const SMALL_STACK_GAP = webSpace(2);
 /** One stable reference for every burst (`ActivityBurst` memo compares it). */
 const displayPath = (path: string) => toDisplayPath(path);
 
-// ─── SessionTurn ─────────────────────────────────────────────────────────────
+// ─── Derived turn data ───────────────────────────────────────────────────────
 
-interface SessionTurnProps {
+interface TurnDataProps {
   turn: Turn;
-  /**
-   * True for the session's working turn (`resolveWorkingTurn`). Only it can be
-   * working, and only it reads the retry frame (web `isWorkingTurn`).
-   */
+  /** True for the session's working turn — only it can be working. */
   isWorkingTurn: boolean;
-  /** Only the working turn receives these; other turns get stable defaults. */
   sessionStatus?: SessionStatus;
   isBusy: boolean;
-  /**
-   * The working turn's answer is complete while prompts wait below it: draw no
-   * busy row here (web `suppressBusyIndicator`); the transcript draws it.
-   */
-  suppressBusyIndicator?: boolean;
   /** The session the turn belongs to — tool rows read its permissions. */
   sessionId?: string;
   /** Pending permissions of the session (one stable store array). */
-  permissions?: PermissionRequest[];
-  pendingQuestions?: QuestionRequest[];
-  agentNames?: string[];
-  onFileMention?: (path: string) => void;
-  onSessionMention?: (sessionId: string) => void;
-  /** Answers a permission prompt under a tool row. Must be stable. */
-  onPermissionReply?: (requestId: string, reply: PermissionReply) => void;
+  permissions: PermissionRequest[];
+  pendingQuestions: QuestionRequest[];
   commands?: Command[];
-  /** User-message edit + queue state — see `UserMessage` in ./turn/user-message. */
-  editingText?: string | null;
-  editPending?: boolean;
-  onEditStart?: (messageId: string, text: string) => void;
-  onEditCancel?: () => void;
-  onEditSend?: (messageId: string, text: string) => void;
-  rewindDisabled?: boolean;
-  queueState?: QueuedPromptState | null;
-  uploadStatus?: UserMessageUploadStatus;
-  /** Who sent this turn's prompt. Set only in a session with two or more people. */
-  sender?: AvatarPerson | null;
 }
 
-const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
-const EMPTY_PERMISSIONS: PermissionRequest[] = Object.freeze([]) as unknown as PermissionRequest[];
-
-function SessionTurnImpl({
+/**
+ * Everything the turn body renders from, memoized with the dependencies the
+ * inline block had before the extraction. Pure rules come from
+ * `lib/session/turn-body.ts`.
+ */
+function useTurnData({
   turn,
   isWorkingTurn,
   sessionStatus,
   isBusy,
-  suppressBusyIndicator = false,
   sessionId,
-  permissions = EMPTY_PERMISSIONS,
-  pendingQuestions = EMPTY_QUESTIONS,
-  agentNames,
-  onFileMention,
-  onSessionMention,
-  onPermissionReply,
+  permissions,
+  pendingQuestions,
   commands,
-  editingText,
-  editPending,
-  onEditStart,
-  onEditCancel,
-  onEditSend,
-  rewindDisabled,
-  queueState,
-  uploadStatus,
-  sender,
-}: SessionTurnProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+}: TurnDataProps) {
   const bodyTurn = turn as unknown as TurnBodyTurn;
 
   // Mobile's wire types are a local copy of the SDK's; the turn rules take SDK parts.
@@ -253,6 +216,277 @@ function SessionTurnImpl({
       .join('\n\n');
   }, [inlineItems, response]);
 
+  // ── Shell mode: the one shell call is the whole answer ──
+  const shellModePart = useMemo(() => getShellModePart(turn as never) as SdkToolPart | undefined, [turn]);
+
+  return {
+    working,
+    hasSteps,
+    hasReasoning,
+    hasAssistantContent,
+    response,
+    answeredQuestions,
+    inlineItems,
+    showInlineContent,
+    segments,
+    streamingTextId,
+    turnError,
+    errorIsAbort,
+    errorDetails,
+    retryInfo,
+    retryMessage,
+    retrySecondsLeft,
+    statusText,
+    elapsedLabel,
+    compactionInfo,
+    costInfo,
+    commandForTurn,
+    copyText,
+    shellModePart,
+  };
+}
+
+// ─── Body sections ───────────────────────────────────────────────────────────
+
+/** 2. Segments — bursts, standalone tool rows, and prose between bursts. */
+function TurnSegments({
+  segments,
+  working,
+  hasSteps,
+  streamingTextId,
+  isDark,
+  sessionId,
+  permissions,
+  onFileMention,
+  onPermissionReply,
+}: {
+  segments: Segment[];
+  working: boolean;
+  hasSteps: boolean;
+  streamingTextId: string | undefined;
+  isDark: boolean;
+  sessionId?: string;
+  permissions: PermissionRequest[];
+  onFileMention?: (path: string) => void;
+  onPermissionReply?: (requestId: string, reply: PermissionReply) => void;
+}) {
+  return (
+    <TurnLiveContext.Provider value={working}>
+      <View style={{ gap: SEGMENT_STACK_GAP }}>
+        {segments.map((segment, index) => {
+          if (segment.kind === 'burst') {
+            return (
+              <ActivityBurst
+                key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
+                segment={segment}
+                turnLive={working}
+                isTrailing={index === segments.length - 1}
+                sessionId={sessionId}
+                onOpenFile={onFileMention}
+                toDisplayPath={displayPath}
+                onPermissionReply={onPermissionReply}
+              />
+            );
+          }
+          if (segment.kind === 'standalone') {
+            if (!shouldShowToolPart(segment.part)) return null;
+            return (
+              <ToolPartRenderer
+                key={segment.part.id}
+                part={segment.part}
+                sessionId={sessionId}
+                permission={getPermissionForTool(permissions, segment.part.callID)}
+                onPermissionReply={onPermissionReply}
+              />
+            );
+          }
+          // A text-only turn renders its response below instead.
+          if (!hasSteps) return null;
+          const text = segment.part.text?.trim();
+          if (!text) return null;
+          return (
+            <TextPartBlock
+              key={segment.part.id}
+              text={text}
+              isDark={isDark}
+              isStreaming={segment.part.id === streamingTextId}
+            />
+          );
+        })}
+      </View>
+    </TurnLiveContext.Provider>
+  );
+}
+
+/**
+ * 3. The response of a text-only turn — streaming (chrome-off command card)
+ * and finished are the same component, so the reply keeps its views when the
+ * turn ends instead of remounting (a re-parse, re-highlight and image reload).
+ */
+function TurnReply({
+  response,
+  isStreaming,
+  isDark,
+  command,
+}: {
+  response: string;
+  isStreaming: boolean;
+  isDark: boolean;
+  command?: { name: string };
+}) {
+  if (!response) return null;
+  const reply = <TextPartBlock text={response} isDark={isDark} isStreaming={isStreaming} />;
+  // A slash-command reply streams in its card with the chrome off.
+  return command ? (
+    <CommandOutputCard name={command.name} chrome={!isStreaming}>
+      {reply}
+    </CommandOutputCard>
+  ) : (
+    reply
+  );
+}
+
+/** 4. Busy slot — retry display, then the working indicator. */
+function TurnBusySlot({
+  retryInfo,
+  retryMessage,
+  retrySecondsLeft,
+  statusText,
+  elapsedLabel,
+  sessionId,
+}: {
+  retryInfo: RetryInfo | undefined;
+  retryMessage: string | undefined;
+  retrySecondsLeft: number;
+  statusText?: string;
+  elapsedLabel?: string;
+  sessionId?: string;
+}) {
+  return (
+    <View style={{ gap: SMALL_STACK_GAP }}>
+      {retryInfo && retryMessage ? (
+        <SessionRetryDisplay
+          message={retryMessage}
+          attempt={retryInfo.attempt}
+          secondsLeft={retrySecondsLeft}
+          details={retryInfo.details}
+        />
+      ) : null}
+      <SessionBusyIndicator
+        sessionId={sessionId}
+        statusText={statusText}
+        elapsedLabel={elapsedLabel}
+        retryLabel={retryInfo ? BUSY_RETRY_LABEL : undefined}
+      />
+    </View>
+  );
+}
+
+// ─── SessionTurn ─────────────────────────────────────────────────────────────
+
+interface SessionTurnProps {
+  turn: Turn;
+  /**
+   * True for the session's working turn (`resolveWorkingTurn`). Only it can be
+   * working, and only it reads the retry frame (web `isWorkingTurn`).
+   */
+  isWorkingTurn: boolean;
+  /** Only the working turn receives these; other turns get stable defaults. */
+  sessionStatus?: SessionStatus;
+  isBusy: boolean;
+  /**
+   * The working turn's answer is complete while prompts wait below it: draw no
+   * busy row here (web `suppressBusyIndicator`); the transcript draws it.
+   */
+  suppressBusyIndicator?: boolean;
+  /** The session the turn belongs to — tool rows read its permissions. */
+  sessionId?: string;
+  /** Pending permissions of the session (one stable store array). */
+  permissions?: PermissionRequest[];
+  pendingQuestions?: QuestionRequest[];
+  agentNames?: string[];
+  onFileMention?: (path: string) => void;
+  onSessionMention?: (sessionId: string) => void;
+  /** Answers a permission prompt under a tool row. Must be stable. */
+  onPermissionReply?: (requestId: string, reply: PermissionReply) => void;
+  commands?: Command[];
+  /** User-message edit + queue state — see `UserMessage` in ./turn/user-message. */
+  editingText?: string | null;
+  editPending?: boolean;
+  onEditStart?: (messageId: string, text: string) => void;
+  onEditCancel?: () => void;
+  onEditSend?: (messageId: string, text: string) => void;
+  rewindDisabled?: boolean;
+  queueState?: QueuedPromptState | null;
+  uploadStatus?: UserMessageUploadStatus;
+  /** Who sent this turn's prompt. Set only in a session with two or more people. */
+  sender?: AvatarPerson | null;
+}
+
+const EMPTY_QUESTIONS: QuestionRequest[] = Object.freeze([]) as unknown as QuestionRequest[];
+const EMPTY_PERMISSIONS: PermissionRequest[] = Object.freeze([]) as unknown as PermissionRequest[];
+
+function SessionTurnImpl({
+  turn,
+  isWorkingTurn,
+  sessionStatus,
+  isBusy,
+  suppressBusyIndicator = false,
+  sessionId,
+  permissions = EMPTY_PERMISSIONS,
+  pendingQuestions = EMPTY_QUESTIONS,
+  agentNames,
+  onFileMention,
+  onSessionMention,
+  onPermissionReply,
+  commands,
+  editingText,
+  editPending,
+  onEditStart,
+  onEditCancel,
+  onEditSend,
+  rewindDisabled,
+  queueState,
+  uploadStatus,
+  sender,
+}: SessionTurnProps) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const {
+    working,
+    hasSteps,
+    hasReasoning,
+    hasAssistantContent,
+    response,
+    answeredQuestions,
+    inlineItems,
+    showInlineContent,
+    segments,
+    streamingTextId,
+    turnError,
+    errorIsAbort,
+    errorDetails,
+    retryInfo,
+    retryMessage,
+    retrySecondsLeft,
+    statusText,
+    elapsedLabel,
+    compactionInfo,
+    costInfo,
+    commandForTurn,
+    copyText,
+    shellModePart,
+  } = useTurnData({
+    turn,
+    isWorkingTurn,
+    sessionStatus,
+    isBusy,
+    sessionId,
+    permissions,
+    pendingQuestions,
+    commands,
+  });
+
   // A long run whose prompt is not loaded has a stand-in prompt with no parts:
   // render its replies without a prompt bubble.
   const userMessage = turn.partial ? null : (
@@ -276,7 +510,6 @@ function SessionTurnImpl({
   );
 
   // ── Shell mode: the one shell call is the whole answer ──
-  const shellModePart = useMemo(() => getShellModePart(turn as never) as SdkToolPart | undefined, [turn]);
   if (shellModePart) {
     return (
       <View style={{ gap: TURN_STACK_GAP }}>
@@ -330,67 +563,35 @@ function SessionTurnImpl({
   // 2. Segments
   if ((working || hasSteps || hasReasoning) && hasAssistantContent) {
     body.push(
-      <TurnLiveContext.Provider key="segments" value={working}>
-        <View style={{ gap: SEGMENT_STACK_GAP }}>
-          {segments.map((segment, index) => {
-            if (segment.kind === 'burst') {
-              return (
-                <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-                  segment={segment}
-                  turnLive={working}
-                  isTrailing={index === segments.length - 1}
-                  sessionId={sessionId}
-                  onOpenFile={onFileMention}
-                  toDisplayPath={displayPath}
-                  onPermissionReply={onPermissionReply}
-                />
-              );
-            }
-            if (segment.kind === 'standalone') {
-              if (!shouldShowToolPart(segment.part)) return null;
-              return (
-                <ToolPartRenderer
-                  key={segment.part.id}
-                  part={segment.part}
-                  sessionId={sessionId}
-                  permission={getPermissionForTool(permissions, segment.part.callID)}
-                  onPermissionReply={onPermissionReply}
-                />
-              );
-            }
-            // A text-only turn renders its response below instead.
-            if (!hasSteps) return null;
-            const text = segment.part.text?.trim();
-            if (!text) return null;
-            return (
-              <TextPartBlock
-                key={segment.part.id}
-                text={text}
-                isDark={isDark}
-                isStreaming={segment.part.id === streamingTextId}
-              />
-            );
-          })}
-        </View>
-      </TurnLiveContext.Provider>,
+      <TurnSegments
+        key="segments"
+        segments={segments}
+        working={working}
+        hasSteps={hasSteps}
+        streamingTextId={streamingTextId}
+        isDark={isDark}
+        sessionId={sessionId}
+        permissions={permissions}
+        onFileMention={onFileMention}
+        onPermissionReply={onPermissionReply}
+      />,
     );
   }
 
   // 3. Response / inline content
-  // The streaming reply and the finished reply share the key "response" and
-  // the same element tree, so the reply keeps its views when the turn ends
-  // instead of remounting (a re-parse, re-highlight and image reload). A
-  // slash-command reply streams in its card with the chrome off.
-  if (working && !hasSteps && !showInlineContent && response) {
+  // The streaming reply and the finished reply are the same `TurnReply`
+  // element under the key "response", so the reply keeps its views when the
+  // turn ends instead of remounting (a re-parse, re-highlight and image
+  // reload). A slash-command reply streams in its card with the chrome off.
+  if (!hasSteps && !showInlineContent && response) {
     body.push(
-      commandForTurn ? (
-        <CommandOutputCard key="response" name={commandForTurn.name} chrome={false}>
-          <TextPartBlock text={response} isDark={isDark} isStreaming />
-        </CommandOutputCard>
-      ) : (
-        <TextPartBlock key="response" text={response} isDark={isDark} isStreaming />
-      ),
+      <TurnReply
+        key="response"
+        response={response}
+        isStreaming={working}
+        isDark={isDark}
+        command={commandForTurn}
+      />,
     );
   }
   if (showInlineContent && inlineItems) {
@@ -415,27 +616,14 @@ function SessionTurnImpl({
         })}
       </View>,
     );
-  } else {
-    if (!working && !hasSteps && response) {
-      body.push(
-        commandForTurn ? (
-          <CommandOutputCard key="response" name={commandForTurn.name}>
-            <TextPartBlock text={response} isDark={isDark} />
-          </CommandOutputCard>
-        ) : (
-          <TextPartBlock key="response" text={response} isDark={isDark} />
-        ),
-      );
-    }
-    if (!hasSteps && !working && !hasReasoning && answeredQuestions.length > 0) {
-      body.push(
-        <View key="answered" style={{ marginTop: SEGMENT_STACK_GAP, gap: SMALL_STACK_GAP }}>
-          {answeredQuestions.map((part) => (
-            <ToolPartRenderer key={part.id} part={part} sessionId={sessionId} turnLive={false} />
-          ))}
-        </View>,
-      );
-    }
+  } else if (!hasSteps && !working && !hasReasoning && answeredQuestions.length > 0) {
+    body.push(
+      <View key="answered" style={{ marginTop: SEGMENT_STACK_GAP, gap: SMALL_STACK_GAP }}>
+        {answeredQuestions.map((part) => (
+          <ToolPartRenderer key={part.id} part={part} sessionId={sessionId} turnLive={false} />
+        ))}
+      </View>,
+    );
   }
 
   // 4. Busy slot — retry display, then the working indicator
@@ -447,22 +635,15 @@ function SessionTurnImpl({
     })
   ) {
     body.push(
-      <View key="busy" style={{ gap: SMALL_STACK_GAP }}>
-        {retryInfo && retryMessage ? (
-          <SessionRetryDisplay
-            message={retryMessage}
-            attempt={retryInfo.attempt}
-            secondsLeft={retrySecondsLeft}
-            details={retryInfo.details}
-          />
-        ) : null}
-        <SessionBusyIndicator
-          sessionId={sessionId}
-          statusText={statusText}
-          elapsedLabel={elapsedLabel}
-          retryLabel={retryInfo ? BUSY_RETRY_LABEL : undefined}
-        />
-      </View>,
+      <TurnBusySlot
+        key="busy"
+        retryInfo={retryInfo}
+        retryMessage={retryMessage}
+        retrySecondsLeft={retrySecondsLeft}
+        statusText={statusText}
+        elapsedLabel={elapsedLabel}
+        sessionId={sessionId}
+      />,
     );
   }
 

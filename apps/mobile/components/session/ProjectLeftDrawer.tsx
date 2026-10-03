@@ -34,9 +34,14 @@
  *   Long press opens `SessionActionsSheet` (Rename, Share, Restart sandbox,
  *   Stop, Delete) over the drawer — the drawer stays open, the same
  *   exception the switcher row makes.
- * - Pinned bottom bar over a fade of the drawer surface: the user's profile
- *   photo in its plan's gradient ring (`PlanRingAvatar`; → the Account page at
- *   /projects/[id]/account) · New session (large primary pill).
+ * - Pinned bottom bar over a fade of the drawer surface (`DrawerBottomBar`):
+ *   the user's profile photo in its plan's gradient ring (`PlanRingAvatar`;
+ *   → the Account page at /projects/[id]/account) · New session (large
+ *   primary pill).
+ *
+ * The data wiring — the three paged session queries, the needs-you merge,
+ * `buildDrawerItems`, list state, refresh/load-more and the open refetch —
+ * lives in `use-project-drawer-sessions` (KRTX-1250).
  *
  * Every action closes the drawer first, except the switcher row: it opens a
  * sheet over the drawer, and only a pick inside that sheet closes the drawer.
@@ -52,7 +57,6 @@
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,7 +65,6 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   MagnifyingGlassIcon,
-  NavigationArrowIcon,
   SealCheckIcon,
 } from '@/lib/icons';
 import { useDrawerProgress } from 'react-native-drawer-layout';
@@ -85,13 +88,8 @@ import { SubsessionTreeMemory } from '@/components/session/SessionSubsessionTree
 import { NavPill, ReviewCountPill, SwitcherRow } from './DrawerNavRows';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { SessionChildren, type SessionChildrenProps } from '@/components/session/SessionTreeParts';
-import { PlanRingAvatar } from '@/components/settings/PlanRingAvatar';
-import { useActivePlanName } from '@/hooks/useActivePlanName';
-import { useProfileEditor } from '@/hooks/useProfileEditor';
 import { haptics } from '@/lib/haptics';
-import { useRefetchOnOpen } from '@/components/session/use-refetch-on-open';
-import { useAccounts, useProject, useProjectSessionsPaged } from '@/lib/projects/hooks';
-import { sessionListState, shouldLoadMoreSessions } from '@/lib/session/session-pages';
+import { useAccounts, useProject } from '@/lib/projects/hooks';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import {
   PROJECT_ACCOUNT_ROUTE,
@@ -99,30 +97,22 @@ import {
   PROJECT_SESSIONS_ROUTE,
   type ProjectDrawerRoute,
 } from '@/lib/session/project-stack';
-import { buildDrawerItems, isParentExpanded, rootRowsOnly, type DrawerItem, type DrawerSectionId } from '@/lib/session/session-tree';
+import type { DrawerItem } from '@/lib/session/session-tree';
 import { parentKey, sectionKey, useSessionTreeStore } from '@/stores/session-tree-store';
 import { useAuthContext } from '@/contexts';
 import type { SessionNeedsYou } from '@/lib/session/needs-you';
 import { useTabStore } from '@/stores/tab-store';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME, withAlpha } from '@/lib/utils/theme';
+import { DrawerBottomBar, barListBottomPadding } from './DrawerBottomBar';
+import { useProjectDrawerSessions } from './use-project-drawer-sessions';
 
-/** `Button size="lg"` height: the New session pill and the avatar match it. */
-const BAR_CONTROL_HEIGHT = 44;
-/** Gap between the bottom bar's controls and the safe-area edge. */
-const BAR_BOTTOM_GAP = 16;
-/** How far the bottom bar's fade reaches above its controls. */
-const BAR_FADE_ABOVE = 36;
-/** Space between the last scroll row and the bottom bar's controls. */
-const LIST_END_GAP = 16;
 /**
  * Height of the fade at the top of the session list. It also is the scroll
  * distance over which the fade appears: invisible at rest, so the first row is
  * never dimmed, fully shown once a row has scrolled under the pills.
  */
 const LIST_TOP_FADE_HEIGHT = 24;
-/** The open refetch waits out the drawer's 420ms slide (`DRAWER_OPEN`). */
-const DRAWER_REFETCH_DELAY_MS = 450;
 /** Drawer progress at or below this counts as closed (fully off screen). */
 const DRAWER_CLOSED_PROGRESS = 0.01;
 
@@ -157,7 +147,7 @@ function DrawerSessionChildren(props: Omit<SessionChildrenProps, 'showLoader'>) 
 
 // ─── ProjectLeftDrawer ───────────────────────────────────────────────────────
 
-export interface ProjectLeftDrawerProps {
+interface ProjectLeftDrawerProps {
   projectId: string;
   /**
    * The project session on screen (an open thread or a connecting session).
@@ -218,10 +208,6 @@ const drawerItemKey = (item: DrawerItem) =>
     : item.kind === 'more'
       ? `more:${item.section}`
       : `${item.kind}:${item.session.session_id}`;
-/** Automated and Shared page size: small, they load only to show a header or a first screen. */
-const SIDE_SECTION_PAGE_SIZE = 20;
-/** Shared empty map: a fresh one per render would re-derive the lists. */
-const EMPTY_NEEDS_YOU: ReadonlyMap<string, SessionNeedsYou> = new Map();
 
 /**
  * Memoized: ProjectScreen re-renders it on every poll and sheet change, and
@@ -233,7 +219,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   activeRuntimeSessionId = null,
   activeParentSessionId = null,
   reviewNeedsYouCount = 0,
-  needsYouBySession = EMPTY_NEEDS_YOU,
+  needsYouBySession,
   onNewSession,
   onOpenProjectSession,
   onOpenSubsession,
@@ -246,11 +232,6 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-
-  // The drawer stays mounted while a root screen (Billing, a settings page)
-  // covers the project.
-  // Poll for provisioning rows only while the project screen is focused.
-  const isFocused = useIsFocused();
 
   // The switcher row's project tile, name, and account line: the project's
   // own account, not necessarily the globally selected one — a deep link can
@@ -266,167 +247,29 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   }, [onOpenSwitcher]);
   // KRTX-639: three independent paged queries of top-level sessions, by who
   // started the run. Children load per parent, on expand (`SessionChildren`).
+  // The hook owns the data wiring: the queries, the needs-you merge, the list
+  // state, refresh/load-more and the open refetch (KRTX-1250).
+  const {
+    items,
+    needsYouSessions,
+    sessionsListState,
+    refreshing,
+    isFetchingNextPage,
+    sharedFetchingNext,
+    automatedFetchingNext,
+    fetchNextShared,
+    fetchNextAutomated,
+    handleRefresh,
+    handleRetrySessions,
+    handleEndReached,
+    isExpanded,
+  } = useProjectDrawerSessions({ projectId, open, activeParentSessionId, needsYouBySession });
   const viewerId = useAuthContext().user?.id ?? null;
   const starterOf = useSessionStarterOf(viewerId);
-  const choices = useSessionTreeStore((state) => state.choices);
   const setChoice = useSessionTreeStore((state) => state.setChoice);
-  const sectionOpen = (id: DrawerSectionId) => choices[sectionKey(projectId, id)] ?? id === 'sessions';
-  const sharedOpen = sectionOpen('shared');
-  const automatedOpen = sectionOpen('automated');
-  // Polls only while the drawer is open: its content stays mounted while
-  // closed, every poll result re-rendered it (~2 renders per 3 s), and the
-  // open refetch below already shows a fresh list.
-  const mine = useProjectSessionsPaged(projectId, { poll: isFocused && open, parent: 'root', startedBy: 'me' });
-  // Shared loads always (its header hides when it is empty); Automated only
-  // once opened: a project can hold hundreds of automated runs.
-  const shared = useProjectSessionsPaged(projectId, {
-    poll: false,
-    parent: 'root',
-    startedBy: 'others',
-    limit: SIDE_SECTION_PAGE_SIZE,
-  });
-  const automated = useProjectSessionsPaged(projectId, {
-    poll: false,
-    parent: 'root',
-    startedBy: 'automated',
-    limit: SIDE_SECTION_PAGE_SIZE,
-    enabled: automatedOpen,
-  });
-  const {
-    isPending: projectSessionsPending,
-    isError: projectSessionsErrored,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = mine;
-  // The side sections' "Show more" rows. `fetchNextPage` is stable; the query
-  // objects are new on every render, so the list reads these fields, not them.
-  const sharedFetchingNext = shared.isFetchingNextPage;
-  const automatedFetchingNext = automated.isFetchingNextPage;
-  const fetchNextShared = shared.fetchNextPage;
-  const fetchNextAutomated = automated.fetchNextPage;
-  const mineRoots = useMemo(() => rootRowsOnly(mine.sessions), [mine.sessions]);
-  const sharedRoots = useMemo(() => rootRowsOnly(shared.sessions), [shared.sessions]);
-  const automatedRoots = useMemo(() => rootRowsOnly(automated.sessions), [automated.sessions]);
-  // Depends on the `refetch` functions (stable), not the query objects (new on
-  // every render): the callback must not change on each fetch's re-render.
-  const refetchMine = mine.refetch;
-  const refetchShared = shared.refetch;
-  const refetchAutomated = automated.refetch;
-  const refetchAll = useCallback(async () => {
-    await Promise.all([
-      refetchMine(),
-      refetchShared(),
-      automatedOpen ? refetchAutomated() : Promise.resolve(),
-    ]);
-  }, [refetchMine, refetchShared, refetchAutomated, automatedOpen]);
-  // Sessions that wait on the user, newest wait first: their own group above
-  // the list, from every loaded top-level row. A session not loaded yet (an
-  // older page, a child) is left to the Review row's count.
-  const needsYouSessions = useMemo(
-    () =>
-      [...mineRoots, ...sharedRoots, ...automatedRoots]
-        .filter((session) => needsYouBySession.has(session.session_id))
-        .sort(
-          (a, b) =>
-            (needsYouBySession.get(b.session_id)?.newestAt ?? 0) -
-            (needsYouBySession.get(a.session_id)?.newestAt ?? 0)
-        ),
-    [mineRoots, sharedRoots, automatedRoots, needsYouBySession]
-  );
-  const withoutNeedsYou = useCallback(
-    (rows: ProjectSession[]) => rows.filter((session) => !needsYouBySession.has(session.session_id)),
-    [needsYouBySession]
-  );
-  const isExpanded = useCallback(
-    (session: ProjectSession) =>
-      isParentExpanded({
-        explicit: choices[parentKey(projectId, session.session_id)],
-        isActiveParent: session.session_id === activeParentSessionId,
-        searchMatch: undefined,
-      }),
-    [choices, projectId, activeParentSessionId]
-  );
-  const items = useMemo(
-    () =>
-      buildDrawerItems(
-        [
-          {
-            id: 'sessions',
-            title: 'Sessions',
-            rows: withoutNeedsYou(mineRoots),
-            open: sectionOpen('sessions'),
-            // No bare heading over nothing: the state block below (loading,
-            // error, empty) speaks for an empty list, and Needs you for a
-            // list whose every row waits on the user.
-            hidden: withoutNeedsYou(mineRoots).length === 0,
-            hasMore: hasNextPage,
-          },
-          {
-            id: 'shared',
-            title: 'Shared',
-            rows: withoutNeedsYou(sharedRoots),
-            open: sharedOpen,
-            hidden: sharedRoots.length === 0,
-            hasMore: shared.hasNextPage,
-          },
-          {
-            id: 'automated',
-            title: 'Automated',
-            rows: withoutNeedsYou(automatedRoots),
-            open: automatedOpen,
-            hidden: false,
-            hasMore: automated.hasNextPage,
-          },
-        ],
-        isExpanded
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
-    [mineRoots, sharedRoots, automatedRoots, withoutNeedsYou, sharedOpen, automatedOpen, choices, projectId, hasNextPage, shared.hasNextPage, automated.hasNextPage, isExpanded]
-  );
-  // loading / error / empty / rows — shared with the Sessions page
-  // (lib/session/session-pages) so a failed fetch, or a first load paused
-  // offline, never reads as "No sessions yet" (COR-146). Judged on the
-  // viewer's own list; Shared and Automated add rows, never a verdict.
-  const sessionsListState = sessionListState({
-    isPending: projectSessionsPending,
-    isError: projectSessionsErrored,
-    hasSessions: mineRoots.length > 0 || sharedRoots.length > 0 || automatedRoots.length > 0,
-  });
-  // Only a pull shows the refresh spinner; a background poll does not.
-  const [refreshing, setRefreshing] = useState(false);
-  const handleRefresh = useCallback(() => {
-    setRefreshing(true);
-    void refetchAll().finally(() => setRefreshing(false));
-  }, [refetchAll]);
-  // The drawer stays mounted while closed, so its query never remounts: each
-  // open refetches the loaded pages in the background (no spinner), so a
-  // session created or renamed elsewhere shows without a pull. After the
-  // slide (open is 420ms): a response landing mid-slide re-rendered the list
-  // while it moved (Jay, 2026-09-27: "not smooth").
-  useRefetchOnOpen(open, refetchAll, DRAWER_REFETCH_DELAY_MS);
-  const handleRetrySessions = useCallback(() => {
-    haptics.tap();
-    void refetchAll();
-  }, [refetchAll]);
-  const handleEndReached = useCallback(() => {
-    if (!sectionOpen('sessions')) return;
-    if (shouldLoadMoreSessions({ hasNextPage, isFetchingNextPage, isRefreshing: refreshing })) {
-      void fetchNextPage();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionOpen reads `choices`
-  }, [choices, projectId, hasNextPage, isFetchingNextPage, refreshing, fetchNextPage]);
-  // The Account page's photo and name, so both surfaces show the same person.
-  const profile = useProfileEditor();
-  // The avatar's ring colour.
-  const planName = useActivePlanName();
 
-  // The bar's controls sit 16pt above the safe-area edge (home indicator).
-  const barBottom = insets.bottom + BAR_BOTTOM_GAP;
-  // The fade starts BAR_FADE_ABOVE over the controls and reaches the screen edge.
-  const fadeHeight = barBottom + BAR_CONTROL_HEIGHT + BAR_FADE_ABOVE;
-  // The list scrolls under the fade; its last row must rest above the controls.
-  const listBottomPadding = barBottom + BAR_CONTROL_HEIGHT + LIST_END_GAP;
+  // The list scrolls under the bottom bar's fade; its last row must rest above the controls.
+  const listBottomPadding = barListBottomPadding(insets.bottom);
 
   // Top fade: follows the scroll offset on the UI thread (no re-render per frame).
   const listScrollY = useSharedValue(0);
@@ -661,7 +504,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
                 session={session}
                 shown={session.session_id === activeProjectSessionId}
                 activeRuntimeId={session.session_id === activeProjectSessionId ? activeRuntimeSessionId : null}
-                needsYou={needsYouBySession.get(session.session_id)}
+                needsYou={needsYouBySession?.get(session.session_id)}
                 onPress={handleOpenProjectSession}
                 onLongPress={onSessionActions}
                 onPressSubsession={handleOpenSubsession}
@@ -727,11 +570,10 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     [showPageLoader, legacyChats]
   );
 
-  // The drawer surface (bg-chrome-background), transparent → opaque, so rows
-  // fade out under the bottom bar instead of stopping at a hard edge.
+  // The drawer surface (bg-chrome-background): the switcher ring, the top
+  // fade below and the bottom bar's fade (DrawerBottomBar).
   const chrome = isDark ? THEME.dark.chromeBackground : THEME.light.chromeBackground;
-  const fadeColors = [withAlpha(chrome, 0), withAlpha(chrome, 0.85), withAlpha(chrome, 1)] as const;
-  // The same fade, reversed, where rows scroll up under the nav pills.
+  // The top fade, the bar's fade reversed, where rows scroll up under the nav pills.
   const topFadeColors = [withAlpha(chrome, 1), withAlpha(chrome, 0)] as const;
 
   return (
@@ -794,44 +636,9 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       </View>
 
       {/* Pinned bottom bar: avatar · New session, over a fade of the drawer
-          surface. Touches on the transparent top of the fade reach the rows. */}
-      <View
-        pointerEvents="box-none"
-        className="absolute inset-x-0 bottom-0"
-        style={{ height: fadeHeight }}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={fadeColors}
-          locations={[0, 0.45, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-        <View
-          pointerEvents="box-none"
-          className="absolute inset-x-0 flex-row items-center justify-between px-5"
-          style={{ bottom: barBottom }}>
-          {/* Avatar left, New session right (Jay, 2026-09-23). The avatar
-              wears its plan's gradient ring. */}
-          <Pressable
-            onPress={goToAccount}
-            accessibilityRole="button"
-            accessibilityLabel={planName ? `Account, ${planName} plan` : 'Account'}
-            hitSlop={2}
-            className="rounded-full active:opacity-70">
-            <PlanRingAvatar
-              imageUrl={profile.avatarUrl}
-              fallbackText={profile.displayName}
-              planName={planName}
-              size={BAR_CONTROL_HEIGHT}
-              gapColor={chrome}
-            />
-          </Pressable>
-          <Button size="lg" className="rounded-full" onPress={handleNewSession}>
-            {/* Web's New session glyph (project-sidebar.tsx), flipped horizontally: tip up-right. */}
-            <Icon as={NavigationArrowIcon} size={20} style={{ transform: [{ scaleX: -1 }] }} />
-            <Text maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.lg}>New session</Text>
-          </Button>
-        </View>
-      </View>
+          surface (DrawerBottomBar). Touches on the transparent top of the
+          fade reach the rows. */}
+      <DrawerBottomBar chrome={chrome} onAvatarPress={goToAccount} onNewSession={handleNewSession} />
     </View>
     </>
   );

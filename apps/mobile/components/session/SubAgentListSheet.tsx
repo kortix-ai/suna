@@ -26,7 +26,7 @@ import {
   spokenRelative,
 } from '@/lib/session/session-list';
 
-export interface SubAgentListSheetProps {
+interface SubAgentListSheetProps {
   subAgents: ProjectSession[];
   onSelect: (session: ProjectSession) => void;
 }

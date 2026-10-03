@@ -18,7 +18,7 @@ import { ParticipantAvatar, PARTICIPANT_ROW_AVATAR_SIZE } from '@/components/ses
 import { Text } from '@/components/ui/text';
 import { participantSheetRows } from '@/lib/session/participants';
 
-export interface SessionParticipantsSheetProps {
+interface SessionParticipantsSheetProps {
   participants: SessionParticipants | undefined;
 }
 

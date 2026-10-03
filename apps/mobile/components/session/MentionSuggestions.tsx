@@ -101,15 +101,15 @@ const KIND_ORDER: MentionItem['kind'][] = ['agent', 'session', 'file', 'skill'];
 
 interface MentionSuggestionsProps {
   items: MentionItem[];
-  selectedIndex: number;
   isLoading?: boolean;
   onSelect: (item: MentionItem) => void;
 }
 
-export function MentionSuggestions({ items, selectedIndex, isLoading, onSelect }: MentionSuggestionsProps) {
+export function MentionSuggestions({ items, isLoading, onSelect }: MentionSuggestionsProps) {
   if (items.length === 0 && !isLoading) return null;
 
-  // Canonical kind order; `selectedIndex` counts rows in this visual order.
+  // Canonical kind order; row 0 is the highlighted one — touch has no
+  // caret-driven selection, and Send always picks the first row.
   const ordered = KIND_ORDER.flatMap((kind) => items.filter((item) => item.kind === kind));
   const searchingFiles = isLoading && !items.some((item) => item.kind === 'file');
 
@@ -123,7 +123,7 @@ export function MentionSuggestions({ items, selectedIndex, isLoading, onSelect }
             label={label}
             detail={detail}
             icon={<Icon as={icon} size={18} className="text-muted-foreground" />}
-            selected={index === selectedIndex}
+            selected={index === 0}
             onPress={() => onSelect(item)}
           />
         );

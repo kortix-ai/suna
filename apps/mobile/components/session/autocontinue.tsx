@@ -12,7 +12,7 @@ import type { Command } from '@/lib/session/runtime-data';
 
 // ─── AutoContinue configuration (shared with frontend) ────────────────────────
 
-export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
+type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
 
 interface AutoContinueAlgorithm {
   id: AutoContinueMode;
@@ -143,7 +143,275 @@ function InfinityOffIcon({ color, size }: { color: string; size: number }) {
   );
 }
 
-export interface AutoContinueSheetProps {
+/** The hand-picked palette both views read, derived from `isDark` once. */
+const palette = (isDark: boolean) => ({
+  foreground: isDark ? THEME.dark.foreground : THEME.light.foreground,
+  muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
+  border: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
+  // The active row's wash: dark tints the foreground, light the purple accent.
+  rowHilite: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
+  pickHilite: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.accent.purple, 0.07),
+});
+
+/** Detail view — algorithm deep-dive with its own scroller. */
+function AlgorithmDetailView({
+  alg,
+  isDark,
+  onBack,
+  onUse,
+}: {
+  alg: AutoContinueAlgorithm;
+  isDark: boolean;
+  onBack: () => void;
+  onUse: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { foreground, muted } = palette(isDark);
+
+  return (
+    <BottomSheetScrollView
+      contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
+        <Button
+          variant="ghost"
+          className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
+          onPress={onBack}
+          hitSlop={12}
+          accessibilityLabel="Back"
+          style={{ marginRight: 12 }}
+        >
+          <CaretLeftIcon size={22} color={muted} />
+        </Button>
+        <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: foreground }}>
+          {alg.label}
+        </Text>
+        <Button
+          variant="ghost"
+          className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
+          onPress={onUse}
+          style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+          hitSlop={10}
+        >
+          <Text style={{ color: THEME.accent.purple, fontFamily: 'Roobert-Medium', fontSize: 13 }}>
+            Use
+          </Text>
+          <CheckIcon size={18} color={THEME.accent.purple} />
+        </Button>
+      </View>
+
+      <View style={{ paddingHorizontal: 20 }}>
+        <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          Role
+        </Text>
+        <Text style={{ fontSize: 14, marginBottom: 16, color: foreground }}>
+          {alg.role}
+        </Text>
+
+        <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          Description
+        </Text>
+        <Text style={{ fontSize: 14, color: muted, marginBottom: 16 }}>
+          {alg.description}
+        </Text>
+
+        <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+          Best for
+        </Text>
+        <Text style={{ fontSize: 14, color: muted, marginBottom: 16 }}>
+          {alg.bestFor}
+        </Text>
+
+        <View style={{ flexDirection: 'row', marginTop: 4 }}>
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Strengths
+            </Text>
+            {alg.strengths.map((s, idx) => (
+              <Text key={idx} style={{ fontSize: 13, color: THEME.accent.green, marginBottom: 6 }}>
+                • {s}
+              </Text>
+            ))}
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Weaknesses
+            </Text>
+            {alg.weaknesses.map((s, idx) => (
+              <Text key={idx} style={{ fontSize: 13, color: THEME.accent.orange, marginBottom: 6 }}>
+                • {s}
+              </Text>
+            ))}
+          </View>
+        </View>
+
+        <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
+          How it works
+        </Text>
+        <Text style={{ fontSize: 13, lineHeight: 20, color: muted }}>
+          {alg.howItWorks}
+        </Text>
+      </View>
+    </BottomSheetScrollView>
+  );
+}
+
+/**
+ * List view — Off / On toggle + algorithm list. Top-level scroller so scroll
+ * gestures actually work inside the sheet.
+ */
+function AutoContinueListView({
+  algorithms,
+  selected,
+  defaultMode,
+  isDark,
+  onSelect,
+  onClose,
+  onAbout,
+}: {
+  algorithms: AutoContinueAlgorithm[];
+  selected: AutoContinueMode | null;
+  defaultMode: AutoContinueMode | null;
+  isDark: boolean;
+  onSelect: (mode: AutoContinueMode | null) => void;
+  onClose: () => void;
+  onAbout: (alg: AutoContinueAlgorithm) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { foreground, muted, border, rowHilite, pickHilite } = palette(isDark);
+  const isActive = selected !== null;
+  const currentAlg = algorithms.find((alg) => alg.id === selected) || null;
+
+  return (
+    <BottomSheetScrollView
+      contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
+        <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: foreground }}>
+          AutoContinue
+        </Text>
+      </View>
+
+      <View>
+        <View>
+          <Button
+            variant="ghost"
+            className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
+            onPress={() => { onSelect(null); onClose(); }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 14,
+              paddingHorizontal: 20,
+              backgroundColor: !isActive ? rowHilite : 'transparent',
+            }}
+          >
+            <InfinityOffIcon color={muted} size={18} />
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: foreground }}>
+                Off
+              </Text>
+              <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>
+                Manual — you send each message
+              </Text>
+            </View>
+            {!isActive && <CheckIcon size={18} color={THEME.accent.purple} />}
+          </Button>
+
+          <Button
+            variant="ghost"
+            className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
+            onPress={() => {
+              if (!isActive && defaultMode) {
+                onSelect(defaultMode);
+              }
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 14,
+              paddingHorizontal: 20,
+              backgroundColor: isActive ? withAlpha(THEME.accent.purple, 0.08) : 'transparent',
+            }}
+          >
+            <InfinityIcon color={isActive ? (THEME.accent.purple) : muted} size={18} />
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: foreground }}>
+                On
+              </Text>
+              <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>
+                {isActive && currentAlg
+                  ? `Running ${currentAlg.label}`
+                  : 'Pick an algorithm and the agent will continue on its own'}
+              </Text>
+            </View>
+            {isActive && <CheckIcon size={18} color={THEME.accent.purple} />}
+          </Button>
+        </View>
+
+        <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
+          <Text style={{ fontSize: 13, color: muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+            Algorithms
+          </Text>
+        </View>
+
+        {algorithms.map((alg, idx) => {
+          const isSelected = selected === alg.id;
+          return (
+            <Button
+              key={alg.id}
+              variant="ghost"
+              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
+              onPress={() => {
+                onSelect(alg.id);
+                onClose();
+              }}
+              style={{
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderBottomWidth: idx < algorithms.length - 1 ? StyleSheet.hairlineWidth : 0,
+                borderBottomColor: border,
+                backgroundColor: isSelected ? pickHilite : 'transparent',
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: foreground }}>
+                    {alg.label}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: muted, marginTop: 1 }}>
+                    {alg.role}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: muted, marginTop: 6 }} numberOfLines={1}>
+                    {alg.description}
+                  </Text>
+                </View>
+                <Button
+                  variant="ghost"
+                  className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
+                  hitSlop={10}
+                  accessibilityLabel={`About ${alg.label}`}
+                  onPress={() => onAbout(alg)}
+                  style={{ padding: 6, marginHorizontal: 4 }}
+                >
+                  <InfoIcon size={18} color={muted} />
+                </Button>
+                {isSelected && (
+                  <CheckIcon size={18} color={THEME.accent.purple} />
+                )}
+              </View>
+            </Button>
+          );
+        })}
+      </View>
+    </BottomSheetScrollView>
+  );
+}
+
+interface AutoContinueSheetProps {
   visible: boolean;
   onClose: () => void;
   selected: AutoContinueMode | null;
@@ -161,18 +429,13 @@ export const AutoContinueSheet = React.memo(function AutoContinueSheet({
   algorithms,
   isDark,
 }: AutoContinueSheetProps) {
-  const insets = useSafeAreaInsets();
   const [detailAlg, setDetailAlg] = useState<AutoContinueAlgorithm | null>(null);
-  const isActive = selected !== null;
-  const currentAlg = algorithms.find((alg) => alg.id === selected) || null;
   const defaultMode = useMemo(() => {
     const preferred = algorithms.find((alg) => alg.id === DEFAULT_AUTOCONTINUE_MODE);
     return preferred?.id ?? algorithms[0]?.id ?? null;
   }, [algorithms]);
 
   const { height: screenHeight } = useWindowDimensions();
-  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
 
   // Bridge `visible` prop to the imperative BottomSheetModal API.
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -213,225 +476,27 @@ export const AutoContinueSheet = React.memo(function AutoContinueSheet({
       backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
     >
       {detailAlg ? (
-        /* Detail view — algorithm deep-dive with its own scroller. */
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
-            <Button
-              variant="ghost"
-              className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
-              onPress={() => setDetailAlg(null)}
-              hitSlop={12}
-              accessibilityLabel="Back"
-              style={{ marginRight: 12 }}
-            >
-              <CaretLeftIcon size={22} color={muted} />
-            </Button>
-            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-              {detailAlg.label}
-            </Text>
-            <Button
-              variant="ghost"
-              className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
-              onPress={() => {
-                onSelect(detailAlg.id);
-                setDetailAlg(null);
-                onClose();
-              }}
-              style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
-              hitSlop={10}
-            >
-              <Text style={{ color: THEME.accent.purple, fontFamily: 'Roobert-Medium', fontSize: 13 }}>
-                Use
-              </Text>
-              <CheckIcon size={18} color={THEME.accent.purple} />
-            </Button>
-          </View>
-
-          <View style={{ paddingHorizontal: 20 }}>
-            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Role
-            </Text>
-            <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-              {detailAlg.role}
-            </Text>
-
-            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Description
-            </Text>
-            <Text style={{ fontSize: 14, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginBottom: 16 }}>
-              {detailAlg.description}
-            </Text>
-
-            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Best for
-            </Text>
-            <Text style={{ fontSize: 14, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginBottom: 16 }}>
-              {detailAlg.bestFor}
-            </Text>
-
-            <View style={{ flexDirection: 'row', marginTop: 4 }}>
-              <View style={{ flex: 1, marginRight: 12 }}>
-                <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                  Strengths
-                </Text>
-                {detailAlg.strengths.map((s, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, color: THEME.accent.green, marginBottom: 6 }}>
-                    • {s}
-                  </Text>
-                ))}
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                  Weaknesses
-                </Text>
-                {detailAlg.weaknesses.map((s, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, color: THEME.accent.orange, marginBottom: 6 }}>
-                    • {s}
-                  </Text>
-                ))}
-              </View>
-            </View>
-
-            <Text style={{ color: muted, fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
-              How it works
-            </Text>
-            <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
-              {detailAlg.howItWorks}
-            </Text>
-          </View>
-        </BottomSheetScrollView>
+        <AlgorithmDetailView
+          alg={detailAlg}
+          isDark={isDark}
+          onBack={() => setDetailAlg(null)}
+          onUse={() => {
+            onSelect(detailAlg.id);
+            setDetailAlg(null);
+            onClose();
+          }}
+        />
       ) : (
-        /* List view — Off / On toggle + algorithm list. Top-level scroller so
-           scroll gestures actually work inside the sheet. */
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
-          showsVerticalScrollIndicator={false}
-        >
-        {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
-        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-            AutoContinue
-          </Text>
-        </View>
-
-        <View>
-          <View>
-            <Button
-              variant="ghost"
-              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
-              onPress={() => { onSelect(null); onClose(); }}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 20,
-                backgroundColor: !isActive ? (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03)) : 'transparent',
-              }}
-            >
-              <InfinityOffIcon color={muted} size={18} />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-                  Off
-                </Text>
-                <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>
-                  Manual — you send each message
-                </Text>
-              </View>
-              {!isActive && <CheckIcon size={18} color={THEME.accent.purple} />}
-            </Button>
-
-            <Button
-              variant="ghost"
-              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
-              onPress={() => {
-                if (!isActive && defaultMode) {
-                  onSelect(defaultMode);
-                }
-              }}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 20,
-                backgroundColor: isActive ? withAlpha(THEME.accent.purple, 0.08) : 'transparent',
-              }}
-            >
-              <InfinityIcon color={isActive ? (THEME.accent.purple) : muted} size={18} />
-              <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-                  On
-                </Text>
-                <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>
-                  {isActive && currentAlg
-                    ? `Running ${currentAlg.label}`
-                    : 'Pick an algorithm and the agent will continue on its own'}
-                </Text>
-              </View>
-              {isActive && <CheckIcon size={18} color={THEME.accent.purple} />}
-            </Button>
-          </View>
-
-          <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
-            <Text style={{ fontSize: 13, color: muted, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Algorithms
-            </Text>
-          </View>
-
-          {algorithms.map((alg, idx) => {
-            const isSelected = selected === alg.id;
-            return (
-              <Button
-                key={alg.id}
-                variant="ghost"
-                className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
-                onPress={() => {
-                  onSelect(alg.id);
-                  onClose();
-                }}
-                style={{
-                  paddingVertical: 14,
-                  paddingHorizontal: 20,
-                  borderBottomWidth: idx < algorithms.length - 1 ? StyleSheet.hairlineWidth : 0,
-                  borderBottomColor: border,
-                  backgroundColor: isSelected ? (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.accent.purple, 0.07)) : 'transparent',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
-                      {alg.label}
-                    </Text>
-                    <Text style={{ fontSize: 13, color: muted, marginTop: 1 }}>
-                      {alg.role}
-                    </Text>
-                    <Text style={{ fontSize: 13, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginTop: 6 }} numberOfLines={1}>
-                      {alg.description}
-                    </Text>
-                  </View>
-                  <Button
-                    variant="ghost"
-                    className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
-                    hitSlop={10}
-                    accessibilityLabel={`About ${alg.label}`}
-                    onPress={() => setDetailAlg(alg)}
-                    style={{ padding: 6, marginHorizontal: 4 }}
-                  >
-                    <InfoIcon size={18} color={muted} />
-                  </Button>
-                  {isSelected && (
-                    <CheckIcon size={18} color={THEME.accent.purple} />
-                  )}
-                </View>
-              </Button>
-            );
-          })}
-        </View>
-        </BottomSheetScrollView>
+        <AutoContinueListView
+          algorithms={algorithms}
+          selected={selected}
+          defaultMode={defaultMode}
+          isDark={isDark}
+          onSelect={onSelect}
+          onClose={onClose}
+          onAbout={setDetailAlg}
+        />
       )}
     </KortixBottomSheetModal>
   );
 });
-

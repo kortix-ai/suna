@@ -31,6 +31,8 @@ function memoSheet(name: string) {
 }
 let composer: any;
 const sent: any[] = [];
+const dispatched: any[] = [];
+const pressables: any[] = [];
 const NO_FILES: any[] = [];
 const NO_UPLOADS = {};
 const attachments = { files: NO_FILES, uploads: NO_UPLOADS, add() {}, remove() {}, takeForSend: async () => ({ files: [], fileParts: [] }), clearAfterSend() {}, reclaim() {} };
@@ -38,9 +40,9 @@ const NO_ALGORITHMS: any[] = [];
 const toast = { error() {} };
 
 const moduleMocks: Record<string, Record<string, any>> = {
-  'react-native': { View: ({ children }: any) => children ?? null, Pressable: ({ children }: any) => children ?? null, TextInput: Empty, StyleSheet: { create: (s: any) => s, hairlineWidth: 1 } },
+  'react-native': { View: ({ children }: any) => children ?? null, Pressable: (props: any) => { pressables.push(props); return props.children ?? null; }, TextInput: Empty, StyleSheet: { create: (s: any) => s, hairlineWidth: 1 } },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
-  '@/components/kortix/composer': { Composer: (props: any) => { composer = props; return null; }, COMPOSER_CONTROL_HIT_SLOP: 4 },
+  '@/components/kortix/composer': { Composer: (props: any) => { composer = props; return props.header ?? null; }, COMPOSER_CONTROL_HIT_SLOP: 4 },
   './AttachSheet': { AttachSheet: memoSheet('AttachSheet') },
   './SessionFilesSheet': { SessionFilesSheet: memoSheet('SessionFilesSheet') },
   './ModelPickerSheet': { ModelPickerSheet: memoSheet('ModelPickerSheet') },
@@ -58,12 +60,19 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/session/local-config': { useLocalConfigStore: (selector: any) => selector({ selectedAgent: null }) },
   './tool/shared/navigation': { useToolFilePreviewStore: { getState: () => ({ setAddToChat() {} }) } },
   './use-mention-file-search': { useMentionFileSearch: () => ({ results: NO_FILES, loading: false, clear() {} }) },
+  // `useSlashCommands` renders these mention-list primitives in its slash menu.
+  './MentionSuggestions': { SuggestionCard: Empty, SuggestionRow: Empty },
+  // `useSlashCommands` imports these two directly; the original file no longer does.
+  '@/lib/icons': { XIcon: Empty, TerminalIcon: Empty },
+  // ...and this one in the staged-command chip (`SessionChatInput` no longer imports Text itself).
+  '@/components/ui/text': { Text: Empty },
 };
 // Pure logic stays real: what typing and sending decide.
 const KEEP_REAL = new Set([
   'react',
   './useMentions',
   './useSkillMentions',
+  './useSlashCommands',
   '@/lib/session/skill-mentions',
   '@/lib/session/send-plan',
   '@/lib/session/session-files',
@@ -85,6 +94,8 @@ for (const [, name] of source.matchAll(/^import (?!type )[^;]*?from ['"]([^'"]+)
   mock.module(name, () => ({ default: Empty, ...values }));
 }
 mock.module('./use-mention-file-search', () => moduleMocks['./use-mention-file-search']);
+// `useSlashCommands` imports this directly; the original file no longer does.
+mock.module('@/components/ui/text', () => ({ default: Empty, Text: Empty }));
 
 let SessionChatInput: typeof import('./SessionChatInput').SessionChatInput;
 let tree: ReactTestRenderer | undefined;
@@ -98,6 +109,8 @@ beforeAll(async () => {
 beforeEach(() => {
   for (const key of Object.keys(sheetRenders)) delete sheetRenders[key];
   sent.length = 0;
+  dispatched.length = 0;
+  pressables.length = 0;
   composer = undefined;
 });
 afterEach(async () => {
@@ -107,12 +120,27 @@ afterEach(async () => {
 
 async function mount() {
   await act(async () => {
-    tree = create(<SessionChatInput onSend={onSend} commands={commands} currentSessionId="s1" sandboxUrl="https://sandbox.test" />);
+    tree = create(
+      <SessionChatInput
+        onSend={onSend}
+        onCommand={(...args: any[]) => dispatched.push(args)}
+        commands={commands}
+        currentSessionId="s1"
+        sandboxUrl="https://sandbox.test"
+      />,
+    );
   });
 }
 async function type(text: string) {
   await act(async () => composer.onChangeText(text));
   expect(composer.value).toBe(text);
+}
+/** One Send tap, plus the frame that releases `submittingRef` for the next tap. */
+async function send() {
+  await act(async () => composer.onSubmit());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 test('typing, "@", "#" and "/" do not re-render the memoized sheets', async () => {
@@ -122,6 +150,35 @@ test('typing, "@", "#" and "/" do not re-render the memoized sheets', async () =
 
   for (const text of ['h', 'he', 'hello', 'hello @', 'hello @ag', 'hello #', 'hello #rev', '/', '/re', '']) await type(text);
   expect(sheetRenders).toEqual(mounted);
+});
+
+test("'/rev' stages a command chip, X clears it, and Send dispatches the staged command", async () => {
+  await mount();
+
+  // "/rev" opens the slash menu with `review` in it; Send picks the highlighted one.
+  await type('/rev');
+  await send();
+  expect(composer.value).toBe('');
+  expect(composer.placeholder).toBe('Add details, then send');
+  expect(composer.allowEmptySend).toBe(true);
+
+  // X on the chip unstages: back to a plain composer with no chip pressable.
+  expect(pressables).toHaveLength(1);
+  expect(pressables[0].accessibilityLabel).toBe('Remove command review');
+  await act(async () => pressables[0].onPress());
+  expect(composer.placeholder).toBe('Ask anything');
+  expect(composer.allowEmptySend).toBe(false);
+  expect(pressables).toHaveLength(1); // no new pressable mounted
+
+  // Re-stage, then Send dispatches the command instead of calling onSend.
+  await type('/rev');
+  await send();
+  expect(composer.allowEmptySend).toBe(true);
+  await send();
+  expect(dispatched).toEqual([[commands[0], undefined]]);
+  expect(sent).toEqual([]);
+  expect(composer.value).toBe('');
+  expect(composer.placeholder).toBe('Ask anything');
 });
 
 test('Recent files appends to the text as typed, and Send sends the text as typed', async () => {

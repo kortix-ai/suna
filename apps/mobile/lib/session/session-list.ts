@@ -261,6 +261,43 @@ export function groupSessionsByActivity(
   return { sections, showHeaders: sections.length > 1 };
 }
 
+// ── List items ───────────────────────────────────────────────────────────
+
+/**
+ * One list item: a group title, or one row with its place in its group
+ * (`SettingsGroupItem` corners). `first` marks the first item of every group
+ * after the first: the group gap goes above it.
+ */
+export type SessionListItem =
+  | { kind: 'title'; key: string; title: string; first: boolean }
+  | { kind: 'row'; key: string; session: ProjectSession; index: number; count: number; first: boolean };
+
+/** The groups as one flat list, in order. Titles only when `showHeaders`. */
+export function sessionListItems(
+  sections: readonly { id: string; label: string; sessions: ProjectSession[] }[],
+  showHeaders: boolean
+): SessionListItem[] {
+  const items: SessionListItem[] = [];
+  sections.forEach((section, sectionIndex) => {
+    let first = sectionIndex > 0;
+    if (showHeaders) {
+      items.push({ kind: 'title', key: `title:${section.id}`, title: section.label, first });
+      first = false;
+    }
+    section.sessions.forEach((session, index) => {
+      items.push({
+        kind: 'row',
+        key: session.session_id,
+        session,
+        index,
+        count: section.sessions.length,
+        first: index === 0 && first,
+      });
+    });
+  });
+  return items;
+}
+
 // ── Status filter ─────────────────────────────────────────────────────────
 
 /** A status the filter sheet offers. `starting` is not one: Running covers it. */

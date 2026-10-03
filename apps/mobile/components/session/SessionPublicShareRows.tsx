@@ -149,7 +149,7 @@ function usePublicTranscriptShare(projectId: string, session: ProjectSession) {
   return { title, activeShare, openShareSheet, ensureLink, revoke };
 }
 
-export interface SessionPublicShareRowsProps {
+interface SessionPublicShareRowsProps {
   projectId: string;
   session: ProjectSession;
   /** Push a confirm view in place of the Share view. */
@@ -273,7 +273,7 @@ export const PUBLIC_SHARE_CONFIRM_TITLE: Record<PublicShareConfirmKind, string> 
   'stop-link': 'Stop sharing link',
 };
 
-export interface SessionShareLinkConfirmProps {
+interface SessionShareLinkConfirmProps {
   projectId: string;
   session: ProjectSession;
   kind: PublicShareConfirmKind;

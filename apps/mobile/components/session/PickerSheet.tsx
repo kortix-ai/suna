@@ -48,7 +48,7 @@ import { pickerSections, showsPickerSearch, type PickerOption } from '@/lib/sess
 const SEARCH_SNAP_POINTS = ['85%', '100%'];
 const FULL_SCREEN_SNAP = ['100%'];
 
-export interface PickerSheetTabs {
+interface PickerSheetTabs {
   items: FloatingTabItem[];
   activeIndex: number;
   onSelect: (index: number) => void;

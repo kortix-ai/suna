@@ -53,7 +53,7 @@ import { showFileTypeIcon } from './tool/shared/tool-icons';
 const SNAP_POINTS = ['100%'];
 /** How long Copy shows its check. */
 
-export interface SessionFilesSheetProps {
+interface SessionFilesSheetProps {
   sessionId: string | null | undefined;
   /** The session's sandbox: where a file's preview loads from. */
   sandboxUrl: string | undefined;

@@ -24,7 +24,7 @@ import { Text } from '@/components/ui/text';
 import { ArrowUpRightIcon, CheckIcon, PlugIcon } from '@/lib/icons';
 import { THEME } from '@/lib/utils/theme';
 
-export interface ConnectorAppMarkProps {
+interface ConnectorAppMarkProps {
   name: string;
   /** `undefined` while loading (skeleton), `null` when the app has no logo. */
   iconUrl: string | null | undefined;

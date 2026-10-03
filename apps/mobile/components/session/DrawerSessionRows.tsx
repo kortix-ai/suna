@@ -2,7 +2,15 @@ import React, { useCallback, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
-import { CONNECTOR_RUN, CONNECTOR_STROKE, SubsessionCountBadge, SubsessionTree, subsessionCountLabel } from '@/components/session/SessionSubsessionTree';
+import {
+  CONNECTOR_RUN,
+  CONNECTOR_STROKE,
+  SubsessionCountBadge,
+  SubsessionTree,
+  subsessionCountLabel,
+  TEXT_X_TOP_LEVEL,
+  TRUNK_X_TOP_LEVEL,
+} from '@/components/session/SessionSubsessionTree';
 import { ExpandControl, StarterLabel } from '@/components/session/SessionTreeParts';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { directSubsessions } from '@kortix/sdk';
@@ -143,15 +151,7 @@ function ProjectSessionListItem({
   );
 }
 
-/**
- * Sub-session tree geometry, from the row's column edge. The trunk runs down
- * the centre of the row's status mark: `px-4` (16) + half the 20pt mark slot
- * (10). Each sub-session title starts on the row's title edge: `px-4` + the
- * 20pt slot + `gap-3` (12). A nested row adds its indent to both.
- */
 const NESTED_LEAD = NESTED_SESSION_INDENT;
-const TRUNK_X_TOP_LEVEL = 16 + 10;
-const TEXT_X_TOP_LEVEL = 16 + 20 + 12;
 
 /**
  * A session row plus its direct runtime sub-sessions under it, always
