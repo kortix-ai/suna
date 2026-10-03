@@ -28,6 +28,7 @@ import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
 import { runReview } from './commands/review.ts';
+import { runAgentInCloud, runRun } from './commands/run.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSchema } from './commands/schema.ts';
@@ -304,6 +305,14 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connect' || argv[0] === 'attach') {
     return runSessionsConnect(argv.slice(1));
   }
+  // Cloud dev: run a command, or an agent CLI with its own flags untouched, in
+  // a sandbox booted from this directory.
+  if (argv[0] === 'run') {
+    return runRun(argv.slice(1));
+  }
+  if (argv[0] === 'claude' || argv[0] === 'codex' || argv[0] === 'opencode') {
+    return runAgentInCloud(argv[0], argv.slice(1));
+  }
   // `kortix t` is the everyday spelling; `tui` stays the documented name.
   if (argv[0] === 'tui' || argv[0] === 't') {
     return runTui(argv.slice(1));
@@ -413,6 +422,10 @@ const KNOWN_COMMANDS = [
   'attach',
   'tui',
   't',
+  'run',
+  'claude',
+  'codex',
+  'opencode',
   'files',
   'cr',
   'review',

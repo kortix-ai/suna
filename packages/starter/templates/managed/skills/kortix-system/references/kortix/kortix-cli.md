@@ -319,6 +319,25 @@ at-a-glance fleet view; `chat … --prompt --json` is a synchronous call;
 `uv run` / `uvx` / `uv pip`, prefer it over bare `pip`), Node, browsers,
 and document tooling preinstalled.
 
+### Run — one command in a fresh cloud sandbox
+
+```sh
+kortix run -- pnpm test                              # any command; exit code is the remote command's
+kortix claude --dangerously-skip-permissions         # Claude Code in the cloud, flags passed through
+kortix codex --dangerously-bypass-approvals-and-sandbox
+kortix opencode                                      # the session's own OpenCode config + Kortix models
+kortix run --session <id> -- bash                    # reuse a session instead of booting one
+```
+
+`kortix run` snapshots the working tree (uncommitted and untracked files,
+`.gitignore` applies), pushes it to a new session's branch, takes the project's
+warm sandbox, and attaches the command like ssh. With no TTY it streams plain
+output, so scripts and agents can call it. When the command exits, its file
+changes are applied back to the folder as uncommitted changes. The folder must
+be bound to the project (`.kortix/link.json`), or run inside a sandbox.
+`kortix claude`/`codex` forward the local login's access token only (never a
+refresh token) and delete it from the sandbox on exit.
+
 ### Triggers
 
 Round-trip through `kortix.yaml`'s `triggers:`. Dashboard sees

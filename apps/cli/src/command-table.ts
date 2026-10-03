@@ -131,6 +131,16 @@ export const TIERS: readonly CommandTier[] = [
             blurb: "Talk to a session's agent (REPL or --prompt)",
           },
           {
+            name: 'run',
+            args: '[--] <command>',
+            blurb: 'Run a command in a cloud sandbox booted from this directory',
+          },
+          {
+            name: 'claude',
+            args: '[args]',
+            blurb: 'Claude Code in a cloud sandbox of this directory (also: codex, opencode)',
+          },
+          {
             name: 'tui',
             args: '[options]',
             blurb: 'Experimental: the whole Kortix product as a terminal app (alias: kortix t)',

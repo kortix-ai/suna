@@ -1,40 +1,14 @@
-import {
-  createKortixPty,
-  getKortixPtyWebSocketUrl,
-  listKortixPty,
-  removeKortixPty,
-  updateKortixPty,
-  type KortixPty,
-} from '@kortix/sdk';
+import { createKortixPty, listKortixPty, removeKortixPty, type KortixPty } from '@kortix/sdk';
 
-import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
-import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
+import { attachPty } from '../pty-attach.ts';
+import { loadSessionForChat, resolveRunningSessionId } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
 const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;
-
-/**
- * Shell-integration hooks embed protocol noise in the byte stream (cursor
- * position pings as OSC 697 + a bare JSON payload) that no terminal
- * emulator is meant to render literally — the web app's xterm-based
- * terminal strips the same patterns before display. A real terminal isn't
- * shielded from this the way xterm.js is, so without stripping it here the
- * first prompt after connect would show visible garbage.
- */
-function sanitizePtyChunk(chunk: string): string {
-  return chunk
-    .replace(/\x1b\]697;[^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x00?\{"cursor":\d+\}/g, '')
-    .replace(/\x1b\][0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\]4;[0-9]+;rgb:[0-9a-fA-F/]+(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[\??[0-9;]*\$y/g, '')
-    .replace(/\x1b\[\d+;\d+R/g, '')
-    .replace(/\x1b\[\?[0-9;]*c/g, '');
-}
 
 const SHELL_HELP = help`Usage: kortix sessions shell [<session-id>] [options]
 
@@ -135,7 +109,9 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
     `${status.ok(`Opening shell in ${C.bold}${label}${C.reset}`)} ${C.dim}(pty ${pty.id})${C.reset}\n`,
   );
 
-  return runPtySession(resolved, runtimeUrl, pty);
+  const { exitCode } = await attachPty(resolved.auth, runtimeUrl, pty.id);
+  process.stderr.write(`${C.dim}Disconnected.${C.reset}\n`);
+  return exitCode ?? 1;
 }
 
 /**
@@ -223,91 +199,4 @@ async function ensurePty(runtimeUrl: string): Promise<KortixPty> {
 
 function createPty(runtimeUrl: string): Promise<KortixPty> {
   return createKortixPty(runtimeUrl, { title: 'Session terminal', env: { ...PTY_ENV } });
-}
-
-/** Put the local terminal in raw mode, pipe bytes to/from the remote PTY's
- *  WebSocket, and forward local resizes. Returns once the connection ends. */
-async function runPtySession(
-  resolved: ResolvedSession,
-  runtimeUrl: string,
-  pty: KortixPty,
-): Promise<number> {
-  const wsUrl = await withKortixScope(resolved.auth, async () =>
-    getKortixPtyWebSocketUrl(pty.id, runtimeUrl),
-  );
-  const ws = openKortixPtyWebSocket(wsUrl);
-  ws.binaryType = 'arraybuffer';
-
-  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-  const sendResize = () => {
-    if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      withKortixScope(resolved.auth, async () =>
-        updateKortixPty(runtimeUrl, pty.id, {
-          size: { rows: process.stdout.rows, cols: process.stdout.columns },
-        }),
-      ).catch(() => {});
-    }, 100);
-  };
-
-  const onStdinData = (chunk: Buffer) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
-  };
-
-  let rawModeOn = false;
-  const cleanup = () => {
-    if (resizeTimer) clearTimeout(resizeTimer);
-    process.stdout.removeListener('resize', sendResize);
-    process.stdin.removeListener('data', onStdinData);
-    if (rawModeOn) {
-      process.stdin.setRawMode(false);
-      rawModeOn = false;
-    }
-    process.stdin.pause();
-  };
-  // Safety net: restore the terminal even if we exit some other way (crash,
-  // uncaught rejection) — an app left in raw mode looks "broken" to the user.
-  process.once('exit', cleanup);
-
-  return new Promise<number>((resolve) => {
-    let resolved_ = false;
-    const finish = (code: number) => {
-      if (resolved_) return;
-      resolved_ = true;
-      cleanup();
-      resolve(code);
-    };
-
-    ws.onopen = () => {
-      process.stdin.setRawMode(true);
-      rawModeOn = true;
-      process.stdin.resume();
-      process.stdin.on('data', onStdinData);
-      process.stdout.on('resize', sendResize);
-      sendResize();
-    };
-
-    ws.onmessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (typeof data === 'string') {
-        process.stdout.write(sanitizePtyChunk(data));
-      } else if (data instanceof ArrayBuffer) {
-        process.stdout.write(sanitizePtyChunk(Buffer.from(data).toString()));
-      } else if (data instanceof Blob) {
-        data.arrayBuffer().then((buf) => process.stdout.write(sanitizePtyChunk(Buffer.from(buf).toString())));
-      }
-    };
-
-    ws.onclose = (event: CloseEvent) => {
-      process.stdout.write(
-        `\n${C.dim}Disconnected${event.reason ? `: ${event.reason}` : ''}.${C.reset}\n`,
-      );
-      finish(0);
-    };
-
-    ws.onerror = () => {
-      process.stderr.write(`${status.err('Terminal connection failed.')}\n`);
-      finish(1);
-    };
-  });
 }

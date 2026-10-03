@@ -1,30 +1,26 @@
 {
-  "source_hash": "0563ac9e50a0c6778df546e333302d7e4a61319ea60a3a99debc16a65c3d5509",
+  "source_hash": "0524bca5a7e869170081e3079f5fd8ca0d9728f22d4a5753585103f0df7f5c8f",
   "diff_files": [
-    "apps/cli/src/__tests__/no-inline-arg-errors.test.ts",
-    "apps/cli/src/__tests__/validate-argv.blackbox.test.ts",
-    "apps/cli/src/commands/validate.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-assets.test.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/runtime-env-allowlist-completeness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/warm-seed.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets-download.ts",
-    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts",
-    "apps/mobile/lib/highlight/shiki.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/api/src/mcp/cli.ts",
+    "apps/cli/README.md",
+    "apps/cli/src/command-table.ts",
+    "apps/cli/src/commands/run.test.ts",
+    "apps/cli/src/commands/run.ts",
+    "apps/cli/src/commands/sessions-shell.ts",
+    "apps/cli/src/index.ts",
+    "apps/cli/src/pty-attach.ts",
+    "apps/web/content/docs/cli.mdx",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/base/skills/kortix-cli/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/kortix-cli.md"
   ],
-  "diff_hash": "a306818837089f3e2a69766f50aa4a1c4685da459efbb7e249df7964161a0953",
-  "head": "e8661f93352cfd2a167a31718f173719042645a8",
+  "diff_hash": "30700a6ab2baf023215f9a17ed2a7d6b7e6eb666ef05e66e53f7809bbb7dc507",
+  "head": "dc418f80def320b28a8f4304a4f1fd5fa29f7524",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T16:18:07.380Z"
+  "at": "2026-10-03T18:46:01.349Z"
 }
