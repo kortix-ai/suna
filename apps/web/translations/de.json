@@ -1914,7 +1914,6 @@
     "messageInput": "Nachrichteneingabe",
     "attachFiles": "Dateien anhängen",
     "selectAgent": "Agent auswählen",
-    "agentLockedHint": "In einer bereits gestarteten Session lässt sich der Agent nicht wechseln.",
     "noModel": "Kein Modell",
     "thinkingEffort": "Denkaufwand",
     "sessionOverrides": "Sitzungsüberschreibungen",
@@ -2911,9 +2910,6 @@
     }
   },
   "hardcodedUi": {
-    "turnFailureNotice": {
-      "unexplained": "Agent-Durchlauf fehlgeschlagen. Es wurde kein Grund gemeldet."
-    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "Wechsle von der Abrechnung pro Maschine zum neuen Tarif für 40 $ pro Sitzplatz. Wir kündigen deine Maschinenabonnements, verrechnen dein ungenutztes Guthaben mit dem ersten Sitzplatz und erstatten den Rest als ",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "Token übernehmen bei jeder Anfrage die Kontorolle und Gruppenmitgliedschaften ihres Erstellers. Begrenze den Zugriff eines Tokens auf ein einzelnes Projekt, wenn du es erstellst.",
     "projectAccessBoundary": {
@@ -19207,7 +19203,8 @@
       "text9e52157faaab": "Ja. Dieselbe Kortix CLI läuft vorab authentifiziert in jeder Sandbox, sodass Agenten genau dieselben Befehle verwenden wie du.",
       "text48b78a9ab65b": "Wie bleiben Läufe isoliert?",
       "text4af0b7d8bfb1": "Jede Sitzung läuft in ihrer eigenen Sandbox auf ihrem eigenen Git-Branch. Zwischen Läufen wird nichts geteilt.",
-      "text39207bf34111": "Ähnliche Fähigkeiten"
+      "text39207bf34111": "Ähnliche Fähigkeiten",
+      "text73112526c03a": "Der Agent-Durchlauf ist fehlgeschlagen. Es wurde kein Grund gemeldet."
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

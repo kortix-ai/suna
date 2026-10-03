@@ -131,6 +131,15 @@ function app(cfg: Partial<Config>, lifecycle: FakeLifecycle = fakeOpencode()) {
   )
 }
 
+/** An empty, repo-less project target. `/workspace` (the fixture default) is a
+ *  real git checkout on a Kortix sandbox, where the "no repo here" 409 the
+ *  auth tests assert would instead run the repo work. */
+function emptyTarget(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'kortix-refresh-empty-'))
+  roots.push(dir)
+  return dir
+}
+
 const SERVICE = { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}`, [KORTIX_SERVICE_CALL_HEADER]: '1' }
 const USER = () => ({
   [KORTIX_USER_CONTEXT_HEADER]: signTestUserContext(
@@ -169,7 +178,7 @@ describe('auth', () => {
 
   it('lets a direct API call with both proofs reach the repo work for base=1', async () => {
     // No repo here, so the repo work answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
+    const res = await app({ projectTarget: emptyTarget() }).request('/kortix/refresh?base=1&restart=0', { method: 'POST', headers: SERVICE })
     expect(res.status).toBe(409)
     const body = (await res.json()) as { error: string; message: string }
     expect(body.error).toBe('refresh failed')
@@ -180,7 +189,7 @@ describe('auth', () => {
     // Only the destructive flag needs the direct call: a user pulling their own
     // workspace keeps working without it. No repo here, so the repo work
     // answers 409; the gate did not refuse it.
-    const res = await app({}).request('/kortix/refresh', {
+    const res = await app({ projectTarget: emptyTarget() }).request('/kortix/refresh', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_SANDBOX_TOKEN}` },
     })

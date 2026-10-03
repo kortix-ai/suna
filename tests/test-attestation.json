@@ -1,11 +1,18 @@
 {
-  "source_hash": "7e8bbbfb86ebb66457e79d77614e957ddd262b937b736fb8fd58c34e94ef5e50",
-  "head": "ccf62f1b47a9e783a901a817da4d7a67b0a6d71b",
+  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
+    "apps/api/src/projects/routes/warm-sessions.ts",
+    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
+    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+  ],
+  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
+  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "skipped-no-db"
+    "db-suites": "pass"
   },
-  "at": "2026-10-03T14:14:34.573Z"
+  "at": "2026-10-03T15:08:44.943Z"
 }

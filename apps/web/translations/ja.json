@@ -1914,7 +1914,6 @@
     "messageInput": "メッセージ入力",
     "attachFiles": "ファイルを添付",
     "selectAgent": "エージェントを選択",
-    "agentLockedHint": "開始済みのセッションではエージェントを切り替えられません。",
     "noModel": "モデルなし",
     "thinkingEffort": "思考レベル",
     "sessionOverrides": "セッションの上書き",
@@ -2911,9 +2910,6 @@
     }
   },
   "hardcodedUi": {
-    "turnFailureNotice": {
-      "unexplained": "エージェントのターンが失敗しました。理由は報告されていません。"
-    },
     "autoFeaturesBillingClaimPerSeatCardJsxTextMoveOff58e07c8d": "マシン単位の請求から、1 席あたり 40 ドルの新しいプランに切り替えます。マシンのサブスクリプションを解約し、未使用残高を最初の席に充当して、残りを",
     "autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc": "トークンは、リクエスト時に作成者のアカウントロールとグループ所属を継承します。トークンのアクセス範囲を制限するには、作成時に 1 つのプロジェクトへ限定してください。",
     "projectAccessBoundary": {
@@ -19207,7 +19203,8 @@
       "text9e52157faaab": "はい。同じ Kortix CLI がすべてのサンドボックス内で認証済みの状態で動作するため、エージェントもあなたとまったく同じコマンドを使います。",
       "text48b78a9ab65b": "実行はどのように隔離されますか？",
       "text4af0b7d8bfb1": "各セッションは専用のサンドボックスで、専用の git ブランチ上で動作します。実行間で共有されるものは何もありません。",
-      "text39207bf34111": "関連スキル"
+      "text39207bf34111": "関連スキル",
+      "text73112526c03a": "エージェントのターンが失敗しました。理由は報告されていません。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

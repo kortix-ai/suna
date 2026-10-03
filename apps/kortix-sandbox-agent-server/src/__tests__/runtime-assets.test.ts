@@ -116,6 +116,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Own the box: the chunk index hashes whatever these resolve to, and the
+    // defaults reach this host's real agent binary (/usr/local/bin/kortix-agent,
+    // ~100 MB hashed 8 bytes at a time by the stub's chunk size). A CI runner
+    // has neither, so pointing both into the fixture restores that shape.
+    agentStateDir: join(ws.root, 'agent-state'),
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
     // The local chunk store must stay inside the fixture: a box that runs the
     // real /usr/local/bin/kortix-agent (every Kortix sandbox image) would
@@ -192,7 +198,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stub)
 
     expect(result).toEqual({ cli: 'updated', skills: 'updated' })
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect((await stat(ws.cliPath)).mode & 0o777).toBe(0o755)
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toContain('body v2')
     expect(await readFile(join(ws.skillsDir, 'kortix-cli/SKILL.md'), 'utf8')).toBe('cli skill v2\n')
@@ -408,7 +414,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stubFetch())
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
   })
 })
 
@@ -636,7 +642,7 @@ describe('reconcileRuntimeAssets over chunks', () => {
     const result = await run(ws, stub)
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect(stub.calls).toContain(`${API_URL}/v1/runtime-assets/cli`)
   })
 })
