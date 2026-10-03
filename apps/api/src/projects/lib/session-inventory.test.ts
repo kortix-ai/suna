@@ -302,7 +302,8 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
   });
 
   // The reaper flips `project_sessions.status` to stopped and leaves the marker
-  // in place. That row must not surface through the resumable-stopped branch.
+  // in place. That row must stay hidden through the warm-marker check, not
+  // resurface as an ordinary stopped session.
   test('a reaped warm session stays hidden even though it looks resumable', () => {
     const selected = selectSessionRowsForViewer({
       rows: [row('reaped-warm', { status: 'stopped', metadata: { warm: true } })],
