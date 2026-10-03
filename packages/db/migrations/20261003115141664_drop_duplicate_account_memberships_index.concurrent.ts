@@ -15,7 +15,7 @@
 //     account_id) (invite accept, member add, seat management).
 // A still-running older API image plans the same statements without it.
 //
-// The preceding migration (20261003020000000_account_memberships_replica_
+// The preceding migration (20261003115140660_account_memberships_replica_
 // identity_pk.sql) re-points the table's REPLICA IDENTITY to the surviving PK
 // first, so no environment is left with an identity flag that has no index
 // behind it when this index goes away.

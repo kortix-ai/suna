@@ -2,7 +2,7 @@
 --
 -- Re-points kortix.account_memberships' logical-replication identity to the
 -- surviving primary-key index account_members_pkey, immediately before
--- 20261003020000100_drop_duplicate_account_memberships_index drops the index
+-- 20261003115141664_drop_duplicate_account_memberships_index drops the index
 -- it was on (the Supabase advisor's duplicate of the PK).
 --
 -- Why: scripts/prod-us-east-2/db-sync.sh once set
