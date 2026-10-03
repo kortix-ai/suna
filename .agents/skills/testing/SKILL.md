@@ -109,8 +109,9 @@ in `references/api-latency-baseline.md`.
 ## Your machine is the pre-merge gate
 
 A pull request into `main` runs **no** GitHub Actions job by itself. Every test
-for a change runs in the developer's own box before the merge. CI runs after the
-merge (push to `main`, non-blocking) and on release pull requests into `staging`
+for a change runs in the developer's own box before the merge. CI runs on a
+schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
+them) and on release pull requests into `staging`
 and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
 runs the six lanes once (~9 min), `preview` deploys once (~7 min) with no tests. A push
 re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`

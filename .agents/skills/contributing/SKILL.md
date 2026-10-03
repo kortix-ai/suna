@@ -172,9 +172,10 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Self-merge when the change is verified (`AGENTS.md` → "Default delivery", rule 5): the
   local checks passed and the PR is mergeable. Do not wait for the user's approval, and do
   not wait for a CI check: none runs. `gh pr merge <pr> --squash`.
-- After the merge, follow **Deploy Dev** to the "Live on dev" comment and verify the change
-  on dev. The same push runs the `Tests` lanes on `main`. They block nothing; a red run
-  comments on your commit, and fixing it is yours.
+- A push to `main` does not deploy dev and does not run `Tests`. Deploy deliberately:
+  `gh workflow run deploy-dev.yml -f surface=changed` (`changed` ships every merge since
+  dev's live SHA; `all` forces every surface; `frontend` builds the web app only). Follow the
+  run to the "Live on dev" comment, then verify the change on dev.
 - Report the PR URL, the merge SHA, the local test commands and their results, the dev
   verification, and anything still unverified.
 - Merging into `staging` or `prod`, and every release step, still needs the user's explicit
@@ -185,13 +186,15 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
 | PR into `main` | none. Adding `test` runs the six `Tests` lanes once (~9 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `drata`, `Desktop`, `deploy-api-router-dev`, `Terraform Apply Global` | no: post-merge safety net |
+| Push to `main` (the merge) | `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
+| Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
 | PR into `staging` | the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
-`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to `push: main` or to the release
-PRs, never to PRs into `main`.
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to a schedule, a dispatch, or the release
+PRs, never to PRs into `main`. Add it to `push: main` only when it takes seconds: a
+push runs on GitHub-billed minutes, and the factory merges ~37 PRs a day.
 
 ## Labels
 

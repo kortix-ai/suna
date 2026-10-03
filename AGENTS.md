@@ -261,8 +261,9 @@ trivial single-file typo/comment fixes on the current branch.
 
 ## Default delivery: verify in your box, self-merge to `main`, verify on dev
 
-`main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
-It is not a save point.
+`main` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
+dispatch, but **merging to `main` still lands your change in everyone's next
+deploy and next `main` checkout.** It is not a save point.
 
 **The development machine does the work. CI does not.** Every test, preview,
 and demo for a change runs in your own box: the worktree's local stack, the
@@ -275,7 +276,8 @@ Never add a label by default or from automation. CI otherwise runs in two places
 | Where | What runs | Blocks? |
 |---|---|---|
 | Pull request into `main` | nothing, unless a person adds `test` (~9 min suite, once) or `preview` (~7 min deploy, once) | no |
-| Push to `main` (after the merge) | `Deploy Dev`, `CI`, `CodeQL`, secret scans, path-gated `DB Migrations` / `i18n-catalogs` / `drata` | no — post-merge safety net |
+| Push to `main` (after the merge) | only cheap guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev`. No dev deploy, no `Tests`, no `CI`, no `CodeQL`, no `Desktop`, no `drata`. | no |
+| Dispatch or schedule on `main` | `Deploy Dev`: `gh workflow run deploy-dev.yml -f surface=changed` (or `all`, `frontend`), `Desktop`: dispatch only. `Tests`: daily. `CI`, `CodeQL`: weekly. `drata`: daily. | no |
 | Pull request into `staging` (release candidate) | full CI: `Tests`, `CI`, `CodeQL`, scanners, `DB Migrations`, Terraform | yes, by the release discipline |
 | Pull request into `prod` (Promote to Production) | full CI plus `Tests - release` against deployed staging | yes, required check |
 
@@ -325,22 +327,20 @@ the PR to the staging CI backstop instead of auto-merge.
    the whole objective ran through a real session on your local stack, and runs
    again on dev after the merge (rule 8). Green tests are not the bar. Someone
    used it.
-7. After the merge, wait for the **Live on dev** comment on your pull request.
-   Deploy Dev posts it when `/health` on every surface it changed serves the
-   deployed commit, with the time since merge; "Not live on dev yet" names the
-   surface that failed. A successful `/health` response alone is not
-   deployment proof — the comment checks the commit. Deploys queue, they never
-   cancel: a run in flight finishes, then the newest waiting push deploys, so
-   a merge is live within about two deploy lengths. Force a full redeploy with
-   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
-   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
-   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit. The comment names the failing lanes and
-   every commit since the last green run, because merges land faster than the
-   suite and the red commit is often not the culprit. The author whose commit
-   broke `main` fixes forward. If `main` is still red 1 hour after the comment,
-   anyone may revert the culprit PR. `main` never blocks a merge or a deploy on
-   a red run.
+7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
+   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   rebuild). Deploys queue, they never cancel. Wait for the run to finish.
+   `/health` on every changed surface must serve the merge SHA: a successful
+   `/health` response alone is not deployment proof. The run comments "Live on
+   dev" on the merged pull request, and "Not live on dev yet" names the
+   surface that failed. The surfaces and their checks are in
+   `.github/workflows/deploy-dev.yml`. No suite runs on the merge push: the
+   attestation (`pnpm test:verify`) was the gate, and the scheduled daily
+   `Tests` run on `main` is the backstop. A red scheduled run comments the
+   failing lanes and every commit since the last green run. The author whose
+   commit broke `main` fixes forward. If `main` is still red 1 hour after the
+   comment, anyone may revert the culprit PR. A red run never blocks a merge or
+   a deploy.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
@@ -545,11 +545,11 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
   root command at the exact requested SHA; browser lanes install Chromium and
   prestart Supabase first. Do not add CI-only test logic.
-- The six lanes run on every push to `main`, on a pull request into `staging`,
+- The six lanes run daily on `main` (`schedule`), on a pull request into `staging`,
   once when a person adds the `test` label to a pull request, and on manual
-  dispatch. Nothing else. A push-to-`main` run blocks nothing: a
-  red run comments the failing lanes on the commit, and a cancelled run means a
-  newer commit superseded it. A pull request into `prod` runs
+  dispatch. A push to `main` does not run them (Actions minutes, 2026-10-03). A
+  scheduled run blocks nothing: a red run comments the failing lanes on the
+  `main` HEAD commit. A pull request into `prod` runs
   `tests-release.yml` against deployed staging instead.
 - `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
   label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
