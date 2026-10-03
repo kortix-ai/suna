@@ -1,4 +1,4 @@
--- Snapshot companion for 20261003020000100_drop_duplicate_account_memberships_index.concurrent.ts.
+-- Snapshot companion for 20261003145424803_drop_duplicate_account_memberships_index.concurrent.ts.
 --
 -- That migration drops `kortix.idx_account_members_user_account` with
 -- DROP INDEX CONCURRENTLY, which cannot run inside a transaction. This file
