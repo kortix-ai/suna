@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { splitHelp } from '../command-argv.ts';
 
 import {
   emitJson,
@@ -142,21 +143,10 @@ the declarative one is kortix.yaml's \`[[agents]].model\`.
 `;
 
 export async function runAgents(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
-
+  const helpExit = splitHelp(argv, HELP);
+  if (helpExit !== null) return helpExit;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let json = false;
   let clear = false;
   let show = false;

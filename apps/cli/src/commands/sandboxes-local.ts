@@ -47,7 +47,7 @@ import { dockerAvailable, hostPlatform } from '../docker.ts';
 import { loadLocalManifest, resolveLocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
 
-export interface LocalBuildFlags {
+interface LocalBuildFlags {
   slug?: string;
   platform?: string;
   tag?: string;
@@ -114,7 +114,7 @@ export function resolveLocalTemplate(
  * template supplies its file's bytes, an `image:` template a one-line `FROM`
  * shim, and the platform default its own canned base.
  */
-export function userDockerfileForTemplate(
+function userDockerfileForTemplate(
   template: SandboxTemplate,
   projectRoot: string,
 ): { text: string; source: string } | { error: string } {

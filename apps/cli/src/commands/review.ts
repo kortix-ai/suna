@@ -309,7 +309,7 @@ async function reviewAct(
   try {
     // ── A connector approval: one live question to the agent. Approve lets the
     //    call run, reject denies it. Nothing else is a decision on that call.
-    const executionId = strip(id, CALL_PREFIX);
+    const executionId = id.startsWith(CALL_PREFIX) ? id.slice(CALL_PREFIX.length) : null;
     if (executionId) {
       if (verdict !== 'approve' && verdict !== 'reject') {
         process.stderr.write(
@@ -337,7 +337,7 @@ async function reviewAct(
 
     // ── A change request: merge / close / request-changes on its own flow. The
     //    native act endpoint 409s on a `cr:` id by design.
-    const crId = strip(id, CR_PREFIX);
+    const crId = id.startsWith(CR_PREFIX) ? id.slice(CR_PREFIX.length) : null;
     if (crId) {
       if (verdict === 'approve') {
         const resp = await ctx.client.post<{
@@ -523,18 +523,13 @@ async function reviewSubmit(
 
 // ── id routing (mirrors apps/web/src/features/review-center/review-actions.ts) ─
 
-/** Strip a namespace prefix, or null when `id` does not carry it. */
-function strip(id: string, prefix: string): string | null {
-  return id.startsWith(prefix) ? id.slice(prefix.length) : null;
-}
-
-export function adaptedSource(id: string): 'cr' | 'call' | null {
+function adaptedSource(id: string): 'cr' | 'call' | null {
   if (id.startsWith(CR_PREFIX)) return 'cr';
   if (id.startsWith(CALL_PREFIX)) return 'call';
   return null;
 }
 
-export interface BulkPlan {
+interface BulkPlan {
   /** Ids the bulk endpoint can act on. */
   native: string[];
   /** Connector approvals — each needs its own parameter review. */
@@ -543,7 +538,7 @@ export interface BulkPlan {
   unsupported: string[];
 }
 
-export function planBulk(ids: Iterable<string>): BulkPlan {
+function planBulk(ids: Iterable<string>): BulkPlan {
   const native: string[] = [];
   const resolvable: string[] = [];
   const unsupported: string[] = [];

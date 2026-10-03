@@ -4,7 +4,7 @@ import type { ProjectSummary } from '../api/types.ts';
 import { loadLink } from '../project-link.ts';
 import { resolveProjectCloneTarget } from './projects.ts';
 
-export type GitCredentialRequest = Record<string, string>;
+type GitCredentialRequest = Record<string, string>;
 
 export function parseGitCredentialRequest(raw: string): GitCredentialRequest {
   const result: GitCredentialRequest = {};
@@ -39,7 +39,7 @@ function canonicalGitUrl(value: string): string | null {
   }
 }
 
-export interface ResolvedGitCredential {
+interface ResolvedGitCredential {
   username: string;
   password: string;
 }

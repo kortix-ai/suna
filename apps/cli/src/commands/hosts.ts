@@ -310,7 +310,7 @@ async function hostsAdd(args: string[]): Promise<number> {
   try {
     url = takeFlagValue(args, ['--url', '--api']);
     dashboardUrl = takeFlagValue(args, ['--dashboard-url']);
-    runLoginFlow = removeBoolFlag(args, ['--login']);
+    runLoginFlow = takeFlagBool(args, ['--login']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -393,7 +393,7 @@ async function hostsAdd(args: string[]): Promise<number> {
 async function hostsRm(args: string[]): Promise<number> {
   let force = false;
   try {
-    force = removeBoolFlag(args, ['--force', '-f']);
+    force = takeFlagBool(args, ['--force', '-f']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -510,12 +510,3 @@ function hostJson(name: string, host: Host, active: boolean) {
   };
 }
 
-function removeBoolFlag(argv: string[], names: string[]): boolean {
-  for (let i = 0; i < argv.length; i += 1) {
-    if (names.includes(argv[i])) {
-      argv.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
-}

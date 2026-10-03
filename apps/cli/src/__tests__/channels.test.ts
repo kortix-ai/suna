@@ -556,3 +556,49 @@ describe('kortix channels bindings', () => {
     expect(stripAnsi(stdout)).not.toContain('#Sam Rivera');
   });
 });
+
+describe('kortix channels manifest — the Slack app manifest JSON', () => {
+  test('prints a self-host Slack manifest wired to this project\'s webhook', async () => {
+    // Characterized before the channels split moved the manifest code: the
+    // manifest is what a self-host admin pastes into api.slack.com/apps, so the
+    // scopes, bot events and the request URL are the contract.
+    const code = await runChannels(['manifest']);
+    expect(code).toBe(0);
+    const manifest = JSON.parse(stdout) as {
+      display_information: { name: string; description: string };
+      features: { bot_user: { display_name: string; always_online: boolean } };
+      oauth_config: { scopes: { bot: string[] } };
+      settings: {
+        event_subscriptions: { request_url: string; bot_events: string[] };
+        org_deploy_enabled: boolean;
+        socket_mode_enabled: boolean;
+        token_rotation_enabled: boolean;
+      };
+    };
+    expect(manifest.display_information.name).toBe('Kortix');
+    expect(manifest.features.bot_user).toEqual({ display_name: 'kortix', always_online: true });
+    // The request URL points this project's Slack webhook on the configured host.
+    expect(manifest.settings.event_subscriptions.request_url).toBe(
+      'https://api.test/v1/webhooks/slack/proj_1',
+    );
+    // The events the Slack receiver answers; a missing one silently drops a
+    // message class, so each is pinned.
+    expect(manifest.settings.event_subscriptions.bot_events).toEqual([
+      'app_mention',
+      'message.im',
+      'message.channels',
+      'message.groups',
+      'message.mpim',
+      'reaction_added',
+      'reaction_removed',
+      'member_joined_channel',
+      'file_shared',
+    ]);
+    // The bot scopes the receiver needs — files, reactions, channels, DMs.
+    for (const scope of ['chat:write', 'channels:history', 'im:history', 'files:read', 'reactions:read', 'users:read']) {
+      expect(manifest.oauth_config.scopes.bot).toContain(scope);
+    }
+    expect(manifest.settings.socket_mode_enabled).toBe(false);
+    expect(manifest.settings.token_rotation_enabled).toBe(false);
+  });
+});

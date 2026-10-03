@@ -36,6 +36,11 @@ export function pad(s: string, width: number): string {
   return s + ' '.repeat(extra);
 }
 
+/** Truncate a string to `max` characters, ending a cut with an ellipsis. */
+export function trim(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
 /** Status helpers. */
 export const status = {
   info: (msg: string) => `  ${C.cyan}▸${C.reset}  ${msg}`,

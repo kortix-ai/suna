@@ -23,7 +23,7 @@ import {
 } from '@kortix/sdk';
 import { resolveUserId, UUID_RE } from '../iam.ts';
 import { withKortixScope } from '../api/sdk.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
@@ -2043,6 +2043,3 @@ function accountsCell(connector: Pick<AdminConnector, 'accounts'>): string {
   return `${accounts.length} · ${names}`;
 }
 
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}

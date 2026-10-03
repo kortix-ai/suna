@@ -1097,6 +1097,68 @@ describe('kortix secrets delivery', () => {
       'Host and injection flags describe a policy, which only an enforced secret has.',
     );
   });
+
+  test('rejects --consumer with a strategy that has no consumer', async () => {
+    // --consumer names the service that spends a none-exposure secret. On a
+    // runtime/egress/denied secret there is nothing for it to name, so the
+    // flag is a misuse, not a silent drop.
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'environment',
+      '--consumer',
+      'connector',
+    ]);
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('Pass it with the `broker` alias');
+  });
+
+  test('rejects an unknown --consumer value before any network call', async () => {
+    const code = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--consumer',
+      'not-a-service',
+    ]);
+    expect(code).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--consumer must be llm-gateway, connector, or http-broker.');
+  });
+
+  test('--template without --inject-header is rejected on a broker row and on enforced', async () => {
+    const broker = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'broker',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-query',
+      'key',
+      '--template',
+      '{{secret}}',
+    ]);
+    expect(broker).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--template requires --inject-header.');
+
+    captureOutput();
+    const enforced = await runSecrets([
+      'delivery',
+      'ANTHROPIC_API_KEY',
+      'enforced',
+      '--allow-host',
+      'api.anthropic.com',
+      '--inject-header',
+      'x-api-key',
+      '--template',
+      'Bearer {{token}}',
+    ]);
+    expect(enforced).toBe(2);
+    expect(requests).toHaveLength(0);
+    expect(stripAnsi(stderr)).toContain('--template must contain {{secret}}.');
+  });
 });
 
 describe('kortix secrets call', () => {

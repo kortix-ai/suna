@@ -293,26 +293,6 @@ function printEvents(events: AuditEvent[]): void {
   }
 }
 
-/**
- * Read an export response body as text.
- *
- * The shared HTTP client parses `application/json`, passes `text/*` through,
- * and returns a **Blob** for everything else. The CSV export is `text/csv` so
- * it arrives as a string; the JSONL export is `application/x-ndjson`, which
- * matches neither branch and arrives as a Blob. `JSON.stringify` on a Blob
- * yields `"{}"` — which is exactly what `--format jsonl` printed before this:
- * an empty object where the export should be.
- *
- * Handled here rather than in the SDK because widening that content-type check
- * changes what every other caller receives. The SDK bug is real and worth
- * fixing separately.
- */
-export async function exportBodyText(body: unknown): Promise<string> {
-  if (typeof body === 'string') return body;
-  if (body instanceof Blob) return await body.text();
-  return JSON.stringify(body);
-}
-
 async function collectAuditPages(
   fetchPage: (cursor: string | null) => Promise<AuditPage>,
   initialCursor: string | null,

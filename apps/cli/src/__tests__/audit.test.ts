@@ -18,7 +18,6 @@ import { join, resolve } from 'node:path';
 import {
   auditEventTitle,
   buildAuditQuery,
-  exportBodyText,
   resolveInstant,
   truncate,
 } from '../commands/audit.ts';
@@ -368,32 +367,6 @@ describe('audit CLI process', () => {
       server.stop(true);
       rmSync(root, { recursive: true, force: true });
     }
-  });
-});
-
-/**
- * The JSONL export came back as the string "{}" the first time it ran against
- * dev. The shared HTTP client parses `application/json`, passes `text/*`
- * through, and returns a **Blob** for anything else — and the export is
- * `application/x-ndjson`, which matches neither. `JSON.stringify(blob)` is
- * `"{}"`, so the command printed an empty object where the export belonged.
- * CSV was fine throughout (`text/csv`), which is what made it easy to miss.
- */
-describe('exportBodyText', () => {
-  test('a Blob body is read as text, not stringified', async () => {
-    const blob = new Blob(['{"event_id":"a"}\n{"event_id":"b"}\n'], {
-      type: 'application/x-ndjson',
-    });
-    const text = await exportBodyText(blob);
-    expect(text).toContain('"event_id":"a"');
-    expect(text.trim().split('\n')).toHaveLength(2);
-    expect(text).not.toBe('{}');
-  });
-
-  test('a string body passes through untouched', async () => {
-    expect(await exportBodyText('event_id,occurred_at\n1,2026-01-01\n')).toBe(
-      'event_id,occurred_at\n1,2026-01-01\n',
-    );
   });
 });
 

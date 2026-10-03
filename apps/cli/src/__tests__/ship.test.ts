@@ -2,13 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import { ApiError, type ApiClient } from '../api/client.ts';
 import type { ProjectSummary } from '../api/types.ts';
-import {
-  authHeaderArgs,
-  linkGitHubBackedProject,
-  reconcileShippedManifest,
-  resolveExistingShipGitTarget,
-  resolveProvisionShipGitTarget,
-} from '../commands/ship.ts';
+import { authHeaderArgs } from '../git-ops.ts';
+import { resolveProjectGitTarget } from '../project-git.ts';
+import { linkGitHubBackedProject } from '../commands/ship-provision.ts';
+import { reconcileShippedManifest } from '../commands/ship-connectors.ts';
 import { resolveProjectCloneTarget } from '../commands/projects.ts';
 
 test('managed git auth headers honor the provider-selected username', () => {
@@ -99,20 +96,28 @@ describe('GitHub-backed project linking', () => {
 });
 
 describe('ship git target resolution', () => {
+  // The provision response the first-ship path resolves: a ProjectSummary
+  // plus the push token fields the provision call returns.
+  interface ProvisionResponse extends ProjectSummary {
+    push_token: string | null;
+    repo_id: string;
+  }
+
   // A host whose managed git runs on an org-wide PAT cannot export a push token
   // at all (POST /git-token 503s — the token would grant write to every managed
   // repo). Ship must therefore prefer the proxy origin for MANAGED projects
   // too, exactly like clone does; insisting on a minted provider token is what
   // broke `kortix ship` against Kortix Cloud.
   test('first-time managed ship pushes through the proxy origin, not the raw upstream', () => {
-    const target = resolveProvisionShipGitTarget({
+    const provision: ProvisionResponse = {
       ...project({
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: true } },
       }),
       push_token: 'ghp_push',
       repo_id: 'repo_1',
-    });
+    };
+    const target = resolveProjectGitTarget(provision);
 
     expect(target).toEqual({
       repoUrl: 'https://api.kortix.com/v1/git/proj_1.git',
@@ -121,7 +126,7 @@ describe('ship git target resolution', () => {
   });
 
   test('existing managed ship pushes through the proxy origin', () => {
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
         metadata: { git: { managed: true } },
@@ -137,7 +142,7 @@ describe('ship git target resolution', () => {
   test('managed ship falls back to a minted token when the host has no proxy', () => {
     // Proxy off ⇒ the server mirrors repo_url into git_origin_url.
     const raw = 'https://github.com/managed-kortix/demo.git';
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({ git_origin_url: raw, metadata: { git: { managed: true } } }),
     );
 
@@ -145,11 +150,12 @@ describe('ship git target resolution', () => {
   });
 
   test('first-time managed ship on a proxy-less host mints a provider token', () => {
-    const target = resolveProvisionShipGitTarget({
+    const provision: ProvisionResponse = {
       ...project({ metadata: { git: { managed: true } } }),
       push_token: 'ghp_push',
       repo_id: 'repo_1',
-    });
+    };
+    const target = resolveProjectGitTarget(provision);
 
     expect(target).toEqual({
       repoUrl: 'https://github.com/managed-kortix/demo.git',
@@ -158,7 +164,7 @@ describe('ship git target resolution', () => {
   });
 
   test('non-managed proxy projects still push through the Kortix git proxy', () => {
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({
         repo_url: 'https://github.com/acme/byo.git',
         git_origin_url: 'https://api.kortix.com/v1/git/proj_1.git',
@@ -173,7 +179,7 @@ describe('ship git target resolution', () => {
   });
 
   test('plain BYO projects rely on local git credentials', () => {
-    const target = resolveExistingShipGitTarget(
+    const target = resolveProjectGitTarget(
       project({
         repo_url: 'https://github.com/acme/byo.git',
         metadata: { git: { managed: false } },
@@ -199,7 +205,7 @@ describe('ship git target resolution', () => {
     ];
 
     for (const shape of shapes) {
-      const ship = resolveExistingShipGitTarget(shape);
+      const ship = resolveProjectGitTarget(shape);
       const clone = resolveProjectCloneTarget(shape, 'kortix_pat_abc');
       expect(clone.repoUrl).toBe(ship.repoUrl);
       expect(clone.needsManagedToken).toBe(ship.credentialMode === 'managed-git-token');

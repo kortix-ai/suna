@@ -78,7 +78,7 @@ export async function runLogin(argv: string[]): Promise<number> {
   });
 }
 
-export interface PerformLoginOptions {
+interface PerformLoginOptions {
   /** The host name to authenticate (already resolved by the caller). */
   hostName: string;
   /** Skip the browser flow and authenticate directly with this PAT. */

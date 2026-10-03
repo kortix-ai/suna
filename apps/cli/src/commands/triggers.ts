@@ -6,8 +6,11 @@ import {
   formatDurationSeconds,
   parseDurationSeconds,
 } from '@kortix/manifest-schema';
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -104,21 +107,10 @@ Global options:
 `;
 
 export async function runTriggers(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
-
+  const helpExit = splitHelp(argv, HELP);
+  if (helpExit !== null) return helpExit;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   const tf: Record<string, string | undefined> = {};
@@ -160,8 +152,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
       return false;
     })();
   } catch (err) {
-    process.stderr.write(`${status.err((err as Error).message)}\n`);
-    return 2;
+    return fail((err as Error).message);
   }
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
   const positional = rest.filter((a) => !a.startsWith('-'));
@@ -268,10 +259,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
 }
 
 async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<number> {
-  if (!slug) {
-    process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
-    return 2;
-  }
+  if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -323,40 +311,30 @@ function triggersAddLocal(
   tf: Record<string, string | undefined>,
   disabled: boolean,
 ): number {
-  if (!slug) {
-    process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
-    return 2;
-  }
+  if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
   if (type !== 'cron' && type !== 'webhook' && type !== 'monitor') {
-    process.stderr.write(`${status.err('--type must be cron, webhook, or monitor.')}\n`);
-    return 2;
+    return fail('--type must be cron, webhook, or monitor.');
   }
   if (!tf.prompt) {
-    process.stderr.write(`${status.err('--prompt is required.')}\n`);
-    return 2;
+    return fail('--prompt is required.');
   }
   if (type === 'cron' && !tf.cron) {
-    process.stderr.write(`${status.err('cron triggers need --cron "<6-field expr>".')}\n`);
-    return 2;
+    return fail('cron triggers need --cron "<6-field expr>".');
   }
   // Monitor flags on a cron/webhook trigger are a hard error, not a silent
   // drop — the platform would never read them.
   if (type !== 'monitor') {
     const stray = MONITOR_ONLY_FLAGS.find(([, value]) => tf[value] !== undefined);
     if (stray) {
-      process.stderr.write(
-        `${status.err(`${stray[0]} is only valid on a monitor trigger (--type monitor).`)}\n`,
-      );
-      return 2;
+      return fail(`${stray[0]} is only valid on a monitor trigger (--type monitor).`);
     }
   }
   let monitor: MonitorFields | null = null;
   if (type === 'monitor') {
     const parsed = parseMonitorFlags(tf);
     if ('error' in parsed) {
-      process.stderr.write(`${status.err(parsed.error)}\n`);
-      return 2;
+      return fail(parsed.error);
     }
     monitor = parsed;
   }
@@ -400,10 +378,7 @@ function triggersAddLocal(
 }
 
 function triggersRmLocal(slug: string | undefined): number {
-  if (!slug) {
-    process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
-    return 2;
-  }
+  if (!slug) return missing('a trigger slug');
   try {
     if (!removeArrayBlock('triggers', 'slug', slug)) {
       process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.yaml.`)}\n`);
@@ -422,10 +397,7 @@ function triggersRmLocal(slug: string | undefined): number {
 // enabled is config — toggle it in the LOCAL kortix.yaml `[[triggers]]` block
 // (the source of truth), preserving the block's comments. `kortix ship` applies.
 function triggersToggle(slug: string | undefined, enabled: boolean): number {
-  if (!slug) {
-    process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
-    return 2;
-  }
+  if (!slug) return missing('a trigger slug');
   try {
     if (!arrayEntryExists('triggers', 'slug', slug)) {
       process.stderr.write(`${status.err(`No [[triggers]] "${slug}" in kortix.yaml.`)}\n`);
@@ -515,7 +487,7 @@ async function triggersAddLive(
   opts: CtxOpts,
   json = false,
 ): Promise<number> {
-  if (!slug) return missingSlug();
+  if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
   if (type !== 'cron' && type !== 'webhook' && type !== 'monitor') {
     return fail('--type must be cron, webhook, or monitor.');
@@ -606,7 +578,7 @@ async function triggersSetLive(
   opts: CtxOpts,
   json = false,
 ): Promise<number> {
-  if (!slug) return missingSlug();
+  if (!slug) return missing('a trigger slug');
   if (tf.cron && tf.runAt) return fail('--cron and --run-at are exclusive — pass one.');
 
   const filter = parseFilters(live.filters);
@@ -675,7 +647,7 @@ async function triggersRmLive(
   opts: CtxOpts,
   json = false,
 ): Promise<number> {
-  if (!slug) return missingSlug();
+  if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   let resp: ProjectTriggersResponse;
@@ -702,7 +674,7 @@ async function triggersToggleLive(
   opts: CtxOpts,
   json = false,
 ): Promise<number> {
-  if (!slug) return missingSlug();
+  if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   let resp: ProjectTriggersResponse;
@@ -732,21 +704,8 @@ function reportWebhookUrl(resp: ProjectTriggersResponse, slug: string): void {
   }
 }
 
-function missingSlug(): number {
-  process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
-  return 2;
-}
-
-function fail(message: string): number {
-  process.stderr.write(`${status.err(message)}\n`);
-  return 2;
-}
-
 async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = false): Promise<number> {
-  if (!slug) {
-    process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
-    return 2;
-  }
+  if (!slug) return missing('a trigger slug');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
