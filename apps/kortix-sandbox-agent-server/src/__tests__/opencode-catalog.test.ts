@@ -265,14 +265,6 @@ describe('the boot config never touches the network', () => {
     KORTIX_LLM_CATALOG_FILE: join(tmpdir(), 'kortix-absent-catalog.json'),
   }
 
-  beforeEach(() => {
-    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = ABSENT_BAKED
-  })
-
-  afterEach(() => {
-    delete process.env.KORTIX_BAKED_LLM_CATALOG_PATH
-  })
-
   function recordFetches(): string[] {
     const calls: string[] = []
     globalThis.fetch = (async (input: string) => {
