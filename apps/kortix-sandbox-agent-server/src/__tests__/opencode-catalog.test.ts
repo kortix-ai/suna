@@ -258,10 +258,6 @@ describe('the boot config never touches the network', () => {
 
   // `opencode serve` cannot bind until this config exists, so the build reads
   // only disk: a catalog file, else the bundled minimal set.
-  // The image's OWN baked catalog (/opt/kortix/llm-catalog.json) would win the
-  // baked-path fallback on a Kortix sandbox; hide the bake so the no-catalog
-  // behavior is pinned on any box.
-  const ABSENT_BAKED = join(tmpdir(), 'kortix-absent-baked-catalog.json')
   const NO_FILE_ENV = {
     KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1',
     KORTIX_TOKEN: 'k-test',

@@ -1,5 +1,5 @@
 {
-  "source_hash": "feec92a14062d92a32f92040a925ebd23a1b4c59edb6befdd328b815071a0a88",
+  "source_hash": "a25659e46b7ebb2e037f3938963ab06f6b036566e62ab5be1df8d89d5a4403d1",
   "diff_files": [
     "apps/api/src/__tests__/e2e-connector-faces.test.ts",
     "apps/cli/src/__tests__/access-assignments.test.ts",
@@ -17,13 +17,13 @@
     "apps/mobile/lib/highlight/shiki.test.ts",
     "packages/db/migrations/20261003010107485_basejump_accounts_fk_covering_indexes.concurrent.ts"
   ],
-  "diff_hash": "badcaefb6b130cc28f61d09fb921582d1562b845031813eefaa2a53965019c33",
-  "head": "91ea941fcea5ef4c1acbf05035f88f5e710a835b",
+  "diff_hash": "92ffe1ac2e75d5ffe7f881e246c814ecaa97e7efdab8e391396c667d67be287b",
+  "head": "88ebd0665e6a1696d14a89430f62b73222f3a9a0",
   "passed": false,
   "lanes": {
     "core": "pass",
     "packages": "fail",
     "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T19:33:29.367Z"
+  "at": "2026-10-03T19:46:46.696Z"
 }
