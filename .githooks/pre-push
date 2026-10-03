@@ -40,7 +40,9 @@ printf '%s\n' "$push_refs" | sh "$(cd "$(dirname "$0")/.." && pwd)/scripts/check
 root=$(cd "$(dirname "$0")/.." && pwd)
 bad=$(printf '%s\n' "$push_refs" | while read -r _ local_sha remote_ref _; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue
-  case "$remote_ref" in refs/heads/scratch/*) continue ;; refs/heads/*) ;; *) continue ;; esac
+  # (no `case` here: macOS /bin/sh 3.2 misparses it inside $(...))
+  [ "${remote_ref#refs/heads/}" != "$remote_ref" ] || continue
+  [ "${remote_ref#refs/heads/scratch/}" = "$remote_ref" ] || continue
   rc=0
   node "$root/tests/verify-attestation.mjs" verify --rev "$local_sha" >&2 || rc=$?
   if [ "$rc" = 1 ] || { [ "$rc" = 3 ] && [ "$remote_ref" = refs/heads/main ]; }; then
