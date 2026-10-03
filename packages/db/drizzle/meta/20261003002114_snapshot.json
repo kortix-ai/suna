@@ -1067,6 +1067,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_account_members_user_account": {
+          "name": "idx_account_members_user_account",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
