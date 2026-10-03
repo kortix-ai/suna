@@ -36,26 +36,6 @@ async function materialize(input = INPUT) {
   return { artifact, runtimePath };
 }
 
-/** The compiled artifact is the identity source in these tests. A suite run on
- *  a developer box or inside a Kortix sandbox inherits live identity vars
- *  (KORTIX_PROJECT_ID, KORTIX_BASE_SHA, …) that would trip the artifact's
- *  fail-closed identity check (exit 78) before the test's own values apply. */
-const RUNTIME_IDENTITY_KEYS = [
-  'KORTIX_COMPILED_RUNTIME_FORMAT',
-  'KORTIX_COMPILED_RUNTIME_SOURCE_SHA',
-  'KORTIX_PROJECT_ID',
-  'KORTIX_BASE_REF',
-  'KORTIX_BASE_SHA',
-] as const;
-
-function piRuntimeEnv(
-  overrides: Record<string, string | undefined> = {},
-): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env };
-  for (const key of RUNTIME_IDENTITY_KEYS) env[key] = undefined;
-  return { ...env, ...overrides };
-}
-
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -104,10 +84,7 @@ describe('compilePiRuntime', () => {
 
   test('the worker runtime receives the baked config via __KORTIX_COMPILED__', async () => {
     const { runtimePath } = await materialize();
-    const stdout = execFileSync(process.execPath, [runtimePath], {
-      encoding: 'utf8',
-      env: piRuntimeEnv(),
-    });
+    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
     const lines = stdout.trim().split('\n');
     expect(lines[0]).toBe('kortix-worker starting');
     const baked = JSON.parse(lines[1]).baked;
@@ -122,7 +99,7 @@ describe('compilePiRuntime', () => {
     try {
       execFileSync(process.execPath, [runtimePath], {
         encoding: 'utf8',
-        env: piRuntimeEnv({ KORTIX_PROJECT_ID: 'someone-else' }),
+        env: { ...process.env, KORTIX_PROJECT_ID: 'someone-else' },
       });
     } catch (error) {
       exitCode = (error as { status: number | null }).status;
@@ -138,10 +115,7 @@ describe('compilePiRuntime', () => {
     });
     expect(artifact.manifest.agent_config).toBeNull();
     expect(artifact.manifest.agent_config_etag).toBeNull();
-    const stdout = execFileSync(process.execPath, [runtimePath], {
-      encoding: 'utf8',
-      env: piRuntimeEnv(),
-    });
+    const stdout = execFileSync(process.execPath, [runtimePath], { encoding: 'utf8' });
     expect(JSON.parse(stdout.trim().split('\n')[1]).baked.agentConfig).toBeNull();
   });
 

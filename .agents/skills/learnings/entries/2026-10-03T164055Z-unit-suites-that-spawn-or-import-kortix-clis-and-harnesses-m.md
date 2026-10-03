@@ -31,10 +31,11 @@ session set, and two product hardenings the failures exposed (a compiled
 runtime that indexes local chunk sources at the manifest's chunk size without
 bound, and a mobile highlighter that caches a tokenizer's aborted-line output).
 
-**Enforcement:** The packages lane itself, on any machine that runs Kortix
-sandboxes: `apps/kortix-sandbox-agent-server/src/__tests__/preload-isolated-home.ts`
-deletes the session set for the whole package; the CLI and API suites sanitize
-per file (the codebase's existing `ENV_KEYS`/delete-loop pattern); the API
-suite's CLI spawns all carry `KORTIX_DISABLE_SANDBOX_ENV_FILE=1` (the same
-seam `apps/api/src/mcp/cli.ts` already uses). A regression re-adds the leak and
-goes red on the first factory worker's `pnpm test`.
+**Enforcement:** `tests/bin/package-quality.ts` `hermeticWorkspaceEnv()`:
+the packages lane scrubs every `KORTIX_*` var but its own runner controls and
+sets `KORTIX_DISABLE_SANDBOX_ENV_FILE=1`, `KORTIX_PT_ENV_PATH`,
+`KORTIX_BAKED_LLM_CATALOG_PATH` and `KORTIX_MANAGED_SKILLS_DIR` at
+nonexistent paths — one place, for every workspace suite. A suite that leaks
+through a NEW channel (a second host-baked file, a new identity var) goes red
+on the first factory worker's `pnpm test`; name the channel there, not in
+per-file `beforeEach` blocks.

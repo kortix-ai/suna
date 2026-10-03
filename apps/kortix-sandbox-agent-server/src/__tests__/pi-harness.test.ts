@@ -23,7 +23,7 @@ import type { PiBootState } from '@/harness/pi/boot-state'
 import { extensionAgentHooks, installedPackages, parseNpmSource, systemPackageCacheDir, warmSystemPackageCache } from '@/harness/pi/extensions/host'
 import { ensureProjectPackageBundle } from '@/harness/pi/extensions/bundle'
 import { signTestUserContext } from './helpers/open-code-harness'
-import { __setPtEnvPathForTests, readHostHealth } from '@/harness/shared/host-health'
+import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
@@ -162,11 +162,9 @@ function rigEnv(workspace: string, env: Record<string, string> = {}): NodeJS.Pro
     KORTIX_LLM_BASE_URL: gateway.baseUrl,
     KORTIX_LLM_CATALOG_FILE: join(catalogDir, 'catalog.json'),
     KORTIX_PI_STATE_DIR: join(workspace, '.state'),
-    // Never the machine's ~/.pi, the image's /opt/kortix/pi-agent, or the
-    // image's baked managed-skills overlay.
+    // Never the machine's ~/.pi or the image's /opt/kortix/pi-agent.
     KORTIX_PI_AGENT_DIR: join(workspace, '.pi-agent'),
     KORTIX_PI_PACKAGES_DIR: join(workspace, '.pi-packages'),
-    KORTIX_MANAGED_SKILLS_DIR: join(workspace, '.managed-skills'),
     KORTIX_PROJECT_AUTO_CLONE: '0',
     KORTIX_WORKSPACE: workspace,
     KORTIX_PROJECT_TARGET: workspace,
@@ -248,19 +246,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
  */
 let homeDir: string
 const realHome = process.env.HOME
-let managedSkillsDirSaved: string | undefined
 beforeEach(() => {
   resetKortixEventBusForTests()
-  // This VM's real /etc/pt-env says KORTIX_PROJECT_AUTO_CLONE=1; the rigs are
-  // repo-less and must not inherit it (CI has no such file).
-  __setPtEnvPathForTests()
   homeDir = mkdtempSync(join(tmpdir(), 'pi-home-'))
   process.env.HOME = homeDir
-  // And the image's baked managed-skills overlay at /opt/kortix/managed-skills
-  // would answer every /skill case with the platform's own skills; point the
-  // managed-skills dir at this rig's empty home instead.
-  managedSkillsDirSaved = process.env.KORTIX_MANAGED_SKILLS_DIR
-  process.env.KORTIX_MANAGED_SKILLS_DIR = join(homeDir, 'no-managed-skills')
 })
 afterEach(async () => {
   for (const rig of rigs.splice(0)) {
@@ -268,9 +257,6 @@ afterEach(async () => {
     rmSync(rig.workspace, { recursive: true, force: true })
   }
   resetKortixEventBusForTests()
-  __setPtEnvPathForTests()
-  if (managedSkillsDirSaved === undefined) delete process.env.KORTIX_MANAGED_SKILLS_DIR
-  else process.env.KORTIX_MANAGED_SKILLS_DIR = managedSkillsDirSaved
   if (realHome === undefined) delete process.env.HOME
   else process.env.HOME = realHome
   rmSync(homeDir, { recursive: true, force: true })

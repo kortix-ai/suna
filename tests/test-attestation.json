@@ -1,18 +1,32 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "17bf2cdf56caab455a489178d4fb060e9357f203091c4d3d7d7684e538b949ac",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-03T164055Z-unit-suites-that-spawn-or-import-kortix-clis-and-harnesses-m.md",
+    "apps/api/src/__tests__/e2e-marketplace-http.test.ts",
+    "apps/api/src/shared/platinum.test.ts",
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/config-provider.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/web-proxy-credential-leak.test.ts",
+    "apps/kortix-sandbox-agent-server/src/lib/git/git.ts",
+    "apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-asset-chunks.ts",
+    "apps/mobile/lib/highlight/shiki.ts",
+    "apps/web/package.json",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "apps/web/src/test-runner-contract.test.ts",
+    "apps/whitelabel-demo/tests/e2e/harness.ts",
+    "packages/agent-tunnel/src/client/cli.test.ts",
+    "packages/llm-gateway/src/pipeline/simple-handler.test.ts",
+    "packages/llm-gateway/src/upstream-fetch.test.ts",
+    "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "cb862e2f48070a09fee2ede330f3b04cd57a477c7be2b7a0092c91cd1adb145b",
+  "head": "b06ed95e652c6dfa6393a339e5f2fcc47971df82",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T19:40:46.741Z"
 }

@@ -179,22 +179,13 @@ describe('tui-bin — download + checksum', () => {
   let dir: string;
   let env: Record<string, string>;
   let url: string;
-  let savedSupervised: string | undefined;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'kortix-tui-bin-'));
     env = { KORTIX_TUI_DIR: dir, KORTIX_TUI_RELEASE_BASE: 'http://127.0.0.1:9/rel' };
     url = 'http://127.0.0.1:9/rel/v1.2.3/kortix-tui-linux-x64';
-    // downloadTuiBin's supervised gate reads the runner env, not `env` — a
-    // suite inside a managed sandbox would refuse every download here.
-    savedSupervised = process.env.KORTIX_SUPERVISED;
-    delete process.env.KORTIX_SUPERVISED;
   });
-  afterEach(() => {
-    if (savedSupervised === undefined) delete process.env.KORTIX_SUPERVISED;
-    else process.env.KORTIX_SUPERVISED = savedSupervised;
-    rmSync(dir, { recursive: true, force: true });
-  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   test('downloads the binary + its .sha256 and installs it executable', async () => {
     const seen: string[] = [];

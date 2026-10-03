@@ -42,12 +42,6 @@ async function runProviderCase(input: {
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_CONFIG_FILE: join(directory, 'config.json'),
       KORTIX_TOKEN: undefined,
-      // The banner the assertions pin below must not inherit this runner's
-      // session env ("host env … · session <id>" instead of "host cloud").
-      KORTIX_API_URL: undefined,
-      KORTIX_SESSION_ID: undefined,
-      KORTIX_FRONTEND_URL: undefined,
-      KORTIX_PROJECT_ID: undefined,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },

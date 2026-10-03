@@ -32,7 +32,12 @@ describe('apps/web test runner', () => {
     expect(pkg.scripts.test).toContain('--isolate');
   });
 
-  test('keeps the parallelism that makes isolation affordable', () => {
-    expect(pkg.scripts.test).toMatch(/--parallel=\d+/);
+  test('stays serial: a parallel --test-worker spun at 100% CPU past every per-test timeout', () => {
+    // Twice on a 12 GiB agent sandbox (2026-10-03) one parallel --test-worker
+    // looped at ~100% CPU for 17+ minutes with `--timeout=5000` unable to
+    // interrupt it (a synchronous loop; the timer only fires between turns),
+    // wedging the packages lane. Serial measured 345 s across 921 files,
+    // 0 fail — the isolation reason still holds, the parallelism does not.
+    expect(pkg.scripts.test).not.toMatch(/--parallel/);
   });
 });

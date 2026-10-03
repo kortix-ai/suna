@@ -1,23 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { argvForInvocation } from '../invocation.ts';
 
 import { stripAnsi } from '../style.ts';
 import { EXPERIMENTAL_NOTICE, type TuiDeps, parseTuiFlags, runTui, tuiChildEnv } from './tui.ts';
 
 const CACHED = { bin: '/home/ada/.kortix/tui/1.2.3/kortix-tui', source: 'cache' as const };
-
-// runTui refuses to manage the TUI binary inside a managed sandbox. A suite
-// that itself runs in one inherits KORTIX_SUPERVISED from the runner env, so
-// every case would exit 1 before its own deps ran.
-let savedSupervised: string | undefined;
-beforeEach(() => {
-  savedSupervised = process.env.KORTIX_SUPERVISED;
-  delete process.env.KORTIX_SUPERVISED;
-});
-afterEach(() => {
-  if (savedSupervised === undefined) delete process.env.KORTIX_SUPERVISED;
-  else process.env.KORTIX_SUPERVISED = savedSupervised;
-});
 
 interface Harness {
   deps: Partial<TuiDeps>;
