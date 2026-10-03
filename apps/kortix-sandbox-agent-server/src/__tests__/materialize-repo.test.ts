@@ -716,6 +716,11 @@ describe('clone depth', () => {
     [1, '1', true],
     [0, '3', false],
   ] as const)('cloneDepth %i materializes %s commit(s), shallow=%p', async (cloneDepth, commits, shallow) => {
+    // These rows test materializeRepo's own depth args. The image-baked
+    // scaffold short-circuits them into a depth-1 scaffold delta-fetch when it
+    // exists (it does inside a platform sandbox; CI has none), so point the
+    // scaffold away and let the plain-clone path under test run.
+    __setScaffoldRepoPathForTests('/kortix-materialize-test-no-scaffold')
     const remote = threeCommitOrigin()
     const target = join(mkdtempSync(join(tmpdir(), 'kortix-depth-')), 'workspace')
     tempDirs.push(join(target, '..'))
