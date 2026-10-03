@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -56,6 +57,20 @@ const LIVE_MANAGED = {
 
 const realFetch = globalThis.fetch
 const tempDirs: string[] = []
+
+// bakedLlmCatalogPath() and catalogIsDegraded() read process.env at call time,
+// not the env objects individual builders receive: point the image's baked
+// catalog at an absent file for the whole suite (CI has none anyway), and
+// restore it afterwards so a later file in the same bun process is unaffected.
+let bakedCatalogEnv: string | undefined
+beforeAll(() => {
+  bakedCatalogEnv = process.env.KORTIX_BAKED_LLM_CATALOG_PATH
+  process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(mkdtempSync(join(tmpdir(), 'kortix-baked-')), 'absent.json')
+})
+afterAll(() => {
+  if (bakedCatalogEnv === undefined) delete process.env.KORTIX_BAKED_LLM_CATALOG_PATH
+  else process.env.KORTIX_BAKED_LLM_CATALOG_PATH = bakedCatalogEnv
+})
 
 async function bakedCatalogFile(body: unknown = STALE_BAKED): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'kortix-managed-'))
@@ -252,7 +267,6 @@ describe('the boot config never touches the network', () => {
     KORTIX_TOKEN: 'k-test',
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_LLM_CATALOG_FILE: join(tmpdir(), 'kortix-absent-catalog.json'),
-    KORTIX_BAKED_LLM_CATALOG_PATH: join(tmpdir(), 'kortix-absent-baked-catalog.json'),
   }
 
   function recordFetches(): string[] {

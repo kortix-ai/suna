@@ -12,7 +12,8 @@
  *   reached from Settings (drawer avatar) → project row.
  * - Nav rows: Search (→ Sessions, its search field auto-focused), Files
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
- *   pill while items wait). Connectors moved to project Settings → Customize
+ *   pill while items wait), and Apps (→ the Apps page, the project's
+ *   deployed apps). Connectors moved to project Settings → Customize
  *   (KRTX-249): a "Customize in the web app" hand-off sheet, not a drawer row.
  * - Three sections of top-level sessions, by who started the run (KRTX-639):
  *   "Sessions" (yours, open), "Shared" (other members', collapsed, no header
@@ -61,6 +62,7 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   MagnifyingGlassIcon,
+  SquaresFourIcon,
   NavigationArrowIcon,
   SealCheckIcon,
 } from '@/lib/icons';
@@ -490,6 +492,12 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
     [navigateOnce]
   );
 
+  // Apps is a tab-store page like Review: one entry point, the drawer pill.
+  const goToApps = useCallback(
+    () => navigateOnce(() => useTabStore.getState().navigateToPage('page:apps')),
+    [navigateOnce]
+  );
+
   const handleOpenProjectSession = useCallback(
     (session: ProjectSession) => {
       onClose();
@@ -758,6 +766,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
           onPress={goToReview}
           trailing={<ReviewCountPill count={reviewNeedsYouCount} />}
         />
+        <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
       </View>
 
       <View className="flex-1">

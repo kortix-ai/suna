@@ -9,7 +9,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
@@ -257,7 +257,10 @@ beforeEach(() => {
   git(work, 'config', 'user.name', 'T')
   git(work, 'checkout', '-q', '-b', 'ses-1')
   api = startFakeApi('sandbox-token')
-})
+  // bun's 5 s default applies to hooks too; under the packages lane's
+  // concurrent waves (API suite + CLI + kortixd at once) the git + fake-API
+  // setup here crossed it once. The runner's own budget is 30 s.
+}, 30_000)
 
 /**
  * What OpenCode reads right now. A booted box always has its boot link pointed
@@ -270,11 +273,12 @@ async function servingDir(): Promise<string | null> {
 
 beforeEach(async () => {
   await pointBootLink(join(work, DIR), store)
-})
+}, 30_000)
 
 afterEach(() => {
   // One bun process runs every daemon test file and bun's file order is not stable,
   // so a file that leaves `running.release_id` set poisons whichever file runs next.
+  // 30 s: same concurrent-wave budget as the beforeEach hooks above.
   resetConfigReleaseStateForTests()
   resetDaemonShutdownStateForTests()
   resetAgentSwapBlockersForTests()
@@ -282,7 +286,7 @@ afterEach(() => {
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
-})
+}, 30_000)
 
 describe('convergeConfigRelease — follow-base', () => {
   test('applies the release: new dir, governance at spawn, proven pointer, clean workspace', async () => {
@@ -1055,11 +1059,11 @@ describe('the session is told which commit it runs', () => {
     expect(applied).toContain(`commit ${release.descriptor.source_commit!.slice(0, 12)}`)
     expect(applied).toContain('`/workspace` is a separate checkout')
     expect(applied).toContain('pushed to the base branch')
-    const mtime = statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs
+    const mtime = Bun.file(CONFIG_RELEASE_NOTICE_PATH).lastModified
 
     // Nothing moved: the agent must not be told its config changed.
     expect((await converge(oc)).outcome).toBe('unchanged')
-    expect(statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs).toBe(mtime)
+    expect(Bun.file(CONFIG_RELEASE_NOTICE_PATH).lastModified).toBe(mtime)
 
     // A push to the base branch: the notice names the new commit.
     write(origin, `${DIR}/agents/kortix.md`, 'PROMPT v2\n')

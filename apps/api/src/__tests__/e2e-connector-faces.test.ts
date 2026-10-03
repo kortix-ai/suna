@@ -389,8 +389,6 @@ async function runCli(args: string[], extraEnv: Record<string, string | undefine
       HOME: process.env.HOME,
       KORTIX_API_URL: apiUrl,
       KORTIX_TOKEN: TOKEN,
-      // Hermetic children: never read the agent sandbox's env file
-      // (/dev/shm/kortix/agent-env.sh), which would swap in a real project id.
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       ...extraEnv,
     },

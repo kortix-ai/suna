@@ -831,10 +831,11 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
 // Well-known path the snapshot builder bakes the full org model catalog to (see
 // dockerfile-layer.ts `COPY ${catalogPath} /opt/kortix/llm-catalog.json`). Present
 // on every modern image; used as the fast, always-available fallback so a slow or
-// down gateway never collapses the picker to the ~13-model minimal set.
-// KORTIX_BAKED_LLM_CATALOG_PATH lets a test point the fallback at a file that
-// does not exist: a sandbox image ships the real baked catalog, so the
-// "no catalog anywhere" paths below cannot run there otherwise.
+// down gateway never collapses the picker to the ~13-model minimal set. A host
+// that really bakes one (every Kortix sandbox image) hides it from the test
+// suite through KORTIX_BAKED_LLM_CATALOG_PATH. Read at CALL time, not module
+// load: the suites set process.env in their own setup, after this module has
+// been imported by an earlier test file in the same bun process.
 function bakedLlmCatalogPath(): string {
   return process.env.KORTIX_BAKED_LLM_CATALOG_PATH?.trim() || '/opt/kortix/llm-catalog.json'
 }

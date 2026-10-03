@@ -8,6 +8,7 @@ import {
   groupBundleMembersByType,
   groupCapabilities,
   itemCountLabel,
+  marketplaceFileNodes,
   resolveBundleMembers,
   totalCapabilityCount,
 } from './marketplace-item-view';
@@ -248,5 +249,37 @@ describe('totalCapabilityCount', () => {
   test('null/undefined capabilities count as zero', () => {
     expect(totalCapabilityCount(null)).toBe(0);
     expect(totalCapabilityCount(undefined)).toBe(0);
+  });
+});
+
+describe('marketplaceFileNodes', () => {
+  test('roots the tree at the shared skill directory, SKILL.md first', () => {
+    const nodes = marketplaceFileNodes([
+      '@skills/pdf/scripts/fill.py',
+      '@skills/pdf/SKILL.md',
+      '@skills/pdf/reference.md',
+    ]);
+    expect(nodes).toEqual([
+      { path: '@skills/pdf/SKILL.md', name: 'SKILL.md', depth: 0 },
+      { path: '@skills/pdf/reference.md', name: 'reference.md', depth: 0 },
+      { path: '@skills/pdf/scripts/fill.py', name: 'fill.py', depth: 1 },
+    ]);
+  });
+
+  test('a single file is one root row', () => {
+    expect(marketplaceFileNodes(['@skills/docx/SKILL.md'])).toEqual([
+      { path: '@skills/docx/SKILL.md', name: 'SKILL.md', depth: 0 },
+    ]);
+  });
+
+  test('targets with no shared directory keep every file, listed flat', () => {
+    expect(marketplaceFileNodes(['b/two.md', 'a/one.md']).map((n) => n.path)).toEqual([
+      'a/one.md',
+      'b/two.md',
+    ]);
+  });
+
+  test('no targets, no rows', () => {
+    expect(marketplaceFileNodes([])).toEqual([]);
   });
 });
