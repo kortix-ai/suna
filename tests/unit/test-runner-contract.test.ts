@@ -132,7 +132,13 @@ describe('local test runner contract', () => {
     expect(cliPackage.scripts.test).toContain(
       'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4',
     );
-    expect(agentPackage.scripts.test).toBe('bun test');
+    // Same budget as the CLI: the lane exports KORTIX_TEST_TIMEOUT_MS=30000
+    // because its concurrent waves push tests past the 5 s default (measured:
+    // three lane runs on a shared 6-CPU box failed three different 5 s-timeout
+    // tests here, 2026-10-03). Still serial: the EEXIST note below holds.
+    expect(agentPackage.scripts.test).toBe(
+      'bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}',
+    );
     // Serial on purpose. `--parallel` implies `--isolate`, and under isolation
     // Bun 1.3.14 re-creates process.stdout/stderr per test file, dups the
     // stdio fd into epoll, and never ends the outgoing sinks at the swap

@@ -141,6 +141,14 @@ describe('highlighter (JavaScript regex engine, strict)', () => {
       // leaves its rest uncoloured; a cold cpp compile on a loaded CI runner
       // crossed that limit and failed the parity check below.
       highlightToTokens(sample, lang, 'light');
+      // The warm-up's result is cached, and the COLD first tokenization of a
+      // freshly loaded grammar can itself differ from every later call (a
+      // fresh-process php warm-up painted the whole `<?php` open tag one
+      // colour, then matched Oniguruma on every later call; 3/3 fresh
+      // processes, raw engine probe, 2026-10-03). Drop the warm-up's cached
+      // result so the parity below compares fresh post-cold tokenizations on
+      // both engines.
+      __testing.tokenCache.delete(`light:${lang}:${sample}`);
 
       for (const scheme of ['light', 'dark'] as const) {
         const tokens = highlightToTokens(sample, lang, scheme);
