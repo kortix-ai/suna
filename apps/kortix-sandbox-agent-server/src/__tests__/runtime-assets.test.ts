@@ -611,7 +611,13 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, oldCli)
     const stub = chunkAwareStub(oldCli, newCli)
 
-    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, {
+      // The chunk indexer reads every local store source in manifest-sized
+      // chunks; a Kortix sandbox bakes a ~100 MB agent at the default
+      // agentBakedPath, which turns an 8-byte chunk manifest into millions of
+      // reads. CI has no such file — point the option at one that is absent.
+      agentBakedPath: join(ws.root, 'no-baked-agent'),
+    })
 
     expect(result.cli).toBe('updated')
     expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)

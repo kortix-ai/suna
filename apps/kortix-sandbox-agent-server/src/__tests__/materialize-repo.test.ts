@@ -77,7 +77,12 @@ function createDetachedWarmCheckout(prefix: string): {
 const tempDirs: string[] = []
 
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  // Point the hook at a path that does not exist, not at the module default:
+  // a Kortix sandbox bakes /opt/kortix/scaffold.git, whose delta fast path
+  // would hijack these clone tests (the depth-0 case expects a full clone).
+  // CI has no baked scaffold, so this is the CI-equivalent state; the tests
+  // that exercise the scaffold path set their own repo per test.
+  __setScaffoldRepoPathForTests('/nonexistent-kortix-scaffold-for-tests')
 })
 
 afterEach(() => {
