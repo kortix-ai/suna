@@ -13,6 +13,7 @@ import {
   setContextField,
 } from './lib/request-context';
 import {
+  requestClientLogFields,
   requestLogLevel,
   requestTimingLogField,
   shouldSuppressRequestLog,
@@ -230,6 +231,7 @@ app.use('*', async (c, next) => {
       // makes turn-stream `kind` queryable in CloudWatch Logs Insights; the full
       // request context (which carries identity) still goes to Better Stack only.
       ...getDiagnosticFields(),
+      ...requestClientLogFields((name) => c.req.header(name)),
       ...(serverTiming ? { server_timing: serverTiming } : {}),
       // Only on failed proxy requests: identify the failing hop without logging
       // request bodies, response bodies, or any sandbox identity.

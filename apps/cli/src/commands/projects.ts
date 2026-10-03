@@ -7,6 +7,7 @@ import {
   activeHostName,
   clearDefaultProject,
   defaultProject,
+  getHost,
   setActiveAccount,
   setDefaultProject,
 } from '../api/config.ts';
@@ -58,7 +59,10 @@ Subcommands:
                        to a v2 kortix.yaml and opens a change request.
   use [<id>]           Set the global DEFAULT project (interactive if omitted).
                        Switches the active account to the project's account.
-  unset                Clear the global default project.
+                       --host <name> binds that logged-in host's default
+                       instead of the active one.
+  unset                Clear the global default project. --host <name> clears
+                       that host's instead.
   link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
@@ -153,11 +157,29 @@ export async function runProjects(argv: string[]): Promise<number> {
       return projectsInfo(restCopy[0], json, hostArg);
     }
     case 'use':
-    case 'default':
-      return projectsUse(rest.find((a) => !a.startsWith('-')));
+    case 'default': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsUse(restCopy.find((a) => !a.startsWith('-')), hostArg);
+    }
     case 'unset':
-    case 'clear':
-      return projectsUnset();
+    case 'clear': {
+      const restCopy = [...rest];
+      let hostArg: string | undefined;
+      try {
+        hostArg = takeFlagValue(restCopy, ['--host']);
+      } catch (err) {
+        process.stderr.write(`${status.err((err as Error).message)}\n`);
+        return 2;
+      }
+      return projectsUnset(hostArg);
+    }
     case 'link':
       return projectsLink(rest[0]);
     case 'unlink':
@@ -1330,9 +1352,21 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   return 0;
 }
 
-async function projectsUse(arg?: string): Promise<number> {
-  const auth = requireAuth();
-  if (!auth) return 1;
+async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
+  // --host names a logged-in host other than the active one: its credential
+  // serves the request, and the default project binds on ITS host entry —
+  // never the ambient session host (`activeHost()` prefers the sandbox env
+  // token, which is what turned `use <id> --host <other>` into a 403 about
+  // a project the user never referenced).
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
 
   let target: ProjectSummary | null = null;
   if (arg) {
@@ -1343,18 +1377,17 @@ async function projectsUse(arg?: string): Promise<number> {
       return surface(err);
     }
   } else {
-    // Pick from the active account's projects.
+    // Pick from the target host's stored account (--host) or the active one.
     let list: ProjectSummary[];
     try {
-      list = await clientFromAuth(auth, { accountId: scopeAccountId(auth) }).get<ProjectSummary[]>(
-        '/projects',
-      );
+      const accountId = hostArg ? auth.account_id || undefined : scopeAccountId(auth);
+      list = await clientFromAuth(auth, { accountId }).get<ProjectSummary[]>('/projects');
     } catch (err) {
       return surface(err);
     }
     if (list.length === 0) {
       process.stderr.write(
-        `${status.err('No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
+        `${status.err(hostArg ? `No projects in host "${hostArg}"'s account.` : 'No projects in the active account.')} Switch with \`kortix accounts use\`.\n`,
       );
       return 1;
     }
@@ -1375,9 +1408,12 @@ async function projectsUse(arg?: string): Promise<number> {
   }
 
   // A default project pins its account. If it lives in a different account
-  // than the active one, switch the active account to it (resolving the
-  // account's display name best-effort) before recording the default.
-  const switched = target.account_id !== (activeAccount()?.id ?? auth.account_id);
+  // than the target host's active one, switch that host's active account to
+  // it (resolving the account's display name best-effort) before recording
+  // the default. With --host the comparison is against the named host's own
+  // stored account, not the ambient active one.
+  const priorAccountId = hostArg ? auth.account_id : activeAccount()?.id ?? auth.account_id;
+  const switched = target.account_id !== priorAccountId;
   let accountLabel = target.account_id.slice(0, 8);
   if (switched) {
     let slug = target.account_id.slice(0, 8);
@@ -1392,18 +1428,26 @@ async function projectsUse(arg?: string): Promise<number> {
     } catch {
       /* fall back to the truncated id */
     }
-    setActiveAccount({ id: target.account_id, slug, name });
+    setActiveAccount({ id: target.account_id, slug, name }, hostArg);
     accountLabel = name ? `${name} (${slug})` : slug;
   }
-  setDefaultProject({
-    project_id: target.project_id,
-    account_id: target.account_id,
-    name: target.name,
-  });
+  setDefaultProject(
+    {
+      project_id: target.project_id,
+      account_id: target.account_id,
+      name: target.name,
+    },
+    hostArg,
+  );
 
   process.stdout.write(`${status.ok(`Default project: ${C.bold}${target.name}${C.reset}`)}\n`);
+  if (hostArg) {
+    process.stdout.write(`  ${C.dim}host      ${C.reset}${hostArg}\n`);
+  }
   if (switched) {
-    process.stdout.write(`  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active)${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}account → ${C.reset}${accountLabel} ${C.dim}(now active${hostArg ? ` on ${hostArg}` : ''})${C.reset}\n`,
+    );
   }
   process.stdout.write(
     `  ${C.dim}Used by connectors/connections/sessions when a directory isn't linked.${C.reset}\n`,
@@ -1411,9 +1455,11 @@ async function projectsUse(arg?: string): Promise<number> {
   return 0;
 }
 
-async function projectsUnset(): Promise<number> {
-  const existing = defaultProject();
-  if (clearDefaultProject()) {
+async function projectsUnset(hostArg?: string): Promise<number> {
+  // The message describes the entry being cleared: the named host with
+  // --host, else the active one (the same resolution clearDefaultProject uses).
+  const existing = hostArg ? getHost(hostArg)?.default_project ?? null : defaultProject();
+  if (clearDefaultProject(hostArg)) {
     process.stdout.write(
       `${status.ok(`Cleared the default project${existing?.name ? ` ${C.dim}(was ${existing.name})${C.reset}` : ''}`)}\n`,
     );
