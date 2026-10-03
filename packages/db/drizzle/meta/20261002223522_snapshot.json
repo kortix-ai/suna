@@ -1,5 +1,5 @@
 {
-  "id": "c78e6786-2343-48b7-a498-ea69b6c21018",
+  "id": "2c8c9cc1-09db-4a04-8c25-0c7faffdfb65",
   "prevId": "f437005a-e96a-4699-9de8-5d61be349e22",
   "version": "7",
   "dialect": "postgresql",
@@ -2942,6 +2942,21 @@
             },
             {
               "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "app_deployment_events_runtime_idx": {
+          "name": "app_deployment_events_runtime_idx",
+          "columns": [
+            {
+              "expression": "runtime_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -14868,21 +14883,6 @@
             },
             {
               "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_trigger_executions_session": {
-          "name": "idx_project_trigger_executions_session",
-          "columns": [
-            {
-              "expression": "session_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

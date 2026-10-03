@@ -23,7 +23,7 @@ gate, offline-`paused` releases it rather than spinning over data already in the
 browser, and a background refetch cannot re-open it.
 **Diagnostic:** a spinner that outlives a 200 whose body is already in the
 Network tab is a gate, not a fetch. Check `fetchStatus`, not `isPending`.
-*Incident:* dev.kortix.com project `441011b6`, members only; introduced
+*Incident:* one dev.kortix.com project, members only; introduced
 `1c8b5434b8` (2026-08-19), found 2026-09-17, fixed in PR #7380. Reproduced and
 A/B-proven on the real UI: same member, same project — `main` gave
 `spinnerPresent:true, rowCount:0`, the fix gave `false, 8`.

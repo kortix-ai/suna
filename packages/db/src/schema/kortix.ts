@@ -4281,6 +4281,7 @@ export const appDeploymentEvents = kortixSchema.table(
       sql`${table.level} IN ('debug', 'info', 'warn', 'error')`,
     ),
     index('app_deployment_events_deployment_idx').on(table.deploymentId, table.createdAt),
+    index('app_deployment_events_runtime_idx').on(table.runtimeId),
   ],
 );
 

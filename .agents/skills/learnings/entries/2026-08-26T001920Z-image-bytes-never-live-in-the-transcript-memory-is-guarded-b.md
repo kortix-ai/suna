@@ -4,7 +4,7 @@ commit: 680cea8c4a
 ---
 # Image bytes never live in the transcript; memory is guarded before the kernel; an unknown probe backs off
 
-*Incident (2026-08-25 23:12Z, SampleCo session 9df2a873):* the kernel OOM-killed
+*Incident (2026-08-25 23:12Z, a SampleCo session):* the kernel OOM-killed
 OpenCode at 6.48 GB RSS on an 8 GB box (`dmesg`: `Killed process 1506
 (opencode.exe) anon-rss:6484532kB`), mid-turn, leaving an empty assistant
 husk. Two forces met: the transcript held 275 MB of base64 tool screenshots in
