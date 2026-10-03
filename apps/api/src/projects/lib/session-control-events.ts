@@ -118,6 +118,7 @@ interface SessionChannel {
   touchedAt: number;
 }
 
+// replica-local: by design; each replica's reconciler re-reads the database (see header).
 const channels = new Map<string, SessionChannel>();
 
 function now(): number {

@@ -15,6 +15,7 @@ import {
 import { backfillSlackBindingLabel } from './binding-label';
 import { slackMessageLabels } from './labels';
 import { PICKER_TTL_MS } from './app';
+import { createPendingSlackPickerMessage } from './auth-resume';
 import { handleSlashCommand } from './commands';
 import {
   createOrJoinThreadSession,
@@ -50,8 +51,6 @@ import type {
   SlackEvent,
   SlashResponse,
 } from './types';
-
-export const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
 // NOTE: deliberately does NOT call backfillSlackBindingLabel — this runs on EVERY
 // Slack event, and the name is already captured on first-bind (the auto-bind
@@ -217,7 +216,11 @@ async function postProjectPicker(opts: {
     .from(projects)
     .where(inArray(projects.projectId, projectIds));
 
-  const pickerId = randomUUID();
+  // The button carries only this id; the triggering message is parked in the DB
+  // so the click replays it on any replica. No message (DM/assistant open) →
+  // nothing to replay, the pick just binds and confirms.
+  const pickerId =
+    (envelope && (await createPendingSlackPickerMessage({ teamId, envelope, ttlMs: PICKER_TTL_MS }))) || randomUUID();
   const conversation = isDm ? null : await describeSlackConversation(token, channelId);
   const channelName = conversation?.type === 'channel' || conversation?.type === 'private_channel' ? conversation.name : null;
   const channelLabel = isDm
@@ -246,16 +249,6 @@ async function postProjectPicker(opts: {
       })),
     },
   ];
-
-  const now = Date.now();
-  for (const [k, v] of pendingPickers) {
-    if (v.expiry < now) pendingPickers.delete(k);
-  }
-  // Only register a replay when a message triggered the picker. On DM/assistant
-  // open there's no message to replay — the pick just binds + confirms.
-  if (envelope) {
-    pendingPickers.set(pickerId, { envelope, expiry: now + PICKER_TTL_MS });
-  }
 
   const pickerTs = await postBlocks(
     token,

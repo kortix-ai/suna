@@ -168,8 +168,8 @@ export async function findWarmProjectSession(scope: {
 }
 
 /**
- * Drop `metadata.warm` and stamp `last_activity_at` for one session — one
- * UPDATE, one moment.
+ * Drop `metadata.warm` and stamp `last_activity_at`, `updated_at`, and
+ * `created_at` for one session — one UPDATE, one moment.
  *
  * Called from POST /start (routes/session-runtime.ts), the earliest server signal a user
  * actually entered this session. Verified for JAY-599/T21: the ONLY caller of
@@ -192,6 +192,11 @@ export async function findWarmProjectSession(scope: {
  * "latest session" for the adoption-to-first-prompt window. Both stamps
  * mirror `recordSessionActivity` exactly.
  *
+ * `created_at` moves to adoption too. The warm row is inserted while the user
+ * dwells on the project home, possibly hours before the send, so its insert
+ * time is pool bookkeeping. The web session list's hover card and mobile row
+ * read `created_at` and showed "4h" for a session started minutes ago.
+ *
  * A no-op (0 rows touched) when the session was never warm: `WARM_SESSION_MARKER`
  * in the WHERE clause makes this safe to call unconditionally and concurrently
  * — a second call (a retried `/start`, a race) finds nothing left to drop and
@@ -213,6 +218,7 @@ export async function dropWarmSessionMarkerOnAdopt(
           [SESSION_LAST_ACTIVITY_KEY]: adoptedAt.toISOString(),
         })}) - ${WARM_SESSION_METADATA_KEY}::text`,
         updatedAt: adoptedAt,
+        createdAt: adoptedAt,
       })
       .where(and(eq(projectSessions.sessionId, sessionId), WARM_SESSION_MARKER));
   } catch (err) {
