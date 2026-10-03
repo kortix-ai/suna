@@ -1,18 +1,26 @@
 {
-  "source_hash": "72683559e9a64f65415268e7b3964ac684b1615d4e7279e5fdb04a49906ee9ff",
+  "source_hash": "0c73ce15a4ec1dfaf66d36cf5c741dc7682be081eb0897d2ed427154f6a8d1b2",
   "diff_files": [
-    "apps/api/src/__tests__/integration-warm-session-adopt.test.ts",
-    "apps/api/src/projects/routes/warm-sessions.ts",
-    "packages/db/scripts/audit-events-uuid-v7.integration.test.ts",
-    "packages/db/scripts/credit-purchases-rls-initplan.integration.test.ts"
+    "apps/kortix-sandbox-agent-server/package.json",
+    "apps/kortix-sandbox-agent-server/src/__tests__/materialize-repo.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-catalog.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-lifecycle.e2e.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/host-health.ts",
+    "apps/mobile/lib/highlight/shiki.test.ts",
+    "apps/web/src/features/session/turn/channel-message.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/unit/test-runner-contract.test.ts"
   ],
-  "diff_hash": "69cfd8249ed222f7d872e5d797380259786ea639688b0ffa653a9d41910c049d",
-  "head": "1fee9bf91ce6166ba3833366b445740c41c621c7",
+  "diff_hash": "1a89b1e2b8eeb126291aaf49acedb8c16f6b00fce1f0f8b287761cab2c0e8346",
+  "head": "e7eb6f94171e1f824f1a79a3a453e51bd96628ce",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "pass"
+    "db-suites": "skipped-no-db"
   },
-  "at": "2026-10-03T15:08:44.943Z"
+  "at": "2026-10-03T15:44:00.588Z"
 }
