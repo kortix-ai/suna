@@ -40,7 +40,8 @@ describe('connector approval handoff', () => {
       approvalContext: ' Sends draft d1 to a@example.com ',
     });
     await callWithApprovalHandoff(connector, 'gmail', 'send_draft', { draft_id: 'd1' }, {
-      approvalContext: 'true',
+      // A valueless flag arrives as the boolean `true` (parseExecArgs).
+      approvalContext: true,
     });
 
     expect(seen).toEqual([{ approvalContext: 'Sends draft d1 to a@example.com' }, {}]);

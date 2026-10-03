@@ -23,6 +23,26 @@ afterEach(() => {
   (process.stdout as any).write = ORIGINAL_STDOUT_WRITE;
 });
 
+describe('kortix connectors — dispatch', () => {
+  test('an unknown subcommand falls through to the help object, exit 0', async () => {
+    // The dispatch is a handler table; an unknown command must keep printing
+    // the machine surface's usage object (the agent reads `commands`).
+    const code = await runConnector(['frobnicate']);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.name).toBe('kortix connectors');
+    expect(parsed.commands).toHaveProperty('call');
+    expect(parsed.commands).toHaveProperty('mcp');
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('a bare command prints the same help object', async () => {
+    const code = await runConnector([]);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout).name).toBe('kortix connectors');
+  });
+});
+
 describe('kortix connectors — built-in channel slugs', () => {
   test('add slack is rejected client-side and points at `kortix channels connect`', async () => {
     const code = await runConnector(['add', 'slack', '--provider', 'pipedream', '--app', 'slack']);

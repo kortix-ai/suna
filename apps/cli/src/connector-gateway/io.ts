@@ -27,10 +27,11 @@ export function out(data: unknown): void {
 export interface ExecArgs {
   command: string;
   args: string[];
-  /** Last value wins for a repeated flag. */
-  flags: Record<string, string>;
+  /** Last value wins for a repeated flag. A valueless flag is the boolean
+   *  `true` — a bare flag, never the string 'true'. */
+  flags: Record<string, string | true>;
   /** Every value of every flag, in order — for repeatable flags such as `--attach`. */
-  repeated: Record<string, string[]>;
+  repeated: Record<string, Array<string | true>>;
 }
 
 /**
@@ -41,13 +42,13 @@ export interface ExecArgs {
 export function parseExecArgs(argv: string[]): ExecArgs {
   const command = argv[0] ?? 'help';
   const args: string[] = [];
-  const flags: Record<string, string> = {};
-  const repeated: Record<string, string[]> = {};
+  const flags: Record<string, string | true> = {};
+  const repeated: Record<string, Array<string | true>> = {};
   for (let i = 1; i < argv.length; i += 1) {
     const a = argv[i]!;
     if (a.startsWith('--')) {
       const key = a.slice(2);
-      const val = argv[i + 1] && !argv[i + 1]!.startsWith('--') ? argv[(i += 1)]! : 'true';
+      const val = argv[i + 1] && !argv[i + 1]!.startsWith('--') ? argv[(i += 1)]! : true;
       flags[key] = val;
       (repeated[key] ??= []).push(val);
     } else {
