@@ -33,12 +33,14 @@ import { registerProjectScopedMemo } from './cache-invalidation';
 import type { ScopeType } from './catalog';
 
 /**
- * Actions no agent ever holds, whatever its grant or bound role says. A human
- * does these. Spec §2.1.
+ * Actions no agent ever holds, whatever its grant or bound role says.
+ *
+ * Only credential minting: a project token minted by an agent session carries
+ * no agent grant, so the agent would hand itself a credential outside its own
+ * permissions. Every other action is an ordinary permission — `all` includes
+ * `project.members.manage` and `project.delete`.
  */
 export const HUMAN_ONLY_ACTIONS: ReadonlySet<string> = new Set([
-  'project.members.manage',
-  'project.delete',
   'project.credentials.issue',
 ]);
 

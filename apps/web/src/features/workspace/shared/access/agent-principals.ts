@@ -31,12 +31,9 @@ import { useMemo } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from '@/features/workspace/customize/sections/view/agent-editor-catalog';
 
 /** Never an agent's, whatever its role or its `kortix_permissions` say. Mirrors
- *  `HUMAN_ONLY` in the spec §2.1 (enforced in apps/api). */
-export const HUMAN_ONLY_PERMISSIONS: readonly string[] = [
-  'project.members.manage',
-  'project.delete',
-  'project.credentials.issue',
-];
+ *  `HUMAN_ONLY_ACTIONS` in apps/api `iam/agent-principal.ts`: a token an agent
+ *  minted would carry none of its permissions. */
+export const HUMAN_ONLY_PERMISSIONS: readonly string[] = ['project.credentials.issue'];
 
 /** Every project permission `kortix_permissions` may name. */
 export const GRANTABLE_PROJECT_PERMISSIONS: readonly string[] = KORTIX_PERMISSIONS_CATALOG.flatMap(
@@ -46,7 +43,7 @@ export const GRANTABLE_PROJECT_PERMISSIONS: readonly string[] = KORTIX_PERMISSIO
 /** Always granted to an agent inside its own project (spec §2.1). */
 const ALWAYS_GRANTED = 'project.read';
 
-export type PermissionGrant = string[] | 'all' | 'none' | undefined;
+export type PermissionGrant = string[] | 'all' | '*' | 'none' | undefined;
 
 export interface AgentAuthority {
   /** The manifest grant, expanded: `all` → every grantable permission. */
@@ -60,7 +57,10 @@ export interface AgentAuthority {
 }
 
 export function expandPermissionGrant(grant: PermissionGrant): string[] {
-  if (grant === 'all') return [...GRANTABLE_PROJECT_PERMISSIONS];
+  // `"*"`, alone or inside a list, is a synonym of `all` (as on the server).
+  if (grant === 'all' || grant === '*' || (Array.isArray(grant) && grant.includes('*'))) {
+    return [...GRANTABLE_PROJECT_PERMISSIONS];
+  }
   if (!grant || grant === 'none') return [];
   return [...new Set(grant)];
 }
