@@ -6027,6 +6027,16 @@ export const connectionOAuthApplications = kortixSchema.table(
     }).onDelete('cascade'),
     uniqueIndex('idx_connection_oauth_applications_connection').on(table.connectionId),
     index('idx_connection_oauth_applications_project').on(table.projectId),
+    // Covers the composite FK above, built by
+    // 20261003100714414_connection_oauth_applications_tenant_index.concurrent.ts:
+    // no existing index leads with account_id, so every RI check on the FK
+    // (Supabase advisor: unindexed_foreign_keys) seq-scanned the table.
+    index('idx_connection_oauth_applications_tenant').on(
+      table.accountId,
+      table.projectId,
+      table.connectorId,
+      table.connectionId,
+    ),
   ],
 );
 
