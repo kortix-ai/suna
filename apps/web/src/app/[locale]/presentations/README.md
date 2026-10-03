@@ -17,7 +17,7 @@ presentations/
   decks/<slug>.tsx    a deck: `useSlides(): SlideDef[]`
   engine/
     deck.tsx          keyboard engine, build steps, presenter notes, overview
-    parts.tsx         Slide, SectionHead, Panel, RowList, SpecStrip, Shot, Rise…
+    parts.tsx         Slide, SectionHead, Panel, RowList, Shot, Rise…
     diagram.tsx       build-aware mechanism diagrams (Stage, Box, Link, Wall…)
 ```
 
