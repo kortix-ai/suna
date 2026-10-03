@@ -247,11 +247,7 @@ export async function stampUnreachableDiagnostics(
     //
     // Gated on the exact cause so a healthy box never pays an exec: this runs
     // only when the daemon has explicitly told us the signature did not verify.
-    if (
-      ensured.cause === 'unsigned_context' &&
-      typeof ensured.detail === 'string' &&
-      ensured.detail.includes('bad_signature')
-    ) {
+    if (ensured.cause === 'unsigned_context' && daemonRefusalReason(ensured.detail) === 'bad_signature') {
       // One exec per poll is a spike of its own (2026-09-29: ~2200 execs in
       // 2 h across 20 stuck sessions, each holding the /start response open).
       // An attempt that did not heal backs off; a healed row stops being
@@ -434,4 +430,14 @@ export async function judgeBootBudget(
     await markRuntimeAnswered(row);
   }
   return null;
+}
+
+/** The daemon refuses a context as JSON `{error:'unauthorized', reason}`; an edge 401 body is not that. */
+function daemonRefusalReason(detail: string | undefined): string | null {
+  try {
+    const reason = (JSON.parse(detail ?? '') as { reason?: unknown }).reason;
+    return typeof reason === 'string' ? reason : null;
+  } catch {
+    return null;
+  }
 }

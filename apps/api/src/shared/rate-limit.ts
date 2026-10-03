@@ -165,6 +165,8 @@ export async function enforceRateLimit(
   return rateLimitExceededResponse(c, result, auditContext);
 }
 
+// replica-local: every limiter below counts in this process, so the fleet allows
+// limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
@@ -177,7 +179,6 @@ const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const projectSessionCreateLimiter = new TokenBucketRateLimiter('project_session_create');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
-export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 /**
  * Per-project budget on session CREATES (the 2026-08-21 storm's other half: a
@@ -470,5 +471,4 @@ export function resetRateLimiters() {
   projectSecretWriteLimiter.reset();
   projectSessionCreateLimiter.reset();
   llmGatewayLimiter.reset();
-  sessionLlmLimiter.reset();
 }

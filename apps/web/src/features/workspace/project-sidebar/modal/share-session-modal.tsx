@@ -1,8 +1,6 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import {
@@ -27,12 +25,7 @@ import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 import { getSessionOversight, setProjectSessionSharing, type ProjectSession } from '@kortix/sdk';
 import { sessionOversightQueryKey } from '@/components/iam/session-oversight-card';
-import {
-  GlobeIcon as Globe,
-  ShieldCheckIcon,
-  LockIcon as LockSolid,
-  UsersIcon as UsersSolid,
-} from '@phosphor-icons/react';
+import { ShieldCheckIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { SessionPublicLinkSection } from './session-public-link-section';
@@ -63,59 +56,6 @@ function delegateCopy(ownerLabel: string, tI18nComplete: UiTranslator): SharingC
       desc: tI18nComplete.raw('text38b08d83da73'),
     },
   };
-}
-
-/** The visibility badge is a status indicator (team/shared/private) — the
- *  shared and private states render their solid glyph, matching the app's
- *  status/solid-surface convention. */
-function UsersSolidFilled({ className }: { className?: string }) {
-  return <UsersSolid className={className} weight="fill" />;
-}
-function LockSolidFilled({ className }: { className?: string }) {
-  return <LockSolid className={className} weight="fill" />;
-}
-
-export function sessionVisibilityMeta(
-  session: Pick<ProjectSession, 'visibility'>,
-  tI18nComplete: UiTranslator,
-) {
-  switch (session.visibility) {
-    case 'project':
-      return { icon: Globe, label: tI18nComplete.raw('text5985039f106d'), tone: 'shared' as const };
-    case 'restricted':
-      return {
-        icon: UsersSolidFilled,
-        label: tI18nComplete.raw('texte3c4b39d6d50'),
-        tone: 'shared' as const,
-      };
-    default:
-      return {
-        icon: LockSolidFilled,
-        label: tI18nComplete.raw('textc63eb6720c6e'),
-        tone: 'private' as const,
-      };
-  }
-}
-
-export function SessionVisibilityBadge({ session }: { session: ProjectSession }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const meta = sessionVisibilityMeta(session, tI18nComplete);
-  const Icon = meta.icon;
-
-  if (session.visibility === 'private' && session.is_owner !== false) return null;
-  const sharedBy =
-    !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
-  return (
-    <Hint
-      side="bottom"
-      label={sharedBy ?? tI18nComplete('text6bf74b3f6d7a', { value0: meta.label })}
-    >
-      <Badge variant="kortix" size="sm" className="gap-2">
-        <Icon className="size-3" />
-        {meta.label}
-      </Badge>
-    </Hint>
-  );
 }
 
 export function ShareSessionModal({
