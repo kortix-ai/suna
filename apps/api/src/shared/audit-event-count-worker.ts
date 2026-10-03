@@ -26,6 +26,7 @@
 //
 // Recursive setTimeout keeps ticks serial per process.
 import { sql } from 'drizzle-orm';
+import { logger } from '../lib/logger';
 import { runWorkerTick } from './audit-scope';
 import { db } from './db';
 
@@ -112,11 +113,13 @@ export async function countPass(nowMs?: number): Promise<{ counted: number }> {
 async function tickAndRearm(): Promise<void> {
   try {
     const result = await runWorkerTick('audit-event-counts', () => countPass());
-    if (result.counted) console.info('[audit event counts] counted', result.counted, 'slot(s)');
+    if (result.counted) logger.info('[audit event counts] counted slots', { counted: result.counted });
   } catch (err) {
     // The next tick retries whatever is still missing; nothing waits a whole
     // cycle for a transient failure, and nothing doubles (counts are exact).
-    console.error('[audit event counts] tick failed', err);
+    logger.error('[audit event counts] tick failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
   if (!stopped) timer = setTimeout(tickAndRearm, TICK_MS);
 }
